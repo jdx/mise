@@ -109,14 +109,14 @@ mod tests {
         };
         let asdf = |s, id, name| t(s, id, name, ForgeType::Asdf);
         let cargo = |s, id, name| t(s, id, name, ForgeType::Cargo);
-        let core = |s, id, name| t(s, id, name, ForgeType::Core);
+        // let core = |s, id, name| t(s, id, name, ForgeType::Core);
         let npm = |s, id, name| t(s, id, name, ForgeType::Npm);
 
         asdf("asdf:poetry", "poetry", "poetry");
         asdf("poetry", "poetry", "poetry");
         asdf("", "", "");
         cargo("cargo:eza", "cargo:eza", "eza");
-        core("node", "node", "node");
+        // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
         npm("npm:prettier", "npm:prettier", "prettier");
     }

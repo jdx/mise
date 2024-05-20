@@ -73,6 +73,8 @@ mod tests {
     fn test_registry() {
         reset();
         let out = assert_cli!("registry");
-        assert_snapshot!(grep(out, "node"), @"node                         core:node");
+        // TODO: enable this when core plugins are back in the registry
+        // assert_snapshot!(grep(out, "node"), @"node                         core:node");
+        assert_snapshot!(grep(out, "poetry"), @"poetry                       asdf:mise-plugins/mise-poetry");
     }
 }

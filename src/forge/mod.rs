@@ -21,7 +21,7 @@ use crate::forge::cargo::CargoForge;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{core, ExternalPlugin, PluginType, VERSION_REGEX};
+use crate::plugins::{ExternalPlugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -63,7 +63,8 @@ impl Display for ForgeType {
 
 static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
 
-fn load_forges() -> ForgeMap {
+// TODO: make this private
+pub fn load_forges() -> ForgeMap {
     let mut forges = FORGES.lock().unwrap();
     if let Some(forges) = &*forges {
         return forges.clone();
@@ -90,9 +91,7 @@ fn list_installed_forges() -> eyre::Result<ForgeList> {
             match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(fa.name)) as AForge,
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.name)) as AForge,
-                ForgeType::Core => {
-                    core::get(&fa.name).unwrap_or_else(|| panic!("Core tool not found {fa}"))
-                }
+                ForgeType::Core => Arc::new(ExternalPlugin::new(fa.name)) as AForge,
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.name)) as AForge,
                 ForgeType::Go => Arc::new(go::GoForge::new(fa.name)) as AForge,
                 ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(fa.name)) as AForge,
@@ -123,7 +122,7 @@ pub fn get(fa: &ForgeArg) -> AForge {
             .or_insert_with(|| match fa.forge_type {
                 ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
                 ForgeType::Cargo => Arc::new(CargoForge::new(name)),
-                ForgeType::Core => core::get(&fa.name).unwrap(),
+                ForgeType::Core => Arc::new(ExternalPlugin::new(name)),
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(name)),
                 ForgeType::Go => Arc::new(go::GoForge::new(name)),
                 ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(name)),
