@@ -73,6 +73,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           { toolchain: nightly, components: "rustfmt, clippy", rustflags: "" }
