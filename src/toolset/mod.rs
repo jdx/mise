@@ -68,8 +68,6 @@ pub struct Toolset {
     pub versions: IndexMap<ForgeArg, ToolVersionList>,
     pub source: Option<ToolSource>,
     pub disable_tools: HashSet<ForgeArg>,
-    pub tool_filter: Option<HashSet<ForgeArg>>,
-    pub installed_only: bool,
 }
 
 impl Toolset {
@@ -301,9 +299,6 @@ impl Toolset {
         self.versions
             .iter()
             .map(|(p, v)| (forge::get(p), &v.versions))
-            .filter(|(p, tv)| {
-                !self.installed_only || tv.iter().all(|tv| p.is_version_installed(tv))
-            })
             .collect()
     }
     pub fn list_current_versions(&self) -> Vec<(Arc<dyn Forge>, ToolVersion)> {
@@ -495,8 +490,7 @@ impl Toolset {
     }
 
     fn is_disabled(&self, fa: &ForgeArg) -> bool {
-        self.tool_filter.as_ref().is_some_and(|tf| !tf.contains(fa))
-            || self.disable_tools.contains(fa)
+        self.disable_tools.contains(fa)
     }
 }
 

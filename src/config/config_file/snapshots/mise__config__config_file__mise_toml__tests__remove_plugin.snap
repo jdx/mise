@@ -6,6 +6,4 @@ Toolset {
     versions: {},
     source: None,
     disable_tools: {},
-    tool_filter: None,
-    installed_only: false,
 }
