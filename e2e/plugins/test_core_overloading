@@ -1,0 +1,5 @@
+# shellcheck shell=bash
+
+mise plugin i -f node https://github.com/mise-plugins/mise-tiny
+mise i node@latest
+assert "mise x node@latest -- rtx-tiny" "rtx-tiny: v3.1.0 args:"
