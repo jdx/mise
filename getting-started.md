@@ -115,6 +115,7 @@ Options:
 - `MISE_DEBUG=1` – enable debug logging
 - `MISE_QUIET=1` – disable non-error output
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
+- `MISE_VERSION=v2024.5.17` – install a specific version
 
 If you want to verify the install script hasn't been tampered with:
 
