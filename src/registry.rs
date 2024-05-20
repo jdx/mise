@@ -2,8 +2,6 @@ use std::collections::BTreeMap;
 
 use once_cell::sync::Lazy;
 
-use crate::plugins::core::CORE_PLUGINS;
-
 const _REGISTRY: &[(&str, &str)] = &[
     ("ubi", "cargo:ubi"),
     ("cargo-binstall", "cargo:cargo-binstall"),
@@ -11,9 +9,11 @@ const _REGISTRY: &[(&str, &str)] = &[
 ];
 
 pub static REGISTRY: Lazy<BTreeMap<&str, String>> = Lazy::new(|| {
-    let core = CORE_PLUGINS
-        .iter()
-        .map(|p| (p.name(), format!("core:{}", p.name())));
+    // TODO: make sure core plugins can be overridden with this enabled
+    // let core = CORE_PLUGINS
+    //     .iter()
+    //     .map(|p| (p.name(), format!("core:{}", p.name())));
     let registry = _REGISTRY.iter().map(|(k, v)| (*k, v.to_string()));
-    core.chain(registry).collect()
+    registry.collect()
+    // core.chain(registry).collect()
 });
