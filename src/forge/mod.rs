@@ -1,4 +1,3 @@
-use crate::plugins::core;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -21,10 +20,11 @@ use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::forge::cargo::CargoForge;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
+use crate::plugins::core;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{ExternalPlugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file};
@@ -295,14 +295,9 @@ pub trait Forge: Debug + Send + Sync {
             .get_all_dependencies(&ToolRequest::System(self.id().into()))?
             .into_iter()
             .collect::<HashSet<_>>();
-        if deps.is_empty() {
-            return Ok(());
-        }
         let config = Config::get();
-        let ts = ToolsetBuilder::new()
-            .with_tool_filter(deps.clone())
-            .build(&config)?;
-        if !ts.list_missing_versions().is_empty() {
+        let ts = config.get_tool_request_set()?.filter_by_tool(&deps);
+        if !ts.missing_tools().is_empty() {
             bail!(
                 "Dependency {} not installed for {}",
                 deps.iter().map(|d| d.to_string()).join(", "),
@@ -486,11 +481,11 @@ pub trait Forge: Debug + Send + Sync {
             .get_all_dependencies(&ToolRequest::System(self.name().into()))?
             .into_iter()
             .collect();
-        ToolsetBuilder::new()
-            .with_tool_filter(dependencies)
-            .with_installed_only()
-            .build(&config)?
-            .full_env()
+        let ts: Toolset = config
+            .get_tool_request_set()?
+            .filter_by_tool(&dependencies)
+            .into();
+        ts.full_env()
     }
 }
 
