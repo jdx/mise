@@ -21,7 +21,7 @@ while ((match = regex.exec(stdout)) !== null) {
     output.push(`| ${match[1]} | [${match[2]}:${match[3]}](${repoUrl}) |`);
   } else if (match[2] === "core") {
     output.push(
-      `| ${match[1]} | [${match[2]}:${match[3]}](https://mise.jdx.dev/lang/${match[2]}.html) |`,
+      `| ${match[1]} | [${match[2]}:${match[3]}](https://mise.jdx.dev/lang/${match[1]}.html) |`,
     );
   } else if (match[2] === "cargo") {
     output.push(
