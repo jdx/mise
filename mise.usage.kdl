@@ -307,8 +307,9 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
 cmd "generate" subcommand_required=true help="[experimental] Generate files for various tools/services" {
+    alias "gen"
     cmd "git-pre-commit" help="[experimental] Generate a git pre-commit hook" {
-        alias "pre-commit" hide=true
+        alias "pre-commit"
         long_help r"[experimental] Generate a git pre-commit hook
 
 This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`

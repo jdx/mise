@@ -9,7 +9,7 @@ use crate::git::Git;
 /// This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
 /// when you commit changes to your repository.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
 pub struct GitPreCommit {
     /// Which hook to generate (saves to .git/hooks/$hook)
     #[clap(long, default_value = "pre-commit")]
@@ -29,6 +29,14 @@ impl GitPreCommit {
         let output = self.generate();
         if self.write {
             let path = Git::get_root()?.join(".git/hooks").join(&self.hook);
+            if path.exists() {
+                let old_path = path.with_extension("old");
+                miseprintln!(
+                    "Moving existing hook to {:?}",
+                    old_path.file_name().unwrap()
+                );
+                file::rename(&path, path.with_extension("old"))?;
+            }
             file::write(&path, &output)?;
             file::make_executable(&path)?;
             miseprintln!("Wrote to {}", display_path(&path));
