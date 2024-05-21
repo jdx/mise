@@ -8,7 +8,7 @@ use crate::cli::args::ForgeArg;
 use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::forge::Forge;
-use crate::toolset::{ToolVersion, ToolsetBuilder};
+use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
 
@@ -76,7 +76,8 @@ impl Prune {
         }
 
         for cf in config.get_tracked_config_files()?.values() {
-            let ts = cf.to_tool_request_set()?;
+            let mut ts = Toolset::from(cf.to_tool_request_set()?);
+            ts.resolve()?;
             for (_, tv) in ts.list_current_versions() {
                 to_delete.remove(&tv.to_string());
             }
