@@ -1,9 +1,10 @@
 # Changelog
 
-## [2024.5.19](https://github.com/jdx/mise/compare/v2024.5.18..v2024.5.19) - 2024-05-20
+## [2024.5.20](https://github.com/jdx/mise/compare/v2024.5.18..v2024.5.20) - 2024-05-21
 
 ### 🐛 Bug Fixes
 
+- **(prune)** make it not install the world by [@jdx](https://github.com/jdx) in [78f4aec](https://github.com/jdx/mise/commit/78f4aeca2647c3980feb68cd3c1e299c9c56b0d6)
 - allow plugins overriding core plugins by [@jdx](https://github.com/jdx) in [#2155](https://github.com/jdx/mise/pull/2155)
 
 ### 🚜 Refactor
@@ -22,6 +23,8 @@
 - fix lint-fix job by [@jdx](https://github.com/jdx) in [6439ca4](https://github.com/jdx/mise/commit/6439ca41820c240846686f9fbe6d67d24114934e)
 - reset config after local tests by [@jdx](https://github.com/jdx) in [29077af](https://github.com/jdx/mise/commit/29077af3a0d04ad004a054e16e7e85e411058be1)
 - fix implode running first when shuffled by [@jdx](https://github.com/jdx) in [7b07258](https://github.com/jdx/mise/commit/7b072589d46b4279574f99385f3515b6bd181bd5)
+- added test for core plugin overloading by [@jdx](https://github.com/jdx) in [9a56129](https://github.com/jdx/mise/commit/9a5612993dc59359e0c876e8f948f2fece8ce93f)
+- added shebang to e2e scripts by [@jdx](https://github.com/jdx) in [#2159](https://github.com/jdx/mise/pull/2159)
 
 ## [2024.5.18](https://github.com/jdx/mise/compare/v2024.5.17..v2024.5.18) - 2024-05-19
 
