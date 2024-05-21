@@ -413,6 +413,8 @@ Examples:
 
 ## `mise generate git-pre-commit [OPTIONS]`
 
+**Aliases:** `pre-commit`
+
 ```text
 [experimental] Generate a git pre-commit hook
 
