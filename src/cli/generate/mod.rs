@@ -5,6 +5,7 @@ mod github_action;
 
 /// [experimental] Generate files for various tools/services
 #[derive(Debug, clap::Args)]
+#[clap(visible_alias = "gen")]
 pub struct Generate {
     #[clap(subcommand)]
     command: Commands,
