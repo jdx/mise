@@ -1,11 +1,10 @@
 use eyre::Result;
 use itertools::Itertools;
+use std::collections::HashSet;
 
-use crate::cli::args::ToolArg;
+use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::Config;
-use crate::toolset::{
-    InstallOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder,
-};
+use crate::toolset::{InstallOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Install a tool version
@@ -58,7 +57,8 @@ impl Install {
     }
     fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
-        let mut ts = ToolsetBuilder::new().build(config)?;
+        let tools: HashSet<ForgeArg> = runtimes.iter().map(|ta| ta.forge.clone()).collect();
+        let mut ts = config.get_tool_request_set()?.filter_by_tool(&tools).into();
         let tool_versions = self.get_requested_tool_versions(&ts, runtimes)?;
         if tool_versions.is_empty() {
             warn!("no runtimes to install");
