@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Settings;
 use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
@@ -59,7 +59,6 @@ impl Forge for GoForge {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let config = Config::try_get()?;
         let settings = Settings::get();
         settings.ensure_experimental("go backend")?;
 
@@ -75,7 +74,7 @@ impl Forge for GoForge {
             .arg("install")
             .arg(&format!("{}@{}", self.name(), version))
             .with_pr(ctx.pr.as_ref())
-            .envs(ctx.ts.env_with_path(&config)?)
+            .envs(self.dependency_env()?)
             .env("GOBIN", ctx.tv.install_path().join("bin"))
             .execute()?;
 
