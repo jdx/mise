@@ -1,7 +1,30 @@
 #!/usr/bin/env bash
 
+# Create system "tools" that always fail and push them to the front of PATH
+cat >"$HOME/bin/fail" <<'EOF'
+#!/usr/bin/env bash
+echo "CALL TO SYSTEM $(basename $0)! args: $*" >&2
+exit 1
+EOF
+chmod +x "$HOME"/bin/fail
+ln -s fail "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+
+# Just to be sure...
+assert_fail go
+
+cat >>.mise.toml <<EOF
+[tools]
+go = "prefix:1.22"
+"go:github.com/golangci/golangci-lint/cmd/golangci-lint" = "latest"
+[settings]
+experimental = true
+EOF
+
+mise install go
+mise install
+
 eval "$(mise activate bash --shims)"
-mise use go@prefix:1.20
 
 assert "mise x go:github.com/DarthSim/hivemind@v1.1.0 -- hivemind --version" "Hivemind version 1.1.0"
 assert "mise x go:github.com/go-task/task/v3/cmd/task@v3.34.1 -- task --version" "Task version: v3.34.1 (h1:yAAxUM54zoaHv+OtDnGgkWSVeiRuaOCn1lPUXPQQA0o=)"
