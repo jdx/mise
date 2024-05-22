@@ -17,7 +17,7 @@ pub struct ErlangPlugin {
     core: CorePlugin,
 }
 
-const KERL_VERSION: &str = "4.0.0";
+const KERL_VERSION: &str = "4.1.1";
 
 impl ErlangPlugin {
     pub fn new() -> Self {
