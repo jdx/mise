@@ -21,8 +21,8 @@ pub struct Current {
 }
 
 impl Current {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let ts = ToolsetBuilder::new().build(&config)?;
         match &self.plugin {
             Some(fa) => {
@@ -118,24 +118,24 @@ mod tests {
     use std::env;
     use test_log::test;
 
-    #[test]
-    fn test_current() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_current() {
+        reset().await;
         assert_cli_snapshot!("current", @r###"
         tiny 3.1.0
         dummy ref:master
         "###);
     }
 
-    #[test]
-    fn test_current_with_runtimes() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_current_with_runtimes() {
+        reset().await;
         assert_cli_snapshot!("current", "tiny", @"3.1.0");
     }
 
-    #[test]
-    fn test_current_missing() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_current_missing() {
+        reset().await;
         assert_cli!("uninstall", "--all", "dummy");
 
         env::set_var("MISE_DUMMY_VERSION", "1.1.0");

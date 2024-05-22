@@ -98,9 +98,10 @@ static FORGE_MAP: Lazy<HashMap<&'static str, ForgeArg>> = Lazy::new(|| {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
-    #[test]
-    fn test_forge_arg() {
+    #[test(tokio::test)]
+    async fn test_forge_arg() {
         let t = |s: &str, id, name, t| {
             let fa: ForgeArg = s.into();
             assert_str_eq!(fa.id, id);
@@ -121,8 +122,8 @@ mod tests {
         npm("npm:prettier", "npm:prettier", "prettier");
     }
 
-    #[test]
-    fn test_forge_arg_pathname() {
+    #[test(tokio::test)]
+    async fn test_forge_arg_pathname() {
         let t = |s: &str, expected| {
             let fa: ForgeArg = s.into();
             let actual = fa.installs_path.to_string_lossy();

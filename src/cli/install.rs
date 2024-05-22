@@ -46,8 +46,8 @@ pub struct Install {
 }
 
 impl Install {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         match &self.tool {
             Some(runtime) => self.install_runtimes(&config, runtime)?,
             None => self.install_missing_runtimes(&config)?,
@@ -144,29 +144,30 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use crate::dirs;
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_install_force() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_install_force() {
+        reset().await;
         assert_cli!("install", "-f", "tiny");
     }
 
-    #[test]
-    fn test_install_asdf_style() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_install_asdf_style() {
+        reset().await;
         assert_cli!("install", "tiny", "2");
     }
 
-    #[test]
-    fn test_install_with_alias() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_install_with_alias() {
+        reset().await;
         assert_cli!("install", "-f", "tiny@my/alias");
         assert_cli_snapshot!("where", "tiny@my/alias");
     }
 
-    #[test]
-    fn test_install_ref() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_install_ref() {
+        reset().await;
         assert_cli!("install", "-f", "dummy@ref:master");
         assert_cli!("global", "dummy@ref:master");
         let output = assert_cli!("where", "dummy");
@@ -177,10 +178,9 @@ mod tests {
         assert_cli!("global", "--unset", "dummy");
     }
 
-    #[test]
-    fn test_install_nothing() {
-        reset();
-        // this doesn't do anything since dummy isn't specified
+    #[test(tokio::test)]
+    async fn test_install_nothing() {
+        reset().await; // this doesn't do anything since dummy isn't specified
         assert_cli_snapshot!("install", "dummy");
     }
 }

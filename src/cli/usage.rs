@@ -11,7 +11,7 @@ use crate::cli;
 pub struct Usage {}
 
 impl Usage {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cli = cli::Cli::command().version(Resettable::Reset);
         let spec: usage::Spec = cli.into();
         let extra = include_str!("../assets/mise-extra.usage.kdl");

@@ -45,7 +45,7 @@ pub struct PluginsLs {
 }
 
 impl PluginsLs {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Config) -> Result<()> {
         let mut tools = plugins::list().into_iter().collect::<BTreeSet<_>>();
 
         if self.all {
@@ -118,29 +118,29 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_plugin_list() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_plugin_list() {
+        reset().await;
         assert_cli_snapshot!("plugin", "list");
     }
 
-    #[test]
-    fn test_plugin_list_urls() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_plugin_list_urls() {
+        reset().await;
         let stdout = assert_cli!("plugin", "list", "--urls");
         assert!(stdout.contains("dummy"))
     }
 
-    #[test]
-    fn test_plugin_list_all() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_plugin_list_all() {
+        reset().await;
         let stdout = assert_cli!("plugin", "list", "--all", "--urls");
         assert_snapshot!(grep(stdout, "zephyr"));
     }
 
-    #[test]
-    fn test_plugin_refs() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_plugin_refs() {
+        reset().await;
         let stdout = assert_cli!("plugin", "list", "--refs");
         assert!(stdout.contains("dummy"))
     }

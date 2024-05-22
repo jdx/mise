@@ -51,34 +51,43 @@ impl JavaPlugin {
         }
     }
 
-    fn fetch_java_metadata(&self, release_type: &str) -> Result<&HashMap<String, JavaMetadata>> {
+    async fn fetch_java_metadata(
+        &self,
+        release_type: &str,
+    ) -> Result<&HashMap<String, JavaMetadata>> {
         let cache = if release_type == "ea" {
             &self.java_metadata_ea_cache
         } else {
             &self.java_metadata_ga_cache
         };
         let release_type = release_type.to_string();
-        cache.get_or_try_init(|| {
-            let mut metadata = HashMap::new();
+        cache
+            .get_or_try_init(|| async {
+                let mut metadata = HashMap::new();
 
-            for m in self.download_java_metadata(&release_type)?.into_iter() {
-                // add openjdk short versions like "java@17.0.0" which default to openjdk
-                if m.vendor == "openjdk" {
-                    if m.version.contains('.') {
-                        metadata.insert(m.version.to_string(), m.clone());
-                    } else {
-                        // mise expects full versions like ".0.0"
-                        metadata.insert(format!("{}.0.0", m.version), m.clone());
+                for m in self
+                    .download_java_metadata(&release_type)
+                    .await?
+                    .into_iter()
+                {
+                    // add openjdk short versions like "java@17.0.0" which default to openjdk
+                    if m.vendor == "openjdk" {
+                        if m.version.contains('.') {
+                            metadata.insert(m.version.to_string(), m.clone());
+                        } else {
+                            // mise expects full versions like ".0.0"
+                            metadata.insert(format!("{}.0.0", m.version), m.clone());
+                        }
                     }
+                    metadata.insert(m.to_string(), m);
                 }
-                metadata.insert(m.to_string(), m);
-            }
 
-            Ok(metadata)
-        })
+                Ok(metadata)
+            })
+            .await
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+    async fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         // TODO: find out how to get this to work for different os/arch
         // See https://github.com/jdx/mise/issues/1196
         // match self.core.fetch_remote_versions_from_mise() {
@@ -87,7 +96,8 @@ impl JavaPlugin {
         //     Err(e) => warn!("failed to fetch remote versions: {}", e),
         // }
         let versions = self
-            .fetch_java_metadata("ga")?
+            .fetch_java_metadata("ga")
+            .await?
             .iter()
             .sorted_by_cached_key(|(v, m)| {
                 let is_shorthand = regex!(r"^\d").is_match(v);
@@ -126,7 +136,7 @@ impl JavaPlugin {
             .execute()
     }
 
-    fn download(
+    async fn download(
         &self,
         tv: &ToolVersion,
         pr: &dyn SingleReport,
@@ -136,7 +146,7 @@ impl JavaPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&m.url, &tarball_path, Some(pr))?;
+        HTTP.download_file(&m.url, &tarball_path, Some(pr)).await?;
 
         hash::ensure_checksum_sha256(&tarball_path, &m.sha256, Some(pr))?;
 
@@ -268,17 +278,18 @@ impl JavaPlugin {
         }
     }
 
-    fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
+    async fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
         let v: String = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let m = self
-            .fetch_java_metadata(&release_type)?
+            .fetch_java_metadata(&release_type)
+            .await?
             .get(&v)
             .ok_or_else(|| eyre!("no metadata found for version {}", tv.version))?;
         Ok(m)
     }
 
-    fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
+    async fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
         let url = format!(
             "https://rtx-java-metadata.jdx.dev/metadata/{}/{}/{}.json",
             release_type,
@@ -287,7 +298,8 @@ impl JavaPlugin {
         );
 
         let metadata = HTTP_FETCH
-            .json::<Vec<JavaMetadata>, _>(url)?
+            .json::<Vec<JavaMetadata>, _>(url)
+            .await?
             .into_iter()
             .filter(|m| {
                 m.file_type
@@ -299,15 +311,17 @@ impl JavaPlugin {
     }
 }
 
+#[async_trait]
 impl Forge for JavaPlugin {
     fn fa(&self) -> &ForgeArg {
         &self.core.fa
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
+            .get_or_try_init(|| async { self.fetch_remote_versions().await })
+            .await
             .cloned()
     }
 
@@ -316,17 +330,17 @@ impl Forge for JavaPlugin {
         fuzzy_match_filter(versions, query)
     }
 
-    fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions()?;
+    async fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
+        let versions = self.list_remote_versions().await?;
         fuzzy_match_filter(versions, query)
     }
 
-    fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
+    async fn get_aliases<'a>(&'a self) -> Result<BTreeMap<String, String>> {
         let aliases = BTreeMap::from([("lts".into(), "21".into())]);
         Ok(aliases)
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    async fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".java-version".into(), ".sdkmanrc".into()])
     }
 
@@ -368,16 +382,16 @@ impl Forge for JavaPlugin {
     }
 
     #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type")]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let metadata = self.tv_to_metadata(&ctx.tv)?;
-        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref(), metadata)?;
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let metadata = self.tv_to_metadata(&ctx.tv).await?;
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref(), metadata).await?;
         self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
         self.verify(&ctx.tv, ctx.pr.as_ref())?;
 
         Ok(())
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         _config: &Config,
         _ts: &Toolset,

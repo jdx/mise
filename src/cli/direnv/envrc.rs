@@ -15,7 +15,7 @@ use crate::toolset::ToolsetBuilder;
 pub struct Envrc {}
 
 impl Envrc {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Config) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config)?;
 
         let envrc_path = env::MISE_TMP_DIR
@@ -58,10 +58,11 @@ impl Envrc {
 mod tests {
     use crate::test::reset;
     use crate::{dirs, file};
+    use test_log::test;
 
-    #[test]
-    fn test_direnv_envrc() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_direnv_envrc() {
+        reset().await;
         let stdout = assert_cli!("direnv", "envrc");
         let envrc = file::read_to_string(stdout.trim()).unwrap();
         let envrc = envrc.replace(dirs::HOME.to_string_lossy().as_ref(), "~");

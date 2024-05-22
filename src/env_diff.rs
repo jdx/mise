@@ -251,19 +251,20 @@ fn normalize_escape_sequences(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use indexmap::indexmap;
+    use test_log::test;
 
     use crate::dirs;
 
     use super::*;
 
-    #[test]
-    fn test_diff() {
+    #[test(tokio::test)]
+    async fn test_diff() {
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         assert_debug_snapshot!(diff.to_patches());
     }
 
-    #[test]
-    fn test_reverse() {
+    #[test(tokio::test)]
+    async fn test_reverse() {
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let patches = diff.reverse().to_patches();
         let to_remove = patches
@@ -311,16 +312,16 @@ mod tests {
         HashMap::from([("a", "1"), ("b", "3"), ("c", "4")].map(|(k, v)| (k.into(), v.into())))
     }
 
-    #[test]
-    fn test_serialize() {
+    #[test(tokio::test)]
+    async fn test_serialize() {
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let serialized = diff.serialize().unwrap();
         let deserialized = EnvDiff::deserialize(&serialized).unwrap();
         assert_debug_snapshot!(deserialized.to_patches());
     }
 
-    #[test]
-    fn test_from_bash_script() {
+    #[test(tokio::test)]
+    async fn test_from_bash_script() {
         let path = dirs::HOME.join("fixtures/exec-env");
         let orig = indexmap! {
             "UNMODIFIED_VAR" => "unmodified",
@@ -352,8 +353,8 @@ mod tests {
         assert_debug_snapshot!(ed);
     }
 
-    #[test]
-    fn test_invalid_escape_sequence() {
+    #[test(tokio::test)]
+    async fn test_invalid_escape_sequence() {
         let input = r#""\g\""#;
         let output = normalize_escape_sequences(input);
         // just warns

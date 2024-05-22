@@ -116,8 +116,8 @@ pub struct Run {
 }
 
 impl Run {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::try_get()?;
         settings.ensure_experimental("`mise run`")?;
         let task_list = self.get_task_lists(&config)?;
@@ -587,10 +587,11 @@ fn format_duration(dur: std::time::Duration) -> String {
 mod tests {
     use crate::file;
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_task_run() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_task_run() {
+        reset().await;
         file::remove_all("test-build-output.txt").unwrap();
         assert_cli_snapshot!(
             "r",

@@ -27,7 +27,7 @@ pub struct Unset {
 }
 
 impl Unset {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let filename = self.file.unwrap_or_else(|| match self.global {
             true => env::MISE_GLOBAL_CONFIG_FILE.clone(),
             false => env::MISE_DEFAULT_CONFIG_FILENAME.clone().into(),
@@ -66,8 +66,9 @@ mod tests {
         cf_path
     }
 
-    #[test]
-    fn test_unset_remove() {
+    use test_log::test;
+    #[test(tokio::test)]
+    async fn test_unset_remove() {
         // Using the default file
         let filename = ".test.mise.toml";
         let cf_path = remove_config_file(filename);

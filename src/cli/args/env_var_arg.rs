@@ -30,9 +30,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn valid_values() {
-        reset();
+    #[test(tokio::test)]
+    async fn valid_values() {
+        reset().await;
         let values = [
             ("FOO", new_arg("FOO", None)),
             ("FOO=", new_arg("FOO", Some(""))),

@@ -26,10 +26,11 @@ pub struct AliasLs {
 }
 
 impl AliasLs {
-    pub fn run(self) -> Result<()> {
-        let config = Config::get();
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         let rows = config
             .get_all_aliases()
+            .await
             .iter()
             .filter(|(fa, _)| {
                 self.plugin.is_none() || self.plugin.as_ref().is_some_and(|f| &f == fa)
@@ -73,9 +74,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_alias_ls() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_alias_ls() {
+        reset().await;
         assert_cli_snapshot!("aliases", @r###"
         java  lts          21   
         node  lts          20   
@@ -94,9 +95,9 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn test_alias_ls_filter() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_alias_ls_filter() {
+        reset().await;
         assert_cli_snapshot!("aliases", "ls", "tiny", @r###"
         tiny  lts      3.1.0
         tiny  lts-prev 2.0.0

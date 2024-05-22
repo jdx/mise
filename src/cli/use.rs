@@ -79,8 +79,8 @@ pub struct Use {
 }
 
 impl Use {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let mut ts = ToolsetBuilder::new().build(&config)?;
         let mpr = MultiProgressReport::get();
         let versions: Vec<_> = self
@@ -218,10 +218,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use crate::test::reset;
     use crate::{dirs, env, file};
+    use test_log::test;
 
-    #[test]
-    fn test_use_local() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_use_local() {
+        reset().await;
         let cf_path = env::current_dir().unwrap().join(".test.mise.toml");
         file::write(&cf_path, "").unwrap();
 
@@ -250,9 +251,9 @@ mod tests {
         let _ = file::remove_file(&cf_path);
     }
 
-    #[test]
-    fn test_use_local_tool_versions() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_use_local_tool_versions() {
+        reset().await;
         let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
 
@@ -262,9 +263,9 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn test_use_global() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_use_global() {
+        reset().await;
         let cf_path = dirs::CONFIG.join("config.toml");
         let orig = file::read_to_string(&cf_path).unwrap();
 

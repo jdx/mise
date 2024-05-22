@@ -12,7 +12,7 @@ use eyre::Result;
 pub struct DirenvActivate {}
 
 impl DirenvActivate {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         miseprintln!(
             //       source_env "$(mise direnv envrc "$@")"
             indoc! {r#"

@@ -384,12 +384,13 @@ pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
 mod tests {
     use crate::test::reset;
     use std::ops::Deref;
+    use test_log::test;
 
     use super::*;
 
-    #[test]
-    fn test_find_up() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_find_up() {
+        reset().await;
         let path = &env::current_dir().unwrap();
         let filenames = vec![".miserc", ".mise.toml", ".test-tool-versions"]
             .into_iter()
@@ -405,22 +406,22 @@ mod tests {
         assert_eq!(find_up.next(), Some(dirs::HOME.join(".test-tool-versions")));
     }
 
-    #[test]
-    fn test_find_up_2() {
+    #[test(tokio::test)]
+    async fn test_find_up_2() {
         let path = &dirs::HOME.join("fixtures");
         let filenames = vec![".test-tool-versions"];
         let result = find_up(path, &filenames);
         assert_eq!(result, Some(dirs::HOME.join(".test-tool-versions")));
     }
 
-    #[test]
-    fn test_dir_subdirs() {
+    #[test(tokio::test)]
+    async fn test_dir_subdirs() {
         let subdirs = dir_subdirs(&dirs::HOME).unwrap();
         assert!(subdirs.contains(&"cwd".to_string()));
     }
 
-    #[test]
-    fn test_display_path() {
+    #[test(tokio::test)]
+    async fn test_display_path() {
         let path = dirs::HOME.join("cwd");
         assert_eq!(display_path(path), "~/cwd");
 
@@ -430,8 +431,8 @@ mod tests {
         assert_eq!(display_path(&path), path.display().to_string());
     }
 
-    #[test]
-    fn test_replace_path() {
+    #[test(tokio::test)]
+    async fn test_replace_path() {
         assert_eq!(replace_path(Path::new("~/cwd")), dirs::HOME.join("cwd"));
         assert_eq!(replace_path(Path::new("/cwd")), Path::new("/cwd"));
     }

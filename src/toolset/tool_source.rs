@@ -58,9 +58,10 @@ impl ToolSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
-    #[test]
-    fn test_tool_source_display() {
+    #[test(tokio::test)]
+    async fn test_tool_source_display() {
         let path = PathBuf::from("/home/user/.test-tool-versions");
 
         let ts = ToolSource::ToolVersions(path);
@@ -79,8 +80,8 @@ mod tests {
         assert_str_eq!(ts.to_string(), "MISE_NODE_VERSION=18");
     }
 
-    #[test]
-    fn test_tool_source_as_json() {
+    #[test(tokio::test)]
+    async fn test_tool_source_as_json() {
         let ts = ToolSource::ToolVersions(PathBuf::from("/home/user/.test-tool-versions"));
         assert_eq!(
             ts.as_json(),

@@ -166,8 +166,8 @@ impl ToolRequest {
         Ok(None)
     }
 
-    pub fn resolve(&self, plugin: &dyn Forge, latest_versions: bool) -> Result<ToolVersion> {
-        ToolVersion::resolve(plugin, self.clone(), latest_versions)
+    pub async fn resolve(&self, plugin: &dyn Forge, latest_versions: bool) -> Result<ToolVersion> {
+        ToolVersion::resolve(plugin, self.clone(), latest_versions).await
     }
 }
 
@@ -196,9 +196,10 @@ impl Display for ToolRequest {
 #[cfg(test)]
 mod tests {
     use super::version_sub;
+    use test_log::test;
 
-    #[test]
-    fn test_version_sub() {
+    #[test(tokio::test)]
+    async fn test_version_sub() {
         assert_str_eq!(version_sub("18.2.3", "2"), "16");
         assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
     }

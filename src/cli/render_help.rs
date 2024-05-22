@@ -12,7 +12,7 @@ use crate::file;
 pub struct RenderHelp {}
 
 impl RenderHelp {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let readme = file::read_to_string("docs/cli-reference.md")?;
         let mut current_readme = readme.split("<!-- MISE:COMMANDS -->");
 
@@ -119,9 +119,9 @@ mod tests {
     use crate::file;
     use test_log::test;
 
-    #[test]
-    fn test_render_help() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_render_help() {
+        reset().await;
         file::create_dir_all("docs").unwrap();
         file::write(
             "docs/cli-reference.md",

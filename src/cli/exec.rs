@@ -49,8 +49,8 @@ pub struct Exec {
 }
 
 impl Exec {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_default_to_latest(true)
@@ -143,22 +143,22 @@ mod tests {
     use std::env;
     use test_log::test;
 
-    #[test]
-    fn test_exec_ok() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_exec_ok() {
+        reset().await;
         assert_cli!("exec", "--", "echo");
     }
 
-    #[test]
-    fn test_exec_fail() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_exec_fail() {
+        reset().await;
         let err = assert_cli_err!("exec", "--", "exit", "1");
         assert_snapshot!(err);
     }
 
-    #[test]
-    fn test_exec_cd() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_exec_cd() {
+        reset().await;
         let cwd = env::current_dir().unwrap();
         assert_cli!("exec", "-C", "/tmp", "--", "pwd");
         env::set_current_dir(cwd).unwrap();

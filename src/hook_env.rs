@@ -172,9 +172,9 @@ mod tests {
     use super::*;
     use test_log::test;
 
-    #[test]
-    fn test_have_config_files_been_modified() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_have_config_files_been_modified() {
+        reset().await;
         let files = BTreeSet::new();
         let watches = HookEnvWatches {
             files: BTreeMap::new(),
@@ -199,9 +199,9 @@ mod tests {
         assert!(!have_config_files_been_modified(&watches, files));
     }
 
-    #[test]
-    fn test_serialize_watches_empty() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_serialize_watches_empty() {
+        reset().await;
         let watches = HookEnvWatches {
             files: BTreeMap::new(),
             env_var_hash: "".into(),
@@ -211,9 +211,9 @@ mod tests {
         assert_eq!(deserialized.files.len(), 0);
     }
 
-    #[test]
-    fn test_serialize_watches() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_serialize_watches() {
+        reset().await;
         let serialized = serialize_watches(&HookEnvWatches {
             files: BTreeMap::from([("foo".into(), UNIX_EPOCH)]),
             env_var_hash: "testing-123".into(),

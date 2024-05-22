@@ -76,14 +76,14 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_hash_to_str() {
+    #[test(tokio::test)]
+    async fn test_hash_to_str() {
         assert_eq!(hash_to_str(&"foo"), "3e8b8c44c3ca73b7");
     }
 
-    #[test]
-    fn test_hash_sha256() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_hash_sha256() {
+        reset().await;
         let path = Path::new(".test-tool-versions");
         let hash = file_hash_sha256(path).unwrap();
         assert_snapshot!(hash);

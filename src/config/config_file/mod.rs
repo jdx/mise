@@ -5,6 +5,7 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use futures::stream::{self, StreamExt, TryStreamExt};
 use once_cell::sync::Lazy;
 use serde_derive::Deserialize;
 use versions::Versioning;
@@ -86,10 +87,10 @@ pub trait ConfigFile: Debug + Send + Sync {
 }
 
 impl dyn ConfigFile {
-    pub fn add_runtimes(&mut self, tools: &[ToolArg], pin: bool) -> eyre::Result<()> {
+    pub async fn add_runtimes(&mut self, tools: &[ToolArg], pin: bool) -> eyre::Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
         let mut ts = self.to_toolset()?.to_owned();
-        ts.resolve()?;
+        ts.resolve().await?;
         let mut plugins_to_update = HashMap::new();
         for ta in tools {
             if let Some(tv) = &ta.tvr {
@@ -109,20 +110,20 @@ impl dyn ConfigFile {
             }
             ts.versions.insert(fa.clone(), tvl);
         }
-        ts.resolve()?;
+        ts.resolve().await?;
         for (fa, versions) in plugins_to_update {
-            let versions = versions
-                .into_iter()
-                .map(|tvr| {
+            let versions = stream::iter(versions)
+                .then(|tvr| async {
                     if pin {
                         let plugin = forge::get(&fa);
-                        let tv = tvr.resolve(plugin.as_ref(), false)?;
-                        Ok(tv.version)
+                        let tv = tvr.resolve(plugin.as_ref(), false).await?;
+                        eyre::Result::<String>::Ok(tv.version)
                     } else {
-                        Ok(tvr.version())
+                        eyre::Result::Ok(tvr.version())
                     }
                 })
-                .collect::<eyre::Result<Vec<_>>>()?;
+                .try_collect::<Vec<String>>()
+                .await?;
             self.replace_versions(&fa, &versions)?;
         }
 
@@ -350,9 +351,10 @@ pub fn reset() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
-    #[test]
-    fn test_detect_config_file_type() {
+    #[test(tokio::test)]
+    async fn test_detect_config_file_type() {
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")),
             Some(ConfigFileType::ToolVersions)

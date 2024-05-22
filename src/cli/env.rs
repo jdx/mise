@@ -26,8 +26,8 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         ts.install_arg_versions(&config, &InstallOptions::new())?;
         ts.notify_if_versions_missing();
@@ -70,14 +70,15 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use std::env;
+    use test_log::test;
 
     use crate::cli::tests::grep;
     use crate::dirs;
     use crate::test::reset;
 
-    #[test]
-    fn test_env() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env() {
+        reset().await;
         let stdout = assert_cli!("env", "-s", "bash");
         assert!(stdout.contains(
             dirs::DATA
@@ -87,9 +88,9 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_env_with_runtime_arg() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_with_runtime_arg() {
+        reset().await;
         assert_cli!("install", "tiny@3.0");
         let stdout = assert_cli!("env", "tiny@3.0", "-s", "bash");
 
@@ -101,9 +102,9 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_env_alias() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_alias() {
+        reset().await;
         assert_cli!("plugin", "add", "tiny");
         assert_cli!("install", "tiny@my/alias");
         let stdout = assert_cli!("env", "tiny@my/alias", "-s", "bash");
@@ -115,24 +116,24 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_env_tiny() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_tiny() {
+        reset().await;
         let stdout = assert_cli!("env", "tiny@2", "tiny@1", "tiny@3", "-s", "bash");
         assert_str_eq!(grep(stdout, "JDXCODE"), "export JDXCODE_TINY=2.1.0");
     }
 
-    #[test]
-    fn test_env_default_shell() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_default_shell() {
+        reset().await;
         env::set_var("SHELL", "");
         let stdout = assert_cli!("env");
         assert!(stdout.contains("export PATH="));
     }
 
-    #[test]
-    fn test_env_json() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_json() {
+        reset().await;
         assert_cli_snapshot!("env", "-J");
     }
 }

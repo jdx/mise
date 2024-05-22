@@ -10,7 +10,7 @@ pub struct GithubRelease {
     pub published_at: String,
 }
 
-pub fn list_releases(repo: &str) -> eyre::Result<Vec<GithubRelease>> {
+pub async fn list_releases(repo: &str) -> eyre::Result<Vec<GithubRelease>> {
     let url = format!("https://api.github.com/repos/{}/releases", repo);
-    crate::http::HTTP_FETCH.json(url)
+    crate::http::HTTP_FETCH.json(url).await
 }

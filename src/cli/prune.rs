@@ -41,7 +41,7 @@ pub struct Prune {
 }
 
 impl Prune {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.configs || !self.tools {
             self.prune_configs()?;
         }
@@ -62,8 +62,8 @@ impl Prune {
         Ok(())
     }
 
-    fn prune_tools(&self) -> Result<()> {
-        let config = Config::try_get()?;
+    async fn prune_tools(&self) -> Result<()> {
+        let config = Config::try_get().await?;
         let ts = ToolsetBuilder::new().build(&config)?;
         let mut to_delete = ts
             .list_installed_versions()?
@@ -77,7 +77,7 @@ impl Prune {
 
         for cf in config.get_tracked_config_files()?.values() {
             let mut ts = Toolset::from(cf.to_tool_request_set()?);
-            ts.resolve()?;
+            ts.resolve().await?;
             for (_, tv) in ts.list_current_versions() {
                 to_delete.remove(&tv.to_string());
             }
@@ -118,9 +118,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_prune() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_prune() {
+        reset().await;
         assert_cli!("prune", "--dry-run");
         assert_cli!("prune", "tiny");
         assert_cli!("prune");

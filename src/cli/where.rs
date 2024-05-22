@@ -28,8 +28,8 @@ pub struct Where {
 }
 
 impl Where {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let runtime = match self.tool.tvr {
             None => match self.asdf_version {
                 Some(version) => self.tool.with_version(&version),
@@ -50,20 +50,18 @@ impl Where {
 
         let plugin = forge::get(&runtime.forge);
 
-        match runtime
-            .tvr
-            .as_ref()
-            .map(|tvr| tvr.resolve(plugin.as_ref(), false))
-        {
-            Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
-                miseprintln!("{}", tv.install_path().to_string_lossy());
-                Ok(())
+        if let Some(tvr) = runtime.tvr.as_ref() {
+            if let Ok(tv) = tvr.resolve(plugin.as_ref(), false).await {
+                if plugin.is_version_installed(&tv) {
+                    miseprintln!("{}", tv.install_path().to_string_lossy());
+                    return Ok(());
+                }
             }
-            _ => Err(VersionNotInstalled(
-                runtime.forge.to_string(),
-                runtime.tvr.map(|tvr| tvr.version()).unwrap_or_default(),
-            ))?,
         }
+        Err(VersionNotInstalled(
+            runtime.forge.to_string(),
+            runtime.tvr.map(|tvr| tvr.version()).unwrap_or_default(),
+        ))?
     }
 }
 
@@ -87,9 +85,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_where() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_where() {
+        reset().await;
         assert_cli!("install");
         let stdout = assert_cli!("where", "tiny");
         assert_str_eq!(
@@ -98,17 +96,17 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_where_asdf_style() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_where_asdf_style() {
+        reset().await;
         assert_cli!("install", "tiny@2", "tiny@3");
         assert_cli_snapshot!("where", "tiny", "2");
         assert_cli_snapshot!("where", "tiny", "3");
     }
 
-    #[test]
-    fn test_where_alias() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_where_alias() {
+        reset().await;
         assert_cli!("install", "tiny@my/alias");
         let stdout = assert_cli!("where", "tiny@my/alias");
         assert_str_eq!(
@@ -118,9 +116,9 @@ mod tests {
         assert_cli!("uninstall", "tiny@my/alias");
     }
 
-    #[test]
-    fn test_where_not_found() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_where_not_found() {
+        reset().await;
         let err = assert_cli_err!("where", "tiny@1111");
         assert_snapshot!(err, @"tiny@1111 not installed");
     }

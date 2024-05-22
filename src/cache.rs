@@ -1,3 +1,4 @@
+use core::future::Future;
 use std::cmp::min;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -8,9 +9,10 @@ use eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::Lazy;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use tokio::sync::OnceCell;
 
 use crate::build_time::built_info;
 use crate::file;
@@ -59,26 +61,30 @@ where
         self
     }
 
-    pub fn get_or_try_init<F>(&self, fetch: F) -> Result<&T>
+    pub async fn get_or_try_init<F, Fut>(&self, fetch: F) -> Result<&T>
     where
-        F: FnOnce() -> Result<T>,
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
     {
-        let val = self.cache.get_or_try_init(|| {
-            let path = &self.cache_file_path;
-            if !self.no_cache && self.is_fresh() {
-                match self.parse() {
-                    Ok(val) => return Ok::<_, color_eyre::Report>(val),
-                    Err(err) => {
-                        warn!("failed to parse cache file: {} {:#}", path.display(), err);
+        let val = self
+            .cache
+            .get_or_try_init(|| async {
+                let path = &self.cache_file_path;
+                if !self.no_cache && self.is_fresh() {
+                    match self.parse() {
+                        Ok(val) => return Ok::<_, color_eyre::Report>(val),
+                        Err(err) => {
+                            warn!("failed to parse cache file: {} {:#}", path.display(), err);
+                        }
                     }
                 }
-            }
-            let val = (fetch)()?;
-            if let Err(err) = self.write(&val) {
-                warn!("failed to write cache file: {} {:#}", path.display(), err);
-            }
-            Ok(val)
-        })?;
+                let val = fetch().await?;
+                if let Err(err) = self.write(&val) {
+                    warn!("failed to write cache file: {} {:#}", path.display(), err);
+                }
+                Ok(val)
+            })
+            .await?;
         Ok(val)
     }
 
@@ -159,15 +165,16 @@ static KEY: Lazy<String> = Lazy::new(|| {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
-    #[test]
-    fn test_cache() {
+    #[test(tokio::test)]
+    async fn test_cache() {
         // does not fail with invalid path
         let cache = CacheManager::new("/invalid:path/to/cache");
         cache.clear().unwrap();
-        let val = cache.get_or_try_init(|| Ok(1)).unwrap();
+        let val = cache.get_or_try_init(|| async { Ok(1) }).await.unwrap();
         assert_eq!(val, &1);
-        let val = cache.get_or_try_init(|| Ok(2)).unwrap();
+        let val = cache.get_or_try_init(|| async { Ok(2) }).await.unwrap();
         assert_eq!(val, &1);
     }
 }

@@ -16,17 +16,17 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self {
-            Self::Ls(cmd) => cmd.run(),
+            Self::Ls(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Backends {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::BackendsLs {}));
 
-        cmd.run()
+        cmd.run().await
     }
 }

@@ -99,15 +99,15 @@ impl ExternalPlugin {
             .collect())
     }
 
-    fn get_repo_url(&self, config: &Config) -> Result<String> {
+    async fn get_repo_url(&self, config: &Config) -> Result<String> {
         self.repo_url
             .clone()
             .or_else(|| config.get_repo_url(&self.name))
             .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))
     }
 
-    fn install(&self, pr: &dyn SingleReport) -> Result<()> {
-        let config = Config::get();
+    async fn install(&self, pr: &dyn SingleReport) -> Result<()> {
+        let config = Config::get().await;
         let repository = self.get_repo_url(&config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
         debug!("install {} {:?}", self.name, repository);
@@ -133,7 +133,7 @@ impl ExternalPlugin {
         Ok(())
     }
 
-    fn fetch_versions(&self) -> Result<Option<Vec<String>>> {
+    async fn fetch_versions(&self) -> Result<Option<Vec<String>>> {
         if !*env::MISE_USE_VERSIONS_HOST {
             return Ok(None);
         }
@@ -146,11 +146,13 @@ impl ExternalPlugin {
         {
             return Ok(None);
         }
-        let versions =
-            match HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", self.name)) {
-                Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
-                res => res?,
-            };
+        let versions = match HTTP_FETCH
+            .get_text(format!("http://mise-versions.jdx.dev/{}", self.name))
+            .await
+        {
+            Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
+            res => res?,
+        };
         let versions = versions
             .lines()
             .map(|v| v.trim().to_string())
@@ -162,9 +164,9 @@ impl ExternalPlugin {
         }
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+    async fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         let settings = Settings::try_get()?;
-        match self.fetch_versions() {
+        match self.fetch_versions().await {
             Ok(Some(versions)) => return Ok(versions),
             Err(err) => warn!(
                 "Failed to fetch remote versions for plugin {}: {}",
@@ -332,8 +334,8 @@ impl ExternalPlugin {
         Ok(env)
     }
 
-    fn script_man_for_tv(&self, tv: &ToolVersion) -> Result<ScriptManager> {
-        let config = Config::get();
+    async fn script_man_for_tv(&self, tv: &ToolVersion) -> Result<ScriptManager> {
+        let config = Config::get().await;
         let mut sm = self.script_man.clone();
         for (key, value) in &tv.request.options() {
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
@@ -448,6 +450,7 @@ impl Hash for ExternalPlugin {
     }
 }
 
+#[async_trait]
 impl Forge for ExternalPlugin {
     fn fa(&self) -> &ForgeArg {
         &self.fa
@@ -466,9 +469,10 @@ impl Forge for ExternalPlugin {
         Ok(out.into_iter().map(|s| s.into()).collect())
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
+            .get_or_try_init(|| async { self.fetch_remote_versions().await })
+            .await
             .wrap_err_with(|| {
                 eyre!(
                     "Failed listing remote versions for plugin {}",
@@ -478,12 +482,13 @@ impl Forge for ExternalPlugin {
             .cloned()
     }
 
-    fn latest_stable_version(&self) -> Result<Option<String>> {
+    async fn latest_stable_version(&self) -> Result<Option<String>> {
         if !self.has_latest_stable_script() {
-            return self.latest_version(Some("latest".into()));
+            return self.latest_version(Some("latest".into())).await;
         }
         self.latest_stable_cache
-            .get_or_try_init(|| self.fetch_latest_stable())
+            .get_or_try_init(|| async { self.fetch_latest_stable() })
+            .await
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching latest stable version for plugin {}",
@@ -513,7 +518,7 @@ impl Forge for ExternalPlugin {
     }
 
     fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {
-        let config = Config::get();
+        let config = Config::get().await;
         let settings = Settings::try_get()?;
         if !force {
             if self.is_installed() {
@@ -606,7 +611,7 @@ impl Forge for ExternalPlugin {
         Ok(())
     }
 
-    fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
+    async fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         if let Some(data) = &self.toml.list_aliases.data {
             return Ok(self.parse_aliases(data).into_iter().collect());
         }
@@ -615,7 +620,8 @@ impl Forge for ExternalPlugin {
         }
         let aliases = self
             .alias_cache
-            .get_or_try_init(|| self.fetch_aliases())
+            .get_or_try_init(|| async { self.fetch_aliases() })
+            .await
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching aliases for plugin {}",
@@ -628,7 +634,7 @@ impl Forge for ExternalPlugin {
         Ok(aliases)
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    async fn legacy_filenames(&self) -> Result<Vec<String>> {
         if let Some(data) = &self.toml.list_legacy_filenames.data {
             return Ok(self.parse_legacy_filenames(data));
         }
@@ -636,7 +642,8 @@ impl Forge for ExternalPlugin {
             return Ok(vec![]);
         }
         self.legacy_filename_cache
-            .get_or_try_init(|| self.fetch_legacy_filenames())
+            .get_or_try_init(|| async { self.fetch_legacy_filenames().await })
+            .await
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching legacy filenames for plugin {}",
@@ -718,7 +725,7 @@ impl Forge for ExternalPlugin {
         exit(result.status.code().unwrap_or(-1));
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
         let mut sm = self.script_man_for_tv(&ctx.tv)?;
 
         for p in ctx.ts.list_paths() {
@@ -746,16 +753,17 @@ impl Forge for ExternalPlugin {
         Ok(())
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         Ok(self
             .cache
-            .list_bin_paths(self, tv, || self.fetch_bin_paths(tv))?
+            .list_bin_paths(self, tv, || async { self.fetch_bin_paths(tv) })
+            .await?
             .into_iter()
             .map(|path| tv.install_short_path().join(path))
             .collect())
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         config: &Config,
         ts: &Toolset,
@@ -771,6 +779,7 @@ impl Forge for ExternalPlugin {
         }
         self.cache
             .exec_env(config, self, tv, || self.fetch_exec_env(ts, tv))
+            .await
     }
 }
 
@@ -790,9 +799,10 @@ impl Debug for ExternalPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
-    #[test]
-    fn test_debug() {
+    #[test(tokio::test)]
+    async fn test_debug() {
         let plugin = ExternalPlugin::new(String::from("dummy"));
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }

@@ -37,8 +37,8 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         if !env::is_activated() {
             err_inactive()?;
         }
@@ -95,10 +95,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use crate::test::reset;
     use std::env;
+    use test_log::test;
 
-    #[test]
-    fn test_shell() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_shell() {
+        reset().await;
         let err = assert_cli_err!("shell", "tiny@1.0.1");
         assert_snapshot!(err);
         env::set_var("__MISE_DIFF", "");

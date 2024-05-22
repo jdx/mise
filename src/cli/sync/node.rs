@@ -34,8 +34,8 @@ pub struct SyncNodeType {
 }
 
 impl SyncNode {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         if self._type.brew {
             self.run_brew(&config)?;
         } else if self._type.nvm {

@@ -40,6 +40,7 @@ inherits = "release"
 lto = true
 
 [dependencies]
+async-trait = "0.1"
 base64 = "0.22.1"
 calm_io = "0.1.1"
 chrono = { version = "0.4.38", default-features = false, features = [
@@ -87,7 +88,6 @@ regex = "1.10.4"
 # mise error sending request for url (https://api.github.com/repos/jdx/mise/releases): error trying to connect: invalid URL, scheme is not http
 # mise error trying to connect: invalid URL, scheme is not http
 reqwest = { version = "<0.12", default-features = false, features = [
-    "blocking",
     "json",
     "gzip",
 ] }
@@ -114,6 +114,7 @@ tempfile = "3.10.1"
 tera = { version = "1.19.1", default-features = false }
 terminal_size = "0.3.0"
 thiserror = "1.0.59"
+tokio = { version = "1", features = ["full"] }
 toml = { version = "0.8.12", features = ["parse"] }
 toml_edit = { version = "0.22.12", features = ["parse"] }
 url = "2.5.0"
@@ -123,6 +124,8 @@ walkdir = "2.5.0"
 which = "6.0.1"
 xx = { version = "1.0.0", features = ["glob"] }
 zip = { version = "1.1.2", default-features = false, features = ["deflate"] }
+futures = "0.3.30"
+tokio-stream = "0.1.15"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3.1"

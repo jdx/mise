@@ -19,7 +19,7 @@ use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{dirs, env, fake_asdf, file, forge, logger};
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
-pub fn handle_shim() -> Result<()> {
+pub async fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
     if regex!(r"^(mise|rtx)(\-.*)?$").is_match(bin_name) || cfg!(test) {
@@ -38,12 +38,12 @@ pub fn handle_shim() -> Result<()> {
         jobs: None,
         raw: false,
     };
-    exec.run()?;
+    exec.run().await?;
     exit(0);
 }
 
 fn which_shim(bin_name: &str) -> Result<PathBuf> {
-    let config = Config::try_get()?;
+    let config = Config::try_get().await?;
     let mut ts = ToolsetBuilder::new().build(&config)?;
     if let Some((p, tv)) = ts.which(bin_name) {
         if let Some(bin) = p.which(&tv, bin_name)? {

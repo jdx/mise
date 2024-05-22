@@ -23,7 +23,7 @@ pub struct Update {
 }
 
 impl Update {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let plugins: Vec<_> = match self.plugin {
             Some(plugins) => plugins
                 .into_iter()
@@ -84,8 +84,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_plugin_update() {
+    use test_log::test;
+    #[test(tokio::test)]
+    async fn test_plugin_update() {
         assert_cli!(
             "plugin",
             "install",

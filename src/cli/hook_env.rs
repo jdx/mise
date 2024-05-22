@@ -32,8 +32,8 @@ pub struct HookEnv {
 }
 
 impl HookEnv {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let watch_files = config.watch_files()?;
         if hook_env::should_exit_early(&watch_files) {
             return Ok(());
@@ -185,9 +185,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_hook_env() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_hook_env() {
+        reset().await;
         assert_cli!("hook-env", "--status", "-s", "fish");
     }
 }

@@ -56,21 +56,21 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Config) -> Result<()> {
         match self {
-            Self::Install(cmd) => cmd.run(config),
-            Self::Link(cmd) => cmd.run(),
-            Self::Ls(cmd) => cmd.run(config),
-            Self::LsRemote(cmd) => cmd.run(config),
-            Self::Uninstall(cmd) => cmd.run(),
-            Self::Update(cmd) => cmd.run(),
+            Self::Install(cmd) => cmd.run(config).await,
+            Self::Link(cmd) => cmd.run().await,
+            Self::Ls(cmd) => cmd.run(config).await,
+            Self::LsRemote(cmd) => cmd.run(config).await,
+            Self::Uninstall(cmd) => cmd.run().await,
+            Self::Update(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Plugins {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let cmd = self.command.unwrap_or(Commands::Ls(ls::PluginsLs {
             all: self.all,
             core: self.core,
@@ -79,6 +79,6 @@ impl Plugins {
             user: self.user,
         }));
 
-        cmd.run(&config)
+        cmd.run(&config).await
     }
 }

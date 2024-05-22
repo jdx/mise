@@ -102,34 +102,35 @@ impl Shell for Zsh {
 #[cfg(test)]
 mod tests {
     use crate::test::replace_path;
+    use test_log::test;
 
     use super::*;
 
-    #[test]
-    fn test_activate() {
+    #[test(tokio::test)]
+    async fn test_activate() {
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/mise");
         assert_snapshot!(zsh.activate(exe, " --status".into()));
     }
 
-    #[test]
-    fn test_set_env() {
+    #[test(tokio::test)]
+    async fn test_set_env() {
         assert_snapshot!(Zsh::default().set_env("FOO", "1"));
     }
 
-    #[test]
-    fn test_prepend_env() {
+    #[test(tokio::test)]
+    async fn test_prepend_env() {
         let sh = Bash::default();
         assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
-    #[test]
-    fn test_unset_env() {
+    #[test(tokio::test)]
+    async fn test_unset_env() {
         assert_snapshot!(Zsh::default().unset_env("FOO"));
     }
 
-    #[test]
-    fn test_deactivate() {
+    #[test(tokio::test)]
+    async fn test_deactivate() {
         let deactivate = Zsh::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }

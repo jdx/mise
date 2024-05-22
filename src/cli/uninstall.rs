@@ -4,6 +4,7 @@ use console::style;
 use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use rayon::prelude::*;
+use tokio::runtime::Handle;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
@@ -30,12 +31,12 @@ pub struct Uninstall {
 }
 
 impl Uninstall {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let tool_versions = if self.installed_tool.is_empty() && self.all {
-            self.get_all_tool_versions(&config)?
+            self.get_all_tool_versions(&config).await?
         } else {
-            self.get_requested_tool_versions()?
+            self.get_requested_tool_versions().await?
         };
         let tool_versions = tool_versions
             .into_iter()
@@ -72,7 +73,10 @@ impl Uninstall {
         Ok(())
     }
 
-    fn get_all_tool_versions(&self, config: &Config) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
+    async fn get_all_tool_versions(
+        &self,
+        config: &Config,
+    ) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
         let ts = ToolsetBuilder::new().build(config)?;
         let tool_versions = ts
             .list_installed_versions()?
@@ -80,7 +84,7 @@ impl Uninstall {
             .collect::<Vec<_>>();
         Ok(tool_versions)
     }
-    fn get_requested_tool_versions(&self) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
+    async fn get_requested_tool_versions(&self) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
         let runtimes = ToolArg::double_tool_condition(&self.installed_tool)?;
         let tool_versions = runtimes
             .into_par_iter()
@@ -105,7 +109,12 @@ impl Uninstall {
                     })
                     .collect::<Result<Vec<_>>>()?;
                 if let Some(tvr) = &a.tvr {
-                    tvs.push((tool.clone(), tvr.resolve(tool.as_ref(), false)?));
+                    let tvr = tvr.clone();
+                    let handle = Handle::current();
+                    let t = tool.clone();
+                    let tvr =
+                        handle.block_on(async move { tvr.resolve(t.as_ref(), false).await })?;
+                    tvs.push((tool.clone(), tvr.into()));
                 }
                 if tvs.is_empty() {
                     warn!("no versions found for {}", style(&tool).blue().for_stderr());

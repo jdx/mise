@@ -18,16 +18,16 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         match self {
-            Self::GitPreCommit(cmd) => cmd.run(),
-            Self::GithubAction(cmd) => cmd.run(),
+            Self::GitPreCommit(cmd) => cmd.run().await,
+            Self::GithubAction(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Generate {
-    pub fn run(self) -> eyre::Result<()> {
-        self.command.run()
+    pub async fn run(self) -> eyre::Result<()> {
+        self.command.run().await
     }
 }

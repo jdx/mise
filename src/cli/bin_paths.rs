@@ -9,8 +9,8 @@ use crate::toolset::ToolsetBuilder;
 pub struct BinPaths {}
 
 impl BinPaths {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let ts = ToolsetBuilder::new().build(&config)?;
         ts.notify_if_versions_missing();
         for p in ts.list_paths() {
@@ -23,10 +23,11 @@ impl BinPaths {
 #[cfg(test)]
 mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_bin_paths() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_bin_paths() {
+        reset().await;
         assert_cli!("i");
         assert_cli_snapshot!("bin-paths", @r###"
         ~/data/installs/tiny/3/bin

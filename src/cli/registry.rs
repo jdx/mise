@@ -13,7 +13,7 @@ use crate::ui::table;
 pub struct Registry {}
 
 impl Registry {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         settings::ensure_experimental("registry")?;
         let mut tools = BTreeMap::new();
 
@@ -69,9 +69,9 @@ mod tests {
     use crate::cli::tests::grep;
     use crate::test::reset;
 
-    #[test]
-    fn test_registry() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_registry() {
+        reset().await;
         let out = assert_cli!("registry");
         // TODO: enable this when core plugins are back in the registry
         // assert_snapshot!(grep(out, "node"), @"node                         core:node");

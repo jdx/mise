@@ -870,9 +870,9 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_fixture() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_fixture() {
+        reset().await;
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env_entries().unwrap());
@@ -886,9 +886,9 @@ mod tests {
         assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
     }
 
-    #[test]
-    fn test_env() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env() {
+        reset().await;
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -912,9 +912,9 @@ mod tests {
         });
     }
 
-    #[test]
-    fn test_env_array_valid() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_array_valid() {
+        reset().await;
         let env = parse_env(formatdoc! {r#"
         [[env]]
         foo="bar"
@@ -929,9 +929,9 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn test_path_dirs() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_path_dirs() {
+        reset().await;
         let env = parse_env(formatdoc! {r#"
             env_path=["/foo", "./bar"]
             [env]
@@ -986,9 +986,9 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn test_env_file() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_file() {
+        reset().await;
         let env = parse_env(formatdoc! {r#"
             env_file = ".env"
             "#});
@@ -1020,9 +1020,9 @@ mod tests {
         assert_debug_snapshot!(env, @r###""dotenv .env\ndotenv .env2""###);
     }
 
-    #[test]
-    fn test_set_alias() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_set_alias() {
+        reset().await;
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1046,9 +1046,9 @@ mod tests {
         file::remove_file(&p).unwrap();
     }
 
-    #[test]
-    fn test_remove_alias() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_remove_alias() {
+        reset().await;
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1076,9 +1076,9 @@ mod tests {
         file::remove_file(&p).unwrap();
     }
 
-    #[test]
-    fn test_replace_versions() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_replace_versions() {
+        reset().await;
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1100,9 +1100,9 @@ mod tests {
         assert_debug_snapshot!(cf);
     }
 
-    #[test]
-    fn test_remove_plugin() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_remove_plugin() {
+        reset().await;
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1122,18 +1122,18 @@ mod tests {
         assert_debug_snapshot!(cf);
     }
 
-    #[test]
-    fn test_fail_with_unknown_key() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_fail_with_unknown_key() {
+        reset().await;
         let _ = toml::from_str::<MiseToml>(&formatdoc! {r#"
         invalid_key = true
         "#})
         .unwrap_err();
     }
 
-    #[test]
-    fn test_env_entries() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_entries() {
+        reset().await;
         let toml = formatdoc! {r#"
         [env]
         foo1="1"
@@ -1153,9 +1153,9 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn test_env_arr() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_arr() {
+        reset().await;
         let toml = formatdoc! {r#"
         [[env]]
         foo1="1"

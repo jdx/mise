@@ -46,12 +46,13 @@ impl ToolVersionList {
 mod tests {
     use crate::test::reset;
     use crate::{dirs, env, file};
+    use test_log::test;
 
     use super::*;
 
-    #[test]
-    fn test_tool_version_list() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_tool_version_list() {
+        reset().await;
         let fa: ForgeArg = "tiny".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
         tvl.requests.push(ToolRequest::new(fa, "latest").unwrap());
@@ -59,9 +60,9 @@ mod tests {
         assert_eq!(tvl.versions.len(), 1);
     }
 
-    #[test]
-    fn test_tool_version_list_failure() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_tool_version_list_failure() {
+        reset().await;
         forge::reset();
         env::set_var("MISE_FAILURE", "1");
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();

@@ -73,8 +73,8 @@ impl PythonPlugin {
         Ok(())
     }
 
-    fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
+    async fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
+        match self.core.fetch_remote_versions_from_mise().await {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
@@ -96,32 +96,38 @@ impl PythonPlugin {
         tv.install_short_path().join("bin/python")
     }
 
-    fn fetch_precompiled_remote_versions(&self) -> eyre::Result<&Vec<(String, String, String)>> {
-        self.precompiled_cache.get_or_try_init(|| {
-            let settings = Settings::get();
-            let raw = HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled")?;
-            let platform = format!("{}-{}", python_arch(&settings), python_os(&settings));
-            let versions = raw
-                .lines()
-                .filter(|v| v.contains(&platform))
-                .flat_map(|v| {
-                    regex!(r"^cpython-(\d+\.\d+\.\d+)\+(\d+).*")
-                        .captures(v)
-                        .map(|caps| {
-                            (
-                                caps[1].to_string(),
-                                caps[2].to_string(),
-                                caps[0].to_string(),
-                            )
-                        })
-                })
-                .collect_vec();
-            Ok(versions)
-        })
+    async fn fetch_precompiled_remote_versions(
+        &self,
+    ) -> eyre::Result<&Vec<(String, String, String)>> {
+        self.precompiled_cache
+            .get_or_try_init(|| async {
+                let settings = Settings::get();
+                let raw = HTTP_FETCH
+                    .get_text("http://mise-versions.jdx.dev/python-precompiled")
+                    .await?;
+                let platform = format!("{}-{}", python_arch(&settings), python_os(&settings));
+                let versions = raw
+                    .lines()
+                    .filter(|v| v.contains(&platform))
+                    .flat_map(|v| {
+                        regex!(r"^cpython-(\d+\.\d+\.\d+)\+(\d+).*")
+                            .captures(v)
+                            .map(|caps| {
+                                (
+                                    caps[1].to_string(),
+                                    caps[2].to_string(),
+                                    caps[0].to_string(),
+                                )
+                            })
+                    })
+                    .collect_vec();
+                Ok(versions)
+            })
+            .await
     }
 
-    fn install_precompiled(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let precompiled_versions = self.fetch_precompiled_remote_versions()?;
+    async fn install_precompiled<'a>(&'a self, ctx: &'a InstallContext<'_>) -> eyre::Result<()> {
+        let precompiled_versions = self.fetch_precompiled_remote_versions().await?;
         let precompile_info = precompiled_versions
             .iter()
             .rev()
@@ -139,7 +145,7 @@ impl PythonPlugin {
                 debug!("no precompiled python found for {}", ctx.tv.version);
                 let mut available = precompiled_versions.iter().map(|(v, _, _)| v);
                 trace!("available precompiled versions: {}", available.join(", "));
-                return self.install_compiled(ctx);
+                return self.install_compiled(ctx).await;
             }
         };
 
@@ -156,7 +162,8 @@ impl PythonPlugin {
         let tarball_path = download.join(filename);
 
         ctx.pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))?;
+        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
+            .await?;
 
         ctx.pr.set_message(format!("installing {filename}"));
         file::untar(&tarball_path, &download)?;
@@ -166,8 +173,8 @@ impl PythonPlugin {
         Ok(())
     }
 
-    fn install_compiled(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let config = Config::get();
+    async fn install_compiled(&self, ctx: &InstallContext<'_>) -> eyre::Result<()> {
+        let config = Config::get().await;
         let settings = Settings::get();
         self.install_or_update_python_build()?;
         if matches!(&ctx.tv.request, ToolRequest::Ref { .. }) {
@@ -186,7 +193,7 @@ impl PythonPlugin {
         if let Some(patch_url) = &settings.python_patch_url {
             ctx.pr
                 .set_message(format!("with patch file from: {patch_url}"));
-            let patch = HTTP.get_text(patch_url)?;
+            let patch = HTTP.get_text(patch_url).await?;
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
         if let Some(patches_dir) = &settings.python_patches_directory {
@@ -308,37 +315,40 @@ impl PythonPlugin {
     }
 }
 
+#[async_trait]
 impl Forge for PythonPlugin {
     fn fa(&self) -> &ForgeArg {
         &self.core.fa
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         if Settings::get().python_compile == Some(false) {
             Ok(self
-                .fetch_precompiled_remote_versions()?
+                .fetch_precompiled_remote_versions()
+                .await?
                 .iter()
                 .map(|(v, _, _)| v.clone())
                 .collect())
         } else {
             self.core
                 .remote_version_cache
-                .get_or_try_init(|| self.fetch_remote_versions())
+                .get_or_try_init(|| async { self.fetch_remote_versions().await })
+                .await
                 .cloned()
         }
     }
 
-    fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
+    async fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".python-version".to_string()])
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let config = Config::get();
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let config = Config::get().await;
         let settings = Settings::try_get()?;
         if settings.python_compile == Some(true) {
-            self.install_compiled(ctx)?;
+            self.install_compiled(ctx).await?;
         } else {
-            self.install_precompiled(ctx)?;
+            self.install_precompiled(ctx).await?;
         }
         self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
         if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
@@ -354,7 +364,7 @@ impl Forge for PythonPlugin {
         Ok(())
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         config: &Config,
         _ts: &Toolset,

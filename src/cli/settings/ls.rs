@@ -17,7 +17,7 @@ pub struct SettingsLs {
 }
 
 impl SettingsLs {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let settings = Settings::try_get()?;
         let mut settings = settings.as_dict()?;
         for k in Settings::hidden_configs() {
@@ -54,10 +54,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_settings_ls() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_settings_ls() {
+        reset().await;
         assert_cli_snapshot!("settings", @r###"
         activate_aggressive = false
         all_compile = false
@@ -97,9 +98,9 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn test_settings_ls_keys() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_settings_ls_keys() {
+        reset().await;
         assert_cli_snapshot!("settings", "--keys", @r###"
         activate_aggressive
         all_compile

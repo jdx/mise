@@ -42,8 +42,8 @@ pub struct Upgrade {
 }
 
 impl Upgrade {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let mut outdated = ts.list_outdated_versions();
         if self.interactive && !outdated.is_empty() {
@@ -149,10 +149,11 @@ type OutputVec = Vec<(Arc<dyn Forge>, ToolVersion, String)>;
 pub mod tests {
     use crate::dirs;
     use crate::test::{change_installed_version, reset};
+    use test_log::test;
 
-    #[test]
-    fn test_upgrade() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_upgrade() {
+        reset().await;
         change_installed_version("tiny", "3.1.0", "3.0.0");
         assert_cli_snapshot!("upgrade", "--dry-run");
         assert_cli_snapshot!("upgrade");

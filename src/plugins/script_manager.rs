@@ -185,15 +185,16 @@ impl ScriptManager {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_script_manager() {
+    #[test(tokio::test)]
+    async fn test_script_manager() {
         let plugin_path = PathBuf::from("/tmp/asdf");
         let script_manager = ScriptManager::new(plugin_path.clone());
         assert_eq!(script_manager.plugin_path, plugin_path);
     }
 
-    #[test]
-    fn test_get_script_path() {
+    use test_log::test;
+    #[test(tokio::test)]
+    async fn test_get_script_path() {
         let plugin_path = PathBuf::from("/tmp/asdf");
         let script_manager = ScriptManager::new(plugin_path.clone());
 

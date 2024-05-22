@@ -107,34 +107,35 @@ impl Shell for Nushell {
 #[cfg(test)]
 mod tests {
     use crate::test::replace_path;
+    use test_log::test;
 
     use super::*;
 
-    #[test]
-    fn test_hook_init() {
+    #[test(tokio::test)]
+    async fn test_hook_init() {
         let nushell = Nushell::default();
         let exe = Path::new("/some/dir/mise");
         assert_snapshot!(nushell.activate(exe, " --status".into()));
     }
 
-    #[test]
-    fn test_set_env() {
+    #[test(tokio::test)]
+    async fn test_set_env() {
         assert_snapshot!(Nushell::default().set_env("FOO", "1"));
     }
 
-    #[test]
-    fn test_prepend_env() {
+    #[test(tokio::test)]
+    async fn test_prepend_env() {
         let sh = Nushell::default();
         assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
-    #[test]
-    fn test_unset_env() {
+    #[test(tokio::test)]
+    async fn test_unset_env() {
         assert_snapshot!(Nushell::default().unset_env("FOO"));
     }
 
-    #[test]
-    fn test_deactivate() {
+    #[test(tokio::test)]
+    async fn test_deactivate() {
         let deactivate = Nushell::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }

@@ -17,8 +17,8 @@ pub struct AliasUnset {
 }
 
 impl AliasUnset {
-    pub fn run(self) -> Result<()> {
-        let mut global_config = Config::get().global_config()?;
+    pub async fn run(self) -> Result<()> {
+        let mut global_config = Config::get().await.global_config()?;
         global_config.remove_alias(&self.plugin, &self.alias)?;
         global_config.save()
     }
@@ -34,10 +34,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_alias_unset() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_alias_unset() {
+        reset().await;
 
         assert_cli!("alias", "unset", "tiny", "my/alias");
         assert_cli_snapshot!("aliases", @r###"
@@ -56,6 +57,6 @@ mod tests {
         tiny  lts-prev     2.0.0
         "###);
 
-        reset();
+        reset().await;
     }
 }

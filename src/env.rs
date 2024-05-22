@@ -389,9 +389,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_apply_patches() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_apply_patches() {
+        reset().await;
         let mut env = HashMap::new();
         env.insert("foo".into(), "bar".into());
         env.insert("baz".into(), "qux".into());
@@ -406,9 +406,9 @@ mod tests {
         assert_eq!(new_env.get("baz").unwrap(), "qux");
     }
 
-    #[test]
-    fn test_var_path() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_var_path() {
+        reset().await;
         set_var("MISE_TEST_PATH", "/foo/bar");
         assert_eq!(
             var_path("MISE_TEST_PATH").unwrap(),

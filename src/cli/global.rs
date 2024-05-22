@@ -45,7 +45,7 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let settings = Settings::try_get()?;
         local(
             &settings.global_tools_file(),
@@ -78,10 +78,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use crate::test::reset;
     use crate::{dirs, file};
+    use test_log::test;
 
-    #[test]
-    fn test_global() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_global() {
+        reset().await;
         let cf_path = dirs::HOME.join(".test-tool-versions");
         let orig = file::read_to_string(&cf_path).ok();
         let _ = file::remove_file(&cf_path);

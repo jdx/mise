@@ -9,6 +9,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_derive::Serialize;
 use tabled::{Table, Tabled};
+use tokio::runtime::Handle;
 use versions::Versioning;
 
 use crate::cli::args::ForgeArg;
@@ -70,8 +71,8 @@ pub struct Ls {
 }
 
 impl Ls {
-    pub fn run(mut self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(mut self) -> Result<()> {
+        let config = Config::try_get().await?;
         self.plugin = self
             .plugin
             .or_else(|| self.plugin_flag.clone().map(|p| vec![p]));
@@ -316,7 +317,10 @@ impl From<(&dyn Forge, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
         } else if !p.is_version_installed(tv) {
             VersionStatus::Missing(tv.version.clone())
         } else if source.is_some() {
-            VersionStatus::Active(tv.version.clone(), p.is_version_outdated(tv, p))
+            let handle = Handle::current();
+            handle.block_on(async move {
+                VersionStatus::Active(tv.version.clone(), p.is_version_outdated(tv, p).await)
+            })
         } else {
             VersionStatus::Inactive(tv.version.clone())
         }
@@ -395,10 +399,11 @@ mod tests {
     use crate::dirs;
     use crate::file::remove_all;
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_ls() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_ls() {
+        reset().await;
         let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
         assert_cli_snapshot!("list", @r###"
@@ -433,27 +438,27 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn test_ls_current() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_ls_current() {
+        reset().await;
         assert_cli_snapshot!("ls", "-c", @r###"
         dummy  ref:master  ~/.test-tool-versions     ref:master
         tiny   3.1.0       ~/cwd/.test-tool-versions 3
         "###);
     }
 
-    #[test]
-    fn test_ls_json() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_ls_json() {
+        reset().await;
         let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--json");
         assert_cli_snapshot!("ls", "--json", "tiny");
     }
 
-    #[test]
-    fn test_ls_parseable() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_ls_parseable() {
+        reset().await;
         let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--parseable", @r###"
@@ -469,30 +474,30 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn test_ls_missing() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_ls_missing() {
+        reset().await;
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--missing", @"");
     }
 
-    #[test]
-    fn test_ls_missing_plugin() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_ls_missing_plugin() {
+        reset().await;
         let err = assert_cli_err!("ls", "missing-plugin");
         assert_str_eq!(err.to_string(), r#"missing-plugin is not installed"#);
     }
 
-    #[test]
-    fn test_ls_prefix() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_ls_prefix() {
+        reset().await;
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--plugin=tiny", "--prefix=3", @"tiny  3.1.0  ~/cwd/.test-tool-versions 3");
     }
 
-    #[test]
-    fn test_global() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_global() {
+        reset().await;
         assert_cli_snapshot!("ls", "--global", @"");
     }
 }

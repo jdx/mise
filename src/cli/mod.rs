@@ -118,61 +118,61 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self {
-            Self::Activate(cmd) => cmd.run(),
-            Self::Alias(cmd) => cmd.run(),
-            Self::Asdf(cmd) => cmd.run(),
-            Self::Backends(cmd) => cmd.run(),
-            Self::BinPaths(cmd) => cmd.run(),
-            Self::Cache(cmd) => cmd.run(),
-            Self::Completion(cmd) => cmd.run(),
-            Self::Config(cmd) => cmd.run(),
-            Self::Current(cmd) => cmd.run(),
-            Self::Deactivate(cmd) => cmd.run(),
-            Self::Direnv(cmd) => cmd.run(),
-            Self::Doctor(cmd) => cmd.run(),
-            Self::Env(cmd) => cmd.run(),
-            Self::Exec(cmd) => cmd.run(),
-            Self::Generate(cmd) => cmd.run(),
-            Self::Global(cmd) => cmd.run(),
-            Self::HookEnv(cmd) => cmd.run(),
-            Self::HookNotFound(cmd) => cmd.run(),
-            Self::Implode(cmd) => cmd.run(),
-            Self::Install(cmd) => cmd.run(),
-            Self::Latest(cmd) => cmd.run(),
-            Self::Link(cmd) => cmd.run(),
-            Self::Local(cmd) => cmd.run(),
-            Self::Ls(cmd) => cmd.run(),
-            Self::LsRemote(cmd) => cmd.run(),
-            Self::Outdated(cmd) => cmd.run(),
-            Self::Plugins(cmd) => cmd.run(),
-            Self::Prune(cmd) => cmd.run(),
-            Self::Registry(cmd) => cmd.run(),
-            Self::Reshim(cmd) => cmd.run(),
-            Self::Run(cmd) => cmd.run(),
-            Self::SelfUpdate(cmd) => cmd.run(),
-            Self::Set(cmd) => cmd.run(),
-            Self::Settings(cmd) => cmd.run(),
-            Self::Shell(cmd) => cmd.run(),
-            Self::Sync(cmd) => cmd.run(),
-            Self::Tasks(cmd) => cmd.run(),
-            Self::Trust(cmd) => cmd.run(),
-            Self::Uninstall(cmd) => cmd.run(),
-            Self::Unset(cmd) => cmd.run(),
-            Self::Upgrade(cmd) => cmd.run(),
-            Self::Usage(cmd) => cmd.run(),
-            Self::Use(cmd) => cmd.run(),
-            Self::Version(cmd) => cmd.run(),
-            Self::Watch(cmd) => cmd.run(),
-            Self::Where(cmd) => cmd.run(),
-            Self::Which(cmd) => cmd.run(),
+            Self::Activate(cmd) => cmd.run().await,
+            Self::Alias(cmd) => cmd.run().await,
+            Self::Asdf(cmd) => cmd.run().await,
+            Self::Backends(cmd) => cmd.run().await,
+            Self::BinPaths(cmd) => cmd.run().await,
+            Self::Cache(cmd) => cmd.run().await,
+            Self::Completion(cmd) => cmd.run().await,
+            Self::Config(cmd) => cmd.run().await,
+            Self::Current(cmd) => cmd.run().await,
+            Self::Deactivate(cmd) => cmd.run().await,
+            Self::Direnv(cmd) => cmd.run().await,
+            Self::Doctor(cmd) => cmd.run().await,
+            Self::Env(cmd) => cmd.run().await,
+            Self::Exec(cmd) => cmd.run().await,
+            Self::Generate(cmd) => cmd.run().await,
+            Self::Global(cmd) => cmd.run().await,
+            Self::HookEnv(cmd) => cmd.run().await,
+            Self::HookNotFound(cmd) => cmd.run().await,
+            Self::Implode(cmd) => cmd.run().await,
+            Self::Install(cmd) => cmd.run().await,
+            Self::Latest(cmd) => cmd.run().await,
+            Self::Link(cmd) => cmd.run().await,
+            Self::Local(cmd) => cmd.run().await,
+            Self::Ls(cmd) => cmd.run().await,
+            Self::LsRemote(cmd) => cmd.run().await,
+            Self::Outdated(cmd) => cmd.run().await,
+            Self::Plugins(cmd) => cmd.run().await,
+            Self::Prune(cmd) => cmd.run().await,
+            Self::Registry(cmd) => cmd.run().await,
+            Self::Reshim(cmd) => cmd.run().await,
+            Self::Run(cmd) => cmd.run().await,
+            Self::SelfUpdate(cmd) => cmd.run().await,
+            Self::Set(cmd) => cmd.run().await,
+            Self::Settings(cmd) => cmd.run().await,
+            Self::Shell(cmd) => cmd.run().await,
+            Self::Sync(cmd) => cmd.run().await,
+            Self::Tasks(cmd) => cmd.run().await,
+            Self::Trust(cmd) => cmd.run().await,
+            Self::Uninstall(cmd) => cmd.run().await,
+            Self::Unset(cmd) => cmd.run().await,
+            Self::Upgrade(cmd) => cmd.run().await,
+            Self::Usage(cmd) => cmd.run().await,
+            Self::Use(cmd) => cmd.run().await,
+            Self::Version(cmd) => cmd.run().await,
+            Self::Watch(cmd) => cmd.run().await,
+            Self::Where(cmd) => cmd.run().await,
+            Self::Which(cmd) => cmd.run().await,
 
             #[cfg(debug_assertions)]
-            Self::RenderHelp(cmd) => cmd.run(),
+            Self::RenderHelp(cmd) => cmd.run().await,
 
             #[cfg(feature = "clap_mangen")]
-            Self::RenderMangen(cmd) => cmd.run(),
+            Self::RenderMangen(cmd) => cmd.run().await,
         }
     }
 }
@@ -198,9 +198,9 @@ impl Cli {
         )
     }
 
-    pub fn run(args: &Vec<String>) -> Result<()> {
+    pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
-        shims::handle_shim()?;
+        shims::handle_shim().await?;
         version::print_version_if_requested(args)?;
 
         let matches = Self::command()
@@ -215,7 +215,7 @@ impl Cli {
         migrate::run();
         debug!("ARGS: {}", &args.join(" "));
         match Commands::from_arg_matches(&matches) {
-            Ok(cmd) => cmd.run(),
+            Ok(cmd) => cmd.run().await,
             Err(err) => matches
                 .subcommand()
                 .ok_or(err)

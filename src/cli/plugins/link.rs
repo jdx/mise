@@ -31,7 +31,7 @@ pub struct PluginsLink {
 }
 
 impl PluginsLink {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let (name, path) = match self.path {
             Some(path) => (self.name, path),
             None => {
@@ -82,9 +82,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_plugin_link() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_plugin_link() {
+        reset().await;
         assert_cli_snapshot!("plugin", "link", "-f", "tiny-link", "../data/plugins/tiny", @"");
         assert_cli_snapshot!("plugins", "ls", @r###"
         dummy

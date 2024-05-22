@@ -26,8 +26,8 @@ pub struct Latest {
 }
 
 impl Latest {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
             Some(ToolRequest::Version { version, .. }) => Some(version),
@@ -38,13 +38,13 @@ impl Latest {
         let mpr = MultiProgressReport::get();
         plugin.ensure_installed(&mpr, false)?;
         if let Some(v) = prefix {
-            prefix = Some(config.resolve_alias(plugin.as_ref(), &v)?);
+            prefix = Some(config.resolve_alias(plugin.as_ref(), &v).await?);
         }
 
         let latest_version = if self.installed {
             plugin.latest_installed_version(prefix)?
         } else {
-            plugin.latest_version(prefix)?
+            plugin.latest_version(prefix).await?
         };
         if let Some(version) = latest_version {
             miseprintln!("{}", version);
@@ -69,41 +69,41 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_latest() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_latest() {
+        reset().await;
         assert_cli_snapshot!("latest", "dummy@1");
     }
 
-    #[test]
-    fn test_latest_asdf_format() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_latest_asdf_format() {
+        reset().await;
         assert_cli_snapshot!("latest", "dummy", "1");
     }
 
-    #[test]
-    fn test_latest_system() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_latest_system() {
+        reset().await;
         let err = assert_cli_err!("latest", "dummy@system");
         assert_snapshot!(err);
     }
 
-    #[test]
-    fn test_latest_installed() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_latest_installed() {
+        reset().await;
         assert_cli_snapshot!("latest", "dummy");
     }
 
-    #[test]
-    fn test_latest_missing_plugin() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_latest_missing_plugin() {
+        reset().await;
         let stdout = assert_cli_err!("latest", "invalid_plugin");
         assert_snapshot!(stdout);
     }
 
-    #[test]
-    fn test_latest_alias() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_latest_alias() {
+        reset().await;
         let stdout = assert_cli!("latest", "tiny@lts");
         assert_str_eq!(stdout, "3.1.0");
     }

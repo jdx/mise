@@ -25,7 +25,7 @@ pub struct Completion {
 }
 
 impl Completion {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
 
         let script = match self.call_usage(shell) {
@@ -92,8 +92,10 @@ impl ValueEnum for Shell {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_completion() {
+    use test_log::test;
+
+    #[test(tokio::test)]
+    async fn test_completion() {
         assert_cli!("completion", "zsh");
         assert_cli!("completion", "bash");
         assert_cli!("completion", "fish");

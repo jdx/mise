@@ -75,9 +75,10 @@ impl MultiProgressReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
-    #[test]
-    fn test_multi_progress_report() {
+    #[test(tokio::test)]
+    async fn test_multi_progress_report() {
         let mpr = MultiProgressReport::get();
         let pr = mpr.add("PREFIX");
         pr.finish_with_message("test".into());

@@ -31,22 +31,24 @@ impl NodePlugin {
         }
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+    async fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         let node_url_overridden = env::var("MISE_NODE_MIRROR_URL")
             .or(env::var("NODE_BUILD_MIRROR_URL"))
             .is_ok();
         if !node_url_overridden {
-            match self.core.fetch_remote_versions_from_mise() {
+            match self.core.fetch_remote_versions_from_mise().await {
                 Ok(Some(versions)) => return Ok(versions),
                 Ok(None) => {}
                 Err(e) => warn!("failed to fetch remote versions: {}", e),
             }
         }
         self.fetch_remote_versions_from_node(&MISE_NODE_MIRROR_URL)
+            .await
     }
-    fn fetch_remote_versions_from_node(&self, base: &Url) -> Result<Vec<String>> {
+    async fn fetch_remote_versions_from_node(&self, base: &Url) -> Result<Vec<String>> {
         let versions = HTTP_FETCH
-            .json::<Vec<NodeVersion>, _>(base.join("index.json")?)?
+            .json::<Vec<NodeVersion>, _>(base.join("index.json")?)
+            .await?
             .into_iter()
             .map(|v| {
                 if regex!(r"^v\d+\.").is_match(&v.version) {
@@ -60,16 +62,23 @@ impl NodePlugin {
         Ok(versions)
     }
 
-    fn install_precompiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
-        match self.fetch_tarball(
-            ctx.pr.as_ref(),
-            &opts.binary_tarball_url,
-            &opts.binary_tarball_path,
-            &opts.version,
-        ) {
+    async fn install_precompiled<'a>(
+        &self,
+        ctx: &'a InstallContext<'_>,
+        opts: &'a BuildOpts,
+    ) -> Result<()> {
+        match self
+            .fetch_tarball(
+                ctx.pr.as_ref(),
+                &opts.binary_tarball_url,
+                &opts.binary_tarball_path,
+                &opts.version,
+            )
+            .await
+        {
             Err(e) if matches!(http::error_code(&e), Some(404)) => {
                 debug!("precompiled node not found");
-                return self.install_compiled(ctx, opts);
+                return self.install_compiled(ctx, opts).await;
             }
             e => e,
         }?;
@@ -83,14 +92,19 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn install_compiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
+    async fn install_compiled<'a>(
+        &'a self,
+        ctx: &'a InstallContext<'_>,
+        opts: &'a BuildOpts,
+    ) -> Result<()> {
         let tarball_name = &opts.source_tarball_name;
         self.fetch_tarball(
             ctx.pr.as_ref(),
             &opts.source_tarball_url,
             &opts.source_tarball_path,
             &opts.version,
-        )?;
+        )
+        .await?;
         ctx.pr.set_message(format!("extracting {tarball_name}"));
         file::remove_all(&opts.build_dir)?;
         file::untar(&opts.source_tarball_path, opts.build_dir.parent().unwrap())?;
@@ -100,7 +114,7 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn fetch_tarball(
+    async fn fetch_tarball(
         &self,
         pr: &dyn SingleReport,
         url: &Url,
@@ -112,11 +126,11 @@ impl NodePlugin {
             pr.set_message(format!("using previously downloaded {tarball_name}"));
         } else {
             pr.set_message(format!("downloading {tarball_name}"));
-            HTTP.download_file(url.clone(), local, Some(pr))?;
+            HTTP.download_file(url.clone(), local, Some(pr)).await?;
         }
         if *env::MISE_NODE_VERIFY {
             pr.set_message(format!("verifying {tarball_name}"));
-            self.verify(local, version, pr)?;
+            self.verify(local, version, pr).await?;
         }
         Ok(())
     }
@@ -143,10 +157,10 @@ impl NodePlugin {
         self.sh(ctx, opts)?.arg(&opts.make_install_cmd).execute()
     }
 
-    fn verify(&self, tarball: &Path, version: &str, pr: &dyn SingleReport) -> Result<()> {
+    async fn verify(&self, tarball: &Path, version: &str, pr: &dyn SingleReport) -> Result<()> {
         let tarball_name = tarball.file_name().unwrap().to_string_lossy().to_string();
         // TODO: verify gpg signature
-        let shasums = HTTP.get_text(self.shasums_url(version)?)?;
+        let shasums = HTTP.get_text(self.shasums_url(version)?).await?;
         let shasums = hash::parse_shasums(&shasums);
         let shasum = shasums.get(&tarball_name).unwrap();
         hash::ensure_checksum_sha256(tarball, shasum, Some(pr))
@@ -234,19 +248,21 @@ impl NodePlugin {
     }
 }
 
+#[async_trait]
 impl Forge for NodePlugin {
     fn fa(&self) -> &ForgeArg {
         &self.core.fa
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
+            .get_or_try_init(|| async { self.fetch_remote_versions().await })
+            .await
             .cloned()
     }
 
-    fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
+    async fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         let aliases = [
             ("lts/argon", "4"),
             ("lts/boron", "6"),
@@ -274,7 +290,7 @@ impl Forge for NodePlugin {
         Ok(aliases)
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    async fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".node-version".into(), ".nvmrc".into()])
     }
 
@@ -289,15 +305,15 @@ impl Forge for NodePlugin {
         Ok(body)
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let config = Config::get();
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let config = Config::get().await;
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx)?;
         trace!("node build opts: {:#?}", opts);
         if settings.node_compile {
-            self.install_compiled(ctx, &opts)?;
+            self.install_compiled(ctx, &opts).await?;
         } else {
-            self.install_precompiled(ctx, &opts)?;
+            self.install_precompiled(ctx, &opts).await?;
         }
         self.test_node(&config, &ctx.tv, ctx.pr.as_ref())?;
         self.install_npm_shim(&ctx.tv)?;

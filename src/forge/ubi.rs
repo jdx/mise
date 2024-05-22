@@ -18,6 +18,7 @@ pub struct UbiForge {
 
 // Uses ubi for installations https://github.com/houseabsolute/ubi
 // it can be installed via mise install cargo:ubi
+#[async_trait]
 impl Forge for UbiForge {
     fn get_type(&self) -> ForgeType {
         ForgeType::Ubi
@@ -32,24 +33,26 @@ impl Forge for UbiForge {
     }
 
     // TODO: v0.0.3 is stripped of 'v' such that it reports incorrectly in tool :-/
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         if name_is_url(self.name()) {
             Ok(vec!["latest".to_string()])
         } else {
             self.remote_version_cache
-                .get_or_try_init(|| {
-                    Ok(github::list_releases(self.name())?
+                .get_or_try_init(|| async {
+                    Ok(github::list_releases(self.name())
+                        .await?
                         .into_iter()
                         .map(|r| r.tag_name)
                         .rev()
                         .collect())
                 })
+                .await
                 .cloned()
         }
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let config = Config::try_get()?;
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::get();
         let version = &ctx.tv.version;
         settings.ensure_experimental("ubi backend")?;

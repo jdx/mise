@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::thread;
 
 use itertools::Itertools;
 use tempfile::tempdir_in;
+use tokio::task;
 use versions::Versioning;
 
 use crate::cli::args::ForgeArg;
@@ -30,8 +30,8 @@ impl GoPlugin {
         }
     }
 
-    fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
+    async fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
+        match self.core.fetch_remote_versions_from_mise().await {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
@@ -111,27 +111,24 @@ impl GoPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
         let settings = Settings::get();
         let filename = format!("go{}.{}-{}.tar.gz", tv.version, platform(), arch());
         let tarball_url = format!("{}/{}", &settings.go_download_mirror, &filename);
         let tarball_path = tv.download_path().join(&filename);
 
-        thread::scope(|s| {
-            let checksum_handle = s.spawn(|| {
-                let checksum_url = format!("{}.sha256", &tarball_url);
-                HTTP.get_text(checksum_url)
-            });
-            pr.set_message(format!("downloading {filename}"));
-            HTTP.download_file(&tarball_url, &tarball_path, Some(pr))?;
+        let checksum_url = format!("{}.sha256", &tarball_url);
+        let checksum_handle = task::spawn(async move { HTTP.get_text(checksum_url).await });
+        pr.set_message(format!("downloading {filename}"));
+        HTTP.download_file(&tarball_url, &tarball_path, Some(pr))
+            .await?;
 
-            if !settings.go_skip_checksum {
-                pr.set_message(format!("verifying {filename}"));
-                let checksum = checksum_handle.join().unwrap()?;
-                hash::ensure_checksum_sha256(&tarball_path, &checksum, Some(pr))?;
-            }
-            Ok(tarball_path)
-        })
+        if !settings.go_skip_checksum {
+            pr.set_message(format!("verifying {filename}"));
+            let checksum = checksum_handle.await??;
+            hash::ensure_checksum_sha256(&tarball_path, &checksum, Some(pr))?;
+        }
+        Ok(tarball_path)
     }
 
     fn install(
@@ -185,22 +182,24 @@ impl GoPlugin {
     }
 }
 
+#[async_trait]
 impl Forge for GoPlugin {
     fn fa(&self) -> &ForgeArg {
         &self.core.fa
     }
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.core
             .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
+            .get_or_try_init(|| async { self.fetch_remote_versions().await })
+            .await
             .cloned()
     }
-    fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
+    async fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".go-version".into()])
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref()).await?;
         self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path)?;
         self.verify(&ctx.tv, ctx.pr.as_ref())?;
 
@@ -215,7 +214,7 @@ impl Forge for GoPlugin {
         Ok(())
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
         if let ToolRequest::System(_) = tv.request {
             return Ok(vec![]);
         }
@@ -233,7 +232,7 @@ impl Forge for GoPlugin {
         Ok(paths)
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         _config: &Config,
         _ts: &Toolset,

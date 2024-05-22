@@ -14,7 +14,7 @@ pub struct SettingsUnset {
 }
 
 impl SettingsUnset {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let path = env::MISE_CONFIG_DIR.join("config.toml");
         let raw = file::read_to_string(&path)?;
         let mut settings: DocumentMut = raw.parse()?;
@@ -33,11 +33,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_settings_unset() {
-        reset();
-
+    #[test(tokio::test)]
+    async fn test_settings_unset() {
+        reset().await;
         assert_cli!("settings", "unset", "legacy_version_file");
 
         assert_cli_snapshot!("settings", @r###"
@@ -78,6 +78,6 @@ mod tests {
         show_tools = false
         "###);
 
-        reset();
+        reset().await;
     }
 }

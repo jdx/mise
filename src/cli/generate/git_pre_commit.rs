@@ -23,7 +23,7 @@ pub struct GitPreCommit {
 }
 
 impl GitPreCommit {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         let settings = Settings::get();
         settings.ensure_experimental("generate git-pre-commit")?;
         let output = self.generate();
@@ -72,16 +72,16 @@ mod tests {
     use crate::git::Git;
     use crate::test::{cleanup, reset, setup_git_repo};
 
-    #[test]
-    fn test_git_pre_commit() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_git_pre_commit() {
+        reset().await;
         setup_git_repo();
         assert_cli_snapshot!("generate", "pre-commit", "--task=testing123");
         cleanup();
     }
-    #[test]
-    fn test_git_pre_commit_write() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_git_pre_commit_write() {
+        reset().await;
         setup_git_repo();
         assert_cli_snapshot!("generate", "pre-commit", "-w", "--hook", "testing123");
         let path = Git::get_root().unwrap().join(".git/hooks/testing123");

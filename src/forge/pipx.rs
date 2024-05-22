@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::fmt::Debug;
 use std::str::FromStr;
 
@@ -7,6 +8,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::forge::{Forge, ForgeType};
 use crate::github;
+use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
@@ -17,6 +19,7 @@ pub struct PIPXForge {
     latest_version_cache: CacheManager<Option<String>>,
 }
 
+#[async_trait]
 impl Forge for PIPXForge {
     fn get_type(&self) -> ForgeType {
         ForgeType::Pipx
@@ -34,39 +37,43 @@ impl Forge for PIPXForge {
      * Pipx doesn't have a remote version concept across its backends, so
      * we return a single version.
      */
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
-            .get_or_try_init(|| match self.name().parse()? {
-                PipxRequest::Pypi(package) => {
-                    let url = format!("https://pypi.org/pypi/{}/json", package);
-                    let raw = crate::http::HTTP_FETCH.get_text(url)?;
-                    let data: serde_json::Value = serde_json::from_str(&raw)?;
-                    let versions = data["releases"]
-                        .as_object()
-                        .ok_or_else(|| eyre::eyre!("Invalid pypi response"))?
-                        .keys()
-                        .map(|k| k.to_string())
-                        .collect();
-                    Ok(versions)
+            .get_or_try_init(|| async {
+                match self.name().parse()? {
+                    PipxRequest::Pypi(package) => {
+                        let url = format!("https://pypi.org/pypi/{}/json", package);
+                        let raw = HTTP_FETCH.get_text(url).await?;
+                        let data: serde_json::Value = serde_json::from_str(&raw)?;
+                        let versions = data["releases"]
+                            .as_object()
+                            .ok_or_else(|| eyre::eyre!("Invalid pypi response"))?
+                            .keys()
+                            .map(|k| k.to_string())
+                            .collect();
+                        Ok(versions)
+                    }
+                    PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
+                        let repo = url.strip_prefix("https://github.com/").unwrap();
+                        let data = github::list_releases(repo).await?;
+                        Ok(data.into_iter().map(|r| r.tag_name).collect())
+                    }
+                    PipxRequest::Git { .. } => Ok(vec!["latest".to_string()]),
                 }
-                PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
-                    let repo = url.strip_prefix("https://github.com/").unwrap();
-                    let data = github::list_releases(repo)?;
-                    Ok(data.into_iter().map(|r| r.tag_name).collect())
-                }
-                PipxRequest::Git { .. } => Ok(vec!["latest".to_string()]),
             })
+            .await
             .cloned()
     }
 
-    fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
+    async fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
-            .get_or_try_init(|| self.latest_version(Some("latest".into())))
+            .get_or_try_init(|| async { self.latest_version(Some("latest".into())).await })
+            .await
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let config = Config::try_get()?;
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::get();
         settings.ensure_experimental("pipx backend")?;
         let pipx_request = self

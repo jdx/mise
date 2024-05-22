@@ -25,8 +25,8 @@ pub struct Outdated {
 }
 
 impl Outdated {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let tool_set = self
             .tool
@@ -148,24 +148,25 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::test::{change_installed_version, reset};
+    use test_log::test;
 
-    #[test]
-    fn test_outdated() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_outdated() {
+        reset().await;
         assert_cli!("prune");
         assert_cli!("install");
         assert_cli_snapshot!("outdated");
     }
 
-    #[test]
-    fn test_outdated_with_runtimes() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_outdated_with_runtimes() {
+        reset().await;
         assert_cli_snapshot!("outdated", "tiny");
     }
 
-    #[test]
-    fn test_outdated_json() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_outdated_json() {
+        reset().await;
         change_installed_version("tiny", "3.1.0", "3.0.0");
         assert_cli_snapshot!("outdated", "tiny", "--json");
         change_installed_version("tiny", "3.0.0", "3.1.0");

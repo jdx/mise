@@ -23,7 +23,7 @@ pub struct PluginsUninstall {
 }
 
 impl PluginsUninstall {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let mpr = MultiProgressReport::get();
 
         let plugins = match self.all {

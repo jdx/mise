@@ -12,7 +12,7 @@ use crate::{env, hook_env};
 pub struct Deactivate {}
 
 impl Deactivate {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if !env::is_activated() {
             err_inactive()?;
         }
@@ -52,10 +52,11 @@ mod tests {
     use crate::config::Config;
     use crate::env;
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_deactivate() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_deactivate() {
+        reset().await;
         let _config = Config::try_get().unwrap(); // hack: prevents error parsing __MISE_DIFF
         let err = assert_cli_err!("deactivate");
         assert_snapshot!(err);

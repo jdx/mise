@@ -213,9 +213,9 @@ pub(crate) mod tests {
     use super::*;
     use test_log::test;
 
-    #[test]
-    fn test_parse() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_parse() {
+        reset().await;
         let tv = ToolVersions::from_file(
             env::current_dir()
                 .unwrap()
@@ -230,9 +230,9 @@ pub(crate) mod tests {
         assert_snapshot!(tv, @"ToolVersions(~/cwd/.test-tool-versions): tiny@3");
     }
 
-    #[test]
-    fn test_parse_comments() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_parse_comments() {
+        reset().await;
         let orig = indoc! {"
         # intro comment
         python 3.11.0 3.10.0 # some comment # more comment
@@ -245,9 +245,9 @@ pub(crate) mod tests {
         assert_eq!(tv.dump().unwrap(), orig);
     }
 
-    #[test]
-    fn test_parse_colon() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_parse_colon() {
+        reset().await;
         let orig = indoc! {"
         ruby: 3.0.5
         "};
@@ -258,9 +258,9 @@ pub(crate) mod tests {
         "###);
     }
 
-    #[test]
-    fn test_parse_tera() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_parse_tera() {
+        reset().await;
         let orig = indoc! {"
         ruby {{'3.0.5'}}
         python {{exec(command='echo 3.11.0')}}
@@ -275,9 +275,9 @@ pub(crate) mod tests {
         "###);
     }
 
-    #[test]
-    fn test_from_toolset() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_from_toolset() {
+        reset().await;
         let orig = indoc! {"
         ruby: 3.0.5 3.1
         "};

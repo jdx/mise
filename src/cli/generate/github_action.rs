@@ -23,7 +23,7 @@ pub struct GithubAction {
 }
 
 impl GithubAction {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         let settings = Settings::get();
         settings.ensure_experimental("generate github-action")?;
         let output = self.generate()?;
@@ -90,16 +90,16 @@ mod tests {
     use crate::git::Git;
     use crate::test::{cleanup, reset, setup_git_repo};
 
-    #[test]
-    fn test_github_action() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_github_action() {
+        reset().await;
         setup_git_repo();
         assert_cli_snapshot!("generate", "github-action");
         cleanup();
     }
-    #[test]
-    fn test_github_action_write() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_github_action_write() {
+        reset().await;
         setup_git_repo();
         assert_cli_snapshot!(
             "generate",

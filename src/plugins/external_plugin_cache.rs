@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
 use std::sync::RwLock;
 
 use eyre::{eyre, Result, WrapErr};
@@ -18,20 +19,21 @@ pub struct ExternalPluginCache {
 }
 
 impl ExternalPluginCache {
-    pub fn list_bin_paths<F>(
+    pub async fn list_bin_paths<F, Fut>(
         &self,
         plugin: &ExternalPlugin,
         tv: &ToolVersion,
         fetch: F,
     ) -> Result<Vec<String>>
     where
-        F: FnOnce() -> Result<Vec<String>>,
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<Vec<String>>>,
     {
         let mut w = self.list_bin_paths.write().unwrap();
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {
             let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
                 Some(key) => {
-                    let config = Config::get();
+                    let config = Config::get().await;
                     let key = render_cache_key(&config, tv, key);
                     let filename = format!("{}-$KEY.msgpack.z", key);
                     tv.cache_path().join("list_bin_paths").join(filename)
@@ -43,10 +45,10 @@ impl ExternalPluginCache {
                 .with_fresh_file(plugin.plugin_path.clone())
                 .with_fresh_file(tv.install_path())
         });
-        cm.get_or_try_init(fetch).cloned()
+        cm.get_or_try_init(fetch).await.cloned()
     }
 
-    pub fn exec_env<F>(
+    pub async fn exec_env<F, Fut>(
         &self,
         config: &Config,
         plugin: &ExternalPlugin,
@@ -54,7 +56,8 @@ impl ExternalPluginCache {
         fetch: F,
     ) -> Result<BTreeMap<String, String>>
     where
-        F: FnOnce() -> Result<BTreeMap<String, String>>,
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<BTreeMap<String, String>>>,
     {
         let mut w = self.exec_env.write().unwrap();
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {
@@ -71,7 +74,7 @@ impl ExternalPluginCache {
                 .with_fresh_file(plugin.plugin_path.clone())
                 .with_fresh_file(tv.install_path())
         });
-        cm.get_or_try_init(fetch).cloned()
+        cm.get_or_try_init(fetch).await.cloned()
     }
 }
 

@@ -31,19 +31,25 @@ impl ToolVersion {
         }
     }
 
-    pub fn resolve(tool: &dyn Forge, request: ToolRequest, latest_versions: bool) -> Result<Self> {
+    pub async fn resolve(
+        tool: &dyn Forge,
+        request: ToolRequest,
+        latest_versions: bool,
+    ) -> Result<Self> {
         if !tool.is_installed() {
             let tv = Self::new(tool, request.clone(), request.version());
             return Ok(tv);
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
-                Self::resolve_version(tool, request, latest_versions, &v)?
+                Self::resolve_version(tool, request, latest_versions, &v).await?
             }
-            ToolRequest::Prefix { prefix, .. } => Self::resolve_prefix(tool, request, &prefix)?,
+            ToolRequest::Prefix { prefix, .. } => {
+                Self::resolve_prefix(tool, request, &prefix).await?
+            }
             ToolRequest::Sub {
                 sub, orig_version, ..
-            } => Self::resolve_sub(tool, request, latest_versions, &sub, &orig_version)?,
+            } => Self::resolve_sub(tool, request, latest_versions, &sub, &orig_version).await?,
             _ => {
                 let version = request.version();
                 Self::new(tool, request, version)
@@ -81,8 +87,8 @@ impl ToolVersion {
     pub fn download_path(&self) -> PathBuf {
         self.forge.downloads_path.join(self.tv_pathname())
     }
-    pub fn latest_version(&self, tool: &dyn Forge) -> Result<String> {
-        let tv = self.request.resolve(tool, true)?;
+    pub async fn latest_version(&self, tool: &dyn Forge) -> Result<String> {
+        let tv = self.request.resolve(tool, true).await?;
         Ok(tv.version)
     }
     pub fn style(&self) -> String {
@@ -111,14 +117,14 @@ impl ToolVersion {
         .replace([':', '/'], "-")
     }
 
-    fn resolve_version(
+    async fn resolve_version(
         tool: &dyn Forge,
         request: ToolRequest,
         latest_versions: bool,
         v: &str,
     ) -> Result<ToolVersion> {
-        let config = Config::get();
-        let v = config.resolve_alias(tool, v)?;
+        let config = Config::get().await;
+        let v = config.resolve_alias(tool, v).await?;
         match v.split_once(':') {
             Some(("ref", r)) => {
                 return Ok(Self::resolve_ref(tool, r.to_string(), request.options()));
@@ -127,11 +133,11 @@ impl ToolVersion {
                 return Self::resolve_path(tool, PathBuf::from(p));
             }
             Some(("prefix", p)) => {
-                return Self::resolve_prefix(tool, request, p);
+                return Self::resolve_prefix(tool, request, p).await;
             }
             Some((part, v)) if part.starts_with("sub-") => {
                 let sub = part.split_once('-').unwrap().1;
-                return Self::resolve_sub(tool, request, latest_versions, sub, v);
+                return Self::resolve_sub(tool, request, latest_versions, sub, v).await;
             }
             _ => (),
         }
@@ -153,7 +159,7 @@ impl ToolVersion {
                     return build(v);
                 }
             }
-            if let Some(v) = tool.latest_version(None)? {
+            if let Some(v) = tool.latest_version(None).await? {
                 return build(v);
             }
         }
@@ -166,15 +172,15 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        let matches = tool.list_versions_matching(&v)?;
+        let matches = tool.list_versions_matching(&v).await?;
         if matches.contains(&v) {
             return build(v);
         }
-        Self::resolve_prefix(tool, request, &v)
+        Self::resolve_prefix(tool, request, &v).await
     }
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
-    fn resolve_sub(
+    async fn resolve_sub(
         tool: &dyn Forge,
         request: ToolRequest,
         latest_versions: bool,
@@ -182,15 +188,15 @@ impl ToolVersion {
         v: &str,
     ) -> Result<Self> {
         let v = match v {
-            "latest" => tool.latest_version(None)?.unwrap(),
-            _ => Config::get().resolve_alias(tool, v)?,
+            "latest" => tool.latest_version(None).await?.unwrap(),
+            _ => Config::get().resolve_alias(tool, v).await?,
         };
         let v = tool_version_request::version_sub(&v, sub);
-        Self::resolve_version(tool, request, latest_versions, &v)
+        Self::resolve_version(tool, request, latest_versions, &v).await
     }
 
-    fn resolve_prefix(tool: &dyn Forge, request: ToolRequest, prefix: &str) -> Result<Self> {
-        let matches = tool.list_versions_matching(prefix)?;
+    async fn resolve_prefix(tool: &dyn Forge, request: ToolRequest, prefix: &str) -> Result<Self> {
+        let matches = tool.list_versions_matching(prefix).await?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,

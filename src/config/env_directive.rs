@@ -73,7 +73,7 @@ pub struct EnvResults {
 }
 
 impl EnvResults {
-    pub fn resolve(
+    pub async fn resolve(
         initial: &HashMap<String, String>,
         input: Vec<(EnvDirective, PathBuf)>,
     ) -> eyre::Result<Self> {
@@ -167,7 +167,7 @@ impl EnvResults {
                     let venv = normalize_path(venv.into());
                     if !venv.exists() && create {
                         // TODO: the toolset stuff doesn't feel like it's in the right place here
-                        let config = Config::get();
+                        let config = Config::get().await;
                         let ts = ToolsetBuilder::new().build(&config)?;
                         let path = ts
                             .list_paths()
@@ -242,9 +242,9 @@ mod tests {
     use super::*;
     use test_log::test;
 
-    #[test]
-    fn test_env_path() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_env_path() {
+        reset().await;
         let mut env = HashMap::new();
         env.insert("A".to_string(), "1".to_string());
         env.insert("B".to_string(), "2".to_string());
@@ -284,9 +284,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_venv_path() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_venv_path() {
+        reset().await;
         let env = HashMap::new();
         let results = EnvResults::resolve(
             &env,
@@ -307,6 +307,7 @@ mod tests {
                 ),
             ],
         )
+        .await
         .unwrap();
         // expect order to be reversed as it processes directives from global to dir specific
         assert_debug_snapshot!(

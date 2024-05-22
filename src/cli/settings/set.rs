@@ -18,7 +18,7 @@ pub struct SettingsSet {
 }
 
 impl SettingsSet {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let value: toml_edit::Value = match self.setting.as_str() {
             "activate_aggressive" => parse_bool(&self.value)?,
             "all_compile" => parse_bool(&self.value)?,
@@ -108,10 +108,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 pub mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_settings_set() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_settings_set() {
+        reset().await;
         assert_cli!("settings", "set", "legacy_version_file", "0");
         assert_cli!("settings", "set", "always_keep_download", "y");
         assert_cli!("settings", "set", "status.missing_tools", "never");
@@ -159,6 +160,6 @@ pub mod tests {
         show_env = false
         show_tools = false
         "###);
-        reset();
+        reset().await;
     }
 }

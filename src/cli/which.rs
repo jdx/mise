@@ -28,8 +28,8 @@ pub struct Which {
 }
 
 impl Which {
-    pub fn run(self) -> Result<()> {
-        let ts = self.get_toolset()?;
+    pub async fn run(self) -> Result<()> {
+        let ts = self.get_toolset().await?;
 
         match ts.which(&self.bin_name) {
             Some((p, tv)) => {
@@ -55,8 +55,8 @@ impl Which {
             }
         }
     }
-    fn get_toolset(&self) -> Result<Toolset> {
-        let config = Config::try_get()?;
+    async fn get_toolset(&self) -> Result<Toolset> {
+        let config = Config::try_get().await?;
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {
             tsb = tsb.with_args(&[tool.clone()]);
@@ -86,9 +86,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_which() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_which() {
+        reset().await;
         assert_cli!("use", "dummy@1.0.0");
         assert_cli_snapshot!("which", "dummy");
         assert_cli!("use", "dummy@ref:master");
@@ -96,9 +96,9 @@ mod tests {
         assert_cli!("use", "--rm", "dummy");
     }
 
-    #[test]
-    fn test_which_plugin() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_which_plugin() {
+        reset().await;
         assert_cli!("use", "dummy@1.0.0");
         assert_cli_snapshot!("which", "--plugin", "dummy");
         assert_cli!("use", "dummy@ref:master");
@@ -106,9 +106,9 @@ mod tests {
         assert_cli!("use", "--rm", "dummy");
     }
 
-    #[test]
-    fn test_which_version() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_which_version() {
+        reset().await;
         assert_cli!("use", "dummy@1.0.0");
         assert_cli_snapshot!("which", "--version", "dummy");
         assert_cli!("use", "dummy@ref:master");
@@ -116,9 +116,9 @@ mod tests {
         assert_cli!("use", "--rm", "dummy");
     }
 
-    #[test]
-    fn test_which_tool() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_which_tool() {
+        reset().await;
         assert_cli!("install", "dummy@1.0.1");
         assert_cli_snapshot!("which", "dummy", "--tool=dummy@1.0.1");
     }

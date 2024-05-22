@@ -32,8 +32,8 @@ pub struct Link {
 }
 
 impl Link {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let version = match self.tool.tvr {
             Some(ref tvr) => tvr.version(),
             None => bail!("must provide a version for {}", self.tool.style()),
@@ -83,9 +83,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_link() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_link() {
+        reset().await;
         assert_cli!("install", "tiny@1.0.1", "tiny@2.1.0");
         assert_cli!("install", "tiny@3.0.1", "tiny@3.1.0");
         create_dir_all("../data/tmp/tiny").unwrap();

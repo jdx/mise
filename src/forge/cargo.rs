@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::fmt::Debug;
 
 use serde_json::Deserializer;
@@ -20,6 +21,7 @@ pub struct CargoForge {
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
+#[async_trait]
 impl Forge for CargoForge {
     fn get_type(&self) -> ForgeType {
         ForgeType::Cargo
@@ -33,10 +35,13 @@ impl Forge for CargoForge {
         Ok(vec!["cargo".into(), "rust".into()])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>
+    where
+        Self: Sized,
+    {
         self.remote_version_cache
-            .get_or_try_init(|| {
-                let raw = HTTP_FETCH.get_text(get_crate_url(self.name())?)?;
+            .get_or_try_init(|| async {
+                let raw = HTTP_FETCH.get_text(get_crate_url(self.name())?).await?;
                 let stream = Deserializer::from_str(&raw).into_iter::<CrateVersion>();
                 let mut versions = vec![];
                 for v in stream {
@@ -47,11 +52,12 @@ impl Forge for CargoForge {
                 }
                 Ok(versions)
             })
+            .await
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let config = Config::try_get()?;
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::get();
         settings.ensure_experimental("cargo backend")?;
         let cmd = if self.is_binstall_enabled() {

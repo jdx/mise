@@ -58,8 +58,8 @@ pub enum SortOrder {
 }
 
 impl TasksLs {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::try_get()?;
         settings.ensure_experimental("`mise tasks ls`")?;
         let tasks = config
@@ -170,9 +170,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_task_ls() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_task_ls() {
+        reset().await;
         assert_cli_snapshot!("t", "--no-headers", @r###"
         configtask                               ~/config/config.toml       
         filetask    This is a test build script  ~/cwd/.mise/tasks/filetask 
@@ -181,15 +181,15 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn test_task_ls_json() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_task_ls_json() {
+        reset().await;
         assert_cli_snapshot!("t", "--json");
     }
 
-    #[test]
-    fn test_task_ls_json_extended() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_task_ls_json_extended() {
+        reset().await;
         assert_cli_snapshot!("t", "--json", "-x");
     }
 }

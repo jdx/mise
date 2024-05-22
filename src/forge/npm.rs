@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::fmt::Debug;
 
 use serde_json::Value;
@@ -17,6 +18,7 @@ pub struct NPMForge {
     latest_version_cache: CacheManager<Option<String>>,
 }
 
+#[async_trait]
 impl Forge for NPMForge {
     fn get_type(&self) -> ForgeType {
         ForgeType::Npm
@@ -30,34 +32,36 @@ impl Forge for NPMForge {
         Ok(vec!["node".into()])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
-            .get_or_try_init(|| {
+            .get_or_try_init(|| async {
                 let raw = cmd!("npm", "view", self.name(), "versions", "--json").read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
             })
+            .await
             .cloned()
     }
 
-    fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
+    async fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
-            .get_or_try_init(|| {
+            .get_or_try_init(|| async {
                 let raw = cmd!("npm", "view", self.name(), "dist-tags", "--json")
                     .full_env(self.dependency_env()?)
                     .read()?;
                 let dist_tags: Value = serde_json::from_str(&raw)?;
                 let latest = match dist_tags["latest"] {
                     Value::String(ref s) => Some(s.clone()),
-                    _ => self.latest_version(Some("latest".into())).unwrap(),
+                    _ => self.latest_version(Some("latest".into())).await.unwrap(),
                 };
                 Ok(latest)
             })
+            .await
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let config = Config::try_get()?;
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::get();
         settings.ensure_experimental("npm backend")?;
 

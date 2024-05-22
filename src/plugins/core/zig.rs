@@ -39,15 +39,16 @@ impl ZigPlugin {
             .execute()
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
+    async fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+        match self.core.fetch_remote_versions_from_mise().await {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
 
-        let releases: Vec<GithubRelease> =
-            HTTP_FETCH.json("https://api.github.com/repos/ziglang/zig/releases?per_page=100")?;
+        let releases: Vec<GithubRelease> = HTTP_FETCH
+            .json("https://api.github.com/repos/ziglang/zig/releases?per_page=100")
+            .await?;
         let versions = releases
             .into_iter()
             .map(|r| r.tag_name)
@@ -57,13 +58,13 @@ impl ZigPlugin {
         Ok(versions)
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let url = if tv.version == "ref:master" {
             format!(
                 "https://ziglang.org/builds/zig-{}-{}-{}.tar.xz",
                 os(),
                 arch(),
-                self.get_master_version()?
+                self.get_master_version().await?
             )
         } else {
             format!(
@@ -79,12 +80,16 @@ impl ZigPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr))?;
+        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
 
         Ok(tarball_path)
     }
 
-    fn install(&self, ctx: &InstallContext, tarball_path: &Path) -> Result<()> {
+    async fn install<'a>(
+        &'a self,
+        ctx: &'a InstallContext<'a>,
+        tarball_path: &'a Path,
+    ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("installing {filename}"));
         file::remove_all(ctx.tv.install_path())?;
@@ -95,7 +100,7 @@ impl ZigPlugin {
                 os(),
                 arch(),
                 if ctx.tv.version == "ref:master" {
-                    self.get_master_version()?
+                    self.get_master_version().await?
                 } else {
                     ctx.tv.version.clone()
                 }
@@ -115,9 +120,10 @@ impl ZigPlugin {
         self.test_zig(ctx)
     }
 
-    fn get_master_version(&self) -> Result<String> {
-        let version_json: serde_json::Value =
-            HTTP_FETCH.json("https://ziglang.org/download/index.json")?;
+    async fn get_master_version(&self) -> Result<String> {
+        let version_json: serde_json::Value = HTTP_FETCH
+            .json("https://ziglang.org/download/index.json")
+            .await?;
         let master_version = version_json
             .pointer("/master/version")
             .and_then(|v| v.as_str())
@@ -126,25 +132,27 @@ impl ZigPlugin {
     }
 }
 
+#[async_trait]
 impl Forge for ZigPlugin {
     fn fa(&self) -> &ForgeArg {
         &self.core.fa
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
+            .get_or_try_init(|| async { self.fetch_remote_versions().await })
+            .await
             .cloned()
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    async fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".zig-version".into()])
     }
     #[requires(matches ! (ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
-        self.install(ctx, &tarball_path)?;
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref()).await?;
+        self.install(ctx, &tarball_path).await?;
         self.verify(ctx)?;
         Ok(())
     }

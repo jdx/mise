@@ -53,7 +53,7 @@ pub struct Activate {
 }
 
 impl Activate {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let shell = get_shell(self.shell_type.or(self.shell))
             .expect("no shell provided. Run `mise activate zsh` or similar");
 

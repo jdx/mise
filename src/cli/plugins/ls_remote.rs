@@ -23,7 +23,7 @@ pub struct PluginsLsRemote {
 }
 
 impl PluginsLsRemote {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Config) -> Result<()> {
         let installed_plugins = plugins::list()
             .into_iter()
             .filter(|p| p.is_installed())
@@ -67,8 +67,9 @@ Examples:
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_plugin_list_remote() {
+    use test_log::test;
+    #[test(tokio::test)]
+    async fn test_plugin_list_remote() {
         let stdout = assert_cli!("plugin", "ls-remote");
         assert!(stdout.contains("tiny"));
     }

@@ -52,7 +52,7 @@ pub struct Local {
 }
 
 impl Local {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let path = if self.parent {
             get_parent_path()?
         } else {
@@ -159,14 +159,15 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use std::panic;
+    use test_log::test;
 
     use crate::cli::tests::grep;
     use crate::test::{cleanup, reset};
     use crate::{dirs, forge};
 
-    #[test]
-    fn test_local_remove() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_remove() {
+        run_test(|| async {
             assert_cli!("install", "tiny@2");
             assert_cli_snapshot!("local", "--pin", "tiny@2");
             assert_cli_snapshot!("local", "tiny@2");
@@ -176,98 +177,106 @@ mod tests {
                 grep(stdout, "tiny"),
                 @"tiny   2.1.0       ~/.test-tool-versions 2"
             );
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_pin() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_pin() {
+        run_test(|| async {
             assert_cli!("local", "--pin", "tiny@1");
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "tiny"), "tiny 1.0.1");
             assert_cli!("local", "--pin", "tiny", "2");
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "tiny"), "tiny 2.1.0");
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_path() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_path() {
+        run_test(|| async {
             assert_cli!("local", "dummy@path:.");
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy path:.");
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_ref() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_ref() {
+        run_test(|| async {
             assert_cli!("local", "dummy@ref:master");
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy ref:master");
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_prefix() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_prefix() {
+        run_test(|| async {
             assert_cli!("local", "dummy@prefix:1");
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy prefix:1");
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_multiple_versions() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_multiple_versions() {
+        run_test(|| async {
             assert_cli_snapshot!("local", "--path");
             assert_cli_snapshot!("local", "tiny@2", "tiny@1", "tiny@3");
             assert_cli!("install");
             forge::reset();
             assert_cli_snapshot!("bin-paths");
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_output_current_version() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_output_current_version() {
+        run_test(|| async {
             assert_cli!("local", "tiny", "2");
             let stdout = assert_cli!("local", "tiny");
             assert_str_eq!(stdout, "2");
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_invalid_multiple_plugins() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_invalid_multiple_plugins() {
+        run_test(|| async {
             let err = assert_cli_err!("local", "tiny", "dummy");
             assert_str_eq!(err.to_string(), "invalid input, specify a version for each tool. Or just specify one tool to print the current version");
-        });
+        }).await;
     }
 
-    #[test]
-    fn test_local_invalid() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_invalid() {
+        run_test(|| async {
             let err = assert_cli_err!("local", "tiny", "dummy@latest");
             assert_str_eq!(err.to_string(), "invalid input, specify a version for each tool. Or just specify one tool to print the current version");
-        });
+        }).await;
     }
 
-    #[test]
-    fn test_local_alias_ref() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_alias_ref() {
+        run_test(|| async {
             assert_cli!("alias", "set", "dummy", "m", "ref:master");
             assert_cli!("local", "dummy@m");
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy m");
             assert_cli_snapshot!("current", "dummy");
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_alias_path() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_alias_path() {
+        run_test(|| async {
             assert_cli!("install", "dummy@1.1.0");
             let local_dummy_path = dirs::INSTALLS.join("dummy").join("1.1.0");
             let path_arg = String::from("path:") + &local_dummy_path.to_string_lossy();
@@ -277,41 +286,45 @@ mod tests {
             assert_str_eq!(grep(stdout, "dummy"), "dummy m");
             let stdout = assert_cli!("current", "dummy");
             assert_str_eq!(grep(stdout, "dummy"), "path:~/data/installs/dummy/1.1.0");
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_alias_prefix() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_alias_prefix() {
+        run_test(|| async {
             assert_cli!("alias", "set", "dummy", "m", "prefix:1");
             assert_cli!("local", "dummy@m");
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy m");
             assert_cli_snapshot!("current", "dummy");
-        });
+        })
+        .await;
     }
 
-    #[test]
-    fn test_local_alias_system() {
-        run_test(|| {
+    #[test(tokio::test)]
+    async fn test_local_alias_system() {
+        run_test(|| async {
             assert_cli!("alias", "set", "dummy", "m", "system");
             assert_cli!("local", "dummy@m");
             let stdout = assert_cli!("local");
             assert_str_eq!(grep(stdout, "dummy"), "dummy m");
             assert_cli_snapshot!("current", "dummy");
-        });
+        })
+        .await;
     }
 
-    fn run_test<T>(test: T)
+    async fn run_test<T, Fut>(test: T)
     where
-        T: FnOnce() + panic::UnwindSafe,
+        T: FnOnce() -> Fut + panic::UnwindSafe,
+        Fut: std::future::Future<Output = ()>,
     {
-        reset();
+        reset().await;
         assert_cli!("install");
         let result = panic::catch_unwind(test);
         assert!(result.is_ok());
         assert_cli!("local", "tiny@3");
-        reset();
+        reset().await;
         cleanup();
     }
 }

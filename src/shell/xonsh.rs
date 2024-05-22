@@ -136,40 +136,41 @@ impl Shell for Xonsh {
 mod tests {
     use super::*;
     use crate::test::replace_path;
+    use test_log::test;
 
-    #[test]
-    fn test_hook_init() {
+    #[test(tokio::test)]
+    async fn test_hook_init() {
         let xonsh = Xonsh::default();
         let exe = Path::new("/some/dir/mise");
         insta::assert_snapshot!(xonsh.activate(exe, " --status".into()));
     }
 
-    #[test]
-    fn test_set_env() {
+    #[test(tokio::test)]
+    async fn test_set_env() {
         insta::assert_snapshot!(Xonsh::default().set_env("FOO", "1"));
     }
 
-    #[test]
-    fn test_prepend_env() {
+    #[test(tokio::test)]
+    async fn test_prepend_env() {
         let sh = Xonsh::default();
         assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
-    #[test]
-    fn test_unset_env() {
+    #[test(tokio::test)]
+    async fn test_unset_env() {
         insta::assert_snapshot!(Xonsh::default().unset_env("FOO"));
     }
 
-    #[test]
-    fn test_xonsh_escape_sq() {
+    #[test(tokio::test)]
+    async fn test_xonsh_escape_sq() {
         assert_eq!(xonsh_escape_sq("foo"), "foo");
         assert_eq!(xonsh_escape_sq("foo'bar"), "foo\\'bar");
         assert_eq!(xonsh_escape_sq("foo\\bar"), "foo\\\\bar");
         assert_eq!(xonsh_escape_sq("foo\nbar"), "foo\\nbar");
     }
 
-    #[test]
-    fn test_xonsh_deactivate() {
+    #[test(tokio::test)]
+    async fn test_xonsh_deactivate() {
         let deactivate = Xonsh::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }

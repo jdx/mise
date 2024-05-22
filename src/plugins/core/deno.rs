@@ -29,14 +29,15 @@ impl DenoPlugin {
         Self { core }
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
+    async fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+        match self.core.fetch_remote_versions_from_mise().await {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
-        let releases: Vec<GithubRelease> =
-            HTTP_FETCH.json("https://api.github.com/repos/denoland/deno/releases?per_page=100")?;
+        let releases: Vec<GithubRelease> = HTTP_FETCH
+            .json("https://api.github.com/repos/denoland/deno/releases?per_page=100")
+            .await?;
         let versions = releases
             .into_iter()
             .map(|r| r.name)
@@ -61,7 +62,7 @@ impl DenoPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let url = format!(
             "https://github.com/denoland/deno/releases/download/v{}/deno-{}-{}.zip",
             tv.version,
@@ -72,7 +73,7 @@ impl DenoPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr))?;
+        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
 
         // TODO: hash::ensure_checksum_sha256(&tarball_path, &m.sha256)?;
 
@@ -95,32 +96,34 @@ impl DenoPlugin {
     }
 }
 
+#[async_trait]
 impl Forge for DenoPlugin {
     fn fa(&self) -> &ForgeArg {
         &self.core.fa
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
+            .get_or_try_init(|| async { self.fetch_remote_versions().await })
+            .await
             .cloned()
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    async fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".deno-version".into()])
     }
 
     #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type")]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref()).await?;
         self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path)?;
         self.verify(&ctx.tv, ctx.pr.as_ref())?;
 
         Ok(())
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         if let ToolRequest::System(_) = tv.request {
             return Ok(vec![]);
         }
@@ -131,7 +134,7 @@ impl Forge for DenoPlugin {
         Ok(bin_paths)
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         _config: &Config,
         _ts: &Toolset,

@@ -163,9 +163,10 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
-    #[test]
-    fn test_tool_arg() {
+    #[test(tokio::test)]
+    async fn test_tool_arg() {
         let tool = ToolArg::from_str("node").unwrap();
         assert_eq!(
             tool,
@@ -178,8 +179,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_tool_arg_with_version() {
+    #[test(tokio::test)]
+    async fn test_tool_arg_with_version() {
         let tool = ToolArg::from_str("node@20").unwrap();
         assert_eq!(
             tool,
@@ -192,8 +193,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_tool_arg_with_version_and_alias() {
+    #[test(tokio::test)]
+    async fn test_tool_arg_with_version_and_alias() {
         let tool = ToolArg::from_str("nodejs@lts").unwrap();
         assert_eq!(
             tool,
@@ -206,8 +207,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_tool_arg_parse_input() {
+    #[test(tokio::test)]
+    async fn test_tool_arg_parse_input() {
         let t = |input, f, v| {
             let (forge, version) = parse_input(input);
             assert_eq!(forge, f);

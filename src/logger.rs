@@ -84,9 +84,10 @@ fn init_write_logger(level: LevelFilter, log_path: &Path) -> Option<Box<dyn Shar
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
-    #[test]
-    fn test_init() {
+    #[test(tokio::test)]
+    async fn test_init() {
         init();
     }
 }

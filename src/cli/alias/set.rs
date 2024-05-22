@@ -19,8 +19,8 @@ pub struct AliasSet {
 }
 
 impl AliasSet {
-    pub fn run(self) -> Result<()> {
-        let mut global_config = Config::get().global_config()?;
+    pub async fn run(self) -> Result<()> {
+        let mut global_config = Config::get().await.global_config()?;
         global_config.set_alias(&self.plugin, &self.alias, &self.value)?;
         global_config.save()
     }
@@ -36,10 +36,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 pub mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_alias_set() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_alias_set() {
+        reset().await;
         assert_cli!("alias", "set", "tiny", "my/alias", "3.0");
 
         assert_cli_snapshot!("aliases", @r###"
@@ -58,6 +59,6 @@ pub mod tests {
         tiny  lts-prev     2.0.0
         tiny  my/alias     3.0
         "###);
-        reset();
+        reset().await;
     }
 }

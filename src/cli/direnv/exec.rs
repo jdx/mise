@@ -18,7 +18,7 @@ struct DirenvWatches {
 }
 
 impl DirenvExec {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Config) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config)?;
 
         let mut cmd = env_cmd();
@@ -52,10 +52,11 @@ fn env_cmd() -> Expression {
 mod tests {
     use crate::cli::tests::grep;
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_direnv_exec() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_direnv_exec() {
+        reset().await;
         let stdout = assert_cli!("direnv", "exec");
         assert_str_eq!(grep(stdout, "JDXCODE_TINY="), "JDXCODE_TINY=3.1.0");
     }

@@ -17,9 +17,9 @@ pub struct AliasGet {
 }
 
 impl AliasGet {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        match config.get_all_aliases().get(&self.plugin) {
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
+        match config.get_all_aliases().await.get(&self.plugin) {
             Some(plugin) => match plugin.get(&self.alias) {
                 Some(alias) => {
                     miseprintln!("{alias}");
@@ -42,26 +42,27 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_alias_get() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_alias_get() {
+        reset().await;
         let stdout = assert_cli!("alias", "get", "tiny", "my/alias");
         assert_snapshot!(stdout, @r###"
         3.0
         "###);
     }
 
-    #[test]
-    fn test_alias_get_plugin_unknown() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_alias_get_plugin_unknown() {
+        reset().await;
         let err = assert_cli_err!("alias", "get", "unknown", "unknown");
         assert_snapshot!(err, @"Unknown plugin: unknown");
     }
 
-    #[test]
-    fn test_alias_get_alias_unknown() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_alias_get_alias_unknown() {
+        reset().await;
         let err = assert_cli_err!("alias", "get", "tiny", "unknown");
         assert_snapshot!(err, @"Unknown alias: unknown");
     }

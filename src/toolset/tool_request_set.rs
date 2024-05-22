@@ -165,7 +165,7 @@ impl ToolRequestSetBuilder {
     }
 
     fn load_config_files(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
-        let config = Config::get();
+        let config = Config::get().await;
         for cf in config.config_files.values().rev() {
             merge(trs, cf.to_tool_request_set()?);
         }

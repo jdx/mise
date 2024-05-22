@@ -20,8 +20,8 @@ pub struct HookNotFound {
 }
 
 impl HookNotFound {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::try_get()?;
         if settings.not_found_auto_install {
             let mut ts = ToolsetBuilder::new().build(&config)?;

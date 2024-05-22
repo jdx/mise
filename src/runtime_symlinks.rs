@@ -118,9 +118,10 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_list_symlinks() {
-        reset();
+    use test_log::test;
+    #[test(tokio::test)]
+    async fn test_list_symlinks() {
+        reset().await;
         assert_cli!("install", "tiny@2");
         let config = Config::load().unwrap();
         let plugin = ExternalPlugin::new(String::from("tiny"));

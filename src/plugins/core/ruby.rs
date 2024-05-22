@@ -59,12 +59,14 @@ impl RubyPlugin {
             .lock()
     }
 
-    fn update_build_tool(&self) -> Result<()> {
+    async fn update_build_tool(&self) -> Result<()> {
         if *env::MISE_RUBY_INSTALL {
             self.update_ruby_install()
+                .await
                 .wrap_err("failed to update ruby-install")?;
         }
         self.update_ruby_build()
+            .await
             .wrap_err("failed to update ruby-build")
     }
 
@@ -86,11 +88,11 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         Ok(())
     }
-    fn update_ruby_build(&self) -> Result<()> {
+    async fn update_ruby_build(&self) -> Result<()> {
         let _lock = self.lock_build_tool();
         if self.ruby_build_path().exists() {
             let cur = self.ruby_build_version()?;
-            let latest = self.latest_ruby_build_version();
+            let latest = self.latest_ruby_build_version().await;
             match (cur, latest) {
                 // ruby-build is up-to-date
                 (cur, Ok(latest)) if cur == latest => return Ok(()),
@@ -127,7 +129,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         Ok(())
     }
-    fn update_ruby_install(&self) -> Result<()> {
+    async fn update_ruby_install(&self) -> Result<()> {
         let _lock = self.lock_build_tool();
         let ruby_install_path = self.ruby_install_path();
         if !ruby_install_path.exists() {
@@ -150,13 +152,13 @@ impl RubyPlugin {
         Ok(updated_at < DAILY)
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
+    async fn fetch_remote_versions(&self) -> Result<Vec<String>> {
+        match self.core.fetch_remote_versions_from_mise().await {
             Ok(Some(versions)) => return Ok(versions),
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
-        if let Err(err) = self.update_build_tool() {
+        if let Err(err) = self.update_build_tool().await {
             warn!("{err}");
         }
         let ruby_build_bin = self.ruby_build_bin();
@@ -235,9 +237,10 @@ impl RubyPlugin {
         Ok(caps.get(1).unwrap().as_str().to_string())
     }
 
-    fn latest_ruby_build_version(&self) -> Result<String> {
-        let release: GithubRelease =
-            HTTP_FETCH.json("https://api.github.com/repos/rbenv/ruby-build/releases/latest")?;
+    async fn latest_ruby_build_version(&self) -> Result<String> {
+        let release: GithubRelease = HTTP_FETCH
+            .json("https://api.github.com/repos/rbenv/ruby-build/releases/latest")
+            .await?;
         Ok(release.tag_name.trim_start_matches('v').to_string())
     }
 
@@ -253,7 +256,7 @@ impl RubyPlugin {
         tv.install_path().join("lib/rubygems_plugin")
     }
 
-    fn install_cmd<'a>(
+    async fn install_cmd<'a>(
         &'a self,
         config: &'a Config,
         tv: &ToolVersion,
@@ -264,7 +267,7 @@ impl RubyPlugin {
         } else {
             CmdLineRunner::new(self.ruby_build_bin())
                 .args(self.install_args_ruby_build(tv)?)
-                .stdin_string(self.fetch_patches()?)
+                .stdin_string(self.fetch_patches().await?)
         };
         Ok(cmd.with_pr(pr).envs(config.env()?))
     }
@@ -313,11 +316,11 @@ impl RubyPlugin {
             .collect()
     }
 
-    fn fetch_patches(&self) -> Result<String> {
+    async fn fetch_patches(&self) -> Result<String> {
         let mut patches = vec![];
         for f in &self.fetch_patch_sources() {
             if regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#).is_match(f) {
-                patches.push(HTTP.get_text(f)?);
+                patches.push(HTTP.get_text(f).await?);
             } else {
                 patches.push(file::read_to_string(f)?);
             }
@@ -326,18 +329,20 @@ impl RubyPlugin {
     }
 }
 
+#[async_trait]
 impl Forge for RubyPlugin {
     fn fa(&self) -> &ForgeArg {
         &self.core.fa
     }
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.core
             .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
+            .get_or_try_init(|| async { self.fetch_remote_versions().await })
+            .await
             .cloned()
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    async fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".ruby-version".into(), "Gemfile".into()])
     }
 
@@ -357,13 +362,14 @@ impl Forge for RubyPlugin {
     }
 
     #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type")]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        if let Err(err) = self.update_build_tool() {
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
+        if let Err(err) = self.update_build_tool().await {
             warn!("ruby build tool update error: {err:#}");
         }
         ctx.pr.set_message("running ruby-build".into());
-        let config = Config::get();
-        self.install_cmd(&config, &ctx.tv, ctx.pr.as_ref())?
+        let config = Config::get().await;
+        self.install_cmd(&config, &ctx.tv, ctx.pr.as_ref())
+            .await?
             .execute()?;
 
         self.test_ruby(&config, &ctx.tv, ctx.pr.as_ref())?;
@@ -375,7 +381,7 @@ impl Forge for RubyPlugin {
         Ok(())
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         _config: &Config,
         _ts: &Toolset,
@@ -428,8 +434,9 @@ fn parse_gemfile(body: &str) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parse_gemfile() {
+    use test_log::test;
+    #[test(tokio::test)]
+    async fn test_parse_gemfile() {
         assert_eq!(
             parse_gemfile(indoc! {r#"
             ruby '2.7.2'

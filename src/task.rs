@@ -370,15 +370,16 @@ where
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use test_log::test;
 
     use crate::task::Task;
     use crate::test::reset;
 
     use super::{config_root, name_from_path};
 
-    #[test]
-    fn test_from_path() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_from_path() {
+        reset().await;
         let test_cases = [(".mise/tasks/filetask", "filetask", vec!["ft"])];
 
         for (path, name, aliases) in test_cases {
@@ -388,9 +389,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_name_from_path() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_name_from_path() {
+        reset().await;
         let test_cases = [
             (("/.mise/tasks", "/.mise/tasks/a"), "a"),
             (("/.mise/tasks", "/.mise/tasks/a/b"), "a:b"),
@@ -404,9 +405,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_name_from_path_invalid() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_name_from_path_invalid() {
+        reset().await;
         let test_cases = [("/some/other/dir", "/.mise/tasks/a")];
 
         for (root, path) in test_cases {
@@ -414,9 +415,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_config_root() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_config_root() {
+        reset().await;
         let test_cases = [
             ("/base", Some(Path::new("/"))),
             ("/base/.mise/tasks", Some(Path::new("/base"))),

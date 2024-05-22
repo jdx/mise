@@ -410,9 +410,10 @@ enum ChildProcessOutput {
 #[cfg(test)]
 mod tests {
     use crate::cmd;
+    use test_log::test;
 
-    #[test]
-    fn test_cmd() {
+    #[test(tokio::test)]
+    async fn test_cmd() {
         let output = cmd!("echo", "foo", "bar").read().unwrap();
         assert_eq!("foo bar", output);
     }

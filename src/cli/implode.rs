@@ -23,7 +23,7 @@ pub struct Implode {
 }
 
 impl Implode {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let mut files = vec![*dirs::STATE, *dirs::DATA, *dirs::CACHE, &*env::MISE_BIN];
         if self.config {
             files.push(&dirs::CONFIG);
@@ -62,10 +62,11 @@ impl Implode {
 mod tests {
     use crate::dirs;
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_implode() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_implode() {
+        reset().await;
         let stdout = assert_cli!("implode", "--config", "--dry-run");
         assert!(stdout.contains(format!("rm -rf {}", dirs::STATE.display()).as_str()));
         assert!(stdout.contains(format!("rm -rf {}", dirs::DATA.display()).as_str()));

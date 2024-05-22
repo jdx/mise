@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -144,6 +145,7 @@ impl From<&ForgeArg> for AForge {
     }
 }
 
+#[async_trait]
 pub trait Forge: Debug + Send + Sync {
     fn id(&self) -> &str {
         &self.fa().id
@@ -173,13 +175,13 @@ pub trait Forge: Debug + Send + Sync {
         }
         Ok(deps)
     }
-    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.ensure_dependencies_installed()?;
-        self._list_remote_versions()
+        self._list_remote_versions().await
     }
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
-    fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
-        self.latest_version(Some("latest".into()))
+    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
+    async fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
+        self.latest_version(Some("latest".into())).await
     }
     fn list_installed_versions(&self) -> eyre::Result<Vec<String>> {
         let installs_path = &self.fa().installs_path;
@@ -204,8 +206,8 @@ pub trait Forge: Debug + Send + Sync {
             }
         }
     }
-    fn is_version_outdated(&self, tv: &ToolVersion, p: &dyn Forge) -> bool {
-        let latest = match tv.latest_version(p) {
+    async fn is_version_outdated(&self, tv: &ToolVersion, p: &dyn Forge) -> bool {
+        let latest = match tv.latest_version(p).await {
             Ok(latest) => latest,
             Err(e) => {
                 debug!(
@@ -233,17 +235,17 @@ pub trait Forge: Debug + Send + Sync {
         let versions = self.list_installed_versions()?;
         fuzzy_match_filter(versions, query)
     }
-    fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions()?;
+    async fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
+        let versions = self.list_remote_versions().await?;
         fuzzy_match_filter(versions, query)
     }
-    fn latest_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
+    async fn latest_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {
             Some(query) => {
-                let matches = self.list_versions_matching(&query)?;
+                let matches = self.list_versions_matching(&query).await?;
                 Ok(find_match_in_list(&matches, &query))
             }
-            None => self.latest_stable_version(),
+            None => self.latest_stable_version().await,
         }
     }
     #[requires(self.is_installed())]
@@ -293,7 +295,7 @@ pub trait Forge: Debug + Send + Sync {
             .get_all_dependencies(&ToolRequest::System(self.id().into()))?
             .into_iter()
             .collect::<HashSet<_>>();
-        let config = Config::get();
+        let config = Config::get().await;
         let ts = config.get_tool_request_set()?.filter_by_tool(&deps);
         if !ts.missing_tools().is_empty() {
             bail!(
@@ -316,10 +318,10 @@ pub trait Forge: Debug + Send + Sync {
         rmdir(&self.fa().downloads_path, pr)?;
         Ok(())
     }
-    fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
+    async fn get_aliases<'a>(&'a self) -> eyre::Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
-    fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
+    async fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![])
     }
     fn parse_legacy_file(&self, path: &Path) -> eyre::Result<String> {
@@ -334,9 +336,9 @@ pub trait Forge: Debug + Send + Sync {
     }
 
     #[requires(ctx.tv.forge.forge_type == self.get_type())]
-    fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
+    async fn install_version<'a>(&'a self, ctx: InstallContext<'a>) -> eyre::Result<()> {
         ensure!(self.is_installed(), "{} is not installed", self.id());
-        let config = Config::get();
+        let config = Config::get().await;
         let settings = Settings::try_get()?;
         if self.is_version_installed(&ctx.tv) {
             if ctx.force {
@@ -349,7 +351,7 @@ pub trait Forge: Debug + Send + Sync {
         let _lock = self.get_lock(&ctx.tv.install_path(), ctx.force)?;
         self.create_install_dirs(&ctx.tv)?;
 
-        if let Err(e) = self.install_version_impl(&ctx) {
+        if let Err(e) = self.install_version_impl(&ctx).await {
             self.cleanup_install_dirs_on_error(&settings, &ctx.tv);
             return Err(e);
         }
@@ -373,7 +375,7 @@ pub trait Forge: Debug + Send + Sync {
 
         Ok(())
     }
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()>;
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()>;
     fn uninstall_version(
         &self,
         tv: &ToolVersion,
@@ -407,14 +409,14 @@ pub trait Forge: Debug + Send + Sync {
     ) -> eyre::Result<()> {
         Ok(())
     }
-    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
         match tv.request {
             ToolRequest::System(_) => Ok(vec![]),
             _ => Ok(vec![tv.install_short_path().join("bin")]),
         }
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         _config: &Config,
         _ts: &Toolset,
@@ -474,7 +476,7 @@ pub trait Forge: Debug + Send + Sync {
     }
 
     fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
-        let config = Config::get();
+        let config = Config::get().await;
         let dependencies = self
             .get_all_dependencies(&ToolRequest::System(self.name().into()))?
             .into_iter()

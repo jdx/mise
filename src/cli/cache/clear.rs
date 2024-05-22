@@ -13,7 +13,7 @@ pub struct CacheClear {
 }
 
 impl CacheClear {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cache_dirs = match &self.plugin {
             Some(plugins) => plugins.iter().map(|p| CACHE.join(p)).collect(),
             None => vec![CACHE.to_path_buf()],
@@ -34,15 +34,17 @@ impl CacheClear {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_cache_clear() {
+    use test_log::test;
+
+    #[test(tokio::test)]
+    async fn test_cache_clear() {
         assert_cli_snapshot!("cache", "clear", @r###"
         mise cache cleared
         "###);
     }
 
-    #[test]
-    fn test_cache_clear_plugin() {
+    #[test(tokio::test)]
+    async fn test_cache_clear_plugin() {
         assert_cli_snapshot!("cache", "clear", "tiny", @r###"
         mise cache cleared for tiny
         "###);

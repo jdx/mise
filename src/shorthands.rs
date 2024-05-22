@@ -56,9 +56,9 @@ mod tests {
     use super::*;
     use test_log::test;
 
-    #[test]
-    fn test_get_shorthands() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_get_shorthands() {
+        reset().await;
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
@@ -71,9 +71,9 @@ mod tests {
         assert_str_eq!(shorthands["xxxxxx"], "https://xxxxxx");
     }
 
-    #[test]
-    fn test_get_shorthands_missing_file() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_get_shorthands_missing_file() {
+        reset().await;
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("test/fixtures/missing.toml".into());

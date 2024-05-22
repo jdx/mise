@@ -1,12 +1,12 @@
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
 use eyre::{Report, Result};
 use once_cell::sync::Lazy;
-use reqwest::blocking::{ClientBuilder, Response};
 use reqwest::IntoUrl;
+use reqwest::{ClientBuilder, Response};
 
 use crate::cli::version;
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
@@ -25,7 +25,7 @@ pub static HTTP_FETCH: Lazy<Client> =
 
 #[derive(Debug)]
 pub struct Client {
-    reqwest: reqwest::blocking::Client,
+    reqwest: reqwest::Client,
 }
 
 impl Client {
@@ -44,8 +44,22 @@ impl Client {
             .gzip(true)
     }
 
-    pub fn get<U: IntoUrl>(&self, url: U) -> Result<Response> {
+    pub async fn get<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let mut url = url.into_url().unwrap();
+
+        match self._get(url.clone()).await {
+            Ok(resp) => Ok(resp),
+            Err(_) if url.scheme() == "http" => {
+                // try with https since http may be blocked
+                url.set_scheme("https").unwrap();
+                self._get(url).await
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    async fn _get<U: IntoUrl>(&self, url: U) -> Result<Response> {
+        let url = url.into_url().unwrap();
         debug!("GET {}", url);
         let mut req = self.reqwest.get(url.clone());
         if url.host_str() == Some("api.github.com") {
@@ -54,52 +68,38 @@ impl Client {
             }
         }
 
-        let resp = match req.send() {
-            Ok(resp) => resp,
-            Err(_) if url.scheme() == "http" => {
-                // try with https since http may be blocked
-                url.set_scheme("https").unwrap();
-                return self.get(url);
-            }
-            Err(err) => return Err(err.into()),
-        };
-
+        let resp = req.send().await?;
         debug!("GET {url} {}", resp.status());
-        if url.scheme() == "http" && resp.error_for_status_ref().is_err() {
-            // try with https since http may be blocked
-            url.set_scheme("https").unwrap();
-            return self.get(url);
-        }
         resp.error_for_status_ref()?;
         Ok(resp)
     }
 
-    pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
+    pub async fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         let mut url = url.into_url().unwrap();
-        let resp = self.get(url.clone())?;
-        let text = resp.text()?;
+        let resp = self.get(url.clone()).await?;
+        let text = resp.text().await?;
         if text.starts_with("<!DOCTYPE html>") {
             if url.scheme() == "http" {
                 // try with https since http may be blocked
                 url.set_scheme("https").unwrap();
-                return self.get_text(url);
+                return self.get_text(url).await;
             }
             bail!("Got HTML instead of text from {}", url);
         }
         Ok(text)
     }
 
-    pub fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
+    pub async fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url().unwrap();
-        let resp = self.get(url)?;
-        let json = resp.json()?;
+        let resp = self.get(url).await?;
+        let json = resp.json().await?;
         Ok(json)
     }
 
-    pub fn download_file<U: IntoUrl>(
+    pub async fn download_file<U: IntoUrl>(
         &self,
         url: U,
         path: &Path,
@@ -107,7 +107,7 @@ impl Client {
     ) -> Result<()> {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
-        let mut resp = self.get(url)?;
+        let mut resp = self.get(url).await?;
         if let Some(length) = resp.content_length() {
             if let Some(pr) = pr {
                 pr.set_length(length);
@@ -116,18 +116,14 @@ impl Client {
 
         file::create_dir_all(path.parent().unwrap())?;
 
-        let mut buf = [0; 32 * 1024];
         let mut file = File::create(path)?;
-        loop {
-            let n = resp.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            file.write_all(&buf[..n])?;
+        while let Some(chunk) = resp.chunk().await? {
+            file.write_all(&chunk)?;
             if let Some(pr) = pr {
-                pr.inc(n as u64);
+                pr.inc(chunk.len() as u64);
             }
         }
+
         Ok(())
     }
 }

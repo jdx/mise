@@ -86,11 +86,13 @@ impl CorePlugin {
         run_with_timeout(f, *env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT)
     }
 
-    pub fn fetch_remote_versions_from_mise(&self) -> Result<Option<Vec<String>>> {
+    pub async fn fetch_remote_versions_from_mise(&self) -> Result<Option<Vec<String>>> {
         if !*env::MISE_USE_VERSIONS_HOST {
             return Ok(None);
         }
-        let raw = HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", &self.name))?;
+        let raw = HTTP_FETCH
+            .get_text(format!("http://mise-versions.jdx.dev/{}", &self.name))
+            .await?;
         let versions = raw
             .lines()
             .map(|v| v.trim().to_string())

@@ -28,8 +28,8 @@ pub struct TasksDeps {
 }
 
 impl TasksDeps {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::try_get()?;
         settings.ensure_experimental("`mise tasks deps`")?;
 
@@ -162,10 +162,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_tasks_deps_tree() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_tasks_deps_tree() {
+        reset().await;
         assert_cli_snapshot!("tasks", "deps", @r###"
         configtask
         filetask
@@ -177,9 +178,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_tasks_deps_tree_args() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_tasks_deps_tree_args() {
+        reset().await;
         assert_cli_snapshot!("tasks", "deps", "filetask", "lint", "test", @r###"
         filetask
         ├── test
@@ -190,9 +191,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_tasks_deps_dot() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_tasks_deps_dot() {
+        reset().await;
         assert_cli_snapshot!("tasks", "deps", "--dot", @r###"
         digraph {
             0 [ label = "configtask"]

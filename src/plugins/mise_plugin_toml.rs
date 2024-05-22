@@ -105,15 +105,16 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_fixture() {
+    use test_log::test;
+    #[test(tokio::test)]
+    async fn test_fixture() {
         let cf = MisePluginToml::from_file(&dirs::HOME.join("fixtures/mise.plugin.toml")).unwrap();
 
         assert_debug_snapshot!(cf.exec_env);
     }
 
-    #[test]
-    fn test_exec_env() {
+    #[test(tokio::test)]
+    async fn test_exec_env() {
         let cf = parse(&formatdoc! {r#"
         [list-aliases]
         data = "test-aliases"

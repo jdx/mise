@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::fmt::Debug;
 
 use crate::cache::CacheManager;
@@ -14,6 +15,7 @@ pub struct GoForge {
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
+#[async_trait]
 impl Forge for GoForge {
     fn get_type(&self) -> ForgeType {
         ForgeType::Go
@@ -27,9 +29,9 @@ impl Forge for GoForge {
         Ok(vec!["go".into()])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
-            .get_or_try_init(|| {
+            .get_or_try_init(|| async {
                 let mut mod_path = Some(self.name());
                 let env = self.dependency_env()?;
 
@@ -55,10 +57,11 @@ impl Forge for GoForge {
 
                 Ok(vec![])
             })
+            .await
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
+    async fn install_version_impl<'a>(&'a self, ctx: &'a InstallContext<'a>) -> eyre::Result<()> {
         let settings = Settings::get();
         settings.ensure_experimental("go backend")?;
 

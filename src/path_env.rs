@@ -87,9 +87,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_path_env() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_path_env() {
+        reset().await;
         let mut path_env = PathEnv::from_iter(
             [
                 "/before-1",
@@ -114,9 +114,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_path_env_no_mise() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_path_env_no_mise() {
+        reset().await;
         let mut path_env = PathEnv::from_iter(
             [
                 "/before-1",

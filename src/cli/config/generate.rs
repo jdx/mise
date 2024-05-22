@@ -17,7 +17,7 @@ pub struct ConfigGenerate {
 }
 
 impl ConfigGenerate {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let settings = Settings::try_get()?;
         settings.ensure_experimental("`mise config generate`")?;
         let doc = r#"
@@ -94,14 +94,14 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_generate() {
-        with_settings!({
-            let out = assert_cli!("config", "generate");
-            for line in out.lines() {
-                assert!(line.len() < 80);
-            }
-            assert_cli_snapshot!("cfg", "generate");
-        });
+    use test_log::test;
+
+    #[test(tokio::test)]
+    async fn test_generate() {
+        let out = assert_cli!("config", "generate");
+        for line in out.lines() {
+            assert!(line.len() < 80);
+        }
+        assert_cli_snapshot!("cfg", "generate");
     }
 }

@@ -27,20 +27,20 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self {
-            Self::Deps(cmd) => cmd.run(),
-            Self::Edit(cmd) => cmd.run(),
-            Self::Ls(cmd) => cmd.run(),
-            Self::Run(cmd) => cmd.run(),
+            Self::Deps(cmd) => cmd.run().await,
+            Self::Edit(cmd) => cmd.run().await,
+            Self::Ls(cmd) => cmd.run().await,
+            Self::Run(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Tasks {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(self.ls));
 
-        cmd.run()
+        cmd.run().await
     }
 }

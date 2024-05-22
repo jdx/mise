@@ -12,13 +12,13 @@ use crate::{cmd, dirs, env, file, forge};
 macro_rules! assert_cli_snapshot {
     ($($args:expr),+, @$snapshot:literal) => {
         let args = &vec!["mise".into(), $($args.into()),+];
-        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
+        let (stdout, stderr) = $crate::test::cli_run(args).await.unwrap();
         let output = [stdout, stderr].join("\n").trim().to_string();
         insta::assert_snapshot!(output, @$snapshot);
     };
     ($($args:expr),+) => {
         let args = &vec!["mise".into(), $($args.into()),+];
-        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
+        let (stdout, stderr) = $crate::test::cli_run(args).await.unwrap();
         let output = [stdout, stderr].join("\n").trim().to_string();
         insta::assert_snapshot!(output);
     };
@@ -28,7 +28,7 @@ macro_rules! assert_cli_snapshot {
 macro_rules! assert_cli {
     ($($args:expr),+) => {{
         let args = &vec!["mise".into(), $($args.into()),+];
-        $crate::test::cli_run(args).unwrap();
+        $crate::test::cli_run(args).await.unwrap();
         let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
         console::strip_ansi_codes(&output).trim().to_string()
     }};
@@ -38,7 +38,7 @@ macro_rules! assert_cli {
 macro_rules! assert_cli_err {
     ($($args:expr),+) => {{
         let args = &vec!["mise".into(), $($args.into()),+];
-        $crate::test::cli_run(args).unwrap_err()
+        $crate::test::cli_run(args).await.unwrap_err()
     }};
 }
 
@@ -71,7 +71,7 @@ fn init() {
     //env::set_var("TERM", "dumb");
 }
 
-pub fn reset() {
+pub async fn reset() {
     Config::reset();
     forge::reset();
     config_file::reset();
@@ -167,14 +167,16 @@ pub fn replace_path(input: &str) -> String {
         .replace(&*env::MISE_BIN.to_string_lossy(), "mise")
 }
 
-pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
+pub async fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
     Config::reset();
     forge::reset();
     config_file::reset();
     env::ARGS.write().unwrap().clone_from(args);
     STDOUT.lock().unwrap().clear();
     STDERR.lock().unwrap().clear();
-    Cli::run(args).with_section(|| format!("{}", args.join(" ").header("Command:")))?;
+    Cli::run(args)
+        .await
+        .with_section(|| format!("{}", args.join(" ").header("Command:")))?;
     let stdout = clean_output(STDOUT.lock().unwrap().join("\n"));
     let stderr = clean_output(STDERR.lock().unwrap().join("\n"));
 

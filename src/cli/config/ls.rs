@@ -20,8 +20,8 @@ pub struct ConfigLs {
 }
 
 impl ConfigLs {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::try_get()?;
         settings.ensure_experimental("`mise config ls`")?;
         let rows = config
@@ -73,10 +73,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_config_ls() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_config_ls() {
+        reset().await;
         assert_cli_snapshot!("cfg", "--no-headers", @r###"
         ~/cwd/.test-tool-versions tiny       
         ~/.test-tool-versions     tiny, dummy

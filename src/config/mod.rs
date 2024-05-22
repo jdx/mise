@@ -2,14 +2,17 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, RwLock};
+use tokio_stream::StreamExt;
 
 use eyre::{Context, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::Lazy;
 use rayon::prelude::*;
+use tokio::sync::OnceCell;
 
+use futures::stream::TryStreamExt;
 pub use settings::Settings;
 
 use crate::cli::args::ForgeArg;
@@ -43,9 +46,9 @@ pub struct Config {
     pub project_root: Option<PathBuf>,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
-    all_aliases: OnceLock<AliasMap>,
+    all_aliases: OnceCell<AliasMap>,
     repo_urls: HashMap<String, String>,
-    shorthands: OnceLock<HashMap<String, String>>,
+    shorthands: OnceCell<HashMap<String, String>>,
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
 }
@@ -53,22 +56,22 @@ pub struct Config {
 static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 
 impl Config {
-    pub fn get() -> Arc<Self> {
-        Self::try_get().unwrap()
+    pub async fn get() -> Arc<Self> {
+        Self::try_get().await.unwrap()
     }
-    pub fn try_get() -> Result<Arc<Self>> {
+    pub async fn try_get() -> Result<Arc<Self>> {
         if let Some(config) = &*CONFIG.read().unwrap() {
             return Ok(config.clone());
         }
-        let config = Arc::new(Self::load()?);
+        let config = Arc::new(Self::load().await?);
         *CONFIG.write().unwrap() = Some(config.clone());
         Ok(config)
     }
-    pub fn load() -> Result<Self> {
+    pub async fn load() -> Result<Self> {
         let settings = Settings::try_get()?;
         trace!("Settings: {:#?}", settings);
 
-        let legacy_files = load_legacy_files(&settings);
+        let legacy_files = load_legacy_files(&settings).await;
         let config_filenames = legacy_files
             .keys()
             .chain(DEFAULT_CONFIG_FILENAMES.iter())
@@ -100,68 +103,78 @@ impl Config {
                 .collect()
         })
     }
-    pub fn env(&self) -> eyre::Result<IndexMap<String, String>> {
+    pub async fn env(&self) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
-            .env_with_sources()?
+            .env_with_sources()
+            .await?
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect())
     }
-    pub fn env_with_sources(&self) -> eyre::Result<&EnvWithSources> {
-        self.env_with_sources.get_or_try_init(|| {
-            let mut env = self.env_results()?.env.clone();
-            let settings = Settings::get();
-            for env_file in settings.env_files() {
-                match dotenvy::from_path_iter(&env_file) {
-                    Ok(iter) => {
-                        for item in iter {
-                            let (k, v) = item.unwrap_or_else(|err| {
-                                warn!("env_file: {err}");
-                                Default::default()
-                            });
-                            env.insert(k, (v, env_file.clone()));
+    pub async fn env_with_sources(&self) -> eyre::Result<&EnvWithSources> {
+        self.env_with_sources
+            .get_or_try_init(|| async {
+                let mut env = self.env_results().await?.env.clone();
+                let settings = Settings::get();
+                for env_file in settings.env_files() {
+                    match dotenvy::from_path_iter(&env_file) {
+                        Ok(iter) => {
+                            for item in iter {
+                                let (k, v) = item.unwrap_or_else(|err| {
+                                    warn!("env_file: {err}");
+                                    Default::default()
+                                });
+                                env.insert(k, (v, env_file.clone()));
+                            }
                         }
+                        Err(err) => trace!("env_file: {err}"),
                     }
-                    Err(err) => trace!("env_file: {err}"),
                 }
-            }
-            Ok(env)
-        })
+                Ok(env)
+            })
+            .await
     }
-    pub fn env_results(&self) -> eyre::Result<&EnvResults> {
-        self.env.get_or_try_init(|| self.load_env())
+    pub async fn env_results(&self) -> eyre::Result<&EnvResults> {
+        self.env.get_or_try_init(|| async { self.load_env() }).await
     }
-    pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
-        Ok(&self.env_results()?.env_paths)
+    pub async fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
+        Ok(&self.env_results().await?.env_paths)
     }
-    pub fn get_shorthands(&self) -> &Shorthands {
+    pub async fn get_shorthands(&self) -> &Shorthands {
         self.shorthands
-            .get_or_init(|| get_shorthands(&Settings::get()))
+            .get_or_init(|| async { get_shorthands(&Settings::get()) })
+            .await
     }
-    pub fn get_tool_request_set(&self) -> eyre::Result<&ToolRequestSet> {
+    pub async fn get_tool_request_set(&self) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
-            .get_or_try_init(|| ToolRequestSetBuilder::new().build())
+            .get_or_try_init(|| async { ToolRequestSetBuilder::new().build() })
+            .await
     }
 
-    pub fn get_repo_url(&self, plugin_name: &String) -> Option<String> {
+    pub async fn get_repo_url(&self, plugin_name: &String) -> Option<String> {
         match self.repo_urls.get(plugin_name) {
             Some(url) => Some(url),
-            None => self.get_shorthands().get(plugin_name),
+            None => self.get_shorthands().await.get(plugin_name),
         }
         .cloned()
     }
 
-    pub fn get_all_aliases(&self) -> &AliasMap {
-        self.all_aliases.get_or_init(|| self.load_all_aliases())
+    pub async fn get_all_aliases(&self) -> &AliasMap {
+        self.all_aliases
+            .get_or_init(|| async { self.load_all_aliases().await })
+            .await
     }
 
-    pub fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
-        self.tasks.get_or_try_init(|| self.load_all_tasks())
+    pub async fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
+        self.tasks
+            .get_or_try_init(|| async { self.load_all_tasks() })
+            .await
     }
 
-    pub fn tasks_with_aliases(&self) -> Result<BTreeMap<String, &Task>> {
+    pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, &Task>> {
         Ok(self
-            .tasks()?
+            .tasks()
+            .await?
             .iter()
             .flat_map(|(_, t)| {
                 t.aliases
@@ -173,30 +186,30 @@ impl Config {
             .collect())
     }
 
-    pub fn resolve_alias(&self, forge: &dyn Forge, v: &str) -> Result<String> {
+    pub async fn resolve_alias(&self, forge: &dyn Forge, v: &str) -> Result<String> {
         if let Some(plugin_aliases) = self.aliases.get(forge.fa()) {
             if let Some(alias) = plugin_aliases.get(v) {
                 return Ok(alias.clone());
             }
         }
-        if let Some(alias) = forge.get_aliases()?.get(v) {
+        if let Some(alias) = forge.get_aliases().await?.get(v) {
             return Ok(alias.clone());
         }
         Ok(v.to_string())
     }
 
-    fn load_all_aliases(&self) -> AliasMap {
+    async fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
-        let plugin_aliases: Vec<_> = forge::list()
-            .into_par_iter()
-            .map(|forge| {
-                let aliases = forge.get_aliases().unwrap_or_else(|err| {
+        let plugin_aliases: Vec<_> = tokio_stream::iter(forge::list())
+            .map(|forge| async {
+                let aliases = forge.get_aliases().await.unwrap_or_else(|err| {
                     warn!("get_aliases: {err}");
                     BTreeMap::new()
                 });
                 (forge.fa().clone(), aliases)
             })
-            .collect();
+            .try_collect()
+            .await;
         for (fa, plugin_aliases) in plugin_aliases {
             for (from, to) in plugin_aliases {
                 aliases.entry(fa.clone()).or_default().insert(from, to);
@@ -377,7 +390,7 @@ impl Config {
         Ok(())
     }
 
-    fn load_env(&self) -> eyre::Result<EnvResults> {
+    async fn load_env(&self) -> eyre::Result<EnvResults> {
         let entries = self
             .config_files
             .iter()
@@ -393,8 +406,8 @@ impl Config {
         EnvResults::resolve(&env::PRISTINE_ENV, entries)
     }
 
-    pub fn watch_files(&self) -> eyre::Result<BTreeSet<PathBuf>> {
-        let env_results = self.env_results()?;
+    pub async fn watch_files(&self) -> eyre::Result<BTreeSet<PathBuf>> {
+        let env_results = self.env_results().await?;
         Ok(self
             .config_files
             .keys()
@@ -419,7 +432,7 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
         .map(|pr| pr.to_path_buf())
 }
 
-fn load_legacy_files(settings: &Settings) -> BTreeMap<String, Vec<String>> {
+async fn load_legacy_files(settings: &Settings) -> BTreeMap<String, Vec<String>> {
     if !settings.legacy_version_file {
         return BTreeMap::new();
     }
@@ -430,16 +443,18 @@ fn load_legacy_files(settings: &Settings) -> BTreeMap<String, Vec<String>> {
                 .legacy_version_file_disable_tools
                 .contains(tool.id())
         })
-        .filter_map(|tool| match tool.legacy_filenames() {
-            Ok(filenames) => Some(
-                filenames
-                    .iter()
-                    .map(|f| (f.to_string(), tool.id().to_string()))
-                    .collect_vec(),
-            ),
-            Err(err) => {
-                eprintln!("Error: {err}");
-                None
+        .filter_map(|tool| async {
+            match tool.legacy_filenames().await {
+                Ok(filenames) => Some(
+                    filenames
+                        .iter()
+                        .map(|f| (f.to_string(), tool.id().to_string()))
+                        .collect_vec(),
+                ),
+                Err(err) => {
+                    eprintln!("Error: {err}");
+                    None
+                }
             }
         })
         .collect::<Vec<Vec<(String, String)>>>()
@@ -656,11 +671,12 @@ fn default_task_includes() -> Vec<PathBuf> {
 mod tests {
     use super::*;
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_load() {
-        reset();
-        let config = Config::load().unwrap();
+    #[test(tokio::test)]
+    async fn test_load() {
+        reset().await;
+        let config = Config::load().await.unwrap();
         assert_debug_snapshot!(config);
     }
 }

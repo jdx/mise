@@ -11,7 +11,7 @@ use crate::cli::{version, Cli};
 pub struct RenderMangen {}
 
 impl RenderMangen {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cli = Cli::command()
             .version(version::V.to_string())
             .disable_colored_help(true);
@@ -36,9 +36,10 @@ fn project_root() -> PathBuf {
 mod tests {
     use crate::env::HOME;
     use crate::file;
+    use test_log::test;
 
-    #[test]
-    fn test_render_mangen() {
+    #[test(tokio::test)]
+    async fn test_render_mangen() {
         let out_dir = HOME.parent().unwrap().join("man").join("man1");
         let orig = file::read_to_string(out_dir.join("mise.1")).unwrap();
         assert_cli!("render-mangen");

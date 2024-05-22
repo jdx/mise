@@ -29,21 +29,21 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Config) -> Result<()> {
         match self {
-            Self::Activate(cmd) => cmd.run(),
-            Self::Envrc(cmd) => cmd.run(config),
-            Self::Exec(cmd) => cmd.run(config),
+            Self::Activate(cmd) => cmd.run().await,
+            Self::Envrc(cmd) => cmd.run(config).await,
+            Self::Exec(cmd) => cmd.run(config).await,
         }
     }
 }
 
 impl Direnv {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let cmd = self
             .command
             .unwrap_or(Commands::Activate(activate::DirenvActivate {}));
-        cmd.run(&config)
+        cmd.run(&config).await
     }
 }

@@ -23,20 +23,20 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self {
-            Self::Ls(cmd) => cmd.run(),
-            Self::Generate(cmd) => cmd.run(),
+            Self::Ls(cmd) => cmd.run().await,
+            Self::Generate(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Config {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::ConfigLs {
             no_header: self.no_header,
         }));
 
-        cmd.run()
+        cmd.run().await
     }
 }

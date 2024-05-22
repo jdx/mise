@@ -167,23 +167,24 @@ impl SingleReport for VerboseReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_log::test;
 
-    #[test]
-    fn test_progress_report() {
+    #[test(tokio::test)]
+    async fn test_progress_report() {
         let pr = ProgressReport::new("foo".into());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }
 
-    #[test]
-    fn test_progress_report_verbose() {
+    #[test(tokio::test)]
+    async fn test_progress_report_verbose() {
         let pr = VerboseReport::new("PREFIX".to_string());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }
 
-    #[test]
-    fn test_progress_report_quiet() {
+    #[test(tokio::test)]
+    async fn test_progress_report_quiet() {
         let pr = QuietReport::new();
         pr.set_message("message".into());
         pr.finish_with_message("message".into());

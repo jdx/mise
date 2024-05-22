@@ -35,7 +35,7 @@ pub struct Trust {
 }
 
 impl Trust {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.untrust {
             self.untrust()
         } else if self.all {
@@ -128,9 +128,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_trust() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_trust() {
+        reset().await;
         assert_cli!("trust", "--untrust");
         assert_cli_snapshot!("trust");
         assert_cli_snapshot!("trust", "--untrust");

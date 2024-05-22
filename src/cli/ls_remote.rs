@@ -3,6 +3,7 @@ use std::sync::Arc;
 use eyre::Result;
 use itertools::Itertools;
 use rayon::prelude::*;
+use tokio::runtime::Handle;
 
 use crate::cli::args::ToolArg;
 use crate::forge;
@@ -32,15 +33,15 @@ pub struct LsRemote {
 }
 
 impl LsRemote {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if let Some(plugin) = self.get_plugin()? {
-            self.run_single(plugin)
+            self.run_single(plugin).await
         } else {
-            self.run_all()
+            self.run_all().await
         }
     }
 
-    fn run_single(self, plugin: Arc<dyn Forge>) -> Result<()> {
+    async fn run_single(self, plugin: Arc<dyn Forge>) -> Result<()> {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
@@ -49,7 +50,7 @@ impl LsRemote {
             _ => self.prefix.clone(),
         };
 
-        let versions = plugin.list_remote_versions()?;
+        let versions = plugin.list_remote_versions().await?;
         let versions = match prefix {
             Some(prefix) => versions
                 .into_iter()
@@ -65,12 +66,15 @@ impl LsRemote {
         Ok(())
     }
 
-    fn run_all(self) -> Result<()> {
+    async fn run_all(self) -> Result<()> {
+        let handle = Handle::current();
         let versions = forge::list()
             .into_par_iter()
             .map(|p| {
-                let versions = p.list_remote_versions()?;
-                Ok((p, versions))
+                handle.block_on(async {
+                    let versions = p.list_remote_versions().await?;
+                    Ok((p, versions))
+                })
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -116,13 +120,15 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_list_remote() {
+    use test_log::test;
+
+    #[test(tokio::test)]
+    async fn test_list_remote() {
         assert_cli_snapshot!("list-remote", "dummy");
     }
 
-    #[test]
-    fn test_ls_remote_prefix() {
+    #[test(tokio::test)]
+    async fn test_ls_remote_prefix() {
         assert_cli_snapshot!("list-remote", "dummy", "1");
         assert_cli_snapshot!("list-remote", "dummy@2");
     }

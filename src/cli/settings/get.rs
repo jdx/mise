@@ -14,7 +14,7 @@ pub struct SettingsGet {
 }
 
 impl SettingsGet {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         let settings = Settings::try_get()?;
         let mut value = toml::Value::Table(settings.as_dict()?);
         let mut key = Some(self.setting.as_str());
@@ -47,16 +47,17 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::test::reset;
+    use test_log::test;
 
-    #[test]
-    fn test_settings_get() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_settings_get() {
+        reset().await;
         assert_cli_snapshot!("settings", "get", "legacy_version_file", @"true");
         assert_cli_snapshot!("settings", "get", "status.missing_tools", @r###""if_other_versions_installed""###);
     }
 
-    #[test]
-    fn test_settings_get_unknown() {
+    #[test(tokio::test)]
+    async fn test_settings_get_unknown() {
         let err = assert_cli_err!("settings", "get", "unknown");
         assert_snapshot!(err, @"Unknown setting: unknown");
     }

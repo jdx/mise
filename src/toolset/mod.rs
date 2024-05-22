@@ -98,7 +98,7 @@ impl Toolset {
         self.versions = versions;
         self.source = other.source;
     }
-    pub fn resolve(&mut self) -> eyre::Result<()> {
+    pub async fn resolve(&mut self) -> eyre::Result<()> {
         self.list_missing_plugins();
         let errors = self
             .versions
@@ -414,7 +414,7 @@ impl Toolset {
             })
     }
     pub fn install_missing_bin(&mut self, bin_name: &str) -> Result<Option<Vec<ToolVersion>>> {
-        let config = Config::try_get()?;
+        let config = Config::try_get().await?;
         let plugins = self
             .list_installed_versions()?
             .into_iter()

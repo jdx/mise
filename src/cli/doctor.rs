@@ -31,7 +31,7 @@ pub struct Doctor {
 }
 
 impl Doctor {
-    pub fn run(mut self) -> eyre::Result<()> {
+    pub async fn run(mut self) -> eyre::Result<()> {
         inline_section("version", &*VERSION)?;
         inline_section("activated", yn(env::is_activated()))?;
         inline_section("shims_on_path", yn(shims_on_path()))?;
@@ -40,7 +40,7 @@ impl Doctor {
         section("shell", shell())?;
         section("dirs", mise_dirs())?;
 
-        match Config::try_get() {
+        match Config::try_get().await {
             Ok(config) => self.analyze_config(config)?,
             Err(err) => self.errors.push(format!("failed to load config: {err}")),
         }
@@ -50,7 +50,7 @@ impl Doctor {
         section("env_vars", mise_env_vars())?;
         self.analyze_settings()?;
 
-        if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
+        if let Some(latest) = version::check_for_new_version(duration::HOURLY).await {
             self.errors.push(format!(
                 "new mise version {latest} available, currently on {}",
                 *version::V

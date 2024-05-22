@@ -54,9 +54,9 @@ mod tests {
     use crate::test::reset;
     use test_log::test;
 
-    #[test]
-    fn test_exact_match() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_exact_match() {
+        reset().await;
         assert_cli!("plugin", "add", "tiny");
         let plugin = ExternalPlugin::new(String::from("tiny"));
         let version = plugin
@@ -68,9 +68,9 @@ mod tests {
         assert_str_eq!(version, "3.1.0");
     }
 
-    #[test]
-    fn test_latest_stable() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_latest_stable() {
+        reset().await;
         let plugin = ExternalPlugin::new(String::from("dummy"));
         let version = plugin.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");

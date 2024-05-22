@@ -17,8 +17,8 @@ pub struct SyncPython {
 }
 
 impl SyncPython {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let python = plugins::get("python");
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
@@ -50,8 +50,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_pyenv() {
+    use test_log::test;
+    #[test(tokio::test)]
+    async fn test_pyenv() {
         assert_cli!("sync", "python", "--pyenv");
     }
 }

@@ -41,8 +41,8 @@ pub struct Set {
 }
 
 impl Set {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         if self.remove.is_none() && self.env_vars.is_none() {
             let rows = config
                 .env_with_sources()?
@@ -127,6 +127,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use test_log::test;
 
     use crate::test::reset;
     use crate::{env, file};
@@ -137,14 +138,14 @@ mod tests {
         cf_path
     }
 
-    #[test]
-    fn test_show_env_vars() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_show_env_vars() {
+        reset().await;
         assert_cli_snapshot!("env-vars");
     }
 
-    #[test]
-    fn test_env_vars() {
+    #[test(tokio::test)]
+    async fn test_env_vars() {
         // Using the default file
         let filename = ".test.mise.toml";
         let cf_path = remove_config_file(filename);
@@ -162,8 +163,8 @@ mod tests {
         file::remove_file(filename).unwrap();
     }
 
-    #[test]
-    fn test_env_vars_remove() {
+    #[test(tokio::test)]
+    async fn test_env_vars_remove() {
         // Using the default file
         let filename = ".test.mise.toml";
         let cf_path = remove_config_file(filename);

@@ -104,36 +104,36 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_activate() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_activate() {
+        reset().await;
         let bash = Bash::default();
         let exe = Path::new("/some/dir/mise");
         assert_snapshot!(bash.activate(exe, " --status".into()));
     }
 
-    #[test]
-    fn test_set_env() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_set_env() {
+        reset().await;
         assert_snapshot!(Bash::default().set_env("FOO", "1"));
     }
 
-    #[test]
-    fn test_prepend_env() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_prepend_env() {
+        reset().await;
         let bash = Bash::default();
         assert_snapshot!(replace_path(&bash.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
-    #[test]
-    fn test_unset_env() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_unset_env() {
+        reset().await;
         assert_snapshot!(Bash::default().unset_env("FOO"));
     }
 
-    #[test]
-    fn test_deactivate() {
-        reset();
+    #[test(tokio::test)]
+    async fn test_deactivate() {
+        reset().await;
         let deactivate = Bash::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }
