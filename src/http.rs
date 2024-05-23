@@ -1,12 +1,14 @@
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
 use eyre::{Report, Result};
 use once_cell::sync::Lazy;
-use reqwest::blocking::{ClientBuilder, Response};
 use reqwest::IntoUrl;
+use reqwest::{ClientBuilder, Response};
+use tokio::runtime::Runtime;
+use url::Url;
 
 use crate::cli::version;
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
@@ -25,7 +27,7 @@ pub static HTTP_FETCH: Lazy<Client> =
 
 #[derive(Debug)]
 pub struct Client {
-    reqwest: reqwest::blocking::Client,
+    reqwest: reqwest::Client,
 }
 
 impl Client {
@@ -44,40 +46,42 @@ impl Client {
             .gzip(true)
     }
 
-    pub fn get<U: IntoUrl>(&self, url: U) -> Result<Response> {
-        let mut url = url.into_url().unwrap();
-        debug!("GET {}", url);
-        let mut req = self.reqwest.get(url.clone());
-        if url.host_str() == Some("api.github.com") {
-            if let Some(token) = &*env::GITHUB_API_TOKEN {
-                req = req.header("authorization", format!("token {}", token));
+    async fn get<U: IntoUrl>(&self, url: U) -> Result<Response> {
+        let get = |url: Url| async move {
+            debug!("GET {}", &url);
+            let mut req = self.reqwest.get(url.clone());
+            if url.host_str() == Some("api.github.com") {
+                if let Some(token) = &*env::GITHUB_API_TOKEN {
+                    req = req.header("authorization", format!("token {}", token));
+                }
             }
-        }
-
-        let resp = match req.send() {
+            let resp = req.send().await?;
+            debug!("GET {url} {}", resp.status());
+            resp.error_for_status_ref()?;
+            Ok(resp)
+        };
+        let mut url = url.into_url().unwrap();
+        let resp = match get(url.clone()).await {
             Ok(resp) => resp,
             Err(_) if url.scheme() == "http" => {
                 // try with https since http may be blocked
                 url.set_scheme("https").unwrap();
-                return self.get(url);
+                get(url).await?
             }
-            Err(err) => return Err(err.into()),
+            Err(err) => return Err(err),
         };
 
-        debug!("GET {url} {}", resp.status());
-        if url.scheme() == "http" && resp.error_for_status_ref().is_err() {
-            // try with https since http may be blocked
-            url.set_scheme("https").unwrap();
-            return self.get(url);
-        }
         resp.error_for_status_ref()?;
         Ok(resp)
     }
 
     pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         let mut url = url.into_url().unwrap();
-        let resp = self.get(url.clone())?;
-        let text = resp.text()?;
+        let rt = self.runtime()?;
+        let text = rt.block_on(async {
+            let resp = self.get(url.clone()).await?;
+            Ok::<String, eyre::Error>(resp.text().await?)
+        })?;
         if text.starts_with("<!DOCTYPE html>") {
             if url.scheme() == "http" {
                 // try with https since http may be blocked
@@ -94,8 +98,11 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url().unwrap();
-        let resp = self.get(url)?;
-        let json = resp.json()?;
+        let rt = self.runtime()?;
+        let json = rt.block_on(async {
+            let resp = self.get(url).await?;
+            Ok::<T, eyre::Error>(resp.json().await?)
+        })?;
         Ok(json)
     }
 
@@ -107,28 +114,35 @@ impl Client {
     ) -> Result<()> {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
-        let mut resp = self.get(url)?;
-        if let Some(length) = resp.content_length() {
-            if let Some(pr) = pr {
-                pr.set_length(length);
-            }
-        }
 
-        file::create_dir_all(path.parent().unwrap())?;
+        let rt = self.runtime()?;
+        rt.block_on(async {
+            let mut resp = self.get(url).await?;
+            if let Some(length) = resp.content_length() {
+                if let Some(pr) = pr {
+                    pr.set_length(length);
+                }
+            }
 
-        let mut buf = [0; 32 * 1024];
-        let mut file = File::create(path)?;
-        loop {
-            let n = resp.read(&mut buf)?;
-            if n == 0 {
-                break;
+            file::create_dir_all(path.parent().unwrap())?;
+            let mut file = File::create(path)?;
+            while let Some(chunk) = resp.chunk().await? {
+                file.write_all(&chunk)?;
+                if let Some(pr) = pr {
+                    pr.inc(chunk.len() as u64);
+                }
             }
-            file.write_all(&buf[..n])?;
-            if let Some(pr) = pr {
-                pr.inc(n as u64);
-            }
-        }
+            Ok::<(), eyre::Error>(())
+        })?;
         Ok(())
+    }
+
+    fn runtime(&self) -> Result<Runtime, Report> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .enable_io()
+            .build()?;
+        Ok(rt)
     }
 }
 

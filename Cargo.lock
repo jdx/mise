@@ -1664,6 +1664,7 @@ dependencies = [
  "test-case",
  "test-log",
  "thiserror",
+ "tokio",
  "toml",
  "toml_edit",
  "url",
