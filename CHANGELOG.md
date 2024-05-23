@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.5.21](https://github.com/jdx/mise/compare/v2024.5.20..v2024.5.21) - 2024-05-23
+
+### 🐛 Bug Fixes
+
+- **(git-pre-commit)** rewrite existing git hook to pre-commit.old by [@jdx](https://github.com/jdx) in [#2165](https://github.com/jdx/mise/pull/2165)
+- handle issue running `mise install` with existing tools by [@jdx](https://github.com/jdx) in [#2161](https://github.com/jdx/mise/pull/2161)
+
+### 🔍 Other Changes
+
+- update kerl to 4.1.1 by [@bklebe](https://github.com/bklebe) in [#2173](https://github.com/jdx/mise/pull/2173)
+
+### New Contributors
+
+* @bklebe made their first contribution in [#2173](https://github.com/jdx/mise/pull/2173)
+
 ## [2024.5.20](https://github.com/jdx/mise/compare/v2024.5.18..v2024.5.20) - 2024-05-21
 
 ### 🐛 Bug Fixes
