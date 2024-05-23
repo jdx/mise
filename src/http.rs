@@ -5,8 +5,7 @@ use std::time::Duration;
 
 use eyre::{Report, Result};
 use once_cell::sync::Lazy;
-use reqwest::IntoUrl;
-use reqwest::{ClientBuilder, Response};
+use reqwest::{ClientBuilder, IntoUrl, Response};
 use tokio::runtime::Runtime;
 use url::Url;
 
