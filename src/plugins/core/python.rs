@@ -177,7 +177,7 @@ impl PythonPlugin {
         let mut cmd = CmdLineRunner::new(self.python_build_bin())
             .with_pr(ctx.pr.as_ref())
             .arg(ctx.tv.version.as_str())
-            .arg(&ctx.tv.install_path())
+            .arg(ctx.tv.install_path())
             .env("PIP_REQUIRE_VIRTUALENV", "false")
             .envs(config.env()?);
         if settings.verbose {
