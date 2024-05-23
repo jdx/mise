@@ -87,7 +87,6 @@ regex = "1.10.4"
 # mise error sending request for url (https://api.github.com/repos/jdx/mise/releases): error trying to connect: invalid URL, scheme is not http
 # mise error trying to connect: invalid URL, scheme is not http
 reqwest = { version = "<0.12", default-features = false, features = [
-    "blocking",
     "json",
     "gzip",
 ] }
@@ -114,6 +113,11 @@ tempfile = "3.10.1"
 tera = { version = "1.19.1", default-features = false }
 terminal_size = "0.3.0"
 thiserror = "1.0.59"
+tokio = { version = "1.37.0", features = [
+    "io-std",
+    "rt",
+    "time",
+] }
 toml = { version = "0.8.12", features = ["parse"] }
 toml_edit = { version = "0.22.12", features = ["parse"] }
 url = "2.5.0"
