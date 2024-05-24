@@ -479,9 +479,9 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         if let Some(env) = &*env::MISE_ENV {
             filenames.push(format!(".config/mise/config.{env}.toml"));
             filenames.push(format!(".config/mise.{env}.toml"));
-            filenames.push(format!("mise/config.{env}.local.toml"));
+            filenames.push(format!("mise/config.{env}.toml"));
             filenames.push(format!("mise.{env}.toml"));
-            filenames.push(format!(".mise/config.{env}.local.toml"));
+            filenames.push(format!(".mise/config.{env}.toml"));
             filenames.push(format!(".mise.{env}.toml"));
             filenames.push(format!(".config/mise/config.{env}.local.toml"));
             filenames.push(format!(".config/mise.{env}.local.toml"));
