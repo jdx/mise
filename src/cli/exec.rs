@@ -70,7 +70,7 @@ impl Exec {
         self.exec(program, args, env)
     }
 
-    #[cfg(not(test))]
+    #[cfg(not(any(test, target_os = "windows")))]
     fn exec<T, U, E>(&self, program: T, args: U, env: BTreeMap<E, E>) -> Result<()>
     where
         T: IntoExecutablePath,
@@ -87,7 +87,7 @@ impl Exec {
         bail!("{:?} {err}", program.to_string_lossy())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, target_os = "windows"))]
     fn exec<T, U, E>(&self, program: T, args: U, env: BTreeMap<E, E>) -> Result<()>
     where
         T: IntoExecutablePath,

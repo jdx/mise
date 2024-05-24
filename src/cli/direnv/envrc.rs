@@ -1,7 +1,8 @@
-use std::fs::{create_dir_all, File};
+use std::fs::File;
 use std::io::Write;
 
 use eyre::Result;
+use xx::file;
 
 use crate::config::Config;
 use crate::env;
@@ -23,7 +24,7 @@ impl Envrc {
             .join(hash_to_str(&env::current_dir()?) + ".envrc");
 
         // TODO: exit early if envrc_path exists and is up to date
-        create_dir_all(envrc_path.parent().unwrap())?;
+        file::mkdirp(envrc_path.parent().unwrap())?;
         let mut file = File::create(&envrc_path)?;
 
         writeln!(

@@ -1,9 +1,9 @@
-use std::fs::create_dir_all;
 use std::path::PathBuf;
 
 use duct::Expression;
 use eyre::{eyre, Result, WrapErr};
 use once_cell::sync::OnceCell;
+use xx::file;
 
 use crate::cmd;
 use crate::file::touch_dir;
@@ -98,7 +98,12 @@ impl Git {
     pub fn clone(&self, url: &str) -> Result<()> {
         debug!("cloning {} to {}", url, self.dir.display());
         if let Some(parent) = self.dir.parent() {
-            create_dir_all(parent)?;
+            file::mkdirp(parent)?;
+        }
+        if let Err(err) = git2::Repository::clone(url, &self.dir) {
+            warn!("git clone failed: {err:#}");
+        } else {
+            return Ok(());
         }
         match get_git_version() {
             Ok(version) => trace!("git version: {}", version),

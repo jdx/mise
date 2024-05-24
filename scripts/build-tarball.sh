@@ -94,6 +94,10 @@ cp LICENSE dist/mise/LICENSE
 cp {,dist/mise/}man/man1/mise.1
 cp {,dist/mise/}share/fish/vendor_conf.d/mise-activate.fish
 
+if [[ "$(get_os)" == "macos" ]]; then
+  codesign -f -s "Developer ID Application: Jeffrey Dickey (4993Y37DX6)" dist/mise/bin/mise
+fi
+
 cd dist
 tar -cJf "$BASENAME.tar.xz" mise
 tar -czf "$BASENAME.tar.gz" mise
