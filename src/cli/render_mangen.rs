@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use eyre::Result;
+use xx::file;
 
 use crate::cli::{version, Cli};
 
@@ -21,7 +22,7 @@ impl RenderMangen {
         man.render(&mut buffer)?;
 
         let out_dir = project_root().join("man").join("man1");
-        fs::create_dir_all(&out_dir)?;
+        file::mkdirp(&out_dir)?;
         fs::write(out_dir.join("mise.1"), buffer)?;
 
         Ok(())

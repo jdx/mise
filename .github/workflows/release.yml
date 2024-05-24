@@ -63,11 +63,12 @@ jobs:
             name: macos-arm64
             target: aarch64-apple-darwin
             runs-on: macos-14
-    #          - os: macos
-    #            name: macos
-    #            target: universal2-apple-darwin
-    #            runs-on: macos-12
     steps:
+      - if: matrix.os == 'macos'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
