@@ -93,7 +93,7 @@ impl SelfUpdate {
             .current_version(cargo_crate_version!())
             .target(&target)
             .bin_path_in_archive("mise/bin/mise")
-            .identifier(&format!("mise-{v}-{target}.tar.gz"))
+            .target(&format!("mise-{v}-{target}.tar.gz"))
             .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
             .build()?
             .update()?;
