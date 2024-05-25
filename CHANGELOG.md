@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.5.22](https://github.com/jdx/mise/compare/v2024.5.21..v2024.5.22) - 2024-05-25
+
+### 🐛 Bug Fixes
+
+- correctly use .mise/config.$MISE_ENV.toml files by [@jdx](https://github.com/jdx) in [cace97b](https://github.com/jdx/mise/commit/cace97b9fe7697a58354b93cc1109b14c9fbd30c)
+- correctly use .mise/config.$MISE_ENV.toml files by [@jdx](https://github.com/jdx) in [262fa2e](https://github.com/jdx/mise/commit/262fa2e283dbd4c2fe4f44f15d81ab6eed54b79d)
+
+### 🔍 Other Changes
+
+- use async reqwest by [@jdx](https://github.com/jdx) in [#2178](https://github.com/jdx/mise/pull/2178)
+- sign macos binary by [@jdx](https://github.com/jdx) in [88f43f8](https://github.com/jdx/mise/commit/88f43f8072a2a223d1be92504cd60b7191ef975b)
+- use sccache by [@jdx](https://github.com/jdx) in [#2183](https://github.com/jdx/mise/pull/2183)
+- compile on windows by [@jdx](https://github.com/jdx) in [#2184](https://github.com/jdx/mise/pull/2184)
+- conditionally set sccache token by [@jdx](https://github.com/jdx) in [#2188](https://github.com/jdx/mise/pull/2188)
+
 ## [2024.5.21](https://github.com/jdx/mise/compare/v2024.5.20..v2024.5.21) - 2024-05-23
 
 ### 🐛 Bug Fixes
