@@ -1,0 +1,26 @@
+target.x86_64-unknown-linux-gnu.pre-build = "./scripts/sccache.sh"
+target.x86_64-unknown-linux-musl.pre-build = "./scripts/sccache.sh"
+#target.aarch64-unknown-linux-gnu.pre-build = "./scripts/sccache.sh"
+#target.aarch64-unknown-linux-musl.pre-build = "./scripts/sccache.sh"
+#target.armv7-unknown-linux-gnueabihf.pre-build = "./scripts/sccache.sh"
+#target.armv7-unknown-linux-musleabihf.pre-build = "./scripts/sccache.sh"
+#target.arm-unknown-linux-gnueabi.pre-build = "./scripts/sccache.sh"
+#target.arm-unknown-linux-musleabi.pre-build = "./scripts/sccache.sh"
+#target.x86_64-apple-darwin.pre-build = "./scripts/sccache.sh"
+#target.aarch64-apple-darwin.pre-build = "./scripts/sccache.sh"
+#target.aarch64-pc-windows-msvc.pre-build = "./scripts/sccache.sh"
+#target.x86_64-pc-windows-msvc.pre-build = "./scripts/sccache.sh"
+
+[build.env]
+passthrough = [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "RUSTC_WRAPPER",
+    "SCCACHE_BUCKET",
+    "SCCACHE_DIR",
+    "SCCACHE_ENDPOINT",
+    "SCCACHE_ERROR_LOG",
+    "SCCACHE_LOG",
+    "SCCACHE_REGION",
+    "SCCACHE_S3_NO_CREDENTIALS",
+]

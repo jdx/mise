@@ -30,7 +30,6 @@ nnnn = 'https://github.com/mise-plugins/rtx-nodejs#main'
 abc = '1'
 
 [tasks]
-format = "cargo fmt -- --emit=files"
 clean = "cargo clean"
 release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"

@@ -48,6 +48,7 @@ pub mod duration;
 mod env;
 mod env_diff;
 mod errors;
+#[cfg_attr(windows, path = "fake_asdf_windows.rs")]
 mod fake_asdf;
 mod file;
 mod forge;
@@ -76,6 +77,9 @@ mod toolset;
 mod ui;
 
 fn main() -> eyre::Result<()> {
+    #[cfg(windows)]
+    warn!("mise is supported on windows. Do not expect anything to work.");
+
     let args = env::args().collect_vec();
     color_eyre::install()?;
 

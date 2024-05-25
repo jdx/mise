@@ -6,7 +6,7 @@ use duct::IntoExecutablePath;
 use eyre::Result;
 
 use crate::cli::args::ToolArg;
-#[cfg(test)]
+#[cfg(any(test, windows))]
 use crate::cmd;
 use crate::config::Config;
 use crate::env;
@@ -70,7 +70,7 @@ impl Exec {
         self.exec(program, args, env)
     }
 
-    #[cfg(not(any(test, target_os = "windows")))]
+    #[cfg(not(any(test, windows)))]
     fn exec<T, U, E>(&self, program: T, args: U, env: BTreeMap<E, E>) -> Result<()>
     where
         T: IntoExecutablePath,
@@ -87,7 +87,7 @@ impl Exec {
         bail!("{:?} {err}", program.to_string_lossy())
     }
 
-    #[cfg(any(test, target_os = "windows"))]
+    #[cfg(any(test, windows))]
     fn exec<T, U, E>(&self, program: T, args: U, env: BTreeMap<E, E>) -> Result<()>
     where
         T: IntoExecutablePath,
