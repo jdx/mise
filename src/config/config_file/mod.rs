@@ -218,13 +218,17 @@ static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashS
 
 pub fn is_trusted(path: &Path) -> bool {
     let mut cached = IS_TRUSTED.lock().unwrap();
-    if cached.contains(path) {
+    let canonicalized_path = match path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    if cached.contains(canonicalized_path.as_path()) {
         return true;
     }
     let settings = Settings::get();
     for p in settings.trusted_config_paths() {
-        if path.starts_with(p) {
-            cached.insert(path.to_path_buf());
+        if canonicalized_path.starts_with(p) {
+            cached.insert(canonicalized_path.to_path_buf());
             return true;
         }
     }
@@ -241,7 +245,7 @@ pub fn is_trusted(path: &Path) -> bool {
         // trust config files
         return false;
     }
-    cached.insert(path.to_path_buf());
+    cached.insert(canonicalized_path.to_path_buf());
     true
 }
 
@@ -249,7 +253,7 @@ pub fn trust(path: &Path) -> eyre::Result<()> {
     let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
-        file::make_symlink(path, &hashed_path)?;
+        file::make_symlink(path.canonicalize()?.as_path(), &hashed_path)?;
     }
     let trust_hash_path = hashed_path.with_extension("hash");
     let hash = file_hash_sha256(path)?;
@@ -267,7 +271,9 @@ pub fn untrust(path: &Path) -> eyre::Result<()> {
 
 /// generates a path like ~/.mise/trusted-configs/dir-file-3e8b8c44c3.toml
 fn trust_path(path: &Path) -> PathBuf {
-    let trust_path = dirs::TRUSTED_CONFIGS.join(hash_to_str(&path));
+    let canonicalized_path = path.canonicalize().unwrap();
+    let hash = hash_to_str(&canonicalized_path);
+    let trust_path = dirs::TRUSTED_CONFIGS.join(hash_to_str(&hash));
     if trust_path.exists() {
         return trust_path;
     }
@@ -276,14 +282,13 @@ fn trust_path(path: &Path) -> PathBuf {
         s.truncate(20);
         s
     };
-    let parent = path
+    let parent = canonicalized_path
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_default()
         .file_name()
         .map(trunc_str);
-    let filename = path.file_name().map(trunc_str);
-    let hash = hash_to_str(&path);
+    let filename = canonicalized_path.file_name().map(trunc_str);
 
     dirs::TRUSTED_CONFIGS.join(
         [parent, filename, Some(hash)]
