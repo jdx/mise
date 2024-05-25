@@ -90,9 +90,8 @@ run = ["mise tasks run test:unit", "mise tasks run test:e2e"]
 
 [tasks."test:unit"]
 description = "run unit tests"
-run = "cargo test"
+run = "cargo test --all-features"
 env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
-depends = ["build"]
 
 [tasks."docker:image"]
 description = "build docker image from Dockerfile"
