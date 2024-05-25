@@ -48,7 +48,6 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - run: ${SCCACHE_PATH} --show-stats
       - run: mise install
       - run: mise x -- cargo nextest run --all-features
       - run: cargo deny check
@@ -76,6 +75,7 @@ jobs:
           author_email: 123107610+mise-en-dev@users.noreply.github.com
       - uses: actions-rust-lang/rustfmt@v1
       - run: mise run lint
+      - run: ${SCCACHE_PATH} --show-stats
 
   nightly:
     runs-on: ubuntu-latest
@@ -111,6 +111,7 @@ jobs:
           push: true
           author_name: mise[bot]
           author_email: 123107610+mise-en-dev@users.noreply.github.com
+      - run: ${SCCACHE_PATH} --show-stats
 
   coverage:
     name: coverage-${{matrix.tranche}}
@@ -168,6 +169,7 @@ jobs:
           name: coverage-${{matrix.tranche}}.lcov
           path: coverage-${{matrix.tranche}}.lcov
           if-no-files-found: error
+      - run: ${SCCACHE_PATH} --show-stats
   coverage-report:
     name: coverage-report
     runs-on: ubuntu-latest

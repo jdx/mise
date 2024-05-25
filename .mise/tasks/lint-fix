@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mise alias=["lint:fix"]
+# mise alias=["format", "lint:fix"]
 set -euxo pipefail
 
 # Used for shellcheck which needs explicit args

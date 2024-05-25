@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
+#[cfg(unix)]
 use std::os::unix::prelude::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Stdio};
@@ -344,9 +345,12 @@ impl Run {
                 if let Some(code) = status.code() {
                     error!("{prefix} exited with code {code}");
                     exit(code);
-                } else if let Some(signal) = status.signal() {
-                    error!("{prefix} killed by signal {signal}");
-                    exit(1);
+                } else {
+                    #[cfg(unix)]
+                    if let Some(signal) = status.signal() {
+                        error!("{prefix} killed by signal {signal}");
+                        exit(1);
+                    }
                 }
             }
             error!("{err}");

@@ -13,12 +13,6 @@ rm -rf "${RELEASE_DIR:?}/$MISE_VERSION"
 mkdir -p "$RELEASE_DIR/$MISE_VERSION"
 
 echo "::group::Build"
-find artifacts -name 'tarball-*' -exec sh -c '
-  target=${1#artifacts/tarball-}
-  cp "artifacts/tarball-$target/"*.tar.gz "$RELEASE_DIR/$MISE_VERSION"
-  cp "artifacts/tarball-$target/"*.tar.xz "$RELEASE_DIR/$MISE_VERSION"
-  ' sh {} \;
-
 platforms=(
   linux-x64
   linux-x64-musl
@@ -32,11 +26,26 @@ platforms=(
   macos-arm64
 )
 for platform in "${platforms[@]}"; do
+  cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
+  cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz"
+  zipsign sign tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" ~/.zipsign/mise.priv
+  zipsign verify tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$BASE_DIR/zipsign.pub"
   cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
   cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
   tar -xvzf "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
   cp -v mise/bin/mise "$RELEASE_DIR/mise-latest-$platform"
   cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform"
+done
+
+win_platforms=(
+  win-arm64
+  win-x64
+)
+for platform in "${win_platforms[@]}"; do
+  cp artifacts/*/"mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip"
+  zipsign sign zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" ~/.zipsign/mise.priv
+  zipsign verify zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$BASE_DIR/zipsign.pub"
+  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/mise-latest-$platform.zip"
 done
 
 echo "::group::Checksums"
