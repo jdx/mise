@@ -12,3 +12,4 @@ shellcheck -x "${scripts[@]}"
 shfmt -d -i 2 -ci -bn "${scripts_dirs[@]}"
 prettier -c $(git ls-files '*.yml' '*.yaml')
 markdownlint .
+actionlint

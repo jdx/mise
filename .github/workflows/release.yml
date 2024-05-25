@@ -25,8 +25,8 @@ jobs:
       SCCACHE_BUCKET: sccache
       SCCACHE_REGION: auto
       SCCACHE_S3_NO_CREDENTIALS: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID && '0' || '1' }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
+      MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
+      MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
     strategy:
       fail-fast: false
       matrix:
@@ -82,6 +82,10 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@v4
+      - if: ${{ env.SCCACHE_S3_NO_CREDENTIALS == '0' }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=$MINIO_AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=$MINIO_AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
       - uses: mozilla-actions/sccache-action@v0.0.4
       - name: cache crates
         id: cache-crates

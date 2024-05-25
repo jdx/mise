@@ -20,6 +20,7 @@ shfmt = "3"
 "npm:markdownlint-cli" = "0.38"
 "npm:prettier" = "3"
 direnv = "latest"
+actionlint = "latest"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 #ruby = "3.1"
 
