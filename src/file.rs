@@ -112,6 +112,9 @@ pub fn create(path: &Path) -> Result<File> {
 }
 
 pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
+    static LOCK: Lazy<Mutex<u8>> = Lazy::new(Default::default);
+    let _lock = LOCK.lock().unwrap();
+
     let path = path.as_ref();
     if !path.exists() {
         trace!("mkdir -p {}", display_path(path));
@@ -404,8 +407,9 @@ pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset;
     use std::ops::Deref;
+
+    use crate::test::reset;
 
     use super::*;
 
