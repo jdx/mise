@@ -1,10 +1,9 @@
 Set-StrictMode -Version Latest
 #Set-PSDebug -Trace 1
 
-# BASENAME=$NAME-$VERSION-$(get_os)-$(get_arch)$(get_suffix)
 $Target = $args[0]
 $Version = ./scripts/get-version.ps1
-$BaseName = "mise-$Version-$Target"
+$BaseName = "mise-v$Version-$Env:OS-$Env:ARCH"
 
 cargo build --release --features openssl/vendored --target "$Target"
 mkdir -p dist/mise/bin

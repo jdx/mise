@@ -108,7 +108,7 @@ jobs:
         run: cargo cache --autoclean
       - run: ${SCCACHE_PATH} --show-stats
   build-tarball-win:
-    name: build-tarball-${{matrix.name}}
+    name: build-tarball-win-${{matrix.arch}}
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -123,9 +123,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: win-arm64
+          - arch: arm64
             target: aarch64-pc-windows-msvc
-          - name: win-x64
+          - arch: x64
             target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
@@ -139,6 +139,9 @@ jobs:
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
+        env:
+          OS: win
+          ARCH: ${{matrix.arch}}
       - uses: actions/upload-artifact@v4
         with:
           name: tarball-${{matrix.target}}
@@ -288,10 +291,17 @@ jobs:
           git_commit_gpgsign: true
           workdir: mise-docs
       - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - run: ls -R artifacts
+      - uses: actions/download-artifact@v4
         with:
-          pattern: 'dist/*'
           path: artifacts
+          pattern: |
+            mise-v*.tar.gz
+            mise-v*.tar.xz
+            mise-v*.zip
           merge-multiple: true
+      - run: ls -R artifacts
       - run: mise/scripts/release.sh
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}

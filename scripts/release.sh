@@ -26,10 +26,10 @@ platforms=(
   macos-arm64
 )
 for platform in "${platforms[@]}"; do
-  zipsign sign tar "artifacts/mise-$MISE_VERSION-$platform.tar.gz" ~/.zipsign/mise.priv
-  zipsign verify tar "artifacts/mise-$MISE_VERSION-$platform.tar.gz" "$BASE_DIR/zipsign.pub"
-  cp "artifacts/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
-  cp "artifacts/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz"
+  cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
+  cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz"
+  zipsign sign tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" ~/.zipsign/mise.priv
+  zipsign verify tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$BASE_DIR/zipsign.pub"
   cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
   cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
   tar -xvzf "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
@@ -42,9 +42,9 @@ win_platforms=(
   win-x64
 )
 for platform in "${win_platforms[@]}"; do
-  zipsign sign zip "artifacts/mise-$MISE_VERSION-$platform.zip" ~/.zipsign/mise.priv
-  zipsign verify zip "artifacts/mise-$MISE_VERSION-$platform.zip" "$BASE_DIR/zipsign.pub"
-  cp "artifacts/mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip"
+  cp artifacts/*/"mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip"
+  zipsign sign zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" ~/.zipsign/mise.priv
+  zipsign verify zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$BASE_DIR/zipsign.pub"
   cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/mise-latest-$platform.zip"
 done
 
