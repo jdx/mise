@@ -260,6 +260,8 @@ mod tests {
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         tiny 3
         "###);
+
+        let _ = file::remove_file(&cf_path);
     }
 
     #[test]

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
+#[cfg(unix)]
 use std::os::unix::fs::symlink;
+#[cfg(unix)]
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -215,6 +217,7 @@ pub fn recursive_ls(dir: &Path) -> Result<Vec<PathBuf>> {
         .try_collect()?)
 }
 
+#[cfg(unix)]
 pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
     trace!("ln -sf {} {}", target.display(), link.display());
     if link.is_file() || link.is_symlink() {
@@ -223,6 +226,11 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
     symlink(target, link)
         .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
     Ok(())
+}
+
+#[cfg(windows)]
+pub fn make_symlink(_target: &Path, _link: &Path) -> Result<()> {
+    unimplemented!("make_symlink is not implemented on Windows")
 }
 
 pub fn remove_symlinks_with_target_prefix(symlink_dir: &Path, target_prefix: &Path) -> Result<()> {
@@ -242,6 +250,7 @@ pub fn remove_symlinks_with_target_prefix(symlink_dir: &Path, target_prefix: &Pa
     Ok(())
 }
 
+#[cfg(unix)]
 pub fn is_executable(path: &Path) -> bool {
     if let Ok(metadata) = path.metadata() {
         return metadata.permissions().mode() & 0o111 != 0;
@@ -249,11 +258,24 @@ pub fn is_executable(path: &Path) -> bool {
     false
 }
 
+#[cfg(windows)]
+pub fn is_executable(path: &Path) -> bool {
+    path.extension().map_or(false, |ext| {
+        ext == "exe" || ext == "bat" || ext == "cmd" || ext == "com" || ext == "ps1" || ext == "vbs"
+    })
+}
+
+#[cfg(unix)]
 pub fn make_executable(path: &Path) -> Result<()> {
     let mut perms = path.metadata()?.permissions();
     perms.set_mode(perms.mode() | 0o111);
     fs::set_permissions(path, perms)
         .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub fn make_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
