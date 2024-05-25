@@ -10,6 +10,9 @@ use crate::github;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
+use itertools::Itertools;
+use semver::Version;
+
 #[derive(Debug)]
 pub struct PIPXForge {
     fa: ForgeArg,
@@ -45,7 +48,9 @@ impl Forge for PIPXForge {
                         .as_object()
                         .ok_or_else(|| eyre::eyre!("Invalid pypi response"))?
                         .keys()
-                        .map(|k| k.to_string())
+                        .map(|k| Version::parse(k).unwrap())
+                        .sorted()
+                        .map(|v| v.to_string())
                         .collect();
                     Ok(versions)
                 }
