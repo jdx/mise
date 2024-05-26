@@ -1404,6 +1404,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1630,7 +1639,7 @@ dependencies = [
  "indicatif",
  "indoc",
  "insta",
- "itertools",
+ "itertools 0.12.1",
  "log",
  "num_cpus",
  "once_cell",
@@ -1671,7 +1680,7 @@ dependencies = [
  "versions",
  "walkdir",
  "which",
- "xx 1.1.4",
+ "xx",
  "zip",
 ]
 
@@ -3260,14 +3269,14 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aeebfca27b4e59b6f065adb43095f9563d691fea3075c34483c6808e301cfcbc"
+checksum = "169665ca600da05053b6c2df83d243fc45cf58e8373dd7b939aaf87f664629fe"
 dependencies = [
  "clap",
  "heck 0.5.0",
  "indexmap 2.2.6",
- "itertools",
+ "itertools 0.13.0",
  "kdl",
  "log",
  "miette",
@@ -3276,7 +3285,7 @@ dependencies = [
  "shell-escape",
  "strum",
  "thiserror",
- "xx 0.5.1",
+ "xx",
 ]
 
 [[package]]
@@ -3309,7 +3318,7 @@ version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38a8931f8d167b6448076020e70b9de46dcf5ea1731212481a092d0071c4ac5b"
 dependencies = [
- "itertools",
+ "itertools 0.12.1",
  "nom",
  "serde",
 ]
@@ -3733,20 +3742,6 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "rustix",
-]
-
-[[package]]
-name = "xx"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e56d3f594fa196a364c0fdd4bab4b4e81fe46712c6754c9bc0930a6eac6998d"
-dependencies = [
- "duct",
- "filetime",
- "log",
- "miette",
- "regex",
- "thiserror",
 ]
 
 [[package]]
