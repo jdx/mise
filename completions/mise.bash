@@ -9,8 +9,8 @@ _mise() {
     if [[ -z ${_USAGE_SPEC_MISE:-} ]]; then
         _USAGE_SPEC_MISE="$(mise usage)"
     fi
-    
-    COMPREPLY=( $(usage complete-word -s "${_USAGE_SPEC_MISE}" --cword="$COMP_CWORD" -- "${COMP_WORDS[@]}" ) )
+
+    COMPREPLY=( $(usage complete-word --shell bash -s "${_USAGE_SPEC_MISE}" --cword="$COMP_CWORD" -- "${COMP_WORDS[@]}" ) )
     if [[ $? -ne 0 ]]; then
         unset COMPREPLY
     fi
