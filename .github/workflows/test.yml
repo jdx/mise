@@ -17,7 +17,7 @@ env:
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1
   RUST_BACKTRACE: 1
-  RUSTC_WRAPPER: sccache
+  #RUSTC_WRAPPER: sccache
   SCCACHE_ENDPOINT: minio.jdx.dev
   SCCACHE_BUCKET: sccache
   SCCACHE_REGION: auto
