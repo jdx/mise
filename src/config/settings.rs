@@ -155,7 +155,9 @@ pub struct SettingsStatus {
     pub show_tools: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, EnumString, Display)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, Default, strum::EnumString, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum SettingsStatusMissingTools {

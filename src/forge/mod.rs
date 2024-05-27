@@ -43,7 +43,17 @@ pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
 pub type ForgeList = Vec<AForge>;
 
 #[derive(
-    Debug, PartialEq, Eq, Hash, Clone, Copy, EnumString, EnumIter, AsRefStr, Ord, PartialOrd,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Clone,
+    Copy,
+    strum::EnumString,
+    strum::EnumIter,
+    strum::AsRefStr,
+    Ord,
+    PartialOrd,
 )]
 #[strum(serialize_all = "snake_case")]
 pub enum ForgeType {

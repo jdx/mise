@@ -557,7 +557,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 "#
 );
 
-#[derive(Debug, PartialEq, EnumString)]
+#[derive(Debug, PartialEq, strum::EnumString)]
 #[strum(serialize_all = "snake_case")]
 enum TaskOutput {
     Prefix,
