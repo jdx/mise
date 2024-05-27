@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use indoc::formatdoc;
+
 use crate::shell::Shell;
 
 #[derive(Default)]

@@ -427,6 +427,8 @@ fn parse_gemfile(body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+
     use super::*;
 
     #[test]

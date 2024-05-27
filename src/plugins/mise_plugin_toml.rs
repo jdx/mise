@@ -102,6 +102,7 @@ impl MisePluginToml {
 #[cfg(test)]
 mod tests {
     use crate::dirs;
+    use indoc::formatdoc;
 
     use super::*;
 

@@ -864,6 +864,7 @@ where
 #[cfg(test)]
 mod tests {
     use dirs::CWD;
+    use indoc::formatdoc;
 
     use crate::test::{replace_path, reset};
     use test_log::test;

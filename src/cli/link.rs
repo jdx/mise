@@ -92,9 +92,9 @@ mod tests {
         create_dir_all("../data/tmp/tiny").unwrap();
         assert_cli!("link", "tiny@9.8.7", "../data/tmp/tiny");
         assert_cli_snapshot!("ls", "tiny", @r###"
-        tiny  1.0.1                                       
-        tiny  2.1.0                                       
-        tiny  3.0.1                                       
+        tiny  1.0.1
+        tiny  2.1.0
+        tiny  3.0.1
         tiny  3.1.0            ~/cwd/.test-tool-versions 3
         tiny  9.8.7 (symlink)
         "###);

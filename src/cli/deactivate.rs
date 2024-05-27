@@ -1,4 +1,5 @@
 use eyre::{eyre, Result};
+use indoc::formatdoc;
 
 use crate::shell::get_shell;
 use crate::ui::style;

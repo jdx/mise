@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{bail, eyre, Result};
 use eyre::WrapErr;
+use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
 
