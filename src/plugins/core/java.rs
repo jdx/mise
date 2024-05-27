@@ -4,6 +4,7 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
+use contracts::requires;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;

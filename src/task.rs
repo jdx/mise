@@ -277,6 +277,7 @@ impl Deps {
         rx
     }
 
+    // use contracts::{ensures, requires};
     // #[requires(self.graph.node_count() > 0)]
     // #[ensures(self.graph.node_count() == old(self.graph.node_count()) - 1)]
     pub fn remove(&mut self, task: &Task) {

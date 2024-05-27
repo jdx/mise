@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use clap::Command;
 use console::style;
+
+use contracts::requires;
 use eyre::WrapErr;
 use itertools::Itertools;
 use rayon::prelude::*;

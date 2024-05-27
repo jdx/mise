@@ -1,7 +1,4 @@
 #[macro_use]
-extern crate contracts;
-extern crate core;
-#[macro_use]
 extern crate eyre;
 #[macro_use]
 extern crate indoc;
