@@ -4,7 +4,7 @@ use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
 
-use eyre::{Context, Result};
+use eyre::{ensure, eyre, Context, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};

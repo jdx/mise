@@ -1,5 +1,5 @@
 use console::style;
-use eyre::Result;
+use eyre::{bail, Result};
 
 use crate::cli::args::ForgeArg;
 use crate::config::Config;

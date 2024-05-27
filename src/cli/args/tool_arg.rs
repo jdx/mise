@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use console::style;
+use eyre::bail;
 use regex::Regex;
 
 use crate::cli::args::ForgeArg;

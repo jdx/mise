@@ -14,7 +14,7 @@ use console::Color;
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
 use either::Either;
-use eyre::Result;
+use eyre::{bail, ensure, eyre, Result};
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;

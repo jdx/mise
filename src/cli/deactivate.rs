@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{eyre, Result};
 
 use crate::shell::get_shell;
 use crate::ui::style;

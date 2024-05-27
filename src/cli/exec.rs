@@ -3,7 +3,10 @@ use std::ffi::{OsStr, OsString};
 
 use clap::ValueHint;
 use duct::IntoExecutablePath;
-use eyre::Result;
+#[cfg(not(any(test, windows)))]
+use eyre::{bail, Result};
+#[cfg(any(test, windows))]
+use eyre::{eyre, Result};
 
 use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]

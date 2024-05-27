@@ -9,7 +9,7 @@ use std::{ffi, fmt, path};
 
 use console::truncate_str;
 use either::Either;
-use eyre::Result;
+use eyre::{eyre, Result};
 use globset::Glob;
 use itertools::Itertools;
 use petgraph::prelude::*;

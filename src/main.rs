@@ -1,6 +1,4 @@
 #[macro_use]
-extern crate eyre;
-#[macro_use]
 extern crate indoc;
 #[cfg(test)]
 #[macro_use]

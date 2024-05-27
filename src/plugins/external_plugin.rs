@@ -8,7 +8,7 @@ use std::process::exit;
 use std::sync::Arc;
 
 use clap::Command;
-use color_eyre::eyre::{eyre, Result, WrapErr};
+use color_eyre::eyre::{bail, eyre, Result, WrapErr};
 use console::style;
 use itertools::Itertools;
 use rayon::prelude::*;

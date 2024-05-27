@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::path::Path;
 
-use eyre::Result;
+use eyre::{ensure, Result};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 

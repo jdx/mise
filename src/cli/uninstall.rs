@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use console::style;
-use eyre::{Result, WrapErr};
+use eyre::{bail, eyre, Result, WrapErr};
 use itertools::Itertools;
 use rayon::prelude::*;
 

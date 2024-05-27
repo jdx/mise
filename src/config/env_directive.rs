@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
-use eyre::Context;
+use eyre::{eyre, Context};
 use indexmap::IndexMap;
 
 use crate::cmd::CmdLineRunner;

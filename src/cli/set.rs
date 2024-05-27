@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
+use eyre::{bail, Result};
 use tabled::Tabled;
 
 use crate::config::config_file::mise_toml::MiseToml;

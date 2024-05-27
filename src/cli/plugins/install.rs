@@ -1,4 +1,4 @@
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{bail, eyre, Result};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use url::Url;

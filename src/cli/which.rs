@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{bail, Result};
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;

@@ -1,5 +1,5 @@
 use console::style;
-use eyre::Result;
+use eyre::{eyre, Result};
 use itertools::Itertools;
 use petgraph::dot::Dot;
 

@@ -7,7 +7,7 @@ use std::time::Duration;
 use std::{panic, thread};
 
 use console::truncate_str;
-use eyre::Result;
+use eyre::{eyre, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;

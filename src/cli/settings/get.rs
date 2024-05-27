@@ -1,4 +1,5 @@
 use crate::config::Settings;
+use eyre::bail;
 
 /// Show a current setting
 ///

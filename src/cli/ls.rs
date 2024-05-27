@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use console::style;
-use eyre::Result;
+use eyre::{ensure, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_derive::Serialize;
