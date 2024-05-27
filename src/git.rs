@@ -43,6 +43,7 @@ impl Git {
 
     pub fn repo(&self) -> Result<&git2::Repository> {
         self.repo.get_or_try_init(|| {
+            trace!("opening git repository at {:?}", self.dir);
             git2::Repository::open(&self.dir)
                 .wrap_err_with(|| format!("failed to open git repository at {:?}", self.dir))
                 .inspect_err(|err| warn!("{err:#}"))
