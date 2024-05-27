@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 45
     env:
-      #RUSTC_WRAPPER: sccache
+      RUSTC_WRAPPER: sccache
       SCCACHE_ENDPOINT: minio.jdx.dev
       SCCACHE_BUCKET: sccache
       SCCACHE_REGION: auto
@@ -98,7 +98,12 @@ jobs:
         run: rustup target add ${{matrix.target}}
       - if: matrix.runs-on == 'ubuntu-latest'
         uses: taiki-e/install-action@cross
-      - run: scripts/build-tarball.sh ${{matrix.target}}
+      - name: build-tarball
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: scripts/build-tarball.sh ${{matrix.target}}
       - uses: actions/upload-artifact@v4
         with:
           name: tarball-${{matrix.target}}
