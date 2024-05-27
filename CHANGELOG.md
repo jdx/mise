@@ -1,5 +1,25 @@
 # Changelog
 
+## [2024.5.23](https://github.com/jdx/mise/compare/v2024.5.22..v2024.5.23) - 2024-05-27
+
+### 🐛 Bug Fixes
+
+- **(self_update)** explicitly set target since there seems to be a bug with .identifier() by [@jdx](https://github.com/jdx) in [#2190](https://github.com/jdx/mise/pull/2190)
+- minor race condition creating directories by [@jdx](https://github.com/jdx) in [23db391](https://github.com/jdx/mise/commit/23db39146c8edf7340472302e7f498f1d89cf5b4)
+- vendor libgit2 for precompiled binaries by [@jdx](https://github.com/jdx) in [#2197](https://github.com/jdx/mise/pull/2197)
+
+### 🧪 Testing
+
+- break coverage tasks up a bit by [@jdx](https://github.com/jdx) in [#2192](https://github.com/jdx/mise/pull/2192)
+
+### 🔍 Other Changes
+
+- updated zip by [@jdx](https://github.com/jdx) in [#2191](https://github.com/jdx/mise/pull/2191)
+- bump usage-lib by [@jdx](https://github.com/jdx) in [74fcd88](https://github.com/jdx/mise/commit/74fcd8863c8668f11c4886dd95fb7929f823eb14)
+- Update bug_report.md by [@jdx](https://github.com/jdx) in [64271ed](https://github.com/jdx/mise/commit/64271edec6e8cbf68dd0ec5f646247fdc3f158e2)
+- added git debug log by [@jdx](https://github.com/jdx) in [7df466e](https://github.com/jdx/mise/commit/7df466e8c9c287ad04b0a753df65c02d64e00451)
+- retry build-tarball by [@jdx](https://github.com/jdx) in [1acf037](https://github.com/jdx/mise/commit/1acf0375072dbf4ae57ddfadf0daf5eea00d5b71)
+
 ## [2024.5.22](https://github.com/jdx/mise/compare/v2024.5.21..v2024.5.22) - 2024-05-25
 
 ### 🐛 Bug Fixes
