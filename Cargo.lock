@@ -1404,6 +1404,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1595,7 +1604,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.5.22"
+version = "2024.5.23"
 dependencies = [
  "assert_cmd",
  "base64 0.22.1",
@@ -1630,7 +1639,7 @@ dependencies = [
  "indicatif",
  "indoc",
  "insta",
- "itertools",
+ "itertools 0.12.1",
  "log",
  "num_cpus",
  "once_cell",
@@ -1671,7 +1680,7 @@ dependencies = [
  "versions",
  "walkdir",
  "which",
- "xx 1.1.4",
+ "xx",
  "zip",
 ]
 
@@ -2089,9 +2098,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.83"
+version = "1.0.84"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b33eb56c327dec362a9e55b3ad14f9d2f0904fb5a5b03b513ab5465399e9f43"
+checksum = "ec96c6a92621310b51366f1e28d05ef11489516e93be030060e5fc12024a49d6"
 dependencies = [
  "unicode-ident",
 ]
@@ -2485,18 +2494,18 @@ checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
 
 [[package]]
 name = "serde"
-version = "1.0.202"
+version = "1.0.203"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "226b61a0d411b2ba5ff6d7f73a476ac4f8bb900373459cd00fab8512828ba395"
+checksum = "7253ab4de971e72fb7be983802300c30b5a7f0c2e56fab8abfc6a214307c0094"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.202"
+version = "1.0.203"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6048858004bcff69094cd972ed40a32500f153bd3be9f716b2eed2e8217c4838"
+checksum = "500cbc0ebeb6f46627f50f3f5811ccf6bf00643be300b4c3eabc0ef55dc5b5ba"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3260,14 +3269,14 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aeebfca27b4e59b6f065adb43095f9563d691fea3075c34483c6808e301cfcbc"
+checksum = "169665ca600da05053b6c2df83d243fc45cf58e8373dd7b939aaf87f664629fe"
 dependencies = [
  "clap",
  "heck 0.5.0",
  "indexmap 2.2.6",
- "itertools",
+ "itertools 0.13.0",
  "kdl",
  "log",
  "miette",
@@ -3276,7 +3285,7 @@ dependencies = [
  "shell-escape",
  "strum",
  "thiserror",
- "xx 0.5.1",
+ "xx",
 ]
 
 [[package]]
@@ -3309,7 +3318,7 @@ version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38a8931f8d167b6448076020e70b9de46dcf5ea1731212481a092d0071c4ac5b"
 dependencies = [
- "itertools",
+ "itertools 0.12.1",
  "nom",
  "serde",
 ]
@@ -3737,23 +3746,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "0.5.1"
+version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e56d3f594fa196a364c0fdd4bab4b4e81fe46712c6754c9bc0930a6eac6998d"
-dependencies = [
- "duct",
- "filetime",
- "log",
- "miette",
- "regex",
- "thiserror",
-]
-
-[[package]]
-name = "xx"
-version = "1.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e08953d3417bf7a7ad3c46ec3d0b2695e1f546bc552052aa7ca7ee40889e097"
+checksum = "9960db6d05795260d426061b0a962282cf67c3cdc81656731d0f646807c26237"
 dependencies = [
  "duct",
  "filetime",
@@ -3773,9 +3768,9 @@ checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
 
 [[package]]
 name = "zeroize"
-version = "1.7.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "525b4ec142c6b68a2d10f01f7bbf6755599ca3f81ea53b8431b7dd348f5fdb2d"
+checksum = "ced3678a2879b30306d323f4542626697a464a97c0a07c9aebf7ebca65cd4dde"
 
 [[package]]
 name = "zip"

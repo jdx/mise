@@ -22,4 +22,4 @@ REPLACE WITH OUTPUT OF `mise doctor`
 ```
 
 **Additional context**
-Add any other context about the problem here.
+Add any other context about the problem here. Consider running mise with `--debug` or `--trace` for extra debug info.

@@ -34,7 +34,7 @@ _mise() {
     _store_cache _usage_mise_spec spec
   fi
 
-  _arguments '*: :($(usage complete-word -s "$spec" -- "${words[@]}" ))'
+  _arguments "*: :(($(usage complete-word --shell zsh -s "$spec" -- "${words[@]}" )))"
   return 0
 }
 
