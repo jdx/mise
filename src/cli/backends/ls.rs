@@ -28,6 +28,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   npm
   pipx
   ubi
+  mint
 "#
 );
 
