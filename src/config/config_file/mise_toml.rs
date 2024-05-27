@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 
-use eyre::WrapErr;
+use eyre::{eyre, WrapErr};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
@@ -863,10 +863,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dirs::CWD;
-
-    use crate::test::{replace_path, reset};
+    use indoc::formatdoc;
+    use insta::{assert_debug_snapshot, assert_snapshot};
     use test_log::test;
+
+    use crate::dirs::CWD;
+    use crate::test::{replace_path, reset};
 
     use super::*;
 

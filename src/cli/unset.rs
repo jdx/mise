@@ -58,6 +58,8 @@ fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
 mod tests {
     use std::path::PathBuf;
 
+    use insta::assert_snapshot;
+
     use crate::{env, file};
 
     fn remove_config_file(filename: &str) -> PathBuf {

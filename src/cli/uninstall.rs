@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use console::style;
-use eyre::{Result, WrapErr};
+use eyre::{bail, eyre, Result, WrapErr};
 use itertools::Itertools;
 use rayon::prelude::*;
 
@@ -122,7 +122,7 @@ impl Uninstall {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-    
+
     $ <bold>mise uninstall node@18.0.0</bold> # will uninstall specific version
     $ <bold>mise uninstall node</bold>        # will uninstall current node version
     $ <bold>mise uninstall --all node@18.0.0</bold> # will uninstall all node versions

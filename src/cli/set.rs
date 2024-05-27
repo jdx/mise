@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
+use eyre::{bail, Result};
 use tabled::Tabled;
 
 use crate::config::config_file::mise_toml::MiseToml;
@@ -127,6 +127,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use insta::assert_snapshot;
 
     use crate::test::reset;
     use crate::{env, file};

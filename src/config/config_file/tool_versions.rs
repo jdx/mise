@@ -205,13 +205,15 @@ impl ConfigFile for ToolVersions {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use indoc::indoc;
+    use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
+    use test_log::test;
 
     use crate::env;
     use crate::test::reset;
 
     use super::*;
-    use test_log::test;
 
     #[test]
     fn test_parse() {

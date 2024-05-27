@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
-use eyre::{Report, Result};
+use eyre::{bail, Report, Result};
 use once_cell::sync::Lazy;
 use reqwest::{ClientBuilder, IntoUrl, Response};
 use tokio::runtime::Runtime;

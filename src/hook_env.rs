@@ -166,11 +166,14 @@ pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset;
     use std::time::UNIX_EPOCH;
 
-    use super::*;
+    use pretty_assertions::{assert_eq, assert_str_eq};
     use test_log::test;
+
+    use crate::test::reset;
+
+    use super::*;
 
     #[test]
     fn test_have_config_files_been_modified() {

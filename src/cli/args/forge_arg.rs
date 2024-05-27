@@ -97,6 +97,8 @@ static FORGE_MAP: Lazy<HashMap<&'static str, ForgeArg>> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::{assert_eq, assert_str_eq};
+
     use super::*;
 
     #[test]

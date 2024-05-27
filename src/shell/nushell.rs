@@ -1,6 +1,8 @@
 use std::fmt::Display;
 use std::path::Path;
 
+use indoc::formatdoc;
+
 use crate::shell::Shell;
 
 #[derive(Default)]
@@ -106,6 +108,8 @@ impl Shell for Nushell {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
+
     use crate::test::replace_path;
 
     use super::*;

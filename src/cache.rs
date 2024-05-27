@@ -158,6 +158,8 @@ static KEY: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use super::*;
 
     #[test]

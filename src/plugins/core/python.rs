@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use eyre::{bail, eyre};
 use itertools::Itertools;
 
 use crate::build_time::built_info;

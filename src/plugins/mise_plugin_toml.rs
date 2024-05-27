@@ -101,6 +101,9 @@ impl MisePluginToml {
 
 #[cfg(test)]
 mod tests {
+    use indoc::formatdoc;
+    use insta::assert_debug_snapshot;
+
     use crate::dirs;
 
     use super::*;

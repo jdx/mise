@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, RwLock};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
-use eyre::Result;
+use eyre::{bail, Result};
 use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
@@ -155,7 +155,9 @@ pub struct SettingsStatus {
     pub show_tools: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, EnumString, Display)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, Default, strum::EnumString, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum SettingsStatusMissingTools {

@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use eyre::Result;
+use eyre::{bail, Result};
 use versions::{Chunk, Version};
 use xx::file;
 
@@ -196,6 +196,7 @@ impl Display for ToolRequest {
 #[cfg(test)]
 mod tests {
     use super::version_sub;
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_version_sub() {

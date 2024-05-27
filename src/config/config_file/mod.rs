@@ -5,6 +5,7 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use eyre::eyre;
 use once_cell::sync::Lazy;
 use serde_derive::Deserialize;
 use versions::Versioning;
@@ -349,6 +350,8 @@ pub fn reset() {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use super::*;
 
     #[test]

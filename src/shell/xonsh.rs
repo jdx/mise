@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use indoc::formatdoc;
+
 use crate::shell::Shell;
 
 #[derive(Default)]
@@ -134,8 +136,12 @@ impl Shell for Xonsh {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use insta::assert_snapshot;
+    use pretty_assertions::assert_eq;
+
     use crate::test::replace_path;
+
+    use super::*;
 
     #[test]
     fn test_hook_init() {

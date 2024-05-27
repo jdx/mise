@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use indoc::formatdoc;
+
 use crate::config::Settings;
 use crate::shell::Shell;
 
@@ -99,8 +101,10 @@ impl Shell for Bash {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::{replace_path, reset};
+    use insta::assert_snapshot;
     use test_log::test;
+
+    use crate::test::{replace_path, reset};
 
     use super::*;
 

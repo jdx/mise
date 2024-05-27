@@ -3,6 +3,7 @@ use std::process::exit;
 
 use console::{pad_str, style, Alignment};
 use indenter::indented;
+use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
 
