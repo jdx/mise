@@ -163,6 +163,8 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use super::*;
 
     #[test]

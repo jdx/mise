@@ -44,6 +44,8 @@ impl ToolVersionList {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use crate::test::reset;
     use crate::{dirs, env, file};
 

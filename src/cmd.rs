@@ -409,6 +409,8 @@ enum ChildProcessOutput {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use crate::cmd;
 
     #[test]

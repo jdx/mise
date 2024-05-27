@@ -251,6 +251,7 @@ fn normalize_escape_sequences(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use indexmap::indexmap;
+    use pretty_assertions::assert_str_eq;
 
     use crate::dirs;
 

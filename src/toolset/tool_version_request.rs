@@ -196,6 +196,7 @@ impl Display for ToolRequest {
 #[cfg(test)]
 mod tests {
     use super::version_sub;
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_version_sub() {

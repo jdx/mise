@@ -136,8 +136,11 @@ impl Shell for Xonsh {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use pretty_assertions::assert_eq;
+
     use crate::test::replace_path;
+
+    use super::*;
 
     #[test]
     fn test_hook_init() {

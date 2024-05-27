@@ -1,10 +1,3 @@
-#[cfg(test)]
-#[macro_use]
-extern crate insta;
-#[cfg(test)]
-#[macro_use]
-extern crate pretty_assertions;
-
 use std::process::exit;
 
 use color_eyre::{Section, SectionExt};
@@ -15,6 +8,9 @@ use crate::cli::version::VERSION;
 use crate::cli::Cli;
 use crate::ui::style;
 
+#[cfg(test)]
+#[macro_use]
+extern crate insta;
 #[cfg(test)]
 #[macro_use]
 mod test;

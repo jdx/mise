@@ -83,9 +83,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_str_eq;
+    use test_log::test;
+
     use crate::dirs;
     use crate::test::reset;
-    use test_log::test;
 
     #[test]
     fn test_where() {

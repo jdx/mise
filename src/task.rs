@@ -372,6 +372,8 @@ where
 mod tests {
     use std::path::Path;
 
+    use pretty_assertions::assert_eq;
+
     use crate::task::Task;
     use crate::test::reset;
 

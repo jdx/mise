@@ -43,6 +43,8 @@ impl Cache {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_str_eq;
+
     use crate::env;
 
     #[test]

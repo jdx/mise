@@ -49,10 +49,13 @@ pub fn list_external() -> ForgeList {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use pretty_assertions::assert_str_eq;
+    use test_log::test;
+
     use crate::forge::Forge;
     use crate::test::reset;
-    use test_log::test;
+
+    use super::*;
 
     #[test]
     fn test_exact_match() {
