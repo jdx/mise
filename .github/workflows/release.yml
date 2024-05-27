@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 45
     env:
-      RUSTC_WRAPPER: sccache
+      #RUSTC_WRAPPER: sccache
       SCCACHE_ENDPOINT: minio.jdx.dev
       SCCACHE_BUCKET: sccache
       SCCACHE_REGION: auto
@@ -121,7 +121,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     env:
-      RUSTC_WRAPPER: sccache
+      #RUSTC_WRAPPER: sccache
       SCCACHE_ENDPOINT: minio.jdx.dev
       SCCACHE_BUCKET: sccache
       SCCACHE_REGION: auto

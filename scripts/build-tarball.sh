@@ -74,11 +74,11 @@ case "$os-$arch" in
 esac
 
 if command -v cross >/dev/null; then
-  cross build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored
+  cross build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2
 elif command -v zig >/dev/null; then
-  cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored
+  cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2
 else
-  cargo build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored
+  cargo build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2
 fi
 mkdir -p dist/mise/bin
 mkdir -p dist/mise/man/man1
