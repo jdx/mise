@@ -48,6 +48,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use crate::test::reset;
+    use insta::assert_snapshot;
 
     #[test]
     fn test_settings_get() {

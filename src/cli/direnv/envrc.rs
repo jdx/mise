@@ -57,6 +57,9 @@ impl Envrc {
 
 #[cfg(test)]
 mod tests {
+
+    use insta::assert_snapshot;
+
     use crate::test::reset;
     use crate::{dirs, file};
 

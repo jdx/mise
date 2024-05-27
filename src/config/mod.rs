@@ -654,8 +654,11 @@ fn default_task_includes() -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use insta::assert_debug_snapshot;
+
     use crate::test::reset;
+
+    use super::*;
 
     #[test]
     fn test_load() {

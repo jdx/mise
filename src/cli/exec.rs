@@ -142,9 +142,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset;
     use std::env;
+
+    use insta::assert_snapshot;
     use test_log::test;
+
+    use crate::test::reset;
 
     #[test]
     fn test_exec_ok() {

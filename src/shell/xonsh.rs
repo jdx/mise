@@ -136,6 +136,7 @@ impl Shell for Xonsh {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
 
     use crate::test::replace_path;

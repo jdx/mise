@@ -10,9 +10,6 @@ use crate::ui::style;
 
 #[cfg(test)]
 #[macro_use]
-extern crate insta;
-#[cfg(test)]
-#[macro_use]
 mod test;
 
 #[macro_use]

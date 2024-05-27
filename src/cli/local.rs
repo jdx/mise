@@ -160,6 +160,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use std::panic;
 
+    use insta::assert_snapshot;
     use pretty_assertions::assert_str_eq;
 
     use crate::cli::tests::grep;

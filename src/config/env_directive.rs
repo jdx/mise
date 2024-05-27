@@ -237,10 +237,12 @@ impl EnvResults {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_debug_snapshot;
+    use test_log::test;
+
     use crate::test::{replace_path, reset};
 
     use super::*;
-    use test_log::test;
 
     #[test]
     fn test_env_path() {

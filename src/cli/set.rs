@@ -128,6 +128,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use std::path::PathBuf;
 
+    use insta::assert_snapshot;
+
     use crate::test::reset;
     use crate::{env, file};
 

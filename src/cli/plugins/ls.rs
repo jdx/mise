@@ -114,9 +114,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
+    use test_log::test;
+
     use crate::cli::tests::grep;
     use crate::test::reset;
-    use test_log::test;
 
     #[test]
     fn test_plugin_list() {

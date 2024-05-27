@@ -863,11 +863,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dirs::CWD;
     use indoc::formatdoc;
-
-    use crate::test::{replace_path, reset};
+    use insta::{assert_debug_snapshot, assert_snapshot};
     use test_log::test;
+
+    use crate::dirs::CWD;
+    use crate::test::{replace_path, reset};
 
     use super::*;
 

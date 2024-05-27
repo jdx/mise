@@ -589,6 +589,8 @@ fn format_duration(dur: std::time::Duration) -> String {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
+
     use crate::file;
     use crate::test::reset;
 

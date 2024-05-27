@@ -125,8 +125,11 @@ impl Shell for Fish {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use insta::assert_snapshot;
+
     use crate::test::replace_path;
+
+    use super::*;
 
     #[test]
     fn test_activate() {

@@ -72,6 +72,7 @@ pub fn parse_shasums(text: &str) -> HashMap<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use test_log::test;
 
