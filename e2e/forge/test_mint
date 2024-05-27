@@ -2,21 +2,21 @@
 require_cmd swift
 
 # Install Mint if not installed yet
-if ! command -v mint &> /dev/null; then
-    MINT_EXECUTABLE_NAME="mint"
-    MINT_INSTALL_PATH=$HOME/bin/$MINT_EXECUTABLE_NAME
+if ! command -v mint &>/dev/null; then
+  MINT_EXECUTABLE_NAME="mint"
+  MINT_INSTALL_PATH=$HOME/bin/$MINT_EXECUTABLE_NAME
 
-    TMP_PACKAGE_DIR=$(mktemp -d)
-    git clone --quiet --depth 1 --branch "master" https://github.com/yonaskolb/Mint.git "$TMP_PACKAGE_DIR"
+  TMP_PACKAGE_DIR=$(mktemp -d)
+  git clone --quiet --depth 1 --branch "master" https://github.com/yonaskolb/Mint.git "$TMP_PACKAGE_DIR"
 
-    SWIFT_BUILD_FLAGS="--disable-sandbox -c release --arch arm64 --arch x86_64"
+  SWIFT_BUILD_FLAGS="--disable-sandbox -c release --arch arm64 --arch x86_64"
 
-    swift build --quiet $SWIFT_BUILD_FLAGS --package-path "$TMP_PACKAGE_DIR"
-    BUILDED_MINT_EXEC_PATH=$(swift build --quiet $SWIFT_BUILD_FLAGS --package-path "$TMP_PACKAGE_DIR" --show-bin-path)/$MINT_EXECUTABLE_NAME
+  swift build --quiet $SWIFT_BUILD_FLAGS --package-path "$TMP_PACKAGE_DIR"
+  BUILDED_MINT_EXEC_PATH=$(swift build --quiet $SWIFT_BUILD_FLAGS --package-path "$TMP_PACKAGE_DIR" --show-bin-path)/$MINT_EXECUTABLE_NAME
 
-    mkdir -p "$(dirname "$MINT_INSTALL_PATH")"
-    cp "$BUILDED_MINT_EXEC_PATH" "$MINT_INSTALL_PATH"
-    rm -rf "$TMP_PACKAGE_DIR"
+  mkdir -p "$(dirname "$MINT_INSTALL_PATH")"
+  cp "$BUILDED_MINT_EXEC_PATH" "$MINT_INSTALL_PATH"
+  rm -rf "$TMP_PACKAGE_DIR"
 fi
 
 # Test Mint

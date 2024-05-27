@@ -33,10 +33,10 @@ use self::forge_meta::ForgeMeta;
 mod cargo;
 pub mod forge_meta;
 mod go;
+mod mint;
 mod npm;
 mod pipx;
 mod ubi;
-mod mint;
 
 pub type AForge = Arc<dyn Forge>;
 pub type ForgeMap = BTreeMap<ForgeArg, AForge>;

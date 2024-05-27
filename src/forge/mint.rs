@@ -33,15 +33,18 @@ impl Forge for MintForge {
         self.remote_version_cache
             .get_or_try_init(|| {
                 Ok(github::list_releases(self.name())?
-                   .into_iter()
-                   .map(|r| r.tag_name)
-                   .rev()
-                   .collect())
+                    .into_iter()
+                    .map(|r| r.tag_name)
+                    .rev()
+                    .collect())
             })
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &crate::install_context::InstallContext) -> eyre::Result<()> {
+    fn install_version_impl(
+        &self,
+        ctx: &crate::install_context::InstallContext,
+    ) -> eyre::Result<()> {
         let settings = Settings::get();
         settings.ensure_experimental("mint backend")?;
 
