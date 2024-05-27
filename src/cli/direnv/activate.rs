@@ -1,4 +1,5 @@
 use eyre::Result;
+use indoc::indoc;
 
 /// Output direnv function to use mise inside direnv
 ///

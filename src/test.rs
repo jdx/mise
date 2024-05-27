@@ -2,6 +2,7 @@ use std::env::join_paths;
 use std::path::PathBuf;
 
 use color_eyre::{Help, SectionExt};
+use indoc::indoc;
 
 use crate::cli::Cli;
 use crate::config::{config_file, Config};

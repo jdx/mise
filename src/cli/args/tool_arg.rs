@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use console::style;
+use eyre::bail;
 use regex::Regex;
 
 use crate::cli::args::ForgeArg;
@@ -162,6 +163,8 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
+
     use super::*;
 
     #[test]

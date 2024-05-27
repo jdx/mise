@@ -83,9 +83,12 @@ impl FromIterator<PathBuf> for PathEnv {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test::reset;
+    use pretty_assertions::assert_eq;
     use test_log::test;
+
+    use crate::test::reset;
+
+    use super::*;
 
     #[test]
     fn test_path_env() {

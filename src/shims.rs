@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;
 
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{bail, eyre, Result};
 use eyre::WrapErr;
+use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
 

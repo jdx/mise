@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{eyre, Result};
 use toml_edit::DocumentMut;
 
 use crate::config::settings::SettingsFile;

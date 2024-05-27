@@ -1,6 +1,7 @@
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
 use eyre::Result;
+use strum::EnumString;
 
 /// Generate shell completions
 #[derive(Debug, clap::Args)]
@@ -73,7 +74,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 "#
 );
 
-#[derive(Debug, Clone, Copy, EnumString, Display)]
+#[derive(Debug, Clone, Copy, EnumString, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 enum Shell {
     Bash,

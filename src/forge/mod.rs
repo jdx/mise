@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use clap::Command;
 use console::style;
-use eyre::WrapErr;
+use contracts::requires;
+use eyre::{bail, ensure, eyre, WrapErr};
 use itertools::Itertools;
 use rayon::prelude::*;
 use regex::Regex;
@@ -42,7 +43,17 @@ pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
 pub type ForgeList = Vec<AForge>;
 
 #[derive(
-    Debug, PartialEq, Eq, Hash, Clone, Copy, EnumString, EnumIter, AsRefStr, Ord, PartialOrd,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Clone,
+    Copy,
+    strum::EnumString,
+    strum::EnumIter,
+    strum::AsRefStr,
+    Ord,
+    PartialOrd,
 )]
 #[strum(serialize_all = "snake_case")]
 pub enum ForgeType {

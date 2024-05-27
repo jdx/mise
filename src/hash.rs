@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::path::Path;
 
-use eyre::Result;
+use eyre::{ensure, Result};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
@@ -72,9 +72,13 @@ pub fn parse_shasums(text: &str) -> HashMap<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test::reset;
+    use insta::assert_snapshot;
+    use pretty_assertions::assert_eq;
     use test_log::test;
+
+    use crate::test::reset;
+
+    use super::*;
 
     #[test]
     fn test_hash_to_str() {

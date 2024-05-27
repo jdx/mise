@@ -1,5 +1,5 @@
 use console::style;
-use eyre::{Report, Result};
+use eyre::{eyre, Report, Result};
 use rayon::prelude::*;
 
 use crate::config::Settings;

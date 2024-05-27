@@ -409,6 +409,8 @@ pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
 mod tests {
     use std::ops::Deref;
 
+    use pretty_assertions::assert_eq;
+
     use crate::test::reset;
 
     use super::*;

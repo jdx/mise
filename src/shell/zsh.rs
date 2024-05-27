@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use indoc::formatdoc;
+
 use crate::config::Settings;
 use crate::shell::bash::Bash;
 use crate::shell::Shell;
@@ -101,6 +103,8 @@ impl Shell for Zsh {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
+
     use crate::test::replace_path;
 
     use super::*;

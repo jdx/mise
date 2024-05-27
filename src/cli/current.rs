@@ -1,5 +1,5 @@
 use console::style;
-use eyre::Result;
+use eyre::{bail, Result};
 
 use crate::cli::args::ForgeArg;
 use crate::config::Config;
@@ -102,10 +102,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     shfmt 3.6.0
     shellcheck 0.9.0
     node 20.0.0
-  
+
     $ <bold>mise current node</bold>
     20.0.0
-  
+
     # can output multiple versions
     $ <bold>mise current python</bold>
     3.11.0 3.10.0

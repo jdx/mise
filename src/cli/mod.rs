@@ -1,5 +1,6 @@
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
+use indoc::indoc;
 
 use crate::config::Settings;
 use crate::{logger, migrate, shims};

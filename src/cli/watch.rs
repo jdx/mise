@@ -1,7 +1,7 @@
 use std::process::exit;
 
 use console::style;
-use eyre::Result;
+use eyre::{eyre, Result};
 
 use crate::cli::args::ForgeArg;
 use crate::cmd;

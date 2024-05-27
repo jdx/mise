@@ -216,6 +216,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
+
     use crate::test::reset;
     use crate::{dirs, env, file};
 

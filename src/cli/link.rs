@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::ValueHint;
 use color_eyre::eyre::{eyre, Result};
 use console::style;
+use eyre::bail;
 use path_absolutize::Absolutize;
 
 use crate::cli::args::ToolArg;
