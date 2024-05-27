@@ -411,14 +411,14 @@ mod tests {
         assert_cli!("install", "tiny@2.0.0");
         assert_cli_snapshot!("list", @r###"
         dummy  ref:master  ~/.test-tool-versions     ref:master
-        tiny   2.0.0
+        tiny   2.0.0                                           
         tiny   3.1.0       ~/cwd/.test-tool-versions 3
         "###);
 
         assert_cli!("uninstall", "tiny@3.1.0");
         assert_cli_snapshot!("list", @r###"
         dummy  ref:master       ~/.test-tool-versions     ref:master
-        tiny   2.0.0
+        tiny   2.0.0                                                
         tiny   3.1.0 (missing)  ~/cwd/.test-tool-versions 3
         "###);
 
