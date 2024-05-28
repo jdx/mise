@@ -269,7 +269,8 @@ pub fn is_executable(path: &Path) -> bool {
 }
 
 #[cfg(unix)]
-pub fn make_executable(path: &Path) -> Result<()> {
+pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
     let mut perms = path.metadata()?.permissions();
     perms.set_mode(perms.mode() | 0o111);
     fs::set_permissions(path, perms)

@@ -72,6 +72,7 @@ mod tests {
     use std::env;
 
     use pretty_assertions::assert_str_eq;
+    use test_log::test;
 
     use crate::cli::tests::grep;
     use crate::dirs;
