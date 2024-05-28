@@ -11,7 +11,7 @@ use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
 use crate::config::Settings;
 use crate::env;
-use crate::forge::{Forge, ForgeList, ForgeType};
+use crate::forge::{Forge, ForgeList};
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
@@ -55,15 +55,12 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
 #[derive(Debug)]
 pub struct CorePlugin {
     pub fa: ForgeArg,
-    pub name: &'static str,
     pub remote_version_cache: CacheManager<Vec<String>>,
 }
 
 impl CorePlugin {
-    pub fn new(name: &'static str) -> Self {
-        let fa = ForgeArg::new(ForgeType::Asdf, name);
+    pub fn new(fa: ForgeArg) -> Self {
         Self {
-            name,
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
             )
@@ -90,7 +87,7 @@ impl CorePlugin {
         if !*env::MISE_USE_VERSIONS_HOST {
             return Ok(None);
         }
-        let raw = HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", &self.name))?;
+        let raw = HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", &self.fa.name))?;
         let versions = raw
             .lines()
             .map(|v| v.trim().to_string())
