@@ -70,8 +70,8 @@ impl Trust {
                 }
             },
         };
-        let path = path.canonicalize()?;
         config_file::untrust(&path)?;
+        let path = path.canonicalize()?;
         info!("untrusted {}", path.display());
 
         let trusted_via_settings = settings
@@ -95,8 +95,8 @@ impl Trust {
                 }
             },
         };
-        let path = path.canonicalize()?;
         config_file::trust(&path)?;
+        let path = path.canonicalize()?;
         info!("trusted {}", path.display());
         Ok(())
     }
