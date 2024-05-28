@@ -193,7 +193,7 @@ impl NodePlugin {
     fn install_npm_shim(&self, tv: &ToolVersion) -> Result<()> {
         file::remove_file(self.npm_path(tv)).ok();
         file::write(self.npm_path(tv), include_str!("assets/node_npm_shim"))?;
-        file::make_executable(&self.npm_path(tv))?;
+        file::make_executable(self.npm_path(tv))?;
         Ok(())
     }
 

@@ -87,7 +87,7 @@ impl DenoPlugin {
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path())?;
         file::rename(tv.download_path().join("deno"), self.deno_bin(tv))?;
-        file::make_executable(&self.deno_bin(tv))?;
+        file::make_executable(self.deno_bin(tv))?;
         Ok(())
     }
 

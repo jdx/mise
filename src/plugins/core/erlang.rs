@@ -66,7 +66,7 @@ impl ErlangPlugin {
             &self.kerl_path(),
             None,
         )?;
-        file::make_executable(&self.kerl_path())?;
+        file::make_executable(self.kerl_path())?;
         Ok(())
     }
 
