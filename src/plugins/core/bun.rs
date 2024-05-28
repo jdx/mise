@@ -87,7 +87,7 @@ impl BunPlugin {
                 .join("bun"),
             self.bun_bin(&ctx.tv),
         )?;
-        file::make_executable(&self.bun_bin(&ctx.tv))?;
+        file::make_executable(self.bun_bin(&ctx.tv))?;
         file::make_symlink(Path::new("./bun"), &ctx.tv.install_path().join("bin/bunx"))?;
         Ok(())
     }
