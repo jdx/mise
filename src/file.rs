@@ -157,11 +157,11 @@ pub fn modified_duration(path: &Path) -> Result<Duration> {
     Ok(duration)
 }
 
-pub fn find_up(from: &Path, filenames: &[&str]) -> Option<PathBuf> {
+pub fn find_up<FN: AsRef<str>>(from: &Path, filenames: &[FN]) -> Option<PathBuf> {
     let mut current = from.to_path_buf();
     loop {
         for filename in filenames {
-            let path = current.join(filename);
+            let path = current.join(filename.as_ref());
             if path.exists() {
                 return Some(path);
             }
