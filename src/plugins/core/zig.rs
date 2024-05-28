@@ -24,7 +24,7 @@ pub struct ZigPlugin {
 
 impl ZigPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("zig");
+        let core = CorePlugin::new("zig".into());
         Self { core }
     }
 
