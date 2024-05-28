@@ -28,7 +28,7 @@ pub struct RubyPlugin {
 impl RubyPlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new("ruby"),
+            core: CorePlugin::new("ruby".into()),
         }
     }
 

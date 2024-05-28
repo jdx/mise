@@ -11,16 +11,25 @@ use crate::registry::REGISTRY;
 
 #[derive(Clone, PartialOrd, Ord)]
 pub struct ForgeArg {
+    /// user-specified identifier, "node", "npm:prettier", "cargo:eza", "vfox:version-fox/vfox-nodejs"
+    /// multiple ids may point to a single tool, e.g.: "node", "core:node" or "vfox:version-fox/vfox-nodejs"
+    /// and "vfox:https://github.com/version-fox/vfox-nodejs"
     pub id: String,
+    /// the name of the tool within the forge, e.g.: "node", "prettier", "eza", "vfox-nodejs"
     pub name: String,
+    /// type of forge, "asdf", "cargo", "core", "npm", "vfox"
     pub forge_type: ForgeType,
+    /// ~/.local/share/mise/cache/<THIS>
     pub cache_path: PathBuf,
+    /// ~/.local/share/mise/installs/<THIS>
     pub installs_path: PathBuf,
+    /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
 }
 
-impl From<&str> for ForgeArg {
-    fn from(s: &str) -> Self {
+impl<A: AsRef<str>> From<A> for ForgeArg {
+    fn from(s: A) -> Self {
+        let s = s.as_ref();
         if let Some(fa) = FORGE_MAP.get(s) {
             return fa.clone();
         }
@@ -32,18 +41,13 @@ impl From<&str> for ForgeArg {
         Self::new(ForgeType::Asdf, s)
     }
 }
-impl From<&String> for ForgeArg {
-    fn from(s: &String) -> Self {
-        Self::from(s.as_str())
-    }
-}
 
 impl ForgeArg {
     pub fn new(forge_type: ForgeType, name: &str) -> Self {
         let name = unalias_forge(name).to_string();
         let id = match forge_type {
             ForgeType::Asdf | ForgeType::Core => name.clone(),
-            forge_type => format!("{}:{}", forge_type.as_ref(), name),
+            forge_type => format!("{forge_type}:{name}"),
         };
         let pathname = regex!(r#"[/:]"#).replace_all(&id, "-").to_string();
         Self {
