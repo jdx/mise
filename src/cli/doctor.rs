@@ -189,7 +189,7 @@ impl Doctor {
 
     fn analyze_plugins(&mut self) {
         for plugin in backend::list() {
-            let is_core = CORE_PLUGINS.iter().any(|fg| fg.id() == plugin.id());
+            let is_core = CORE_PLUGINS.contains_key(plugin.id());
             let plugin_type = plugin.get_plugin_type();
 
             if is_core && plugin_type == PluginType::Asdf {

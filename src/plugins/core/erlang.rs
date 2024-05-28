@@ -22,7 +22,7 @@ const KERL_VERSION: &str = "4.1.1";
 impl ErlangPlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new("erlang".into()),
+            core: CorePlugin::new(BackendArg::new("erlang", "erlang")),
         }
     }
 

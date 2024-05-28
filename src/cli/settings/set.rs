@@ -24,6 +24,7 @@ impl SettingsSet {
             "all_compile" => parse_bool(&self.value)?,
             "always_keep_download" => parse_bool(&self.value)?,
             "always_keep_install" => parse_bool(&self.value)?,
+            "asdf" => parse_bool(&self.value)?,
             "asdf_compat" => parse_bool(&self.value)?,
             "cargo_binstall" => parse_bool(&self.value)?,
             "color" => parse_bool(&self.value)?,
@@ -61,6 +62,7 @@ impl SettingsSet {
             "task_output" => self.value.into(),
             "trusted_config_paths" => self.value.split(':').map(|s| s.to_string()).collect(),
             "verbose" => parse_bool(&self.value)?,
+            "vfox" => parse_bool(&self.value)?,
             "yes" => parse_bool(&self.value)?,
             _ => return Err(eyre!("Unknown setting: {}", self.setting)),
         };
@@ -135,6 +137,7 @@ pub mod tests {
         all_compile = false
         always_keep_download = true
         always_keep_install = true
+        asdf = true
         asdf_compat = false
         cargo_binstall = true
         color = true
@@ -162,6 +165,7 @@ pub mod tests {
         raw = false
         trusted_config_paths = []
         verbose = true
+        vfox = false
         yes = true
 
         [status]

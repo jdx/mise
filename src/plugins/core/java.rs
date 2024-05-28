@@ -35,7 +35,7 @@ pub struct JavaPlugin {
 
 impl JavaPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("java".into());
+        let core = CorePlugin::new(BackendArg::new("java", "java"));
         let java_metadata_ga_cache_filename =
             format!("java_metadata_ga_{}_{}-$KEY.msgpack.z", os(), arch());
         let java_metadata_ea_cache_filename =

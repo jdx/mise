@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 pub use python::PythonPlugin;
 
-use crate::backend::{Backend, BackendList};
+use crate::backend::{Backend, BackendMap};
 use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
@@ -35,7 +35,7 @@ mod python;
 mod ruby;
 mod zig;
 
-pub static CORE_PLUGINS: Lazy<BackendList> = Lazy::new(|| {
+pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     let mut plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
@@ -51,6 +51,9 @@ pub static CORE_PLUGINS: Lazy<BackendList> = Lazy::new(|| {
         plugins.push(Arc::new(ZigPlugin::new()));
     }
     plugins
+        .into_iter()
+        .map(|p| (p.id().to_string(), p))
+        .collect()
 });
 
 #[derive(Debug)]
@@ -64,7 +67,7 @@ impl CorePlugin {
         let settings = Settings::get();
         CORE_PLUGINS
             .iter()
-            .map(|f| Box::new(CorePlugin::new(f.name().to_string().into())) as Box<dyn Plugin>)
+            .map(|(id, _)| Box::new(CorePlugin::new(id.to_string().into())) as Box<dyn Plugin>)
             .filter(|p| !settings.disable_tools.contains(p.name()))
             .collect()
     }
