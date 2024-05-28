@@ -1,4 +1,5 @@
-use color_eyre::{eyre::bail, Result};
+use color_eyre::eyre::bail;
+use color_eyre::Result;
 use console::style;
 use self_update::backends::github::{ReleaseList, Update};
 use self_update::update::Release;
