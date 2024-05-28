@@ -457,46 +457,52 @@ fn load_legacy_files(settings: &Settings) -> BTreeMap<String, Vec<String>> {
     legacy_filenames
 }
 
-pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
+pub static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
     if *env::MISE_DEFAULT_CONFIG_FILENAME == ".mise.toml" {
-        let mut filenames = vec![
-            env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.clone(), // .tool-versions
-            ".config/mise/config.toml".into(),
-            ".config/mise.toml".into(),
-            ".mise/config.toml".into(),
-            "mise/config.toml".into(),
-            ".mise/config.toml".into(),
-            ".rtx.toml".into(),
-            "mise.toml".into(),
-            env::MISE_DEFAULT_CONFIG_FILENAME.clone(), // .mise.toml
-            ".config/mise/config.local.toml".into(),
-            ".config/mise.local.toml".into(),
-            ".mise/config.local.toml".into(),
-            ".rtx.local.toml".into(),
-            "mise.local.toml".into(),
-            ".mise.local.toml".into(),
-        ];
-        if let Some(env) = &*env::MISE_ENV {
-            filenames.push(format!(".config/mise/config.{env}.toml"));
-            filenames.push(format!(".config/mise.{env}.toml"));
-            filenames.push(format!("mise/config.{env}.toml"));
-            filenames.push(format!("mise.{env}.toml"));
-            filenames.push(format!(".mise/config.{env}.toml"));
-            filenames.push(format!(".mise.{env}.toml"));
-            filenames.push(format!(".config/mise/config.{env}.local.toml"));
-            filenames.push(format!(".config/mise.{env}.local.toml"));
-            filenames.push(format!("mise/config.{env}.local.toml"));
-            filenames.push(format!("mise.{env}.local.toml"));
-            filenames.push(format!(".mise/config.{env}.local.toml"));
-            filenames.push(format!(".mise.{env}.local.toml"));
-        }
-        filenames
+        vec![
+            &*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME, // .tool-versions
+            ".config/mise/config.toml",
+            ".config/mise.toml",
+            ".mise/config.toml",
+            "mise/config.toml",
+            ".mise/config.toml",
+            ".rtx.toml",
+            "mise.toml",
+            &*env::MISE_DEFAULT_CONFIG_FILENAME, // .mise.toml
+            ".config/mise/config.local.toml",
+            ".config/mise.local.toml",
+            ".mise/config.local.toml",
+            ".rtx.local.toml",
+            "mise.local.toml",
+            ".mise.local.toml",
+        ]
     } else {
         vec![
-            env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.clone(),
-            env::MISE_DEFAULT_CONFIG_FILENAME.clone(),
+            &*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME,
+            &*env::MISE_DEFAULT_CONFIG_FILENAME,
         ]
     }
+});
+pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
+    let mut filenames = LOCAL_CONFIG_FILENAMES
+        .iter()
+        .map(|f| f.to_string())
+        .collect_vec();
+    if let Some(env) = &*env::MISE_ENV {
+        filenames.push(format!(".config/mise/config.{env}.toml"));
+        filenames.push(format!(".config/mise.{env}.toml"));
+        filenames.push(format!("mise/config.{env}.toml"));
+        filenames.push(format!("mise.{env}.toml"));
+        filenames.push(format!(".mise/config.{env}.toml"));
+        filenames.push(format!(".mise.{env}.toml"));
+        filenames.push(format!(".config/mise/config.{env}.local.toml"));
+        filenames.push(format!(".config/mise.{env}.local.toml"));
+        filenames.push(format!("mise/config.{env}.local.toml"));
+        filenames.push(format!("mise.{env}.local.toml"));
+        filenames.push(format!(".mise/config.{env}.local.toml"));
+        filenames.push(format!(".mise.{env}.local.toml"));
+    }
+    filenames
 });
 
 pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
