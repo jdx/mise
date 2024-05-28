@@ -1,5 +1,8 @@
+use indexmap::IndexMap;
+use itertools::Itertools;
 use std::fmt::Debug;
 use std::str::FromStr;
+use versions::Versioning;
 
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
@@ -7,6 +10,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::forge::{Forge, ForgeType};
 use crate::github;
+use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
@@ -39,13 +43,12 @@ impl Forge for PIPXForge {
             .get_or_try_init(|| match self.name().parse()? {
                 PipxRequest::Pypi(package) => {
                     let url = format!("https://pypi.org/pypi/{}/json", package);
-                    let raw = crate::http::HTTP_FETCH.get_text(url)?;
-                    let data: serde_json::Value = serde_json::from_str(&raw)?;
-                    let versions = data["releases"]
-                        .as_object()
-                        .ok_or_else(|| eyre::eyre!("Invalid pypi response"))?
+                    let data: PypiPackage = HTTP_FETCH.json(url)?;
+                    let versions = data
+                        .releases
                         .keys()
-                        .map(|k| k.to_string())
+                        .map(|v| v.to_string())
+                        .sorted_by_cached_key(|v| Versioning::new(v))
                         .collect();
                     Ok(versions)
                 }
@@ -61,7 +64,14 @@ impl Forge for PIPXForge {
 
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
-            .get_or_try_init(|| self.latest_version(Some("latest".into())))
+            .get_or_try_init(|| match self.name().parse()? {
+                PipxRequest::Pypi(package) => {
+                    let url = format!("https://pypi.org/pypi/{}/json", package);
+                    let pkg: PypiPackage = HTTP_FETCH.json(url)?;
+                    Ok(Some(pkg.info.version))
+                }
+                _ => self.latest_version(Some("latest".into())),
+            })
             .cloned()
     }
 
@@ -142,3 +152,17 @@ impl FromStr for PipxRequest {
         }
     }
 }
+
+#[derive(serde::Deserialize)]
+struct PypiPackage {
+    releases: IndexMap<String, Vec<PypiRelease>>,
+    info: PypiInfo,
+}
+
+#[derive(serde::Deserialize)]
+struct PypiInfo {
+    version: String,
+}
+
+#[derive(serde::Deserialize)]
+struct PypiRelease {}
