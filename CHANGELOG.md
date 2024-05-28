@@ -1,5 +1,26 @@
 # Changelog
 
+## [2024.5.24](https://github.com/jdx/mise/compare/v2024.5.23..v2024.5.24) - 2024-05-28
+
+### 🐛 Bug Fixes
+
+- **(pipx)** version ordering by [@jdx](https://github.com/jdx) in [#2209](https://github.com/jdx/mise/pull/2209)
+- **(use)** re-use mise.toml if exists by [@jdx](https://github.com/jdx) in [#2207](https://github.com/jdx/mise/pull/2207)
+- mise trust works incorrectly with symlinked configuration file by [@roele](https://github.com/roele) in [#2186](https://github.com/jdx/mise/pull/2186)
+
+### 🚜 Refactor
+
+- simplify ForgeArg building by [@jdx](https://github.com/jdx) in [#2208](https://github.com/jdx/mise/pull/2208)
+
+### 🔍 Other Changes
+
+- resolve macros/derived-traits from crates w/ scopes rather than globally by [@donaldguy](https://github.com/donaldguy) in [#2198](https://github.com/jdx/mise/pull/2198)
+- eliminate .tool-versions only used for jq by [@donaldguy](https://github.com/donaldguy) in [#2195](https://github.com/jdx/mise/pull/2195)
+
+### New Contributors
+
+* @donaldguy made their first contribution in [#2195](https://github.com/jdx/mise/pull/2195)
+
 ## [2024.5.23](https://github.com/jdx/mise/compare/v2024.5.22..v2024.5.23) - 2024-05-27
 
 ### 🐛 Bug Fixes
