@@ -16,6 +16,3 @@ always_keep_install= true
 legacy_version_file= true
 plugin_autoupdate_last_check_duration = "20m"
 jobs = 2
-
-[tools]
-tiny = "2.1.0"
