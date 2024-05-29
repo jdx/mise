@@ -157,11 +157,11 @@ pub fn modified_duration(path: &Path) -> Result<Duration> {
     Ok(duration)
 }
 
-pub fn find_up(from: &Path, filenames: &[&str]) -> Option<PathBuf> {
+pub fn find_up<FN: AsRef<str>>(from: &Path, filenames: &[FN]) -> Option<PathBuf> {
     let mut current = from.to_path_buf();
     loop {
         for filename in filenames {
-            let path = current.join(filename);
+            let path = current.join(filename.as_ref());
             if path.exists() {
                 return Some(path);
             }
@@ -269,7 +269,8 @@ pub fn is_executable(path: &Path) -> bool {
 }
 
 #[cfg(unix)]
-pub fn make_executable(path: &Path) -> Result<()> {
+pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
     let mut perms = path.metadata()?.permissions();
     perms.set_mode(perms.mode() | 0o111);
     fs::set_permissions(path, perms)
@@ -408,6 +409,8 @@ pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::ops::Deref;
+
+    use pretty_assertions::assert_eq;
 
     use crate::test::reset;
 

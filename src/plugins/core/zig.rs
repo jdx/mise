@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -23,7 +24,7 @@ pub struct ZigPlugin {
 
 impl ZigPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("zig");
+        let core = CorePlugin::new("zig".into());
         Self { core }
     }
 

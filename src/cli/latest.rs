@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{bail, Result};
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
@@ -66,8 +66,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset;
+    use insta::assert_snapshot;
+    use pretty_assertions::assert_str_eq;
     use test_log::test;
+
+    use crate::test::reset;
 
     #[test]
     fn test_latest() {

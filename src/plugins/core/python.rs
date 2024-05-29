@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use eyre::{bail, eyre};
 use itertools::Itertools;
 
 use crate::build_time::built_info;
@@ -26,7 +27,7 @@ pub struct PythonPlugin {
 
 impl PythonPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("python");
+        let core = CorePlugin::new("python".into());
         Self {
             precompiled_cache: CacheManager::new(
                 core.fa.cache_path.join("precompiled-$KEY.msgpack.z"),

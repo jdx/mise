@@ -71,6 +71,8 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
+
     use crate::test::reset;
 
     #[test]

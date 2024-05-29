@@ -1,19 +1,3 @@
-#[macro_use]
-extern crate contracts;
-extern crate core;
-#[macro_use]
-extern crate eyre;
-#[macro_use]
-extern crate indoc;
-#[cfg(test)]
-#[macro_use]
-extern crate insta;
-#[cfg(test)]
-#[macro_use]
-extern crate pretty_assertions;
-#[macro_use]
-extern crate strum;
-
 use std::process::exit;
 
 use color_eyre::{Section, SectionExt};

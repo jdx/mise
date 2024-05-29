@@ -26,9 +26,12 @@ impl FromStr for EnvVarArg {
 
 #[cfg(test)]
 mod tests {
-    use super::EnvVarArg;
-    use crate::test::reset;
+    use pretty_assertions::assert_eq;
     use test_log::test;
+
+    use crate::test::reset;
+
+    use super::EnvVarArg;
 
     #[test]
     fn valid_values() {

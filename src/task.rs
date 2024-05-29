@@ -9,7 +9,7 @@ use std::{ffi, fmt, path};
 
 use console::truncate_str;
 use either::Either;
-use eyre::Result;
+use eyre::{eyre, Result};
 use globset::Glob;
 use itertools::Itertools;
 use petgraph::prelude::*;
@@ -277,6 +277,7 @@ impl Deps {
         rx
     }
 
+    // use contracts::{ensures, requires};
     // #[requires(self.graph.node_count() > 0)]
     // #[ensures(self.graph.node_count() == old(self.graph.node_count()) - 1)]
     pub fn remove(&mut self, task: &Task) {
@@ -370,6 +371,8 @@ where
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    use pretty_assertions::assert_eq;
 
     use crate::task::Task;
     use crate::test::reset;

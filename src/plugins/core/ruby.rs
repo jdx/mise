@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 
+use contracts::requires;
 use eyre::{Result, WrapErr};
 
 use crate::cli::args::ForgeArg;
@@ -27,7 +28,7 @@ pub struct RubyPlugin {
 impl RubyPlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new("ruby"),
+            core: CorePlugin::new("ruby".into()),
         }
     }
 
@@ -426,6 +427,9 @@ fn parse_gemfile(body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+    use pretty_assertions::assert_eq;
+
     use super::*;
 
     #[test]

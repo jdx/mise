@@ -1,5 +1,6 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
+use indoc::formatdoc;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
@@ -93,8 +94,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset;
     use std::env;
+
+    use insta::assert_snapshot;
+
+    use crate::test::reset;
 
     #[test]
     fn test_shell() {

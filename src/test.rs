@@ -2,6 +2,7 @@ use std::env::join_paths;
 use std::path::PathBuf;
 
 use color_eyre::{Help, SectionExt};
+use indoc::indoc;
 
 use crate::cli::Cli;
 use crate::config::{config_file, Config};
@@ -75,10 +76,31 @@ pub fn reset() {
     Config::reset();
     forge::reset();
     config_file::reset();
+    file::remove_all(&*env::HOME.join("cwd")).unwrap();
+    file::create_dir_all(&*env::HOME.join("cwd")).unwrap();
     env::set_current_dir(env::HOME.join("cwd")).unwrap();
     env::remove_var("MISE_FAILURE");
     file::remove_all(&*dirs::TRUSTED_CONFIGS).unwrap();
     file::remove_all(&*dirs::TRACKED_CONFIGS).unwrap();
+    file::create_dir_all(".mise/tasks").unwrap();
+    file::write(
+        ".mise/tasks/filetask",
+        indoc! {r#"#!/usr/bin/env bash
+# mise alias=["ft"]
+# mise description="This is a test build script"
+# mise depends=["lint", "test"]
+# mise sources=[".test-tool-versions"]
+# mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+# mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+
+set -euxo pipefail
+cd "$MISE_PROJECT_ROOT" || exit 1
+echo "running test-build script"
+echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.txt
+    "#},
+    )
+    .unwrap();
+    file::make_executable(".mise/tasks/filetask").unwrap();
     file::write(
         env::HOME.join(".test-tool-versions"),
         indoc! {r#"

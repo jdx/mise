@@ -6,10 +6,8 @@ use itertools::Itertools;
 
 use crate::cli::args::{ForgeArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, Config, Settings};
-use crate::env::{
-    MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
-};
+use crate::config::{config_file, Config, Settings, LOCAL_CONFIG_FILENAMES};
+use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_GLOBAL_CONFIG_FILE};
 use crate::file::display_path;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -181,18 +179,15 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
-    let mise_toml = p.join(&*MISE_DEFAULT_CONFIG_FILENAME);
-    let tool_versions = p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME);
-    if mise_toml.exists() {
-        return mise_toml;
-    } else if tool_versions.exists() {
-        return tool_versions;
-    }
-    let filenames = vec![MISE_DEFAULT_CONFIG_FILENAME.as_str()];
+    let filenames = LOCAL_CONFIG_FILENAMES
+        .iter()
+        .rev()
+        .map(|f| f.to_string())
+        .collect::<Vec<_>>();
     if let Some(p) = file::find_up(p, &filenames) {
         return p;
     }
-    mise_toml
+    p.join(&*MISE_DEFAULT_CONFIG_FILENAME)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -216,6 +211,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
+
     use crate::test::reset;
     use crate::{dirs, env, file};
 

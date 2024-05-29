@@ -50,11 +50,14 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::reset;
     use std::ops::Deref;
 
-    use super::*;
+    use pretty_assertions::assert_str_eq;
     use test_log::test;
+
+    use crate::test::reset;
+
+    use super::*;
 
     #[test]
     fn test_get_shorthands() {

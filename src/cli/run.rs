@@ -14,7 +14,7 @@ use console::Color;
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
 use either::Either;
-use eyre::Result;
+use eyre::{bail, ensure, eyre, Result};
 use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -557,7 +557,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 "#
 );
 
-#[derive(Debug, PartialEq, EnumString)]
+#[derive(Debug, PartialEq, strum::EnumString)]
 #[strum(serialize_all = "snake_case")]
 enum TaskOutput {
     Prefix,
@@ -589,6 +589,8 @@ fn format_duration(dur: std::time::Duration) -> String {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
+
     use crate::file;
     use crate::test::reset;
 

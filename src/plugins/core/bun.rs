@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -23,7 +24,7 @@ pub struct BunPlugin {
 
 impl BunPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("bun");
+        let core = CorePlugin::new("bun".into());
         Self { core }
     }
 
@@ -86,7 +87,7 @@ impl BunPlugin {
                 .join("bun"),
             self.bun_bin(&ctx.tv),
         )?;
-        file::make_executable(&self.bun_bin(&ctx.tv))?;
+        file::make_executable(self.bun_bin(&ctx.tv))?;
         file::make_symlink(Path::new("./bun"), &ctx.tv.install_path().join("bin/bunx"))?;
         Ok(())
     }

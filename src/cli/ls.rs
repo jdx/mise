@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use console::style;
-use eyre::Result;
+use eyre::{ensure, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_derive::Serialize;
@@ -392,6 +392,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_str_eq;
+
     use crate::dirs;
     use crate::file::remove_all;
     use crate::test::reset;

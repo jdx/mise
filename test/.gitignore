@@ -2,5 +2,5 @@ data/
 !data/plugins
 cache/
 state/
-cwd/man/
+cwd/
 test-build-output.txt

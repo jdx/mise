@@ -4,6 +4,8 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 
 use color_eyre::eyre::{eyre, Result};
+use contracts::requires;
+use indoc::formatdoc;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -33,7 +35,7 @@ pub struct JavaPlugin {
 
 impl JavaPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("java");
+        let core = CorePlugin::new("java".into());
         let java_metadata_ga_cache_filename =
             format!("java_metadata_ga_{}_{}-$KEY.msgpack.z", os(), arch());
         let java_metadata_ea_cache_filename =
