@@ -883,10 +883,15 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result
 
 #[cfg(test)]
 mod tests {
+    use test_log::test;
+
+    use crate::test::reset;
+
     use super::*;
 
     #[test]
     fn test_debug() {
+        reset();
         let plugin = Asdf::new(String::from("dummy"));
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }
