@@ -12,6 +12,7 @@ use color_eyre::eyre::{bail, eyre, Result, WrapErr};
 use console::style;
 use itertools::Itertools;
 use rayon::prelude::*;
+use url::Url;
 
 use crate::cache::CacheManager;
 use crate::cli::args::ForgeArg;
@@ -139,11 +140,13 @@ impl Asdf {
         }
         // ensure that we're using a default shorthand plugin
         let git = Git::new(self.plugin_path.to_path_buf());
-        if git.get_remote_url()
-            != DEFAULT_SHORTHANDS
-                .get(self.name.as_str())
-                .map(|s| s.to_string())
-        {
+        let normalized_remote = normalize_remote(&git.get_remote_url().unwrap_or_default())
+            .unwrap_or("INVALID_URL".into());
+        let shorthand_remote = DEFAULT_SHORTHANDS
+            .get(self.name.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
             return Ok(None);
         }
         let versions =
@@ -521,14 +524,7 @@ impl Forge for Asdf {
             }
             if !settings.yes && self.repo_url.is_none() {
                 let url = self.get_repo_url(&config).unwrap_or_default();
-                let is_shorthand = DEFAULT_SHORTHANDS
-                    .get(self.name.as_str())
-                    .is_some_and(|s| s == &url);
-                let is_mise_url = url.starts_with("https://github.com/mise-plugins/");
-                let is_trusted = !is_shorthand
-                    || is_mise_url
-                    || TRUSTED_SHORTHANDS.contains(&self.name.as_str());
-                if !is_trusted {
+                if !is_trusted_plugin(self.name(), &url) {
                     warn!(
                         "⚠️ {} is a community-developed plugin",
                         style(&self.name).blue(),
@@ -879,6 +875,23 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result
     )
     .render_str(tmpl, &ctx)
     .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
+}
+
+fn normalize_remote(remote: &str) -> eyre::Result<String> {
+    let url = Url::parse(remote)?;
+    let host = url.host_str().unwrap();
+    let path = url.path().trim_end_matches(".git");
+    Ok(format!("{host}{path}"))
+}
+
+fn is_trusted_plugin(name: &str, remote: &str) -> bool {
+    let normalized_url = normalize_remote(remote).unwrap_or("INVALID_URL".into());
+    let is_shorthand = DEFAULT_SHORTHANDS
+        .get(name)
+        .is_some_and(|s| normalize_remote(s).unwrap_or_default() == normalized_url);
+    let is_mise_url = normalized_url.starts_with("github.com/mise-plugins/");
+
+    !is_shorthand || is_mise_url || TRUSTED_SHORTHANDS.contains(name)
 }
 
 #[cfg(test)]
