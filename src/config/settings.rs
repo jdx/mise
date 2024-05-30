@@ -74,6 +74,8 @@ pub struct Settings {
     /// set to true to skip checksum verification when downloading go sdk tarballs
     #[config(env = "MISE_GO_SKIP_CHECKSUM", default = false)]
     pub go_skip_checksum: bool,
+    #[config(env = "MISE_HTTP_TIMEOUT", default = 30)]
+    pub http_timeout: u64,
     #[config(env = "MISE_JOBS", default = 4)]
     pub jobs: usize,
     #[config(env = "MISE_LEGACY_VERSION_FILE", default = true)]
