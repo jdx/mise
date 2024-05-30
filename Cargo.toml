@@ -156,8 +156,6 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-arm64{ 
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ archive-suffix }"
 [package.metadata.binstall.overrides.armv7-unknown-linux-gnueabihf]
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
-[package.metadata.binstall.overrides.armv6-unknown-linux-gnueabihf]
-pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv6{ archive-suffix }"
 
 [package.metadata.cargo-machete]
 ignored = ["built", "openssl"]
