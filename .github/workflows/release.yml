@@ -148,10 +148,6 @@ jobs:
           name: tarball-${{matrix.target}}
           path: dist/*.zip
           if-no-files-found: error
-      - uses: taiki-e/install-action@v2
-        with: { tool: cargo-cache }
-      - if: steps.cache-crates.outputs.cache-hit != 'true'
-        run: cargo cache --autoclean
   e2e-linux:
     name: e2e-linux-${{matrix.tranche}}
     needs: [build-tarball]
