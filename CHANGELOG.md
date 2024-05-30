@@ -1,5 +1,27 @@
 # Changelog
 
+## [2024.5.25](https://github.com/jdx/mise/compare/v2024.5.24..v2024.5.25) - 2024-05-30
+
+### 🚀 Features
+
+- use all tera features by [@jdx](https://github.com/jdx) in [48ca740](https://github.com/jdx/mise/commit/48ca74043e21fe12de18a8457e4554ac2cadb17b)
+
+### 🚜 Refactor
+
+- turn asdf into a forge by [@jdx](https://github.com/jdx) in [#2219](https://github.com/jdx/mise/pull/2219)
+
+### 🧪 Testing
+
+- clean cwd in unit tests by [@jdx](https://github.com/jdx) in [#2211](https://github.com/jdx/mise/pull/2211)
+- windows by [@jdx](https://github.com/jdx) in [#2216](https://github.com/jdx/mise/pull/2216)
+- add reset() to more tests by [@jdx](https://github.com/jdx) in [#2217](https://github.com/jdx/mise/pull/2217)
+- added reset() to more tests by [@jdx](https://github.com/jdx) in [a22c9dd](https://github.com/jdx/mise/commit/a22c9dd1f0eb8c057046e23807abe3c5352faf66)
+
+### 🔍 Other Changes
+
+- fix build-tarball call by [@jdx](https://github.com/jdx) in [2a4b986](https://github.com/jdx/mise/commit/2a4b98685f0dc2c4c85c3ecee9634b08432354fc)
+- **breaking** use kebab-case for backend-installs by [@jdx](https://github.com/jdx) in [#2218](https://github.com/jdx/mise/pull/2218)
+
 ## [2024.5.24](https://github.com/jdx/mise/compare/v2024.5.23..v2024.5.24) - 2024-05-28
 
 ### 🐛 Bug Fixes
