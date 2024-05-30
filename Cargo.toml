@@ -118,6 +118,7 @@ toml_edit = { version = "0.22.12", features = ["parse"] }
 url = "2.5.0"
 usage-lib = { version = "0.3", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
+vfox = { path = "../vfox.rs" }
 walkdir = "2.5.0"
 which = "6.0.1"
 xx = { version = "1.0.0", features = ["glob"] }
