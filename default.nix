@@ -28,8 +28,6 @@ rustPlatform.buildRustPackage {
       --replace '#!/bin/sh' '#!${bash}/bin/sh'
     substituteInPlace ./src/env_diff.rs \
       --replace '"bash"' '"${bash}/bin/bash"'
-    substituteInPlace ./test/cwd/.mise/tasks/filetask \
-      --replace '#!/usr/bin/env bash' '#!${bash}/bin/bash'
     substituteInPlace ./src/cli/direnv/exec.rs \
       --replace '"env"' '"${coreutils}/bin/env"' \
       --replace 'cmd!("direnv"' 'cmd!("${direnv}/bin/direnv"'
