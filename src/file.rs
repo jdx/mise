@@ -279,7 +279,7 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub fn make_executable(_path: &Path) -> Result<()> {
+pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
