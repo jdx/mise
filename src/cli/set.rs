@@ -129,6 +129,7 @@ mod tests {
     use std::path::PathBuf;
 
     use insta::assert_snapshot;
+    use test_log::test;
 
     use crate::test::reset;
     use crate::{env, file};
@@ -147,6 +148,7 @@ mod tests {
 
     #[test]
     fn test_env_vars() {
+        reset();
         // Using the default file
         let filename = ".test.mise.toml";
         let cf_path = remove_config_file(filename);
@@ -166,6 +168,7 @@ mod tests {
 
     #[test]
     fn test_env_vars_remove() {
+        reset();
         // Using the default file
         let filename = ".test.mise.toml";
         let cf_path = remove_config_file(filename);
