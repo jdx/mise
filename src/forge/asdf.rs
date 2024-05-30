@@ -5,7 +5,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::exit;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use clap::Command;
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
@@ -26,10 +26,10 @@ use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{PluginType, Script, ScriptManager};
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -38,7 +38,7 @@ use crate::ui::prompt;
 use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
-pub struct ExternalPlugin {
+pub struct Asdf {
     pub fa: ForgeArg,
     pub name: String,
     pub plugin_path: PathBuf,
@@ -52,7 +52,7 @@ pub struct ExternalPlugin {
     legacy_filename_cache: CacheManager<Vec<String>>,
 }
 
-impl ExternalPlugin {
+impl Asdf {
     pub fn new(name: String) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
         let mut toml_path = plugin_path.join("mise.plugin.toml");
@@ -434,21 +434,21 @@ fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
         .with_env("MISE_SHIMS_DIR", *dirs::SHIMS)
 }
 
-impl Eq for ExternalPlugin {}
+impl Eq for Asdf {}
 
-impl PartialEq for ExternalPlugin {
+impl PartialEq for Asdf {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl Hash for ExternalPlugin {
+impl Hash for Asdf {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
 }
 
-impl Forge for ExternalPlugin {
+impl Forge for Asdf {
     fn fa(&self) -> &ForgeArg {
         &self.fa
     }
@@ -774,7 +774,7 @@ impl Forge for ExternalPlugin {
     }
 }
 
-impl Debug for ExternalPlugin {
+impl Debug for Asdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExternalPlugin")
             .field("name", &self.name)
@@ -787,13 +787,107 @@ impl Debug for ExternalPlugin {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct ExternalPluginCache {
+    list_bin_paths: RwLock<HashMap<ToolRequest, CacheManager<Vec<String>>>>,
+    exec_env: RwLock<HashMap<ToolRequest, CacheManager<BTreeMap<String, String>>>>,
+}
+
+impl ExternalPluginCache {
+    pub fn list_bin_paths<F>(
+        &self,
+        plugin: &Asdf,
+        tv: &ToolVersion,
+        fetch: F,
+    ) -> eyre::Result<Vec<String>>
+    where
+        F: FnOnce() -> eyre::Result<Vec<String>>,
+    {
+        let mut w = self.list_bin_paths.write().unwrap();
+        let cm = w.entry(tv.request.clone()).or_insert_with(|| {
+            let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
+                Some(key) => {
+                    let config = Config::get();
+                    let key = render_cache_key(&config, tv, key);
+                    let filename = format!("{}-$KEY.msgpack.z", key);
+                    tv.cache_path().join("list_bin_paths").join(filename)
+                }
+                None => tv.cache_path().join("list_bin_paths-$KEY.msgpack.z"),
+            };
+            CacheManager::new(list_bin_paths_filename)
+                .with_fresh_file(dirs::DATA.to_path_buf())
+                .with_fresh_file(plugin.plugin_path.clone())
+                .with_fresh_file(tv.install_path())
+        });
+        cm.get_or_try_init(fetch).cloned()
+    }
+
+    pub fn exec_env<F>(
+        &self,
+        config: &Config,
+        plugin: &Asdf,
+        tv: &ToolVersion,
+        fetch: F,
+    ) -> eyre::Result<BTreeMap<String, String>>
+    where
+        F: FnOnce() -> eyre::Result<BTreeMap<String, String>>,
+    {
+        let mut w = self.exec_env.write().unwrap();
+        let cm = w.entry(tv.request.clone()).or_insert_with(|| {
+            let exec_env_filename = match &plugin.toml.exec_env.cache_key {
+                Some(key) => {
+                    let key = render_cache_key(config, tv, key);
+                    let filename = format!("{}-$KEY.msgpack.z", key);
+                    tv.cache_path().join("exec_env").join(filename)
+                }
+                None => tv.cache_path().join("exec_env-$KEY.msgpack.z"),
+            };
+            CacheManager::new(exec_env_filename)
+                .with_fresh_file(dirs::DATA.to_path_buf())
+                .with_fresh_file(plugin.plugin_path.clone())
+                .with_fresh_file(tv.install_path())
+        });
+        cm.get_or_try_init(fetch).cloned()
+    }
+}
+
+fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> String {
+    let elements = cache_key
+        .iter()
+        .map(|tmpl| {
+            let s = parse_template(config, tv, tmpl).unwrap();
+            let s = s.trim().to_string();
+            trace!("cache key element: {} -> {}", tmpl.trim(), s);
+            let mut s = hash_to_str(&s);
+            s.truncate(10);
+            s
+        })
+        .collect::<Vec<String>>();
+    elements.join("-")
+}
+
+fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result<String> {
+    let mut ctx = BASE_CONTEXT.clone();
+    ctx.insert("project_root", &config.project_root);
+    ctx.insert("opts", &tv.request.options());
+    get_tera(
+        config
+            .project_root
+            .as_ref()
+            .or(env::current_dir().as_ref().ok())
+            .map(|p| p.as_path()),
+    )
+    .render_str(tmpl, &ctx)
+    .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_debug() {
-        let plugin = ExternalPlugin::new(String::from("dummy"));
+        let plugin = Asdf::new(String::from("dummy"));
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }
 }
