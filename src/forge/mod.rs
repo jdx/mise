@@ -36,6 +36,7 @@ pub mod forge_meta;
 mod go;
 mod npm;
 mod pipx;
+mod spm;
 mod ubi;
 
 pub type AForge = Arc<dyn Forge>;
@@ -63,6 +64,7 @@ pub enum ForgeType {
     Go,
     Npm,
     Pipx,
+    Spm,
     Ubi,
 }
 
@@ -106,6 +108,7 @@ fn list_installed_forges() -> eyre::Result<ForgeList> {
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.name)) as AForge,
                 ForgeType::Go => Arc::new(go::GoForge::new(fa.name)) as AForge,
                 ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(fa.name)) as AForge,
+                ForgeType::Spm => Arc::new(spm::SpmForge::new(fa.name)) as AForge,
                 ForgeType::Ubi => Arc::new(ubi::UbiForge::new(fa.name)) as AForge,
             }
         })
@@ -137,6 +140,7 @@ pub fn get(fa: &ForgeArg) -> AForge {
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(name)),
                 ForgeType::Go => Arc::new(go::GoForge::new(name)),
                 ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(name)),
+                ForgeType::Spm => Arc::new(spm::SpmForge::new(name)),
                 ForgeType::Ubi => Arc::new(ubi::UbiForge::new(name)),
             })
             .clone()

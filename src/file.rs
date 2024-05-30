@@ -90,6 +90,21 @@ pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     })
 }
 
+pub fn copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    trace!("cp {} {}", from.display(), to.display());
+    fs::copy(from, to)
+        .wrap_err_with(|| {
+            format!(
+                "failed copy: {} -> {}",
+                display_path(from),
+                display_path(to)
+            )
+        })
+        .map(|_| ())
+}
+
 pub fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
     let path = path.as_ref();
     trace!("write {}", display_path(path));
