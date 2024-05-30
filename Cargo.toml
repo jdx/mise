@@ -104,7 +104,7 @@ sys-info = "0.9.1"
 tabled = { version = "0.15.0", features = ["ansi"] }
 tar = "0.4.40"
 tempfile = "3.10.1"
-tera = { version = "1.19.1", default-features = false }
+tera = "1.19"
 terminal_size = "0.3.0"
 thiserror = "1.0.59"
 tokio = { version = "1.37.0", features = [
