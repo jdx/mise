@@ -18,8 +18,6 @@ platforms=(
   linux-x64-musl
   linux-arm64
   linux-arm64-musl
-  linux-armv6
-  linux-armv6-musl
   linux-armv7
   linux-armv7-musl
   macos-x64
