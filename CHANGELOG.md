@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.5.26](https://github.com/jdx/mise/compare/v2024.5.25..v2024.5.26) - 2024-05-30
+
+### 🐛 Bug Fixes
+
+- normalize remote urls by [@jdx](https://github.com/jdx) in [#2221](https://github.com/jdx/mise/pull/2221)
+
+### 🧪 Testing
+
+- added reset() to more tests by [@jdx](https://github.com/jdx) in [f9f65b3](https://github.com/jdx/mise/commit/f9f65b39214c9341bf44ad694c6659b6a17fdf9c)
+
+### 🔍 Other Changes
+
+- remove armv6 targets by [@jdx](https://github.com/jdx) in [90752f4](https://github.com/jdx/mise/commit/90752f4f08a8ca4095fb464edd79a7aed2b07e54)
+
 ## [2024.5.25](https://github.com/jdx/mise/compare/v2024.5.24..v2024.5.25) - 2024-05-30
 
 ### 🚀 Features
