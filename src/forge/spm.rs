@@ -92,43 +92,76 @@ impl Forge for SpmForge {
 
         //
         // 2. Build the swift package
-        // - TODO: validate if package have executables
-        // - TODO: should specify concrete product (executable) or `swift build` compile all of them?
         // - TODO: specify arch, platform, target?
-        //
-        debug!("Building swift package");
-        let build_cmd = CmdLineRunner::new("swift")
-            .arg("build")
-            .arg("--configuration")
-            .arg("release")
-            .arg("--package-path")
-            .arg(&tmp_repo_dir);
-        build_cmd.execute()?;
-        let bin_path = cmd!(
+
+        let package_json = cmd!(
             "swift",
-            "build",
-            "--configuration",
-            "release",
+            "package",
+            "dump-package",
             "--package-path",
-            &tmp_repo_dir,
-            "--show-bin-path"
+            &tmp_repo_dir
         )
         .read()?;
+        // TODO: should use serde compatible types?
+        // TODO: support early swift version package format?
+        let executables = serde_json::from_str::<serde_json::Value>(&package_json)?
+            .get("products")
+            .ok_or_else(|| eyre::eyre!("No products found in package"))?
+            .as_array()
+            .ok_or_else(|| eyre::eyre!("Products is not an array"))?
+            .iter()
+            .filter(|p| {
+                p.get("type")
+                    .unwrap()
+                    .as_object()
+                    .unwrap()
+                    .contains_key("executable")
+            })
+            .map(|p| p.get("name").unwrap().as_str().unwrap().to_string())
+            .collect::<Vec<String>>();
+        if executables.len() == 0 {
+            return Err(eyre::eyre!("No executables found in package"));
+        }
+        debug!("Found executables: {:?}", executables);
 
-        //
-        // 3. Copy all binaries to the install path
-        // - TODO: copy resources and other related files
-        //
-        let install_bin_path = ctx.tv.install_path().join("bin");
-        debug!(
-            "Copying binaries to install path: {}",
-            install_bin_path.display()
-        );
-        file::create_dir_all(&install_bin_path)?;
-        let files = file::ls(Path::new(&bin_path))?;
-        for file in files {
-            // TODO: check if file is executable
-            file::copy(&file, &install_bin_path.join(file.file_name().unwrap()))?;
+        for executable in executables {
+            debug!("Building swift package");
+            let build_cmd = CmdLineRunner::new("swift")
+                .arg("build")
+                .arg("--configuration")
+                .arg("release")
+                .arg("--product")
+                .arg(&executable)
+                .arg("--package-path")
+                .arg(&tmp_repo_dir);
+            build_cmd.execute()?;
+            let bin_path = cmd!(
+                "swift",
+                "build",
+                "--configuration",
+                "release",
+                "--product",
+                &executable,
+                "--package-path",
+                &tmp_repo_dir,
+                "--show-bin-path"
+            )
+            .read()?;
+
+            //
+            // 3. Copy binary to the install path
+            // - TODO: copy resources and other related files
+            //
+            let install_bin_path = ctx.tv.install_path().join("bin");
+            debug!(
+                "Copying binaries to install path: {}",
+                install_bin_path.display()
+            );
+            file::create_dir_all(&install_bin_path)?;
+            file::copy(
+                Path::new(&bin_path).join(&executable),
+                &install_bin_path.join(&executable),
+            )?;
         }
 
         debug!("Cleaning up temporary files");
