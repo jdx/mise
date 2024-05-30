@@ -4,9 +4,9 @@ use rayon::ThreadPoolBuilder;
 use url::Url;
 
 use crate::config::{Config, Settings};
+use crate::forge::asdf::Asdf;
 use crate::forge::{unalias_forge, Forge};
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::ExternalPlugin;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -108,7 +108,7 @@ impl PluginsInstall {
         git_url: Option<String>,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        let mut plugin = ExternalPlugin::new(name.clone());
+        let mut plugin = Asdf::new(name.clone());
         plugin.repo_url = git_url;
         if !self.force && plugin.is_installed() {
             warn!("Plugin {name} already installed");

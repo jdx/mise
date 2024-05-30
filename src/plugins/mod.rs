@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-pub use external_plugin::ExternalPlugin;
 pub use script_manager::{Script, ScriptManager};
 
 use crate::cli::args::ForgeArg;
@@ -11,10 +10,8 @@ use crate::forge;
 use crate::forge::{AForge, ForgeList, ForgeType};
 
 pub mod core;
-mod external_plugin;
-mod external_plugin_cache;
-mod mise_plugin_toml;
-mod script_manager;
+pub mod mise_plugin_toml;
+pub mod script_manager;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PluginType {
@@ -49,19 +46,18 @@ pub fn list_external() -> ForgeList {
 
 #[cfg(test)]
 mod tests {
+    use crate::forge::asdf::Asdf;
     use pretty_assertions::assert_str_eq;
     use test_log::test;
 
     use crate::forge::Forge;
     use crate::test::reset;
 
-    use super::*;
-
     #[test]
     fn test_exact_match() {
         reset();
         assert_cli!("plugin", "add", "tiny");
-        let plugin = ExternalPlugin::new(String::from("tiny"));
+        let plugin = Asdf::new(String::from("tiny"));
         let version = plugin
             .latest_version(Some("1.0.0".into()))
             .unwrap()
@@ -74,7 +70,7 @@ mod tests {
     #[test]
     fn test_latest_stable() {
         reset();
-        let plugin = ExternalPlugin::new(String::from("dummy"));
+        let plugin = Asdf::new(String::from("dummy"));
         let version = plugin.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");
     }
