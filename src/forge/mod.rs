@@ -74,8 +74,7 @@ impl Display for ForgeType {
 
 static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
 
-// TODO: make this private
-pub fn load_forges() -> ForgeMap {
+fn load_forges() -> ForgeMap {
     let mut forges = FORGES.lock().unwrap();
     if let Some(forges) = &*forges {
         return forges.clone();
