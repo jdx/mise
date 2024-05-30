@@ -1664,6 +1664,7 @@ dependencies = [
  "git2",
  "globset",
  "globwalk",
+ "heck 0.5.0",
  "home",
  "humantime",
  "indenter",

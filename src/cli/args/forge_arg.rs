@@ -1,3 +1,4 @@
+use heck::ToKebabCase;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -49,7 +50,7 @@ impl ForgeArg {
             ForgeType::Asdf | ForgeType::Core => name.clone(),
             forge_type => format!("{forge_type}:{name}"),
         };
-        let pathname = regex!(r#"[/:]"#).replace_all(&id, "-").to_string();
+        let pathname = id.to_kebab_case();
         Self {
             name,
             forge_type,
@@ -139,7 +140,7 @@ mod tests {
         t("node", "node");
         t("", "");
         t("cargo:eza", "cargo-eza");
-        t("npm:@antfu/ni", "npm-@antfu-ni");
+        t("npm:@antfu/ni", "npm-antfu-ni");
         t("npm:prettier", "npm-prettier");
     }
 }
