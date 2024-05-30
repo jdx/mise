@@ -18,11 +18,12 @@ use versions::Versioning;
 use crate::cli::args::ForgeArg;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
+use crate::forge::asdf::Asdf;
 use crate::forge::cargo::CargoForge;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{ExternalPlugin, PluginType, VERSION_REGEX};
+use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -31,12 +32,13 @@ use crate::{dirs, file};
 
 use self::forge_meta::ForgeMeta;
 
-mod cargo;
+pub mod asdf;
+pub mod cargo;
 pub mod forge_meta;
-mod go;
-mod npm;
-mod pipx;
-mod ubi;
+pub mod go;
+pub mod npm;
+pub mod pipx;
+pub mod ubi;
 
 pub type AForge = Arc<dyn Forge>;
 pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
@@ -80,7 +82,7 @@ fn load_forges() -> ForgeMap {
         return forges.clone();
     }
     let mut plugins = CORE_PLUGINS.clone();
-    plugins.extend(ExternalPlugin::list().expect("failed to list plugins"));
+    plugins.extend(Asdf::list().expect("failed to list plugins"));
     plugins.extend(list_installed_forges().expect("failed to list forges"));
     let settings = Settings::get();
     plugins.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
@@ -99,9 +101,9 @@ fn list_installed_forges() -> eyre::Result<ForgeList> {
             let id = ForgeMeta::read(&dir).id;
             let fa: ForgeArg = id.as_str().into();
             match fa.forge_type {
-                ForgeType::Asdf => Arc::new(ExternalPlugin::new(fa.name)) as AForge,
+                ForgeType::Asdf => Arc::new(Asdf::new(fa.name)) as AForge,
                 ForgeType::Cargo => Arc::new(CargoForge::new(fa.name)) as AForge,
-                ForgeType::Core => Arc::new(ExternalPlugin::new(fa.name)) as AForge,
+                ForgeType::Core => Arc::new(Asdf::new(fa.name)) as AForge,
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.name)) as AForge,
                 ForgeType::Go => Arc::new(go::GoForge::new(fa.name)) as AForge,
                 ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(fa.name)) as AForge,
@@ -130,9 +132,9 @@ pub fn get(fa: &ForgeArg) -> AForge {
         forges
             .entry(fa.clone())
             .or_insert_with(|| match fa.forge_type {
-                ForgeType::Asdf => Arc::new(ExternalPlugin::new(name)),
+                ForgeType::Asdf => Arc::new(Asdf::new(name)),
                 ForgeType::Cargo => Arc::new(CargoForge::new(name)),
-                ForgeType::Core => Arc::new(ExternalPlugin::new(name)),
+                ForgeType::Core => Arc::new(Asdf::new(name)),
                 ForgeType::Npm => Arc::new(npm::NPMForge::new(name)),
                 ForgeType::Go => Arc::new(go::GoForge::new(name)),
                 ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(name)),

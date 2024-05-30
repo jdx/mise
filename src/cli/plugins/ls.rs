@@ -6,8 +6,9 @@ use rayon::prelude::*;
 use tabled::{Table, Tabled};
 
 use crate::config::Config;
+use crate::forge::asdf::Asdf;
 use crate::plugins;
-use crate::plugins::{ExternalPlugin, PluginType};
+use crate::plugins::PluginType;
 use crate::ui::table;
 
 /// List installed plugins
@@ -50,7 +51,7 @@ impl PluginsLs {
 
         if self.all {
             for (plugin, url) in config.get_shorthands() {
-                let mut ep = ExternalPlugin::new(plugin.clone());
+                let mut ep = Asdf::new(plugin.clone());
                 ep.repo_url = Some(url.to_string());
                 tools.insert(Arc::new(ep));
             }

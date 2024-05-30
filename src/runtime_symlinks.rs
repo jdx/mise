@@ -113,9 +113,9 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::forge::asdf::Asdf;
     use insta::assert_debug_snapshot;
 
-    use crate::plugins::ExternalPlugin;
     use crate::test::reset;
 
     use super::*;
@@ -125,7 +125,7 @@ mod tests {
         reset();
         assert_cli!("install", "tiny@2");
         let config = Config::load().unwrap();
-        let plugin = ExternalPlugin::new(String::from("tiny"));
+        let plugin = Asdf::new(String::from("tiny"));
         let plugin = Arc::new(plugin);
         let symlinks = list_symlinks(&config, plugin).unwrap();
         assert_debug_snapshot!(symlinks);
