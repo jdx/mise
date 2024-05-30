@@ -1636,7 +1636,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.5.24"
+version = "2024.5.25"
 dependencies = [
  "assert_cmd",
  "base64 0.22.1",
@@ -3797,9 +3797,9 @@ checksum = "bec47e5bfd1bff0eeaf6d8b485cc1074891a197ab4225d504cb7a1ab88b02bf0"
 
 [[package]]
 name = "winnow"
-version = "0.6.8"
+version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3c52e9c97a68071b23e836c9380edae937f17b9c4667bd021973efc689f618d"
+checksum = "86c949fede1d13936a99f14fafd3e76fd642b556dd2ce96287fbe2e0151bfac6"
 dependencies = [
  "memchr",
 ]
