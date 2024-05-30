@@ -104,13 +104,15 @@ impl Shell for Zsh {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
+    use test_log::test;
 
-    use crate::test::replace_path;
+    use crate::test::{replace_path, reset};
 
     use super::*;
 
     #[test]
     fn test_activate() {
+        reset();
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/mise");
         assert_snapshot!(zsh.activate(exe, " --status".into()));
@@ -118,22 +120,26 @@ mod tests {
 
     #[test]
     fn test_set_env() {
+        reset();
         assert_snapshot!(Zsh::default().set_env("FOO", "1"));
     }
 
     #[test]
     fn test_prepend_env() {
+        reset();
         let sh = Bash::default();
         assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
     #[test]
     fn test_unset_env() {
+        reset();
         assert_snapshot!(Zsh::default().unset_env("FOO"));
     }
 
     #[test]
     fn test_deactivate() {
+        reset();
         let deactivate = Zsh::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }
