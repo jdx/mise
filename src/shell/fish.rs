@@ -126,13 +126,15 @@ impl Shell for Fish {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
+    use test_log::test;
 
-    use crate::test::replace_path;
+    use crate::test::{replace_path, reset};
 
     use super::*;
 
     #[test]
     fn test_activate() {
+        reset();
         let fish = Fish::default();
         let exe = Path::new("/some/dir/mise");
         assert_snapshot!(fish.activate(exe, " --status".into()));
@@ -140,22 +142,26 @@ mod tests {
 
     #[test]
     fn test_set_env() {
+        reset();
         assert_snapshot!(Fish::default().set_env("FOO", "1"));
     }
 
     #[test]
     fn test_prepend_env() {
+        reset();
         let sh = Fish::default();
         assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
     }
 
     #[test]
     fn test_unset_env() {
+        reset();
         assert_snapshot!(Fish::default().unset_env("FOO"));
     }
 
     #[test]
     fn test_deactivate() {
+        reset();
         let deactivate = Fish::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
     }
