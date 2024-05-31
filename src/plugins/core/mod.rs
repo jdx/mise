@@ -21,6 +21,7 @@ use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::ruby::RubyPlugin;
 use crate::plugins::core::zig::ZigPlugin;
+use crate::plugins::{Plugin, PluginList, PluginType};
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 
@@ -59,6 +60,15 @@ pub struct CorePlugin {
 }
 
 impl CorePlugin {
+    pub fn list() -> PluginList {
+        let settings = Settings::get();
+        CORE_PLUGINS
+            .iter()
+            .map(|f| Box::new(CorePlugin::new(f.name().to_string().into())) as Box<dyn Plugin>)
+            .filter(|p| !settings.disable_tools.contains(p.name()))
+            .collect()
+    }
+
     pub fn new(fa: ForgeArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
@@ -94,5 +104,31 @@ impl CorePlugin {
             .filter(|v| !v.is_empty())
             .collect_vec();
         Ok(Some(versions))
+    }
+}
+
+impl Plugin for CorePlugin {
+    fn name(&self) -> &str {
+        &self.fa.name
+    }
+
+    fn get_plugin_type(&self) -> PluginType {
+        PluginType::Core
+    }
+
+    fn get_remote_url(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn current_abbrev_ref(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn current_sha_short(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn is_installed(&self) -> bool {
+        true
     }
 }

@@ -501,16 +501,6 @@ impl Forge for Asdf {
         git.get_remote_url().or_else(|| self.repo_url.clone())
     }
 
-    fn current_sha_short(&self) -> Result<String> {
-        let git = Git::new(self.plugin_path.to_path_buf());
-        git.current_sha_short()
-    }
-
-    fn current_abbrev_ref(&self) -> Result<String> {
-        let git = Git::new(self.plugin_path.to_path_buf());
-        git.current_abbrev_ref()
-    }
-
     fn is_installed(&self) -> bool {
         self.plugin_path.exists()
     }
