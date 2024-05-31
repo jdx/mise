@@ -228,6 +228,12 @@ mod tests {
         tiny = "2"
         "###);
 
+        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @"mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        [tools]
+        tiny = ["1", "2", "3"]
+        "###);
+
         assert_cli_snapshot!("use", "--pin", "tiny", @"mise ~/cwd/.test.mise.toml tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]

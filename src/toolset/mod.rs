@@ -230,7 +230,7 @@ impl Toolset {
                     Err(e) => panic::resume_unwind(e),
                 })
                 .collect::<Result<Vec<Vec<ToolVersion>>>>()
-                .map(|x| x.into_iter().flatten().collect())
+                .map(|x| x.into_iter().flatten().rev().collect())
         })?;
         trace!("install: resolving");
         if let Err(err) = self.resolve() {
