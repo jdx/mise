@@ -84,8 +84,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
+    use test_log::test;
+
+    use crate::test::reset;
+
     #[test]
     fn test_plugin_update() {
+        reset();
         assert_cli!(
             "plugin",
             "install",
