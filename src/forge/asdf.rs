@@ -457,7 +457,7 @@ impl Forge for Asdf {
     }
 
     fn get_plugin_type(&self) -> PluginType {
-        PluginType::External
+        PluginType::Asdf
     }
 
     fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<ForgeArg>> {

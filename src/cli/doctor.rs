@@ -190,7 +190,7 @@ impl Doctor {
             let is_core = CORE_PLUGINS.iter().any(|fg| fg.id() == plugin.id());
             let plugin_type = plugin.get_plugin_type();
 
-            if is_core && plugin_type == PluginType::External {
+            if is_core && plugin_type == PluginType::Asdf {
                 self.warnings
                     .push(format!("plugin {} overrides a core plugin", &plugin.id()));
             }
@@ -269,7 +269,7 @@ fn render_plugins() -> String {
         .map(|p| {
             let padded_name = pad_str(p.id(), max_plugin_name_len, Alignment::Left, None);
             let extra = match p.get_plugin_type() {
-                PluginType::External => {
+                PluginType::Asdf => {
                     let git = Git::new(dirs::PLUGINS.join(p.id()));
                     match git.get_remote_url() {
                         Some(url) => {
