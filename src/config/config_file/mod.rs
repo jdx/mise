@@ -201,7 +201,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         return Ok(());
     }
     if cmd != "hook-env" {
-        let ans = prompt::confirm(format!(
+        let ans = prompt::confirm_with_all(format!(
             "{} {} is not trusted. Trust it?",
             style::eyellow("mise"),
             style::epath(path)
