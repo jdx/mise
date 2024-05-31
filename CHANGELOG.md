@@ -1,5 +1,22 @@
 # Changelog
 
+## [2024.5.28](https://github.com/jdx/mise/compare/v2024.5.27..v2024.5.28) - 2024-05-31
+
+### 🐛 Bug Fixes
+
+- download keeps failing if it takes more than 30s by [@roele](https://github.com/roele) in [#2224](https://github.com/jdx/mise/pull/2224)
+- settings unset does not work by [@roele](https://github.com/roele) in [#2230](https://github.com/jdx/mise/pull/2230)
+- cleaner community-developed plugin warning by [@jdx](https://github.com/jdx) in [8dcf0f3](https://github.com/jdx/mise/commit/8dcf0f3a746fcae74d944412b6f0e141ded88860)
+- correct `mise use` ordering by [@jdx](https://github.com/jdx) in [#2234](https://github.com/jdx/mise/pull/2234)
+
+### 🚜 Refactor
+
+- forge -> backend by [@jdx](https://github.com/jdx) in [#2227](https://github.com/jdx/mise/pull/2227)
+
+### 🧪 Testing
+
+- added reset() to more tests by [@jdx](https://github.com/jdx) in [5a6ea6a](https://github.com/jdx/mise/commit/5a6ea6afb9855827b5e6216aa20760dd45f5502f)
+
 ## [2024.5.27](https://github.com/jdx/mise/compare/v2024.5.26..v2024.5.27) - 2024-05-31
 
 ### 🚜 Refactor
