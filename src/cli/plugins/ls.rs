@@ -59,7 +59,7 @@ impl PluginsLs {
         } else if self.core {
             tools.retain(|p| matches!(p.get_plugin_type(), PluginType::Core));
         } else {
-            tools.retain(|p| matches!(p.get_plugin_type(), PluginType::External));
+            tools.retain(|p| matches!(p.get_plugin_type(), PluginType::Asdf));
         }
 
         if self.urls || self.refs {

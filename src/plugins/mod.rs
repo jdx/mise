@@ -16,7 +16,7 @@ pub mod script_manager;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PluginType {
     Core,
-    External,
+    Asdf,
 }
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
@@ -40,7 +40,7 @@ pub fn list() -> ForgeList {
 pub fn list_external() -> ForgeList {
     list()
         .into_iter()
-        .filter(|tool| tool.get_plugin_type() == PluginType::External)
+        .filter(|tool| tool.get_plugin_type() == PluginType::Asdf)
         .collect()
 }
 
