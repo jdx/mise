@@ -23,7 +23,7 @@ use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{PluginType, VERSION_REGEX};
+use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -291,9 +291,6 @@ pub trait Backend: Debug + Send + Sync {
     fn is_installed(&self) -> bool {
         true
     }
-    fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> eyre::Result<()> {
-        Ok(())
-    }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
         let deps = self
             .get_all_dependencies(&ToolRequest::System(self.id().into()))?
@@ -308,12 +305,6 @@ pub trait Backend: Debug + Send + Sync {
                 self.id()
             );
         }
-        Ok(())
-    }
-    fn update(&self, _pr: &dyn SingleReport, _git_ref: Option<String>) -> eyre::Result<()> {
-        Ok(())
-    }
-    fn uninstall(&self, _pr: &dyn SingleReport) -> eyre::Result<()> {
         Ok(())
     }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
@@ -337,6 +328,9 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> eyre::Result<()> {
         unimplemented!()
+    }
+    fn plugin(&self) -> Option<&dyn Plugin> {
+        None
     }
 
     #[requires(ctx.tv.backend.backend_type == self.get_type())]

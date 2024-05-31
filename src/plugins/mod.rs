@@ -1,5 +1,8 @@
+use console::style;
+use eyre::WrapErr;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
+use std::path::Path;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -11,6 +14,8 @@ use crate::backend::{ABackend, BackendList, BackendType};
 use crate::cli::args::BackendArg;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::core::CorePlugin;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
 
 pub mod asdf_plugin;
 pub mod core;
@@ -32,6 +37,10 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 
 pub fn get(name: &str) -> ABackend {
     BackendArg::new(BackendType::Asdf, name).into()
+}
+
+pub fn get2(name: &str) -> APlugin {
+    Box::new(AsdfPlugin::new(name.to_string())) as APlugin
 }
 
 pub fn list() -> BackendList {
@@ -69,6 +78,10 @@ pub trait Plugin: Debug + Send {
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>>;
     fn current_sha_short(&self) -> eyre::Result<Option<String>>;
     fn is_installed(&self) -> bool;
+
+    fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> eyre::Result<()>;
+    fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> eyre::Result<()>;
+    fn uninstall(&self, pr: &dyn SingleReport) -> eyre::Result<()>;
 }
 
 impl Ord for APlugin {

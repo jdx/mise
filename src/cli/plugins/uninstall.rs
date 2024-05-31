@@ -42,17 +42,17 @@ impl PluginsUninstall {
     }
 
     fn uninstall_one(&self, plugin_name: &str, mpr: &MultiProgressReport) -> Result<()> {
-        match plugins::get(plugin_name) {
-            plugin if plugin.is_installed() => {
-                let prefix = format!("plugin:{}", style::eblue(&plugin.id()));
-                let pr = mpr.add(&prefix);
-                plugin.uninstall(pr.as_ref())?;
-                if self.purge {
-                    plugin.purge(pr.as_ref())?;
-                }
-                pr.finish_with_message("uninstalled".into());
+        let backend = plugins::get(plugin_name);
+        if let Some(plugin) = backend.plugin() {
+            let prefix = format!("plugin:{}", style::eblue(&backend.name()));
+            let pr = mpr.add(&prefix);
+            backend.plugin().unwrap().uninstall(pr.as_ref())?;
+            if self.purge {
+                backend.purge(pr.as_ref())?;
             }
-            _ => warn!("{} is not installed", style::eblue(plugin_name)),
+            pr.finish_with_message("uninstalled".into());
+        } else {
+            warn!("{} is not installed", style::eblue(plugin_name));
         }
         Ok(())
     }
