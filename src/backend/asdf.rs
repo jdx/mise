@@ -516,10 +516,10 @@ impl Backend for Asdf {
                 let url = self.get_repo_url(&config).unwrap_or_default();
                 if !is_trusted_plugin(self.name(), &url) {
                     warn!(
-                        "⚠️ {} is a community-developed plugin",
+                        "⚠️ {} is a community-developed plugin – {}",
                         style(&self.name).blue(),
+                        style(url.trim_end_matches(".git")).yellow()
                     );
-                    warn!("url: {}", style(url.trim_end_matches(".git")).yellow(),);
                     if settings.paranoid {
                         bail!("Paranoid mode is enabled, refusing to install community-developed plugin");
                     }
