@@ -57,6 +57,7 @@ mod tests {
         go_set_gopath = false
         go_set_goroot = true
         go_skip_checksum = false
+        http_timeout = 30
         jobs = 2
         legacy_version_file = true
         legacy_version_file_disable_tools = []

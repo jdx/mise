@@ -10,6 +10,7 @@ use tokio::runtime::Runtime;
 use url::Url;
 
 use crate::cli::version;
+use crate::config::Settings;
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
@@ -19,7 +20,8 @@ use crate::{env, file};
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
     Lazy::new(|| Client::new(Duration::from_secs(3)).unwrap());
 
-pub static HTTP: Lazy<Client> = Lazy::new(|| Client::new(Duration::from_secs(30)).unwrap());
+pub static HTTP: Lazy<Client> =
+    Lazy::new(|| Client::new(Duration::from_secs(Settings::get().http_timeout)).unwrap());
 
 pub static HTTP_FETCH: Lazy<Client> =
     Lazy::new(|| Client::new(*MISE_FETCH_REMOTE_VERSIONS_TIMEOUT).unwrap());
