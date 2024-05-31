@@ -1,9 +1,8 @@
-use std::ffi::OsString;
-use std::sync::Arc;
-
 use eyre::Result;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+use std::ffi::OsString;
+use std::sync::Arc;
 
 pub use python::PythonPlugin;
 
@@ -128,9 +127,5 @@ impl Plugin for CorePlugin {
 
     fn current_sha_short(&self) -> Result<Option<String>> {
         Ok(None)
-    }
-
-    fn is_installed(&self) -> bool {
-        true
     }
 }

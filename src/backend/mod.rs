@@ -5,7 +5,6 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use clap::Command;
 use console::style;
 use contracts::requires;
 use eyre::{bail, eyre, WrapErr};
@@ -21,14 +20,12 @@ use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
-use crate::lock_file::LockFile;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{PluginType, VERSION_REGEX};
+use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
-use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, file};
+use crate::{dirs, file, lock_file};
 
 use self::backend_meta::BackendMeta;
 
@@ -270,7 +267,6 @@ pub trait Backend: Debug + Send + Sync {
             None => self.latest_stable_version(),
         }
     }
-    #[requires(self.is_installed())]
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {
             Some(query) => {
@@ -300,18 +296,6 @@ pub trait Backend: Debug + Send + Sync {
     fn get_remote_url(&self) -> Option<String> {
         None
     }
-    fn is_installed(&self) -> bool {
-        true
-    }
-    fn is_installed_err(&self) -> eyre::Result<()> {
-        if self.is_installed() {
-            return Ok(());
-        }
-        bail!("{} is not installed", self.id())
-    }
-    fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> eyre::Result<()> {
-        Ok(())
-    }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
         let deps = self
             .get_all_dependencies(&ToolRequest::System(self.id().into()))?
@@ -326,12 +310,6 @@ pub trait Backend: Debug + Send + Sync {
                 self.id()
             );
         }
-        Ok(())
-    }
-    fn update(&self, _pr: &dyn SingleReport, _git_ref: Option<String>) -> eyre::Result<()> {
-        Ok(())
-    }
-    fn uninstall(&self, _pr: &dyn SingleReport) -> eyre::Result<()> {
         Ok(())
     }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
@@ -350,16 +328,15 @@ pub trait Backend: Debug + Send + Sync {
         let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }
-    fn external_commands(&self) -> eyre::Result<Vec<Command>> {
-        Ok(vec![])
-    }
-    fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> eyre::Result<()> {
-        unimplemented!()
+    fn plugin(&self) -> Option<&dyn Plugin> {
+        None
     }
 
     #[requires(ctx.tv.backend.backend_type == self.get_type())]
     fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
-        self.is_installed_err()?;
+        if let Some(plugin) = self.plugin() {
+            plugin.is_installed_err()?;
+        }
         let config = Config::get();
         let settings = Settings::try_get()?;
         if self.is_version_installed(&ctx.tv) {
@@ -370,7 +347,7 @@ pub trait Backend: Debug + Send + Sync {
                 return Ok(());
             }
         }
-        let _lock = self.get_lock(&ctx.tv.install_path(), ctx.force)?;
+        let _lock = lock_file::get(&ctx.tv.install_path(), ctx.force)?;
         self.create_install_dirs(&ctx.tv)?;
 
         if let Err(e) = self.install_version_impl(&ctx) {
@@ -458,19 +435,6 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
-    fn get_lock(&self, path: &Path, force: bool) -> eyre::Result<Option<fslock::LockFile>> {
-        let lock = if force {
-            None
-        } else {
-            let lock = LockFile::new(path)
-                .with_callback(|l| {
-                    debug!("waiting for lock on {}", display_path(l));
-                })
-                .lock()?;
-            Some(lock)
-        };
-        Ok(lock)
-    }
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
         let _ = remove_all_with_warning(tv.install_path());
         let _ = remove_all_with_warning(tv.download_path());

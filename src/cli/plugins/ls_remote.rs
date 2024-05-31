@@ -26,7 +26,7 @@ impl PluginsLsRemote {
     pub fn run(self, config: &Config) -> Result<()> {
         let installed_plugins = plugins::list()
             .into_iter()
-            .filter(|p| p.is_installed())
+            .filter(|b| b.plugin().is_some_and(|p| p.is_installed()))
             .map(|p| p.id().to_string())
             .collect::<HashSet<_>>();
 

@@ -1,16 +1,19 @@
-use std::collections::BTreeMap;
-use std::fmt::{Debug, Display};
-
+use clap::Command;
 use once_cell::sync::Lazy;
 use regex::Regex;
-
 pub use script_manager::{Script, ScriptManager};
+use std::collections::BTreeMap;
+use std::fmt::{Debug, Display};
+use std::vec;
 
 use crate::backend;
 use crate::backend::{ABackend, BackendList, BackendType};
 use crate::cli::args::BackendArg;
+use crate::errors::Error::PluginNotInstalled;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::core::CorePlugin;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
 
 pub mod asdf_plugin;
 pub mod core;
@@ -68,7 +71,37 @@ pub trait Plugin: Debug + Send {
     fn get_remote_url(&self) -> eyre::Result<Option<String>>;
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>>;
     fn current_sha_short(&self) -> eyre::Result<Option<String>>;
-    fn is_installed(&self) -> bool;
+    fn is_installed(&self) -> bool {
+        true
+    }
+    fn is_installed_err(&self) -> eyre::Result<()> {
+        if !self.is_installed() {
+            return Err(PluginNotInstalled(self.name().to_string()).into());
+        }
+        Ok(())
+    }
+
+    fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> eyre::Result<()> {
+        Ok(())
+    }
+    fn update(&self, _pr: &dyn SingleReport, _gitref: Option<String>) -> eyre::Result<()> {
+        Ok(())
+    }
+    fn uninstall(&self, _pr: &dyn SingleReport) -> eyre::Result<()> {
+        Ok(())
+    }
+    fn install(&self, _pr: &dyn SingleReport) -> eyre::Result<()> {
+        Ok(())
+    }
+    fn external_commands(&self) -> eyre::Result<Vec<Command>> {
+        Ok(vec![])
+    }
+    fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> eyre::Result<()> {
+        unimplemented!(
+            "execute_external_command not implemented for {}",
+            self.name()
+        )
+    }
 }
 
 impl Ord for APlugin {

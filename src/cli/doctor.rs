@@ -103,11 +103,13 @@ impl Doctor {
         section("backends", render_backends())?;
         section("plugins", render_plugins())?;
 
-        for plugin in backend::list() {
-            if !plugin.is_installed() {
-                self.errors
-                    .push(format!("plugin {} is not installed", &plugin.id()));
-                continue;
+        for backend in backend::list() {
+            if let Some(plugin) = backend.plugin() {
+                if !plugin.is_installed() {
+                    self.errors
+                        .push(format!("plugin {} is not installed", &plugin.name()));
+                    continue;
+                }
             }
         }
 
@@ -256,7 +258,10 @@ fn render_backends() -> String {
 fn render_plugins() -> String {
     let plugins = backend::list()
         .into_iter()
-        .filter(|p| p.is_installed() && p.get_type() == BackendType::Asdf)
+        .filter(|b| {
+            b.plugin()
+                .is_some_and(|p| p.is_installed() && b.get_type() == BackendType::Asdf)
+        })
         .collect::<Vec<_>>();
     let max_plugin_name_len = plugins
         .iter()

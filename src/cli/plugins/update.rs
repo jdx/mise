@@ -50,12 +50,15 @@ impl Update {
             .install(|| {
                 plugins
                     .into_par_iter()
-                    .map(|(plugin, ref_)| {
-                        let prefix = format!("plugin:{}", style(plugin.id()).blue().for_stderr());
+                    .map(|(backend, ref_)| {
+                        let prefix = format!("plugin:{}", style(backend.id()).blue().for_stderr());
                         let pr = mpr.add(&prefix);
-                        plugin
-                            .update(pr.as_ref(), ref_)
-                            .map_err(|e| eyre!("[{plugin}] plugin update: {e:?}"))
+                        if let Some(plugin) = backend.plugin() {
+                            plugin
+                                .update(pr.as_ref(), ref_)
+                                .map_err(|e| eyre!("[{backend}] plugin update: {e:?}"))?;
+                        }
+                        Ok(())
                     })
                     .filter_map(|r| r.err())
                     .collect::<Vec<_>>()
