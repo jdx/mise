@@ -29,9 +29,9 @@ mod env;
 #[cfg(test)]
 mod exec;
 
-// Tests forges
+// Tests backends
 #[cfg(test)]
-mod forge;
+mod backend;
 
 // Tests `mise global`
 #[cfg(test)]

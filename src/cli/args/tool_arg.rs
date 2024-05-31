@@ -6,13 +6,13 @@ use console::style;
 use eyre::bail;
 use regex::Regex;
 
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::toolset::ToolRequest;
 use crate::ui::style;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {
-    pub forge: ForgeArg,
+    pub backend: BackendArg,
     pub version: Option<String>,
     pub version_type: ToolVersionType,
     pub tvr: Option<ToolRequest>,
@@ -32,22 +32,22 @@ impl FromStr for ToolArg {
     type Err = eyre::Error;
 
     fn from_str(input: &str) -> eyre::Result<Self> {
-        let (forge_input, version) = parse_input(input);
+        let (backend_input, version) = parse_input(input);
 
-        let forge: ForgeArg = forge_input.into();
+        let backend: BackendArg = backend_input.into();
         let version_type = match version.as_ref() {
             Some(version) => version.parse()?,
             None => ToolVersionType::Version(String::from("latest")),
         };
         let tvr = version
             .as_ref()
-            .map(|v| ToolRequest::new(forge.clone(), v))
+            .map(|v| ToolRequest::new(backend.clone(), v))
             .transpose()?;
         Ok(Self {
             tvr,
             version: version.map(|v| v.to_string()),
             version_type,
-            forge,
+            backend,
         })
     }
 }
@@ -98,11 +98,11 @@ impl ToolArg {
             let re: &Regex = regex!(r"^\d+(\.\d+)*$");
             let a = tools[0].clone();
             let b = tools[1].clone();
-            if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.forge.name) {
-                tools[1].tvr = Some(ToolRequest::new(a.forge.clone(), &b.forge.name)?);
-                tools[1].forge = a.forge;
-                tools[1].version_type = b.forge.name.parse()?;
-                tools[1].version = Some(b.forge.name);
+            if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.backend.name) {
+                tools[1].tvr = Some(ToolRequest::new(a.backend.clone(), &b.backend.name)?);
+                tools[1].backend = a.backend;
+                tools[1].version_type = b.backend.name.parse()?;
+                tools[1].version = Some(b.backend.name);
                 tools.remove(0);
             }
         }
@@ -111,7 +111,7 @@ impl ToolArg {
 
     pub fn with_version(self, version: &str) -> Self {
         Self {
-            tvr: Some(ToolRequest::new(self.forge.clone(), version).unwrap()),
+            tvr: Some(ToolRequest::new(self.backend.clone(), version).unwrap()),
             version: Some(version.into()),
             version_type: version.parse().unwrap(),
             ..self
@@ -126,7 +126,7 @@ impl ToolArg {
             .unwrap_or(String::from("latest"));
         format!(
             "{}{}",
-            style(&self.forge.name).blue().for_stderr(),
+            style(&self.backend.name).blue().for_stderr(),
             style(&format!("@{version}")).for_stderr()
         )
     }
@@ -136,29 +136,29 @@ impl Display for ToolArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.tvr {
             Some(tvr) => write!(f, "{}", tvr),
-            _ => write!(f, "{}", self.forge.name),
+            _ => write!(f, "{}", self.backend.name),
         }
     }
 }
 
 fn parse_input(s: &str) -> (&str, Option<&str>) {
-    let (forge, version) = s
+    let (backend, version) = s
         .split_once('@')
         .map(|(f, v)| (f, Some(v)))
         .unwrap_or((s, None));
 
     // special case for packages with npm scopes like "npm:@antfu/ni"
-    if forge == "npm:" {
+    if backend == "npm:" {
         if let Some(v) = version {
             return if let Some(i) = v.find('@') {
-                (&s[..forge.len() + i + 1], Some(&v[i + 1..]))
+                (&s[..backend.len() + i + 1], Some(&v[i + 1..]))
             } else {
-                (&s[..forge.len() + v.len() + 1], None)
+                (&s[..backend.len() + v.len() + 1], None)
             };
         }
     }
 
-    (forge, version)
+    (backend, version)
 }
 
 #[cfg(test)]
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                forge: "node".into(),
+                backend: "node".into(),
                 version: None,
                 version_type: ToolVersionType::Version("latest".into()),
                 tvr: None,
@@ -187,7 +187,7 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                forge: "node".into(),
+                backend: "node".into(),
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
                 tvr: Some(ToolRequest::new("node".into(), "20").unwrap()),
@@ -201,7 +201,7 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
-                forge: "node".into(),
+                backend: "node".into(),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
                 tvr: Some(ToolRequest::new("node".into(), "lts").unwrap()),
@@ -212,8 +212,8 @@ mod tests {
     #[test]
     fn test_tool_arg_parse_input() {
         let t = |input, f, v| {
-            let (forge, version) = parse_input(input);
-            assert_eq!(forge, f);
+            let (backend, version) = parse_input(input);
+            assert_eq!(backend, f);
             assert_eq!(version, v);
         };
         t("npm:@antfu/ni", "npm:@antfu/ni", None);

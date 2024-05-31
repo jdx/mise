@@ -4,15 +4,15 @@ use std::fmt::{Debug, Display};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
-use crate::cli::args::{ForgeArg, ToolArg};
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::toolset::{ToolRequest, ToolSource};
 
 #[derive(Debug, Default, Clone)]
 pub struct ToolRequestSet {
-    pub tools: IndexMap<ForgeArg, Vec<ToolRequest>>,
-    pub sources: BTreeMap<ForgeArg, ToolSource>,
+    pub tools: IndexMap<BackendArg, Vec<ToolRequest>>,
+    pub sources: BTreeMap<BackendArg, ToolSource>,
 }
 
 impl ToolRequestSet {
@@ -20,10 +20,10 @@ impl ToolRequestSet {
         Self::default()
     }
 
-    // pub fn tools_with_sources(&self) -> Vec<(&ForgeArg, &Vec<ToolRequest>, &ToolSource)> {
+    // pub fn tools_with_sources(&self) -> Vec<(&BackendArg, &Vec<ToolRequest>, &ToolSource)> {
     //     self.tools
     //         .iter()
-    //         .map(|(forge, tvr)| (forge, tvr, self.sources.get(forge).unwrap()))
+    //         .map(|(backend, tvr)| (backend, tvr, self.sources.get(backend).unwrap()))
     //         .collect()
     // }
 
@@ -47,11 +47,11 @@ impl ToolRequestSet {
             .collect()
     }
 
-    pub fn list_plugins(&self) -> Vec<&ForgeArg> {
+    pub fn list_plugins(&self) -> Vec<&BackendArg> {
         self.tools.keys().collect()
     }
 
-    pub fn list_current_versions(&self) -> Vec<(&ForgeArg, &ToolRequest)> {
+    pub fn list_current_versions(&self) -> Vec<(&BackendArg, &ToolRequest)> {
         self.tools
             .iter()
             .map(|(fa, tvr)| (fa, tvr.last().unwrap()))
@@ -59,28 +59,28 @@ impl ToolRequestSet {
     }
 
     pub fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
-        let fa = tr.forge();
+        let fa = tr.backend();
         if !self.tools.contains_key(fa) {
             self.sources.insert(fa.clone(), source.clone());
         }
-        let list = self.tools.entry(tr.forge().clone()).or_default();
+        let list = self.tools.entry(tr.backend().clone()).or_default();
         list.push(tr);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&ForgeArg, &Vec<ToolRequest>, &ToolSource)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&BackendArg, &Vec<ToolRequest>, &ToolSource)> {
         self.tools
             .iter()
-            .map(|(forge, tvr)| (forge, tvr, self.sources.get(forge).unwrap()))
+            .map(|(backend, tvr)| (backend, tvr, self.sources.get(backend).unwrap()))
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = (ForgeArg, Vec<ToolRequest>, ToolSource)> {
+    pub fn into_iter(self) -> impl Iterator<Item = (BackendArg, Vec<ToolRequest>, ToolSource)> {
         self.tools.into_iter().map(move |(fa, tvr)| {
             let source = self.sources.get(&fa).unwrap().clone();
             (fa, tvr, source)
         })
     }
 
-    pub fn filter_by_tool(&self, tools: &HashSet<ForgeArg>) -> Self {
+    pub fn filter_by_tool(&self, tools: &HashSet<BackendArg>) -> Self {
         self.iter()
             .filter(|(fa, ..)| tools.contains(fa))
             .map(|(fa, trl, ts)| (fa.clone(), trl.clone(), ts.clone()))
@@ -96,10 +96,10 @@ impl Display for ToolRequestSet {
     }
 }
 
-impl FromIterator<(ForgeArg, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
+impl FromIterator<(BackendArg, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
     fn from_iter<T>(iter: T) -> Self
     where
-        T: IntoIterator<Item = (ForgeArg, Vec<ToolRequest>, ToolSource)>,
+        T: IntoIterator<Item = (BackendArg, Vec<ToolRequest>, ToolSource)>,
     {
         let mut trs = ToolRequestSet::new();
         for (_fa, tvr, source) in iter {
@@ -118,7 +118,7 @@ pub struct ToolRequestSetBuilder {
     /// default to latest version if no version is specified (for `mise x`)
     default_to_latest: bool,
     /// tools which will be disabled
-    disable_tools: Vec<ForgeArg>,
+    disable_tools: Vec<BackendArg>,
 }
 
 impl ToolRequestSetBuilder {
@@ -148,8 +148,8 @@ impl ToolRequestSetBuilder {
         self.load_runtime_env(&mut trs)?;
         self.load_runtime_args(&mut trs)?;
 
-        let forges = trs.tools.keys().cloned().collect::<Vec<_>>();
-        for fa in &forges {
+        let backends = trs.tools.keys().cloned().collect::<Vec<_>>();
+        for fa in &backends {
             if self.is_disabled(fa) {
                 trs.tools.swap_remove(fa);
                 trs.sources.remove(fa);
@@ -160,7 +160,7 @@ impl ToolRequestSetBuilder {
         Ok(trs)
     }
 
-    fn is_disabled(&self, fa: &ForgeArg) -> bool {
+    fn is_disabled(&self, fa: &BackendArg) -> bool {
         self.disable_tools.contains(fa)
     }
 
@@ -183,7 +183,7 @@ impl ToolRequestSetBuilder {
                     // ignore MISE_INSTALL_VERSION
                     continue;
                 }
-                let fa: ForgeArg = plugin_name.as_str().into();
+                let fa: BackendArg = plugin_name.as_str().into();
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = ToolRequestSet::new();
                 for v in v.split_whitespace() {
@@ -197,7 +197,11 @@ impl ToolRequestSetBuilder {
     }
 
     fn load_runtime_args(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
-        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.forge.clone()) {
+        for (_, args) in self
+            .args
+            .iter()
+            .into_group_map_by(|arg| arg.backend.clone())
+        {
             let mut arg_ts = ToolRequestSet::new();
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
@@ -207,9 +211,9 @@ impl ToolRequestSetBuilder {
                     // should default to installing the "latest" version if no version is specified
                     // in .mise.toml
 
-                    if !trs.tools.contains_key(&arg.forge) {
+                    if !trs.tools.contains_key(&arg.backend) {
                         // no active version, so use "latest"
-                        let tr = ToolRequest::new(arg.forge.clone(), "latest")?;
+                        let tr = ToolRequest::new(arg.backend.clone(), "latest")?;
                         arg_ts.add_version(tr, &ToolSource::Argument);
                     }
                 }

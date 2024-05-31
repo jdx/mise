@@ -11,12 +11,12 @@ use serde_derive::Serialize;
 use tabled::{Table, Tabled};
 use versions::Versioning;
 
-use crate::cli::args::ForgeArg;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::forge::Forge;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use crate::ui::table;
-use crate::{config, forge};
+use crate::{backend, config};
 
 /// List installed and active tool versions
 ///
@@ -30,10 +30,10 @@ use crate::{config, forge};
 pub struct Ls {
     /// Only show tool versions from [PLUGIN]
     #[clap(conflicts_with = "plugin_flag")]
-    plugin: Option<Vec<ForgeArg>>,
+    plugin: Option<Vec<BackendArg>>,
 
     #[clap(long = "plugin", short, hide = true)]
-    plugin_flag: Option<ForgeArg>,
+    plugin_flag: Option<BackendArg>,
 
     /// Only show tool versions currently specified in a .tool-versions/.mise.toml
     #[clap(long, short)]
@@ -105,7 +105,7 @@ impl Ls {
         match &self.plugin {
             Some(plugins) => {
                 for fa in plugins {
-                    let plugin = forge::get(fa);
+                    let plugin = backend::get(fa);
                     ensure!(plugin.is_installed(), "{fa} is not installed");
                 }
             }
@@ -151,7 +151,7 @@ impl Ls {
                 // only displaying 1 plugin so only show the version
                 miseprintln!("{}", tv.version);
             } else {
-                miseprintln!("{} {}", &tv.forge, tv.version);
+                miseprintln!("{} {}", &tv.backend, tv.version);
             }
         }
         Ok(())
@@ -192,7 +192,7 @@ impl Ls {
 
         let mut ts = Toolset::from(trs);
         ts.resolve()?;
-        let mut versions: HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)> = ts
+        let mut versions: HashMap<(String, String), (Arc<dyn Backend>, ToolVersion)> = ts
             .list_installed_versions()?
             .into_iter()
             .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p, tv)))
@@ -202,7 +202,7 @@ impl Ls {
             .list_current_versions()
             .into_iter()
             .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p, tv)))
-            .collect::<HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)>>();
+            .collect::<HashMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
 
         versions.extend(active.clone());
 
@@ -221,7 +221,7 @@ impl Ls {
             })
             .map(|(k, (p, tv))| {
                 let source = match &active.get(&k) {
-                    Some((_, tv)) => ts.versions.get(&tv.forge).map(|tv| tv.source.clone()),
+                    Some((_, tv)) => ts.versions.get(&tv.backend).map(|tv| tv.source.clone()),
                     None => None,
                 };
                 (p, tv, source)
@@ -229,7 +229,7 @@ impl Ls {
             // if it isn't installed and it's not specified, don't show it
             .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv))
             .filter(|(p, _, _)| match &self.plugin {
-                Some(forge) => forge.contains(p.fa()),
+                Some(backend) => backend.contains(p.fa()),
                 None => true,
             })
             .collect();
@@ -254,13 +254,13 @@ struct JSONToolVersion {
     active: bool,
 }
 
-type RuntimeRow = (Arc<dyn Forge>, ToolVersion, Option<ToolSource>);
+type RuntimeRow = (Arc<dyn Backend>, ToolVersion, Option<ToolSource>);
 
 #[derive(Tabled)]
 #[tabled(rename_all = "PascalCase")]
 struct Row {
     #[tabled(display_with = "Self::display_plugin")]
-    plugin: Arc<dyn Forge>,
+    plugin: Arc<dyn Backend>,
     version: VersionStatus,
     #[tabled(rename = "Config Source", display_with = "Self::display_source")]
     source: Option<ToolSource>,
@@ -275,7 +275,7 @@ impl Row {
             None => String::new(),
         }
     }
-    fn display_plugin(plugin: &Arc<dyn Forge>) -> String {
+    fn display_plugin(plugin: &Arc<dyn Backend>) -> String {
         style(plugin).blue().to_string()
     }
     fn display_source(source: &Option<ToolSource>) -> String {
@@ -309,8 +309,8 @@ enum VersionStatus {
     Symlink(String, bool),
 }
 
-impl From<(&dyn Forge, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
-    fn from((p, tv, source): (&dyn Forge, &ToolVersion, &Option<ToolSource>)) -> Self {
+impl From<(&dyn Backend, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
+    fn from((p, tv, source): (&dyn Backend, &ToolVersion, &Option<ToolSource>)) -> Self {
         if p.symlink_path(tv).is_some() {
             VersionStatus::Symlink(tv.version.clone(), source.is_some())
         } else if !p.is_version_installed(tv) {

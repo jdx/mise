@@ -3,7 +3,7 @@ source: src/config/config_file/mise_toml.rs
 expression: cf.alias
 ---
 {
-    ForgeArg("node"): {
+    BackendArg("node"): {
         "my_custom_node": "18",
     },
 }

@@ -4,33 +4,33 @@ use std::fmt::Debug;
 use std::str::FromStr;
 use versions::Versioning;
 
+use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::forge::{Forge, ForgeType};
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
-pub struct PIPXForge {
-    fa: ForgeArg,
+pub struct PIPXBackend {
+    fa: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
     latest_version_cache: CacheManager<Option<String>>,
 }
 
-impl Forge for PIPXForge {
-    fn get_type(&self) -> ForgeType {
-        ForgeType::Pipx
+impl Backend for PIPXBackend {
+    fn get_type(&self) -> BackendType {
+        BackendType::Pipx
     }
 
-    fn fa(&self) -> &ForgeArg {
+    fn fa(&self) -> &BackendArg {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
         Ok(vec!["pipx".into()])
     }
 
@@ -100,9 +100,9 @@ impl Forge for PIPXForge {
     }
 }
 
-impl PIPXForge {
+impl PIPXBackend {
     pub fn new(name: String) -> Self {
-        let fa = ForgeArg::new(ForgeType::Pipx, &name);
+        let fa = BackendArg::new(BackendType::Pipx, &name);
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions-$KEY.msgpack.z"),

@@ -4,7 +4,7 @@ use color_eyre::eyre::{eyre, ContextCompat, Result};
 use console::style;
 use itertools::Itertools;
 
-use crate::cli::args::{ForgeArg, ToolArg};
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{config_file, Settings};
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
@@ -44,7 +44,7 @@ pub struct Local {
 
     /// Remove the plugin(s) from .tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Option<Vec<ForgeArg>>,
+    remove: Option<Vec<BackendArg>>,
 
     /// Get the path of the config file
     #[clap(long)]
@@ -91,7 +91,7 @@ pub fn get_parent_path() -> Result<PathBuf> {
 pub fn local(
     path: &Path,
     runtime: Vec<ToolArg>,
-    remove: Option<Vec<ForgeArg>>,
+    remove: Option<Vec<BackendArg>>,
     pin: bool,
     fuzzy: bool,
     show_path: bool,
@@ -165,7 +165,7 @@ mod tests {
 
     use crate::cli::tests::grep;
     use crate::test::{cleanup, reset};
-    use crate::{dirs, forge};
+    use crate::{backend, dirs};
 
     #[test]
     fn test_local_remove() {
@@ -227,7 +227,7 @@ mod tests {
             assert_cli_snapshot!("local", "--path");
             assert_cli_snapshot!("local", "tiny@2", "tiny@1", "tiny@3");
             assert_cli!("install");
-            forge::reset();
+            backend::reset();
             assert_cli_snapshot!("bin-paths");
         });
     }

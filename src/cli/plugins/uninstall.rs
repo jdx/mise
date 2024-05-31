@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::forge::unalias_forge;
+use crate::backend::unalias_backend;
 use crate::plugins;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -35,7 +35,7 @@ impl PluginsUninstall {
         };
 
         for plugin_name in plugins {
-            let plugin_name = unalias_forge(&plugin_name);
+            let plugin_name = unalias_backend(&plugin_name);
             self.uninstall_one(plugin_name, &mpr)?;
         }
         Ok(())

@@ -21,6 +21,7 @@ mod regex;
 #[macro_use]
 mod cmd;
 
+mod backend;
 pub mod build_time;
 mod cache;
 mod cli;
@@ -35,7 +36,6 @@ mod errors;
 #[cfg_attr(windows, path = "fake_asdf_windows.rs")]
 mod fake_asdf;
 mod file;
-mod forge;
 mod git;
 pub mod github;
 mod hash;

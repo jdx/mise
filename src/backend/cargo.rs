@@ -3,33 +3,33 @@ use std::fmt::Debug;
 use serde_json::Deserializer;
 use url::Url;
 
+use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
 use crate::file;
-use crate::forge::{Forge, ForgeType};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
-pub struct CargoForge {
-    fa: ForgeArg,
+pub struct CargoBackend {
+    fa: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
-impl Forge for CargoForge {
-    fn get_type(&self) -> ForgeType {
-        ForgeType::Cargo
+impl Backend for CargoBackend {
+    fn get_type(&self) -> BackendType {
+        BackendType::Cargo
     }
 
-    fn fa(&self) -> &ForgeArg {
+    fn fa(&self) -> &BackendArg {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
         Ok(vec!["cargo".into(), "rust".into()])
     }
 
@@ -76,9 +76,9 @@ impl Forge for CargoForge {
     }
 }
 
-impl CargoForge {
+impl CargoBackend {
     pub fn new(name: String) -> Self {
-        let fa = ForgeArg::new(ForgeType::Cargo, &name);
+        let fa = BackendArg::new(BackendType::Cargo, &name);
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions-$KEY.msgpack.z"),

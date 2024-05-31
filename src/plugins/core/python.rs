@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 use eyre::{bail, eyre};
 use itertools::Itertools;
 
+use crate::backend::Backend;
 use crate::build_time::built_info;
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
-use crate::forge::Forge;
 use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -309,8 +309,8 @@ impl PythonPlugin {
     }
 }
 
-impl Forge for PythonPlugin {
-    fn fa(&self) -> &ForgeArg {
+impl Backend for PythonPlugin {
+    fn fa(&self) -> &BackendArg {
         &self.core.fa
     }
 

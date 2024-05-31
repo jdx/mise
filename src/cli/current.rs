@@ -1,10 +1,10 @@
 use console::style;
 use eyre::{bail, Result};
 
-use crate::cli::args::ForgeArg;
+use crate::backend;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::forge;
-use crate::forge::Forge;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
 /// Shows current active and installed runtime versions
@@ -17,7 +17,7 @@ pub struct Current {
     /// Plugin to show versions of
     /// e.g.: ruby, node, cargo:eza, npm:prettier, etc.
     #[clap()]
-    plugin: Option<ForgeArg>,
+    plugin: Option<BackendArg>,
 }
 
 impl Current {
@@ -26,7 +26,7 @@ impl Current {
         let ts = ToolsetBuilder::new().build(&config)?;
         match &self.plugin {
             Some(fa) => {
-                let plugin = forge::get(fa);
+                let plugin = backend::get(fa);
                 if !plugin.is_installed() {
                     bail!("Plugin {fa} is not installed");
                 }
@@ -36,7 +36,7 @@ impl Current {
         }
     }
 
-    fn one(&self, ts: Toolset, tool: &dyn Forge) -> Result<()> {
+    fn one(&self, ts: Toolset, tool: &dyn Backend) -> Result<()> {
         if !tool.is_installed() {
             warn!("Plugin {} is not installed", tool.id());
             return Ok(());
@@ -73,10 +73,10 @@ impl Current {
             }
             for tv in versions {
                 if !plugin.is_version_installed(tv) {
-                    let source = ts.versions.get(&tv.forge).unwrap().source.clone();
+                    let source = ts.versions.get(&tv.backend).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",
-                        &tv.forge, &tv.version, &source
+                        &tv.backend, &tv.version, &source
                     );
                 }
             }
