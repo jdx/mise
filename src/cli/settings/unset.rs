@@ -1,7 +1,8 @@
 use eyre::Result;
 use toml_edit::DocumentMut;
 
-use crate::{config::settings::SettingsFile, env, file};
+use crate::config::settings::SettingsFile;
+use crate::{env, file};
 
 /// Clears a setting
 ///
