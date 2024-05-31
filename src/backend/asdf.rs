@@ -14,15 +14,15 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use url::Url;
 
+use crate::backend::{ABackend, Backend, BackendList, BackendType};
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
-use crate::forge::{AForge, Forge, ForgeList, ForgeType};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
@@ -40,7 +40,7 @@ use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct Asdf {
-    pub fa: ForgeArg,
+    pub fa: BackendArg,
     pub name: String,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
@@ -61,7 +61,7 @@ impl Asdf {
             toml_path = plugin_path.join("rtx.plugin.toml");
         }
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
-        let fa = ForgeArg::new(ForgeType::Asdf, &name);
+        let fa = BackendArg::new(BackendType::Asdf, &name);
         Self {
             script_man: build_script_man(&name, &plugin_path),
             cache: ExternalPluginCache::default(),
@@ -93,10 +93,10 @@ impl Asdf {
         }
     }
 
-    pub fn list() -> Result<ForgeList> {
+    pub fn list() -> Result<BackendList> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()
-            .map(|name| Arc::new(Self::new(name)) as AForge)
+            .map(|name| Arc::new(Self::new(name)) as ABackend)
             .collect())
     }
 
@@ -451,8 +451,8 @@ impl Hash for Asdf {
     }
 }
 
-impl Forge for Asdf {
-    fn fa(&self) -> &ForgeArg {
+impl Backend for Asdf {
+    fn fa(&self) -> &BackendArg {
         &self.fa
     }
 
@@ -460,8 +460,8 @@ impl Forge for Asdf {
         PluginType::Asdf
     }
 
-    fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<ForgeArg>> {
-        let out = match tvr.forge().name.as_str() {
+    fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<BackendArg>> {
+        let out = match tvr.backend().name.as_str() {
             "poetry" | "pipenv" | "pipx" => vec!["python"],
             "elixir" => vec!["erlang"],
             _ => vec![],

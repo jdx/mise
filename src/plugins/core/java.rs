@@ -12,12 +12,12 @@ use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 use versions::Versioning;
 
+use crate::backend::Backend;
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
-use crate::forge::Forge;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -301,8 +301,8 @@ impl JavaPlugin {
     }
 }
 
-impl Forge for JavaPlugin {
-    fn fa(&self) -> &ForgeArg {
+impl Backend for JavaPlugin {
+    fn fa(&self) -> &BackendArg {
         &self.core.fa
     }
 

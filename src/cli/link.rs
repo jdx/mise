@@ -46,7 +46,7 @@ impl Link {
                 style(path.to_string_lossy()).cyan().for_stderr()
             );
         }
-        let target = self.tool.forge.installs_path.join(version);
+        let target = self.tool.backend.installs_path.join(version);
         if target.exists() {
             if self.force {
                 remove_all(&target)?;

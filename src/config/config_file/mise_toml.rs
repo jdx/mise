@@ -13,7 +13,7 @@ use tera::Context as TeraContext;
 use toml_edit::{table, value, Array, DocumentMut, Item, Value};
 use versions::Versioning;
 
-use crate::cli::args::{ForgeArg, ToolVersionType};
+use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::{trust_check, ConfigFile, TaskConfig};
 use crate::config::env_directive::EnvDirective;
@@ -45,7 +45,7 @@ pub struct MiseToml {
     #[serde(skip)]
     doc: OnceCell<DocumentMut>,
     #[serde(default)]
-    tools: IndexMap<ForgeArg, MiseTomlToolList>,
+    tools: IndexMap<BackendArg, MiseTomlToolList>,
     #[serde(default)]
     plugins: HashMap<String, String>,
     #[serde(default)]
@@ -109,7 +109,7 @@ impl MiseToml {
         Ok(self.doc.get_mut().unwrap())
     }
 
-    pub fn set_alias(&mut self, fa: &ForgeArg, from: &str, to: &str) -> eyre::Result<()> {
+    pub fn set_alias(&mut self, fa: &BackendArg, from: &str, to: &str) -> eyre::Result<()> {
         self.alias
             .entry(fa.clone())
             .or_default()
@@ -127,7 +127,7 @@ impl MiseToml {
         Ok(())
     }
 
-    pub fn remove_alias(&mut self, fa: &ForgeArg, from: &str) -> eyre::Result<()> {
+    pub fn remove_alias(&mut self, fa: &BackendArg, from: &str) -> eyre::Result<()> {
         if let Some(aliases) = self
             .doc_mut()?
             .get_mut("alias")
@@ -250,7 +250,7 @@ impl ConfigFile for MiseToml {
         self.tasks.0.values().collect()
     }
 
-    fn remove_plugin(&mut self, fa: &ForgeArg) -> eyre::Result<()> {
+    fn remove_plugin(&mut self, fa: &BackendArg) -> eyre::Result<()> {
         self.tools.shift_remove(fa);
         let doc = self.doc_mut()?;
         if let Some(tools) = doc.get_mut("tools") {
@@ -264,7 +264,7 @@ impl ConfigFile for MiseToml {
         Ok(())
     }
 
-    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> eyre::Result<()> {
+    fn replace_versions(&mut self, fa: &BackendArg, versions: &[String]) -> eyre::Result<()> {
         self.tools.entry(fa.clone()).or_default().0 = versions
             .iter()
             .map(|v| MiseTomlTool {
@@ -805,17 +805,17 @@ impl<'de> de::Deserialize<'de> for Tasks {
     }
 }
 
-impl<'de> de::Deserialize<'de> for ForgeArg {
+impl<'de> de::Deserialize<'de> for BackendArg {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
     {
-        struct ForgeArgVisitor;
+        struct BackendArgVisitor;
 
-        impl<'de> Visitor<'de> for ForgeArgVisitor {
-            type Value = ForgeArg;
+        impl<'de> Visitor<'de> for BackendArgVisitor {
+            type Value = BackendArg;
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("forge argument")
+                formatter.write_str("backend argument")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -826,7 +826,7 @@ impl<'de> de::Deserialize<'de> for ForgeArg {
             }
         }
 
-        deserializer.deserialize_any(ForgeArgVisitor)
+        deserializer.deserialize_any(BackendArgVisitor)
     }
 }
 
@@ -848,7 +848,7 @@ where
         {
             let mut aliases = AliasMap::new();
             while let Some(plugin) = map.next_key::<String>()? {
-                let fa: ForgeArg = plugin.as_str().into();
+                let fa: BackendArg = plugin.as_str().into();
                 let plugin_aliases = aliases.entry(fa).or_default();
                 for (from, to) in map.next_value::<BTreeMap<String, String>>()? {
                     plugin_aliases.insert(from, to);

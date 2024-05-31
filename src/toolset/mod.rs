@@ -19,16 +19,16 @@ pub use tool_version::ToolVersion;
 pub use tool_version_list::ToolVersionList;
 pub use tool_version_request::ToolRequest;
 
-use crate::cli::args::ForgeArg;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::config::settings::SettingsStatusMissingTools;
 use crate::config::{Config, Settings};
 use crate::env::TERM_WIDTH;
 use crate::errors::Error;
-use crate::forge::Forge;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{env, forge, runtime_symlinks, shims};
+use crate::{backend, env, runtime_symlinks, shims};
 
 mod builder;
 mod tool_request_set;
@@ -65,7 +65,7 @@ impl InstallOptions {
 /// merge in other toolsets from various sources
 #[derive(Debug, Default, Clone)]
 pub struct Toolset {
-    pub versions: IndexMap<ForgeArg, ToolVersionList>,
+    pub versions: IndexMap<BackendArg, ToolVersionList>,
     pub source: Option<ToolSource>,
 }
 
@@ -77,13 +77,13 @@ impl Toolset {
         }
     }
     pub fn add_version(&mut self, tvr: ToolRequest) {
-        let fa = tvr.forge();
+        let fa = tvr.backend();
         if self.is_disabled(fa) {
             return;
         }
         let tvl = self
             .versions
-            .entry(tvr.forge().clone())
+            .entry(tvr.backend().clone())
             .or_insert_with(|| ToolVersionList::new(fa.clone(), self.source.clone().unwrap()));
         tvl.requests.push(tvr);
     }
@@ -94,7 +94,7 @@ impl Toolset {
                 versions.insert(plugin, tvl);
             }
         }
-        versions.retain(|_, tvl| !self.is_disabled(&tvl.forge));
+        versions.retain(|_, tvl| !self.is_disabled(&tvl.backend));
         self.versions = versions;
         self.source = other.source;
     }
@@ -128,7 +128,7 @@ impl Toolset {
             .into_iter()
             .filter(|(p, tv)| opts.force || !p.is_version_installed(tv))
             .map(|(_, tv)| tv)
-            .filter(|tv| matches!(self.versions[&tv.forge].source, ToolSource::Argument))
+            .filter(|tv| matches!(self.versions[&tv.backend].source, ToolSource::Argument))
             .map(|tv| tv.request)
             .collect_vec();
         self.install_versions(config, versions, &mpr, opts)
@@ -137,7 +137,7 @@ impl Toolset {
     pub fn list_missing_plugins(&self) -> Vec<String> {
         self.versions
             .keys()
-            .map(forge::get)
+            .map(backend::get)
             .filter(|p| !p.is_installed())
             .map(|p| p.id().into())
             .collect()
@@ -163,9 +163,9 @@ impl Toolset {
         let queue: Vec<_> = versions
             .into_iter()
             .rev()
-            .group_by(|v| v.forge().clone())
+            .group_by(|v| v.backend().clone())
             .into_iter()
-            .map(|(fa, v)| (forge::get(&fa), v.collect_vec()))
+            .map(|(fa, v)| (backend::get(&fa), v.collect_vec()))
             .collect();
         for (t, _) in &queue {
             if !t.is_installed() {
@@ -250,13 +250,13 @@ impl Toolset {
             .map(|(_, tv)| tv)
             .collect()
     }
-    pub fn list_installed_versions(&self) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
-        let current_versions: HashMap<(String, String), (Arc<dyn Forge>, ToolVersion)> = self
+    pub fn list_installed_versions(&self) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
+        let current_versions: HashMap<(String, String), (Arc<dyn Backend>, ToolVersion)> = self
             .list_current_versions()
             .into_iter()
             .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
             .collect();
-        let versions = forge::list()
+        let versions = backend::list()
             .into_par_iter()
             .map(|p| {
                 let versions = p.list_installed_versions()?;
@@ -282,7 +282,7 @@ impl Toolset {
 
         Ok(versions)
     }
-    pub fn list_plugins(&self) -> Vec<Arc<dyn Forge>> {
+    pub fn list_plugins(&self) -> Vec<Arc<dyn Backend>> {
         self.list_versions_by_plugin()
             .into_iter()
             .map(|(p, _)| p)
@@ -294,25 +294,25 @@ impl Toolset {
             .flat_map(|tvl| &tvl.requests)
             .collect()
     }
-    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Forge>, &Vec<ToolVersion>)> {
+    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &Vec<ToolVersion>)> {
         self.versions
             .iter()
-            .map(|(p, v)| (forge::get(p), &v.versions))
+            .map(|(p, v)| (backend::get(p), &v.versions))
             .collect()
     }
-    pub fn list_current_versions(&self) -> Vec<(Arc<dyn Forge>, ToolVersion)> {
+    pub fn list_current_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_versions_by_plugin()
             .iter()
             .flat_map(|(p, v)| v.iter().map(|v| (p.clone(), v.clone())))
             .collect()
     }
-    pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Forge>, ToolVersion)> {
+    pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_versions()
             .into_iter()
             .filter(|(p, v)| p.is_version_installed(v))
             .collect()
     }
-    pub fn list_outdated_versions(&self) -> Vec<(Arc<dyn Forge>, ToolVersion, String)> {
+    pub fn list_outdated_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion, String)> {
         self.list_current_versions()
             .into_iter()
             .filter_map(|(t, tv)| {
@@ -402,7 +402,7 @@ impl Toolset {
             })
             .collect()
     }
-    pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Forge>, ToolVersion)> {
+    pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_installed_versions()
             .into_par_iter()
             .find_first(|(p, tv)| {
@@ -430,7 +430,7 @@ impl Toolset {
             let versions = self
                 .list_missing_versions()
                 .into_iter()
-                .filter(|tv| &tv.forge == plugin.fa())
+                .filter(|tv| &tv.backend == plugin.fa())
                 .map(|tv| tv.request)
                 .collect_vec();
             if !versions.is_empty() {
@@ -469,7 +469,7 @@ impl Toolset {
                 SettingsStatusMissingTools::Never => false,
                 SettingsStatusMissingTools::Always => true,
                 SettingsStatusMissingTools::IfOtherVersionsInstalled => tv
-                    .get_forge()
+                    .get_backend()
                     .list_installed_versions()
                     .is_ok_and(|f| !f.is_empty()),
             })
@@ -488,7 +488,7 @@ impl Toolset {
         );
     }
 
-    fn is_disabled(&self, fa: &ForgeArg) -> bool {
+    fn is_disabled(&self, fa: &BackendArg) -> bool {
         let settings = Settings::get();
         let fa = fa.to_string();
         settings.disable_tools.iter().any(|s| s == &fa)
@@ -522,7 +522,10 @@ impl From<ToolRequestSet> for Toolset {
 }
 
 fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequest>> {
-    let versions_hash = requests.iter().map(|tr| tr.forge()).collect::<HashSet<_>>();
+    let versions_hash = requests
+        .iter()
+        .map(|tr| tr.backend())
+        .collect::<HashSet<_>>();
     let leaves = requests
         .iter()
         .map(|tr| {

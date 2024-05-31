@@ -6,11 +6,11 @@ use itertools::Itertools;
 use tempfile::tempdir_in;
 use versions::Versioning;
 
-use crate::cli::args::ForgeArg;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::forge::Forge;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -185,8 +185,8 @@ impl GoPlugin {
     }
 }
 
-impl Forge for GoPlugin {
-    fn fa(&self) -> &ForgeArg {
+impl Backend for GoPlugin {
+    fn fa(&self) -> &BackendArg {
         &self.core.fa
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {

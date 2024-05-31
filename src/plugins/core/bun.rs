@@ -5,11 +5,11 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
-use crate::cli::args::ForgeArg;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::file;
-use crate::forge::Forge;
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -97,8 +97,8 @@ impl BunPlugin {
     }
 }
 
-impl Forge for BunPlugin {
-    fn fa(&self) -> &ForgeArg {
+impl Backend for BunPlugin {
+    fn fa(&self) -> &BackendArg {
         &self.core.fa
     }
 

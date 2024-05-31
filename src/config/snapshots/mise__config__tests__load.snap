@@ -9,7 +9,7 @@ Config {
         "~/config/config.toml",
     ],
     Aliases: {
-        ForgeArg("tiny"): {
+        BackendArg("tiny"): {
             "my/alias": "3.0",
         },
     },

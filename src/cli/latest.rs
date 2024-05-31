@@ -1,8 +1,8 @@
 use color_eyre::eyre::{bail, Result};
 
+use crate::backend::ABackend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::forge::AForge;
 use crate::toolset::ToolRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -34,7 +34,7 @@ impl Latest {
             _ => bail!("invalid version: {}", self.tool.style()),
         };
 
-        let plugin: AForge = self.tool.forge.into();
+        let plugin: ABackend = self.tool.backend.into();
         let mpr = MultiProgressReport::get();
         plugin.ensure_installed(&mpr, false)?;
         if let Some(v) = prefix {

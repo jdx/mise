@@ -7,7 +7,7 @@ use indoc::indoc;
 use crate::cli::Cli;
 use crate::config::{config_file, Config};
 use crate::output::tests::{STDERR, STDOUT};
-use crate::{cmd, dirs, env, file, forge};
+use crate::{backend, cmd, dirs, env, file};
 
 #[macro_export]
 macro_rules! assert_cli_snapshot {
@@ -74,7 +74,7 @@ fn init() {
 
 pub fn reset() {
     Config::reset();
-    forge::reset();
+    backend::reset();
     config_file::reset();
     file::remove_all(&*env::HOME.join("cwd")).unwrap();
     file::create_dir_all(&*env::HOME.join("cwd")).unwrap();
@@ -191,7 +191,7 @@ pub fn replace_path(input: &str) -> String {
 
 pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
     Config::reset();
-    forge::reset();
+    backend::reset();
     config_file::reset();
     env::ARGS.write().unwrap().clone_from(args);
     STDOUT.lock().unwrap().clear();

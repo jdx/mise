@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::args::{ForgeArg, ToolArg};
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::Config;
 use crate::env;
 use crate::errors::Error;
@@ -71,7 +71,7 @@ impl ToolsetBuilder {
                     // ignore MISE_INSTALL_VERSION
                     continue;
                 }
-                let fa: ForgeArg = plugin_name.as_str().into();
+                let fa: BackendArg = plugin_name.as_str().into();
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = Toolset::new(source);
                 for v in v.split_whitespace() {
@@ -85,7 +85,11 @@ impl ToolsetBuilder {
     }
 
     fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
-        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.forge.clone()) {
+        for (_, args) in self
+            .args
+            .iter()
+            .into_group_map_by(|arg| arg.backend.clone())
+        {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
@@ -99,11 +103,11 @@ impl ToolsetBuilder {
                     let set_as_latest = !ts
                         .list_current_requests()
                         .iter()
-                        .any(|tvr| tvr.forge() == &arg.forge);
+                        .any(|tvr| tvr.backend() == &arg.backend);
 
                     if set_as_latest {
                         // no active version, so use "latest"
-                        arg_ts.add_version(ToolRequest::new(arg.forge.clone(), "latest")?);
+                        arg_ts.add_version(ToolRequest::new(arg.backend.clone(), "latest")?);
                     }
                 }
             }
