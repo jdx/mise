@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
 #[cfg(unix)]
-use std::os::unix::prelude::ExitStatusExt;
+use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};

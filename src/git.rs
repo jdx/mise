@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::path::PathBuf;
 
 use duct::Expression;
@@ -215,6 +216,12 @@ impl Git {
 fn get_git_version() -> Result<String> {
     let version = cmd!("git", "--version").read()?;
     Ok(version.trim().into())
+}
+
+impl Debug for Git {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Git").field("dir", &self.dir).finish()
+    }
 }
 
 // #[cfg(test)]
