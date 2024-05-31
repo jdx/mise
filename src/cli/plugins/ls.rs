@@ -1,13 +1,10 @@
-use std::collections::BTreeSet;
-use std::sync::Arc;
-
 use eyre::Result;
 use rayon::prelude::*;
 use tabled::{Table, Tabled};
 
 use crate::config::Config;
-use crate::forge::asdf::Asdf;
 use crate::plugins;
+use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::PluginType;
 use crate::ui::table;
 
@@ -47,34 +44,46 @@ pub struct PluginsLs {
 
 impl PluginsLs {
     pub fn run(self, config: &Config) -> Result<()> {
-        let mut tools = plugins::list().into_iter().collect::<BTreeSet<_>>();
+        let mut tools = plugins::list2()?;
 
         if self.all {
             for (plugin, url) in config.get_shorthands() {
-                let mut ep = Asdf::new(plugin.clone());
+                let mut ep = AsdfPlugin::new(plugin.to_string());
                 ep.repo_url = Some(url.to_string());
-                tools.insert(Arc::new(ep));
+                tools.insert(ep.name.clone(), Box::new(ep));
             }
         } else if self.user && self.core {
         } else if self.core {
-            tools.retain(|p| matches!(p.get_plugin_type(), PluginType::Core));
+            tools.retain(|_, p| matches!(p.get_plugin_type(), PluginType::Core));
         } else {
-            tools.retain(|p| matches!(p.get_plugin_type(), PluginType::Asdf));
+            tools.retain(|_, p| matches!(p.get_plugin_type(), PluginType::Asdf));
         }
 
         if self.urls || self.refs {
             let data = tools
                 .into_par_iter()
-                .map(|p| {
+                .map(|(name, p)| {
+                    let remote_url = p.get_remote_url().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    });
+                    let abbrev_ref = p.current_abbrev_ref().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    });
+                    let sha_short = p.current_sha_short().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    });
                     let mut row = Row {
-                        plugin: p.id().to_string(),
-                        url: p.get_remote_url().unwrap_or_default(),
+                        plugin: name,
+                        url: remote_url.unwrap_or_default(),
                         ref_: String::new(),
                         sha: String::new(),
                     };
                     if p.is_installed() {
-                        row.ref_ = p.current_abbrev_ref().unwrap_or_default();
-                        row.sha = p.current_sha_short().unwrap_or_default();
+                        row.ref_ = abbrev_ref.unwrap_or_default();
+                        row.sha = sha_short.unwrap_or_default();
                     }
                     row
                 })
@@ -83,7 +92,7 @@ impl PluginsLs {
             table::default_style(&mut table, false);
             miseprintln!("{table}");
         } else {
-            for tool in tools {
+            for tool in tools.values() {
                 miseprintln!("{tool}");
             }
         }

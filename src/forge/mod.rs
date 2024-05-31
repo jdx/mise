@@ -288,12 +288,6 @@ pub trait Forge: Debug + Send + Sync {
     fn get_remote_url(&self) -> Option<String> {
         None
     }
-    fn current_sha_short(&self) -> eyre::Result<String> {
-        Ok(String::from(""))
-    }
-    fn current_abbrev_ref(&self) -> eyre::Result<String> {
-        Ok(String::from(""))
-    }
     fn is_installed(&self) -> bool {
         true
     }
