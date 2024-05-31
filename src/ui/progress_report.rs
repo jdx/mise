@@ -4,7 +4,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
 
 use crate::ui::style;
-use crate::{env, forge, ui};
+use crate::{backend, env, ui};
 
 pub trait SingleReport: Send + Sync {
     fn println(&self, _message: String) {}
@@ -46,7 +46,7 @@ pub struct ProgressReport {
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
-    forge::list()
+    backend::list()
         .into_iter()
         .map(|p| p.id().len())
         .max()

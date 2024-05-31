@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::cli::args::ForgeArg;
+use crate::backend::BackendList;
+use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
-use crate::forge::ForgeList;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 #[derive(Debug)]
@@ -14,7 +14,7 @@ pub struct LegacyVersionFile {
 }
 
 impl LegacyVersionFile {
-    pub fn parse(path: PathBuf, plugins: ForgeList) -> Result<Self> {
+    pub fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
         let source = ToolSource::LegacyVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();
 
@@ -35,11 +35,11 @@ impl ConfigFile for LegacyVersionFile {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, _fa: &ForgeArg) -> Result<()> {
+    fn remove_plugin(&mut self, _fa: &BackendArg) -> Result<()> {
         unimplemented!()
     }
 
-    fn replace_versions(&mut self, _plugin_name: &ForgeArg, _versions: &[String]) -> Result<()> {
+    fn replace_versions(&mut self, _plugin_name: &BackendArg, _versions: &[String]) -> Result<()> {
         unimplemented!()
     }
 

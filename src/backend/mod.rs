@@ -15,11 +15,11 @@ use regex::Regex;
 use strum::IntoEnumIterator;
 use versions::Versioning;
 
-use crate::cli::args::ForgeArg;
+use crate::backend::asdf::Asdf;
+use crate::backend::cargo::CargoBackend;
+use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
-use crate::forge::asdf::Asdf;
-use crate::forge::cargo::CargoForge;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::plugins::core::CORE_PLUGINS;
@@ -30,19 +30,19 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file};
 
-use self::forge_meta::ForgeMeta;
+use self::backend_meta::BackendMeta;
 
 pub mod asdf;
+pub mod backend_meta;
 pub mod cargo;
-pub mod forge_meta;
 pub mod go;
 pub mod npm;
 pub mod pipx;
 pub mod ubi;
 
-pub type AForge = Arc<dyn Forge>;
-pub type ForgeMap = BTreeMap<ForgeArg, AForge>;
-pub type ForgeList = Vec<AForge>;
+pub type ABackend = Arc<dyn Backend>;
+pub type BackendMap = BTreeMap<BackendArg, ABackend>;
+pub type BackendList = Vec<ABackend>;
 
 #[derive(
     Debug,
@@ -58,7 +58,7 @@ pub type ForgeList = Vec<AForge>;
     PartialOrd,
 )]
 #[strum(serialize_all = "snake_case")]
-pub enum ForgeType {
+pub enum BackendType {
     Asdf,
     Cargo,
     Core,
@@ -68,117 +68,117 @@ pub enum ForgeType {
     Ubi,
 }
 
-impl Display for ForgeType {
+impl Display for BackendType {
     fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
         write!(formatter, "{}", format!("{:?}", self).to_lowercase())
     }
 }
 
-static FORGES: Mutex<Option<ForgeMap>> = Mutex::new(None);
+static FORGES: Mutex<Option<BackendMap>> = Mutex::new(None);
 
-fn load_forges() -> ForgeMap {
-    let mut forges = FORGES.lock().unwrap();
-    if let Some(forges) = &*forges {
-        return forges.clone();
+fn load_backends() -> BackendMap {
+    let mut backends = FORGES.lock().unwrap();
+    if let Some(backends) = &*backends {
+        return backends.clone();
     }
     let mut plugins = CORE_PLUGINS.clone();
     plugins.extend(Asdf::list().expect("failed to list plugins"));
-    plugins.extend(list_installed_forges().expect("failed to list forges"));
+    plugins.extend(list_installed_backends().expect("failed to list backends"));
     let settings = Settings::get();
     plugins.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
-    let plugins: ForgeMap = plugins
+    let plugins: BackendMap = plugins
         .into_iter()
         .map(|plugin| (plugin.fa().clone(), plugin))
         .collect();
-    *forges = Some(plugins.clone());
+    *backends = Some(plugins.clone());
     plugins
 }
 
-fn list_installed_forges() -> eyre::Result<ForgeList> {
+fn list_installed_backends() -> eyre::Result<BackendList> {
     Ok(file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
         .map(|dir| {
-            let id = ForgeMeta::read(&dir).id;
-            let fa: ForgeArg = id.as_str().into();
-            match fa.forge_type {
-                ForgeType::Asdf => Arc::new(Asdf::new(fa.name)) as AForge,
-                ForgeType::Cargo => Arc::new(CargoForge::new(fa.name)) as AForge,
-                ForgeType::Core => Arc::new(Asdf::new(fa.name)) as AForge,
-                ForgeType::Npm => Arc::new(npm::NPMForge::new(fa.name)) as AForge,
-                ForgeType::Go => Arc::new(go::GoForge::new(fa.name)) as AForge,
-                ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(fa.name)) as AForge,
-                ForgeType::Ubi => Arc::new(ubi::UbiForge::new(fa.name)) as AForge,
+            let id = BackendMeta::read(&dir).id;
+            let fa: BackendArg = id.as_str().into();
+            match fa.backend_type {
+                BackendType::Asdf => Arc::new(Asdf::new(fa.name)) as ABackend,
+                BackendType::Cargo => Arc::new(CargoBackend::new(fa.name)) as ABackend,
+                BackendType::Core => Arc::new(Asdf::new(fa.name)) as ABackend,
+                BackendType::Npm => Arc::new(npm::NPMBackend::new(fa.name)) as ABackend,
+                BackendType::Go => Arc::new(go::GoBackend::new(fa.name)) as ABackend,
+                BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(fa.name)) as ABackend,
+                BackendType::Ubi => Arc::new(ubi::UbiBackend::new(fa.name)) as ABackend,
             }
         })
-        .filter(|f| f.fa().forge_type != ForgeType::Asdf)
+        .filter(|f| f.fa().backend_type != BackendType::Asdf)
         .collect())
 }
 
-pub fn list() -> ForgeList {
-    load_forges().values().cloned().collect()
+pub fn list() -> BackendList {
+    load_backends().values().cloned().collect()
 }
 
-pub fn list_forge_types() -> Vec<ForgeType> {
-    ForgeType::iter().collect()
+pub fn list_backend_types() -> Vec<BackendType> {
+    BackendType::iter().collect()
 }
 
-pub fn get(fa: &ForgeArg) -> AForge {
-    if let Some(forge) = load_forges().get(fa) {
-        forge.clone()
+pub fn get(fa: &BackendArg) -> ABackend {
+    if let Some(backend) = load_backends().get(fa) {
+        backend.clone()
     } else {
         let mut m = FORGES.lock().unwrap();
-        let forges = m.as_mut().unwrap();
+        let backends = m.as_mut().unwrap();
         let name = fa.name.to_string();
-        forges
+        backends
             .entry(fa.clone())
-            .or_insert_with(|| match fa.forge_type {
-                ForgeType::Asdf => Arc::new(Asdf::new(name)),
-                ForgeType::Cargo => Arc::new(CargoForge::new(name)),
-                ForgeType::Core => Arc::new(Asdf::new(name)),
-                ForgeType::Npm => Arc::new(npm::NPMForge::new(name)),
-                ForgeType::Go => Arc::new(go::GoForge::new(name)),
-                ForgeType::Pipx => Arc::new(pipx::PIPXForge::new(name)),
-                ForgeType::Ubi => Arc::new(ubi::UbiForge::new(name)),
+            .or_insert_with(|| match fa.backend_type {
+                BackendType::Asdf => Arc::new(Asdf::new(name)),
+                BackendType::Cargo => Arc::new(CargoBackend::new(name)),
+                BackendType::Core => Arc::new(Asdf::new(name)),
+                BackendType::Npm => Arc::new(npm::NPMBackend::new(name)),
+                BackendType::Go => Arc::new(go::GoBackend::new(name)),
+                BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(name)),
+                BackendType::Ubi => Arc::new(ubi::UbiBackend::new(name)),
             })
             .clone()
     }
 }
 
-impl From<ForgeArg> for AForge {
-    fn from(fa: ForgeArg) -> Self {
+impl From<BackendArg> for ABackend {
+    fn from(fa: BackendArg) -> Self {
         get(&fa)
     }
 }
 
-impl From<&ForgeArg> for AForge {
-    fn from(fa: &ForgeArg) -> Self {
+impl From<&BackendArg> for ABackend {
+    fn from(fa: &BackendArg) -> Self {
         get(fa)
     }
 }
 
-pub trait Forge: Debug + Send + Sync {
+pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
         &self.fa().id
     }
     fn name(&self) -> &str {
         &self.fa().name
     }
-    fn get_type(&self) -> ForgeType {
-        ForgeType::Asdf
+    fn get_type(&self) -> BackendType {
+        BackendType::Asdf
     }
-    fn fa(&self) -> &ForgeArg;
+    fn fa(&self) -> &BackendArg;
     fn get_plugin_type(&self) -> PluginType {
         PluginType::Core
     }
     /// If any of these tools are installing in parallel, we should wait for them to finish
     /// before installing this tool.
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
         Ok(vec![])
     }
-    fn get_all_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_all_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
         let mut deps = self.get_dependencies(tvr)?;
-        let dep_forges = deps.iter().map(|fa| fa.into()).collect::<Vec<AForge>>();
-        for dep in dep_forges {
+        let dep_backends = deps.iter().map(|fa| fa.into()).collect::<Vec<ABackend>>();
+        for dep in dep_backends {
             // TODO: pass the right tvr
             let tvr = ToolRequest::System(dep.id().into());
             deps.extend(dep.get_all_dependencies(&tvr)?);
@@ -216,7 +216,7 @@ pub trait Forge: Debug + Send + Sync {
             }
         }
     }
-    fn is_version_outdated(&self, tv: &ToolVersion, p: &dyn Forge) -> bool {
+    fn is_version_outdated(&self, tv: &ToolVersion, p: &dyn Backend) -> bool {
         let latest = match tv.latest_version(p) {
             Ok(latest) => latest,
             Err(e) => {
@@ -339,7 +339,7 @@ pub trait Forge: Debug + Send + Sync {
         unimplemented!()
     }
 
-    #[requires(ctx.tv.forge.forge_type == self.get_type())]
+    #[requires(ctx.tv.backend.backend_type == self.get_type())]
     fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
         ensure!(self.is_installed(), "{} is not installed", self.id());
         let config = Config::get();
@@ -360,7 +360,7 @@ pub trait Forge: Debug + Send + Sync {
             return Err(e);
         }
 
-        ForgeMeta::write(&ctx.tv.forge)?;
+        BackendMeta::write(&ctx.tv.backend)?;
 
         self.cleanup_install_dirs(&settings, &ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
@@ -535,41 +535,41 @@ fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
     })
 }
 
-pub fn unalias_forge(forge: &str) -> &str {
-    match forge {
+pub fn unalias_backend(backend: &str) -> &str {
+    match backend {
         "nodejs" => "node",
         "golang" => "go",
-        _ => forge,
+        _ => backend,
     }
 }
 
-impl Display for dyn Forge {
+impl Display for dyn Backend {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.id())
     }
 }
 
-impl Eq for dyn Forge {}
+impl Eq for dyn Backend {}
 
-impl PartialEq for dyn Forge {
+impl PartialEq for dyn Backend {
     fn eq(&self, other: &Self) -> bool {
         self.get_plugin_type() == other.get_plugin_type() && self.id() == other.id()
     }
 }
 
-impl Hash for dyn Forge {
+impl Hash for dyn Backend {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id().hash(state)
     }
 }
 
-impl PartialOrd for dyn Forge {
+impl PartialOrd for dyn Backend {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for dyn Forge {
+impl Ord for dyn Backend {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.id().cmp(other.id())
     }

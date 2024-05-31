@@ -6,9 +6,9 @@ use regex::Regex;
 
 pub use script_manager::{Script, ScriptManager};
 
-use crate::cli::args::ForgeArg;
-use crate::forge;
-use crate::forge::{AForge, ForgeList, ForgeType};
+use crate::backend;
+use crate::backend::{ABackend, BackendList, BackendType};
+use crate::cli::args::BackendArg;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::core::CorePlugin;
 
@@ -30,14 +30,14 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
         .unwrap()
 });
 
-pub fn get(name: &str) -> AForge {
-    ForgeArg::new(ForgeType::Asdf, name).into()
+pub fn get(name: &str) -> ABackend {
+    BackendArg::new(BackendType::Asdf, name).into()
 }
 
-pub fn list() -> ForgeList {
-    forge::list()
+pub fn list() -> BackendList {
+    backend::list()
         .into_iter()
-        .filter(|f| f.get_type() == ForgeType::Asdf)
+        .filter(|f| f.get_type() == BackendType::Asdf)
         .collect()
 }
 
@@ -51,7 +51,7 @@ pub fn list2() -> eyre::Result<PluginMap> {
     Ok(core.chain(asdf).collect())
 }
 
-pub fn list_external() -> ForgeList {
+pub fn list_external() -> BackendList {
     list()
         .into_iter()
         .filter(|tool| tool.get_plugin_type() == PluginType::Asdf)
@@ -102,8 +102,8 @@ mod tests {
     use pretty_assertions::assert_str_eq;
     use test_log::test;
 
-    use crate::forge::asdf::Asdf;
-    use crate::forge::Forge;
+    use crate::backend::asdf::Asdf;
+    use crate::backend::Backend;
     use crate::test::reset;
 
     #[test]

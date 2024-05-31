@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 
@@ -11,7 +11,7 @@ use crate::config::Config;
 #[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasSet {
     /// The plugin to set the alias for
-    pub plugin: ForgeArg,
+    pub plugin: BackendArg,
     /// The alias to set
     pub alias: String,
     /// The value to set the alias to

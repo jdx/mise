@@ -4,9 +4,9 @@ use std::sync::Arc;
 use demand::DemandOption;
 use eyre::{Context, Result};
 
+use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::forge::Forge;
 use crate::toolset::{InstallOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -53,7 +53,7 @@ impl Upgrade {
             let tool_set = self
                 .tool
                 .iter()
-                .map(|t| t.forge.clone())
+                .map(|t| t.backend.clone())
                 .collect::<HashSet<_>>();
             outdated.retain(|(p, _, _)| tool_set.is_empty() || tool_set.contains(p.fa()));
         }
@@ -115,7 +115,7 @@ impl Upgrade {
 
     fn uninstall_old_version(
         &self,
-        tool: Arc<dyn Forge>,
+        tool: Arc<dyn Backend>,
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
@@ -143,7 +143,7 @@ impl Upgrade {
     }
 }
 
-type OutputVec = Vec<(Arc<dyn Forge>, ToolVersion, String)>;
+type OutputVec = Vec<(Arc<dyn Backend>, ToolVersion, String)>;
 
 #[cfg(test)]
 pub mod tests {

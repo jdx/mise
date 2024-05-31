@@ -6,12 +6,12 @@ use serde_derive::Deserialize;
 use tempfile::tempdir_in;
 use url::Url;
 
+use crate::backend::Backend;
 use crate::build_time::built_info;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::MISE_NODE_MIRROR_URL;
-use crate::forge::Forge;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -234,8 +234,8 @@ impl NodePlugin {
     }
 }
 
-impl Forge for NodePlugin {
-    fn fa(&self) -> &ForgeArg {
+impl Backend for NodePlugin {
+    fn fa(&self) -> &BackendArg {
         &self.core.fa
     }
 

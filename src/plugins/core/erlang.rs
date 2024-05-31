@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use eyre::Result;
 
-use crate::cli::args::ForgeArg;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::file::display_path;
-use crate::forge::Forge;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
@@ -92,8 +92,8 @@ impl ErlangPlugin {
     }
 }
 
-impl Forge for ErlangPlugin {
-    fn fa(&self) -> &ForgeArg {
+impl Backend for ErlangPlugin {
+    fn fa(&self) -> &BackendArg {
         &self.core.fa
     }
     fn _list_remote_versions(&self) -> Result<Vec<String>> {

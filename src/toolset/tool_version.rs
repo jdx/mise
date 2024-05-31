@@ -7,10 +7,10 @@ use std::path::PathBuf;
 use console::style;
 use eyre::Result;
 
-use crate::cli::args::ForgeArg;
+use crate::backend;
+use crate::backend::{ABackend, Backend};
+use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::forge;
-use crate::forge::{AForge, Forge};
 use crate::hash::hash_to_str;
 use crate::toolset::{tool_version_request, ToolRequest, ToolVersionOptions};
 
@@ -18,20 +18,24 @@ use crate::toolset::{tool_version_request, ToolRequest, ToolVersionOptions};
 #[derive(Debug, Clone)]
 pub struct ToolVersion {
     pub request: ToolRequest,
-    pub forge: ForgeArg,
+    pub backend: BackendArg,
     pub version: String,
 }
 
 impl ToolVersion {
-    pub fn new(tool: &dyn Forge, request: ToolRequest, version: String) -> Self {
+    pub fn new(tool: &dyn Backend, request: ToolRequest, version: String) -> Self {
         ToolVersion {
-            forge: tool.fa().clone(),
+            backend: tool.fa().clone(),
             version,
             request,
         }
     }
 
-    pub fn resolve(tool: &dyn Forge, request: ToolRequest, latest_versions: bool) -> Result<Self> {
+    pub fn resolve(
+        tool: &dyn Backend,
+        request: ToolRequest,
+        latest_versions: bool,
+    ) -> Result<Self> {
         if !tool.is_installed() {
             let tv = Self::new(tool, request.clone(), request.version());
             return Ok(tv);
@@ -52,8 +56,8 @@ impl ToolVersion {
         Ok(tv)
     }
 
-    pub fn get_forge(&self) -> AForge {
-        forge::get(&self.forge)
+    pub fn get_backend(&self) -> ABackend {
+        backend::get(&self.backend)
     }
 
     pub fn install_path(&self) -> PathBuf {
@@ -61,14 +65,14 @@ impl ToolVersion {
             ToolRequest::Path(_, p) => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
-        self.forge.installs_path.join(pathname)
+        self.backend.installs_path.join(pathname)
     }
     pub fn install_short_path(&self) -> PathBuf {
         let pathname = match &self.request {
             ToolRequest::Path(_, p) => p.to_string_lossy().to_string(),
             _ => self.tv_short_pathname(),
         };
-        let sp = self.forge.installs_path.join(pathname);
+        let sp = self.backend.installs_path.join(pathname);
         if sp.exists() {
             sp
         } else {
@@ -76,19 +80,19 @@ impl ToolVersion {
         }
     }
     pub fn cache_path(&self) -> PathBuf {
-        self.forge.cache_path.join(self.tv_pathname())
+        self.backend.cache_path.join(self.tv_pathname())
     }
     pub fn download_path(&self) -> PathBuf {
-        self.forge.downloads_path.join(self.tv_pathname())
+        self.backend.downloads_path.join(self.tv_pathname())
     }
-    pub fn latest_version(&self, tool: &dyn Forge) -> Result<String> {
+    pub fn latest_version(&self, tool: &dyn Backend) -> Result<String> {
         let tv = self.request.resolve(tool, true)?;
         Ok(tv.version)
     }
     pub fn style(&self) -> String {
         format!(
             "{}{}",
-            style(&self.forge.id).blue().for_stderr(),
+            style(&self.backend.id).blue().for_stderr(),
             style(&format!("@{}", &self.version)).for_stderr()
         )
     }
@@ -112,7 +116,7 @@ impl ToolVersion {
     }
 
     fn resolve_version(
-        tool: &dyn Forge,
+        tool: &dyn Backend,
         request: ToolRequest,
         latest_versions: bool,
         v: &str,
@@ -175,7 +179,7 @@ impl ToolVersion {
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
     fn resolve_sub(
-        tool: &dyn Forge,
+        tool: &dyn Backend,
         request: ToolRequest,
         latest_versions: bool,
         sub: &str,
@@ -189,7 +193,7 @@ impl ToolVersion {
         Self::resolve_version(tool, request, latest_versions, &v)
     }
 
-    fn resolve_prefix(tool: &dyn Forge, request: ToolRequest, prefix: &str) -> Result<Self> {
+    fn resolve_prefix(tool: &dyn Backend, request: ToolRequest, prefix: &str) -> Result<Self> {
         let matches = tool.list_versions_matching(prefix)?;
         let v = match matches.last() {
             Some(v) => v,
@@ -199,9 +203,9 @@ impl ToolVersion {
         Ok(Self::new(tool, request, v.to_string()))
     }
 
-    fn resolve_ref(tool: &dyn Forge, ref_: String, opts: ToolVersionOptions) -> Self {
+    fn resolve_ref(tool: &dyn Backend, ref_: String, opts: ToolVersionOptions) -> Self {
         let request = ToolRequest::Ref {
-            forge: tool.fa().clone(),
+            backend: tool.fa().clone(),
             ref_,
             options: opts.clone(),
         };
@@ -209,7 +213,7 @@ impl ToolVersion {
         Self::new(tool, request, version)
     }
 
-    fn resolve_path(tool: &dyn Forge, path: PathBuf) -> Result<ToolVersion> {
+    fn resolve_path(tool: &dyn Backend, path: PathBuf) -> Result<ToolVersion> {
         let path = fs::canonicalize(path)?;
         let request = ToolRequest::Path(tool.fa().clone(), path);
         let version = request.version();
@@ -219,13 +223,13 @@ impl ToolVersion {
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", &self.forge.id, &self.version)
+        write!(f, "{}@{}", &self.backend.id, &self.version)
     }
 }
 
 impl PartialEq for ToolVersion {
     fn eq(&self, other: &Self) -> bool {
-        self.forge.id == other.forge.id && self.version == other.version
+        self.backend.id == other.backend.id && self.version == other.version
     }
 }
 
@@ -239,7 +243,7 @@ impl PartialOrd for ToolVersion {
 
 impl Ord for ToolVersion {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.forge.id.cmp(&other.forge.id) {
+        match self.backend.id.cmp(&other.backend.id) {
             Ordering::Equal => self.version.cmp(&other.version),
             o => o,
         }
@@ -248,7 +252,7 @@ impl Ord for ToolVersion {
 
 impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.forge.id.hash(state);
+        self.backend.id.hash(state);
         self.version.hash(state);
     }
 }

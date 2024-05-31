@@ -2,11 +2,11 @@ use clap::{ArgMatches, Command};
 use eyre::Result;
 use rayon::prelude::*;
 
-use crate::cli::args::ForgeArg;
-use crate::forge;
+use crate::backend;
+use crate::cli::args::BackendArg;
 
 pub fn commands() -> Vec<Command> {
-    forge::list()
+    backend::list()
         .into_par_iter()
         .flat_map(|p| {
             p.external_commands().unwrap_or_else(|e| {
@@ -18,13 +18,13 @@ pub fn commands() -> Vec<Command> {
         .collect()
 }
 
-pub fn execute(fa: &ForgeArg, args: &ArgMatches) -> Result<()> {
+pub fn execute(fa: &BackendArg, args: &ArgMatches) -> Result<()> {
     if let Some(mut cmd) = commands()
         .into_iter()
         .find(|c| c.get_name() == fa.to_string())
     {
         if let Some((subcommand, matches)) = args.subcommand() {
-            let plugin = forge::get(fa);
+            let plugin = backend::get(fa);
             let args: Vec<String> = matches
                 .get_raw("args")
                 .unwrap_or_default()

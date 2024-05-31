@@ -7,19 +7,19 @@ use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
 
+use crate::backend::BackendType;
 use crate::build_time::built_info;
 use crate::cli::version;
 use crate::cli::version::VERSION;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
-use crate::forge::ForgeType;
 use crate::git::Git;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
 use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::ui::style;
-use crate::{cmd, dirs, duration, env, file, forge, shims};
+use crate::{backend, cmd, dirs, duration, env, file, shims};
 
 /// Check mise installation for possible problems
 #[derive(Debug, clap::Args)]
@@ -103,7 +103,7 @@ impl Doctor {
         section("backends", render_backends())?;
         section("plugins", render_plugins())?;
 
-        for plugin in forge::list() {
+        for plugin in backend::list() {
             if !plugin.is_installed() {
                 self.errors
                     .push(format!("plugin {} is not installed", &plugin.id()));
@@ -186,7 +186,7 @@ impl Doctor {
     }
 
     fn analyze_plugins(&mut self) {
-        for plugin in forge::list() {
+        for plugin in backend::list() {
             let is_core = CORE_PLUGINS.iter().any(|fg| fg.id() == plugin.id());
             let plugin_type = plugin.get_plugin_type();
 
@@ -244,9 +244,9 @@ fn render_config_files(config: &Config) -> String {
 
 fn render_backends() -> String {
     let mut s = vec![];
-    let backends = forge::list_forge_types()
+    let backends = backend::list_backend_types()
         .into_iter()
-        .filter(|f| *f != ForgeType::Asdf);
+        .filter(|f| *f != BackendType::Asdf);
     for b in backends {
         s.push(format!("{}", b));
     }
@@ -254,9 +254,9 @@ fn render_backends() -> String {
 }
 
 fn render_plugins() -> String {
-    let plugins = forge::list()
+    let plugins = backend::list()
         .into_iter()
-        .filter(|p| p.is_installed() && p.get_type() == ForgeType::Asdf)
+        .filter(|p| p.is_installed() && p.get_type() == BackendType::Asdf)
         .collect::<Vec<_>>();
     let max_plugin_name_len = plugins
         .iter()

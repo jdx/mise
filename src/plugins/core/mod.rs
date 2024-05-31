@@ -7,11 +7,11 @@ use once_cell::sync::Lazy;
 
 pub use python::PythonPlugin;
 
+use crate::backend::{Backend, BackendList};
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use crate::env;
-use crate::forge::{Forge, ForgeList};
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
@@ -35,8 +35,8 @@ mod python;
 mod ruby;
 mod zig;
 
-pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
-    let mut plugins: Vec<Arc<dyn Forge>> = vec![
+pub static CORE_PLUGINS: Lazy<BackendList> = Lazy::new(|| {
+    let mut plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         Arc::new(ErlangPlugin::new()),
@@ -55,7 +55,7 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
 
 #[derive(Debug)]
 pub struct CorePlugin {
-    pub fa: ForgeArg,
+    pub fa: BackendArg,
     pub remote_version_cache: CacheManager<Vec<String>>,
 }
 
@@ -69,7 +69,7 @@ impl CorePlugin {
             .collect()
     }
 
-    pub fn new(fa: ForgeArg) -> Self {
+    pub fn new(fa: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions-$KEY.msgpack.z"),

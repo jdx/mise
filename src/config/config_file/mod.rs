@@ -12,7 +12,7 @@ use versions::Versioning;
 
 use tool_versions::ToolVersions;
 
-use crate::cli::args::{ForgeArg, ToolArg};
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
 use crate::config::{AliasMap, Settings};
@@ -22,7 +22,7 @@ use crate::hash::{file_hash_sha256, hash_to_str};
 use crate::task::Task;
 use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
-use crate::{dirs, env, file, forge};
+use crate::{backend, dirs, env, file};
 
 pub mod legacy_version;
 pub mod mise_toml;
@@ -69,8 +69,8 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_plugin(&mut self, _fa: &ForgeArg) -> eyre::Result<()>;
-    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> eyre::Result<()>;
+    fn remove_plugin(&mut self, _fa: &BackendArg) -> eyre::Result<()>;
+    fn replace_versions(&mut self, fa: &BackendArg, versions: &[String]) -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
     fn dump(&self) -> eyre::Result<String>;
     fn to_toolset(&self) -> eyre::Result<Toolset> {
@@ -95,7 +95,7 @@ impl dyn ConfigFile {
         for ta in tools {
             if let Some(tv) = &ta.tvr {
                 plugins_to_update
-                    .entry(ta.forge.clone())
+                    .entry(ta.backend.clone())
                     .or_insert_with(Vec::new)
                     .push(tv);
             }
@@ -116,7 +116,7 @@ impl dyn ConfigFile {
                 .into_iter()
                 .map(|tvr| {
                     if pin {
-                        let plugin = forge::get(&fa);
+                        let plugin = backend::get(&fa);
                         let tv = tvr.resolve(plugin.as_ref(), false)?;
                         Ok(tv.version)
                     } else {
@@ -136,7 +136,7 @@ impl dyn ConfigFile {
     pub fn display_runtime(&self, runtimes: &[ToolArg]) -> eyre::Result<bool> {
         // in this situation we just print the current version in the config file
         if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
-            let fa = &runtimes[0].forge;
+            let fa = &runtimes[0].backend;
             let tvl = self
                 .to_toolset()?
                 .versions

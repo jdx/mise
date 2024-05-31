@@ -4,10 +4,10 @@ use std::sync::Arc;
 use console::style;
 use eyre::Result;
 
-use crate::cli::args::ForgeArg;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
-use crate::forge::Forge;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
@@ -25,7 +25,7 @@ use super::trust::Trust;
 pub struct Prune {
     /// Prune only versions from this plugin(s)
     #[clap()]
-    pub plugin: Option<Vec<ForgeArg>>,
+    pub plugin: Option<Vec<BackendArg>>,
 
     /// Do not actually delete anything
     #[clap(long, short = 'n')]
@@ -69,10 +69,10 @@ impl Prune {
             .list_installed_versions()?
             .into_iter()
             .map(|(p, tv)| (tv.to_string(), (p, tv)))
-            .collect::<BTreeMap<String, (Arc<dyn Forge>, ToolVersion)>>();
+            .collect::<BTreeMap<String, (Arc<dyn Backend>, ToolVersion)>>();
 
-        if let Some(forges) = &self.plugin {
-            to_delete.retain(|_, (_, tv)| forges.contains(&tv.forge));
+        if let Some(backends) = &self.plugin {
+            to_delete.retain(|_, (_, tv)| backends.contains(&tv.backend));
         }
 
         for cf in config.get_tracked_config_files()?.values() {
@@ -86,7 +86,7 @@ impl Prune {
         self.delete(to_delete.into_values().collect())
     }
 
-    fn delete(&self, to_delete: Vec<(Arc<dyn Forge>, ToolVersion)>) -> Result<()> {
+    fn delete(&self, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Result<()> {
         let settings = Settings::try_get()?;
         let mpr = MultiProgressReport::get();
         for (p, tv) in to_delete {

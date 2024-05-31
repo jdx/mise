@@ -1,29 +1,29 @@
 use std::fmt::Debug;
 
+use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
-use crate::forge::{Forge, ForgeType};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
-pub struct GoForge {
-    fa: ForgeArg,
+pub struct GoBackend {
+    fa: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
-impl Forge for GoForge {
-    fn get_type(&self) -> ForgeType {
-        ForgeType::Go
+impl Backend for GoBackend {
+    fn get_type(&self) -> BackendType {
+        BackendType::Go
     }
 
-    fn fa(&self) -> &ForgeArg {
+    fn fa(&self) -> &BackendArg {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
         Ok(vec!["go".into()])
     }
 
@@ -82,9 +82,9 @@ impl Forge for GoForge {
     }
 }
 
-impl GoForge {
+impl GoBackend {
     pub fn new(name: String) -> Self {
-        let fa = ForgeArg::new(ForgeType::Go, &name);
+        let fa = BackendArg::new(BackendType::Go, &name);
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions-$KEY.msgpack.z"),

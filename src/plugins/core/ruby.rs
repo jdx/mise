@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 use contracts::requires;
 use eyre::{Result, WrapErr};
 
-use crate::cli::args::ForgeArg;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
-use crate::forge::Forge;
 use crate::git::Git;
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -327,8 +327,8 @@ impl RubyPlugin {
     }
 }
 
-impl Forge for RubyPlugin {
-    fn fa(&self) -> &ForgeArg {
+impl Backend for RubyPlugin {
+    fn fa(&self) -> &BackendArg {
         &self.core.fa
     }
     fn _list_remote_versions(&self) -> Result<Vec<String>> {

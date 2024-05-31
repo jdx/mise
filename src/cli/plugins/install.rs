@@ -3,9 +3,9 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use url::Url;
 
+use crate::backend::asdf::Asdf;
+use crate::backend::{unalias_backend, Backend};
 use crate::config::{Config, Settings};
-use crate::forge::asdf::Asdf;
-use crate::forge::{unalias_forge, Forge};
 use crate::plugins::core::CORE_PLUGINS;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -121,7 +121,7 @@ impl PluginsInstall {
 }
 
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
-    let name = unalias_forge(name);
+    let name = unalias_backend(name);
     Ok(match git_url {
         Some(url) => match url.contains(':') {
             true => (name.to_string(), Some(url.clone())),
@@ -142,7 +142,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
             let name = name.strip_prefix("rtx-").unwrap_or(name);
             let name = name.strip_prefix("mise-").unwrap_or(name);
             let name = name.strip_suffix(".git").unwrap_or(name);
-            return Ok(unalias_forge(name).to_string());
+            return Ok(unalias_backend(name).to_string());
         }
     }
     Err(eyre!("could not infer plugin name from url: {}", url))
