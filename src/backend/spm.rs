@@ -3,7 +3,6 @@ use std::fmt::{self, Debug};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use git2::Repository;
 use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
 use serde_derive::Deserialize;
@@ -15,6 +14,7 @@ use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
+use crate::git::Git;
 use crate::install_context::InstallContext;
 use crate::{file, github};
 
@@ -109,17 +109,10 @@ impl SPMBackend {
         let tmp_repo_dir = temp_dir().join("spm").join(&repo_dir_name);
         file::remove_all(&tmp_repo_dir)?;
         file::create_dir_all(tmp_repo_dir.parent().unwrap())?;
-        debug!(
-            "Cloning swift package repo: {}, revision: {} to path: {}",
-            repo_url,
-            revision,
-            tmp_repo_dir.display()
-        );
-        // TODO: use project-wide git module
-        let repo = Repository::clone(&repo_url, &tmp_repo_dir)?;
-        let (object, reference) = repo.revparse_ext(&revision)?;
-        repo.checkout_tree(&object, None)?;
-        repo.set_head(reference.unwrap().name().unwrap())?;
+
+        let git = Git::new(tmp_repo_dir.clone());
+        git.clone(&repo_url)?;
+        git.update(Some(revision))?;
         Ok(tmp_repo_dir)
     }
 
