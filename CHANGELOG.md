@@ -1,5 +1,12 @@
 # Changelog
 
+## [2024.6.0](https://github.com/jdx/mise/compare/v2024.5.28..v2024.6.0) - 2024-06-01
+
+### 🔍 Other Changes
+
+- bump itertools by [@jdx](https://github.com/jdx) in [#2238](https://github.com/jdx/mise/pull/2238)
+- migrate docs repo into this repo by [@jdx](https://github.com/jdx) in [#2237](https://github.com/jdx/mise/pull/2237)
+
 ## [2024.5.28](https://github.com/jdx/mise/compare/v2024.5.27..v2024.5.28) - 2024-05-31
 
 ### 🐛 Bug Fixes
