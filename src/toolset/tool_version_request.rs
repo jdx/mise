@@ -5,66 +5,66 @@ use eyre::{bail, Result};
 use versions::{Chunk, Version};
 use xx::file;
 
-use crate::cli::args::ForgeArg;
-use crate::forge;
-use crate::forge::Forge;
+use crate::backend;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ToolRequest {
     Version {
-        forge: ForgeArg,
+        backend: BackendArg,
         version: String,
         options: ToolVersionOptions,
     },
     Prefix {
-        forge: ForgeArg,
+        backend: BackendArg,
         prefix: String,
         options: ToolVersionOptions,
     },
     Ref {
-        forge: ForgeArg,
+        backend: BackendArg,
         ref_: String,
         options: ToolVersionOptions,
     },
     Sub {
-        forge: ForgeArg,
+        backend: BackendArg,
         sub: String,
         orig_version: String,
     },
-    Path(ForgeArg, PathBuf),
-    System(ForgeArg),
+    Path(BackendArg, PathBuf),
+    System(BackendArg),
 }
 
 impl ToolRequest {
-    pub fn new(forge: ForgeArg, s: &str) -> eyre::Result<Self> {
+    pub fn new(backend: BackendArg, s: &str) -> eyre::Result<Self> {
         let s = match s.split_once('-') {
             Some(("ref", r)) => format!("ref:{}", r),
             _ => s.to_string(),
         };
         Ok(match s.split_once(':') {
             Some(("ref", r)) => Self::Ref {
-                forge,
+                backend,
                 ref_: r.to_string(),
                 options: Default::default(),
             },
             Some(("prefix", p)) => Self::Prefix {
-                forge,
+                backend,
                 prefix: p.to_string(),
                 options: Default::default(),
             },
-            Some(("path", p)) => Self::Path(forge, PathBuf::from(p)),
+            Some(("path", p)) => Self::Path(backend, PathBuf::from(p)),
             Some((p, v)) if p.starts_with("sub-") => Self::Sub {
-                forge,
+                backend,
                 sub: p.split_once('-').unwrap().1.to_string(),
                 orig_version: v.to_string(),
             },
             None => {
                 if s == "system" {
-                    Self::System(forge)
+                    Self::System(backend)
                 } else {
                     Self::Version {
-                        forge,
+                        backend,
                         version: s,
                         options: Default::default(),
                     }
@@ -73,8 +73,12 @@ impl ToolRequest {
             _ => bail!("invalid tool version request: {s}"),
         })
     }
-    pub fn new_opts(forge: ForgeArg, s: &str, options: ToolVersionOptions) -> eyre::Result<Self> {
-        let mut tvr = Self::new(forge, s)?;
+    pub fn new_opts(
+        backend: BackendArg,
+        s: &str,
+        options: ToolVersionOptions,
+    ) -> eyre::Result<Self> {
+        let mut tvr = Self::new(backend, s)?;
         match &mut tvr {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
@@ -83,19 +87,19 @@ impl ToolRequest {
         }
         Ok(tvr)
     }
-    pub fn forge(&self) -> &ForgeArg {
+    pub fn backend(&self) -> &BackendArg {
         match self {
-            Self::Version { forge: f, .. }
-            | Self::Prefix { forge: f, .. }
-            | Self::Ref { forge: f, .. }
+            Self::Version { backend: f, .. }
+            | Self::Prefix { backend: f, .. }
+            | Self::Ref { backend: f, .. }
             | Self::Path(f, _)
-            | Self::Sub { forge: f, .. }
+            | Self::Sub { backend: f, .. }
             | Self::System(f) => f,
         }
     }
-    pub fn dependencies(&self) -> eyre::Result<Vec<ForgeArg>> {
-        let forge = forge::get(self.forge());
-        forge.get_all_dependencies(self)
+    pub fn dependencies(&self) -> eyre::Result<Vec<BackendArg>> {
+        let backend = backend::get(self.backend());
+        backend.get_all_dependencies(self)
     }
     pub fn version(&self) -> String {
         match self {
@@ -120,7 +124,7 @@ impl ToolRequest {
     }
 
     pub fn is_installed(&self) -> bool {
-        // TODO: dispatch to forge
+        // TODO: dispatch to backend
         match self {
             Self::System(_) => true,
             _ => self.install_path().is_some_and(|p| p.exists()),
@@ -129,20 +133,24 @@ impl ToolRequest {
 
     pub fn install_path(&self) -> Option<PathBuf> {
         match self {
-            Self::Version { forge, version, .. } => Some(forge.installs_path.join(version)),
-            Self::Ref { forge, ref_, .. } => {
-                Some(forge.installs_path.join(format!("ref-{}", ref_)))
+            Self::Version {
+                backend, version, ..
+            } => Some(backend.installs_path.join(version)),
+            Self::Ref { backend, ref_, .. } => {
+                Some(backend.installs_path.join(format!("ref-{}", ref_)))
             }
             Self::Sub {
-                forge,
+                backend,
                 sub,
                 orig_version,
             } => self
                 .local_resolve(orig_version)
                 .inspect_err(|e| warn!("ToolRequest.local_resolve: {e:#}"))
                 .unwrap_or_default()
-                .map(|v| forge.installs_path.join(version_sub(&v, sub.as_str()))),
-            Self::Prefix { forge, prefix, .. } => match file::ls(&forge.installs_path) {
+                .map(|v| backend.installs_path.join(version_sub(&v, sub.as_str()))),
+            Self::Prefix {
+                backend, prefix, ..
+            } => match file::ls(&backend.installs_path) {
                 Ok(installs) => installs
                     .iter()
                     .find(|p| p.file_name().unwrap().to_string_lossy().starts_with(prefix))
@@ -155,8 +163,8 @@ impl ToolRequest {
     }
 
     pub fn local_resolve(&self, v: &str) -> eyre::Result<Option<String>> {
-        let forge = forge::get(self.forge());
-        let matches = forge.list_installed_versions_matching(v)?;
+        let backend = backend::get(self.backend());
+        let matches = backend.list_installed_versions_matching(v)?;
         if matches.iter().any(|m| m == v) {
             return Ok(Some(v.to_string()));
         }
@@ -166,7 +174,7 @@ impl ToolRequest {
         Ok(None)
     }
 
-    pub fn resolve(&self, plugin: &dyn Forge, latest_versions: bool) -> Result<ToolVersion> {
+    pub fn resolve(&self, plugin: &dyn Backend, latest_versions: bool) -> Result<ToolVersion> {
         ToolVersion::resolve(plugin, self.clone(), latest_versions)
     }
 }
@@ -189,7 +197,7 @@ pub fn version_sub(orig: &str, sub: &str) -> String {
 
 impl Display for ToolRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", &self.forge(), self.version())
+        write!(f, "{}@{}", &self.backend(), self.version())
     }
 }
 

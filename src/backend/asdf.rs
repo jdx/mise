@@ -5,31 +5,32 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::exit;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use clap::Command;
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
 use console::style;
 use itertools::Itertools;
 use rayon::prelude::*;
+use url::Url;
 
+use crate::backend::{ABackend, Backend, BackendList, BackendType};
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
 use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
-use crate::forge::{AForge, Forge, ForgeList, ForgeType};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::plugins::external_plugin_cache::ExternalPluginCache;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{PluginType, Script, ScriptManager};
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -38,8 +39,8 @@ use crate::ui::prompt;
 use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
-pub struct ExternalPlugin {
-    pub fa: ForgeArg,
+pub struct Asdf {
+    pub fa: BackendArg,
     pub name: String,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
@@ -52,7 +53,7 @@ pub struct ExternalPlugin {
     legacy_filename_cache: CacheManager<Vec<String>>,
 }
 
-impl ExternalPlugin {
+impl Asdf {
     pub fn new(name: String) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
         let mut toml_path = plugin_path.join("mise.plugin.toml");
@@ -60,7 +61,7 @@ impl ExternalPlugin {
             toml_path = plugin_path.join("rtx.plugin.toml");
         }
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
-        let fa = ForgeArg::new(ForgeType::Asdf, &name);
+        let fa = BackendArg::new(BackendType::Asdf, &name);
         Self {
             script_man: build_script_man(&name, &plugin_path),
             cache: ExternalPluginCache::default(),
@@ -92,10 +93,10 @@ impl ExternalPlugin {
         }
     }
 
-    pub fn list() -> Result<ForgeList> {
+    pub fn list() -> Result<BackendList> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()
-            .map(|name| Arc::new(Self::new(name)) as AForge)
+            .map(|name| Arc::new(Self::new(name)) as ABackend)
             .collect())
     }
 
@@ -139,11 +140,13 @@ impl ExternalPlugin {
         }
         // ensure that we're using a default shorthand plugin
         let git = Git::new(self.plugin_path.to_path_buf());
-        if git.get_remote_url()
-            != DEFAULT_SHORTHANDS
-                .get(self.name.as_str())
-                .map(|s| s.to_string())
-        {
+        let normalized_remote = normalize_remote(&git.get_remote_url().unwrap_or_default())
+            .unwrap_or("INVALID_URL".into());
+        let shorthand_remote = DEFAULT_SHORTHANDS
+            .get(self.name.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
             return Ok(None);
         }
         let versions =
@@ -434,31 +437,31 @@ fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
         .with_env("MISE_SHIMS_DIR", *dirs::SHIMS)
 }
 
-impl Eq for ExternalPlugin {}
+impl Eq for Asdf {}
 
-impl PartialEq for ExternalPlugin {
+impl PartialEq for Asdf {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl Hash for ExternalPlugin {
+impl Hash for Asdf {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
 }
 
-impl Forge for ExternalPlugin {
-    fn fa(&self) -> &ForgeArg {
+impl Backend for Asdf {
+    fn fa(&self) -> &BackendArg {
         &self.fa
     }
 
     fn get_plugin_type(&self) -> PluginType {
-        PluginType::External
+        PluginType::Asdf
     }
 
-    fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<ForgeArg>> {
-        let out = match tvr.forge().name.as_str() {
+    fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<BackendArg>> {
+        let out = match tvr.backend().name.as_str() {
             "poetry" | "pipenv" | "pipx" => vec!["python"],
             "elixir" => vec!["erlang"],
             _ => vec![],
@@ -498,16 +501,6 @@ impl Forge for ExternalPlugin {
         git.get_remote_url().or_else(|| self.repo_url.clone())
     }
 
-    fn current_sha_short(&self) -> Result<String> {
-        let git = Git::new(self.plugin_path.to_path_buf());
-        git.current_sha_short()
-    }
-
-    fn current_abbrev_ref(&self) -> Result<String> {
-        let git = Git::new(self.plugin_path.to_path_buf());
-        git.current_abbrev_ref()
-    }
-
     fn is_installed(&self) -> bool {
         self.plugin_path.exists()
     }
@@ -521,19 +514,12 @@ impl Forge for ExternalPlugin {
             }
             if !settings.yes && self.repo_url.is_none() {
                 let url = self.get_repo_url(&config).unwrap_or_default();
-                let is_shorthand = DEFAULT_SHORTHANDS
-                    .get(self.name.as_str())
-                    .is_some_and(|s| s == &url);
-                let is_mise_url = url.starts_with("https://github.com/mise-plugins/");
-                let is_trusted = !is_shorthand
-                    || is_mise_url
-                    || TRUSTED_SHORTHANDS.contains(&self.name.as_str());
-                if !is_trusted {
+                if !is_trusted_plugin(self.name(), &url) {
                     warn!(
-                        "⚠️ {} is a community-developed plugin",
+                        "⚠️ {} is a community-developed plugin – {}",
                         style(&self.name).blue(),
+                        style(url.trim_end_matches(".git")).yellow()
                     );
-                    warn!("url: {}", style(url.trim_end_matches(".git")).yellow(),);
                     if settings.paranoid {
                         bail!("Paranoid mode is enabled, refusing to install community-developed plugin");
                     }
@@ -774,7 +760,7 @@ impl Forge for ExternalPlugin {
     }
 }
 
-impl Debug for ExternalPlugin {
+impl Debug for Asdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExternalPlugin")
             .field("name", &self.name)
@@ -787,13 +773,129 @@ impl Debug for ExternalPlugin {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct ExternalPluginCache {
+    list_bin_paths: RwLock<HashMap<ToolRequest, CacheManager<Vec<String>>>>,
+    exec_env: RwLock<HashMap<ToolRequest, CacheManager<BTreeMap<String, String>>>>,
+}
+
+impl ExternalPluginCache {
+    pub fn list_bin_paths<F>(
+        &self,
+        plugin: &Asdf,
+        tv: &ToolVersion,
+        fetch: F,
+    ) -> eyre::Result<Vec<String>>
+    where
+        F: FnOnce() -> eyre::Result<Vec<String>>,
+    {
+        let mut w = self.list_bin_paths.write().unwrap();
+        let cm = w.entry(tv.request.clone()).or_insert_with(|| {
+            let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
+                Some(key) => {
+                    let config = Config::get();
+                    let key = render_cache_key(&config, tv, key);
+                    let filename = format!("{}-$KEY.msgpack.z", key);
+                    tv.cache_path().join("list_bin_paths").join(filename)
+                }
+                None => tv.cache_path().join("list_bin_paths-$KEY.msgpack.z"),
+            };
+            CacheManager::new(list_bin_paths_filename)
+                .with_fresh_file(dirs::DATA.to_path_buf())
+                .with_fresh_file(plugin.plugin_path.clone())
+                .with_fresh_file(tv.install_path())
+        });
+        cm.get_or_try_init(fetch).cloned()
+    }
+
+    pub fn exec_env<F>(
+        &self,
+        config: &Config,
+        plugin: &Asdf,
+        tv: &ToolVersion,
+        fetch: F,
+    ) -> eyre::Result<BTreeMap<String, String>>
+    where
+        F: FnOnce() -> eyre::Result<BTreeMap<String, String>>,
+    {
+        let mut w = self.exec_env.write().unwrap();
+        let cm = w.entry(tv.request.clone()).or_insert_with(|| {
+            let exec_env_filename = match &plugin.toml.exec_env.cache_key {
+                Some(key) => {
+                    let key = render_cache_key(config, tv, key);
+                    let filename = format!("{}-$KEY.msgpack.z", key);
+                    tv.cache_path().join("exec_env").join(filename)
+                }
+                None => tv.cache_path().join("exec_env-$KEY.msgpack.z"),
+            };
+            CacheManager::new(exec_env_filename)
+                .with_fresh_file(dirs::DATA.to_path_buf())
+                .with_fresh_file(plugin.plugin_path.clone())
+                .with_fresh_file(tv.install_path())
+        });
+        cm.get_or_try_init(fetch).cloned()
+    }
+}
+
+fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> String {
+    let elements = cache_key
+        .iter()
+        .map(|tmpl| {
+            let s = parse_template(config, tv, tmpl).unwrap();
+            let s = s.trim().to_string();
+            trace!("cache key element: {} -> {}", tmpl.trim(), s);
+            let mut s = hash_to_str(&s);
+            s.truncate(10);
+            s
+        })
+        .collect::<Vec<String>>();
+    elements.join("-")
+}
+
+fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result<String> {
+    let mut ctx = BASE_CONTEXT.clone();
+    ctx.insert("project_root", &config.project_root);
+    ctx.insert("opts", &tv.request.options());
+    get_tera(
+        config
+            .project_root
+            .as_ref()
+            .or(env::current_dir().as_ref().ok())
+            .map(|p| p.as_path()),
+    )
+    .render_str(tmpl, &ctx)
+    .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
+}
+
+fn normalize_remote(remote: &str) -> eyre::Result<String> {
+    let url = Url::parse(remote)?;
+    let host = url.host_str().unwrap();
+    let path = url.path().trim_end_matches(".git");
+    Ok(format!("{host}{path}"))
+}
+
+fn is_trusted_plugin(name: &str, remote: &str) -> bool {
+    let normalized_url = normalize_remote(remote).unwrap_or("INVALID_URL".into());
+    let is_shorthand = DEFAULT_SHORTHANDS
+        .get(name)
+        .is_some_and(|s| normalize_remote(s).unwrap_or_default() == normalized_url);
+    let is_mise_url = normalized_url.starts_with("github.com/mise-plugins/");
+
+    !is_shorthand || is_mise_url || TRUSTED_SHORTHANDS.contains(name)
+}
+
 #[cfg(test)]
 mod tests {
+    use test_log::test;
+
+    use crate::test::reset;
+
     use super::*;
 
     #[test]
     fn test_debug() {
-        let plugin = ExternalPlugin::new(String::from("dummy"));
+        reset();
+        let plugin = Asdf::new(String::from("dummy"));
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }
 }

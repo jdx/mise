@@ -2,7 +2,7 @@ use eyre::Result;
 use itertools::Itertools;
 use std::collections::HashSet;
 
-use crate::cli::args::{ForgeArg, ToolArg};
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::Config;
 use crate::toolset::{InstallOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -57,7 +57,7 @@ impl Install {
     }
     fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
-        let tools: HashSet<ForgeArg> = runtimes.iter().map(|ta| ta.forge.clone()).collect();
+        let tools: HashSet<BackendArg> = runtimes.iter().map(|ta| ta.backend.clone()).collect();
         let mut ts = config.get_tool_request_set()?.filter_by_tool(&tools).into();
         let tool_versions = self.get_requested_tool_versions(&ts, runtimes)?;
         if tool_versions.is_empty() {
@@ -91,7 +91,7 @@ impl Install {
                 Some(tv) => requests.push(tv),
                 None => {
                     if ta.tvr.is_none() {
-                        match ts.versions.get(&ta.forge) {
+                        match ts.versions.get(&ta.backend) {
                             // the tool is in config so fetch the params from config
                             // this may match multiple versions of one tool (e.g.: python)
                             Some(tvl) => {
@@ -103,7 +103,7 @@ impl Install {
                             // so we default to @latest with no options
                             None => {
                                 let tvr = ToolRequest::Version {
-                                    forge: ta.forge.clone(),
+                                    backend: ta.backend.clone(),
                                     version: "latest".into(),
                                     options: default_opts.clone(),
                                 };

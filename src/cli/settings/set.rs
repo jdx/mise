@@ -36,6 +36,7 @@ impl SettingsSet {
             "go_set_gopath" => parse_bool(&self.value)?,
             "go_set_goroot" => parse_bool(&self.value)?,
             "go_skip_checksum" => parse_bool(&self.value)?,
+            "http_timeout" => parse_i64(&self.value)?,
             "jobs" => parse_i64(&self.value)?,
             "legacy_version_file" => parse_bool(&self.value)?,
             "node_compile" => parse_bool(&self.value)?,
@@ -139,6 +140,7 @@ pub mod tests {
         go_set_gopath = false
         go_set_goroot = true
         go_skip_checksum = false
+        http_timeout = 30
         jobs = 2
         legacy_version_file = false
         legacy_version_file_disable_tools = []

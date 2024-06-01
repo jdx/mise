@@ -1,7 +1,7 @@
 use eyre::Result;
 use tabled::Tabled;
 
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::ui::table;
 
@@ -18,7 +18,7 @@ use crate::ui::table;
 pub struct AliasLs {
     /// Show aliases for <PLUGIN>
     #[clap()]
-    pub plugin: Option<ForgeArg>,
+    pub plugin: Option<BackendArg>,
 
     /// Don't show table header
     #[clap(long)]

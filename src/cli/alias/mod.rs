@@ -1,7 +1,7 @@
 use clap::Subcommand;
 use eyre::Result;
 
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 
 mod get;
 mod ls;
@@ -16,7 +16,7 @@ pub struct Alias {
 
     /// filter aliases by plugin
     #[clap(short, long)]
-    pub plugin: Option<ForgeArg>,
+    pub plugin: Option<BackendArg>,
 
     /// Don't show table header
     #[clap(long)]

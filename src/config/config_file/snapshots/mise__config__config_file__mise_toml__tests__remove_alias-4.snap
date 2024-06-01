@@ -5,7 +5,7 @@ expression: cf
 MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: 
  {
     alias: {
-        ForgeArg("node"): {
+        BackendArg("node"): {
             "18": "18.0.0",
         },
     },

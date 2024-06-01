@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 
@@ -11,7 +11,7 @@ use crate::config::Config;
 #[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasUnset {
     /// The plugin to remove the alias from
-    pub plugin: ForgeArg,
+    pub plugin: BackendArg,
     /// The alias to remove
     pub alias: String,
 }

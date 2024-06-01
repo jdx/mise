@@ -12,7 +12,8 @@ use rayon::prelude::*;
 
 pub use settings::Settings;
 
-use crate::cli::args::ForgeArg;
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::cli::version;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::mise_toml::MiseToml;
@@ -20,19 +21,18 @@ use crate::config::config_file::ConfigFile;
 use crate::config::env_directive::EnvResults;
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
-use crate::forge::Forge;
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::task::Task;
 use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder};
 use crate::ui::style;
-use crate::{dirs, env, file, forge};
+use crate::{backend, dirs, env, file};
 
 pub mod config_file;
 mod env_directive;
 pub mod settings;
 pub mod tracking;
 
-type AliasMap = BTreeMap<ForgeArg, BTreeMap<String, String>>;
+type AliasMap = BTreeMap<BackendArg, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
 type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
@@ -173,13 +173,13 @@ impl Config {
             .collect())
     }
 
-    pub fn resolve_alias(&self, forge: &dyn Forge, v: &str) -> Result<String> {
-        if let Some(plugin_aliases) = self.aliases.get(forge.fa()) {
+    pub fn resolve_alias(&self, backend: &dyn Backend, v: &str) -> Result<String> {
+        if let Some(plugin_aliases) = self.aliases.get(backend.fa()) {
             if let Some(alias) = plugin_aliases.get(v) {
                 return Ok(alias.clone());
             }
         }
-        if let Some(alias) = forge.get_aliases()?.get(v) {
+        if let Some(alias) = backend.get_aliases()?.get(v) {
             return Ok(alias.clone());
         }
         Ok(v.to_string())
@@ -187,14 +187,14 @@ impl Config {
 
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
-        let plugin_aliases: Vec<_> = forge::list()
+        let plugin_aliases: Vec<_> = backend::list()
             .into_par_iter()
-            .map(|forge| {
-                let aliases = forge.get_aliases().unwrap_or_else(|err| {
+            .map(|backend| {
+                let aliases = backend.get_aliases().unwrap_or_else(|err| {
                     warn!("get_aliases: {err}");
                     BTreeMap::new()
                 });
-                (forge.fa().clone(), aliases)
+                (backend.fa().clone(), aliases)
             })
             .collect();
         for (fa, plugin_aliases) in plugin_aliases {
@@ -423,7 +423,7 @@ fn load_legacy_files(settings: &Settings) -> BTreeMap<String, Vec<String>> {
     if !settings.legacy_version_file {
         return BTreeMap::new();
     }
-    let legacy = forge::list()
+    let legacy = backend::list()
         .into_par_iter()
         .filter(|tool| {
             !settings
@@ -593,7 +593,7 @@ fn parse_config_file(
 ) -> Result<Box<dyn ConfigFile>> {
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
         Some(plugin) => {
-            let tools = forge::list()
+            let tools = backend::list()
                 .into_iter()
                 .filter(|f| plugin.contains(&f.to_string()))
                 .collect::<Vec<_>>();

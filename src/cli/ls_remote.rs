@@ -4,9 +4,9 @@ use eyre::Result;
 use itertools::Itertools;
 use rayon::prelude::*;
 
+use crate::backend;
+use crate::backend::Backend;
 use crate::cli::args::ToolArg;
-use crate::forge;
-use crate::forge::Forge;
 use crate::toolset::ToolRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -40,7 +40,7 @@ impl LsRemote {
         }
     }
 
-    fn run_single(self, plugin: Arc<dyn Forge>) -> Result<()> {
+    fn run_single(self, plugin: Arc<dyn Backend>) -> Result<()> {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
@@ -66,7 +66,7 @@ impl LsRemote {
     }
 
     fn run_all(self) -> Result<()> {
-        let versions = forge::list()
+        let versions = backend::list()
             .into_par_iter()
             .map(|p| {
                 let versions = p.list_remote_versions()?;
@@ -84,10 +84,10 @@ impl LsRemote {
         Ok(())
     }
 
-    fn get_plugin(&self) -> Result<Option<Arc<dyn Forge>>> {
+    fn get_plugin(&self) -> Result<Option<Arc<dyn Backend>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                let plugin = forge::get(&tool_arg.forge);
+                let plugin = backend::get(&tool_arg.backend);
                 let mpr = MultiProgressReport::get();
                 plugin.ensure_installed(&mpr, false)?;
                 Ok(Some(plugin))

@@ -7,11 +7,11 @@ use once_cell::sync::Lazy;
 
 pub use python::PythonPlugin;
 
+use crate::backend::{Backend, BackendList};
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use crate::env;
-use crate::forge::{Forge, ForgeList};
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
@@ -21,6 +21,7 @@ use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::ruby::RubyPlugin;
 use crate::plugins::core::zig::ZigPlugin;
+use crate::plugins::{Plugin, PluginList, PluginType};
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 
@@ -34,8 +35,8 @@ mod python;
 mod ruby;
 mod zig;
 
-pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
-    let mut plugins: Vec<Arc<dyn Forge>> = vec![
+pub static CORE_PLUGINS: Lazy<BackendList> = Lazy::new(|| {
+    let mut plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         Arc::new(ErlangPlugin::new()),
@@ -54,12 +55,21 @@ pub static CORE_PLUGINS: Lazy<ForgeList> = Lazy::new(|| {
 
 #[derive(Debug)]
 pub struct CorePlugin {
-    pub fa: ForgeArg,
+    pub fa: BackendArg,
     pub remote_version_cache: CacheManager<Vec<String>>,
 }
 
 impl CorePlugin {
-    pub fn new(fa: ForgeArg) -> Self {
+    pub fn list() -> PluginList {
+        let settings = Settings::get();
+        CORE_PLUGINS
+            .iter()
+            .map(|f| Box::new(CorePlugin::new(f.name().to_string().into())) as Box<dyn Plugin>)
+            .filter(|p| !settings.disable_tools.contains(p.name()))
+            .collect()
+    }
+
+    pub fn new(fa: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
@@ -94,5 +104,31 @@ impl CorePlugin {
             .filter(|v| !v.is_empty())
             .collect_vec();
         Ok(Some(versions))
+    }
+}
+
+impl Plugin for CorePlugin {
+    fn name(&self) -> &str {
+        &self.fa.name
+    }
+
+    fn get_plugin_type(&self) -> PluginType {
+        PluginType::Core
+    }
+
+    fn get_remote_url(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn current_abbrev_ref(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn current_sha_short(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn is_installed(&self) -> bool {
+        true
     }
 }

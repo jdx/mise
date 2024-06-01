@@ -184,11 +184,15 @@ impl ScriptManager {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
+    use test_log::test;
+
+    use crate::test::reset;
 
     use super::*;
 
     #[test]
     fn test_script_manager() {
+        reset();
         let plugin_path = PathBuf::from("/tmp/asdf");
         let script_manager = ScriptManager::new(plugin_path.clone());
         assert_eq!(script_manager.plugin_path, plugin_path);
@@ -196,6 +200,7 @@ mod tests {
 
     #[test]
     fn test_get_script_path() {
+        reset();
         let plugin_path = PathBuf::from("/tmp/asdf");
         let script_manager = ScriptManager::new(plugin_path.clone());
 

@@ -1,33 +1,33 @@
 use std::fmt::Debug;
 
+use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
-use crate::forge::{Forge, ForgeType};
 use crate::github;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
-pub struct UbiForge {
-    fa: ForgeArg,
+pub struct UbiBackend {
+    fa: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
 // Uses ubi for installations https://github.com/houseabsolute/ubi
 // it can be installed via mise install cargo:ubi
-impl Forge for UbiForge {
-    fn get_type(&self) -> ForgeType {
-        ForgeType::Ubi
+impl Backend for UbiBackend {
+    fn get_type(&self) -> BackendType {
+        BackendType::Ubi
     }
 
-    fn fa(&self) -> &ForgeArg {
+    fn fa(&self) -> &BackendArg {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
         Ok(vec!["cargo:ubi".into()])
     }
 
@@ -77,9 +77,9 @@ impl Forge for UbiForge {
     }
 }
 
-impl UbiForge {
+impl UbiBackend {
     pub fn new(name: String) -> Self {
-        let fa = ForgeArg::new(ForgeType::Ubi, &name);
+        let fa = BackendArg::new(BackendType::Ubi, &name);
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions-$KEY.msgpack.z"),

@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use tera::Context;
 
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::config::config_file;
 use crate::config::config_file::ConfigFile;
 use crate::file;
@@ -25,7 +25,7 @@ pub struct ToolVersions {
     context: Context,
     path: PathBuf,
     pre: String,
-    plugins: IndexMap<ForgeArg, ToolVersionPlugin>,
+    plugins: IndexMap<BackendArg, ToolVersionPlugin>,
     tools: ToolRequestSet,
 }
 
@@ -75,7 +75,7 @@ impl ToolVersions {
         Ok(cf)
     }
 
-    fn get_or_create_plugin(&mut self, fa: &ForgeArg) -> &mut ToolVersionPlugin {
+    fn get_or_create_plugin(&mut self, fa: &BackendArg) -> &mut ToolVersionPlugin {
         self.plugins
             .entry(fa.clone())
             .or_insert_with(|| ToolVersionPlugin {
@@ -85,8 +85,8 @@ impl ToolVersions {
             })
     }
 
-    fn parse_plugins(input: &str) -> IndexMap<ForgeArg, ToolVersionPlugin> {
-        let mut plugins: IndexMap<ForgeArg, ToolVersionPlugin> = IndexMap::new();
+    fn parse_plugins(input: &str) -> IndexMap<BackendArg, ToolVersionPlugin> {
+        let mut plugins: IndexMap<BackendArg, ToolVersionPlugin> = IndexMap::new();
         for line in input.lines() {
             if line.trim_start().starts_with('#') {
                 if let Some(prev) = &mut plugins.values_mut().last() {
@@ -118,7 +118,7 @@ impl ToolVersions {
         plugins
     }
 
-    fn add_version(&mut self, fa: &ForgeArg, version: &str) {
+    fn add_version(&mut self, fa: &BackendArg, version: &str) {
         self.get_or_create_plugin(fa)
             .versions
             .push(version.to_string());
@@ -157,12 +157,12 @@ impl ConfigFile for ToolVersions {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, fa: &ForgeArg) -> Result<()> {
+    fn remove_plugin(&mut self, fa: &BackendArg) -> Result<()> {
         self.plugins.shift_remove(fa);
         Ok(())
     }
 
-    fn replace_versions(&mut self, fa: &ForgeArg, versions: &[String]) -> eyre::Result<()> {
+    fn replace_versions(&mut self, fa: &BackendArg, versions: &[String]) -> eyre::Result<()> {
         self.get_or_create_plugin(fa).versions.clear();
         for version in versions {
             self.add_version(fa, version);

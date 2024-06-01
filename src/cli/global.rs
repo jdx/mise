@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::cli::args::{ForgeArg, ToolArg};
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::cli::local::local;
 use crate::config::Settings;
 
@@ -37,7 +37,7 @@ pub struct Global {
 
     /// Remove the plugin(s) from ~/.tool-versions
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Option<Vec<ForgeArg>>,
+    remove: Option<Vec<BackendArg>>,
 
     /// Get the path of the global config file
     #[clap(long)]

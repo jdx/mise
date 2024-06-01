@@ -215,3 +215,13 @@ jobs:
         with:
           recreate: true
           path: code-coverage-results.md
+  win:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build
+      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: cargo test
+        continue-on-error: true

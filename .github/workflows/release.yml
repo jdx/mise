@@ -55,14 +55,6 @@ jobs:
             name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
             runs-on: ubuntu-latest
-          - os: ubuntu
-            name: linux-armv6
-            target: arm-unknown-linux-gnueabi
-            runs-on: ubuntu-latest
-          - os: ubuntu
-            name: linux-armv6-musl
-            target: arm-unknown-linux-musleabi
-            runs-on: ubuntu-latest
           - os: macos
             name: macos-x64
             target: x86_64-apple-darwin
@@ -156,10 +148,6 @@ jobs:
           name: tarball-${{matrix.target}}
           path: dist/*.zip
           if-no-files-found: error
-      - uses: taiki-e/install-action@v2
-        with: { tool: cargo-cache }
-      - if: steps.cache-crates.outputs.cache-hit != 'true'
-        run: cargo cache --autoclean
   e2e-linux:
     name: e2e-linux-${{matrix.tranche}}
     needs: [build-tarball]

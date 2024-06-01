@@ -4,7 +4,7 @@ use console::style;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::args::{ForgeArg, ToolArg};
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config, Settings, LOCAL_CONFIG_FILENAMES};
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_GLOBAL_CONFIG_FILE};
@@ -62,7 +62,7 @@ pub struct Use {
 
     /// Remove the plugin(s) from config file
     #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Vec<ForgeArg>,
+    remove: Vec<BackendArg>,
 
     /// Specify a path to a config file or directory
     /// If a directory is specified, it will look for .mise.toml (default) or .tool-versions
@@ -87,7 +87,7 @@ impl Use {
             .cloned()
             .map(|t| match t.tvr {
                 Some(tvr) => Ok(tvr),
-                None => ToolRequest::new(t.forge, "latest"),
+                None => ToolRequest::new(t.backend, "latest"),
             })
             .collect::<Result<_>>()?;
         let versions = ts.install_versions(
@@ -106,7 +106,7 @@ impl Use {
         let settings = Settings::try_get()?;
         let pin = self.pin || (settings.asdf_compat && !self.fuzzy);
 
-        for (fa, tvl) in &versions.iter().group_by(|tv| &tv.forge) {
+        for (fa, tvl) in &versions.iter().group_by(|tv| &tv.backend) {
             let versions: Vec<String> = tvl
                 .into_iter()
                 .map(|tv| {
@@ -147,13 +147,13 @@ impl Use {
     fn warn_if_hidden(&self, config: &Config, global: &Path) {
         let ts = ToolsetBuilder::new().build(config).unwrap_or_default();
         let warn = |targ: &ToolArg, p| {
-            let plugin = &targ.forge;
+            let plugin = &targ.backend;
             let p = display_path(p);
             let global = display_path(global);
             warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
-            if let Some(tv) = ts.versions.get(&targ.forge) {
+            if let Some(tv) = ts.versions.get(&targ.backend) {
                 if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
                     if p != global {
                         warn(targ, p);
@@ -226,6 +226,12 @@ mod tests {
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"
+        "###);
+
+        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @"mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        [tools]
+        tiny = ["1", "2", "3"]
         "###);
 
         assert_cli_snapshot!("use", "--pin", "tiny", @"mise ~/cwd/.test.mise.toml tools: tiny@3.1.0");

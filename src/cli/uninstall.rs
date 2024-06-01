@@ -5,12 +5,12 @@ use eyre::{bail, eyre, Result, WrapErr};
 use itertools::Itertools;
 use rayon::prelude::*;
 
+use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::forge::Forge;
 use crate::toolset::{ToolRequest, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{forge, runtime_symlinks, shims};
+use crate::{backend, runtime_symlinks, shims};
 
 /// Removes runtime versions
 #[derive(Debug, clap::Args)]
@@ -72,7 +72,10 @@ impl Uninstall {
         Ok(())
     }
 
-    fn get_all_tool_versions(&self, config: &Config) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
+    fn get_all_tool_versions(
+        &self,
+        config: &Config,
+    ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
         let ts = ToolsetBuilder::new().build(config)?;
         let tool_versions = ts
             .list_installed_versions()?
@@ -80,12 +83,12 @@ impl Uninstall {
             .collect::<Vec<_>>();
         Ok(tool_versions)
     }
-    fn get_requested_tool_versions(&self) -> Result<Vec<(Arc<dyn Forge>, ToolVersion)>> {
+    fn get_requested_tool_versions(&self) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
         let runtimes = ToolArg::double_tool_condition(&self.installed_tool)?;
         let tool_versions = runtimes
             .into_par_iter()
             .map(|a| {
-                let tool = forge::get(&a.forge);
+                let tool = backend::get(&a.backend);
                 let query = a.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
                 let installed_versions = tool.list_installed_versions()?;
                 let exact_match = installed_versions.iter().find(|v| v == &&query);

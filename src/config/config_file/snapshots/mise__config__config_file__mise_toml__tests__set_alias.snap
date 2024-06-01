@@ -3,12 +3,12 @@ source: src/config/config_file/mise_toml.rs
 expression: cf.alias
 ---
 {
-    ForgeArg("node"): {
+    BackendArg("node"): {
         "16": "16.0.0",
         "18": "18.0.1",
         "20": "20.0.0",
     },
-    ForgeArg("python"): {
+    BackendArg("python"): {
         "3.10": "3.10.0",
     },
 }

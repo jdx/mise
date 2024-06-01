@@ -4,77 +4,77 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap())
 ---
 ToolRequestSet {
     tools: {
-        ForgeArg("terraform"): [
+        BackendArg("terraform"): [
             Version {
-                forge: ForgeArg("terraform"),
+                backend: BackendArg("terraform"),
                 version: "1.0.0",
                 options: {},
             },
         ],
-        ForgeArg("node"): [
+        BackendArg("node"): [
             Version {
-                forge: ForgeArg("node"),
+                backend: BackendArg("node"),
                 version: "18",
                 options: {},
             },
             Prefix {
-                forge: ForgeArg("node"),
+                backend: BackendArg("node"),
                 prefix: "20",
                 options: {},
             },
             Ref {
-                forge: ForgeArg("node"),
+                backend: BackendArg("node"),
                 ref_: "master",
                 options: {},
             },
             Path(
-                ForgeArg("node"),
+                BackendArg("node"),
                 "~/.nodes/18",
             ),
         ],
-        ForgeArg("jq"): [
+        BackendArg("jq"): [
             Prefix {
-                forge: ForgeArg("jq"),
+                backend: BackendArg("jq"),
                 prefix: "1.6",
                 options: {},
             },
         ],
-        ForgeArg("shellcheck"): [
+        BackendArg("shellcheck"): [
             Version {
-                forge: ForgeArg("shellcheck"),
+                backend: BackendArg("shellcheck"),
                 version: "0.9.0",
                 options: {},
             },
         ],
-        ForgeArg("python"): [
+        BackendArg("python"): [
             Version {
-                forge: ForgeArg("python"),
+                backend: BackendArg("python"),
                 version: "3.10.0",
                 options: {
                     "venv": ".venv",
                 },
             },
             Version {
-                forge: ForgeArg("python"),
+                backend: BackendArg("python"),
                 version: "3.9.0",
                 options: {},
             },
         ],
     },
     sources: {
-        ForgeArg("jq"): MiseToml(
+        BackendArg("jq"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        ForgeArg("node"): MiseToml(
+        BackendArg("node"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        ForgeArg("python"): MiseToml(
+        BackendArg("python"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        ForgeArg("shellcheck"): MiseToml(
+        BackendArg("shellcheck"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        ForgeArg("terraform"): MiseToml(
+        BackendArg("terraform"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
     },

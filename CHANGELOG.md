@@ -1,5 +1,74 @@
 # Changelog
 
+## [2024.5.28](https://github.com/jdx/mise/compare/v2024.5.27..v2024.5.28) - 2024-05-31
+
+### 🐛 Bug Fixes
+
+- download keeps failing if it takes more than 30s by [@roele](https://github.com/roele) in [#2224](https://github.com/jdx/mise/pull/2224)
+- settings unset does not work by [@roele](https://github.com/roele) in [#2230](https://github.com/jdx/mise/pull/2230)
+- cleaner community-developed plugin warning by [@jdx](https://github.com/jdx) in [8dcf0f3](https://github.com/jdx/mise/commit/8dcf0f3a746fcae74d944412b6f0e141ded88860)
+- correct `mise use` ordering by [@jdx](https://github.com/jdx) in [#2234](https://github.com/jdx/mise/pull/2234)
+
+### 🚜 Refactor
+
+- forge -> backend by [@jdx](https://github.com/jdx) in [#2227](https://github.com/jdx/mise/pull/2227)
+
+### 🧪 Testing
+
+- added reset() to more tests by [@jdx](https://github.com/jdx) in [5a6ea6a](https://github.com/jdx/mise/commit/5a6ea6afb9855827b5e6216aa20760dd45f5502f)
+
+## [2024.5.27](https://github.com/jdx/mise/compare/v2024.5.26..v2024.5.27) - 2024-05-31
+
+### 🚜 Refactor
+
+- rename External plugins to Asdf by [@jdx](https://github.com/jdx) in [8e774ba](https://github.com/jdx/mise/commit/8e774ba44e933eedfb999259d1244d589fc7d847)
+- split asdf into forge+plugin by [@jdx](https://github.com/jdx) in [#2225](https://github.com/jdx/mise/pull/2225)
+
+### 🧪 Testing
+
+- added reset() to more tests by [@jdx](https://github.com/jdx) in [1c76011](https://github.com/jdx/mise/commit/1c760112eef92eb51ada4ab00e45568adcf62b97)
+- added reset() to more tests by [@jdx](https://github.com/jdx) in [402c5ce](https://github.com/jdx/mise/commit/402c5cee97ebdbeb42fc32d055f73794d4dfdf12)
+
+### 🔍 Other Changes
+
+- dont clean cache on win by [@jdx](https://github.com/jdx) in [ede6528](https://github.com/jdx/mise/commit/ede6528f5fe5e5beeabf0a007997f3abc188faa5)
+
+## [2024.5.26](https://github.com/jdx/mise/compare/v2024.5.25..v2024.5.26) - 2024-05-30
+
+### 🐛 Bug Fixes
+
+- normalize remote urls by [@jdx](https://github.com/jdx) in [#2221](https://github.com/jdx/mise/pull/2221)
+
+### 🧪 Testing
+
+- added reset() to more tests by [@jdx](https://github.com/jdx) in [f9f65b3](https://github.com/jdx/mise/commit/f9f65b39214c9341bf44ad694c6659b6a17fdf9c)
+
+### 🔍 Other Changes
+
+- remove armv6 targets by [@jdx](https://github.com/jdx) in [90752f4](https://github.com/jdx/mise/commit/90752f4f08a8ca4095fb464edd79a7aed2b07e54)
+
+## [2024.5.25](https://github.com/jdx/mise/compare/v2024.5.24..v2024.5.25) - 2024-05-30
+
+### 🚀 Features
+
+- use all tera features by [@jdx](https://github.com/jdx) in [48ca740](https://github.com/jdx/mise/commit/48ca74043e21fe12de18a8457e4554ac2cadb17b)
+
+### 🚜 Refactor
+
+- turn asdf into a forge by [@jdx](https://github.com/jdx) in [#2219](https://github.com/jdx/mise/pull/2219)
+
+### 🧪 Testing
+
+- clean cwd in unit tests by [@jdx](https://github.com/jdx) in [#2211](https://github.com/jdx/mise/pull/2211)
+- windows by [@jdx](https://github.com/jdx) in [#2216](https://github.com/jdx/mise/pull/2216)
+- add reset() to more tests by [@jdx](https://github.com/jdx) in [#2217](https://github.com/jdx/mise/pull/2217)
+- added reset() to more tests by [@jdx](https://github.com/jdx) in [a22c9dd](https://github.com/jdx/mise/commit/a22c9dd1f0eb8c057046e23807abe3c5352faf66)
+
+### 🔍 Other Changes
+
+- fix build-tarball call by [@jdx](https://github.com/jdx) in [2a4b986](https://github.com/jdx/mise/commit/2a4b98685f0dc2c4c85c3ecee9634b08432354fc)
+- **breaking** use kebab-case for backend-installs by [@jdx](https://github.com/jdx) in [#2218](https://github.com/jdx/mise/pull/2218)
+
 ## [2024.5.24](https://github.com/jdx/mise/compare/v2024.5.23..v2024.5.24) - 2024-05-28
 
 ### 🐛 Bug Fixes

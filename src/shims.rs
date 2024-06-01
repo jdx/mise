@@ -11,13 +11,13 @@ use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
 
+use crate::backend::Backend;
 use crate::cli::exec::Exec;
 use crate::config::{Config, Settings};
 use crate::file::{create_dir_all, display_path, remove_all};
-use crate::forge::Forge;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
-use crate::{dirs, env, fake_asdf, file, forge, logger};
+use crate::{backend, dirs, env, fake_asdf, file, logger};
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub fn handle_shim() -> Result<()> {
@@ -58,7 +58,7 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
     let settings = Settings::try_get()?;
     if settings.not_found_auto_install {
         for tv in ts.install_missing_bin(bin_name)?.unwrap_or_default() {
-            let p = tv.get_forge();
+            let p = tv.get_backend();
             if let Some(bin) = p.which(&tv, bin_name)? {
                 trace!(
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
@@ -112,7 +112,7 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
         let symlink_path = dirs::SHIMS.join(shim);
         remove_all(&symlink_path)?;
     }
-    for plugin in forge::list() {
+    for plugin in backend::list() {
         match dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
             Ok(files) => {
                 for bin in files {
@@ -204,7 +204,7 @@ fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
 }
 
 // lists all the paths to bins in a tv that shims will be needed for
-fn list_tool_bins(t: Arc<dyn Forge>, tv: &ToolVersion) -> Result<Vec<String>> {
+fn list_tool_bins(t: Arc<dyn Backend>, tv: &ToolVersion) -> Result<Vec<String>> {
     Ok(t.list_bin_paths(tv)?
         .into_iter()
         .par_bridge()
@@ -245,17 +245,17 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
     if tvs.is_empty() {
         bail!("{} is not a valid shim", bin_name);
     }
-    let missing_plugins = tvs.iter().map(|tv| &tv.forge).collect::<HashSet<_>>();
+    let missing_plugins = tvs.iter().map(|tv| &tv.backend).collect::<HashSet<_>>();
     let mut missing_tools = ts
         .list_missing_versions()
         .into_iter()
-        .filter(|t| missing_plugins.contains(&t.forge))
+        .filter(|t| missing_plugins.contains(&t.backend))
         .collect_vec();
     if missing_tools.is_empty() {
         let mut msg = format!("No version is set for shim: {}\n", bin_name);
         msg.push_str("Set a global default version with one of the following:\n");
         for tv in tvs {
-            msg.push_str(&format!("mise use -g {}@{}\n", tv.forge, tv.version));
+            msg.push_str(&format!("mise use -g {}@{}\n", tv.backend, tv.version));
         }
         Err(eyre!(msg.trim().to_string()))
     } else {

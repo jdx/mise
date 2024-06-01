@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.5.24"
+version = "2024.5.28"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -65,6 +65,7 @@ fslock = "0.2.1"
 git2 = "0.18.3"
 globset = "0.4.14"
 globwalk = "0.9.1"
+heck = "0.5"
 home = "0.5.9"
 humantime = "2.1.0"
 indenter = "0.3.3"
@@ -104,7 +105,7 @@ sys-info = "0.9.1"
 tabled = { version = "0.15.0", features = ["ansi"] }
 tar = "0.4.40"
 tempfile = "3.10.1"
-tera = { version = "1.19.1", default-features = false }
+tera = "1.19"
 terminal_size = "0.3.0"
 thiserror = "1.0.59"
 tokio = { version = "1.37.0", features = [
@@ -155,8 +156,6 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-arm64{ 
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ archive-suffix }"
 [package.metadata.binstall.overrides.armv7-unknown-linux-gnueabihf]
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
-[package.metadata.binstall.overrides.armv6-unknown-linux-gnueabihf]
-pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv6{ archive-suffix }"
 
 [package.metadata.cargo-machete]
 ignored = ["built", "openssl"]

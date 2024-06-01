@@ -1,6 +1,7 @@
 use eyre::Result;
 use toml_edit::DocumentMut;
 
+use crate::config::settings::SettingsFile;
 use crate::{env, file};
 
 /// Clears a setting
@@ -17,9 +18,17 @@ impl SettingsUnset {
     pub fn run(self) -> Result<()> {
         let path = env::MISE_CONFIG_DIR.join("config.toml");
         let raw = file::read_to_string(&path)?;
-        let mut settings: DocumentMut = raw.parse()?;
+        let mut config: DocumentMut = raw.parse()?;
+        if !config.contains_key("settings") {
+            return Ok(());
+        }
+        let settings = config["settings"].as_table_mut().unwrap();
         settings.remove(&self.setting);
-        file::write(&path, settings.to_string())
+
+        // validate
+        let _: SettingsFile = toml::from_str(&config.to_string())?;
+
+        file::write(&path, config.to_string())
     }
 }
 
@@ -38,7 +47,7 @@ mod tests {
     fn test_settings_unset() {
         reset();
 
-        assert_cli!("settings", "unset", "legacy_version_file");
+        assert_cli!("settings", "unset", "jobs");
 
         assert_cli_snapshot!("settings", @r###"
         activate_aggressive = false
@@ -57,7 +66,8 @@ mod tests {
         go_set_gopath = false
         go_set_goroot = true
         go_skip_checksum = false
-        jobs = 2
+        http_timeout = 30
+        jobs = 4
         legacy_version_file = true
         legacy_version_file_disable_tools = []
         node_compile = false

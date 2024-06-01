@@ -53,8 +53,6 @@ get_arch() {
 		echo "x64$musl"
 	elif [ "$arch" = aarch64 ] || [ "$arch" = arm64 ]; then
 		echo "arm64$musl"
-	elif [ "$arch" = armv6l ]; then
-		echo "armv6$musl"
 	elif [ "$arch" = armv7l ]; then
 		echo "armv7$musl"
 	else
@@ -85,8 +83,6 @@ get_checksum() {
 		checksum_linux_x86_64_musl="$MISE_CHECKSUM_LINUX_X86_64_MUSL"
 		checksum_linux_arm64="$MISE_CHECKSUM_LINUX_ARM64"
 		checksum_linux_arm64_musl="$MISE_CHECKSUM_LINUX_ARM64_MUSL"
-		checksum_linux_armv6="$MISE_CHECKSUM_LINUX_ARMV6"
-		checksum_linux_armv6_musl="$MISE_CHECKSUM_LINUX_ARMV6_MUSL"
 		checksum_linux_armv7="$MISE_CHECKSUM_LINUX_ARMV7"
 		checksum_linux_armv7_musl="$MISE_CHECKSUM_LINUX_ARMV7_MUSL"
 		checksum_macos_x86_64="$MISE_CHECKSUM_MACOS_X86_64"
@@ -101,10 +97,6 @@ get_checksum() {
 				echo "$checksum_linux_arm64"
 			elif [ "$arch" = "arm64-musl" ]; then
 				echo "$checksum_linux_arm64_musl"
-			elif [ "$arch" = "armv6" ]; then
-				echo "$checksum_linux_armv6"
-			elif [ "$arch" = "armv6-musl" ]; then
-				echo "$checksum_linux_armv6_musl"
 			elif [ "$arch" = "armv7" ]; then
 				echo "$checksum_linux_armv7"
 			elif [ "$arch" = "armv7-musl" ]; then

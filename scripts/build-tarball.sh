@@ -30,10 +30,7 @@ get_arch() {
     aarch64-*)
       echo "arm64"
       ;;
-    arm-*)
-      echo "armv6"
-      ;;
-    armv7-*)
+    arm*)
       echo "armv7"
       ;;
     x86_64-*)

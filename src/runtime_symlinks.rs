@@ -7,16 +7,16 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use versions::Versioning;
 
+use crate::backend::{backend_meta, Backend};
 use crate::config::Config;
 use crate::file::make_symlink;
-use crate::forge::{forge_meta, Forge};
 use crate::plugins::VERSION_REGEX;
-use crate::{file, forge};
+use crate::{backend, file};
 
 pub fn rebuild(config: &Config) -> Result<()> {
-    for forge in forge::list() {
-        let symlinks = list_symlinks(config, forge.clone())?;
-        let installs_dir = &forge.fa().installs_path;
+    for backend in backend::list() {
+        let symlinks = list_symlinks(config, backend.clone())?;
+        let installs_dir = &backend.fa().installs_path;
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
@@ -29,21 +29,21 @@ pub fn rebuild(config: &Config) -> Result<()> {
             }
             make_symlink(&to, &from)?;
         }
-        remove_missing_symlinks(forge.clone())?;
+        remove_missing_symlinks(backend.clone())?;
         // remove install dir if empty (ignore metadata)
         file::remove_dir_ignore(
             installs_dir,
-            vec![forge_meta::FORGE_META_FILENAME.to_string()],
+            vec![backend_meta::FORGE_META_FILENAME.to_string()],
         )?;
     }
     Ok(())
 }
 
-fn list_symlinks(config: &Config, forge: Arc<dyn Forge>) -> Result<IndexMap<String, PathBuf>> {
+fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> Result<IndexMap<String, PathBuf>> {
     // TODO: make this a pure function and add test cases
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
-    for v in installed_versions(&forge)? {
+    for v in installed_versions(&backend)? {
         let prefix = regex!(r"^[a-zA-Z0-9]+-")
             .find(&v)
             .map(|s| s.as_str().to_string())
@@ -60,7 +60,7 @@ fn list_symlinks(config: &Config, forge: Arc<dyn Forge>) -> Result<IndexMap<Stri
         symlinks.insert(format!("{prefix}latest"), rel_path(&v));
         for (from, to) in config
             .get_all_aliases()
-            .get(forge.fa())
+            .get(backend.fa())
             .unwrap_or(&BTreeMap::new())
         {
             if from.contains('/') {
@@ -79,8 +79,8 @@ fn list_symlinks(config: &Config, forge: Arc<dyn Forge>) -> Result<IndexMap<Stri
     Ok(symlinks)
 }
 
-fn installed_versions(forge: &Arc<dyn Forge>) -> Result<Vec<String>> {
-    let versions = forge
+fn installed_versions(backend: &Arc<dyn Backend>) -> Result<Vec<String>> {
+    let versions = backend
         .list_installed_versions()?
         .into_iter()
         .filter(|v| !VERSION_REGEX.is_match(v))
@@ -88,8 +88,8 @@ fn installed_versions(forge: &Arc<dyn Forge>) -> Result<Vec<String>> {
     Ok(versions)
 }
 
-fn remove_missing_symlinks(forge: Arc<dyn Forge>) -> Result<()> {
-    let installs_dir = &forge.fa().installs_path;
+fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
+    let installs_dir = &backend.fa().installs_path;
     if !installs_dir.exists() {
         return Ok(());
     }
@@ -113,9 +113,9 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::backend::asdf::Asdf;
     use insta::assert_debug_snapshot;
 
-    use crate::plugins::ExternalPlugin;
     use crate::test::reset;
 
     use super::*;
@@ -125,7 +125,7 @@ mod tests {
         reset();
         assert_cli!("install", "tiny@2");
         let config = Config::load().unwrap();
-        let plugin = ExternalPlugin::new(String::from("tiny"));
+        let plugin = Asdf::new(String::from("tiny"));
         let plugin = Arc::new(plugin);
         let symlinks = list_symlinks(&config, plugin).unwrap();
         assert_debug_snapshot!(symlinks);

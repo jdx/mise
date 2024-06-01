@@ -7,7 +7,7 @@ use indoc::indoc;
 use crate::cli::Cli;
 use crate::config::{config_file, Config};
 use crate::output::tests::{STDERR, STDOUT};
-use crate::{cmd, dirs, env, file, forge};
+use crate::{backend, cmd, dirs, env, file};
 
 #[macro_export]
 macro_rules! assert_cli_snapshot {
@@ -66,7 +66,7 @@ fn init() {
     env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
     env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
     env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
-    env::set_var("MISE_CACHE_DIR", env::HOME.join("data/cache"));
+    env::set_var("MISE_CACHE_DIR", env::HOME.join("data").join("cache"));
     env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
     env::set_var("MISE_DEFAULT_CONFIG_FILENAME", ".test.mise.toml");
     //env::set_var("TERM", "dumb");
@@ -74,7 +74,7 @@ fn init() {
 
 pub fn reset() {
     Config::reset();
-    forge::reset();
+    backend::reset();
     config_file::reset();
     file::remove_all(&*env::HOME.join("cwd")).unwrap();
     file::create_dir_all(&*env::HOME.join("cwd")).unwrap();
@@ -117,7 +117,7 @@ echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.t
     )
     .unwrap();
     file::write(
-        env::HOME.join("config/settings.toml"),
+        env::HOME.join("config").join("settings.toml"),
         indoc! {r#"
             experimental = true
             verbose = true
@@ -125,7 +125,7 @@ echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.t
     )
     .unwrap();
     file::write(
-        env::HOME.join("config/config.toml"),
+        env::HOME.join("config").join("config.toml"),
         indoc! {r#"
             [env]
             TEST_ENV_VAR = 'test-123'
@@ -191,7 +191,7 @@ pub fn replace_path(input: &str) -> String {
 
 pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
     Config::reset();
-    forge::reset();
+    backend::reset();
     config_file::reset();
     env::ARGS.write().unwrap().clone_from(args);
     STDOUT.lock().unwrap().clear();
