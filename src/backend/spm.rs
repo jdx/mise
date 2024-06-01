@@ -1,6 +1,6 @@
 use std::env::temp_dir;
 use std::fmt::{self, Debug};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use git2::Repository;
@@ -15,6 +15,7 @@ use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
+use crate::install_context::InstallContext;
 use crate::{file, github};
 
 #[derive(Debug)]
@@ -53,144 +54,29 @@ impl Backend for SPMBackend {
             .cloned()
     }
 
-    fn install_version_impl(
-        &self,
-        ctx: &crate::install_context::InstallContext,
-    ) -> eyre::Result<()> {
+    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let settings = Settings::get();
         settings.ensure_experimental("spm backend")?;
 
-        //
-        // 1. Checkout the swift package repo:
-        // - name could be github repo shorthand or full url
-        // - if full url, clone it
-        // - if shorthand, convert to full url and clone it
-        //
-        // - version is a release tag
-        // - if version not specified ("latest"), get last release tag
-        // - if there are no release tags, get error
-        //
-        let repo_url = SwiftPackageRepo::from_str(self.name())?.0;
+        let repo_url = SwiftPackageRepo::from_str(self.name())?.url;
         let version = if ctx.tv.version == "latest" {
             self.latest_stable_version()?
                 .ok_or_else(|| eyre::eyre!("No stable versions found"))?
         } else {
             ctx.tv.version.clone()
         };
-
-        let tmp_repo_dir = temp_dir()
-            .join("spm")
-            .join(self.filename_safe_url(&repo_url) + "@" + &version);
-        file::remove_all(&tmp_repo_dir)?;
-        file::create_dir_all(tmp_repo_dir.parent().unwrap())?;
-
-        debug!(
-            "Cloning swift package repo: {}, tag: {}, path: {}",
-            repo_url,
-            version,
-            tmp_repo_dir.display()
-        );
-        // TODO: use project git module (now it doesn't support checkout by tag)
-        let repo = Repository::clone(&repo_url, &tmp_repo_dir)?;
-        let (object, reference) = repo.revparse_ext(&version)?;
-        repo.checkout_tree(&object, None)?;
-        repo.set_head(reference.unwrap().name().unwrap())?;
-
-        //
-        // 2. Build the swift package
-        // - parse Package.swift dump to get executables list
-        // - build each executable
-        //
-        let package_json = cmd!(
-            "swift",
-            "package",
-            "dump-package",
-            "--package-path",
-            &tmp_repo_dir
-        )
-        .read()?;
-
-        let executables = serde_json::from_str::<PackageDescription>(&package_json)
-            .map_err(|err| eyre::eyre!("Failed to parse package description. Details: {}", err))?
-            .products
-            .iter()
-            .filter(|p| p.r#type.is_executable())
-            .map(|p| p.name.clone())
-            .collect::<Vec<String>>();
+        let repo_dir = self.clone_package_repo(repo_url, version)?;
+        let executables = self.get_executable_names(&repo_dir)?;
         if executables.is_empty() {
             return Err(eyre::eyre!("No executables found in the package"));
         }
-        debug!("Found executables: {:?}", executables);
-
         for executable in executables {
-            debug!("Building swift package");
-            let build_cmd = CmdLineRunner::new("swift")
-                .arg("build")
-                .arg("--configuration")
-                .arg("release")
-                .arg("--product")
-                .arg(&executable)
-                .arg("--package-path")
-                .arg(&tmp_repo_dir)
-                .with_pr(ctx.pr.as_ref());
-            build_cmd.execute()?;
-            let bin_path = cmd!(
-                "swift",
-                "build",
-                "--configuration",
-                "release",
-                "--product",
-                &executable,
-                "--package-path",
-                &tmp_repo_dir,
-                "--show-bin-path"
-            )
-            .read()?;
-
-            //
-            // 3. Copy binary to the install path
-            // - copy resources and other related files
-            //
-            let install_bin_path = ctx.tv.install_path().join("bin");
-            debug!(
-                "Copying binaries to install path: {}",
-                install_bin_path.display()
-            );
-            file::create_dir_all(&install_bin_path)?;
-            file::copy(
-                Path::new(&bin_path).join(&executable),
-                &install_bin_path.join(&executable),
-            )?;
-
-            // find and copy resources with save relative to the binary path
-            // dynamic libraries: .dylib, .so, .dll
-            // resource bundles: .bundle, .resources
-            WalkDir::new(&bin_path)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    let ext = e.path().extension().unwrap_or_default();
-                    ext == "dylib"
-                        || ext == "so"
-                        || ext == "dll"
-                        || ext == "bundle"
-                        || ext == "resources"
-                })
-                .try_for_each(|e| -> Result<(), eyre::Error> {
-                    let rel_path = e.path().strip_prefix(&bin_path)?;
-                    let install_path = install_bin_path.join(rel_path);
-                    file::create_dir_all(&install_path.parent().unwrap())?;
-                    if e.path().is_dir() {
-                        file::copy_dir_all(e.path(), &install_path)?;
-                    } else {
-                        file::copy(e.path(), &install_path)?;
-                    }
-                    Ok(())
-                })?;
+            let bin_path = self.build_executable(&executable, &repo_dir, ctx)?;
+            self.copy_build_artifacts(bin_path, executable, ctx)?;
         }
 
         debug!("Cleaning up temporary files");
-        file::remove_all(&tmp_repo_dir)?;
+        file::remove_all(&repo_dir)?;
 
         Ok(())
     }
@@ -207,14 +93,159 @@ impl SPMBackend {
         }
     }
 
-    fn filename_safe_url(&self, url: &str) -> String {
-        url.replace("://", "_")
+    fn clone_package_repo(
+        &self,
+        repo_url: String,
+        revision: String,
+    ) -> Result<PathBuf, eyre::Error> {
+        let repo_dir_name = repo_url
+            .replace("://", "_")
             .replace("/", "_")
             .replace("?", "_")
             .replace("&", "_")
             .replace(":", "_")
+            + "@"
+            + &revision;
+        let tmp_repo_dir = temp_dir().join("spm").join(&repo_dir_name);
+        file::remove_all(&tmp_repo_dir)?;
+        file::create_dir_all(tmp_repo_dir.parent().unwrap())?;
+        debug!(
+            "Cloning swift package repo: {}, revision: {} to path: {}",
+            repo_url,
+            revision,
+            tmp_repo_dir.display()
+        );
+        // TODO: use project-wide git module
+        let repo = Repository::clone(&repo_url, &tmp_repo_dir)?;
+        let (object, reference) = repo.revparse_ext(&revision)?;
+        repo.checkout_tree(&object, None)?;
+        repo.set_head(reference.unwrap().name().unwrap())?;
+        Ok(tmp_repo_dir)
+    }
+
+    fn get_executable_names(&self, repo_dir: &PathBuf) -> Result<Vec<String>, eyre::Error> {
+        let package_json = cmd!(
+            "swift",
+            "package",
+            "dump-package",
+            "--package-path",
+            &repo_dir
+        )
+        .read()?;
+        let executables = serde_json::from_str::<PackageDescription>(&package_json)
+            .map_err(|err| eyre::eyre!("Failed to parse package description. Details: {}", err))?
+            .products
+            .iter()
+            .filter(|p| p.r#type.is_executable())
+            .map(|p| p.name.clone())
+            .collect::<Vec<String>>();
+        debug!("Found executables: {:?}", executables);
+        Ok(executables)
+    }
+
+    fn build_executable(
+        &self,
+        executable: &String,
+        repo_dir: &PathBuf,
+        ctx: &InstallContext<'_>,
+    ) -> Result<String, eyre::Error> {
+        debug!("Building swift package");
+        let build_cmd = CmdLineRunner::new("swift")
+            .arg("build")
+            .arg("--configuration")
+            .arg("release")
+            .arg("--product")
+            .arg(executable)
+            .arg("--package-path")
+            .arg(repo_dir)
+            .with_pr(ctx.pr.as_ref());
+        build_cmd.execute()?;
+        let bin_path = cmd!(
+            "swift",
+            "build",
+            "--configuration",
+            "release",
+            "--product",
+            &executable,
+            "--package-path",
+            &repo_dir,
+            "--show-bin-path"
+        )
+        .read()?;
+        Ok(bin_path)
+    }
+
+    fn copy_build_artifacts(
+        &self,
+        bin_path: String,
+        executable: String,
+        ctx: &InstallContext<'_>,
+    ) -> Result<(), eyre::Error> {
+        let install_bin_path = ctx.tv.install_path().join("bin");
+        debug!(
+            "Copying binaries to install path: {}",
+            install_bin_path.display()
+        );
+        file::create_dir_all(&install_bin_path)?;
+        file::copy(
+            Path::new(&bin_path).join(&executable),
+            &install_bin_path.join(&executable),
+        )?;
+        WalkDir::new(&bin_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let ext = e.path().extension().unwrap_or_default();
+                // TODO: support other platforms extensions
+                ext == "dylib" || ext == "bundle"
+            })
+            .try_for_each(|e| -> Result<(), eyre::Error> {
+                let rel_path = e.path().strip_prefix(&bin_path)?;
+                let install_path = install_bin_path.join(rel_path);
+                file::create_dir_all(&install_path.parent().unwrap())?;
+                if e.path().is_dir() {
+                    file::copy_dir_all(e.path(), &install_path)?;
+                } else {
+                    file::copy(e.path(), &install_path)?;
+                }
+                Ok(())
+            })?;
+        Ok(())
     }
 }
+
+struct SwiftPackageRepo {
+    /// https://github.com/owner/repo.git
+    url: String,
+}
+
+impl FromStr for SwiftPackageRepo {
+    type Err = eyre::Error;
+
+    /// swift package github repo shorthand:
+    /// - owner/repo
+    ///
+    /// swift package github repo full url:
+    /// - https://github.com/owner/repo.git
+    /// - TODO: support more type of git urls
+    ///
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let url = Url::parse(s);
+        if url.is_ok()
+            && url.as_ref().unwrap().host_str() == Some("github.com")
+            && url.as_ref().unwrap().path().ends_with(".git")
+        {
+            Ok(Self { url: s.to_string() })
+        } else if regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$").is_match(s) {
+            Ok(Self {
+                url: format!("https://github.com/{}.git", s.to_string()),
+            })
+        } else {
+            Err(eyre::eyre!("Invalid swift package repo: {}", s))
+        }
+    }
+}
+
 /// https://developer.apple.com/documentation/packagedescription
 #[derive(Deserialize)]
 struct PackageDescription {
@@ -293,32 +324,5 @@ impl PackageDescriptionProductType {
         }
 
         deserializer.deserialize_map(TypeFieldVisitor)
-    }
-}
-
-/// https://github.com/owner/repo.git
-struct SwiftPackageRepo(String);
-
-impl FromStr for SwiftPackageRepo {
-    type Err = eyre::Error;
-
-    // swift package github repo shorthand:
-    // - owner/repo
-    //
-    // swift package github repo full url:
-    // - https://github.com/owner/repo.git
-    // TODO: support more type of git urls
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url = Url::parse(s);
-        if url.is_ok()
-            && url.as_ref().unwrap().host_str() == Some("github.com")
-            && url.as_ref().unwrap().path().ends_with(".git")
-        {
-            Ok(Self(s.to_string()))
-        } else if regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$").is_match(s) {
-            Ok(Self(format!("https://github.com/{}.git", s.to_string())))
-        } else {
-            Err(eyre::eyre!("Invalid swift package repo: {}", s))
-        }
     }
 }
