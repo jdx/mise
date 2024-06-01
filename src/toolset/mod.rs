@@ -163,7 +163,7 @@ impl Toolset {
         let queue: Vec<_> = versions
             .into_iter()
             .rev()
-            .group_by(|v| v.backend().clone())
+            .chunk_by(|v| v.backend().clone())
             .into_iter()
             .map(|(fa, v)| (backend::get(&fa), v.collect_vec()))
             .collect();

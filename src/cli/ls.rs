@@ -129,7 +129,7 @@ impl Ls {
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
-            .group_by(|(p, _, _)| p.id().to_string())
+            .chunk_by(|(p, _, _)| p.id().to_string())
         {
             let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
