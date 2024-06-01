@@ -6,30 +6,33 @@ use std::str::FromStr;
 use git2::Repository;
 use url::Url;
 
+use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
-use crate::cli::args::ForgeArg;
+use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
-use crate::forge::{Forge, ForgeType};
 use crate::{file, github};
 
 #[derive(Debug)]
-pub struct SpmForge {
-    fa: ForgeArg,
+pub struct SPMBackend {
+    fa: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
 // https://github.com/apple/swift-package-manager
-impl Forge for SpmForge {
-    fn get_type(&self) -> ForgeType {
-        ForgeType::Spm
+impl Backend for SPMBackend {
+    fn get_type(&self) -> BackendType {
+        BackendType::Spm
     }
 
-    fn fa(&self) -> &ForgeArg {
+    fn fa(&self) -> &BackendArg {
         &self.fa
     }
 
-    fn get_dependencies(&self, _tvr: &crate::toolset::ToolRequest) -> eyre::Result<Vec<ForgeArg>> {
+    fn get_dependencies(
+        &self,
+        _tvr: &crate::toolset::ToolRequest,
+    ) -> eyre::Result<Vec<BackendArg>> {
         // TODO: swift as dependencies (wait for swift core plugin: https://github.com/jdx/mise/pull/1708)
         Ok(vec![])
     }
@@ -171,9 +174,9 @@ impl Forge for SpmForge {
     }
 }
 
-impl SpmForge {
+impl SPMBackend {
     pub fn new(name: String) -> Self {
-        let fa = ForgeArg::new(ForgeType::Spm, &name);
+        let fa = BackendArg::new(BackendType::Spm, &name);
         Self {
             remote_version_cache: CacheManager::new(
                 fa.cache_path.join("remote_versions-$KEY.msgpack.z"),

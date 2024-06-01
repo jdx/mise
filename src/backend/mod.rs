@@ -109,7 +109,7 @@ fn list_installed_backends() -> eyre::Result<BackendList> {
                 BackendType::Npm => Arc::new(npm::NPMBackend::new(fa.name)) as ABackend,
                 BackendType::Go => Arc::new(go::GoBackend::new(fa.name)) as ABackend,
                 BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(fa.name)) as ABackend,
-                BackendType::Spm => Arc::new(pipx::SPMBackend::new(fa.name)) as ABackend,
+                BackendType::Spm => Arc::new(spm::SPMBackend::new(fa.name)) as ABackend,
                 BackendType::Ubi => Arc::new(ubi::UbiBackend::new(fa.name)) as ABackend,
             }
         })
@@ -141,7 +141,7 @@ pub fn get(fa: &BackendArg) -> ABackend {
                 BackendType::Npm => Arc::new(npm::NPMBackend::new(name)),
                 BackendType::Go => Arc::new(go::GoBackend::new(name)),
                 BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(name)),
-                BackendType::Spm => Arc::new(pipx::SPMBackend::new(name)),
+                BackendType::Spm => Arc::new(spm::SPMBackend::new(name)),
                 BackendType::Ubi => Arc::new(ubi::UbiBackend::new(name)),
             })
             .clone()
