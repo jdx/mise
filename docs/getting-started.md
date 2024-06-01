@@ -189,7 +189,7 @@ If you need something else, compile it with `cargo install mise` (see below).
 
 For Alpine Linux:
 
-```
+```sh
 apk add mise
 ```
 
@@ -257,7 +257,7 @@ cargo install mise --git https://github.com/jdx/mise --branch main
 
 For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
 
-```
+```sh
 dnf install -y dnf-plugins-core
 dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 dnf install -y mise
@@ -265,7 +265,7 @@ dnf install -y mise
 
 ### Docker
 
-```
+```sh
 docker run jdxcode/mise x node@20 -- node -v
 ```
 
