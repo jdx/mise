@@ -1,9 +1,12 @@
 use std::env::temp_dir;
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::path::Path;
 use std::str::FromStr;
 
 use git2::Repository;
+use serde::de::{MapAccess, Visitor};
+use serde::Deserializer;
+use serde_derive::Deserialize;
 use url::Url;
 
 use crate::backend::{Backend, BackendType};
@@ -105,26 +108,14 @@ impl Backend for SPMBackend {
             &tmp_repo_dir
         )
         .read()?;
-        // TODO: should use serde compatible types?
-        // TODO: support early swift version package format?
-        let executables = serde_json::from_str::<serde_json::Value>(&package_json)?
-            .get("products")
-            .ok_or_else(|| eyre::eyre!("No products found in package"))?
-            .as_array()
-            .ok_or_else(|| eyre::eyre!("Products is not an array"))?
+
+        let executables = serde_json::from_str::<PackageDescription>(&package_json)
+            .map_err(|err| eyre::eyre!("Failed to parse package description. Details: {}", err))?
+            .products
             .iter()
-            .filter(|p| {
-                p.get("type")
-                    .unwrap()
-                    .as_object()
-                    .unwrap()
-                    .contains_key("executable")
-            })
-            .map(|p| p.get("name").unwrap().as_str().unwrap().to_string())
+            .filter(|p| p.r#type.is_executable())
+            .map(|p| p.name.clone())
             .collect::<Vec<String>>();
-        if executables.len() == 0 {
-            return Err(eyre::eyre!("No executables found in package"));
-        }
         debug!("Found executables: {:?}", executables);
 
         for executable in executables {
@@ -191,6 +182,86 @@ impl SPMBackend {
             .replace("?", "_")
             .replace("&", "_")
             .replace(":", "_")
+    }
+}
+/// https://developer.apple.com/documentation/packagedescription
+#[derive(Deserialize)]
+struct PackageDescription {
+    products: Vec<PackageDescriptionProduct>,
+}
+
+#[derive(Deserialize)]
+struct PackageDescriptionProduct {
+    name: String,
+    #[serde(deserialize_with = "PackageDescriptionProductType::deserialize_product_type_field")]
+    r#type: PackageDescriptionProductType,
+}
+
+#[derive(Deserialize)]
+enum PackageDescriptionProductType {
+    Executable,
+    Other,
+}
+
+impl PackageDescriptionProductType {
+    fn is_executable(&self) -> bool {
+        matches!(self, Self::Executable)
+    }
+
+    /// Product type is a key in the map with an undocumented value that we are not interested in and can be easily skipped.
+    ///
+    /// Example:
+    /// ```json
+    /// "type" : {
+    ///     "executable" : null
+    /// }
+    /// ```
+    /// or
+    /// ```json
+    /// "type" : {
+    ///     "library" : [
+    ///       "automatic"
+    ///     ]
+    /// }
+    /// ```
+    fn deserialize_product_type_field<'de, D>(
+        deserializer: D,
+    ) -> Result<PackageDescriptionProductType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TypeFieldVisitor;
+
+        impl<'de> Visitor<'de> for TypeFieldVisitor {
+            type Value = PackageDescriptionProductType;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a map with a key 'executable' or other types")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                if let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "executable" => {
+                            // Skip the value by reading it into a dummy serde_json::Value
+                            let _value: serde_json::Value = map.next_value()?;
+                            Ok(PackageDescriptionProductType::Executable)
+                        }
+                        _ => {
+                            let _value: serde_json::Value = map.next_value()?;
+                            Ok(PackageDescriptionProductType::Other)
+                        }
+                    }
+                } else {
+                    Err(serde::de::Error::custom("missing key"))
+                }
+            }
+        }
+
+        deserializer.deserialize_map(TypeFieldVisitor)
     }
 }
 
