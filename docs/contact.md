@@ -15,5 +15,3 @@ driver for me. If you have anything positive or negative to say-even if it's jus
 to say hi-please reach out to me either on [Twitter](https://twitter.com/jdxcode),
 [Mastodon](https://fosstodon.org/@jdx), [Discord](https://discord.gg/UBa7pJUN7Z),
 or `jdx at this domain`.
-
-

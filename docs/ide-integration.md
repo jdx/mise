@@ -15,6 +15,7 @@ to first add it to `/etc/shells`.
 Once you know the right one, modify the appropriate file:
 
 ::: code-group
+
 ```zsh
 # ~/.zprofile
 eval "$(mise activate zsh --shims)"
@@ -33,14 +34,20 @@ else
   mise activate fish --shims | source
 end
 ```
+
 :::
 
-This assumes that `mise` is on PATH. If it is not, you'll need to use the absolute path (e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
+This assumes that `mise` is on PATH. If it is not, you'll need to use the absolute path (
+e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
-This won't work for all of mise's functionality. For example, arbitrary env vars in `[env]` will only be set
-if a shim is executed. For this we need tighter integration with the IDE and a custom plugin. If you feel
-ambitious, take a look at existing direnv extensions for your IDE and see if you can modify it to work for mise.
-Direnv and mise work similarly and there should be a direnv extension that can be used as a starting point.
+This won't work for all of mise's functionality. For example, arbitrary env vars in `[env]` will
+only be set
+if a shim is executed. For this we need tighter integration with the IDE and a custom plugin. If you
+feel
+ambitious, take a look at existing direnv extensions for your IDE and see if you can modify it to
+work for mise.
+Direnv and mise work similarly and there should be a direnv extension that can be used as a starting
+point.
 
 ## Vim
 
@@ -76,7 +83,11 @@ vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
 
 ## Xcode
 
-Xcode projects can run system commands from script build phases and schemes. Since Xcode sandboxes the execution of the script using the tool `/usr/bin/sandbox-exec`, don't expect Mise and the automatically-activated tools to work out of the box. First, you'll need to add `$(SRCROOT)/.mise.toml` to the list of **Input files**. This is necessary for Xcode to allow reads to that file. Then, you can use `mise activate` to activate the tools you need:
+Xcode projects can run system commands from script build phases and schemes. Since Xcode sandboxes
+the execution of the script using the tool `/usr/bin/sandbox-exec`, don't expect Mise and the
+automatically-activated tools to work out of the box. First, you'll need to
+add `$(SRCROOT)/.mise.toml` to the list of **Input files**. This is necessary for Xcode to allow
+reads to that file. Then, you can use `mise activate` to activate the tools you need:
 
 ```bash
 # -C ensures that Mise loads the configuration from the Mise configuration 
@@ -88,20 +99,21 @@ swiftlint
 
 ## JetBrains Editors (IntelliJ, RustRover, PyCharm, WebStorm, RubyMine, GoLand, etc)
 
-Some JetBrains IDEs have direct support for mise, others have support for asdf which can be used by first symlinking the mise tool directory which is the
+Some JetBrains IDEs have direct support for mise, others have support for asdf which can be used by
+first symlinking the mise tool directory which is the
 same layout as asdf:
 
 ```sh
-$ ln -s ~/.local/share/mise ~/.asdf
+ln -s ~/.local/share/mise ~/.asdf
 ```
 
 Then they should show up on in Project Settings:
 
-![](https://github.com/jdx/mise-docs/assets/216188/b34a0e3f-7af8-45c9-85b8-2c72bd1dc226)
+![project settings](https://github.com/jdx/mise-docs/assets/216188/b34a0e3f-7af8-45c9-85b8-2c72bd1dc226)
 
 Or in the case of node (possibly other languages), it's under "Languages & Frameworks":
 
-![](https://github.com/jdx/mise-docs/assets/216188/9926be1c-ab88-451a-8ace-edf2dac564b5)
+![languages & frameworks](https://github.com/jdx/mise-docs/assets/216188/9926be1c-ab88-451a-8ace-edf2dac564b5)
 
 ## VSCode
 
@@ -117,9 +129,17 @@ the tools in `launch.json`:
       "name": "Launch Program",
       "program": "${file}",
       "args": [],
-      "osx": { "runtimeExecutable": "mise" },
-      "linux": { "runtimeExecutable": "mise" },
-      "runtimeArgs": ["x", "--", "node"]
+      "osx": {
+        "runtimeExecutable": "mise"
+      },
+      "linux": {
+        "runtimeExecutable": "mise"
+      },
+      "runtimeArgs": [
+        "x",
+        "--",
+        "node"
+      ]
     }
   ]
 }

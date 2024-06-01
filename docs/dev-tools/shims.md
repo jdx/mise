@@ -44,8 +44,8 @@ the env vars.
 Also, if you run a set of commands in a single line like the following:
 
 ```sh
-$ cd ~
-$ cd ~/src/proj1 && node -v && cd ~/src/proj2 && node -v
+cd ~
+cd ~/src/proj1 && node -v && cd ~/src/proj2 && node -v
 ```
 
 Using `mise activate`, this will use the tools from `~`, not from `~/src/proj1` or `~/src/proj2` even
@@ -124,16 +124,19 @@ rc files like `.zshrc` are unusual. It's a script but also runs only for interac
 to access tools provided by mise inside of an rc file you have 2 options:
 
 ::: code-group
+
 ```sh [hook-env]
 eval "$(mise activate zsh)"
 eval "$(mise hook-env -s zsh)"
 node some_script.js
 ```
+
 ```sh [shims]
 eval "$(mise activate zsh --shims)" # should be first
 eval "$(mise activate zsh)"
 node some_script.js
 ```
+
 :::
 
 The `hook-env` option is the one I would go with. It's a bit cleaner since you won't have the shims

@@ -22,29 +22,38 @@ mise 2024.x.x
 ```
 
 ::: tip
-"~/.local/bin" does not need to be in PATH. mise will automatically add its own directory to PATH when activated.
+"~/.local/bin" does not need to be in PATH. mise will automatically add its own directory to PATH
+when activated.
 :::
 
 ### 2a. Activate mise
 
-`mise activate` is one way to setup mise but alternatively you can use [shims](dev-tools/shims.md), [direnv](./direnv), or skip
-this step entirely. If you skip it, then tools like `npm` and `node` will not be in PATH. You'll need to prefix
+`mise activate` is one way to setup mise but alternatively you can
+use [shims](dev-tools/shims.md), [direnv](./direnv), or skip
+this step entirely. If you skip it, then tools like `npm` and `node` will not be in PATH. You'll
+need to prefix
 commands with `mise exec` or run tasks with `mise run` in order to use tools managed with mise.
 
-Make sure you restart your shell session after modifying your rc file in order for it to take effect. Also note that
-this uses `~/.local/bin/mise` as the binary location since that's what https://mise.run uses by default. If you've
+Make sure you restart your shell session after modifying your rc file in order for it to take
+effect. Also note that
+this uses `~/.local/bin/mise` as the binary location since that's what <https://mise.run> uses by
+default. If you've
 installed mise by some other means it may be on PATH or somewhere different.
 
 ::: code-group
+
 ```sh [bash]
 echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
 ```
+
 ```sh [zsh]
 echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 ```
+
 ```sh [fish]
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ```
+
 :::
 
 ### 2b. Alternative: Add mise shims to PATH
@@ -55,14 +64,17 @@ mise in interactive sessions (.bash_profile/.zprofile will work in non-interacti
 like scripts or IDEs).
 
 ::: code-group
+
 ```sh [bash]
 # note that bash will read from ~/.profile or ~/.bash_profile if the latter exists
 # ergo, you may want to check to see which is defined on your system and only append to the existing file
 echo 'export PATH="$HOME/.local/share/mise/shims:$PATH"' >> ~/.bash_profile
 ```
+
 ```sh [zsh]
 echo 'export PATH="$HOME/.local/share/mise/shims:$PATH"' >> ~/.zprofile
 ```
+
 ```sh [fish]
 fish_add_path ~/.local/share/mise/shims
 ```
@@ -72,13 +84,15 @@ You can also run `mise activate --shims` which will do the above for you.
 :::
 
 :::info
-mise respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like to change these locations.
+mise respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like
+to change these locations.
 :::
 
 ### 3. Adding tools to mise <Badge type="tip" text="optional" />
 
 :::info
-Of course, if using mise solely for [environment management](/environments) or [running tasks](/tasks/)
+Of course, if using mise solely for [environment management](/environments)
+or [running tasks](/tasks/)
 this step is not necessary.
 :::
 
@@ -99,14 +113,16 @@ v20.x.x
 ```
 
 :::tip
-Use `mise x -- node -v` or set a shell alias in your shell's rc file like `alias x="mise x --"` to save some keystrokes.
+Use `mise x -- node -v` or set a shell alias in your shell's rc file like `alias x="mise x --"` to
+save some keystrokes.
 :::
 
 ## Alternate Installation Methods
 
-### https://mise.run
+### <https://mise.run>
 
-Note that it isn't necessary for `mise` to be on `PATH`. If you run the activate script in your shell's rc
+Note that it isn't necessary for `mise` to be on `PATH`. If you run the activate script in your
+shell's rc
 file, mise will automatically add itself to `PATH`.
 
 ```sh
@@ -114,6 +130,7 @@ curl https://mise.run | sh
 ```
 
 Options:
+
 - `MISE_DEBUG=1` – enable debug logging
 - `MISE_QUIET=1` – disable non-error output
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
@@ -131,18 +148,23 @@ sh ./install.sh
 or if you're allergic to `| sh`:
 
 ::: code-group
+
 ```sh [macos-arm64]
 curl https://mise.jdx.dev/mise-latest-macos-arm64 > ~/.local/bin/mise
 ```
+
 ```sh [macos-x64]
 curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise
 ```
+
 ```sh [linux-x64]
 curl https://mise.jdx.dev/mise-latest-linux-x64 > ~/.local/bin/mise
 ```
+
 ```sh [linux-arm64]
 curl https://mise.jdx.dev/mise-latest-linux-arm64 > ~/.local/bin/mise
 ```
+
 :::
 
 It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/bin` or whatever.
@@ -171,13 +193,15 @@ For Alpine Linux:
 apk add mise
 ```
 
-_mise lives in the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/mise/APKBUILD)._
+_mise lives in
+the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/mise/APKBUILD)._
 
 ### apt
 
 For installation on Ubuntu/Debian:
 
 ::: code-group
+
 ```sh [amd64]
 apt update -y && apt install -y gpg sudo wget curl
 sudo install -dm 755 /etc/apt/keyrings
@@ -195,6 +219,7 @@ echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] http
 sudo apt update
 sudo apt install -y mise
 ```
+
 :::
 
 ### aur
@@ -302,19 +327,19 @@ yum install -y mise
 
 ## Shells
 
-#### Bash
+### Bash
 
 ```sh
 echo 'eval "$(mise activate bash)"' >> ~/.bashrc
 ```
 
-#### Zsh
+### Zsh
 
 ```sh
 echo 'eval "$(mise activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
 ```
 
-#### Fish
+### Fish
 
 ```sh
 echo 'mise activate fish | source' >> ~/.config/fish/config.fish
@@ -327,9 +352,11 @@ this is not necessary.
 See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for more information.
 :::
 
-#### Nushell
+### Nushell
 
-Since Nu does [not support `eval`](https://www.nushell.sh/book/how_nushell_code_gets_run.html#eval-function) the initialization script is saved in `env.nu`:
+Since Nu
+does [not support `eval`](https://www.nushell.sh/book/how_nushell_code_gets_run.html#eval-function)
+the initialization script is saved in `env.nu`:
 
 ```nushell
 '
@@ -339,15 +366,18 @@ let mise_path = $nu.default-config-dir | path join scripts mise.nu
 "\nuse mise.nu" | save $nu.config-path --append
 ```
 
-If you prefer to keep your dotfiles clean you can save it to a different directory then update `$env.NU_LIB_DIRS`:
+If you prefer to keep your dotfiles clean you can save it to a different directory then
+update `$env.NU_LIB_DIRS`:
 
 ```nushell
 "\n$env.NU_LIB_DIRS ++= ($mise_path | path dirname | to nuon)" | save $nu.env-path --append
 ```
 
-#### Xonsh
+### Xonsh
 
-Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time by using a pure Python import: add the code below to, for example, `~/.config/xonsh/mise.py` config file and `import mise` it in `~/.config/xonsh/rc.xsh`:
+Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a
+bit off startup time by using a pure Python import: add the code below to, for
+example, `~/.config/xonsh/mise.py` config file and `import mise` it in `~/.config/xonsh/rc.xsh`:
 
 ```python
 from pathlib         import Path
@@ -364,9 +394,12 @@ Or continue to use `rc.xsh`/`.xonshrc`:
 echo 'execx($(~/bin/mise activate xonsh))' >> ~/.config/xonsh/rc.xsh # or ~/.xonshrc
 ```
 
-Given that `mise` replaces both shell env `$PATH` and OS environ `PATH`, watch out that your configs don't have these two set differently (might throw `os.environ['PATH'] = xonsh.built_ins.XSH.env.get_detyped('PATH')` at the end of a config to make sure they match)
+Given that `mise` replaces both shell env `$PATH` and OS environ `PATH`, watch out that your configs
+don't have these two set differently (might
+throw `os.environ['PATH'] = xonsh.built_ins.XSH.env.get_detyped('PATH')` at the end of a config to
+make sure they match)
 
-#### Something else?
+### Something else?
 
 Adding a new shell is not hard at all since very little shell code is
 in this project.

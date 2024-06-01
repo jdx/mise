@@ -33,7 +33,7 @@ If you build infrastructure where users may still be calling `rtx activate` in t
 shell rc scripts, you can create a symlink `ln -s /path/to/mise /path/to/rtx` so
 `rtx activate` still functions.
 
-For https://mise.run, we're using `~/.local/bin/mise`
+For <https://mise.run>, we're using `~/.local/bin/mise`
 as the executable PATH instead of the old directory `~/.local/share/rtx/bin/mise`
 to keep things a bit cleaner. You can still use the old style if you like by setting
 `MISE_INSTALL_PATH`.

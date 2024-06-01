@@ -26,14 +26,14 @@
       <excludeFolder url="file://$MODULE_DIR$/asdf-plugins" />
       <excludeFolder url="file://$MODULE_DIR$/megalinter-reports" />
       <excludeFolder url="file://$MODULE_DIR$/e2e/.venv" />
-      <excludeFolder url="file://$MODULE_DIR$/mise-docs/.vitepress/cache" />
-      <excludeFolder url="file://$MODULE_DIR$/mise-docs/.vitepress/dist" />
+      <excludeFolder url="file://$MODULE_DIR$/docs/.vitepress/cache" />
+      <excludeFolder url="file://$MODULE_DIR$/docs/.vitepress/dist" />
       <excludeFolder url="file://$MODULE_DIR$/usage/target" />
       <excludeFolder url="file://$MODULE_DIR$/usage/xx" />
       <excludeFolder url="file://$MODULE_DIR$/usage/docs/.vitepress/cache" />
       <excludeFolder url="file://$MODULE_DIR$/usage/docs/.vitepress/dist" />
       <excludeFolder url="file://$MODULE_DIR$/.dev" />
-      <excludeFolder url="file://$MODULE_DIR$/mise-docs/node_modules" />
+      <excludeFolder url="file://$MODULE_DIR$/docs/node_modules" />
       <excludePattern pattern="*.log" />
     </content>
     <orderEntry type="inheritedJdk" />

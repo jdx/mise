@@ -204,10 +204,13 @@ impl Display for ToolRequest {
 #[cfg(test)]
 mod tests {
     use super::version_sub;
+    use crate::backend::reset;
     use pretty_assertions::assert_str_eq;
+    use test_log::test;
 
     #[test]
     fn test_version_sub() {
+        reset();
         assert_str_eq!(version_sub("18.2.3", "2"), "16");
         assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
     }

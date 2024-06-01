@@ -1,8 +1,8 @@
 # Rust
 
 Rust is not currently offered as a core plugin. In fact, I don't think you
-should actually use mise for rust development. Rust has an official version 
-manager called [`rustup`](https://rustup.rs/) that is better than what any of 
+should actually use mise for rust development. Rust has an official version
+manager called [`rustup`](https://rustup.rs/) that is better than what any of
 the current mise plugins offer.
 
 You install [rustup](https://rustup.rs/) with the following:
@@ -29,11 +29,10 @@ so you could do something like this:
 rust = "nightly"
 ```
 
-
 Where that would basically be equivalent to:
 
 ```sh
-$ rustup override set nightly
+rustup override set nightly
 ```
 
 Frankly though, this isn't high on my priority list. Use rustup. It's great.

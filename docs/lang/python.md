@@ -69,7 +69,7 @@ Specify the OS to use for precompiled binaries.
 Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this
 to
 `"x86_64"` for the most compatible binaries.
-See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
+See <https://gregoryszorc.com/docs/python-build-standalone/main/running.html> for more information.
 
 ### `python_patch_url`
 
@@ -124,7 +124,7 @@ If you'd like to disable these binaries, set [`python_compile`](#python_compile)
 
 These binaries may not work on older CPUs however you may opt into binaries which
 are more compatible with older CPUs by setting `MISE_PYTHON_PRECOMPILED_ARCH` with
-a different version. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for
+a different version. See <https://gregoryszorc.com/docs/python-build-standalone/main/running.html> for
 more information
 on this option. Set it to "x86_64" for the most compatible binaries.
 

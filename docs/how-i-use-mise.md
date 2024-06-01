@@ -52,8 +52,8 @@ This way I can easily test mise in any directory with `@mise`. I probably
 run this more often than without just out of habit. For example, if I want to test `mise activate` in zsh:
 
 ```sh
-$ zsh
-$ eval "$(@mise activate zsh)"
+zsh
+eval "$(@mise activate zsh)"
 ```
 
 ## Minimal tools
@@ -110,10 +110,10 @@ instead.
 I often need to access mise's internals so I do the following:
 
 ```sh
-$ ln -s ~/.mise ~/.config/mise
-$ ln -s ~/.mise ~/.local/share/mise
-$ ln -s ~/.mise ~/.local/state/mise
-$ ln -s ~/.mise/cache ~/.cache/mise
+ln -s ~/.mise ~/.config/mise
+ln -s ~/.mise ~/.local/share/mise
+ln -s ~/.mise ~/.local/state/mise
+ln -s ~/.mise/cache ~/.cache/mise
 ```
 
 It is good that mise generally follows XDG spec, but for tools that I interact

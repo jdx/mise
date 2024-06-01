@@ -37,6 +37,7 @@ const board = [
   }
 ]
 </script>
+
 # Team
 
 Jeff Dickey is the primary developer behind mise. He does the bulk

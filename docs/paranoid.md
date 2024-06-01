@@ -1,14 +1,14 @@
 # Paranoid
 
 Paranoid is an optional behavior that locks mise down more to make it harder
-for a bad actor to compromise your system. These are settings that I 
+for a bad actor to compromise your system. These are settings that I
 personally do not use on my own system because I find the behavior too
 restrictive for the benefits.
 
 Paranoid mode can be enabled with either `MISE_PARANOID=1` or a setting:
 
 ```sh
-$ mise settings set paranoid 1
+mise settings set paranoid 1
 ```
 
 ## Config files
@@ -40,7 +40,7 @@ Other than that, say for "shfmt", you'll need to specify the full git repo
 to install:
 
 ```sh
-$ mise plugin install shfmt https://github.com/luizm/asdf-shfmt
+mise plugin install shfmt https://github.com/luizm/asdf-shfmt
 ```
 
 Unlike in normal mode where `mise plugin install shfmt` would be sufficient.

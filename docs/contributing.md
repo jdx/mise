@@ -9,11 +9,11 @@ There is a docker setup that makes development with mise easier. It is especiall
 Here's some example ways to use it:
 
 ```sh
-$ mise run docker:cargo build
-$ mise run docker:cargo test
-$ mise run docker:mise --help # run `mise --help` in the dev container
-$ mise run docker:mise run test:e2e # run the e2e tests inside of the docker container
-$ mise run docker:e2e # shortcut for `mise run docker:mise run test:e2e`
+mise run docker:cargo build
+mise run docker:cargo test
+mise run docker:mise --help # run `mise --help` in the dev container
+mise run docker:mise run test:e2e # run the e2e tests inside of the docker container
+mise run docker:e2e # shortcut for `mise run docker:mise run test:e2e`
 ```
 
 ## Testing
@@ -26,12 +26,15 @@ for executing since it does not require having a proper local setup.
 To run locally you will need to first disable mise if you are using it.
 
 :::code-group
+
 ```sh [dev container]
-$ mise run docker:cargo test
+mise run docker:cargo test
 ```
+
 ```sh [local]
-$ cargo test
+cargo test
 ```
+
 :::
 
 ### E2E Tests
@@ -39,12 +42,15 @@ $ cargo test
 Like unit tests, the e2e tests should be run either in the dev container (recommended) or with mise disabled locally.
 
 :::code-group
+
 ```sh [dev container]
-$ mise run docker:e2e
+mise run docker:e2e
 ```
+
 ```sh [local]
-$ mise run test:e2e
+mise run test:e2e
 ```
+
 :::
 
 Slow tests do not run by default or on PRs. They can be manually enabled with `TEST_ALL=1`.
@@ -106,10 +112,10 @@ Don't forget to change the manifest path to the correct path for your setup.
 Then if that is in PATH just use `@mise` to run mise by compiling it on the fly.
 
 ```sh
-$ @mise --help
-$ @mise run docker:e2e
-$ eval "$(@mise activate zsh)"
-$ @mise activate fish | source
+@mise --help
+@mise run docker:e2e
+eval "$(@mise activate zsh)"
+@mise activate fish | source
 ```
 
 ## Releasing

@@ -109,7 +109,7 @@ export default defineConfig({
     ],
 
     editLink: {
-      pattern: 'https://github.com/jdx/mise-docs/edit/main/:path',
+      pattern: 'https://github.com/jdx/mise/edit/main/docs/:path',
     },
     search: {
       provider: 'algolia',

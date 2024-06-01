@@ -97,7 +97,7 @@ not already exists.
 `mise x` can be used for one-off commands using specific tools. e.g.: if you want to run a script with python3.12:
 
 ```sh
-$ mise x python@3.12 -- ./myscript.py
+mise x python@3.12 -- ./myscript.py
 ```
 
 Python will be installed if it is not already. `mise x` will read local/global `.tool-versions`/`.mise-toml` files
@@ -114,8 +114,9 @@ $ mise x -- node -v
 If you use this a lot, an alias can be helpful:
 
 ```sh
-$ alias mx="mise x --"
+alias mx="mise x --"
 ```
+
 :::
 
 Similarly, `mise run` can be used to [execute tasks](/tasks/) which will also activate the mise environment with all of your tools.

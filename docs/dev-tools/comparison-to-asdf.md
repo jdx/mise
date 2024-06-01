@@ -101,6 +101,6 @@ mise has support for backends other than asdf plugins. For example you can insta
 directly from cargo and npm:
 
 ```sh
-$ mise use -g cargo:ripgrep@14
-$ mise use -g npm:prettier@3
+mise use -g cargo:ripgrep@14
+mise use -g npm:prettier@3
 ```

@@ -3,10 +3,12 @@
 ## `.mise.toml`
 
 `.mise.toml` is a new config file that replaces asdf-style `.tool-versions` files with a file
-that has lot more flexibility. It supports functionality that is not possible with `.tool-versions`, such as:
+that has lot more flexibility. It supports functionality that is not possible with `.tool-versions`,
+such as:
 
 - setting arbitrary env vars while inside the directory
-- passing options to plugins like `virtualenv=".venv"` for [python](https://github.com/jdx/mise/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
+- passing options to plugins like `virtualenv=".venv"`
+  for [python](https://github.com/jdx/mise/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
 - specifying custom plugin URLs
 
 They can use any of the following file locations (in order of precedence, top is highest):
@@ -23,7 +25,8 @@ They can use any of the following file locations (in order of precedence, top is
 - `.config/mise/config.toml`
 
 See [Profiles](/profiles) for more information about `.mise.$MISE_ENV.toml` files.
-These files recurse upwards, so if you have a `~/src/work/myproj/.mise.toml` file, what is defined there will override anything set in
+These files recurse upwards, so if you have a `~/src/work/myproj/.mise.toml` file, what is defined
+there will override anything set in
 `~/src/work/.mise.toml` or `~/.config/mise.toml`. The config contents are merged together.
 
 :::tip
@@ -47,7 +50,7 @@ node = ['16', 'prefix:20', 'ref:master', 'path:~/.nodes/14']
 
 # send arbitrary options to the plugin, passed as:
 # MISE_TOOL_OPTS__VENV=.venv
-python = {version='3.10', virtualenv='.venv'}
+python = { version = '3.10', virtualenv = '.venv' }
 
 [plugins]
 # specify a custom repo url
@@ -101,7 +104,8 @@ If you simply want to install a plugin from a specific URL once, it's better to 
 `mise plugin install plugin <GIT_URL>`. Add this section to `.mise.toml` if you want
 to share the plugin location/revision with other developers in your project.
 
-This is similar to [`MISE_SHORTHANDS`](https://github.com/jdx/mise#mise_shorthands_fileconfigmiseshorthandstoml)
+This is similar
+to [`MISE_SHORTHANDS`](https://github.com/jdx/mise#mise_shorthands_fileconfigmiseshorthandstoml)
 but doesn't require a separate file.
 
 ### `[aliases]` - Tool version aliases
@@ -110,7 +114,9 @@ The following makes `mise install node@my_custom_node` install node-20.x
 this can also be specified in a [plugin](/dev-tools/aliases.md).
 note adding an alias will also add a symlink, in this case:
 
-    ~/.local/share/mise/installs/node/20 -> ./20.x.x
+```sh
+~/.local/share/mise/installs/node/20 -> ./20.x.x
+```
 
 ```toml
 my_custom_node = '20'
@@ -118,7 +124,8 @@ my_custom_node = '20'
 
 ## Global config: `~/.config/mise/config.toml`
 
-mise can be configured in `~/.config/mise/config.toml`. It's like local `.mise.toml` files except that
+mise can be configured in `~/.config/mise/config.toml`. It's like local `.mise.toml` files except
+that
 it is used for all directories.
 
 ```toml
@@ -168,7 +175,7 @@ env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
 experimental = true # enable experimental features
 
 # configure messages displayed when entering directories with config files
-status = {missing_tools = "if_other_versions_installed", show_env = false, show_tools = false}
+status = { missing_tools = "if_other_versions_installed", show_env = false, show_tools = false }
 ```
 
 ## System config: `/etc/mise/config.toml`
@@ -198,7 +205,8 @@ node        sub-2:lts      # install 2 versions behind the latest lts (e.g.: 18 
 python      sub-0.1:latest # install python-3.10 if the latest is 3.11
 ```
 
-See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on this file format.
+See [the asdf docs](https://asdf-vm.com/manage/configuration.html#tool-versions) for more info on
+this file format.
 
 ## Scopes
 
@@ -215,7 +223,8 @@ Both `.mise.toml` and `.tool-versions` support "scopes" which modify the behavio
 
 ## Legacy version files
 
-mise supports "legacy version files" just like asdf. They're language-specific files like `.node-version`
+mise supports "legacy version files" just like asdf. They're language-specific files
+like `.node-version`
 and `.python-version`. These are ideal for setting the runtime version of a project without forcing
 other developers to use a specific tool like mise/asdf.
 
@@ -234,7 +243,8 @@ in mise and nvm. Here are some of the supported legacy version files:
 | terraform | `.terraform-version`, `.packer-version`, `main.tf` |
 | yarn      | `.yarnrc`                                          |
 
-In mise these are enabled by default. You can disable them with `mise settings set legacy_version_file false`.
+In mise these are enabled by default. You can disable them
+with `mise settings set legacy_version_file false`.
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
 `bin/parse-version-file`. However these are [cached](/cache-behavior) so it's not a huge deal.
 You may not even notice.
@@ -259,7 +269,8 @@ Some of them also can be set via global CLI flags.
 * Env: `MISE_ACTIVATE_AGGRESSIVE`
 * Default: `false`
 
-Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.
+Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after
+activation to take precedence.
 
 For example, if you have the following in your `.mise.toml`:
 
@@ -276,10 +287,12 @@ eval "$(mise activate zsh)"
 PATH="/some/other/python:$PATH"
 ```
 
-What will happen is `/some/other/python` will be used instead of the python installed by mise. This means
+What will happen is `/some/other/python` will be used instead of the python installed by mise. This
+means
 you typically want to put `mise activate` at the end of your shell config so nothing overrides it.
 
-If you want to always use the mise versions of tools despite what is in your shell config, set this to `true`.
+If you want to always use the mise versions of tools despite what is in your shell config, set this
+to `true`.
 In that case, using this example again, `/some/other/python` will be after mise's python in PATH.
 
 ### `asdf_compat`
@@ -289,9 +302,11 @@ In that case, using this example again, `/some/other/python` will be after mise'
 * Default: `false`
 
 Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
-This disables mise functionality that would otherwise make these files incompatible with asdf such as non-pinned versions.
+This disables mise functionality that would otherwise make these files incompatible with asdf such
+as non-pinned versions.
 
-This will also change the default global tool config to be `~/.tool-versions` instead of `~/.config/mise/config.toml`.
+This will also change the default global tool config to be `~/.tool-versions` instead
+of `~/.config/mise/config.toml`.
 
 ### `disable_tools`
 
@@ -299,7 +314,8 @@ This will also change the default global tool config to be `~/.tool-versions` in
 * Env: `MISE_DISABLE_TOOLS`
 * Default: `[]`
 
-Disables the specified tools. Separate with `,`. Generally used for core plugins but works with any tool.
+Disables the specified tools. Separate with `,`. Generally used for core plugins but works with any
+tool.
 
 ### `status.missing_tools`
 
@@ -343,7 +359,8 @@ mise can also be configured via environment variables. The following options are
 
 Default: `~/.local/share/mise` or `$XDG_DATA_HOME/mise`
 
-This is the directory where mise stores plugins and tool installs. These are not supposed to be shared
+This is the directory where mise stores plugins and tool installs. These are not supposed to be
+shared
 across machines.
 
 ### `MISE_CACHE_DIR`
@@ -356,7 +373,8 @@ across machines. It may be deleted at any time mise is not running.
 
 ### `MISE_TMP_DIR`
 
-Default: [`std::env::temp_dir()`](https://doc.rust-lang.org/std/env/fn.temp_dir.html) implementation in rust
+Default: [`std::env::temp_dir()`](https://doc.rust-lang.org/std/env/fn.temp_dir.html) implementation
+in rust
 
 This is used for temporary storage such as when installing tools.
 
@@ -379,7 +397,8 @@ a different name.
 
 ### `MISE_DEFAULT_CONFIG_FILENAME`
 
-Set to something other than `.mise.toml` to have mise look for `.mise.toml` config files with a different name.
+Set to something other than `.mise.toml` to have mise look for `.mise.toml` config files with a
+different name.
 
 ### `MISE_ENV`
 
@@ -413,7 +432,8 @@ of what is set in `.tool-versions`/`.mise.toml`.
 ### `MISE_LEGACY_VERSION_FILE=1`
 
 Plugins can read the versions files used by other version managers (if enabled by the plugin)
-for example, `.nvmrc` in the case of node's nvm. See [legacy version files](#legacy-version-files) for more
+for example, `.nvmrc` in the case of node's nvm. See [legacy version files](#legacy-version-files)
+for more
 information.
 
 Set to "0" to disable legacy version file parsing.
@@ -427,7 +447,8 @@ Disable legacy version file parsing for specific tools. Separate with `,`.
 Set to `1` to default to using `.mise.toml` in `mise local` instead of `.tool-versions` for
 configuration.
 
-For now this is not used by `mise use` which will only use `.mise.toml` unless `--path` is specified.
+For now this is not used by `mise use` which will only use `.mise.toml` unless `--path` is
+specified.
 
 ### `MISE_TRUSTED_CONFIG_PATHS`
 
@@ -518,8 +539,10 @@ This will automatically answer yes or no to prompts. This is useful for scriptin
 
 ### `MISE_NOT_FOUND_AUTO_INSTALL=true`
 
-Set to false to disable the "command not found" handler to autoinstall missing tool versions. Disable this
-if experiencing strange behavior in your shell when a command is not found—but please submit a ticket to
+Set to false to disable the "command not found" handler to autoinstall missing tool versions.
+Disable this
+if experiencing strange behavior in your shell when a command is not found—but please submit a
+ticket to
 help diagnose problems.
 
 ### `MISE_TASK_OUTPUT=prefix`
@@ -555,7 +578,8 @@ Default: false unless running NixOS or Alpine (let me know if others should be a
 Do not use precompiled binaries for all languages. Useful if running on a Linux distribution
 like Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.
 
-Note that this needs to be setup for each language. File a ticket if you notice a language that is not
+Note that this needs to be setup for each language. File a ticket if you notice a language that is
+not
 working with this config.
 
 ### `MISE_FISH_AUTO_ACTIVATE=1`

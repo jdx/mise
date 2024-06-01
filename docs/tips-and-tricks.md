@@ -27,7 +27,7 @@ If `~/.local/bin` is not in PATH, you'll need to prefix all commands with `~/.lo
 Now you can use `mise-x64` to install tools:
 
 ```sh
-$ mise-x64 use -g node@20
+mise-x64 use -g node@20
 ```
 
 ## Shebang
@@ -78,5 +78,5 @@ jobs:
 Instead of manually editing `.mise.toml` to add env vars, you can use `mise set` instead:
 
 ```sh
-$ mise set NODE_ENV=production
+mise set NODE_ENV=production
 ```
