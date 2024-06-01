@@ -106,7 +106,7 @@ impl Use {
         let settings = Settings::try_get()?;
         let pin = self.pin || (settings.asdf_compat && !self.fuzzy);
 
-        for (fa, tvl) in &versions.iter().group_by(|tv| &tv.backend) {
+        for (fa, tvl) in &versions.iter().chunk_by(|tv| &tv.backend) {
             let versions: Vec<String> = tvl
                 .into_iter()
                 .map(|tv| {
