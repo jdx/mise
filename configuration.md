@@ -150,6 +150,7 @@ trusted_config_paths = [
 
 verbose = false     # set to true to see full installation output, see `MISE_VERBOSE`
 asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `MISE_ASDF_COMPAT`
+http_timeout = 30   # set the timeout for http requests in seconds, see `MISE_HTTP_TIMEOUT`
 jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
 raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
 yes = false         # set to true to automatically answer yes to all prompts
@@ -472,6 +473,10 @@ Equivalent to `MISE_LOG_LEVEL=warn`.
 ### `MISE_PARANOID=0`
 
 Enables extra-secure behavior. See [Paranoid](/paranoid).
+
+### `MISE_HTTP_TIMEOUT`
+
+Set the timeout for http requests in seconds. The default is `30`.
 
 ### `MISE_JOBS=1`
 
