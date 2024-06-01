@@ -3,7 +3,7 @@ name: release
 on:
   push:
     tags: ["v*"]
-    branches: ["release", "win"]
+    branches: ["release", "win", "docs"]
   workflow_dispatch:
 
 concurrency:
@@ -250,20 +250,18 @@ jobs:
       - build-tarball-win
     steps:
       - uses: actions/checkout@v4
+      - uses: crazy-max/ghaction-import-gpg@v6
         with:
-          path: mise
-      - uses: actions/checkout@v4
-        with:
-          repository: jdx/mise-docs
-          path: mise-docs
-          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
       - name: cache zipsign
         id: cache-zipsign
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/zipsign
           key: cargo-zipsign
-      - run: ./mise/scripts/setup-zipsign.sh
+      - run: ./scripts/setup-zipsign.sh
         env:
           ZIPSIGN: ${{ secrets.ZIPSIGN }}
       - name: Install fd-find
@@ -281,12 +279,6 @@ jobs:
         with:
           key: ${{ secrets.RTX_SSH_KEY }}
           known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
-      - uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
-          git_user_signingkey: true
-          git_commit_gpgsign: true
-          workdir: mise-docs
       - uses: actions/download-artifact@v4
         with: { path: artifacts }
       - run: ls -R artifacts
@@ -299,16 +291,12 @@ jobs:
             mise-v*.zip
           merge-multiple: true
       - run: ls -R artifacts
-      - run: mise/scripts/release.sh
+      - run: scripts/release.sh
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-      - name: mise-docs push
-        if: startsWith(github.event.ref, 'refs/tags/v')
-        run: git push
-        working-directory: mise-docs
       - name: GitHub Release Assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.event.ref, 'refs/tags/v')

@@ -8,4 +8,4 @@ export AWS_ACCESS_KEY_ID=$CLOUDFLARE_ACCESS_KEY_ID
 export AWS_SECRET_ACCESS_KEY=$CLOUDFLARE_SECRET_ACCESS_KEY
 export AWS_S3_BUCKET=mise
 
-./mise/scripts/publish-s3.sh
+./scripts/publish-s3.sh
