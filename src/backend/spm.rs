@@ -1,7 +1,6 @@
 use std::env::temp_dir;
 use std::fmt::{self, Debug};
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+use std::path::PathBuf;
 
 use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
@@ -58,21 +57,17 @@ impl Backend for SPMBackend {
         let settings = Settings::get();
         settings.ensure_experimental("spm backend")?;
 
-        let repo_url = SwiftPackageRepo::from_str(self.name())?.url;
-        let version = if ctx.tv.version == "latest" {
-            self.latest_stable_version()?
-                .ok_or_else(|| eyre::eyre!("No stable versions found"))?
-        } else {
-            ctx.tv.version.clone()
-        };
-        let repo_dir = self.clone_package_repo(repo_url, version)?;
+        let repo = self.get_package_repo(ctx)?;
+        let repo_dir = self.clone_package_repo(&repo)?;
+
         let executables = self.get_executable_names(&repo_dir)?;
         if executables.is_empty() {
             return Err(eyre::eyre!("No executables found in the package"));
         }
         for executable in executables {
             let bin_path = self.build_executable(&executable, &repo_dir, ctx)?;
-            self.copy_build_artifacts(bin_path, executable, ctx)?;
+            let install_bin_path = ctx.tv.install_path().join("bin");
+            self.copy_build_artifacts(&executable, &bin_path, &install_bin_path)?;
         }
 
         debug!("Cleaning up temporary files");
@@ -93,26 +88,40 @@ impl SPMBackend {
         }
     }
 
-    fn clone_package_repo(
-        &self,
-        repo_url: String,
-        revision: String,
-    ) -> Result<PathBuf, eyre::Error> {
-        let repo_dir_name = repo_url
-            .replace("://", "_")
-            .replace("/", "_")
-            .replace("?", "_")
-            .replace("&", "_")
-            .replace(":", "_")
-            + "@"
-            + &revision;
-        let tmp_repo_dir = temp_dir().join("spm").join(&repo_dir_name);
+    fn get_package_repo(&self, ctx: &InstallContext) -> Result<SwiftPackageRepo, eyre::Error> {
+        let name = self.name();
+
+        let url = Url::parse(name);
+        let url = if url.is_ok()
+            && url.as_ref().unwrap().host_str() == Some("github.com")
+            && url.as_ref().unwrap().path().ends_with(".git")
+        {
+            url.unwrap().to_string()
+        } else if regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$").is_match(name) {
+            format!("https://github.com/{}.git", name.to_string())
+        } else {
+            // TODO: support other url/shorthand types
+            Err(eyre::eyre!("Invalid swift package repo: {}", name))?
+        };
+
+        let revision = if ctx.tv.version == "latest" {
+            self.latest_stable_version()?
+                .ok_or_else(|| eyre::eyre!("No stable versions found"))?
+        } else {
+            ctx.tv.version.clone()
+        };
+
+        Ok(SwiftPackageRepo::new(url, revision))
+    }
+
+    fn clone_package_repo(&self, package_repo: &SwiftPackageRepo) -> Result<PathBuf, eyre::Error> {
+        let tmp_repo_dir = temp_dir().join("spm").join(&package_repo.repo_dir_name());
         file::remove_all(&tmp_repo_dir)?;
         file::create_dir_all(tmp_repo_dir.parent().unwrap())?;
 
         let git = Git::new(tmp_repo_dir.clone());
-        git.clone(&repo_url)?;
-        git.update(Some(revision))?;
+        git.clone(&package_repo.url)?;
+        git.update(Some(package_repo.revision.clone()))?;
         Ok(tmp_repo_dir)
     }
 
@@ -138,10 +147,10 @@ impl SPMBackend {
 
     fn build_executable(
         &self,
-        executable: &String,
+        executable: &str,
         repo_dir: &PathBuf,
         ctx: &InstallContext<'_>,
-    ) -> Result<String, eyre::Error> {
+    ) -> Result<PathBuf, eyre::Error> {
         debug!("Building swift package");
         let build_cmd = CmdLineRunner::new("swift")
             .arg("build")
@@ -165,23 +174,22 @@ impl SPMBackend {
             "--show-bin-path"
         )
         .read()?;
-        Ok(bin_path)
+        Ok(PathBuf::from(bin_path.trim().to_string()))
     }
 
     fn copy_build_artifacts(
         &self,
-        bin_path: String,
-        executable: String,
-        ctx: &InstallContext<'_>,
+        executable: &str,
+        bin_path: &PathBuf,
+        install_bin_path: &PathBuf,
     ) -> Result<(), eyre::Error> {
-        let install_bin_path = ctx.tv.install_path().join("bin");
         debug!(
             "Copying binaries to install path: {}",
             install_bin_path.display()
         );
         file::create_dir_all(&install_bin_path)?;
         file::copy(
-            Path::new(&bin_path).join(&executable),
+            &bin_path.join(&executable),
             &install_bin_path.join(&executable),
         )?;
         WalkDir::new(&bin_path)
@@ -210,32 +218,24 @@ impl SPMBackend {
 struct SwiftPackageRepo {
     /// https://github.com/owner/repo.git
     url: String,
+    /// branch, tag, or commit hash
+    revision: String,
 }
 
-impl FromStr for SwiftPackageRepo {
-    type Err = eyre::Error;
+impl SwiftPackageRepo {
+    fn new(url: String, revision: String) -> Self {
+        Self { url, revision }
+    }
 
-    /// swift package github repo shorthand:
-    /// - owner/repo
-    ///
-    /// swift package github repo full url:
-    /// - https://github.com/owner/repo.git
-    /// - TODO: support more type of git urls
-    ///
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url = Url::parse(s);
-        if url.is_ok()
-            && url.as_ref().unwrap().host_str() == Some("github.com")
-            && url.as_ref().unwrap().path().ends_with(".git")
-        {
-            Ok(Self { url: s.to_string() })
-        } else if regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$").is_match(s) {
-            Ok(Self {
-                url: format!("https://github.com/{}.git", s.to_string()),
-            })
-        } else {
-            Err(eyre::eyre!("Invalid swift package repo: {}", s))
-        }
+    fn repo_dir_name(&self) -> String {
+        self.url
+            .replace("://", "_")
+            .replace("/", "_")
+            .replace("?", "_")
+            .replace("&", "_")
+            .replace(":", "_")
+            + "@"
+            + &self.revision
     }
 }
 
