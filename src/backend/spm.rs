@@ -8,6 +8,7 @@ use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
 use serde_derive::Deserialize;
 use url::Url;
+use walkdir::WalkDir;
 
 use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
@@ -77,7 +78,6 @@ impl Backend for SPMBackend {
             ctx.tv.version.clone()
         };
 
-        // TODO: should we use cache for this (cache | downloads)? Now i think it's not necessary
         let tmp_repo_dir = temp_dir()
             .join("spm")
             .join(self.filename_safe_url(&repo_url) + "@" + &version);
@@ -98,8 +98,9 @@ impl Backend for SPMBackend {
 
         //
         // 2. Build the swift package
-        // - TODO: specify arch, platform, target?
-
+        // - parse Package.swift dump to get executables list
+        // - build each executable
+        //
         let package_json = cmd!(
             "swift",
             "package",
@@ -116,6 +117,9 @@ impl Backend for SPMBackend {
             .filter(|p| p.r#type.is_executable())
             .map(|p| p.name.clone())
             .collect::<Vec<String>>();
+        if executables.is_empty() {
+            return Err(eyre::eyre!("No executables found in the package"));
+        }
         debug!("Found executables: {:?}", executables);
 
         for executable in executables {
@@ -127,7 +131,8 @@ impl Backend for SPMBackend {
                 .arg("--product")
                 .arg(&executable)
                 .arg("--package-path")
-                .arg(&tmp_repo_dir);
+                .arg(&tmp_repo_dir)
+                .with_pr(ctx.pr.as_ref());
             build_cmd.execute()?;
             let bin_path = cmd!(
                 "swift",
@@ -144,7 +149,7 @@ impl Backend for SPMBackend {
 
             //
             // 3. Copy binary to the install path
-            // - TODO: copy resources and other related files
+            // - copy resources and other related files
             //
             let install_bin_path = ctx.tv.install_path().join("bin");
             debug!(
@@ -156,6 +161,32 @@ impl Backend for SPMBackend {
                 Path::new(&bin_path).join(&executable),
                 &install_bin_path.join(&executable),
             )?;
+
+            // find and copy resources with save relative to the binary path
+            // dynamic libraries: .dylib, .so, .dll
+            // resource bundles: .bundle, .resources
+            WalkDir::new(&bin_path)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    let ext = e.path().extension().unwrap_or_default();
+                    ext == "dylib"
+                        || ext == "so"
+                        || ext == "dll"
+                        || ext == "bundle"
+                        || ext == "resources"
+                })
+                .try_for_each(|e| -> Result<(), eyre::Error> {
+                    let rel_path = e.path().strip_prefix(&bin_path)?;
+                    let install_path = install_bin_path.join(rel_path);
+                    file::create_dir_all(&install_path.parent().unwrap())?;
+                    if e.path().is_dir() {
+                        file::copy_dir_all(e.path(), &install_path)?;
+                    } else {
+                        file::copy(e.path(), &install_path)?;
+                    }
+                    Ok(())
+                })?;
         }
 
         debug!("Cleaning up temporary files");
