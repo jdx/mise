@@ -100,9 +100,7 @@ impl SPMBackend {
         package_repo: &SwiftPackageRepo,
         revision: &str,
     ) -> Result<PathBuf, eyre::Error> {
-        let tmp_repo_dir = temp_dir()
-            .join("spm")
-            .join(&package_repo.dir_name(revision));
+        let tmp_repo_dir = temp_dir().join("spm").join(package_repo.dir_name(revision));
         file::remove_all(&tmp_repo_dir)?;
         file::create_dir_all(tmp_repo_dir.parent().unwrap())?;
 
@@ -113,7 +111,7 @@ impl SPMBackend {
             tmp_repo_dir.display()
         );
         let repo = Repository::clone(package_repo.url.as_str(), &tmp_repo_dir)?;
-        let (object, reference) = repo.revparse_ext(&revision)?;
+        let (object, reference) = repo.revparse_ext(revision)?;
         repo.checkout_tree(&object, None)?;
         repo.set_head(reference.unwrap().name().unwrap())?;
         Ok(tmp_repo_dir)
@@ -181,12 +179,9 @@ impl SPMBackend {
             "Copying binaries to install path: {}",
             install_bin_path.display()
         );
-        file::create_dir_all(&install_bin_path)?;
-        file::copy(
-            &bin_path.join(&executable),
-            &install_bin_path.join(&executable),
-        )?;
-        WalkDir::new(&bin_path)
+        file::create_dir_all(install_bin_path)?;
+        file::copy(bin_path.join(executable), install_bin_path.join(executable))?;
+        WalkDir::new(bin_path)
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| {
@@ -195,9 +190,9 @@ impl SPMBackend {
                 ext == "dylib" || ext == "bundle"
             })
             .try_for_each(|e| -> Result<(), eyre::Error> {
-                let rel_path = e.path().strip_prefix(&bin_path)?;
+                let rel_path = e.path().strip_prefix(bin_path)?;
                 let install_path = install_bin_path.join(rel_path);
-                file::create_dir_all(&install_path.parent().unwrap())?;
+                file::create_dir_all(install_path.parent().unwrap())?;
                 if e.path().is_dir() {
                     file::copy_dir_all(e.path(), &install_path)?;
                 } else {
@@ -241,7 +236,7 @@ impl SwiftPackageRepo {
     }
 
     fn dir_name(&self, revision: &str) -> String {
-        self.shorthand.replace("/", "-") + "@" + revision
+        self.shorthand.replace('/', "-") + "@" + revision
     }
 }
 

@@ -2,7 +2,7 @@
 
 # Enable test when `Swift` installation will be fixed on Linux (for docker run)
 # Wait for https://github.com/jdx/mise/pull/1708
-exit 0;
+exit 0
 
 mise use swift
 
