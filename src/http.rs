@@ -35,7 +35,7 @@ impl Client {
     fn new(timeout: Duration) -> Result<Self> {
         Ok(Self {
             reqwest: Self::_new()
-                .timeout(timeout)
+                .read_timeout(timeout)
                 .connect_timeout(timeout)
                 .build()?,
         })
