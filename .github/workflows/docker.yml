@@ -85,6 +85,8 @@ jobs:
     container:
       image: ghcr.io/jdx/mise:dev
     needs: [dev]
+    env:
+      GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - run: cargo install --path . --debug
