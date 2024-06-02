@@ -1,9 +1,12 @@
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
+use serde_derive::Deserialize;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
@@ -14,6 +17,37 @@ use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env};
 
+#[derive(Debug, Clone, Deserialize)]
+pub enum PathEntry {
+    Normal(PathBuf),
+}
+
+impl PathEntry {
+    fn to_string_lossy(&self) -> Cow<'_, str> {
+        match self {
+            PathEntry::Normal(p) => p.to_string_lossy()
+        }
+    }
+}
+
+impl FromStr for PathEntry {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> eyre::Result<Self> {
+        let res = PathBuf::from_str(s)?;
+        return Ok(Self::Normal(res));
+    }
+}
+
+impl AsRef<Path> for PathEntry {
+    #[inline]
+    fn as_ref(&self) -> &Path {
+        match self {
+            PathEntry::Normal(p) => p.as_ref()
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum EnvDirective {
     /// simple key/value pair
@@ -23,7 +57,7 @@ pub enum EnvDirective {
     /// dotenv file
     File(PathBuf),
     /// add a path to the PATH
-    Path(PathBuf),
+    Path(PathEntry),
     /// run a bash script and apply the resulting env diff
     Source(PathBuf),
     PythonVenv {
@@ -121,7 +155,9 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Path(input) => {
+                    debug!("input: {:?}", &input);
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
+                    debug!("s: {:?}", &s);
                     env::split_paths(&s)
                         .map(normalize_path)
                         .for_each(|p| r.env_paths.push(p.clone()));
