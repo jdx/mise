@@ -2,6 +2,7 @@ use std::env::temp_dir;
 use std::fmt::{self, Debug};
 use std::path::PathBuf;
 
+use git2::Repository;
 use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
 use serde_derive::Deserialize;
@@ -13,7 +14,6 @@ use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
-use crate::git::Git;
 use crate::install_context::InstallContext;
 use crate::{file, github};
 
@@ -42,9 +42,10 @@ impl Backend for SPMBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+        let repo = SwiftPackageRepo::new(self.name())?;
         self.remote_version_cache
             .get_or_try_init(|| {
-                Ok(github::list_releases(self.name())?
+                Ok(github::list_releases(repo.shorthand.as_str())?
                     .into_iter()
                     .map(|r| r.tag_name)
                     .rev()
@@ -57,8 +58,14 @@ impl Backend for SPMBackend {
         let settings = Settings::get();
         settings.ensure_experimental("spm backend")?;
 
-        let repo = self.get_package_repo(ctx)?;
-        let repo_dir = self.clone_package_repo(&repo)?;
+        let repo = SwiftPackageRepo::new(self.name())?;
+        let revision = if ctx.tv.version == "latest" {
+            self.latest_stable_version()?
+                .ok_or_else(|| eyre::eyre!("No stable versions found"))?
+        } else {
+            ctx.tv.version.clone()
+        };
+        let repo_dir = self.clone_package_repo(&repo, &revision)?;
 
         let executables = self.get_executable_names(&repo_dir)?;
         if executables.is_empty() {
@@ -88,40 +95,27 @@ impl SPMBackend {
         }
     }
 
-    fn get_package_repo(&self, ctx: &InstallContext) -> Result<SwiftPackageRepo, eyre::Error> {
-        let name = self.name();
-
-        let url = Url::parse(name);
-        let url = if url.is_ok()
-            && url.as_ref().unwrap().host_str() == Some("github.com")
-            && url.as_ref().unwrap().path().ends_with(".git")
-        {
-            url.unwrap().to_string()
-        } else if regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$").is_match(name) {
-            format!("https://github.com/{}.git", name.to_string())
-        } else {
-            // TODO: support other url/shorthand types
-            Err(eyre::eyre!("Invalid swift package repo: {}", name))?
-        };
-
-        let revision = if ctx.tv.version == "latest" {
-            self.latest_stable_version()?
-                .ok_or_else(|| eyre::eyre!("No stable versions found"))?
-        } else {
-            ctx.tv.version.clone()
-        };
-
-        Ok(SwiftPackageRepo::new(url, revision))
-    }
-
-    fn clone_package_repo(&self, package_repo: &SwiftPackageRepo) -> Result<PathBuf, eyre::Error> {
-        let tmp_repo_dir = temp_dir().join("spm").join(&package_repo.repo_dir_name());
+    fn clone_package_repo(
+        &self,
+        package_repo: &SwiftPackageRepo,
+        revision: &str,
+    ) -> Result<PathBuf, eyre::Error> {
+        let tmp_repo_dir = temp_dir()
+            .join("spm")
+            .join(&package_repo.dir_name(revision));
         file::remove_all(&tmp_repo_dir)?;
         file::create_dir_all(tmp_repo_dir.parent().unwrap())?;
 
-        let git = Git::new(tmp_repo_dir.clone());
-        git.clone(&package_repo.url)?;
-        git.update(Some(package_repo.revision.clone()))?;
+        debug!(
+            "Cloning swift package repo: {}, revision: {} to path: {}",
+            package_repo.url.as_str(),
+            revision,
+            tmp_repo_dir.display()
+        );
+        let repo = Repository::clone(package_repo.url.as_str(), &tmp_repo_dir)?;
+        let (object, reference) = repo.revparse_ext(&revision)?;
+        repo.checkout_tree(&object, None)?;
+        repo.set_head(reference.unwrap().name().unwrap())?;
         Ok(tmp_repo_dir)
     }
 
@@ -215,27 +209,39 @@ impl SPMBackend {
     }
 }
 
+#[derive(Debug)]
 struct SwiftPackageRepo {
     /// https://github.com/owner/repo.git
-    url: String,
-    /// branch, tag, or commit hash
-    revision: String,
+    url: Url,
+    /// owner/repo_name
+    shorthand: String,
 }
 
 impl SwiftPackageRepo {
-    fn new(url: String, revision: String) -> Self {
-        Self { url, revision }
+    fn new(name: &str) -> Result<Self, eyre::Error> {
+        let shorthand_regex = regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$");
+        let shorthand_in_url_regex =
+            regex!(r"https://github.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+)\.git");
+
+        let shorthand =
+            if let Some(Some(m)) = shorthand_in_url_regex.captures(name).map(|c| c.get(1)) {
+                m.as_str()
+            } else if shorthand_regex.is_match(name) {
+                name
+            } else {
+                Err(eyre::eyre!("Invalid swift package repo: {}", name))?
+            };
+        let url_str = format!("https://github.com/{}.git", shorthand);
+        let url = Url::parse(&url_str)?;
+
+        Ok(Self {
+            url,
+            shorthand: shorthand.to_string(),
+        })
     }
 
-    fn repo_dir_name(&self) -> String {
-        self.url
-            .replace("://", "_")
-            .replace("/", "_")
-            .replace("?", "_")
-            .replace("&", "_")
-            .replace(":", "_")
-            + "@"
-            + &self.revision
+    fn dir_name(&self, revision: &str) -> String {
+        self.shorthand.replace("/", "-") + "@" + revision
     }
 }
 
