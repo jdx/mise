@@ -25,7 +25,7 @@ pub enum PathEntry {
 impl PathEntry {
     fn to_string_lossy(&self) -> Cow<'_, str> {
         match self {
-            PathEntry::Normal(p) => p.to_string_lossy()
+            PathEntry::Normal(pb) => pb.to_string_lossy()
         }
     }
 }
@@ -34,8 +34,8 @@ impl FromStr for PathEntry {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> eyre::Result<Self> {
-        let res = PathBuf::from_str(s)?;
-        return Ok(Self::Normal(res));
+        let pb = PathBuf::from_str(s)?;
+        Ok(Self::Normal(pb))
     }
 }
 
@@ -43,7 +43,7 @@ impl AsRef<Path> for PathEntry {
     #[inline]
     fn as_ref(&self) -> &Path {
         match self {
-            PathEntry::Normal(p) => p.as_ref()
+            PathEntry::Normal(pb) => pb.as_ref()
         }
     }
 }
