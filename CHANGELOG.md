@@ -1,5 +1,37 @@
 # Changelog
 
+## [2024.6.1](https://github.com/jdx/mise/compare/v2024.6.0..v2024.6.1) - 2024-06-03
+
+### 🚀 Features
+
+- SPM(Swift Package Manager) backend by [@kattouf](https://github.com/kattouf) in [#2241](https://github.com/jdx/mise/pull/2241)
+
+### 🐛 Bug Fixes
+
+- mise up node fails by [@roele](https://github.com/roele) in [#2243](https://github.com/jdx/mise/pull/2243)
+
+### 📚 Documentation
+
+- fixed syntax by [@jdx](https://github.com/jdx) in [56083f8](https://github.com/jdx/mise/commit/56083f858a4ee28a020a414c1addf0c2bb7968af)
+
+### 🧪 Testing
+
+- set GITHUB_TOKEN in dev-test by [@jdx](https://github.com/jdx) in [4334313](https://github.com/jdx/mise/commit/4334313da52c13d7f87656fb0e7978e4cf1f5d2f)
+
+### 🔍 Other Changes
+
+- Update getting-started.md: nushell by [@chrmod](https://github.com/chrmod) in [#2248](https://github.com/jdx/mise/pull/2248)
+
+### 📦️ Dependency Updates
+
+- update rust crate demand to v1.2.4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2246](https://github.com/jdx/mise/pull/2246)
+- update rust crate zip to v2.1.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2247](https://github.com/jdx/mise/pull/2247)
+
+### New Contributors
+
+* @chrmod made their first contribution in [#2248](https://github.com/jdx/mise/pull/2248)
+* @kattouf made their first contribution in [#2241](https://github.com/jdx/mise/pull/2241)
+
 ## [2024.6.0](https://github.com/jdx/mise/compare/v2024.5.28..v2024.6.0) - 2024-06-01
 
 ### 🔍 Other Changes
