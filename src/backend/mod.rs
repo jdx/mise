@@ -38,6 +38,7 @@ pub mod cargo;
 pub mod go;
 pub mod npm;
 pub mod pipx;
+pub mod spm;
 pub mod ubi;
 
 pub type ABackend = Arc<dyn Backend>;
@@ -65,6 +66,7 @@ pub enum BackendType {
     Go,
     Npm,
     Pipx,
+    Spm,
     Ubi,
 }
 
@@ -107,6 +109,7 @@ fn list_installed_backends() -> eyre::Result<BackendList> {
                 BackendType::Npm => Arc::new(npm::NPMBackend::new(fa.name)) as ABackend,
                 BackendType::Go => Arc::new(go::GoBackend::new(fa.name)) as ABackend,
                 BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(fa.name)) as ABackend,
+                BackendType::Spm => Arc::new(spm::SPMBackend::new(fa.name)) as ABackend,
                 BackendType::Ubi => Arc::new(ubi::UbiBackend::new(fa.name)) as ABackend,
             }
         })
@@ -138,6 +141,7 @@ pub fn get(fa: &BackendArg) -> ABackend {
                 BackendType::Npm => Arc::new(npm::NPMBackend::new(name)),
                 BackendType::Go => Arc::new(go::GoBackend::new(name)),
                 BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(name)),
+                BackendType::Spm => Arc::new(spm::SPMBackend::new(name)),
                 BackendType::Ubi => Arc::new(ubi::UbiBackend::new(name)),
             })
             .clone()
