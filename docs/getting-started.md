@@ -354,13 +354,13 @@ See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for m
 
 ### Nushell
 
-Since Nu
+Nu
 does [not support `eval`](https://www.nushell.sh/book/how_nushell_code_gets_run.html#eval-function)
-the initialization script is saved in `env.nu`:
+Install Mise by appending `env.nu` and `config.nu`:
 
 ```nushell
 '
-let mise_path = $nu.default-config-dir | path join scripts mise.nu
+let mise_path = $nu.default-config-dir | path join mise.nu
 ^mise activate nu | save $mise_path --force
 ' | save $nu.env-path --append
 "\nuse mise.nu" | save $nu.config-path --append
