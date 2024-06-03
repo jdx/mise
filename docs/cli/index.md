@@ -167,6 +167,7 @@ Examples:
   go
   npm
   pipx
+  spm
   ubi
 ```
 
