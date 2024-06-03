@@ -134,6 +134,7 @@ cmd "backends" help="Manage backends" {
   go
   npm
   pipx
+  spm
   ubi
 "
     }
