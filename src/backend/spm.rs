@@ -224,7 +224,7 @@ impl SwiftPackageRepo {
             } else if shorthand_regex.is_match(name) {
                 name
             } else {
-                Err(eyre::eyre!("Invalid swift package repo: {}", name))?
+                Err(eyre::eyre!("Invalid Swift package repository: {}. The repository should either be a GitHub repository slug, owner/name, or the complete URL, https://github.com/owner/name.", name))?
             };
         let url_str = format!("https://github.com/{}.git", shorthand);
         let url = Url::parse(&url_str)?;
