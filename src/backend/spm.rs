@@ -240,6 +240,36 @@ impl SwiftPackageRepo {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_str_eq;
+    use test_log::test;
+
+    use super::*;
+
+    #[test]
+    fn test_spm_repo_init_by_shorthand() {
+        let package_name = "nicklockwood/SwiftFormat";
+        let package_repo = SwiftPackageRepo::new(package_name).unwrap();
+        assert_str_eq!(
+            package_repo.url.as_str(),
+            "https://github.com/nicklockwood/SwiftFormat.git"
+        );
+        assert_str_eq!(package_repo.shorthand, "nicklockwood/SwiftFormat");
+    }
+
+    #[test]
+    fn test_spm_repo_init_by_url() {
+        let package_name = "https://github.com/nicklockwood/SwiftFormat.git";
+        let package_repo = SwiftPackageRepo::new(package_name).unwrap();
+        assert_str_eq!(
+            package_repo.url.as_str(),
+            "https://github.com/nicklockwood/SwiftFormat.git"
+        );
+        assert_str_eq!(package_repo.shorthand, "nicklockwood/SwiftFormat");
+    }
+}
+
 /// https://developer.apple.com/documentation/packagedescription
 #[derive(Deserialize)]
 struct PackageDescription {
