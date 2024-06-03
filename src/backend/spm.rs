@@ -218,14 +218,15 @@ impl SwiftPackageRepo {
         let shorthand_in_url_regex =
             regex!(r"https://github.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+)\.git");
 
-        let shorthand =
-            if let Some(Some(m)) = shorthand_in_url_regex.captures(name).map(|c| c.get(1)) {
-                m.as_str()
-            } else if shorthand_regex.is_match(name) {
-                name
-            } else {
-                Err(eyre::eyre!("Invalid Swift package repository: {}. The repository should either be a GitHub repository slug, owner/name, or the complete URL, https://github.com/owner/name.", name))?
-            };
+        let shorthand = if let Some(Some(m)) =
+            shorthand_in_url_regex.captures(name).map(|c| c.get(1))
+        {
+            m.as_str()
+        } else if shorthand_regex.is_match(name) {
+            name
+        } else {
+            Err(eyre::eyre!("Invalid Swift package repository: {}. The repository should either be a GitHub repository slug, owner/name, or the complete URL, https://github.com/owner/name.", name))?
+        };
         let url_str = format!("https://github.com/{}.git", shorthand);
         let url = Url::parse(&url_str)?;
 
