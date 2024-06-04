@@ -3,7 +3,7 @@
 You may install packages directly from [Cargo Crates](https://crates.io/) even if there
 isn't an asdf plugin for it.
 
-The code for this is inside of the mise repository at [`./src/forge/cargo.rs`](https://github.com/jdx/mise/blob/main/src/forge/cargo.rs).
+The code for this is inside of the mise repository at [`./src/backend/cargo.rs`](https://github.com/jdx/mise/blob/main/src/backend/cargo.rs).
 
 ## Dependencies
 

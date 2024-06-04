@@ -3,7 +3,7 @@
 You may install packages directly via [go install](https://go.dev/doc/install) even if there
 isn't an asdf plugin for it.
 
-The code for this is inside of the mise repository at [`./src/forge/go.rs`](https://github.com/jdx/mise/blob/main/src/forge/go.rs).
+The code for this is inside of the mise repository at [`./src/backend/go.rs`](https://github.com/jdx/mise/blob/main/src/backend/go.rs).
 
 ## Dependencies
 

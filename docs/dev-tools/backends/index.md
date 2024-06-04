@@ -13,5 +13,5 @@ In addition to asdf plugins, you can also directly install CLIs with some packag
 
 ::: tip
 If you'd like to contribute a new backend to mise, they're not difficult to write.
-See [`./src/forge/`](https://github.com/jdx/mise/tree/main/src/forge) for examples.
+See [`./src/backend/`](https://github.com/jdx/mise/tree/main/src/backend) for examples.
 :::

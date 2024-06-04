@@ -2,7 +2,7 @@
 
 You may install Github Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend.
 
-The code for this is inside of the mise repository at [`./src/forge/ubi.rs`](https://github.com/jdx/mise/blob/main/src/forge/ubi.rs).
+The code for this is inside of the mise repository at [`./src/backend/ubi.rs`](https://github.com/jdx/mise/blob/main/src/backend/ubi.rs).
 
 ## Dependencies
 
