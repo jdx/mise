@@ -7,7 +7,7 @@ You may install python packages directly from:
 - Github
 - Http
 
-The code for this is inside of the mise repository at [`./src/forge/pipx.rs`](https://github.com/jdx/mise/blob/main/src/forge/pipx.rs).
+The code for this is inside of the mise repository at [`./src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
 
 ## Dependencies
 

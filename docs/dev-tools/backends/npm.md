@@ -3,7 +3,7 @@
 You may install packages directly from [npmjs.org](https://npmjs.org/) even if there
 isn't an asdf plugin for it.
 
-The code for this is inside of the mise repository at [`./src/forge/npm.rs`](https://github.com/jdx/mise/blob/main/src/forge/npm.rs).
+The code for this is inside of the mise repository at [`./src/backend/npm.rs`](https://github.com/jdx/mise/blob/main/src/backend/npm.rs).
 
 ## Dependencies
 
