@@ -7,6 +7,7 @@ In addition to asdf plugins, you can also directly install CLIs with some packag
 * [Go](/dev-tools/backends/go) <Badge type="warning" text="experimental" />
 * [NPM](/dev-tools/backends/npm) <Badge type="warning" text="experimental" />
 * [Pipx](/dev-tools/backends/pipx) <Badge type="warning" text="experimental" />
+* [SPM](/dev-tools/backends/spm) <Badge type="warning" text="experimental" />
 * [Ubi](/dev-tools/backends/ubi) <Badge type="warning" text="experimental" />
 * [More coming soon!](https://github.com/jdx/mise/discussions/1250)
 
