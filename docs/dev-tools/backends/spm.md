@@ -8,6 +8,9 @@ The code for this is inside of the mise repository at [`./src/backend/spm.rs`](h
 
 This relies on having `swift` installed. You can install it according to the [instructions](https://www.swift.org/install).
 
+> [!NOTE]
+> If you have Xcode installed and selected in your system via `xcode-select`, Swift is already available through the toolchain embedded in the Xcode installation.
+
 ## Usage
 
 The following installs the latest version of `tuist`
