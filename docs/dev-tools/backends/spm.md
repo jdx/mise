@@ -29,13 +29,13 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 "spm:tuist/tuist" = "latest"
 ```
 
-### Supported Ubi Syntax
+### Supported Syntax
 
-| Description                                   | Usage                                                                                                   |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Github shorthand for latest release version   | `spm:tuist/tuist`                                                                                       |
-| Github shorthand for specific release version | `spm:tuist/tuist@4.15.0`                                                                                |
-| Github url for latest release version         | `spm:https://github.com/tuist/tuist.git`                                                                |
-| Github url for specific release version       | `spm:https://github.com/tuist/tuist.git@4.15.0`                                                         |
+| Description                                   | Usage                                                     |
+| --------------------------------------------- | --------------------------------------------------------- |
+| Github shorthand for latest release version   | `spm:tuist/tuist`                                         |
+| Github shorthand for specific release version | `spm:tuist/tuist@4.15.0`                                  |
+| Github url for latest release version         | `spm:https://github.com/tuist/tuist.git`                  |
+| Github url for specific release version       | `spm:https://github.com/tuist/tuist.git@4.15.0`           |
 
 Other syntax may work but is unsupported and untested.
