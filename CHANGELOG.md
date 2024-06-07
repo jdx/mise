@@ -1,5 +1,15 @@
 # Changelog
 
+## [2024.6.2](https://github.com/jdx/mise/compare/v2024.6.1..v2024.6.2) - 2024-06-07
+
+### 🐛 Bug Fixes
+
+- after installing the latest version, mise rolls back to the previous one by [@roele](https://github.com/roele) in [#2258](https://github.com/jdx/mise/pull/2258)
+
+### 📚 Documentation
+
+- add SPM backend page by [@kattouf](https://github.com/kattouf) in [#2252](https://github.com/jdx/mise/pull/2252)
+
 ## [2024.6.1](https://github.com/jdx/mise/compare/v2024.6.0..v2024.6.1) - 2024-06-03
 
 ### 🚀 Features
@@ -30,7 +40,6 @@
 ### New Contributors
 
 * @chrmod made their first contribution in [#2248](https://github.com/jdx/mise/pull/2248)
-* @kattouf made their first contribution in [#2241](https://github.com/jdx/mise/pull/2241)
 
 ## [2024.6.0](https://github.com/jdx/mise/compare/v2024.5.28..v2024.6.0) - 2024-06-01
 
