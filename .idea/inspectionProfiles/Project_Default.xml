@@ -20,7 +20,7 @@
           <option value="http://localhost" />
           <option value="http://maven.apache.org/POM/" />
           <option value="http://maven.apache.org/xsd/" />
-          <option value="http://mise-versions.jdx.dev" />
+          <option value="https://mise-versions.jdx.dev" />
           <option value="http://primefaces.org/ui" />
           <option value="http://rtx-versions.jdx.dev" />
           <option value="http://schema.cloudfoundry.org/spring/" />

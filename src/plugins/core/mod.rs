@@ -97,7 +97,8 @@ impl CorePlugin {
         if !*env::MISE_USE_VERSIONS_HOST {
             return Ok(None);
         }
-        let raw = HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", &self.fa.name))?;
+        let raw =
+            HTTP_FETCH.get_text(format!("https://mise-versions.jdx.dev/{}", &self.fa.name))?;
         let versions = raw
             .lines()
             .map(|v| v.trim().to_string())
