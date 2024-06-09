@@ -165,6 +165,7 @@ fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<Stri
         .strip_prefix(root)
         .map(|p| match p {
             p if p.starts_with(".mise/tasks") => p.strip_prefix(".mise/tasks"),
+            p if p.starts_with("mise/tasks") => p.strip_prefix("mise/tasks"),
             p if p.starts_with(".config/mise/tasks") => p.strip_prefix(".config/mise/tasks"),
             _ => Ok(p),
         })??
@@ -338,6 +339,10 @@ fn config_root(config_source: &impl AsRef<Path>) -> Option<&Path> {
         if ancestor.ends_with(".config/mise/tasks") {
             return ancestor.parent()?.parent()?.parent();
         }
+
+        if ancestor.ends_with("mise/tasks") {
+            return ancestor.parent()?.parent();
+        }
     }
 
     config_source.as_ref().parent()
@@ -424,6 +429,7 @@ mod tests {
             ("/base", Some(Path::new("/"))),
             ("/base/.mise/tasks", Some(Path::new("/base"))),
             ("/base/.config/mise/tasks", Some(Path::new("/base"))),
+            ("/base/mise/tasks", Some(Path::new("/base"))),
         ];
 
         for (src, expected) in test_cases {
