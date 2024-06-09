@@ -24,14 +24,20 @@ impl AsdfPlugin {
 
     pub fn list() -> eyre::Result<PluginList> {
         let settings = Settings::get();
-        Ok(file::ls(*dirs::PLUGINS)?
-            .into_par_iter()
-            .map(|dir| {
-                let name = dir.file_name().unwrap().to_string_lossy().to_string();
-                Box::new(AsdfPlugin::new(name)) as Box<dyn Plugin>
-            })
-            .filter(|p| !settings.disable_tools.contains(p.name()))
-            .collect())
+        match file::ls(*dirs::PLUGINS) {
+            Ok(dirs) => {
+                let plugins = dirs
+                    .into_par_iter()
+                    .map(|dir| {
+                        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+                        Box::new(AsdfPlugin::new(name)) as Box<dyn Plugin>
+                    })
+                    .filter(|p| !settings.disable_tools.contains(p.name()))
+                    .collect();
+                Ok(plugins)
+            }
+            Err(_) => Ok(PluginList::new()),
+        }
     }
 }
 
