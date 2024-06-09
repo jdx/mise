@@ -132,7 +132,7 @@ impl Config {
     pub fn env_results(&self) -> eyre::Result<&EnvResults> {
         debug!("load_env: start");
         let res = self.env.get_or_try_init(|| self.load_env());
-        debug!("env_results: {:?}", &res);
+        debug!("env_results: {:#?}", &res);
         res
     }
     pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
@@ -394,7 +394,7 @@ impl Config {
             .into_iter()
             .flatten()
             .collect();
-        debug!("load_env: entries: {:?}", entries);
+        debug!("load_env: entries: {:#?}", entries);
         EnvResults::resolve(&env::PRISTINE_ENV, entries)
     }
 

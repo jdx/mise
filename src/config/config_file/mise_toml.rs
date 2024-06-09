@@ -39,7 +39,7 @@ pub struct MiseToml {
     env_file: Vec<PathBuf>,
     #[serde(default)]
     env: EnvList,
-    #[serde(default)] //, deserialize_with = "deserialize_arr")]
+    #[serde(default, deserialize_with = "deserialize_arr")]
     env_path: Vec<PathEntry>,
     #[serde(default, deserialize_with = "deserialize_alias")]
     alias: AliasMap,

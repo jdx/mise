@@ -18,14 +18,17 @@ use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env};
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
 pub enum PathEntry {
     Normal(PathBuf),
+    Lazy(PathBuf),
 }
 
 impl PathEntry {
     fn to_string_lossy(&self) -> Cow<'_, str> {
         match self {
-            PathEntry::Normal(pb) => pb.to_string_lossy()
+            PathEntry::Normal(pb) => pb.to_string_lossy(),
+            PathEntry::Lazy(pb) => pb.to_string_lossy(),
         }
     }
 }
@@ -43,7 +46,8 @@ impl AsRef<Path> for PathEntry {
     #[inline]
     fn as_ref(&self) -> &Path {
         match self {
-            PathEntry::Normal(pb) => pb.as_ref()
+            PathEntry::Normal(pb) => pb.as_ref(),
+            PathEntry::Lazy(pb) => pb.as_ref(),
         }
     }
 }
@@ -113,6 +117,8 @@ impl EnvResults {
     ) -> eyre::Result<Self> {
         let settings = Settings::get();
         let mut ctx = BASE_CONTEXT.clone();
+        debug!("resolve: input: {:#?}", &input);
+        // debug!("BASE_CONTEXT: {:#?}", &ctx);
         let mut env = initial
             .iter()
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
@@ -125,6 +131,10 @@ impl EnvResults {
             env_scripts: Vec::new(),
         };
         for (directive, source) in input {
+            debug!(
+                "resolve: directive: {:?}, source: {:?}",
+                &directive, &source
+            );
             let config_root = source
                 .parent()
                 .map(Path::to_path_buf)
@@ -136,6 +146,7 @@ impl EnvResults {
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect::<HashMap<_, _>>();
             ctx.insert("env", &env_vars);
+            //debug!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             let normalize_path = |p: PathBuf| {
                 let p = p.strip_prefix("./").unwrap_or(&p);
                 match p.strip_prefix("~/") {
@@ -155,7 +166,11 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Path(input) => {
-                    debug!("input: {:?}", &input);
+                    debug!(
+                        "resolve: input: {:?}, input.to_string(): {:?}",
+                        &input,
+                        input.to_string_lossy().as_ref()
+                    );
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
                     debug!("s: {:?}", &s);
                     env::split_paths(&s)
