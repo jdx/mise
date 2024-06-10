@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "vitepress": "1.2.2"
+    "vitepress": "1.2.3"
   },
   "scripts": {
     "docs:dev": "vitepress dev",

@@ -1026,7 +1026,7 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks` directory.
+These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
@@ -1110,8 +1110,9 @@ Examples:
 ```text
 Updates mise itself
 
-Uses the GitHub Releases API to find the latest release and binary
-By default, this will also update any installed plugins
+Uses the GitHub Releases API to find the latest release and binary.
+By default, this will also update any installed plugins.
+Uses the `GITHUB_API_TOKEN` environment variable if set for higher rate limits.
 
 Usage: self-update [OPTIONS] [VERSION]
 
@@ -1456,7 +1457,7 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks` directory.
+These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
