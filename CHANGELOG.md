@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.6.3](https://github.com/jdx/mise/compare/v2024.6.2..v2024.6.3) - 2024-06-10
+
+### 🐛 Bug Fixes
+
+- github API rate limiting could be handled more explicitly by [@roele](https://github.com/roele) in [#2274](https://github.com/jdx/mise/pull/2274)
+- group prefix not applied for script tasks by [@roele](https://github.com/roele) in [#2273](https://github.com/jdx/mise/pull/2273)
+- mise plugins ls returns error immediately after install by [@roele](https://github.com/roele) in [#2271](https://github.com/jdx/mise/pull/2271)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.2.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2277](https://github.com/jdx/mise/pull/2277)
+- update rust crate regex to v1.10.5 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2278](https://github.com/jdx/mise/pull/2278)
+- update rust crate regex to v1.10.5 by [@renovate[bot]](https://github.com/renovate[bot]) in [577de17](https://github.com/jdx/mise/commit/577de1757c4bb4e6421d3e281c44825a8b8788b8)
+
 ## [2024.6.2](https://github.com/jdx/mise/compare/v2024.6.1..v2024.6.2) - 2024-06-07
 
 ### 🐛 Bug Fixes
