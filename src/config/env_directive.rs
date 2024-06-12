@@ -18,7 +18,6 @@ use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env};
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
 pub enum PathEntry {
     Normal(PathBuf),
     Lazy(PathBuf),
