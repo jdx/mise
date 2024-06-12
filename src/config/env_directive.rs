@@ -153,7 +153,16 @@ impl EnvResults {
             env_paths: Vec::new(),
             env_scripts: Vec::new(),
         };
-        for (directive, source) in input {
+        let normalize_path = |config_root: &PathBuf, p: PathBuf| {
+            let p = p.strip_prefix("./").unwrap_or(&p);
+            match p.strip_prefix("~/") {
+                Ok(p) => dirs::HOME.join(p),
+                _ if p.is_relative() => config_root.join(p),
+                _ => p.to_path_buf(),
+            }
+        };
+        let mut lazy: bool = false;
+        for (directive, source) in input.clone() {
             debug!(
                 "resolve: directive: {:?}, source: {:?}",
                 &directive, &source
@@ -170,14 +179,6 @@ impl EnvResults {
                 .collect::<HashMap<_, _>>();
             ctx.insert("env", &env_vars);
             //debug!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
-            let normalize_path = |p: PathBuf| {
-                let p = p.strip_prefix("./").unwrap_or(&p);
-                match p.strip_prefix("~/") {
-                    Ok(p) => dirs::HOME.join(p),
-                    _ if p.is_relative() => config_root.join(p),
-                    _ => p.to_path_buf(),
-                }
-            };
             match directive {
                 EnvDirective::Val(k, v) => {
                     let v = r.parse_template(&ctx, &source, &v)?;
@@ -188,22 +189,29 @@ impl EnvResults {
                     env.shift_remove(&k);
                     r.env_remove.insert(k);
                 }
-                EnvDirective::Path(input) => {
-                    debug!(
-                        "resolve: input: {:?}, input.to_string(): {:?}",
-                        &input,
-                        input.to_string_lossy().as_ref()
-                    );
-                    let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    debug!("s: {:?}", &s);
-                    env::split_paths(&s)
-                        .map(normalize_path)
-                        .for_each(|p| r.env_paths.push(p.clone()));
-                }
+                EnvDirective::Path(input_str) => match input_str {
+                    PathEntry::Normal(input) => {
+                        debug!(
+                            "resolve: input: {:?}, input.to_string(): {:?}",
+                            &input,
+                            input.to_string_lossy().as_ref()
+                        );
+                        debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
+                        let s =
+                            r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
+                        debug!("s: {:?}", &s);
+                        env::split_paths(&s)
+                            .map(|s| normalize_path(&config_root, s.into()))
+                            .for_each(|p| r.env_paths.push(p.clone()));
+                    }
+                    PathEntry::Lazy(_input) => {
+                        lazy = true;
+                    }
+                },
                 EnvDirective::File(input) => {
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    for p in xx::file::glob(normalize_path(s.into()))? {
+                    for p in xx::file::glob(normalize_path(&config_root, s.into()))? {
                         r.env_files.push(p.clone());
                         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(&p));
                         for item in dotenvy::from_path_iter(&p).wrap_err_with(errfn)? {
@@ -217,7 +225,7 @@ impl EnvResults {
                     settings.ensure_experimental("env._.source")?;
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    for p in xx::file::glob(normalize_path(s.into()))? {
+                    for p in xx::file::glob(normalize_path(&config_root, s.into()))? {
                         r.env_scripts.push(p.clone());
                         let env_diff = EnvDiff::from_bash_script(&p, env_vars.clone())?;
                         for p in env_diff.to_patches() {
@@ -238,7 +246,7 @@ impl EnvResults {
                     trace!("python venv: {} create={create}", display_path(&path));
                     trust_check(&source)?;
                     let venv = r.parse_template(&ctx, &source, path.to_string_lossy().as_ref())?;
-                    let venv = normalize_path(venv.into());
+                    let venv = normalize_path(&config_root, venv.into());
                     if !venv.exists() && create {
                         // TODO: the toolset stuff doesn't feel like it's in the right place here
                         let config = Config::get();
@@ -282,6 +290,46 @@ impl EnvResults {
                     }
                 }
             };
+        }
+        if lazy {
+            debug!("second pass");
+            debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
+            for (directive, source) in input.into_iter().rev() {
+                debug!(
+                    "resolve: directive: {:?}, source: {:?}",
+                    &directive, &source
+                );
+                let config_root = source
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .or_else(|| dirs::CWD.clone())
+                    .unwrap_or_default();
+                ctx.insert("config_root", &config_root);
+                let env_vars = env
+                    .iter()
+                    .map(|(k, (v, _))| (k.clone(), v.clone()))
+                    .collect::<HashMap<_, _>>();
+                ctx.insert("env", &env_vars);
+                debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
+                match directive {
+                    EnvDirective::Path(input_str) => {
+                        if let PathEntry::Lazy(input) = input_str {
+                            debug!(
+                                "resolve: input: {:?}, input.to_string(): {:?}",
+                                &input,
+                                input.to_string_lossy().as_ref()
+                            );
+                            let s =
+                                r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
+                            debug!("s: {:?}", &s);
+                            env::split_paths(&s)
+                                .map(|s| normalize_path(&config_root, s.into()))
+                                .for_each(|p| r.env_paths.push(p.clone()));
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
         for (k, (v, source)) in env {
             if let Some(source) = source {
