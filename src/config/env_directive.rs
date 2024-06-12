@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
-use serde_derive::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
@@ -17,7 +17,7 @@ use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum PathEntry {
     Normal(PathBuf),
     Lazy(PathBuf),
@@ -48,6 +48,30 @@ impl AsRef<Path> for PathEntry {
             PathEntry::Normal(pb) => pb.as_ref(),
             PathEntry::Lazy(pb) => pb.as_ref(),
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for PathEntry {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Debug, Deserialize)]
+        struct ParsedPathEntry {
+            value: PathBuf,
+        }
+
+        #[derive(Debug, Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Short(PathBuf),
+            Full(ParsedPathEntry),
+        }
+
+        Ok(match Helper::deserialize(deserializer)? {
+            Helper::Short(value) => {
+                let _ = value; // parse value here
+                Self::Normal(value)
+            }
+            Helper::Full(this) => Self::Lazy(this.value),
+        })
     }
 }
 
