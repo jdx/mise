@@ -133,6 +133,12 @@ pub struct EnvResults {
     pub env_scripts: Vec<PathBuf>,
 }
 
+#[derive(Debug)]
+enum APath {
+    Normal(String, PathBuf),
+    Lazy(PathBuf, PathBuf),
+}
+
 impl EnvResults {
     pub fn resolve(
         initial: &HashMap<String, String>,
@@ -161,6 +167,7 @@ impl EnvResults {
                 _ => p.to_path_buf(),
             }
         };
+        let mut paths: Vec<APath> = Vec::new();
         for (directive, source) in input.clone() {
             debug!(
                 "resolve: directive: {:?}, source: {:?}",
@@ -177,47 +184,42 @@ impl EnvResults {
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect::<HashMap<_, _>>();
             ctx.insert("env", &env_vars);
-            //debug!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
+            debug!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v) => {
                     let v = r.parse_template(&ctx, &source, &v)?;
                     r.env_remove.remove(&k);
+                    debug!("inserting {:?}={:?} from {:?}", &k, &v, &source);
                     env.insert(k, (v, Some(source.clone())));
                 }
                 EnvDirective::Rm(k) => {
                     env.shift_remove(&k);
                     r.env_remove.insert(k);
                 }
-                EnvDirective::Path(input_str) => match input_str {
-                    PathEntry::Normal(input) => {
-                        debug!(
-                            "resolve: normal: input: {:?}, input.to_string(): {:?}",
-                            &input,
-                            input.to_string_lossy().as_ref()
-                        );
-                        debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
-                        let s =
-                            r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                        debug!("s: {:?}", &s);
-                        env::split_paths(&s)
-                            .map(|s| normalize_path(&config_root, s.into()))
-                            .for_each(|p| r.env_paths.push(p.clone()));
+                EnvDirective::Path(input_str) => {
+                    debug!("input_str: {:#?}", input_str);
+                    match input_str {
+                        PathEntry::Normal(input) => {
+                            debug!(
+                                "resolve: normal: input: {:?}, input.to_string(): {:?}",
+                                &input,
+                                input.to_string_lossy().as_ref()
+                            );
+                            let s =
+                                r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
+                            debug!("s: {:?}", &s);
+                            paths.push(APath::Normal(s, source));
+                        }
+                        PathEntry::Lazy(input) => {
+                            debug!(
+                                "resolve: lazy: input: {:?}, input.to_string(): {:?}",
+                                &input,
+                                input.to_string_lossy().as_ref()
+                            );
+                            paths.push(APath::Lazy(input, source));
+                        }
                     }
-                    PathEntry::Lazy(input) => {
-                        debug!(
-                            "resolve: lazy: input: {:?}, input.to_string(): {:?}",
-                            &input,
-                            input.to_string_lossy().as_ref()
-                        );
-                        debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
-                        let s =
-                            r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                        debug!("s: {:?}", &s);
-                        env::split_paths(&s)
-                            .map(|s| normalize_path(&config_root, s.into()))
-                            .for_each(|p| r.env_paths.push(p.clone()));
-                    }
-                },
+                }
                 EnvDirective::File(input) => {
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
@@ -301,9 +303,43 @@ impl EnvResults {
                 }
             };
         }
+        let env_vars = env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect::<HashMap<_, _>>();
+        ctx.insert("env", &env_vars);
         for (k, (v, source)) in env {
             if let Some(source) = source {
                 r.env.insert(k, (v, source));
+            }
+        }
+        debug!("paths: {:#?}", &paths);
+        debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
+        for entry in paths {
+            debug!("entry {:?}", &entry);
+            match entry {
+                APath::Normal(s, source) => {
+                    let config_root = source
+                        .parent()
+                        .map(Path::to_path_buf)
+                        .or_else(|| dirs::CWD.clone())
+                        .unwrap_or_default();
+                    env::split_paths(&s)
+                        .map(|s| normalize_path(&config_root, s.into()))
+                        .for_each(|p| r.env_paths.push(p.clone()));
+                }
+                APath::Lazy(pb, source) => {
+                    let config_root = source
+                        .parent()
+                        .map(Path::to_path_buf)
+                        .or_else(|| dirs::CWD.clone())
+                        .unwrap_or_default();
+                    let s = r.parse_template(&ctx, &source, pb.to_string_lossy().as_ref())?;
+                    debug!("s: {:?}", &s);
+                    env::split_paths(&s)
+                        .map(|s| normalize_path(&config_root, s.into()))
+                        .for_each(|p| r.env_paths.push(p.clone()));
+                }
             }
         }
         Ok(r)
