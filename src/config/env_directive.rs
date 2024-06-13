@@ -322,20 +322,17 @@ impl EnvResults {
                 .map(Path::to_path_buf)
                 .or_else(|| dirs::CWD.clone())
                 .unwrap_or_default();
-            match entry {
-                MyPath::Normal(s) => {
-                    env::split_paths(&s)
-                        .map(|s| normalize_path(&config_root, s.into()))
-                        .for_each(|p| r.env_paths.push(p.clone()));
-                }
+            let s = match entry {
+                MyPath::Normal(s) => s,
                 MyPath::Lazy(pb) => {
                     let s = r.parse_template(&ctx, &source, pb.to_string_lossy().as_ref())?;
                     debug!("s: {:?}", &s);
-                    env::split_paths(&s)
-                        .map(|s| normalize_path(&config_root, s.into()))
-                        .for_each(|p| r.env_paths.push(p.clone()));
+                    s
                 }
-            }
+            };
+            env::split_paths(&s)
+                .map(|s| normalize_path(&config_root, s.into()))
+                .for_each(|p| r.env_paths.push(p.clone()));
         }
         Ok(r)
     }
