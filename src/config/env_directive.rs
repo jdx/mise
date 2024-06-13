@@ -134,9 +134,9 @@ pub struct EnvResults {
 }
 
 #[derive(Debug)]
-enum APath {
-    Normal(String, PathBuf),
-    Lazy(PathBuf, PathBuf),
+enum MyPath {
+    Normal(String),
+    Lazy(PathBuf),
 }
 
 impl EnvResults {
@@ -167,7 +167,7 @@ impl EnvResults {
                 _ => p.to_path_buf(),
             }
         };
-        let mut paths: Vec<APath> = Vec::new();
+        let mut paths: Vec<(MyPath, PathBuf)> = Vec::new();
         for (directive, source) in input.clone() {
             debug!(
                 "resolve: directive: {:?}, source: {:?}",
@@ -208,7 +208,7 @@ impl EnvResults {
                             let s =
                                 r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
                             debug!("s: {:?}", &s);
-                            paths.push(APath::Normal(s, source));
+                            paths.push((MyPath::Normal(s), source));
                         }
                         PathEntry::Lazy(input) => {
                             debug!(
@@ -216,7 +216,7 @@ impl EnvResults {
                                 &input,
                                 input.to_string_lossy().as_ref()
                             );
-                            paths.push(APath::Lazy(input, source));
+                            paths.push((MyPath::Lazy(input), source));
                         }
                     }
                 }
@@ -315,25 +315,20 @@ impl EnvResults {
         }
         debug!("paths: {:#?}", &paths);
         debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
-        for entry in paths {
-            debug!("entry {:?}", &entry);
+        for (entry, source) in paths {
+            debug!("entry: {:?}, source: {:?}", &entry, &source);
+            let config_root = source
+                .parent()
+                .map(Path::to_path_buf)
+                .or_else(|| dirs::CWD.clone())
+                .unwrap_or_default();
             match entry {
-                APath::Normal(s, source) => {
-                    let config_root = source
-                        .parent()
-                        .map(Path::to_path_buf)
-                        .or_else(|| dirs::CWD.clone())
-                        .unwrap_or_default();
+                MyPath::Normal(s) => {
                     env::split_paths(&s)
                         .map(|s| normalize_path(&config_root, s.into()))
                         .for_each(|p| r.env_paths.push(p.clone()));
                 }
-                APath::Lazy(pb, source) => {
-                    let config_root = source
-                        .parent()
-                        .map(Path::to_path_buf)
-                        .or_else(|| dirs::CWD.clone())
-                        .unwrap_or_default();
+                MyPath::Lazy(pb) => {
                     let s = r.parse_template(&ctx, &source, pb.to_string_lossy().as_ref())?;
                     debug!("s: {:?}", &s);
                     env::split_paths(&s)
