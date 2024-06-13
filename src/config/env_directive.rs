@@ -161,7 +161,6 @@ impl EnvResults {
                 _ => p.to_path_buf(),
             }
         };
-        let mut lazy: bool = false;
         for (directive, source) in input.clone() {
             debug!(
                 "resolve: directive: {:?}, source: {:?}",
@@ -192,7 +191,7 @@ impl EnvResults {
                 EnvDirective::Path(input_str) => match input_str {
                     PathEntry::Normal(input) => {
                         debug!(
-                            "resolve: input: {:?}, input.to_string(): {:?}",
+                            "resolve: normal: input: {:?}, input.to_string(): {:?}",
                             &input,
                             input.to_string_lossy().as_ref()
                         );
@@ -204,8 +203,19 @@ impl EnvResults {
                             .map(|s| normalize_path(&config_root, s.into()))
                             .for_each(|p| r.env_paths.push(p.clone()));
                     }
-                    PathEntry::Lazy(_input) => {
-                        lazy = true;
+                    PathEntry::Lazy(input) => {
+                        debug!(
+                            "resolve: lazy: input: {:?}, input.to_string(): {:?}",
+                            &input,
+                            input.to_string_lossy().as_ref()
+                        );
+                        debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
+                        let s =
+                            r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
+                        debug!("s: {:?}", &s);
+                        env::split_paths(&s)
+                            .map(|s| normalize_path(&config_root, s.into()))
+                            .for_each(|p| r.env_paths.push(p.clone()));
                     }
                 },
                 EnvDirective::File(input) => {
@@ -290,46 +300,6 @@ impl EnvResults {
                     }
                 }
             };
-        }
-        if lazy {
-            debug!("second pass");
-            debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
-            for (directive, source) in input.into_iter().rev() {
-                debug!(
-                    "resolve: directive: {:?}, source: {:?}",
-                    &directive, &source
-                );
-                let config_root = source
-                    .parent()
-                    .map(Path::to_path_buf)
-                    .or_else(|| dirs::CWD.clone())
-                    .unwrap_or_default();
-                ctx.insert("config_root", &config_root);
-                let env_vars = env
-                    .iter()
-                    .map(|(k, (v, _))| (k.clone(), v.clone()))
-                    .collect::<HashMap<_, _>>();
-                ctx.insert("env", &env_vars);
-                debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
-                match directive {
-                    EnvDirective::Path(input_str) => {
-                        if let PathEntry::Lazy(input) = input_str {
-                            debug!(
-                                "resolve: input: {:?}, input.to_string(): {:?}",
-                                &input,
-                                input.to_string_lossy().as_ref()
-                            );
-                            let s =
-                                r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                            debug!("s: {:?}", &s);
-                            env::split_paths(&s)
-                                .map(|s| normalize_path(&config_root, s.into()))
-                                .for_each(|p| r.env_paths.push(p.clone()));
-                        }
-                    }
-                    _ => {}
-                }
-            }
         }
         for (k, (v, source)) in env {
             if let Some(source) = source {
