@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io::Stderr;
 use std::path::{Path, PathBuf};
 
 use eyre::Result;
@@ -6,6 +7,7 @@ use serde_derive::Deserialize;
 use tempfile::tempdir_in;
 use url::Url;
 
+use crate::Report;
 use crate::backend::Backend;
 use crate::build_time::built_info;
 use crate::cli::args::BackendArg;
@@ -22,6 +24,35 @@ use crate::{env, file, hash, http};
 #[derive(Debug)]
 pub struct NodePlugin {
     core: CorePlugin,
+}
+
+fn parse_from_package_json(path: String, body: &String) -> Option<String> {
+    if path.contains("package.json") {
+        let json: serde_json::Value =
+            serde_json::from_str(&body).expect("JSON was not well-formatted");
+        let engines_node: Option<&str> = json
+            .get("engines")
+            .and_then(|value| value.get("node"))
+            .and_then(|value| value.as_str());
+        if engines_node.is_some() {
+            let version = engines_node.unwrap().to_string();
+            if version != "" {
+                return Option::Some(version);
+            }
+        }
+        let volta_node: Option<&str> = json
+            .get("volta")
+            .and_then(|value| value.get("node"))
+            .and_then(|value| value.as_str());
+        if volta_node.is_some() {
+            let version = volta_node.unwrap().to_string();
+            println!("Assign version -> {}", version);
+            if version != "" {
+                return Option::Some(version);
+            }
+        }
+    }
+    return Option::None;
 }
 
 impl NodePlugin {
@@ -279,7 +310,12 @@ impl Backend for NodePlugin {
     }
 
     fn parse_legacy_file(&self, path: &Path) -> Result<String> {
+        let str = path.to_str().unwrap();
         let body = file::read_to_string(path)?;
+        let package_json = parse_from_package_json(str.to_string(), &body);
+        if package_json.is_some() {
+            return Ok(package_json.unwrap());
+        }
         // strip comments
         let body = body.split('#').next().unwrap_or_default().to_string();
         // trim "v" prefix
