@@ -22,6 +22,13 @@ pub enum PathEntry {
     Lazy(PathBuf),
 }
 
+impl From<&str> for PathEntry {
+    fn from(s: &str) -> Self {
+        let pb = PathBuf::from(s);
+        Self::Normal(pb)
+    }
+}
+
 impl FromStr for PathEntry {
     type Err = eyre::Error;
 
