@@ -321,7 +321,7 @@ impl EnvResults {
                 }
             };
             env::split_paths(&s)
-                .map(|s| normalize_path(&config_root, s.into()))
+                .map(|s| normalize_path(&config_root, s))
                 .for_each(|p| r.env_paths.push(p.clone()));
         }
         Ok(r)
