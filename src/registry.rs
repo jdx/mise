@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use once_cell::sync::Lazy;
 
 const _REGISTRY: &[(&str, &str)] = &[
-    ("ubi", "cargo:ubi"),
     ("cargo-binstall", "cargo:cargo-binstall"),
     // ("elixir", "asdf:mise-plugins/mise-elixir"),
 ];

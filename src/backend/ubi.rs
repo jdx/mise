@@ -1,10 +1,11 @@
 use std::fmt::Debug;
 
+use eyre::eyre;
+
 use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
-use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Settings;
 use crate::env::GITHUB_TOKEN;
 use crate::github;
 use crate::install_context::InstallContext;
@@ -28,10 +29,9 @@ impl Backend for UbiBackend {
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        Ok(vec!["cargo:ubi".into()])
+        Ok(vec![])
     }
 
-    // TODO: v0.0.3 is stripped of 'v' such that it reports incorrectly in tool :-/
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         if name_is_url(self.name()) {
             Ok(vec!["latest".to_string()])
@@ -49,31 +49,31 @@ impl Backend for UbiBackend {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let config = Config::try_get()?;
         let settings = Settings::get();
         let version = &ctx.tv.version;
         settings.ensure_experimental("ubi backend")?;
         // Workaround because of not knowing how to pull out the value correctly without quoting
         let path_with_bin = ctx.tv.install_path().join("bin");
 
-        let mut cmd = CmdLineRunner::new("ubi")
-            .arg("--in")
-            .arg(path_with_bin)
-            .arg("--project")
-            .arg(self.name())
-            .with_pr(ctx.pr.as_ref())
-            .envs(ctx.ts.env_with_path(&config)?)
-            .prepend_path(ctx.ts.list_paths())?;
+        let mut builder = ubi::UbiBuilder::new()
+            .project(self.name())
+            .install_dir(path_with_bin);
 
         if let Some(token) = &*GITHUB_TOKEN {
-            cmd = cmd.env("GITHUB_TOKEN", token);
+            builder = builder.github_token(token);
         }
 
         if version != "latest" {
-            cmd = cmd.arg("--tag").arg(version);
+            builder = builder.tag(version);
         }
 
-        cmd.execute()
+        let u = builder.build().map_err(|e| eyre!(Box::new(e)))?;
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()?;
+        rt.block_on(u.install_binary())
+            .map_err(|e| eyre!(Box::new(e)))
     }
 }
 
