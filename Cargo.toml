@@ -126,6 +126,8 @@ which = "6.0.1"
 xx = { version = "1.0.0", features = ["glob"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
+ubi = { git = "https://github.com/houseabsolute/ubi.git", branch = "library-ize" }
+
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.29", features = ["signal", "user"] }

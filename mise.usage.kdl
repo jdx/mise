@@ -734,7 +734,6 @@ cmd "registry" help="[experimental] List available tools" {
     $ mise registry
     node    core:node
     poetry  asdf:mise-plugins/mise-poetry
-    ubi     cargo:ubi
 "
 }
 cmd "reshim" help="rebuilds the shim farm" {
