@@ -39,7 +39,7 @@ pub struct MiseToml {
     env_file: Vec<PathBuf>,
     #[serde(default)]
     env: EnvList,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_arr")]
     env_path: Vec<PathEntry>,
     #[serde(default, deserialize_with = "deserialize_alias")]
     alias: AliasMap,
@@ -445,7 +445,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[derive(Deserialize)]
                             #[serde(deny_unknown_fields)]
                             struct EnvDirectives {
-                                #[serde(default)]
+                                #[serde(default, deserialize_with = "deserialize_arr")]
                                 path: Vec<PathEntry>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
                                 file: Vec<PathBuf>,
