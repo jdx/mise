@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
@@ -21,15 +20,6 @@ use crate::{dirs, env};
 pub enum PathEntry {
     Normal(PathBuf),
     Lazy(PathBuf),
-}
-
-impl PathEntry {
-    fn to_string_lossy(&self) -> Cow<'_, str> {
-        match self {
-            PathEntry::Normal(pb) => pb.to_string_lossy(),
-            PathEntry::Lazy(pb) => pb.to_string_lossy(),
-        }
-    }
 }
 
 impl FromStr for PathEntry {
