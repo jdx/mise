@@ -62,7 +62,7 @@ eyre = "0.6.12"
 filetime = "0.2.23"
 flate2 = "1.0.30"
 fslock = "0.2.1"
-git2 = "0.18.3"
+git2 = {version = "0.18.3", features = ["vendored-libgit2"] }
 globset = "0.4.14"
 globwalk = "0.9.1"
 heck = "0.5"
