@@ -1,5 +1,15 @@
 # Changelog
 
+## [2024.6.4](https://github.com/jdx/mise/compare/v2024.6.3..v2024.6.4) - 2024-06-15
+
+### 🐛 Bug Fixes
+
+- allow glob patterns in task outputs and sources by [@adamdickinson](https://github.com/adamdickinson) in [#2286](https://github.com/jdx/mise/pull/2286)
+
+### New Contributors
+
+* @adamdickinson made their first contribution in [#2286](https://github.com/jdx/mise/pull/2286)
+
 ## [2024.6.3](https://github.com/jdx/mise/compare/v2024.6.2..v2024.6.3) - 2024-06-10
 
 ### 🐛 Bug Fixes
