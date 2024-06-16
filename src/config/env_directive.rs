@@ -130,12 +130,6 @@ pub struct EnvResults {
     pub env_scripts: Vec<PathBuf>,
 }
 
-#[derive(Debug)]
-enum MyPath {
-    Normal(String),
-    Lazy(PathBuf),
-}
-
 impl EnvResults {
     pub fn resolve(
         initial: &HashMap<String, String>,
@@ -164,7 +158,7 @@ impl EnvResults {
                 _ => p.to_path_buf(),
             }
         };
-        let mut paths: Vec<(MyPath, PathBuf)> = Vec::new();
+        let mut paths: Vec<(PathEntry, PathBuf)> = Vec::new();
         for (directive, source) in input.clone() {
             debug!(
                 "resolve: directive: {:?}, source: {:?}",
@@ -205,7 +199,7 @@ impl EnvResults {
                             let s =
                                 r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
                             debug!("s: {:?}", &s);
-                            paths.push((MyPath::Normal(s), source));
+                            paths.push((PathEntry::Normal(s.into()), source));
                         }
                         PathEntry::Lazy(input) => {
                             debug!(
@@ -213,7 +207,7 @@ impl EnvResults {
                                 &input,
                                 input.to_string_lossy().as_ref()
                             );
-                            paths.push((MyPath::Lazy(input), source));
+                            paths.push((PathEntry::Lazy(input), source));
                         }
                     }
                 }
@@ -320,8 +314,8 @@ impl EnvResults {
                 .or_else(|| dirs::CWD.clone())
                 .unwrap_or_default();
             let s = match entry {
-                MyPath::Normal(s) => s,
-                MyPath::Lazy(pb) => {
+                PathEntry::Normal(pb) => pb.to_string_lossy().to_string(),
+                PathEntry::Lazy(pb) => {
                     let s = r.parse_template(&ctx, &source, pb.to_string_lossy().as_ref())?;
                     debug!("s: {:?}", &s);
                     s
