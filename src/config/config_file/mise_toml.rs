@@ -445,7 +445,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[derive(Deserialize)]
                             #[serde(deny_unknown_fields)]
                             struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_arr")]
+                                #[serde(default)]
                                 path: Vec<PathEntry>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
                                 file: Vec<PathBuf>,
