@@ -36,6 +36,11 @@ Now that `mise` is installed, you can optionally activate it or add its [shims](
 For interactive shells, `mise activate` is recommended. In non-interactive sessions, like CI/CD, IDEs, and scripts, using `shims` might work best. You can also not use any and call `mise exec/run` directly instead.
 See [this guide](dev-tools/shims.md) for more information.
 
+:::info
+Activation may be handled automatically if you use fish shell and installed via homebrew. This
+can be disabled with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`.
+:::
+
 ::: code-group
 
 ```sh [bash]
