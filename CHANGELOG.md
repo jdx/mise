@@ -1,5 +1,15 @@
 # Changelog
 
+## [2024.6.5](https://github.com/jdx/mise/compare/v2024.6.4..v2024.6.5) - 2024-06-18
+
+### 🔍 Other Changes
+
+- Fixes nix flake by [@laozc](https://github.com/laozc) in [#2305](https://github.com/jdx/mise/pull/2305)
+
+### New Contributors
+
+* @laozc made their first contribution in [#2305](https://github.com/jdx/mise/pull/2305)
+
 ## [2024.6.4](https://github.com/jdx/mise/compare/v2024.6.3..v2024.6.4) - 2024-06-15
 
 ### 🐛 Bug Fixes
