@@ -445,6 +445,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[derive(Deserialize)]
                             #[serde(deny_unknown_fields)]
                             struct EnvDirectives {
+                                // TODO:
+                                //  Adding
+                                //      deserialize_with = "deserialize_arr"
+                                //  to the following directive fixes 3 of 4 failing tests
+                                //  but causes parsing of a lazy path entry to fail with
+                                //      invalid type: map, expected a string
                                 #[serde(default)]
                                 path: Vec<PathEntry>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
