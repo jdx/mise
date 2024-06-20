@@ -150,7 +150,7 @@ impl Asdf {
             return Ok(None);
         }
         let versions =
-            match HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", self.name)) {
+            match HTTP_FETCH.get_text(format!("https://mise-versions.jdx.dev/{}", self.name)) {
                 Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
                 res => res?,
             };

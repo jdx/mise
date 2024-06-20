@@ -108,7 +108,7 @@ fn get_latest_version_call() -> Option<String> {
 
 #[cfg(not(test))]
 fn get_latest_version_call() -> Option<String> {
-    const URL: &str = "http://mise.jdx.dev/VERSION";
+    const URL: &str = "https://mise.jdx.dev/VERSION";
     debug!("checking mise version from {}", URL);
     match crate::http::HTTP_VERSION_CHECK.get_text(URL) {
         Ok(text) => {
