@@ -1,5 +1,21 @@
 # Changelog
 
+## [2024.6.6](https://github.com/jdx/mise/compare/v2024.6.5..v2024.6.6) - 2024-06-20
+
+### 🐛 Bug Fixes
+
+- improve error message for missing plugins by [@jdx](https://github.com/jdx) in [#2313](https://github.com/jdx/mise/pull/2313)
+
+### 🔍 Other Changes
+
+- Update configuration.md by [@jdx](https://github.com/jdx) in [a2f19cb](https://github.com/jdx/mise/commit/a2f19cbc655058472009d000c77d1fc8df8612fd)
+- Update index.md by [@jdx](https://github.com/jdx) in [d9ef467](https://github.com/jdx/mise/commit/d9ef467ee9ef026039fa2220163f21a2214ebbfc)
+- Update index.md by [@jdx](https://github.com/jdx) in [63739c8](https://github.com/jdx/mise/commit/63739c880dbfefdecab282736710d496d7e88dbc)
+
+### 📦️ Dependency Updates
+
+- bump curve25519-dalek from 4.1.2 to 4.1.3 by [@dependabot[bot]](https://github.com/dependabot[bot]) in [#2306](https://github.com/jdx/mise/pull/2306)
+
 ## [2024.6.5](https://github.com/jdx/mise/compare/v2024.6.4..v2024.6.5) - 2024-06-18
 
 ### 🔍 Other Changes
