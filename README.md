@@ -52,6 +52,7 @@ Hook mise into your shell (pick the right one for your shell):
 ```sh-session
 # note this assumes mise is located at ~/.local/bin/mise
 # which is what https://mise.run does by default
+# if you installed via homebrew, the fish shell activation is handled automatically
 echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
 echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
