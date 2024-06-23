@@ -50,7 +50,6 @@ impl Backend for UbiBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let settings = Settings::get();
-        let version = &ctx.tv.version;
         settings.ensure_experimental("ubi backend")?;
         // Workaround because of not knowing how to pull out the value correctly without quoting
         let path_with_bin = ctx.tv.install_path().join("bin");
@@ -63,6 +62,7 @@ impl Backend for UbiBackend {
             builder = builder.github_token(token);
         }
 
+        let version = &ctx.tv.version;
         if version != "latest" {
             builder = builder.tag(version);
         }
