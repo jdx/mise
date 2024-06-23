@@ -1186,6 +1186,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
+
+[[package]]
 name = "globset"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1944,7 +1950,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.6.3"
+version = "2024.6.6"
 dependencies = [
  "assert_cmd",
  "base64 0.22.1",
@@ -1970,8 +1976,8 @@ dependencies = [
  "flate2",
  "fslock",
  "git2",
+ "glob",
  "globset",
- "globwalk",
  "heck 0.5.0",
  "home",
  "humantime",

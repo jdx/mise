@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.6.3"
+version = "2024.6.6"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -63,8 +63,8 @@ filetime = "0.2.23"
 flate2 = "1.0.30"
 fslock = "0.2.1"
 git2 = "0.18.3"
+glob = "0.3.1"
 globset = "0.4.14"
-globwalk = "0.9.1"
 heck = "0.5"
 home = "0.5.9"
 humantime = "2.1.0"

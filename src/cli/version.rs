@@ -78,7 +78,7 @@ fn show_latest() {
 }
 
 pub fn check_for_new_version(cache_duration: Duration) -> Option<String> {
-    if let Some(latest) = get_latest_version(cache_duration).and_then(|v| Versioning::new(&v)) {
+    if let Some(latest) = get_latest_version(cache_duration).and_then(Versioning::new) {
         if *V < latest {
             return Some(latest.to_string());
         }

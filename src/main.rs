@@ -1,12 +1,9 @@
-use std::process::exit;
-
 use color_eyre::{Section, SectionExt};
 use eyre::Report;
 use itertools::Itertools;
 
 use crate::cli::version::VERSION;
 use crate::cli::Cli;
-use crate::ui::style;
 
 #[cfg(test)]
 #[macro_use]
@@ -79,17 +76,17 @@ fn handle_err(err: Report) -> eyre::Result<()> {
             return Ok(());
         }
     }
-    if log::max_level() < log::LevelFilter::Debug {
-        display_friendly_err(err);
-        exit(1);
-    }
+    // if log::max_level() < log::LevelFilter::Debug {
+    //     display_friendly_err(err);
+    //     exit(1);
+    // }
     Err(err)
 }
 
-fn display_friendly_err(err: Report) {
-    for err in err.chain() {
-        error!("{err}");
-    }
-    let msg = style::edim("Run with --verbose or MISE_VERBOSE=1 for more information");
-    error!("{msg}");
-}
+// fn display_friendly_err(err: Report) {
+//     for err in err.chain() {
+//         error!("{err}");
+//     }
+//     let msg = style::edim("Run with --verbose or MISE_VERBOSE=1 for more information");
+//     error!("{msg}");
+// }

@@ -15,7 +15,7 @@ use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
 use either::Either;
 use eyre::{bail, ensure, eyre, Result};
-use globwalk::GlobWalkerBuilder;
+use glob::glob;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
@@ -479,7 +479,7 @@ impl Run {
 
 fn is_glob_pattern(path: &str) -> bool {
     // This is the character set used for glob
-    // detection by globwalk
+    // detection by glob
     let glob_chars = ['*', '{', '}'];
 
     path.chars().any(|c| glob_chars.contains(&c))
@@ -512,12 +512,24 @@ fn last_modified_glob_match(
     if patterns.is_empty() {
         return Ok(None);
     }
-    let files = GlobWalkerBuilder::from_patterns(root, patterns)
-        .follow_links(true)
-        .build()?
+    let files = patterns
+        .iter()
+        .flat_map(|pattern| {
+            glob(
+                root.as_ref()
+                    .join(pattern)
+                    .to_str()
+                    .expect("Conversion to string path failed"),
+            )
+            .unwrap()
+        })
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.path().to_owned());
+        .filter(|e| {
+            e.metadata()
+                .expect("Metadata call failed")
+                .file_type()
+                .is_file()
+        });
 
     last_modified_file(files)
 }

@@ -9,6 +9,7 @@ use std::sync::{Arc, RwLock};
 
 use clap::Command;
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
+use color_eyre::Section;
 use console::style;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -150,6 +151,7 @@ impl Asdf {
             return Ok(None);
         }
         let versions =
+            // using http is not a security concern and enabling tls makes mise significantly slower
             match HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", self.name)) {
                 Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
                 res => res?,
@@ -503,6 +505,14 @@ impl Backend for Asdf {
 
     fn is_installed(&self) -> bool {
         self.plugin_path.exists()
+    }
+
+    fn is_installed_err(&self) -> eyre::Result<()> {
+        if self.is_installed() {
+            return Ok(());
+        }
+        Err(eyre!("asdf plugin {} is not installed", self.id())
+            .suggestion("run with --yes to install plugin automatically"))
     }
 
     fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {

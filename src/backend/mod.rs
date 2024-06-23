@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use clap::Command;
 use console::style;
 use contracts::requires;
-use eyre::{bail, ensure, eyre, WrapErr};
+use eyre::{bail, eyre, WrapErr};
 use itertools::Itertools;
 use rayon::prelude::*;
 use regex::Regex;
@@ -295,6 +295,12 @@ pub trait Backend: Debug + Send + Sync {
     fn is_installed(&self) -> bool {
         true
     }
+    fn is_installed_err(&self) -> eyre::Result<()> {
+        if self.is_installed() {
+            return Ok(());
+        }
+        bail!("{} is not installed", self.id())
+    }
     fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> eyre::Result<()> {
         Ok(())
     }
@@ -345,7 +351,7 @@ pub trait Backend: Debug + Send + Sync {
 
     #[requires(ctx.tv.backend.backend_type == self.get_type())]
     fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
-        ensure!(self.is_installed(), "{} is not installed", self.id());
+        self.is_installed_err()?;
         let config = Config::get();
         let settings = Settings::try_get()?;
         if self.is_version_installed(&ctx.tv) {

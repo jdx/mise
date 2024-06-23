@@ -1,8 +1,8 @@
-{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, openssl }:
+{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, openssl, git }:
 
 rustPlatform.buildRustPackage {
   pname = "mise";
-  version = "2024.6.3";
+  version = "2024.6.6";
 
   src = lib.cleanSource ./.;
 
@@ -22,17 +22,17 @@ rustPlatform.buildRustPackage {
   ] ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security darwin.apple_sdk.frameworks.SystemConfiguration ];
 
   prePatch = ''
-    substituteInPlace ./test/data/plugins/**/bin/* \
-      --replace '#!/usr/bin/env bash' '#!${bash}/bin/bash'
-    substituteInPlace ./src/fake_asdf.rs ./src/cli/reshim.rs \
-      --replace '#!/bin/sh' '#!${bash}/bin/sh'
+    substituteInPlace ./src/test.rs ./test/data/plugins/**/bin/* \
+      --replace '/usr/bin/env bash' '${bash}/bin/bash'
+    substituteInPlace ./src/fake_asdf.rs ./src/cli/generate/git_pre_commit.rs ./src/cli/generate/snapshots/*.snap \
+      --replace '/bin/sh' '${bash}/bin/sh'
     substituteInPlace ./src/env_diff.rs \
       --replace '"bash"' '"${bash}/bin/bash"'
-    substituteInPlace ./test/cwd/.mise/tasks/filetask \
-      --replace '#!/usr/bin/env bash' '#!${bash}/bin/bash'
     substituteInPlace ./src/cli/direnv/exec.rs \
       --replace '"env"' '"${coreutils}/bin/env"' \
       --replace 'cmd!("direnv"' 'cmd!("${direnv}/bin/direnv"'
+    substituteInPlace ./src/git.rs ./src/test.rs \
+      --replace '"git"' '"${git}/bin/git"'
   '';
 
   # Skip the test_plugin_list_urls as it uses the .git folder, which

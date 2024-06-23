@@ -48,10 +48,6 @@ erlang = ['23.3', '24.0']
 # supports everything you can do with .tool-versions currently
 node = ['16', 'prefix:20', 'ref:master', 'path:~/.nodes/14']
 
-# send arbitrary options to the plugin, passed as:
-# MISE_TOOL_OPTS__VENV=.venv
-python = { version = '3.10', virtualenv = '.venv' }
-
 [plugins]
 # specify a custom repo url
 # note this will only be used if the plugin does not already exist
