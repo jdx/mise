@@ -1567,15 +1567,6 @@ checksum = "f8478577c03552c21db0e2724ffb8986a5ce7af88107e6be5d2ee6e158c12800"
 
 [[package]]
 name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
@@ -1861,7 +1852,7 @@ dependencies = [
  "indicatif",
  "indoc",
  "insta",
- "itertools 0.13.0",
+ "itertools",
  "log",
  "num_cpus",
  "once_cell",
@@ -3553,7 +3544,7 @@ checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
 [[package]]
 name = "ubi"
 version = "0.1.0"
-source = "git+https://github.com/houseabsolute/ubi.git?branch=library-ize#0066eaa0ba163d517c5d28dc857f1665bdf2da48"
+source = "git+https://github.com/houseabsolute/ubi.git?branch=library-ize#efcf1bb05075d51e28ba012243add715d55e7981"
 dependencies = [
  "anyhow",
  "binstall-tar",
@@ -3561,7 +3552,7 @@ dependencies = [
  "clap",
  "fern",
  "flate2",
- "itertools 0.12.1",
+ "itertools",
  "lazy-regex",
  "log",
  "platforms",
@@ -3701,7 +3692,7 @@ dependencies = [
  "clap",
  "heck 0.5.0",
  "indexmap 2.2.6",
- "itertools 0.13.0",
+ "itertools",
  "kdl",
  "log",
  "miette",
@@ -3743,7 +3734,7 @@ version = "6.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fc28d1172a20e32754969ea1a873c2c6e68e36c449c6056aa3e2ee5fe69a794"
 dependencies = [
- "itertools 0.13.0",
+ "itertools",
  "nom",
  "serde",
 ]
