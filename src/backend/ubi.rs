@@ -67,6 +67,15 @@ impl Backend for UbiBackend {
             builder = builder.tag(version);
         }
 
+        let exe = std::env::var("MISE_TOOL_OPTS__EXE").unwrap_or(String::new());
+        if !exe.is_empty() {
+            builder = builder.exe(&exe);
+        }
+        let matching = std::env::var("MISE_TOOL_OPTS__MATCHING").unwrap_or(String::new());
+        if !matching.is_empty() {
+            builder = builder.matching(&matching);
+        }
+
         let u = builder.build().map_err(|e| eyre!(Box::new(e)))?;
 
         let rt = tokio::runtime::Builder::new_current_thread()
