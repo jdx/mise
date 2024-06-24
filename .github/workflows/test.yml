@@ -43,7 +43,7 @@ jobs:
         run: |
           echo "AWS_ACCESS_KEY_ID=$MINIO_AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
           echo "AWS_SECRET_ACCESS_KEY=$MINIO_AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
-      - uses: mozilla-actions/sccache-action@v0.0.4
+      - uses: mozilla-actions/sccache-action@v0.0.5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with: { toolchain: stable, components: rustfmt }
       - uses: taiki-e/install-action@v2
@@ -94,7 +94,7 @@ jobs:
         run: |
           echo "AWS_ACCESS_KEY_ID=$MINIO_AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
           echo "AWS_SECRET_ACCESS_KEY=$MINIO_AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
-      - uses: mozilla-actions/sccache-action@v0.0.4
+      - uses: mozilla-actions/sccache-action@v0.0.5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           { toolchain: nightly, components: "rustfmt, clippy", rustflags: "" }
@@ -138,7 +138,7 @@ jobs:
         run: |
           echo "AWS_ACCESS_KEY_ID=$MINIO_AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
           echo "AWS_SECRET_ACCESS_KEY=$MINIO_AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
-      - uses: mozilla-actions/sccache-action@v0.0.4
+      - uses: mozilla-actions/sccache-action@v0.0.5
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
