@@ -63,9 +63,7 @@ impl<'de> Deserialize<'de> for PathEntry {
         }
 
         Ok(match Helper::deserialize(deserializer)? {
-            Helper::Normal(value) => {
-                Self::Normal(value)
-            }
+            Helper::Normal(value) => Self::Normal(value),
             Helper::Lazy(this) => Self::Lazy(this.value),
         })
     }
