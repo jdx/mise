@@ -51,23 +51,22 @@ impl AsRef<Path> for PathEntry {
 impl<'de> Deserialize<'de> for PathEntry {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Debug, Deserialize)]
-        struct ParsedPathEntry {
+        struct MapPathEntry {
             value: PathBuf,
         }
 
         #[derive(Debug, Deserialize)]
         #[serde(untagged)]
         enum Helper {
-            Short(PathBuf),
-            Full(ParsedPathEntry),
+            Normal(PathBuf),
+            Lazy(MapPathEntry),
         }
 
         Ok(match Helper::deserialize(deserializer)? {
-            Helper::Short(value) => {
-                let _ = value; // parse value here
+            Helper::Normal(value) => {
                 Self::Normal(value)
             }
-            Helper::Full(this) => Self::Lazy(this.value),
+            Helper::Lazy(this) => Self::Lazy(this.value),
         })
     }
 }
