@@ -137,8 +137,7 @@ impl EnvResults {
     ) -> eyre::Result<Self> {
         let settings = Settings::get();
         let mut ctx = BASE_CONTEXT.clone();
-        debug!("resolve: input: {:#?}", &input);
-        // debug!("BASE_CONTEXT: {:#?}", &ctx);
+        trace!("resolve: input: {:#?}", &input);
         let mut env = initial
             .iter()
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
@@ -160,7 +159,7 @@ impl EnvResults {
         };
         let mut paths: Vec<(PathEntry, PathBuf)> = Vec::new();
         for (directive, source) in input.clone() {
-            debug!(
+            trace!(
                 "resolve: directive: {:?}, source: {:?}",
                 &directive, &source
             );
@@ -175,12 +174,12 @@ impl EnvResults {
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect::<HashMap<_, _>>();
             ctx.insert("env", &env_vars);
-            debug!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
+            trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v) => {
                     let v = r.parse_template(&ctx, &source, &v)?;
                     r.env_remove.remove(&k);
-                    debug!("inserting {:?}={:?} from {:?}", &k, &v, &source);
+                    trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
                     env.insert(k, (v, Some(source.clone())));
                 }
                 EnvDirective::Rm(k) => {
@@ -188,21 +187,21 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Path(input_str) => {
-                    debug!("input_str: {:#?}", input_str);
+                    trace!("resolve: input_str: {:#?}", input_str);
                     match input_str {
                         PathEntry::Normal(input) => {
-                            debug!(
+                            trace!(
                                 "resolve: normal: input: {:?}, input.to_string(): {:?}",
                                 &input,
                                 input.to_string_lossy().as_ref()
                             );
                             let s =
                                 r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                            debug!("s: {:?}", &s);
+                            trace!("resolve: s: {:?}", &s);
                             paths.push((PathEntry::Normal(s.into()), source));
                         }
                         PathEntry::Lazy(input) => {
-                            debug!(
+                            trace!(
                                 "resolve: lazy: input: {:?}, input.to_string(): {:?}",
                                 &input,
                                 input.to_string_lossy().as_ref()
@@ -304,10 +303,10 @@ impl EnvResults {
                 r.env.insert(k, (v, source));
             }
         }
-        debug!("paths: {:#?}", &paths);
-        debug!("resolve: ctx.env: {:#?}", &ctx.get("env"));
+        trace!("resolve: paths: {:#?}", &paths);
+        trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
         for (entry, source) in paths {
-            debug!("entry: {:?}, source: {:?}", &entry, &source);
+            trace!("resolve: entry: {:?}, source: {:?}", &entry, &source);
             let config_root = source
                 .parent()
                 .map(Path::to_path_buf)
@@ -317,7 +316,7 @@ impl EnvResults {
                 PathEntry::Normal(pb) => pb.to_string_lossy().to_string(),
                 PathEntry::Lazy(pb) => {
                     let s = r.parse_template(&ctx, &source, pb.to_string_lossy().as_ref())?;
-                    debug!("s: {:?}", &s);
+                    trace!("resolve: s: {:?}", &s);
                     s
                 }
             };

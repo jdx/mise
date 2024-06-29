@@ -75,7 +75,7 @@ impl Config {
             .cloned()
             .collect_vec();
         let config_paths = load_config_paths(&config_filenames);
-        debug!("config_paths: {:?}", config_paths);
+        trace!("load: config_paths: {:?}", config_paths);
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
 
         let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
@@ -130,9 +130,9 @@ impl Config {
         })
     }
     pub fn env_results(&self) -> eyre::Result<&EnvResults> {
-        debug!("load_env: start");
+        trace!("env_results: start");
         let res = self.env.get_or_try_init(|| self.load_env());
-        debug!("env_results: {:#?}", &res);
+        trace!("env_results: {:#?}", &res);
         res
     }
     pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
@@ -394,7 +394,7 @@ impl Config {
             .into_iter()
             .flatten()
             .collect();
-        debug!("load_env: entries: {:#?}", entries);
+        trace!("load_env: entries: {:#?}", entries);
         EnvResults::resolve(&env::PRISTINE_ENV, entries)
     }
 
