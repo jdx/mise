@@ -26,6 +26,8 @@ $ python3.11 -V
 3.11.0
 ```
 
+See available versions with `mise ls-remote python`.
+
 ## Configuration
 
 `python-build` already has
