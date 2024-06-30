@@ -158,7 +158,8 @@ impl EnvResults {
         for (directive, source) in input.clone() {
             trace!(
                 "resolve: directive: {:?}, source: {:?}",
-                &directive, &source
+                &directive,
+                &source
             );
             let config_root = source
                 .parent()

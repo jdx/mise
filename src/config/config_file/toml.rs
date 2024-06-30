@@ -1,7 +1,7 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::str::FromStr;
-use std::fmt::Debug;
 
 use either::Either;
 use serde::de;
