@@ -134,6 +134,7 @@ cmd "backends" help="Manage backends" {
   go
   npm
   pipx
+  spm
   ubi
 "
     }
@@ -779,7 +780,7 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks` directory.
+These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
@@ -827,8 +828,9 @@ The name of the script will be the name of the tasks.
 cmd "self-update" help="Updates mise itself" {
     long_help r"Updates mise itself
 
-Uses the GitHub Releases API to find the latest release and binary
-By default, this will also update any installed plugins"
+Uses the GitHub Releases API to find the latest release and binary.
+By default, this will also update any installed plugins.
+Uses the `GITHUB_API_TOKEN` environment variable if set for higher rate limits."
     flag "-f --force" help="Update even if already up to date"
     flag "--no-plugins" help="Disable auto-updating plugins"
     flag "-y --yes" help="Skip confirmation prompt"
@@ -1052,7 +1054,7 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks` directory.
+These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF

@@ -27,6 +27,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   go
   npm
   pipx
+  spm
   ubi
 "#
 );

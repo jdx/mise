@@ -14,7 +14,7 @@ pub struct RenderHelp {}
 
 impl RenderHelp {
     pub fn run(self) -> Result<()> {
-        let readme = file::read_to_string("docs/cli-reference.md")?;
+        let readme = file::read_to_string("docs/cli/index.md")?;
         let mut current_readme = readme.split("<!-- MISE:COMMANDS -->");
 
         let mut doc = String::new();
@@ -23,7 +23,7 @@ impl RenderHelp {
         doc.push_str(render_commands().as_str());
         doc.push_str(current_readme.next().unwrap());
         doc = remove_trailing_spaces(&doc) + "\n";
-        file::write("docs/cli-reference.md", &doc)?;
+        file::write("docs/cli/index.md", &doc)?;
         Ok(())
     }
 }
@@ -125,9 +125,9 @@ mod tests {
     #[test]
     fn test_render_help() {
         reset();
-        file::create_dir_all("docs").unwrap();
+        file::create_dir_all("docs/cli").unwrap();
         file::write(
-            "docs/cli-reference.md",
+            "docs/cli/index.md",
             indoc! {r#"
             <!-- MISE:COMMANDS -->
             <!-- MISE:COMMANDS -->
@@ -135,8 +135,8 @@ mod tests {
         )
         .unwrap();
         assert_cli!("render-help");
-        let readme = fs::read_to_string("docs/cli-reference.md").unwrap();
+        let readme = fs::read_to_string("docs/cli/index.md").unwrap();
         assert!(readme.contains("# Commands"));
-        file::remove_file("docs/cli-reference.md").unwrap();
+        file::remove_file("docs/cli/index.md").unwrap();
     }
 }

@@ -5,8 +5,8 @@ echo "::group::Setup"
 git config --global user.name mise-en-dev
 git config --global user.email 123107610+mise-en-dev@users.noreply.github.com
 
-BASE_DIR="$(cd mise && pwd)"
-MISE_VERSION=$(cd mise && ./scripts/get-version.sh)
+BASE_DIR="$(pwd)"
+MISE_VERSION=$(./scripts/get-version.sh)
 RELEASE_DIR=releases
 export BASE_DIR MISE_VERSION RELEASE_DIR
 rm -rf "${RELEASE_DIR:?}/$MISE_VERSION"
@@ -65,28 +65,16 @@ gpg --clearsign -u 8B81C9D17413A06D <SHASUMS512.txt >SHASUMS512.asc
 popd
 
 echo "::group::install.sh"
-./mise/scripts/render-install.sh >"$RELEASE_DIR"/install.sh
+./scripts/render-install.sh >"$RELEASE_DIR"/install.sh
 chmod +x "$RELEASE_DIR"/install.sh
 shellcheck "$RELEASE_DIR"/install.sh
 gpg -u 8B81C9D17413A06D --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
 
 if [[ "$DRY_RUN" != 1 ]]; then
   echo "::group::Publish npm @jdxcode/mise"
-  NPM_PREFIX=@jdxcode/mise ./mise/scripts/release-npm.sh
+  NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
   #  echo "::group::Publish npm mise-cli"
-  #  NPM_PREFIX=mise-cli ./mise/scripts/release-npm.sh
+  #  NPM_PREFIX=mise-cli ./scripts/release-npm.sh
   echo "::group::Publish r2"
-  ./mise/scripts/publish-r2.sh
+  ./scripts/publish-r2.sh
 fi
-
-echo "::group::Publish mise-docs"
-cp ./mise/docs/registry.md ./mise-docs/registry.md
-cp ./mise/docs/cli-reference.md ./mise-docs/cli/index.md
-pushd mise-docs
-if [[ -z $(git status -s) ]]; then
-  echo "No changes to docs"
-else
-  git add cli/index.md registry.md
-  git commit -m "mise ${MISE_VERSION#v}"
-fi
-popd

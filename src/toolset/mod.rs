@@ -18,6 +18,7 @@ pub use tool_source::ToolSource;
 pub use tool_version::ToolVersion;
 pub use tool_version_list::ToolVersionList;
 pub use tool_version_request::ToolRequest;
+use versions::Version;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -163,7 +164,7 @@ impl Toolset {
         let queue: Vec<_> = versions
             .into_iter()
             .rev()
-            .group_by(|v| v.backend().clone())
+            .chunk_by(|v| v.backend().clone())
             .into_iter()
             .map(|(fa, v)| (backend::get(&fa), v.collect_vec()))
             .collect();
@@ -327,7 +328,9 @@ impl Toolset {
                         return None;
                     }
                 };
-                if !t.is_version_installed(&tv) || tv.version != latest {
+                if !t.is_version_installed(&tv)
+                    || is_outdated_version(tv.version.as_str(), latest.as_str())
+                {
                     Some((t, tv, latest))
                 } else {
                     None
@@ -541,4 +544,48 @@ fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequ
         .flatten_ok()
         .collect::<Result<Vec<_>>>()?;
     Ok(leaves)
+}
+
+fn is_outdated_version(current: &str, latest: &str) -> bool {
+    let c = Version::new(current);
+    let l = Version::new(latest);
+    if c.is_some() && l.is_some() {
+        return c.lt(&l);
+    }
+    current != latest
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::backend::reset;
+    use pretty_assertions::assert_eq;
+    use test_log::test;
+
+    use super::is_outdated_version;
+
+    #[test]
+    fn test_is_outdated_version() {
+        reset();
+
+        assert_eq!(is_outdated_version("1.10.0", "1.12.0"), true);
+        assert_eq!(is_outdated_version("1.12.0", "1.10.0"), false);
+
+        assert_eq!(
+            is_outdated_version("1.10.0-SNAPSHOT", "1.12.0-SNAPSHOT"),
+            true
+        );
+        assert_eq!(
+            is_outdated_version("1.12.0-SNAPSHOT", "1.10.0-SNAPSHOT"),
+            false
+        );
+
+        assert_eq!(
+            is_outdated_version("temurin-17.0.0", "temurin-17.0.1"),
+            true
+        );
+        assert_eq!(
+            is_outdated_version("temurin-17.0.1", "temurin-17.0.0"),
+            false
+        );
+    }
 }

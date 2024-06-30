@@ -58,7 +58,7 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
             miseprintln!("{}", version.version);
         }
     } else {
-        for (plugin, versions) in &versions.into_iter().group_by(|(_, v)| v.backend.clone()) {
+        for (plugin, versions) in &versions.into_iter().chunk_by(|(_, v)| v.backend.clone()) {
             miseprintln!("{}", plugin);
             for (_, tv) in versions {
                 miseprintln!("  {}", tv.version);

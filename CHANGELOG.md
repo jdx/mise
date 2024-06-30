@@ -1,5 +1,67 @@
 # Changelog
 
+## [2024.6.3](https://github.com/jdx/mise/compare/v2024.6.2..v2024.6.3) - 2024-06-10
+
+### 🐛 Bug Fixes
+
+- github API rate limiting could be handled more explicitly by [@roele](https://github.com/roele) in [#2274](https://github.com/jdx/mise/pull/2274)
+- group prefix not applied for script tasks by [@roele](https://github.com/roele) in [#2273](https://github.com/jdx/mise/pull/2273)
+- mise plugins ls returns error immediately after install by [@roele](https://github.com/roele) in [#2271](https://github.com/jdx/mise/pull/2271)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.2.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2277](https://github.com/jdx/mise/pull/2277)
+- update rust crate regex to v1.10.5 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2278](https://github.com/jdx/mise/pull/2278)
+- update rust crate regex to v1.10.5 by [@renovate[bot]](https://github.com/renovate[bot]) in [577de17](https://github.com/jdx/mise/commit/577de1757c4bb4e6421d3e281c44825a8b8788b8)
+
+## [2024.6.2](https://github.com/jdx/mise/compare/v2024.6.1..v2024.6.2) - 2024-06-07
+
+### 🐛 Bug Fixes
+
+- after installing the latest version, mise rolls back to the previous one by [@roele](https://github.com/roele) in [#2258](https://github.com/jdx/mise/pull/2258)
+
+### 📚 Documentation
+
+- add SPM backend page by [@kattouf](https://github.com/kattouf) in [#2252](https://github.com/jdx/mise/pull/2252)
+
+## [2024.6.1](https://github.com/jdx/mise/compare/v2024.6.0..v2024.6.1) - 2024-06-03
+
+### 🚀 Features
+
+- SPM(Swift Package Manager) backend by [@kattouf](https://github.com/kattouf) in [#2241](https://github.com/jdx/mise/pull/2241)
+
+### 🐛 Bug Fixes
+
+- mise up node fails by [@roele](https://github.com/roele) in [#2243](https://github.com/jdx/mise/pull/2243)
+
+### 📚 Documentation
+
+- fixed syntax by [@jdx](https://github.com/jdx) in [56083f8](https://github.com/jdx/mise/commit/56083f858a4ee28a020a414c1addf0c2bb7968af)
+
+### 🧪 Testing
+
+- set GITHUB_TOKEN in dev-test by [@jdx](https://github.com/jdx) in [4334313](https://github.com/jdx/mise/commit/4334313da52c13d7f87656fb0e7978e4cf1f5d2f)
+
+### 🔍 Other Changes
+
+- Update getting-started.md: nushell by [@chrmod](https://github.com/chrmod) in [#2248](https://github.com/jdx/mise/pull/2248)
+
+### 📦️ Dependency Updates
+
+- update rust crate demand to v1.2.4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2246](https://github.com/jdx/mise/pull/2246)
+- update rust crate zip to v2.1.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2247](https://github.com/jdx/mise/pull/2247)
+
+### New Contributors
+
+* @chrmod made their first contribution in [#2248](https://github.com/jdx/mise/pull/2248)
+
+## [2024.6.0](https://github.com/jdx/mise/compare/v2024.5.28..v2024.6.0) - 2024-06-01
+
+### 🔍 Other Changes
+
+- bump itertools by [@jdx](https://github.com/jdx) in [#2238](https://github.com/jdx/mise/pull/2238)
+- migrate docs repo into this repo by [@jdx](https://github.com/jdx) in [#2237](https://github.com/jdx/mise/pull/2237)
+
 ## [2024.5.28](https://github.com/jdx/mise/compare/v2024.5.27..v2024.5.28) - 2024-05-31
 
 ### 🐛 Bug Fixes
