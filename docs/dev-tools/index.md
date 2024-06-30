@@ -120,3 +120,16 @@ alias mx="mise x --"
 :::
 
 Similarly, `mise run` can be used to [execute tasks](/tasks/) which will also activate the mise environment with all of your tools.
+
+## Tool Options
+
+mise plugins may accept configuration in the form of tool options specified in `mise.toml`:
+
+```toml
+[tools]
+# send arbitrary options to the plugin, passed as:
+# MISE_TOOL_OPTS__FOO=bar
+mytool = { version = '3.10', foo = 'bar' }
+```
+
+Unfortunately at the time of this writing, it's not possible to specify this via the CLI in `mise use` or other commands though. See <https://github.com/jdx/mise/issues/2309>

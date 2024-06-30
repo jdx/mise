@@ -97,6 +97,7 @@ impl CorePlugin {
         if !*env::MISE_USE_VERSIONS_HOST {
             return Ok(None);
         }
+        // using http is not a security concern and enabling tls makes mise significantly slower
         let raw = HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", &self.fa.name))?;
         let versions = raw
             .lines()
