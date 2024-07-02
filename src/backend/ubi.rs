@@ -67,11 +67,11 @@ impl Backend for UbiBackend {
             builder = builder.tag(version);
         }
 
-        let exe = std::env::var("MISE_TOOL_OPTS__EXE").unwrap_or(String::new());
+        let exe = std::env::var("MISE_TOOL_OPTS__EXE").unwrap_or_default();
         if !exe.is_empty() {
             builder = builder.exe(&exe);
         }
-        let matching = std::env::var("MISE_TOOL_OPTS__MATCHING").unwrap_or(String::new());
+        let matching = std::env::var("MISE_TOOL_OPTS__MATCHING").unwrap_or_default();
         if !matching.is_empty() {
             builder = builder.matching(&matching);
         }
