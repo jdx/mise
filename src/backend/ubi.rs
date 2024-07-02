@@ -76,13 +76,12 @@ impl Backend for UbiBackend {
             builder = builder.matching(&matching);
         }
 
-        let u = builder.build().map_err(|e| eyre!(Box::new(e)))?;
+        let u = builder.build().map_err(|e| eyre!(e))?;
 
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_io()
             .build()?;
-        rt.block_on(u.install_binary())
-            .map_err(|e| eyre!(Box::new(e)))
+        rt.block_on(u.install_binary()).map_err(|e| eyre!(e))
     }
 }
 
