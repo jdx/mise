@@ -8,7 +8,7 @@ such as:
 
 - setting arbitrary env vars while inside the directory
 - passing options to plugins like `virtualenv=".venv"`
-  for [python](https://github.com/jdx/mise/blob/main/docs/python.md#experimental-automatic-virtualenv-creationactivation).
+  for [python](https://github.com/jdx/mise/blob/main/docs/lang/python.md#automatic-virtualenv-activation).
 - specifying custom plugin URLs
 
 They can use any of the following file locations (in order of precedence, top is highest):
