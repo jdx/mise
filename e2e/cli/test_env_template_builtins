@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+cat <<EOF >.mise.toml
+[env]
+ENV_TMPL_SLUGGY = "{{ 'Some.unslugified^thing' | slugify }}"
+ENV_TMPL_SIZEFMT = "{{ '102400' | int | filesizeformat }}"
+EOF
+
+assert "mise env -s zsh | grep ENV_TMPL_SLUGGY" "export ENV_TMPL_SLUGGY=some-unslugified-thing"
+assert "mise env -s zsh | grep ENV_TMPL_SIZEFMT" "export ENV_TMPL_SIZEFMT='100 kB'"
