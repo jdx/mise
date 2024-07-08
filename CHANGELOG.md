@@ -1,5 +1,29 @@
 # Changelog
 
+## [2024.7.1](https://github.com/jdx/mise/compare/v2024.7.0..v2024.7.1) - 2024-07-08
+
+### 🔍 Other Changes
+
+- Fix link to Python venv activation doc section by [@gzurowski](https://github.com/gzurowski) in [#2353](https://github.com/jdx/mise/pull/2353)
+
+### 📦️ Dependency Updates
+
+- update built to 0.7.4 and git2 to 0.19.0 by [@roele](https://github.com/roele) in [#2357](https://github.com/jdx/mise/pull/2357)
+
+### New Contributors
+
+* @gzurowski made their first contribution in [#2353](https://github.com/jdx/mise/pull/2353)
+
+## [2024.7.0](https://github.com/jdx/mise/compare/v2024.6.6..v2024.7.0) - 2024-07-03
+
+### 📚 Documentation
+
+- update actions/checkout version by [@light-planck](https://github.com/light-planck) in [#2349](https://github.com/jdx/mise/pull/2349)
+
+### New Contributors
+
+* @light-planck made their first contribution in [#2349](https://github.com/jdx/mise/pull/2349)
+
 ## [2024.6.6](https://github.com/jdx/mise/compare/v2024.6.5..v2024.6.6) - 2024-06-20
 
 ### 🐛 Bug Fixes
