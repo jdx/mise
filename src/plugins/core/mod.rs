@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use eyre::Result;
 use itertools::Itertools;
+use luajit::LuajitPlugin;
 use once_cell::sync::Lazy;
 
 pub use python::PythonPlugin;
@@ -30,6 +31,7 @@ mod deno;
 mod erlang;
 mod go;
 mod java;
+mod luajit;
 mod node;
 mod python;
 mod ruby;
@@ -42,6 +44,7 @@ pub static CORE_PLUGINS: Lazy<BackendList> = Lazy::new(|| {
         Arc::new(ErlangPlugin::new()),
         Arc::new(GoPlugin::new()),
         Arc::new(JavaPlugin::new()),
+        Arc::new(LuajitPlugin::new()),
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
