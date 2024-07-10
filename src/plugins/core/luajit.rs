@@ -9,7 +9,7 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::file;
-use crate::github::GithubTag;
+use crate::github::{self, GithubTag};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -46,8 +46,7 @@ impl LuajitPlugin {
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
 
-        let tags: Vec<GithubTag> =
-            HTTP_FETCH.json("https://api.github.com/repos/LuaJIT/LuaJIT/tags?per_page=100")?;
+        let tags: Vec<GithubTag> = github::list_tags("LuaJIT/LuaJIT")?;
         let versions = tags
             .into_iter()
             .map(|r| r.name)
