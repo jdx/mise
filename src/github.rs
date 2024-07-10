@@ -20,7 +20,6 @@ pub struct GithubTag {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct GithubCommit {
     pub sha: String,
     pub url: String,
