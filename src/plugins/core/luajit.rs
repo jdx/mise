@@ -110,11 +110,12 @@ impl LuajitPlugin {
 
         let prefix_arg = format!("PREFIX={}", ctx.tv.install_path().display());
 
-        ctx.pr.set_message(format!("building {filename}"));
-
-        let mut cmd = cmd!("make", "amalg", &prefix_arg)
-            .dir(&source_dir)
-            .stdout_null();
+        ctx.pr.set_message(String::from("building luajit"));
+        let mut cmd = CmdLineRunner::new("make")
+            .with_pr(&*ctx.pr)
+            .arg("amalg")
+            .arg(&prefix_arg)
+            .current_dir(&source_dir);
         if cfg!(target_os = "macos") {
             let target = self.macos_version()?;
             cmd = cmd.env("MACOSX_DEPLOYMENT_TARGET", target);
@@ -122,14 +123,22 @@ impl LuajitPlugin {
                 cmd = cmd.env("LDFLAGS", ldflags);
             }
         }
-        cmd.run()?;
+        cmd.execute()?;
 
-        ctx.pr.set_message(format!("installing {filename}"));
-        cmd!("make", "install", &prefix_arg)
-            .env("PREFIX", ctx.tv.install_path())
-            .dir(&source_dir)
-            .stdout_null()
-            .run()?;
+        ctx.pr.set_message(format!("installing luajit"));
+        let mut cmd = CmdLineRunner::new("make")
+            .with_pr(&*ctx.pr)
+            .arg("install")
+            .arg(prefix_arg)
+            .current_dir(&source_dir);
+        if cfg!(target_os = "macos") {
+            let target = self.macos_version()?;
+            cmd = cmd.env("MACOSX_DEPLOYMENT_TARGET", target);
+            if let Some(ldflags) = self.ldflags() {
+                cmd = cmd.env("LDFLAGS", ldflags);
+            }
+        }
+        cmd.execute()?;
 
         Ok(())
     }
