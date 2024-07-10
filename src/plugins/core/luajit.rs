@@ -159,7 +159,6 @@ impl Backend for LuajitPlugin {
             .cloned()
     }
 
-    // #[requires(matches ! (ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
     #[requires(matches ! (ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
