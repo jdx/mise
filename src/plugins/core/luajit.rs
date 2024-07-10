@@ -10,7 +10,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::file;
 use crate::github::{self, GithubTag};
-use crate::http::{HTTP, HTTP_FETCH};
+use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion};
