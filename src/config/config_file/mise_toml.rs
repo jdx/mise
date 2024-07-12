@@ -219,8 +219,15 @@ impl ConfigFile for MiseToml {
         }
     }
 
-    fn plugins(&self) -> HashMap<String, String> {
-        self.plugins.clone()
+    fn plugins(&self) -> eyre::Result<HashMap<String, String>> {
+        self.plugins
+            .clone()
+            .into_iter()
+            .map(|(k, v)| {
+                let v = self.parse_template(&v)?;
+                Ok((k, v))
+            })
+            .collect()
     }
 
     fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
@@ -324,8 +331,23 @@ impl ConfigFile for MiseToml {
         Ok(trs)
     }
 
-    fn aliases(&self) -> AliasMap {
-        self.alias.clone()
+    fn aliases(&self) -> eyre::Result<AliasMap> {
+        self.alias
+            .clone()
+            .iter()
+            .map(|(k, v)| {
+                let k = k.clone();
+                let v: Result<BTreeMap<String, String>, eyre::Error> = v
+                    .clone()
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let v = self.parse_template(&v)?;
+                        Ok((k, v))
+                    })
+                    .collect();
+                v.map(|v| (k, v))
+            })
+            .collect()
     }
 
     fn task_config(&self) -> &TaskConfig {
@@ -878,7 +900,7 @@ mod tests {
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env_entries().unwrap());
-        assert_debug_snapshot!(cf.plugins());
+        assert_debug_snapshot!(cf.plugins().unwrap());
         assert_snapshot!(replace_path(&format!(
             "{:#?}",
             cf.to_tool_request_set().unwrap()
