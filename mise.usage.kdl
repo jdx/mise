@@ -328,16 +328,16 @@ when you commit changes to your repository."
         }
         flag "-w --write" help="write to .git/hooks/pre-commit and make it executable"
     }
-    cmd "github-action" help="[experimental] Generate a Github Action workflow file" {
-        long_help r"[experimental] Generate a Github Action workflow file
+    cmd "github-action" help="[experimental] Generate a GitHub Action workflow file" {
+        long_help r"[experimental] Generate a GitHub Action workflow file
 
-This command generates a Github Action workflow file that runs a mise task like `mise run ci`
+This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
 when you push changes to your repository."
         after_long_help r#"Examples:
 
     $ mise generate github-action --write --task=ci
     $ git commit -m "feat: add new feature"
-    $ git push # runs `mise run ci` on Github
+    $ git push # runs `mise run ci` on GitHub
 "#
         flag "-n --name" help="the name of the workflow to generate" {
             arg "<NAME>"
