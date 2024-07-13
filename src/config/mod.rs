@@ -77,13 +77,11 @@ impl Config {
         let config_paths = load_config_paths(&config_filenames);
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
 
-        let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
-
         let config = Self {
-            aliases: load_aliases(&config_files),
+            aliases: load_aliases(&config_files)?,
             project_root: get_project_root(&config_files),
+            repo_urls: load_plugins(&config_files)?,
             config_files,
-            repo_urls,
             ..Default::default()
         };
 
@@ -603,18 +601,28 @@ fn parse_config_file(
     }
 }
 
-fn load_aliases(config_files: &ConfigMap) -> AliasMap {
+fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     let mut aliases: AliasMap = AliasMap::new();
 
     for config_file in config_files.values() {
-        for (plugin, plugin_aliases) in config_file.aliases() {
+        for (plugin, plugin_aliases) in config_file.aliases()? {
             for (from, to) in plugin_aliases {
                 aliases.entry(plugin.clone()).or_default().insert(from, to);
             }
         }
     }
 
-    aliases
+    Ok(aliases)
+}
+
+fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
+    let mut plugins = HashMap::new();
+    for config_file in config_files.values() {
+        for (plugin, url) in config_file.plugins()? {
+            plugins.insert(plugin.clone(), url.clone());
+        }
+    }
+    Ok(plugins)
 }
 
 impl Debug for Config {

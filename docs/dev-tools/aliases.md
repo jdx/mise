@@ -26,3 +26,12 @@ echo "lts-fermium 14"
 Because this is mise-specific functionality not currently used by asdf it isn't likely to be in any
 plugin currently, but plugin authors can add this script without impacting asdf users.
 :::
+
+## Templates
+
+Alias values can be templates, see [Templates](/templates) for details.
+
+```toml
+[alias.node]
+current = "{{exec(command='node --version')}}"
+```

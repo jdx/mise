@@ -46,3 +46,12 @@ any option and it will be passed to the plugin in that format.
 
 Currently this only supports simple strings, but we can make it compatible with more complex types
 (arrays, tables) fairly easily if there is a need for it.
+
+## Templates
+
+Plugin custom repository values can be templates, see [Templates](/templates) for details.
+
+```toml
+[plugins]
+my-plugin = "https://{{ get_env(name='GIT_USR', default='empty') }}:{{ get_env(name='GIT_PWD', default='empty') }}@github.com/foo/my-plugin.git"
+```
