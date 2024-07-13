@@ -26,6 +26,13 @@ PROJECT_NAME = "{{config_root | split(pat='/') | last}}"
 Here's another using `exec()`:
 
 ```toml
-[aliases]
+[alias.node]
 current = "{{exec(command='node --version')}}"
+```
+
+Or one that uses [`get_env()`](https://keats.github.io/tera/docs/#get-env):
+
+```toml
+[plugins]
+my-plugin = "https://{{ get_env(name='GIT_USR', default='empty') }}:{{ get_env(name='GIT_PWD', default='empty') }}@github.com/foo/my-plugin.git"
 ```

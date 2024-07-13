@@ -60,8 +60,8 @@ pub trait ConfigFile: Debug + Send + Sync {
             None => None,
         }
     }
-    fn plugins(&self) -> HashMap<String, String> {
-        Default::default()
+    fn plugins(&self) -> eyre::Result<HashMap<String, String>> {
+        Ok(Default::default())
     }
     fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
         Ok(Default::default())
@@ -77,8 +77,8 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.to_tool_request_set()?.into())
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
-    fn aliases(&self) -> AliasMap {
-        Default::default()
+    fn aliases(&self) -> eyre::Result<AliasMap> {
+        Ok(Default::default())
     }
     fn task_config(&self) -> &TaskConfig {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
