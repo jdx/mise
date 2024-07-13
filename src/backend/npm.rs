@@ -64,7 +64,7 @@ impl Backend for NPMBackend {
         CmdLineRunner::new("npm")
             .arg("install")
             .arg("-g")
-            .arg(&format!("{}@{}", self.name(), ctx.tv.version))
+            .arg(format!("{}@{}", self.name(), ctx.tv.version))
             .arg("--prefix")
             .arg(ctx.tv.install_path())
             .with_pr(ctx.pr.as_ref())

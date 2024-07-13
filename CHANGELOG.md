@@ -1,5 +1,16 @@
 # Changelog
 
+## [2024.7.2](https://github.com/jdx/mise/compare/v2024.7.1..v2024.7.2) - 2024-07-13
+
+### 🚀 Features
+
+- support env vars in plugin urls by [@roele](https://github.com/roele) in [#2370](https://github.com/jdx/mise/pull/2370)
+
+### 📦️ Dependency Updates
+
+- update rust crate self_update to 0.41 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2359](https://github.com/jdx/mise/pull/2359)
+- update dependency vitepress to v1.3.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2358](https://github.com/jdx/mise/pull/2358)
+
 ## [2024.7.1](https://github.com/jdx/mise/compare/v2024.7.0..v2024.7.1) - 2024-07-08
 
 ### 🔍 Other Changes
