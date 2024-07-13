@@ -447,9 +447,9 @@ Examples:
 ## `mise generate github-action [OPTIONS]`
 
 ```text
-[experimental] Generate a Github Action workflow file
+[experimental] Generate a GitHub Action workflow file
 
-This command generates a Github Action workflow file that runs a mise task like `mise run ci`
+This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
 when you push changes to your repository.
 
 Usage: generate github-action [OPTIONS]
@@ -472,7 +472,7 @@ Examples:
 
     $ mise generate github-action --write --task=ci
     $ git commit -m "feat: add new feature"
-    $ git push # runs `mise run ci` on Github
+    $ git push # runs `mise run ci` on GitHub
 ```
 
 ## `mise implode [OPTIONS]`

@@ -4,9 +4,9 @@ use crate::config::Settings;
 use crate::file::display_path;
 use crate::git::Git;
 
-/// [experimental] Generate a Github Action workflow file
+/// [experimental] Generate a GitHub Action workflow file
 ///
-/// This command generates a Github Action workflow file that runs a mise task like `mise run ci`
+/// This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
 /// when you push changes to your repository.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
@@ -78,7 +78,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise generate github-action --write --task=ci</bold>
     $ <bold>git commit -m "feat: add new feature"</bold>
-    $ <bold>git push</bold> <dim># runs `mise run ci` on Github</dim>
+    $ <bold>git push</bold> <dim># runs `mise run ci` on GitHub</dim>
 "#
 );
 

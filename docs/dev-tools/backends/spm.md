@@ -1,6 +1,6 @@
 # SPM Backend <Badge type="warning" text="experimental" />
 
-You may install executables managed by [Swift Package Manager](https://www.swift.org/documentation/package-manager) directly from Github releases.
+You may install executables managed by [Swift Package Manager](https://www.swift.org/documentation/package-manager) directly from GitHub releases.
 
 The code for this is inside of the mise repository at [`./src/backend/spm.rs`](https://github.com/jdx/mise/blob/main/src/backend/spm.rs).
 
@@ -36,9 +36,9 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 | Description                                   | Usage                                                     |
 | --------------------------------------------- | --------------------------------------------------------- |
-| Github shorthand for latest release version   | `spm:tuist/tuist`                                         |
-| Github shorthand for specific release version | `spm:tuist/tuist@4.15.0`                                  |
-| Github url for latest release version         | `spm:https://github.com/tuist/tuist.git`                  |
-| Github url for specific release version       | `spm:https://github.com/tuist/tuist.git@4.15.0`           |
+| GitHub shorthand for latest release version   | `spm:tuist/tuist`                                         |
+| GitHub shorthand for specific release version | `spm:tuist/tuist@4.15.0`                                  |
+| GitHub url for latest release version         | `spm:https://github.com/tuist/tuist.git`                  |
+| GitHub url for specific release version       | `spm:https://github.com/tuist/tuist.git@4.15.0`           |
 
 Other syntax may work but is unsupported and untested.

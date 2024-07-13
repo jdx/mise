@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 if [[ -n ${GITHUB_ACTION:-} ]]; then
-  # Output Github action annotations
+  # Output GitHub action annotations
   annotate() {
     local parameters=""
     [[ -n ${file:=${TEST_SCRIPT:-}} ]] && parameters="file=${file}"
