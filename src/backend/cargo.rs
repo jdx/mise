@@ -64,7 +64,7 @@ impl Backend for CargoBackend {
             CmdLineRunner::new("cargo").arg("install")
         };
 
-        cmd.arg(&format!("{}@{}", self.name(), ctx.tv.version))
+        cmd.arg(format!("{}@{}", self.name(), ctx.tv.version))
             .arg("--root")
             .arg(ctx.tv.install_path())
             .with_pr(ctx.pr.as_ref())

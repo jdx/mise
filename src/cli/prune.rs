@@ -95,7 +95,7 @@ impl Prune {
                 prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
             }
             let pr = mpr.add(&prefix);
-            if self.dry_run || settings.yes || prompt::confirm(&format!("remove {} ?", &tv))? {
+            if self.dry_run || settings.yes || prompt::confirm(format!("remove {} ?", &tv))? {
                 p.uninstall_version(&tv, pr.as_ref(), self.dry_run)?;
                 pr.finish();
             }

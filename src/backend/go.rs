@@ -72,7 +72,7 @@ impl Backend for GoBackend {
 
         CmdLineRunner::new("go")
             .arg("install")
-            .arg(&format!("{}@{}", self.name(), version))
+            .arg(format!("{}@{}", self.name(), version))
             .with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env()?)
             .env("GOBIN", ctx.tv.install_path().join("bin"))
