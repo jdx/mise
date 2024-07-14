@@ -247,9 +247,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.6.0"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "514de17de45fdb8dc022b1a7975556c53c86f9f0aa5f534b98977b171857c2c9"
+checksum = "a12916984aab3fa6e39d655a33e09c0071eb36d6ab3aea5c2d78551f1df6d952"
 
 [[package]]
 name = "calm_io"
@@ -272,9 +272,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47de7e88bbbd467951ae7f5a6f34f70d1b4d9cfce53d5fd70f74ebe118b3db56"
+checksum = "18e2d530f35b40a84124146478cd16f34225306a8441998836466a2e2961c950"
 dependencies = [
  "jobserver",
  "libc",
@@ -1628,7 +1628,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.7.2"
+version = "2024.7.3"
 dependencies = [
  "assert_cmd",
  "base64",
