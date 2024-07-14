@@ -1,5 +1,16 @@
 # Changelog
 
+## [2024.7.3](https://github.com/jdx/mise/compare/v2024.7.2..v2024.7.3) - 2024-07-14
+
+### 🔍 Other Changes
+
+- Use correct capitalization of GitHub by [@jahands](https://github.com/jahands) in [#2372](https://github.com/jdx/mise/pull/2372)
+- loosen git2 requirements by [@jdx](https://github.com/jdx) in [#2374](https://github.com/jdx/mise/pull/2374)
+
+### New Contributors
+
+* @jahands made their first contribution in [#2372](https://github.com/jdx/mise/pull/2372)
+
 ## [2024.7.2](https://github.com/jdx/mise/compare/v2024.7.1..v2024.7.2) - 2024-07-13
 
 ### 🚀 Features
