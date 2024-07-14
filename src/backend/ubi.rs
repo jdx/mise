@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use eyre::eyre;
+use ubi::UbiBuilder;
 
 use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
@@ -54,7 +55,7 @@ impl Backend for UbiBackend {
         // Workaround because of not knowing how to pull out the value correctly without quoting
         let path_with_bin = ctx.tv.install_path().join("bin");
 
-        let mut builder = ubi::UbiBuilder::new()
+        let mut builder = UbiBuilder::new()
             .project(self.name())
             .install_dir(path_with_bin);
 
