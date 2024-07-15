@@ -43,15 +43,15 @@ installed mise by some other means it may be on PATH or somewhere different.
 ::: code-group
 
 ```sh [bash]
-echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
+echo 'eval "$($(which mise) activate bash)"' >> ~/.bashrc
 ```
 
 ```sh [zsh]
-echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
+echo 'eval "$($(which mise) activate zsh)"' >> ~/.zshrc
 ```
 
 ```sh [fish]
-echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
+echo '$(which mise) activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 :::
