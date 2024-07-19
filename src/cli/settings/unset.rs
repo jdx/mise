@@ -70,6 +70,7 @@ mod tests {
         jobs = 4
         legacy_version_file = true
         legacy_version_file_disable_tools = []
+        libgit2 = true
         node_compile = false
         not_found_auto_install = true
         paranoid = false

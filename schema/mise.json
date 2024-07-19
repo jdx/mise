@@ -337,6 +337,11 @@
           },
           "type": "array"
         },
+        "libgit2": {
+          "description": "use libgit2 for git operations",
+          "type": "boolean",
+          "default": true
+        },
         "node_compile": {
           "description": "do not use precompiled binaries for node",
           "type": "boolean"
