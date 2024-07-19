@@ -313,6 +313,15 @@ of `~/.config/mise/config.toml`.
 Disables the specified tools. Separate with `,`. Generally used for core plugins but works with any
 tool.
 
+### `libgit2`
+
+* Type: `bool`
+* Env: `MISE_LIBGIT2`
+* Default: `true`
+
+Use libgit2 for git operations. This is generally faster but may not be as compatible if the
+system's libgit2 is not the same version as the one used by mise.
+
 ### `status.missing_tools`
 
 * Type: `enum`
