@@ -170,11 +170,6 @@ fn valid_key(k: &str) -> bool {
         || k == "SHELLOPTS"
         || k == "COMP_WORDBREAKS"
         || k == "PS1"
-        // TODO: consider removing this
-        // this is to make the ruby plugin compatible,
-        // it causes ruby to attempt to call asdf to reshim the binaries
-        // which we don't need or want to happen
-        || k == "RUBYLIB"
         // following two ignores are for exported bash functions and exported bash
         // functions which are multiline, they appear in the environment as e.g.:
         // BASH_FUNC_exported-bash-function%%=() { echo "this is an"
