@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.7.4](https://github.com/jdx/mise/compare/v2024.7.3..v2024.7.4) - 2024-07-19
+
+### 🚀 Features
+
+- added MISE_LIBGIT2 setting by [@jdx](https://github.com/jdx) in [#2386](https://github.com/jdx/mise/pull/2386)
+
+### 🐛 Bug Fixes
+
+- keep RUBYLIB env var by [@jdx](https://github.com/jdx) in [#2387](https://github.com/jdx/mise/pull/2387)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.3.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2376](https://github.com/jdx/mise/pull/2376)
+- update docker/build-push-action action to v6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2377](https://github.com/jdx/mise/pull/2377)
+
 ## [2024.7.3](https://github.com/jdx/mise/compare/v2024.7.2..v2024.7.3) - 2024-07-14
 
 ### 🔍 Other Changes
