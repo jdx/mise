@@ -79,6 +79,7 @@ mod tests {
         jobs = 2
         legacy_version_file = true
         legacy_version_file_disable_tools = []
+        libgit2 = true
         node_compile = false
         not_found_auto_install = true
         paranoid = false
@@ -122,6 +123,7 @@ mod tests {
         jobs
         legacy_version_file
         legacy_version_file_disable_tools
+        libgit2
         node_compile
         not_found_auto_install
         paranoid

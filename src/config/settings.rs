@@ -82,6 +82,8 @@ pub struct Settings {
     pub legacy_version_file: bool,
     #[config(env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub legacy_version_file_disable_tools: BTreeSet<String>,
+    #[config(env = "MISE_LIBGIT2", default = true)]
+    pub libgit2: bool,
     #[config(env = "MISE_NODE_COMPILE", default = false)]
     pub node_compile: bool,
     #[config(env = "MISE_NOT_FOUND_AUTO_INSTALL", default = true)]
