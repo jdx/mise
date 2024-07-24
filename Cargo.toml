@@ -117,6 +117,7 @@ tokio = { version = "1.37.0", features = [
 ] }
 toml = { version = "0.8.12", features = ["parse"] }
 toml_edit = { version = "0.22.12", features = ["parse"] }
+ubi = "0.1.0"
 url = "2.5.0"
 usage-lib = { version = "0.3", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
@@ -125,8 +126,6 @@ walkdir = "2.5.0"
 which = "6.0.1"
 xx = { version = "1.0.0", features = ["glob"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
-
-ubi = { git = "https://github.com/houseabsolute/ubi.git", branch = "library-ize" }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
