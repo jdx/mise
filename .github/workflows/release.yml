@@ -48,6 +48,14 @@ jobs:
             target: aarch64-unknown-linux-musl
             runs-on: ubuntu-latest
           - os: ubuntu
+            name: linux-armv8
+            target: armv8-unknown-linux-gnueabi
+            runs-on: ubuntu-latest
+          - os: ubuntu
+            name: linux-armv8-musl
+            target: armv8-unknown-linux-musleabi
+            runs-on: ubuntu-latest
+          - os: ubuntu
             name: linux-armv7
             target: armv7-unknown-linux-gnueabi
             runs-on: ubuntu-latest
