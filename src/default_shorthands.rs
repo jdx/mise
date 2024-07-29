@@ -755,6 +755,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("vhs", "https://github.com/chessmango/asdf-vhs.git"),
     ("viddy", "https://github.com/ryodocx/asdf-viddy.git"),
     ("vim", "https://github.com/tsuyoshicho/asdf-vim.git"),
+    ("virtualos", "https://github.com/tuist/asdf-virtualos.git"),
     ("vlt", "https://github.com/asdf-community/asdf-hashicorp.git"),
     ("vultr-cli", "https://github.com/ikuradon/asdf-vultr-cli.git"),
     ("wasi-sdk", "https://github.com/coolreader18/asdf-wasi-sdk.git"),
