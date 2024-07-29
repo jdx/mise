@@ -42,7 +42,18 @@ impl ZigPlugin {
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         match self.core.fetch_remote_versions_from_mise() {
-            Ok(Some(versions)) => return Ok(versions),
+            Ok(Some(versions)) => {
+                return Ok(versions
+                    .into_iter()
+                    .map(|r| {
+                        if r == "master" {
+                            "ref:master".to_string()
+                        } else {
+                            r
+                        }
+                    })
+                    .collect())
+            }
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
@@ -52,6 +63,13 @@ impl ZigPlugin {
         let versions = releases
             .into_iter()
             .map(|r| r.tag_name)
+            .map(|r| {
+                if r == "master" {
+                    "ref:master".to_string()
+                } else {
+                    r
+                }
+            })
             .unique()
             .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
             .collect();
