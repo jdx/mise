@@ -6,8 +6,10 @@ use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, Config, Settings, LOCAL_CONFIG_FILENAMES};
-use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_GLOBAL_CONFIG_FILE};
+use crate::config::{config_file, is_global_config, Config, Settings, LOCAL_CONFIG_FILENAMES};
+use crate::env::{
+    MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
+};
 use crate::file::display_path;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -179,15 +181,30 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
+    let mise_toml = p.join(&*MISE_DEFAULT_CONFIG_FILENAME);
+    let tool_versions = p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME);
+    if mise_toml.exists() {
+        return mise_toml;
+    } else if tool_versions.exists() {
+        return tool_versions;
+    }
     let filenames = LOCAL_CONFIG_FILENAMES
         .iter()
         .rev()
+        .filter(|f| is_global_config(Path::new(f)))
         .map(|f| f.to_string())
         .collect::<Vec<_>>();
     if let Some(p) = file::find_up(p, &filenames) {
         return p;
     }
-    p.join(&*MISE_DEFAULT_CONFIG_FILENAME)
+    match is_asdf_compat() {
+        true => tool_versions,
+        false => mise_toml,
+    }
+}
+
+fn is_asdf_compat() -> bool {
+    Settings::try_get().map_or(false, |s| s.asdf_compat)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -217,7 +234,7 @@ mod tests {
     use crate::{dirs, env, file};
 
     #[test]
-    fn test_use_local() {
+    fn test_use_local_reuse() {
         reset();
         let cf_path = env::current_dir().unwrap().join(".test.mise.toml");
         file::write(&cf_path, "").unwrap();
@@ -254,10 +271,60 @@ mod tests {
     }
 
     #[test]
-    fn test_use_local_tool_versions() {
+    fn test_use_local_create() {
+        reset();
+        let _ = file::remove_file(env::current_dir().unwrap().join(".test-tool-versions"));
+        let cf_path = env::current_dir().unwrap().join(".test.mise.toml");
+
+        assert_cli_snapshot!("use", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+      [tools]
+      tiny = "2"
+      "###);
+
+        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @"mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+      [tools]
+      tiny = ["1", "2", "3"]
+      "###);
+
+        assert_cli_snapshot!("use", "--pin", "tiny", @"mise ~/cwd/.test.mise.toml tools: tiny@3.1.0");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+      [tools]
+      tiny = "3.1.0"
+      "###);
+
+        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+      [tools]
+      tiny = "2"
+      "###);
+
+        let p = cf_path.to_string_lossy().to_string();
+        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"mise ~/cwd/.test.mise.toml tools:");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @"");
+
+        let _ = file::remove_file(&cf_path);
+    }
+
+    #[test]
+    fn test_use_local_tool_versions_reuse() {
         reset();
         let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
+
+        assert_cli_snapshot!("use", "tiny@3", @"mise ~/cwd/.test-tool-versions tools: tiny@3.1.0");
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        tiny 3
+        "###);
+
+        let _ = file::remove_file(&cf_path);
+    }
+
+    #[test]
+    fn test_use_local_tool_versions_create() {
+        reset();
+        let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
 
         assert_cli_snapshot!("use", "tiny@3", @"mise ~/cwd/.test-tool-versions tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
