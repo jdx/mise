@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.7.5](https://github.com/jdx/mise/compare/v2024.7.4..v2024.7.5) - 2024-07-29
+
+### 🐛 Bug Fixes
+
+- mise use does not create a local .mise.toml anymore by [@roele](https://github.com/roele) in [#2406](https://github.com/jdx/mise/pull/2406)
+- transform `master` to `ref:master` in ls-remote for zig by [@chasinglogic](https://github.com/chasinglogic) in [#2409](https://github.com/jdx/mise/pull/2409)
+
+### 📦️ Dependency Updates
+
+- bump openssl from 0.10.64 to 0.10.66 by [@dependabot[bot]](https://github.com/dependabot[bot]) in [#2397](https://github.com/jdx/mise/pull/2397)
+
+### New Contributors
+
+* @chasinglogic made their first contribution in [#2409](https://github.com/jdx/mise/pull/2409)
+
 ## [2024.7.4](https://github.com/jdx/mise/compare/v2024.7.3..v2024.7.4) - 2024-07-19
 
 ### 🚀 Features

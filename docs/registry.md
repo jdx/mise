@@ -739,6 +739,7 @@ editLink: false
 | vhs | [asdf:chessmango/asdf-vhs](https://github.com/chessmango/asdf-vhs) |
 | viddy | [asdf:ryodocx/asdf-viddy](https://github.com/ryodocx/asdf-viddy) |
 | vim | [asdf:tsuyoshicho/asdf-vim](https://github.com/tsuyoshicho/asdf-vim) |
+| virtualos | [asdf:tuist/asdf-virtualos](https://github.com/tuist/asdf-virtualos) |
 | vlt | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | vultr-cli | [asdf:ikuradon/asdf-vultr-cli](https://github.com/ikuradon/asdf-vultr-cli) |
 | wasi-sdk | [asdf:coolreader18/asdf-wasi-sdk](https://github.com/coolreader18/asdf-wasi-sdk) |
