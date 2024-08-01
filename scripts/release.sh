@@ -78,3 +78,5 @@ if [[ "$DRY_RUN" != 1 ]]; then
   echo "::group::Publish r2"
   ./scripts/publish-r2.sh
 fi
+
+gh release edit --draft=false "$MISE_VERSION"
