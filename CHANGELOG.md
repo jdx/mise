@@ -1,5 +1,21 @@
 # Changelog
 
+## [2024.8.0](https://github.com/jdx/mise/compare/v2024.7.5..v2024.8.0) - 2024-08-01
+
+### 📚 Documentation
+
+- Fix 'mise x' command snippet in the Continuous Integration section by [@mollyIV](https://github.com/mollyIV) in [#2411](https://github.com/jdx/mise/pull/2411)
+
+### 🔍 Other Changes
+
+- retry mise tests for docker-dev-test workflow by [@jdx](https://github.com/jdx) in [cc014dd](https://github.com/jdx/mise/commit/cc014dde3dedd1d891dab62fc37e4633dc995226)
+- add BSD-2-Clause to allowed dep licenses by [@jdx](https://github.com/jdx) in [b4ea53c](https://github.com/jdx/mise/commit/b4ea53c4b2b01103ed93fc185dbca858730c3207)
+- create new alpine gitlab token to replace the expired one by [@jdx](https://github.com/jdx) in [b30db04](https://github.com/jdx/mise/commit/b30db04aaa1f13ef0dcdf02e6df2f2afbdd73c94)
+
+### New Contributors
+
+* @mollyIV made their first contribution in [#2411](https://github.com/jdx/mise/pull/2411)
+
 ## [2024.7.5](https://github.com/jdx/mise/compare/v2024.7.4..v2024.7.5) - 2024-07-29
 
 ### 🐛 Bug Fixes
