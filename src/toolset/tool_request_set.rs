@@ -60,13 +60,13 @@ impl ToolRequestSet {
         list.push(tr);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=(&BackendArg, &Vec<ToolRequest>, &ToolSource)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&BackendArg, &Vec<ToolRequest>, &ToolSource)> {
         self.tools
             .iter()
             .map(|(backend, tvr)| (backend, tvr, self.sources.get(backend).unwrap()))
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item=(BackendArg, Vec<ToolRequest>, ToolSource)> {
+    pub fn into_iter(self) -> impl Iterator<Item = (BackendArg, Vec<ToolRequest>, ToolSource)> {
         self.tools.into_iter().map(move |(fa, tvr)| {
             let source = self.sources.get(&fa).unwrap().clone();
             (fa, tvr, source)
@@ -92,7 +92,7 @@ impl Display for ToolRequestSet {
 impl FromIterator<(BackendArg, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
     fn from_iter<T>(iter: T) -> Self
     where
-        T: IntoIterator<Item=(BackendArg, Vec<ToolRequest>, ToolSource)>,
+        T: IntoIterator<Item = (BackendArg, Vec<ToolRequest>, ToolSource)>,
     {
         let mut trs = ToolRequestSet::new();
         for (_fa, tvr, source) in iter {
