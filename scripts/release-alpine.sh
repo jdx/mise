@@ -8,6 +8,7 @@ export GITLAB_TOKEN="$ALPINE_GITLAB_TOKEN"
 
 sudo chown -R packager:packager /github/home
 mkdir -p /github/home/.abuild
+echo "$ALPINE_PUB_KEY" >"/etc/apk/keys/$ALPINE_KEY_ID.pub"
 echo "$ALPINE_PUB_KEY" >"/github/home/.abuild/$ALPINE_KEY_ID.pub"
 echo "$ALPINE_PRIV_KEY" >"/github/home/.abuild/$ALPINE_KEY_ID"
 echo "PACKAGER_PRIVKEY=\"/github/home/.abuild/$ALPINE_KEY_ID\"" >>/github/home/.abuild/abuild.conf
