@@ -373,7 +373,9 @@ fn linux_distro() -> Option<String> {
 }
 
 fn filename(path: &str) -> &str {
-    path.rsplit_once(path::MAIN_SEPARATOR_STR).map(|(_, file)| file).unwrap_or(path)
+    path.rsplit_once(path::MAIN_SEPARATOR_STR)
+        .map(|(_, file)| file)
+        .unwrap_or(path)
 }
 
 fn is_ninja_on_path() -> bool {
