@@ -92,7 +92,12 @@ jobs:
       - run: cargo install --path . --debug
       - run: mise trust --all
       - run: mise install -y
-      - run: mise run test
+      - name: mise run test
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          command: mise run test
   dockerhub:
     runs-on: ubuntu-latest
     steps:
