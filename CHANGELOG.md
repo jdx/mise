@@ -1,5 +1,23 @@
 # Changelog
 
+## [2024.8.1](https://github.com/jdx/mise/compare/v2024.8.0..v2024.8.1) - 2024-08-01
+
+### 🐛 Bug Fixes
+
+- various windows bug fixes by [@jdx](https://github.com/jdx) in [90b02eb](https://github.com/jdx/mise/commit/90b02eb49055bc7d458cd3cbfb0de00119539dfb)
+- ignore PROMPT_DIRTRIM in diffing logic by [@jdx](https://github.com/jdx) in [7b5563c](https://github.com/jdx/mise/commit/7b5563cd007edf26bc17f07e6cddabacad451e00)
+
+### 📚 Documentation
+
+- added information on rolling alpine tokens by [@jdx](https://github.com/jdx) in [bd693b0](https://github.com/jdx/mise/commit/bd693b02fb4d1060ff7a07dcea07b4a7c5584a8b)
+
+### 🔍 Other Changes
+
+- mark releases as draft until they have been fully released by [@jdx](https://github.com/jdx) in [508f125](https://github.com/jdx/mise/commit/508f125dcea9c6d0457b59c36293204d25adc7ef)
+- fix windows builds by [@jdx](https://github.com/jdx) in [91c90a2](https://github.com/jdx/mise/commit/91c90a2b2d373998433c64196254f7e4d0d8cd82)
+- fix alpine release builds by [@jdx](https://github.com/jdx) in [a7534bb](https://github.com/jdx/mise/commit/a7534bbdd961e6a16852c947f1594d6a52034e58)
+- only edit releases when not a dry run by [@jdx](https://github.com/jdx) in [2255522](https://github.com/jdx/mise/commit/2255522b5045e45ce0dea3699f6555a22a271971)
+
 ## [2024.8.0](https://github.com/jdx/mise/compare/v2024.7.5..v2024.8.0) - 2024-08-01
 
 ### 📚 Documentation
