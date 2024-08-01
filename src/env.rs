@@ -33,9 +33,9 @@ pub static XDG_CACHE_HOME: Lazy<PathBuf> =
 pub static XDG_CONFIG_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CONFIG_HOME").unwrap_or_else(|| HOME.join(".config")));
 pub static XDG_DATA_HOME: Lazy<PathBuf> =
-    Lazy::new(|| var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local/share")));
+    Lazy::new(|| var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local").join("share")));
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
-    Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local/state")));
+    Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
 pub static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
