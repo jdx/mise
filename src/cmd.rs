@@ -92,7 +92,10 @@ where
 
     if cfg!(windows) {
         let program = program.to_string_lossy().to_string();
-        let mut args = args.iter().map(|s| s.to_string_lossy().to_string()).collect::<Vec<_>>();
+        let mut args = args
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
         args.insert(0, program);
         args.insert(0, "/c".to_string());
         duct::cmd("cmd.exe", args)

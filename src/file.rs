@@ -260,21 +260,30 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
+//#[deprecated]
 pub fn make_symlink(_target: &Path, _link: &Path) -> Result<()> {
     unimplemented!("make_symlink is not implemented on Windows")
 }
 
+#[cfg(windows)]
 pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     trace!("ln -sf {} {}", target.display(), link.display());
     if link.is_file() || link.is_symlink() {
         // remove existing file if exists
         fs::remove_file(link)?;
     }
-    if cfg!(windows) {
-        xx::file::write(link, target.to_string_lossy().to_string())?;
-    } else {
-        make_symlink(target, link)?;
+    xx::file::write(link, target.to_string_lossy().to_string())?;
+    Ok(())
+}
+
+#[cfg(unix)]
+pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
+    trace!("ln -sf {} {}", target.display(), link.display());
+    if link.is_file() || link.is_symlink() {
+        // remove existing file if exists
+        fs::remove_file(link)?;
     }
+    make_symlink(target, link)?;
     Ok(())
 }
 
