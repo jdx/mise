@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
+use eyre::{bail, Result};
 use serde_derive::Deserialize;
 use tempfile::tempdir_in;
 use url::Url;
@@ -83,6 +83,28 @@ impl NodePlugin {
         Ok(())
     }
 
+    fn install_windows(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
+        match self.fetch_tarball(
+            ctx.pr.as_ref(),
+            &opts.binary_tarball_url,
+            &opts.binary_tarball_path,
+            &opts.version,
+        ) {
+            Err(e) if matches!(http::error_code(&e), Some(404)) => {
+                bail!("precompiled node not found {e}");
+            }
+            e => e,
+        }?;
+        let tarball_name = &opts.binary_tarball_name;
+        ctx.pr.set_message(format!("extracting {tarball_name}"));
+        let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
+        file::unzip(&opts.binary_tarball_path, tmp_extract_path.path())?;
+        file::remove_all(&opts.install_path)?;
+        let slug = format!("node-v{}-{}-{}", &opts.version, os(), arch());
+        file::rename(tmp_extract_path.path().join(slug), &opts.install_path)?;
+        Ok(())
+    }
+
     fn install_compiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
         let tarball_name = &opts.source_tarball_name;
         self.fetch_tarball(
@@ -153,15 +175,27 @@ impl NodePlugin {
     }
 
     fn node_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/node")
+        if cfg!(windows) {
+            tv.install_path().join("node.exe")
+        } else {
+            tv.install_path().join("bin").join("node")
+        }
     }
 
     fn npm_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/npm")
+        if cfg!(windows) {
+            tv.install_path().join("npm.cmd")
+        } else {
+            tv.install_path().join("bin").join("npm")
+        }
     }
 
     fn corepack_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/corepack")
+        if cfg!(windows) {
+            tv.install_path().join("corepack.cmd")
+        } else {
+            tv.install_path().join("bin").join("corepack")
+        }
     }
 
     fn install_default_packages(
@@ -294,13 +328,17 @@ impl Backend for NodePlugin {
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx)?;
         trace!("node build opts: {:#?}", opts);
-        if settings.node_compile {
+        if cfg!(windows) {
+            self.install_windows(ctx, &opts)?;
+        } else if settings.node_compile {
             self.install_compiled(ctx, &opts)?;
         } else {
             self.install_precompiled(ctx, &opts)?;
         }
         self.test_node(&config, &ctx.tv, ctx.pr.as_ref())?;
-        self.install_npm_shim(&ctx.tv)?;
+        if !cfg!(windows) {
+            self.install_npm_shim(&ctx.tv)?;
+        }
         self.test_npm(&config, &ctx.tv, ctx.pr.as_ref())?;
         if let Err(err) = self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref()) {
             warn!("failed to install default npm packages: {err:#}");
@@ -335,6 +373,10 @@ impl BuildOpts {
         let v = &ctx.tv.version;
         let install_path = ctx.tv.install_path();
         let source_tarball_name = format!("node-v{v}.tar.gz");
+
+        #[cfg(windows)]
+        let binary_tarball_name = format!("node-v{v}-{}-{}.zip", os(), arch());
+        #[cfg(not(windows))]
         let binary_tarball_name = format!("node-v{v}-{}-{}.tar.gz", os(), arch());
 
         Ok(Self {
