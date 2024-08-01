@@ -351,7 +351,7 @@ jobs:
     runs-on: ubuntu-22.04
     container: ghcr.io/jdx/mise:alpine
     timeout-minutes: 30
-    needs: [e2e-linux]
+    needs: [release]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
