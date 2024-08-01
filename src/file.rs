@@ -264,6 +264,20 @@ pub fn make_symlink(_target: &Path, _link: &Path) -> Result<()> {
     unimplemented!("make_symlink is not implemented on Windows")
 }
 
+pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
+    trace!("ln -sf {} {}", target.display(), link.display());
+    if link.is_file() || link.is_symlink() {
+        // remove existing file if exists
+        fs::remove_file(link)?;
+    }
+    if cfg!(windows) {
+        xx::file::write(link, target.to_string_lossy().to_string())?;
+    } else {
+        make_symlink(target, link)?;
+    }
+    Ok(())
+}
+
 pub fn remove_symlinks_with_target_prefix(symlink_dir: &Path, target_prefix: &Path) -> Result<()> {
     if !symlink_dir.exists() {
         return Ok(());

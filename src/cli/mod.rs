@@ -214,6 +214,10 @@ impl Cli {
         Settings::add_cli_matches(&matches);
         logger::init();
         migrate::run();
+
+        #[cfg(windows)]
+        warn_windows()?;
+
         debug!("ARGS: {}", &args.join(" "));
         match Commands::from_arg_matches(&matches) {
             Ok(cmd) => cmd.run(),
@@ -223,6 +227,12 @@ impl Cli {
                 .map(|(command, sub_m)| external::execute(&command.into(), sub_m))?,
         }
     }
+}
+
+fn warn_windows() -> Result<()> {
+    warn!("mise is supported on windows. Do not expect anything to work.");
+    let settings = Settings::try_get()?;
+    settings.ensure_experimental("windows support")
 }
 
 const LONG_ABOUT: &str = indoc! {"

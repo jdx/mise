@@ -23,7 +23,7 @@ use crate::{backend, dirs, env, fake_asdf, file, logger};
 pub fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
-    if regex!(r"^(mise|rtx)(\-.*)?$").is_match(bin_name) || cfg!(test) {
+    if regex!(r"^(mise|rtx)(\-.*)?(\.exe)?$").is_match(bin_name) || cfg!(test) {
         return Ok(());
     }
     logger::init();
