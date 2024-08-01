@@ -229,6 +229,7 @@ impl Cli {
     }
 }
 
+#[cfg(windows)]
 fn warn_windows() -> Result<()> {
     warn!("mise is supported on windows. Do not expect anything to work.");
     let settings = Settings::try_get()?;
