@@ -90,7 +90,15 @@ where
     let display_command = [display_name.into(), display_args].join(" ");
     debug!("$ {display_command}");
 
-    duct::cmd(program, args)
+    if cfg!(windows) {
+        let program = program.to_string_lossy().to_string();
+        let mut args = args.iter().map(|s| s.to_string_lossy().to_string()).collect::<Vec<_>>();
+        args.insert(0, program);
+        args.insert(0, "/c".to_string());
+        duct::cmd("cmd.exe", args)
+    } else {
+        duct::cmd(program, args)
+    }
 }
 
 pub struct CmdLineRunner<'a> {
