@@ -149,8 +149,8 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
     file::make_symlink(mise_bin, symlink_path).wrap_err_with(|| {
         eyre!(
             "Failed to create symlink from {} to {}",
-            display_path(&mise_bin),
-            display_path(&symlink_path)
+            display_path(mise_bin),
+            display_path(symlink_path)
         )
     })?;
     Ok(())
