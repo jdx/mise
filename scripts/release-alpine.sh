@@ -4,12 +4,13 @@ set -euxo pipefail
 MISE_VERSION=$(./scripts/get-version.sh)
 
 export GITLAB_HOST=gitlab.alpinelinux.org
+export GITLAB_TOKEN="$ALPINE_GITLAB_TOKEN"
 
 sudo chown -R packager:packager /github/home
 mkdir -p /github/home/.abuild
-echo "$ALPINE_PUB_KEY" >/github/home/.abuild/-640e56d3.rsa.pub
-echo "$ALPINE_PRIV_KEY" >/github/home/.abuild/-640e56d3.rsa
-echo "PACKAGER_PRIVKEY=\"/github/home/.abuild/-640e56d3.rsa\"" >>/github/home/.abuild/abuild.conf
+echo "$ALPINE_PUB_KEY" >"/github/home/.abuild/$ALPINE_KEY_ID.pub"
+echo "$ALPINE_PRIV_KEY" >"/github/home/.abuild/$ALPINE_KEY_ID"
+echo "PACKAGER_PRIVKEY=\"/github/home/.abuild/$ALPINE_KEY_ID\"" >>/github/home/.abuild/abuild.conf
 
 git config --global user.name "Jeff Dickey"
 git config --global user.email 6271-jdxcode@users.gitlab.alpinelinux.org

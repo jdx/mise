@@ -360,4 +360,4 @@ jobs:
         env:
           ALPINE_PUB_KEY: ${{ secrets.ALPINE_PUB_KEY }}
           ALPINE_PRIV_KEY: ${{ secrets.ALPINE_PRIV_KEY }}
-          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          ALPINE_GITLAB_TOKEN: ${{ secrets.ALPINE_GITLAB_TOKEN }}
