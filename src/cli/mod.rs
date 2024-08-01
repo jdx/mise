@@ -216,7 +216,7 @@ impl Cli {
         migrate::run();
 
         #[cfg(windows)]
-        warn_windows()?;
+        warn_windows(&args[1])?;
 
         debug!("ARGS: {}", &args.join(" "));
         match Commands::from_arg_matches(&matches) {
@@ -230,10 +230,13 @@ impl Cli {
 }
 
 #[cfg(windows)]
-fn warn_windows() -> Result<()> {
+fn warn_windows(arg1: &str) -> Result<()> {
     warn!("mise is supported on windows. Do not expect anything to work.");
     let settings = Settings::try_get()?;
-    settings.ensure_experimental("windows support")
+    if arg1 != "settings" { // allow running `mise settings set experimental true`
+        settings.ensure_experimental("windows support")?;
+    }
+    Ok(())
 }
 
 const LONG_ABOUT: &str = indoc! {"
