@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-MISE_VERSION=$(./scripts/get-version.sh)
+MISE_VERSION=$(./scripts/get-latest-version.sh)
 
 export GITLAB_HOST=gitlab.alpinelinux.org
 export GITLAB_TOKEN="$ALPINE_GITLAB_TOKEN"
