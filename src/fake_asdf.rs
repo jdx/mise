@@ -1,4 +1,4 @@
-use std::env::{join_paths, split_paths, PATH_KEY};
+use std::env::{join_paths, split_paths};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -7,6 +7,7 @@ use color_eyre::eyre::ErrReport;
 use indoc::formatdoc;
 use once_cell::sync::OnceCell;
 
+use crate::env::PATH_KEY;
 use crate::{env, file};
 
 pub fn setup() -> color_eyre::Result<PathBuf> {
