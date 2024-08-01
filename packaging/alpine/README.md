@@ -11,7 +11,7 @@ sudo su - packager
 abuild-keygen -a -n
 ```
 
-Then store them in Github secrets as `ALPINE_PRIV_KEY` and `ALPINE_PUB_KEY`.
+Then store them in GitHub secrets as `ALPINE_PRIV_KEY` and `ALPINE_PUB_KEY`.
 Note the name of the private key file, it will be something like `-5f2b2c4e.rsa`.
 Save that string as `ALPINE_KEY_ID` as another secret.
 
