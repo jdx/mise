@@ -170,6 +170,7 @@ fn valid_key(k: &str) -> bool {
         || k == "SHELLOPTS"
         || k == "COMP_WORDBREAKS"
         || k == "PS1"
+        || k == "PROMPT_DIRTRIM"
         // following two ignores are for exported bash functions and exported bash
         // functions which are multiline, they appear in the environment as e.g.:
         // BASH_FUNC_exported-bash-function%%=() { echo "this is an"
