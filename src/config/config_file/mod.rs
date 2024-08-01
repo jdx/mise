@@ -253,7 +253,7 @@ pub fn trust(path: &Path) -> eyre::Result<()> {
     let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
-        file::make_symlink(path.canonicalize()?.as_path(), &hashed_path)?;
+        file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
     }
     let trust_hash_path = hashed_path.with_extension("hash");
     let hash = file_hash_sha256(path)?;
