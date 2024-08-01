@@ -6,7 +6,6 @@ use std::process::exit;
 use std::sync::Arc;
 
 use color_eyre::eyre::{bail, eyre, Result};
-use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -100,13 +99,7 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 
     for shim in shims_to_add {
         let symlink_path = dirs::SHIMS.join(shim);
-        file::make_symlink(&mise_bin, &symlink_path).wrap_err_with(|| {
-            eyre!(
-                "Failed to create symlink from {} to {}",
-                display_path(&mise_bin),
-                display_path(&symlink_path)
-            )
-        })?;
+        add_shim(&mise_bin, &symlink_path)?;
     }
     for shim in shims_to_remove {
         let symlink_path = dirs::SHIMS.join(shim);
@@ -128,6 +121,30 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+#[cfg(windows)]
+fn add_shim(_mise_bin: &Path, symlink_path: &Path) -> Result<()> {
+    file::write(
+        symlink_path.with_extension("cmd"),
+        formatdoc! {r#"
+        @echo off
+        setlocal
+        mise x -- %*
+        "#},
+    )
+}
+
+#[cfg(unix)]
+fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
+    file::make_symlink(mise_bin, symlink_path).wrap_err_with(|| {
+        eyre!(
+            "Failed to create symlink from {} to {}",
+            display_path(&mise_bin),
+            display_path(&symlink_path)
+        )
+    })?;
     Ok(())
 }
 

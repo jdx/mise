@@ -233,7 +233,8 @@ impl Cli {
 fn warn_windows(arg1: &str) -> Result<()> {
     warn!("mise is not yet supported on windows. Do not expect anything to work.");
     let settings = Settings::try_get()?;
-    if arg1 != "settings" { // allow running `mise settings set experimental true`
+    if arg1 != "settings" {
+        // allow running `mise settings set experimental true`
         settings.ensure_experimental("windows support")?;
     }
     Ok(())

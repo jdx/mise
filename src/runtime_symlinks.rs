@@ -9,7 +9,7 @@ use versions::Versioning;
 
 use crate::backend::{backend_meta, Backend};
 use crate::config::Config;
-use crate::file::make_symlink;
+use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::{backend, file};
 
@@ -27,7 +27,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
                     continue;
                 }
             }
-            make_symlink(&to, &from)?;
+            make_symlink_or_file(&to, &from)?;
         }
         remove_missing_symlinks(backend.clone())?;
         // remove install dir if empty (ignore metadata)
