@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 pub use std::env::*;
+use std::path;
 use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::Duration;
@@ -372,7 +373,7 @@ fn linux_distro() -> Option<String> {
 }
 
 fn filename(path: &str) -> &str {
-    path.rsplit_once('/').map(|(_, file)| file).unwrap_or(path)
+    path.rsplit_once(path::MAIN_SEPARATOR_STR).map(|(_, file)| file).unwrap_or(path)
 }
 
 fn is_ninja_on_path() -> bool {
