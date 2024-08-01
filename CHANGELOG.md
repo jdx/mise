@@ -1,5 +1,22 @@
 # Changelog
 
+## [2024.8.2](https://github.com/jdx/mise/compare/v2024.8.1..v2024.8.2) - 2024-08-01
+
+### 🐛 Bug Fixes
+
+- windows bug fixes by [@jdx](https://github.com/jdx) in [465ea89](https://github.com/jdx/mise/commit/465ea894f317eda025783e66a68f58ab10319790)
+- made cmd! work on windows by [@jdx](https://github.com/jdx) in [c0cef5b](https://github.com/jdx/mise/commit/c0cef5b0941b476badfdbb4f46f24b117d72698d)
+- got node to install on windows by [@jdx](https://github.com/jdx) in [e5aa94e](https://github.com/jdx/mise/commit/e5aa94ecb14c7700823ff7dd58a6e633ced5e054)
+- windows shims by [@jdx](https://github.com/jdx) in [fc2cd48](https://github.com/jdx/mise/commit/fc2cd489babe834546424831a9613e1d0558aa7d)
+- windows paths by [@jdx](https://github.com/jdx) in [a06bcce](https://github.com/jdx/mise/commit/a06bcce484ce405342e68a1ac5dbb667db376f5e)
+
+### 🔍 Other Changes
+
+- fix build by [@jdx](https://github.com/jdx) in [9d85182](https://github.com/jdx/mise/commit/9d8518249c783819a82366f8541f1ea20959e771)
+- dry-run alpine releases by [@jdx](https://github.com/jdx) in [0ef2727](https://github.com/jdx/mise/commit/0ef2727905ce904e44b25cfe46c29645fd41405a)
+- update bun version in e2e test by [@jdx](https://github.com/jdx) in [f4b339f](https://github.com/jdx/mise/commit/f4b339f7974dbb261e7e8a387d082f4090e01f21)
+- fix bun test by [@jdx](https://github.com/jdx) in [00d7054](https://github.com/jdx/mise/commit/00d70543a5f3e0db891b7bfb505e65dacb66d8f0)
+
 ## [2024.8.1](https://github.com/jdx/mise/compare/v2024.8.0..v2024.8.1) - 2024-08-01
 
 ### 🐛 Bug Fixes
