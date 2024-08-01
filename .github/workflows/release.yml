@@ -362,4 +362,4 @@ jobs:
           ALPINE_KEY_ID: ${{ secrets.ALPINE_KEY_ID }}
           ALPINE_PRIV_KEY: ${{ secrets.ALPINE_PRIV_KEY }}
           ALPINE_PUB_KEY: ${{ secrets.ALPINE_PUB_KEY }}
-          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
