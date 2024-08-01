@@ -17,6 +17,7 @@ use signal_hook::iterator::Signals;
 
 use crate::config::Settings;
 use crate::env;
+use crate::env::PATH_KEY;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
@@ -182,14 +183,14 @@ impl<'a> CmdLineRunner<'a> {
 
     pub fn prepend_path(mut self, paths: Vec<PathBuf>) -> eyre::Result<Self> {
         let existing = self
-            .get_env("PATH")
+            .get_env(&PATH_KEY)
             .map(|c| c.to_owned())
-            .unwrap_or_else(|| env::var_os("PATH").unwrap());
+            .unwrap_or_else(|| env::var_os(&*PATH_KEY).unwrap());
         let paths = paths
             .into_iter()
             .chain(env::split_paths(&existing))
             .collect::<Vec<_>>();
-        self.cmd.env("PATH", env::join_paths(paths)?);
+        self.cmd.env(&*PATH_KEY, env::join_paths(paths)?);
         Ok(self)
     }
 

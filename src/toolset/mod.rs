@@ -24,7 +24,7 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::settings::SettingsStatusMissingTools;
 use crate::config::{Config, Settings};
-use crate::env::TERM_WIDTH;
+use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::errors::Error;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
@@ -352,13 +352,13 @@ impl Toolset {
             path_env.add(p);
         }
         let mut env = self.env(config)?;
-        if let Some(path) = env.get("PATH") {
+        if let Some(path) = env.get(&*PATH_KEY) {
             path_env.add(PathBuf::from(path));
         }
         for p in self.list_paths() {
             path_env.add(p);
         }
-        env.insert("PATH".to_string(), path_env.to_string());
+        env.insert(PATH_KEY.to_string(), path_env.to_string());
         Ok(env)
     }
     pub fn env(&self, config: &Config) -> Result<BTreeMap<String, String>> {
@@ -388,7 +388,7 @@ impl Toolset {
             .rev()
             .collect();
         if !add_paths.is_empty() {
-            entries.insert("PATH".to_string(), add_paths);
+            entries.insert(PATH_KEY.to_string(), add_paths);
         }
         entries.extend(config.env()?.clone());
         Ok(entries)

@@ -11,6 +11,7 @@ use flate2::Compression;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
+use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches};
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
@@ -141,8 +142,11 @@ fn get_mise_env_vars_hashed() -> String {
 
 pub fn clear_old_env(shell: &dyn Shell) -> String {
     let mut patches = env::__MISE_DIFF.reverse().to_patches();
-    if let Some(path) = env::PRISTINE_ENV.deref().get("PATH") {
-        patches.push(EnvDiffOperation::Change("PATH".into(), path.to_string()));
+    if let Some(path) = env::PRISTINE_ENV.deref().get(&*PATH_KEY) {
+        patches.push(EnvDiffOperation::Change(
+            PATH_KEY.to_string(),
+            path.to_string(),
+        ));
     }
     build_env_commands(shell, &patches)
 }

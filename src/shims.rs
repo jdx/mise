@@ -6,6 +6,7 @@ use std::process::exit;
 use std::sync::Arc;
 
 use color_eyre::eyre::{bail, eyre, Result};
+use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -125,7 +126,7 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn add_shim(_mise_bin: &Path, symlink_path: &Path) -> Result<()> {
+fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
     file::write(
         symlink_path.with_extension("cmd"),
         formatdoc! {r#"
@@ -134,6 +135,13 @@ fn add_shim(_mise_bin: &Path, symlink_path: &Path) -> Result<()> {
         mise x -- %*
         "#},
     )
+    .wrap_err_with(|| {
+        eyre!(
+            "Failed to create symlink from {} to {}",
+            display_path(mise_bin),
+            display_path(symlink_path)
+        )
+    })
 }
 
 #[cfg(unix)]
