@@ -1122,6 +1122,7 @@ mod tests {
         assert_snapshot!(cf.dump().unwrap());
         assert_snapshot!(cf);
         assert_debug_snapshot!(cf);
+        file::remove_all(&p).unwrap();
     }
 
     #[test]
