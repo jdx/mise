@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.8.3](https://github.com/jdx/mise/compare/v2024.8.2..v2024.8.3) - 2024-08-01
+
+### 🧪 Testing
+
+- clean up global config test by [@jdx](https://github.com/jdx) in [c9f2ec5](https://github.com/jdx/mise/commit/c9f2ec514082c6b1816c52378ce5c29d24aa73cc)
+
+### 🔍 Other Changes
+
+- set extra alpine key by [@jdx](https://github.com/jdx) in [c6b152b](https://github.com/jdx/mise/commit/c6b152bd1864b49c392ad64becbff1b1722be52f)
+- test alpine releases by [@jdx](https://github.com/jdx) in [08f7730](https://github.com/jdx/mise/commit/08f77301c772eb55cee376908f9d907e42c7fe4b)
+- perform alpine at the very end by [@jdx](https://github.com/jdx) in [7c31e17](https://github.com/jdx/mise/commit/7c31e17cc6ff612298c8bdb335d86cab95c9473b)
+- chmod by [@jdx](https://github.com/jdx) in [a3fe85b](https://github.com/jdx/mise/commit/a3fe85b7b71faecb220b33d6cc3b630884b4343a)
+- added jq/gh to alpine docker by [@jdx](https://github.com/jdx) in [e1514cf](https://github.com/jdx/mise/commit/e1514cf95cc625085530c12afc6a7ceb57ff0b64)
+
 ## [2024.8.2](https://github.com/jdx/mise/compare/v2024.8.1..v2024.8.2) - 2024-08-01
 
 ### 🐛 Bug Fixes
