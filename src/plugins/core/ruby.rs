@@ -10,6 +10,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
+use crate::env::PATH_KEY;
 use crate::git::Git;
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -204,7 +205,7 @@ impl RubyPlugin {
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
                 None => cmd = cmd.arg(package),
             };
-            cmd.env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            cmd.env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
         Ok(())
@@ -225,7 +226,7 @@ impl RubyPlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env()?)
-            .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
             .execute()
     }
 

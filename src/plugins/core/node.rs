@@ -11,7 +11,7 @@ use crate::build_time::built_info;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::env::MISE_NODE_MIRROR_URL;
+use crate::env::{MISE_NODE_MIRROR_URL, PATH_KEY};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -218,7 +218,7 @@ impl NodePlugin {
                 .arg("--global")
                 .arg(package)
                 .envs(config.env()?)
-                .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+                .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
         Ok(())
@@ -237,7 +237,7 @@ impl NodePlugin {
         CmdLineRunner::new(corepack)
             .with_pr(pr)
             .arg("enable")
-            .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
             .execute()?;
         Ok(())
     }
@@ -254,7 +254,7 @@ impl NodePlugin {
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         pr.set_message("npm -v".into());
         CmdLineRunner::new(self.npm_path(tv))
-            .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
             .envs(config.env()?)

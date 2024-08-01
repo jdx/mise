@@ -11,6 +11,7 @@ use flate2::Compression;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
+use crate::env::PATH_KEY;
 use crate::{cmd, file};
 
 #[derive(Default, Serialize, Deserialize)]
@@ -161,7 +162,7 @@ fn valid_key(k: &str) -> bool {
     k.is_empty()
         || k == "_"
         || k == "SHLVL"
-        || k == "PATH"
+        || k == *PATH_KEY
         || k == "PWD"
         || k == "OLDPWD"
         || k == "HOME"

@@ -8,7 +8,7 @@ use itertools::Itertools;
 
 use crate::config::{Config, Settings};
 use crate::direnv::DirenvDiff;
-use crate::env::{TERM_WIDTH, __MISE_DIFF};
+use crate::env::{PATH_KEY, TERM_WIDTH, __MISE_DIFF};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
@@ -42,7 +42,7 @@ impl HookEnv {
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;
         let mut env = ts.env(&config)?;
-        let env_path = env.remove("PATH");
+        let env_path = env.remove(&*PATH_KEY);
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
 
@@ -112,7 +112,7 @@ impl HookEnv {
             .into_iter()
             .filter(|p| !p.is_empty())
             .join(":");
-        let mut ops = vec![EnvDiffOperation::Add("PATH".into(), new_path)];
+        let mut ops = vec![EnvDiffOperation::Add(PATH_KEY.to_string(), new_path)];
 
         if let Some(input) = env::DIRENV_DIFF.deref() {
             match self.update_direnv_diff(input, installs, to_remove) {

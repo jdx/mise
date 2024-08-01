@@ -12,6 +12,7 @@ use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use crate::env;
+use crate::env::PATH_KEY;
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
@@ -80,7 +81,7 @@ impl CorePlugin {
     }
 
     pub fn path_env_with_tv_path(tv: &ToolVersion) -> Result<OsString> {
-        let mut path = env::split_paths(&env::var_os("PATH").unwrap()).collect::<Vec<_>>();
+        let mut path = env::split_paths(&env::var_os(&*PATH_KEY).unwrap()).collect::<Vec<_>>();
         path.insert(0, tv.install_path().join("bin"));
         Ok(env::join_paths(path)?)
     }

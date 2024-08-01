@@ -11,6 +11,7 @@ use once_cell::sync::Lazy;
 
 use crate::cmd::{cmd, CmdLineRunner};
 use crate::config::Settings;
+use crate::env::PATH_KEY;
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::fake_asdf::get_path_with_fake_asdf;
@@ -82,7 +83,7 @@ static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
     env.extend(
         (indexmap! {
             "ASDF_CONCURRENCY" => num_cpus::get().to_string(),
-            "PATH" => get_path_with_fake_asdf(),
+            &*PATH_KEY => get_path_with_fake_asdf(),
             "MISE_CACHE_DIR" => env::MISE_CACHE_DIR.to_string_lossy().to_string(),
             "MISE_CONCURRENCY" => num_cpus::get().to_string(),
             "MISE_DATA_DIR" => dirs::DATA.to_string_lossy().to_string(),
@@ -116,11 +117,11 @@ impl ScriptManager {
     }
 
     pub fn prepend_path(&mut self, path: PathBuf) {
-        let k: OsString = "PATH".into();
+        let k: OsString = PATH_KEY.to_string().into();
         let mut paths = env::split_paths(&self.env[&k]).collect::<Vec<_>>();
         paths.insert(0, path);
         self.env
-            .insert("PATH".into(), env::join_paths(paths).unwrap());
+            .insert(PATH_KEY.to_string().into(), env::join_paths(paths).unwrap());
     }
 
     pub fn get_script_path(&self, script: &Script) -> PathBuf {

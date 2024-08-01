@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
+use crate::env::PATH_KEY;
 use crate::file::touch_dir;
 use crate::shell::{get_shell, Shell, ShellType};
 use crate::{dirs, env};
@@ -97,7 +98,7 @@ impl Activate {
 
     fn prepend_path(&self, shell: &dyn Shell, p: &Path) -> String {
         if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
-            shell.prepend_env("PATH", p.to_string_lossy().as_ref())
+            shell.prepend_env(&PATH_KEY, p.to_string_lossy().as_ref())
         } else {
             String::new()
         }

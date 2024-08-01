@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::path;
 use std::path::PathBuf;
+use std::string::ToString;
 use std::sync::RwLock;
 use std::time::Duration;
 
@@ -134,11 +135,18 @@ pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unw
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<HashMap<String, String>> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
-pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get("PATH") {
+pub static PATH_KEY: Lazy<String> = Lazy::new(|| {
+    vars()
+        .map(|(k, _)| k)
+        .find_or_first(|k| k.to_uppercase() == "PATH")
+        .map(|k| k.to_string())
+        .unwrap_or("PATH".into())
+});
+pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get(&*PATH_KEY) {
     Some(path) => split_paths(path).collect(),
     None => vec![],
 });
-pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var("PATH") {
+pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var(&*PATH_KEY) {
     Ok(ref path) => split_paths(path).collect(),
     Err(_) => vec![],
 });
@@ -306,7 +314,7 @@ fn get_pristine_env(
     let mut env = apply_patches(&orig_env, &patches);
 
     // get the current path as a vector
-    let path = match env.get("PATH") {
+    let path = match env.get(&*PATH_KEY) {
         Some(path) => split_paths(path).collect(),
         None => vec![],
     };
@@ -321,7 +329,7 @@ fn get_pristine_env(
 
     // put the pristine PATH back into the environment
     env.insert(
-        "PATH".into(),
+        PATH_KEY.to_string(),
         join_paths(path).unwrap().to_string_lossy().to_string(),
     );
     env
