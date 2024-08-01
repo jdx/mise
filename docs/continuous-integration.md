@@ -17,7 +17,7 @@ To ensure you run the version of the tools installed by Mise, make sure you run 
 
 ```yaml
 script: |
-  mise x npm -- test
+  mise x -- npm test
 ```
 
 Alternatively, you can add the [shims](/dev-tools/shims.md) directory to your `PATH`, if the CI provider allows it.
