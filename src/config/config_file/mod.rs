@@ -211,7 +211,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
             return Ok(());
         }
     }
-    Err(UntrustedConfig())?
+    Err(UntrustedConfig(path.into()))?
 }
 
 static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
