@@ -1,5 +1,18 @@
 # Changelog
 
+## [2024.8.4](https://github.com/jdx/mise/compare/v2024.8.3..v2024.8.4) - 2024-08-02
+
+### 🐛 Bug Fixes
+
+- alpine key madness by [@jdx](https://github.com/jdx) in [a7156e0](https://github.com/jdx/mise/commit/a7156e0042cf10fc3d43723ffd6a92860b4faa0a)
+- alpine github key by [@jdx](https://github.com/jdx) in [a52b68d](https://github.com/jdx/mise/commit/a52b68d024a8ce9955bd84347cc591b249717312)
+- alpine github key by [@jdx](https://github.com/jdx) in [ebc923f](https://github.com/jdx/mise/commit/ebc923ff3c140c6c282bb0c1a2896ad758b4a3c2)
+- spm - cannot install package with null release name field by [@roele](https://github.com/roele) in [#2419](https://github.com/jdx/mise/pull/2419)
+
+### 🔍 Other Changes
+
+- removed dead code by [@jdx](https://github.com/jdx) in [#2416](https://github.com/jdx/mise/pull/2416)
+
 ## [2024.8.3](https://github.com/jdx/mise/compare/v2024.8.2..v2024.8.3) - 2024-08-01
 
 ### 🧪 Testing
