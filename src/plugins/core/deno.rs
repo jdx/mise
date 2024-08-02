@@ -40,8 +40,7 @@ impl DenoPlugin {
             HTTP_FETCH.json("https://api.github.com/repos/denoland/deno/releases?per_page=100")?;
         let versions = releases
             .into_iter()
-            .map(|r| r.name)
-            .filter(|v| !v.is_empty())
+            .map(|r| r.tag_name)
             .filter(|v| v.starts_with('v'))
             .map(|v| v.trim_start_matches('v').to_string())
             .unique()

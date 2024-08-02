@@ -3,11 +3,11 @@ use serde_derive::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct GithubRelease {
     pub tag_name: String,
-    pub name: String,
-    pub body: String,
+    pub name: Option<String>,
+    pub body: Option<String>,
     pub prerelease: bool,
     pub created_at: String,
-    pub published_at: String,
+    pub published_at: Option<String>,
 }
 
 pub fn list_releases(repo: &str) -> eyre::Result<Vec<GithubRelease>> {
