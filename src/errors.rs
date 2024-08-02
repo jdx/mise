@@ -1,8 +1,11 @@
-use eyre::Report;
+use std::path::PathBuf;
 use std::process::ExitStatus;
 
-use crate::toolset::{ToolRequest, ToolSource};
+use eyre::Report;
 use thiserror::Error;
+
+use crate::file::display_path;
+use crate::toolset::{ToolRequest, ToolSource};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -18,8 +21,11 @@ pub enum Error {
     VersionNotInstalled(String, String),
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
-    #[error("Config file is not trusted.\nTrust it with `mise trust`.")]
-    UntrustedConfig(),
+    #[error(
+        "Config file {} is not trusted.\nTrust it with `mise trust`.",
+        display_path(.0)
+    )]
+    UntrustedConfig(PathBuf),
 }
 
 fn render_exit_status(exit_status: &Option<ExitStatus>) -> String {
