@@ -220,7 +220,10 @@ pub fn is_trusted(path: &Path) -> bool {
     let mut cached = IS_TRUSTED.lock().unwrap();
     let canonicalized_path = match path.canonicalize() {
         Ok(p) => p,
-        Err(_) => return false,
+        Err(err) => {
+            debug!("trust canonicalize: {err}");
+            return false;
+        }
     };
     if cached.contains(canonicalized_path.as_path()) {
         return true;
@@ -240,7 +243,10 @@ pub fn is_trusted(path: &Path) -> bool {
         if !trusted {
             return false;
         }
-    } else if !(trust_path(path).exists() || ci_info::is_ci() && !cfg!(test)) {
+    } else if cfg!(test) || ci_info::is_ci() {
+        // in tests/CI we trust everything
+        return true;
+    } else if !trust_path(path).exists() {
         // the file isn't trusted, and we're not on a CI system where we generally assume we can
         // trust config files
         return false;
