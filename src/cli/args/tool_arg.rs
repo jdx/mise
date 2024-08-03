@@ -22,7 +22,7 @@ pub struct ToolArg {
 pub enum ToolVersionType {
     Path(PathBuf),
     Prefix(String),
-    Ref(String),
+    Ref(String, String),
     Sub { sub: String, orig_version: String },
     System,
     Version(String),
@@ -57,7 +57,9 @@ impl FromStr for ToolVersionType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s.split_once(':') {
-            Some(("ref", r)) => Self::Ref(r.to_string()),
+            Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
+                Self::Ref(ref_type.to_string(), r.to_string())
+            }
             Some(("prefix", p)) => Self::Prefix(p.to_string()),
             Some(("path", p)) => Self::Path(PathBuf::from(p)),
             Some((p, v)) if p.starts_with("sub-") => Self::Sub {
@@ -76,7 +78,7 @@ impl Display for ToolVersionType {
         match self {
             Self::Path(p) => write!(f, "path:{}", p.to_string_lossy()),
             Self::Prefix(p) => write!(f, "prefix:{}", p),
-            Self::Ref(r) => write!(f, "ref:{}", r),
+            Self::Ref(rt, r) => write!(f, "{rt}:{r}"),
             Self::Sub { sub, orig_version } => write!(f, "sub-{}:{}", sub, orig_version),
             Self::System => write!(f, "system"),
             Self::Version(v) => write!(f, "{}", v),

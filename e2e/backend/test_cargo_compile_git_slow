@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+require_cmd cargo
+
+assert "mise x cargo:eza-community/eza@tag:v0.18.24 -- eza --version" "eza - A modern, maintained replacement for ls
+v0.18.24 [+git]
+https://github.com/eza-community/eza"

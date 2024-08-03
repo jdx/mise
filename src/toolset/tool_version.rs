@@ -124,8 +124,13 @@ impl ToolVersion {
         let config = Config::get();
         let v = config.resolve_alias(tool, v)?;
         match v.split_once(':') {
-            Some(("ref", r)) => {
-                return Ok(Self::resolve_ref(tool, r.to_string(), request.options()));
+            Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
+                return Ok(Self::resolve_ref(
+                    tool,
+                    r.to_string(),
+                    ref_type.to_string(),
+                    request.options(),
+                ));
             }
             Some(("path", p)) => {
                 return Self::resolve_path(tool, PathBuf::from(p));
@@ -203,10 +208,16 @@ impl ToolVersion {
         Ok(Self::new(tool, request, v.to_string()))
     }
 
-    fn resolve_ref(tool: &dyn Backend, ref_: String, opts: ToolVersionOptions) -> Self {
+    fn resolve_ref(
+        tool: &dyn Backend,
+        ref_: String,
+        ref_type: String,
+        opts: ToolVersionOptions,
+    ) -> Self {
         let request = ToolRequest::Ref {
             backend: tool.fa().clone(),
             ref_,
+            ref_type,
             options: opts.clone(),
         };
         let version = request.version();
