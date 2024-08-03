@@ -12,7 +12,7 @@ use crate::backend::{ABackend, Backend};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::hash::hash_to_str;
-use crate::toolset::{tool_version_request, ToolRequest, ToolVersionOptions};
+use crate::toolset::{tool_request, ToolRequest, ToolVersionOptions};
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
@@ -194,7 +194,7 @@ impl ToolVersion {
             "latest" => tool.latest_version(None)?.unwrap(),
             _ => Config::get().resolve_alias(tool, v)?,
         };
-        let v = tool_version_request::version_sub(&v, sub);
+        let v = tool_request::version_sub(&v, sub);
         Self::resolve_version(tool, request, latest_versions, &v)
     }
 
