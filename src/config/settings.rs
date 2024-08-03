@@ -424,7 +424,9 @@ impl Settings {
     }
 
     pub fn as_dict(&self) -> eyre::Result<toml::Table> {
-        Ok(self.to_string().parse()?)
+        let s = toml::to_string(self)?;
+        let table = toml::from_str(&s)?;
+        Ok(table)
     }
 }
 

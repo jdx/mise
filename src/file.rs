@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs;
 use std::fs::File;
 #[cfg(unix)]
@@ -160,6 +161,13 @@ pub fn display_path<P: AsRef<Path>>(path: P) -> String {
         true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
         false => path.to_string_lossy().to_string(),
     }
+}
+
+/// replaces $HOME in a string with "~" and $PATH with "$PATH", generally used to clean up output
+/// after it is rendered
+pub fn replace_paths_in_string<S: Display>(input: S) -> String {
+    let home = env::HOME.to_string_lossy().to_string();
+    input.to_string().replace(&home, "~")
 }
 
 /// replaces "~" with $HOME
