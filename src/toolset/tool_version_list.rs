@@ -1,7 +1,7 @@
 use crate::backend;
 use crate::cli::args::BackendArg;
 use crate::errors::Error;
-use crate::toolset::tool_version_request::ToolRequest;
+use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::{ToolSource, ToolVersion};
 
 /// represents several versions of a tool for a particular plugin

@@ -13,11 +13,11 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 pub use builder::ToolsetBuilder;
+pub use tool_request::ToolRequest;
 pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::ToolVersion;
 pub use tool_version_list::ToolVersionList;
-pub use tool_version_request::ToolRequest;
 use versions::Version;
 
 use crate::backend::Backend;
@@ -32,11 +32,11 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, env, runtime_symlinks, shims};
 
 mod builder;
+mod tool_request;
 mod tool_request_set;
 mod tool_source;
 mod tool_version;
 mod tool_version_list;
-mod tool_version_request;
 
 pub type ToolVersionOptions = BTreeMap<String, String>;
 
