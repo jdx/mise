@@ -73,13 +73,26 @@ impl SyncNode {
         let nvm_versions_path = NVM_DIR.join("versions").join("node");
         let installed_versions_path = dirs::INSTALLS.join("node");
 
-        file::remove_symlinks_with_target_prefix(&installed_versions_path, &nvm_versions_path)?;
+        let removed =
+            file::remove_symlinks_with_target_prefix(&installed_versions_path, &nvm_versions_path)?;
+        if !removed.is_empty() {
+            debug!("Removed symlinks: {removed:?}");
+        }
 
+        let mut created = vec![];
         let subdirs = file::dir_subdirs(&nvm_versions_path)?;
         for entry in sorted(subdirs) {
             let v = entry.trim_start_matches('v');
-            tool.create_symlink(v, &nvm_versions_path.join(&entry))?;
-            miseprintln!("Synced node@{} from nvm", v);
+            let symlink = tool.create_symlink(v, &nvm_versions_path.join(&entry))?;
+            if let Some(symlink) = symlink {
+                created.push(symlink);
+                miseprintln!("Synced node@{} from nvm", v);
+            } else {
+                info!("Skipping node@{v} from nvm because it already exists in mise");
+            }
+        }
+        if !created.is_empty() {
+            debug!("Created symlinks: {created:?}");
         }
 
         config.rebuild_shims_and_runtime_symlinks()

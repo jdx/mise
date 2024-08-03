@@ -249,19 +249,19 @@ pub fn recursive_ls(dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 #[cfg(unix)]
-pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
+pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     trace!("ln -sf {} {}", target.display(), link.display());
     if link.is_file() || link.is_symlink() {
         fs::remove_file(link)?;
     }
     symlink(target, link)
         .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
-    Ok(())
+    Ok((target.to_path_buf(), link.to_path_buf()))
 }
 
 #[cfg(windows)]
 //#[deprecated]
-pub fn make_symlink(_target: &Path, _link: &Path) -> Result<()> {
+pub fn make_symlink(_target: &Path, _link: &Path) -> Result<(PathBuf, PathBuf)> {
     unimplemented!("make_symlink is not implemented on Windows")
 }
 
@@ -287,10 +287,14 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn remove_symlinks_with_target_prefix(symlink_dir: &Path, target_prefix: &Path) -> Result<()> {
+pub fn remove_symlinks_with_target_prefix(
+    symlink_dir: &Path,
+    target_prefix: &Path,
+) -> Result<Vec<PathBuf>> {
     if !symlink_dir.exists() {
-        return Ok(());
+        return Ok(vec![]);
     }
+    let mut removed = vec![];
     for entry in symlink_dir.read_dir()? {
         let entry = entry?;
         let path = entry.path();
@@ -298,10 +302,11 @@ pub fn remove_symlinks_with_target_prefix(symlink_dir: &Path, target_prefix: &Pa
             let target = path.read_link()?;
             if target.starts_with(target_prefix) {
                 fs::remove_file(&path)?;
+                removed.push(path);
             }
         }
     }
-    Ok(())
+    Ok(removed)
 }
 
 #[cfg(unix)]
