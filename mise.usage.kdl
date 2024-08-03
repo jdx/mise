@@ -1119,6 +1119,7 @@ This includes:
 "
     flag "-a --all" help="Trust all config files in the current directory and its parents"
     flag "--untrust" help="No longer trust this config"
+    flag "--show" help="Show the trusted status of config files from the current directory and its parents.\nDoes not trust or untrust any files."
     arg "[CONFIG_FILE]" help="The config file to trust"
 }
 cmd "uninstall" help="Removes runtime versions" {

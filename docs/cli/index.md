@@ -1562,6 +1562,10 @@ Options:
       --untrust
           No longer trust this config
 
+      --show
+          Show the trusted status of config files from the current directory and its parents.
+          Does not trust or untrust any files.
+
 Examples:
     # trusts ~/some_dir/.mise.toml
     $ mise trust ~/some_dir/.mise.toml
