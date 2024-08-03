@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+export NVM_DIR="$PWD/.nvm"
+
+install_fake_node() {
+  mkdir -p "$1/bin"
+  echo "#!/usr/bin/env echo" >"$1/bin/node"
+  chmod +x "$1/bin/node"
+}
+
+install_fake_node "$NVM_DIR/versions/node/v18.0.0"
+mise sync node --nvm
+mise ls
+assert_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/18.0.0"
+
+install_fake_node "$NVM_DIR/versions/node/v20.0.0"
+install_fake_node "$NVM_DIR/versions/node/v22.0.0"
+install_fake_node "$MISE_DATA_DIR/installs/node/20.0.0/bin"
+
+mise sync node --nvm
+mise ls
+assert_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/22.0.0"
+assert_not_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/20.0.0"
+assert_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/18.0.0"
