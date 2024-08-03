@@ -2,4 +2,4 @@
 source: src/cli/trust.rs
 expression: output
 ---
-mise untrusted ~/cwd/.test-tool-versions
+mise No untrusted config files found.
