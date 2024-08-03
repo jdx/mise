@@ -331,11 +331,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 fn section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
+    let body = file::replace_paths_in_string(body);
     miseprintln!("\n{}: \n{}", style(header).bold(), indent_by(body, "  "));
     Ok(())
 }
 
 fn inline_section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
+    let body = file::replace_paths_in_string(body);
     miseprintln!("{}: {body}", style(header).bold());
     Ok(())
 }
