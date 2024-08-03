@@ -240,10 +240,18 @@ pub trait Backend: Debug + Send + Sync {
             _ => None,
         }
     }
-    fn create_symlink(&self, version: &str, target: &Path) -> eyre::Result<()> {
+    fn create_symlink(
+        &self,
+        version: &str,
+        target: &Path,
+    ) -> eyre::Result<Option<(PathBuf, PathBuf)>> {
         let link = self.fa().installs_path.join(version);
+        if link.exists() {
+            return Ok(None);
+        }
         file::create_dir_all(link.parent().unwrap())?;
-        file::make_symlink(target, &link)
+        let link = file::make_symlink(target, &link)?;
+        Ok(Some(link))
     }
     fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_installed_versions()?;

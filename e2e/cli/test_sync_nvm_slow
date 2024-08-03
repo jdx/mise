@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+export NVM_DIR="$PWD/.nvm"
+mkdir -p "$NVM_DIR"
+curl -L https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.0.tar.gz | tar -xz -C "$NVM_DIR" --strip-components=1
+. "$NVM_DIR/nvm.sh"
+
+nvm install 22.0.0
+mise sync node --nvm
+mise ls
+assert_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/22.0.0"
+
+# mise install node@20.0.0
+# nvm install 20.0.0
+# nvm install 18.0.0
+# mise sync node --nvm
+# mise ls
+# assert_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/22.0.0"
+# assert_not_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/20.0.0"
+# assert_contains "mise ls node --json | jq -r '.[] | .symlinked_to | select( . != null)'" "node/18.0.0"
