@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use color_eyre::Section;
+use eyre::eyre;
 use serde_json::Deserializer;
 use url::Url;
 
@@ -34,6 +36,10 @@ impl Backend for CargoBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+        if self.git_url().is_some() {
+            // TODO: maybe fetch tags/branches from git?
+            return Ok(vec!["HEAD".into()]);
+        }
         self.remote_version_cache
             .get_or_try_init(|| {
                 let raw = HTTP_FETCH.get_text(get_crate_url(self.name())?)?;
@@ -54,17 +60,36 @@ impl Backend for CargoBackend {
         let config = Config::try_get()?;
         let settings = Settings::get();
         settings.ensure_experimental("cargo backend")?;
-        let cmd = if self.is_binstall_enabled() {
-            let mut runner = CmdLineRunner::new("cargo-binstall").arg("-y");
-            if let Some(token) = &*GITHUB_TOKEN {
-                runner = runner.env("GITHUB_TOKEN", token)
+        let install_arg = format!("{}@{}", self.name(), ctx.tv.version);
+
+        let cmd = CmdLineRunner::new("cargo").arg("install");
+        let cmd = if let Some(url) = self.git_url() {
+            let mut cmd = cmd.arg(format!("--git={url}"));
+            if let Some(rev) = ctx.tv.version.strip_prefix("rev:") {
+                cmd = cmd.arg(format!("--rev={rev}"));
+            } else if let Some(branch) = ctx.tv.version.strip_prefix("branch:") {
+                cmd = cmd.arg(format!("--branch={branch}"));
+            } else if let Some(tag) = ctx.tv.version.strip_prefix("tag:") {
+                cmd = cmd.arg(format!("--tag={tag}"));
+            } else if ctx.tv.version != "HEAD" {
+                Err(eyre!("Invalid cargo git version: {}", ctx.tv.version).note(
+                    r#"You can specify "rev:", "branch:", or "tag:", e.g.:
+      * mise use cargo:eza-community/eza@tag:v0.18.0
+      * mise use cargo:eza-community/eza@branch:main"#,
+                ))?;
             }
-            runner
+            cmd
+        } else if self.is_binstall_enabled() {
+            let mut cmd = CmdLineRunner::new("cargo-binstall").arg("-y");
+            if let Some(token) = &*GITHUB_TOKEN {
+                cmd = cmd.env("GITHUB_TOKEN", token)
+            }
+            cmd.arg(install_arg)
         } else {
-            CmdLineRunner::new("cargo").arg("install")
+            cmd.arg(install_arg)
         };
 
-        cmd.arg(format!("{}@{}", self.name(), ctx.tv.version))
+        cmd.arg("--locked")
             .arg("--root")
             .arg(ctx.tv.install_path())
             .with_pr(ctx.pr.as_ref())
@@ -90,6 +115,17 @@ impl CargoBackend {
     fn is_binstall_enabled(&self) -> bool {
         let settings = Settings::get();
         settings.cargo_binstall && file::which_non_pristine("cargo-binstall").is_some()
+    }
+
+    /// if the name is a git repo, return the git url
+    fn git_url(&self) -> Option<Url> {
+        if let Ok(url) = Url::parse(self.name()) {
+            Some(url)
+        } else if let Some((user, repo)) = self.name().split_once('/') {
+            format!("https://github.com/{user}/{repo}.git").parse().ok()
+        } else {
+            None
+        }
     }
 }
 
