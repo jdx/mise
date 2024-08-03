@@ -1,5 +1,24 @@
 # Changelog
 
+## [2024.8.5](https://github.com/jdx/mise/compare/v2024.8.4..v2024.8.5) - 2024-08-03
+
+### 🚀 Features
+
+- show friendly errors when not in verbose/debug mode by [@jdx](https://github.com/jdx) in [#2431](https://github.com/jdx/mise/pull/2431)
+- allow installing cargo packages with `--git` by [@jdx](https://github.com/jdx) in [#2430](https://github.com/jdx/mise/pull/2430)
+- some ux improvements to `mise sync nvm` by [@jdx](https://github.com/jdx) in [#2432](https://github.com/jdx/mise/pull/2432)
+
+### 🐛 Bug Fixes
+
+- display untrusted file on error by [@jdx](https://github.com/jdx) in [#2423](https://github.com/jdx/mise/pull/2423)
+- `mise trust` issue with unstable hashing by [@jdx](https://github.com/jdx) in [#2427](https://github.com/jdx/mise/pull/2427)
+- use newer eza in e2e test by [@jdx](https://github.com/jdx) in [eec3989](https://github.com/jdx/mise/commit/eec3989d8602ebc10304adbd5ded0574fc2981f0)
+- take out home directory paths from `mise dr` output by [@jdx](https://github.com/jdx) in [#2433](https://github.com/jdx/mise/pull/2433)
+
+### 🔍 Other Changes
+
+- use pub(crate) to get notified about dead code by [@jdx](https://github.com/jdx) in [#2426](https://github.com/jdx/mise/pull/2426)
+
 ## [2024.8.4](https://github.com/jdx/mise/compare/v2024.8.3..v2024.8.4) - 2024-08-02
 
 ### 🐛 Bug Fixes
