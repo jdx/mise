@@ -243,13 +243,14 @@ impl SwiftPackageRepo {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::config::config_file::reset;
     use pretty_assertions::assert_str_eq;
     use test_log::test;
 
-    use super::*;
-
     #[test]
     fn test_spm_repo_init_by_shorthand() {
+        reset();
         let package_name = "nicklockwood/SwiftFormat";
         let package_repo = SwiftPackageRepo::new(package_name).unwrap();
         assert_str_eq!(
@@ -261,6 +262,7 @@ mod tests {
 
     #[test]
     fn test_spm_repo_init_by_url() {
+        reset();
         let package_name = "https://github.com/nicklockwood/SwiftFormat.git";
         let package_repo = SwiftPackageRepo::new(package_name).unwrap();
         assert_str_eq!(
