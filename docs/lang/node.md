@@ -17,6 +17,8 @@ default:
 mise use -g node@20
 ```
 
+See available versions with `mise ls-remote node`.
+
 ## Requirements
 
 See [BUILDING.md](https://github.com/nodejs/node/blob/main/BUILDING.md#building-nodejs-on-supported-platforms) in node's documentation for
