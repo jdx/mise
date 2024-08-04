@@ -78,7 +78,7 @@ jobs:
         run: |
           echo "AWS_ACCESS_KEY_ID=$MINIO_AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
           echo "AWS_SECRET_ACCESS_KEY=$MINIO_AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
-      - uses: mozilla-actions/sccache-action@v0.0.4
+      - uses: mozilla-actions/sccache-action@v0.0.5
       - name: cache crates
         id: cache-crates
         uses: actions/cache@v4
@@ -131,7 +131,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup target add ${{matrix.target}}
-      - uses: mozilla-actions/sccache-action@v0.0.4
+      - uses: mozilla-actions/sccache-action@v0.0.5
       - name: cache crates
         id: cache-crates
         uses: actions/cache@v4
