@@ -244,6 +244,42 @@
               "description": "do not display this task",
               "type": "boolean"
             },
+            "inputs": {
+              "description": "inputs for this task",
+              "type": "array",
+              "items": {
+                "description": "confirmation input",
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "description": "unique identifier for this input",
+                    "type": "string"
+                  },
+                  "input_type": {
+                    "description": "confirmation input",
+                    "type": "string",
+                    "enum": ["confirm", "input", "password", "select"],
+                    "default": "confirm"
+                  },
+                  "title": {
+                    "description": "title of the input",
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "description of the input",
+                    "type": "string"
+                  },
+                  "options": {
+                    "description": "options for select input",
+                    "type": "array",
+                    "items": {
+                      "description": "option for select input",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
             "quiet": {
               "description": "do not display mise information for this task",
               "type": "boolean"

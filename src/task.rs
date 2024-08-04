@@ -22,6 +22,20 @@ use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::ui::tree::TreeItem;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Deserialize)]
+pub struct TaskInput {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub input_type: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Eq, PartialEq, Deserialize)]
 pub struct Task {
     #[serde(skip)]
     pub name: String,
@@ -39,6 +53,8 @@ pub struct Task {
     pub dir: Option<PathBuf>,
     #[serde(default)]
     pub hide: bool,
+    #[serde(default)]
+    pub inputs: Vec<TaskInput>,
     #[serde(default)]
     pub raw: bool,
     #[serde(default)]

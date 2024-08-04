@@ -231,12 +231,17 @@ impl Run {
             .filter(|(_, v)| v.0 == Either::Right(false))
             .map(|(k, _)| k)
             .collect::<HashSet<_>>();
-        let env: BTreeMap<String, String> = env
+        let mut env: BTreeMap<String, String> = env
             .iter()
             .chain(string_env)
             .filter(|(k, _)| !rm_env.contains(k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+
+        let input_values = self.process_task_inputs(&prefix, task);
+        for (k, v) in input_values? {
+            env.insert(format!("MISE_INPUT_{}", k.to_uppercase()), v);
+        }
 
         let timer = std::time::Instant::now();
 
@@ -263,6 +268,72 @@ impl Run {
         self.save_checksum(task)?;
 
         Ok(())
+    }
+
+    fn process_task_inputs(
+        &self,
+        prefix: &String,
+        task: &Task,
+    ) -> Result<BTreeMap<String, String>> {
+        let mut values = BTreeMap::new();
+        task.inputs.iter().for_each(|input| {
+            let title = format!("{} {}", prefix, input.title.as_str());
+            let description = input.description.as_str();
+            match input.input_type.as_str() {
+                "confirm" => {
+                    let confirm = demand::Confirm::new(title)
+                        .description(description)
+                        .run()
+                        .unwrap_or(true);
+                    if !confirm {
+                        error!("{prefix} task cancelled");
+                        exit(1)
+                    }
+                }
+                "input" => {
+                    let value = demand::Input::new(title)
+                        .description(description)
+                        .run()
+                        .unwrap();
+                    values.insert(input.id.clone(), value);
+                }
+                "password" => {
+                    let value = demand::Input::new(title)
+                        .description(description)
+                        .password(true)
+                        .run()
+                        .unwrap();
+                    values.insert(input.id.clone(), value);
+                }
+                "select" => {
+                    let options = input.options.iter().map(DemandOption::new).collect_vec();
+                    let value = demand::Select::new(title)
+                        .description(description)
+                        .options(options)
+                        .run()
+                        .unwrap()
+                        .to_string();
+                    values.insert(input.id.clone(), value);
+                }
+                "multiselect" => {
+                    let options = input.options.iter().map(DemandOption::new).collect_vec();
+                    let value = demand::MultiSelect::new(title)
+                        .description(description)
+                        .options(options)
+                        .run()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .join(",");
+                    values.insert(input.id.clone(), value);
+                }
+                _ => {
+                    error!("{prefix} unknown input type: {}", input.input_type);
+                    exit(1);
+                }
+            }
+        });
+
+        Ok(values)
     }
 
     fn exec_script(
