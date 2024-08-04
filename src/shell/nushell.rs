@@ -48,7 +48,7 @@ impl Shell for Nushell {
             $in | lines | parse "{{op}},{{name}},{{value}}"
           }}
 
-          export def --wrapped main [command?: string, --help, ...rest: string] {{
+          export def --env --wrapped main [command?: string, --help, ...rest: string] {{
             let commands = ["shell", "deactivate"]
 
             if ($command == null) {{
