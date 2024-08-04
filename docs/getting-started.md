@@ -40,6 +40,11 @@ this uses `~/.local/bin/mise` as the binary location since that's what <https://
 default. If you've
 installed mise by some other means it may be on PATH or somewhere different.
 
+:::info
+Activation may be handled automatically if you use the [fish shell](#fish) and installed via
+homebrew.
+:::
+
 ::: code-group
 
 ```sh [bash]
