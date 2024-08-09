@@ -1,5 +1,11 @@
 # Changelog
 
+## [2024.8.6](https://github.com/jdx/mise/compare/v2024.8.5..v2024.8.6) - 2024-08-09
+
+### 🚜 Refactor
+
+- renamed tool_request_version to tool_request to match the class by [@jdx](https://github.com/jdx) in [76a611a](https://github.com/jdx/mise/commit/76a611ac0f3cfbc7ac58fdc87a528e86ef73507e)
+
 ## [2024.8.5](https://github.com/jdx/mise/compare/v2024.8.4..v2024.8.5) - 2024-08-03
 
 ### 🚀 Features
