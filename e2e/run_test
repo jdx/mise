@@ -33,7 +33,7 @@ setup_isolated_env() {
 }
 
 create_isolated_env() {
-  # Create the required diretories
+  # Create the required directories
   mkdir -p "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
 
   # The dummy plugin is required for some tests

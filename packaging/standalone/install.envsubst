@@ -76,7 +76,7 @@ get_checksum() {
 	arch="$(get_arch)"
 	url="https://github.com/jdx/mise/releases/download/${version}/SHASUMS256.txt"
 
-	# For current version use static checksum otherwize
+	# For current version use static checksum otherwise
 	# use checksum from releases
 	if [ "$version" = "$MISE_CURRENT_VERSION" ]; then
 		checksum_linux_x86_64="$MISE_CHECKSUM_LINUX_X86_64"
