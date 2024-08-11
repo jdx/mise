@@ -100,7 +100,7 @@ fn test_nodejs() -> Result<()> {
         .run()?
         .success();
 
-    // When node@lts/hydrogen is insalled
+    // When node@lts/hydrogen is installed
     // Mise should succeed
     env.mise()
         .env(
@@ -211,7 +211,7 @@ fn python_config_fixture() -> File {
 // From e2e/test_python
 #[test]
 #[ignore]
-fn test_python_complie() -> Result<()> {
+fn test_python_compile() -> Result<()> {
     mise! {
         given_environment!(has_exported_var "MISE_ALL_COMPILE", "1");
         when!(
