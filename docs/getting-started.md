@@ -151,18 +151,22 @@ or if you're allergic to `| sh`:
 
 ```sh [macos-arm64]
 curl https://mise.jdx.dev/mise-latest-macos-arm64 > ~/.local/bin/mise
+chmod +x ~/.local/bin/mise
 ```
 
 ```sh [macos-x64]
 curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise
+chmod +x ~/.local/bin/mise
 ```
 
 ```sh [linux-x64]
 curl https://mise.jdx.dev/mise-latest-linux-x64 > ~/.local/bin/mise
+chmod +x ~/.local/bin/mise
 ```
 
 ```sh [linux-arm64]
 curl https://mise.jdx.dev/mise-latest-linux-arm64 > ~/.local/bin/mise
+chmod +x ~/.local/bin/mise
 ```
 
 :::
