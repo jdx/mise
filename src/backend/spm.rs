@@ -213,10 +213,11 @@ struct SwiftPackageRepo {
 }
 
 impl SwiftPackageRepo {
+    /// Parse the slug or the full URL of a GitHub package repository.
     fn new(name: &str) -> Result<Self, eyre::Error> {
-        let shorthand_regex = regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$");
+        let shorthand_regex = regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+$");
         let shorthand_in_url_regex =
-            regex!(r"https://github.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+)\.git");
+            regex!(r"https://github.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+)\.git");
 
         let shorthand = if let Some(Some(m)) =
             shorthand_in_url_regex.captures(name).map(|c| c.get(1))
@@ -258,6 +259,27 @@ mod tests {
             "https://github.com/nicklockwood/SwiftFormat.git"
         );
         assert_str_eq!(package_repo.shorthand, "nicklockwood/SwiftFormat");
+    }
+
+    #[test]
+    fn test_spm_repo_init_name() {
+        reset();
+        assert!(
+            SwiftPackageRepo::new("owner/name.swift").is_ok(),
+            "name part can contain ."
+        );
+        assert!(
+            SwiftPackageRepo::new("owner/name_swift").is_ok(),
+            "name part can contain _"
+        );
+        assert!(
+            SwiftPackageRepo::new("owner/name-swift").is_ok(),
+            "name part can contain -"
+        );
+        assert!(
+            SwiftPackageRepo::new("owner/name$swift").is_err(),
+            "name part cannot contain characters other than a-zA-Z0-9._-"
+        );
     }
 
     #[test]
