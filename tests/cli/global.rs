@@ -10,7 +10,7 @@ fn test_exec_change_directory() -> Result<()> {
         .with_home_files([CONFIGS.get(".tool-versions")])
         .build()?;
 
-    let tool_verisons_path = env.home_path().join(".tool-versions");
+    let tool_versions_path = env.home_path().join(".tool-versions");
 
     // Given default settings
     // When `mise global node 20.0.0` is run
@@ -41,7 +41,7 @@ fn test_exec_change_directory() -> Result<()> {
     env.mise()
         .unset_env("MISE_GLOBAL_CONFIG_FILE")
         .unset_env("MISE_CONFIG_FILE")
-        .env("MISE_CONFIG_FILE", &tool_verisons_path)
+        .env("MISE_CONFIG_FILE", &tool_versions_path)
         .args(["global", "node", "20.0.0"])
         .run()?
         .stdout(predicate::str::contains("~/.tool-versions"))
@@ -53,7 +53,7 @@ fn test_exec_change_directory() -> Result<()> {
     env.mise()
         .unset_env("MISE_GLOBAL_CONFIG_FILE")
         .unset_env("MISE_CONFIG_FILE")
-        .env("MISE_GLOBAL_CONFIG_FILE", tool_verisons_path)
+        .env("MISE_GLOBAL_CONFIG_FILE", tool_versions_path)
         .args(["global", "node", "20.0.0"])
         .run()?
         .stdout(predicate::str::contains("~/.tool-versions"))
