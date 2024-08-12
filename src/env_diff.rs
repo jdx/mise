@@ -140,9 +140,8 @@ impl EnvDiff {
             };
         }
         for (k, v) in self.new.iter() {
-            match self.old.contains_key(k) {
-                false => patches.push(EnvDiffOperation::Add(k.into(), v.into())),
-                true => {}
+            if !self.old.contains_key(k) {
+                patches.push(EnvDiffOperation::Add(k.into(), v.into()))
             };
         }
 
