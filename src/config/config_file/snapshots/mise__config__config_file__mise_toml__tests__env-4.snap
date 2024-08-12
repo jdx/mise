@@ -10,5 +10,13 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet:
             "foo",
             "bar",
         ),
+        Val(
+            "foo2",
+            "qux\\nquux",
+        ),
+        Val(
+            "foo3",
+            "qux\nquux",
+        ),
     ],
 }
