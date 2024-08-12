@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.8.6](https://github.com/jdx/mise/compare/v2024.8.5..v2024.8.6) - 2024-08-12
+
+### 🐛 Bug Fixes
+
+- spm backend doesn't allow a GitHub repo name containing a dot by [@roele](https://github.com/roele) in [#2449](https://github.com/jdx/mise/pull/2449)
+
+### 🚜 Refactor
+
+- renamed tool_request_version to tool_request to match the class by [@jdx](https://github.com/jdx) in [76a611a](https://github.com/jdx/mise/commit/76a611ac0f3cfbc7ac58fdc87a528e86ef73507e)
+
+### 📚 Documentation
+
+- fix typos again by [@kianmeng](https://github.com/kianmeng) in [#2446](https://github.com/jdx/mise/pull/2446)
+- add executable permission after installation by [@kianmeng](https://github.com/kianmeng) in [#2447](https://github.com/jdx/mise/pull/2447)
+
 ## [2024.8.5](https://github.com/jdx/mise/compare/v2024.8.4..v2024.8.5) - 2024-08-03
 
 ### 🚀 Features
