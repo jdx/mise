@@ -102,14 +102,11 @@ impl Ls {
     }
 
     fn verify_plugin(&self) -> Result<()> {
-        match &self.plugin {
-            Some(plugins) => {
-                for fa in plugins {
-                    let plugin = backend::get(fa);
-                    ensure!(plugin.is_installed(), "{fa} is not installed");
-                }
+        if let Some(plugins) = &self.plugin {
+            for fa in plugins {
+                let plugin = backend::get(fa);
+                ensure!(plugin.is_installed(), "{fa} is not installed");
             }
-            None => {}
         }
         Ok(())
     }
