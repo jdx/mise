@@ -508,11 +508,8 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
 
     // The current directory is not always available, e.g.
     // when a directory was deleted or inside FUSE mounts.
-    match &*dirs::CWD {
-        Some(current_dir) => {
-            config_files.extend(file::FindUp::new(current_dir, config_filenames));
-        }
-        None => {}
+    if let Some(current_dir) = &*dirs::CWD {
+        config_files.extend(file::FindUp::new(current_dir, config_filenames));
     };
 
     config_files.extend(global_config_files());
