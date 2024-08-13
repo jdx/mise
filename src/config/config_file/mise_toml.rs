@@ -920,6 +920,8 @@ mod tests {
         min_version = "2024.1.1"
         [env]
         foo="bar"
+        foo2='qux\nquux'
+        foo3="qux\nquux"
         "#},
         )
         .unwrap();
@@ -927,7 +929,7 @@ mod tests {
         let dump = cf.dump().unwrap();
         let env = parse_env(file::read_to_string(&p).unwrap());
 
-        assert_debug_snapshot!(env, @r###""foo=bar""###);
+        assert_debug_snapshot!(env, @r###""foo=bar\nfoo2=qux\\nquux\nfoo3=qux\nquux""###);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         with_settings!({
             assert_snapshot!(dump);
@@ -945,11 +947,18 @@ mod tests {
 
         [[env]]
         bar="baz"
+
+        [[env]]
+        foo2='qux\nquux'
+        bar2="qux\nquux"
         "#});
 
         assert_snapshot!(env, @r###"
         foo=bar
         bar=baz
+        foo2=qux\nquux
+        bar2=qux
+        quux
         "###);
     }
 
