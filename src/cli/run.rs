@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
-#[cfg(unix)]
-use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -186,6 +184,7 @@ impl Run {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs() + 1)
             .build()?;
+        let exit_status = Mutex::new(None);
         pool.scope(|s| {
             let run = |task: &Task| {
                 let t = task.clone();
@@ -194,7 +193,11 @@ impl Run {
                     trace!("running tasks: {task}");
                     if let Err(err) = self.run_task(config, &env, &task) {
                         error!("{err}");
-                        exit(1);
+                        if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
+                            *exit_status.lock().unwrap() = status.code();
+                        } else {
+                            *exit_status.lock().unwrap() = Some(1);
+                        }
                     }
                     let mut tasks = tasks.lock().unwrap();
                     tasks.remove(&task);
@@ -210,6 +213,11 @@ impl Run {
             let msg = format!("finished in {}", format_duration(timer.elapsed()));
             info!("{}", style::edim(msg));
         };
+
+        if let Some(status) = *exit_status.lock().unwrap() {
+            debug!("exiting with status: {status}");
+            exit(status);
+        }
 
         Ok(())
     }
@@ -340,22 +348,7 @@ impl Run {
         if self.dry_run {
             return Ok(());
         }
-        if let Err(err) = cmd.execute() {
-            if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
-                if let Some(code) = status.code() {
-                    error!("{prefix} exited with code {code}");
-                    exit(code);
-                } else {
-                    #[cfg(unix)]
-                    if let Some(signal) = status.signal() {
-                        error!("{prefix} killed by signal {signal}");
-                        exit(1);
-                    }
-                }
-            }
-            error!("{err}");
-            exit(1);
-        }
+        cmd.execute()?;
         trace!("{prefix} exited successfully");
         Ok(())
     }
