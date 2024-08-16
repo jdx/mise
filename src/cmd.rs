@@ -323,7 +323,10 @@ impl<'a> CmdLineRunner<'a> {
                 #[cfg(not(any(test, target_os = "windows")))]
                 ChildProcessOutput::Signal(sig) => {
                     if sig != SIGINT {
-                        cmd!("kill", format!("-{sig}"), id.to_string()).run()?;
+                        debug!("Received signal {}, {id}", sig);
+                        let pid = nix::unistd::Pid::from_raw(id as i32);
+                        let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
+                        nix::sys::signal::kill(pid, sig)?;
                     }
                 }
             }
