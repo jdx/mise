@@ -1,5 +1,16 @@
 # Changelog
 
+## [2024.8.7](https://github.com/jdx/mise/compare/v2024.8.6..v2024.8.7) - 2024-08-16
+
+### 🐛 Bug Fixes
+
+- mise treats escaped newlines in env files differently than dotenvy by [@roele](https://github.com/roele) in [#2455](https://github.com/jdx/mise/pull/2455)
+- wait for spawned tasks to die before exiting by [@jdx](https://github.com/jdx) in [#2461](https://github.com/jdx/mise/pull/2461)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.3.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2450](https://github.com/jdx/mise/pull/2450)
+
 ## [2024.8.6](https://github.com/jdx/mise/compare/v2024.8.5..v2024.8.6) - 2024-08-12
 
 ### 🐛 Bug Fixes
