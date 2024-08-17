@@ -104,8 +104,10 @@ impl Ls {
     fn verify_plugin(&self) -> Result<()> {
         if let Some(plugins) = &self.plugin {
             for fa in plugins {
-                let plugin = backend::get(fa);
-                ensure!(plugin.is_installed(), "{fa} is not installed");
+                let backend = backend::get(fa);
+                if let Some(plugin) = backend.plugin() {
+                    ensure!(plugin.is_installed(), "{fa} is not installed");
+                }
             }
         }
         Ok(())

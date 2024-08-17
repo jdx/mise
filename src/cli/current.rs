@@ -26,20 +26,24 @@ impl Current {
         let ts = ToolsetBuilder::new().build(&config)?;
         match &self.plugin {
             Some(fa) => {
-                let plugin = backend::get(fa);
-                if !plugin.is_installed() {
-                    bail!("Plugin {fa} is not installed");
+                let backend = backend::get(fa);
+                if let Some(plugin) = backend.plugin() {
+                    if !plugin.is_installed() {
+                        bail!("Plugin {fa} is not installed");
+                    }
                 }
-                self.one(ts, plugin.as_ref())
+                self.one(ts, backend.as_ref())
             }
             None => self.all(ts),
         }
     }
 
     fn one(&self, ts: Toolset, tool: &dyn Backend) -> Result<()> {
-        if !tool.is_installed() {
-            warn!("Plugin {} is not installed", tool.id());
-            return Ok(());
+        if let Some(plugin) = tool.plugin() {
+            if !plugin.is_installed() {
+                warn!("Plugin {} is not installed", tool.id());
+                return Ok(());
+            }
         }
         match ts
             .list_versions_by_plugin()

@@ -15,7 +15,8 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 /// note that the results are cached for 24 hours
 /// run `mise cache clean` to clear the cache and get fresh results
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
+)]
 pub struct LsRemote {
     /// Plugin to get versions for
     #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
@@ -87,10 +88,12 @@ impl LsRemote {
     fn get_plugin(&self) -> Result<Option<Arc<dyn Backend>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                let plugin = backend::get(&tool_arg.backend);
+                let backend = backend::get(&tool_arg.backend);
                 let mpr = MultiProgressReport::get();
-                plugin.ensure_installed(&mpr, false)?;
-                Ok(Some(plugin))
+                if let Some(plugin) = backend.plugin() {
+                    plugin.ensure_installed(&mpr, false)?;
+                }
+                Ok(Some(backend))
             }
             None => Ok(None),
         }
