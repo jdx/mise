@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.8.8](https://github.com/jdx/mise/compare/v2024.8.7..v2024.8.8) - 2024-08-17
+
+### 🚜 Refactor
+
+- split asdf into forge+plugin by [@jdx](https://github.com/jdx) in [#2226](https://github.com/jdx/mise/pull/2226)
+
+### 🧪 Testing
+
+- fix home directory for win tests by [@jdx](https://github.com/jdx) in [#2464](https://github.com/jdx/mise/pull/2464)
+
+### 📦️ Dependency Updates
+
+- update rust crate tabled to 0.16.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2452](https://github.com/jdx/mise/pull/2452)
+
 ## [2024.8.7](https://github.com/jdx/mise/compare/v2024.8.6..v2024.8.7) - 2024-08-16
 
 ### 🐛 Bug Fixes
