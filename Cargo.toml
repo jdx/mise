@@ -103,7 +103,7 @@ simplelog = { version = "0.12.2" }
 siphasher = "1"
 strum = { version = "0.26.2", features = ["derive"] }
 sys-info = "0.9.1"
-tabled = { version = "0.16.0", features = ["ansi"] }
+tabled = { version = "0.16", features = ["ansi"] }
 tar = "0.4.40"
 tempfile = "3.10.1"
 tera = "1.19"
