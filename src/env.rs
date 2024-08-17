@@ -20,8 +20,13 @@ pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 
 // paths and directories
+#[cfg(test)]
+pub static HOME: Lazy<PathBuf> =
+    Lazy::new(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
+#[cfg(not(test))]
 pub static HOME: Lazy<PathBuf> =
     Lazy::new(|| home::home_dir().unwrap_or_else(|| PathBuf::from("/")));
+
 pub static EDITOR: Lazy<String> =
     Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
 
