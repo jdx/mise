@@ -32,25 +32,27 @@ impl ToolVersion {
     }
 
     pub fn resolve(
-        tool: &dyn Backend,
+        backend: &dyn Backend,
         request: ToolRequest,
         latest_versions: bool,
     ) -> Result<Self> {
-        if !tool.is_installed() {
-            let tv = Self::new(tool, request.clone(), request.version());
-            return Ok(tv);
+        if let Some(plugin) = backend.plugin() {
+            if !plugin.is_installed() {
+                let tv = Self::new(backend, request.clone(), request.version());
+                return Ok(tv);
+            }
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
-                Self::resolve_version(tool, request, latest_versions, &v)?
+                Self::resolve_version(backend, request, latest_versions, &v)?
             }
-            ToolRequest::Prefix { prefix, .. } => Self::resolve_prefix(tool, request, &prefix)?,
+            ToolRequest::Prefix { prefix, .. } => Self::resolve_prefix(backend, request, &prefix)?,
             ToolRequest::Sub {
                 sub, orig_version, ..
-            } => Self::resolve_sub(tool, request, latest_versions, &sub, &orig_version)?,
+            } => Self::resolve_sub(backend, request, latest_versions, &sub, &orig_version)?,
             _ => {
                 let version = request.version();
-                Self::new(tool, request, version)
+                Self::new(backend, request, version)
             }
         };
         Ok(tv)
@@ -116,58 +118,61 @@ impl ToolVersion {
     }
 
     fn resolve_version(
-        tool: &dyn Backend,
+        backend: &dyn Backend,
         request: ToolRequest,
         latest_versions: bool,
         v: &str,
     ) -> Result<ToolVersion> {
         let config = Config::get();
-        let v = config.resolve_alias(tool, v)?;
+        let v = config.resolve_alias(backend, v)?;
         match v.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
                 return Ok(Self::resolve_ref(
-                    tool,
+                    backend,
                     r.to_string(),
                     ref_type.to_string(),
                     request.options(),
                 ));
             }
             Some(("path", p)) => {
-                return Self::resolve_path(tool, PathBuf::from(p));
+                return Self::resolve_path(backend, PathBuf::from(p));
             }
             Some(("prefix", p)) => {
-                return Self::resolve_prefix(tool, request, p);
+                return Self::resolve_prefix(backend, request, p);
             }
             Some((part, v)) if part.starts_with("sub-") => {
                 let sub = part.split_once('-').unwrap().1;
-                return Self::resolve_sub(tool, request, latest_versions, sub, v);
+                return Self::resolve_sub(backend, request, latest_versions, sub, v);
             }
             _ => (),
         }
 
-        let build = |v| Ok(Self::new(tool, request.clone(), v));
-        if !tool.is_installed() {
-            return build(v);
+        let build = |v| Ok(Self::new(backend, request.clone(), v));
+
+        if let Some(plugin) = backend.plugin() {
+            if !plugin.is_installed() {
+                return build(v);
+            }
         }
 
         let existing = build(v.clone())?;
-        if tool.is_version_installed(&existing) {
+        if backend.is_version_installed(&existing) {
             // if the version is already installed, no need to fetch all the remote versions
             return Ok(existing);
         }
 
         if v == "latest" {
             if !latest_versions {
-                if let Some(v) = tool.latest_installed_version(None)? {
+                if let Some(v) = backend.latest_installed_version(None)? {
                     return build(v);
                 }
             }
-            if let Some(v) = tool.latest_version(None)? {
+            if let Some(v) = backend.latest_version(None)? {
                 return build(v);
             }
         }
         if !latest_versions {
-            let matches = tool.list_installed_versions_matching(&v)?;
+            let matches = backend.list_installed_versions_matching(&v)?;
             if matches.contains(&v) {
                 return build(v);
             }
@@ -175,11 +180,11 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        let matches = tool.list_versions_matching(&v)?;
+        let matches = backend.list_versions_matching(&v)?;
         if matches.contains(&v) {
             return build(v);
         }
-        Self::resolve_prefix(tool, request, &v)
+        Self::resolve_prefix(backend, request, &v)
     }
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`

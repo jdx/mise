@@ -139,7 +139,7 @@ impl Toolset {
         self.versions
             .keys()
             .map(backend::get)
-            .filter(|p| !p.is_installed())
+            .filter(|b| b.plugin().is_some_and(|p| !p.is_installed()))
             .map(|p| p.id().into())
             .collect()
     }
@@ -168,15 +168,17 @@ impl Toolset {
             .into_iter()
             .map(|(fa, v)| (backend::get(&fa), v.collect_vec()))
             .collect();
-        for (t, _) in &queue {
-            if !t.is_installed() {
-                t.ensure_installed(mpr, false).or_else(|err| {
-                    if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
-                        Ok(())
-                    } else {
-                        Err(err)
-                    }
-                })?;
+        for (backend, _) in &queue {
+            if let Some(plugin) = backend.plugin() {
+                if !plugin.is_installed() {
+                    plugin.ensure_installed(mpr, false).or_else(|err| {
+                        if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
+                            Ok(())
+                        } else {
+                            Err(err)
+                        }
+                    })?;
+                }
             }
         }
         let queue = Arc::new(Mutex::new(queue));

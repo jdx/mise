@@ -48,6 +48,7 @@ mod path_env;
 mod plugins;
 mod rand;
 mod registry;
+pub(crate) mod result;
 mod runtime_symlinks;
 mod shell;
 mod shims;
