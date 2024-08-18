@@ -135,7 +135,7 @@ mod tests {
     use pretty_assertions::assert_str_eq;
     use test_log::test;
 
-    use crate::backend::asdf::Asdf;
+    use crate::backend::asdf::AsdfBackend;
     use crate::backend::Backend;
     use crate::test::reset;
 
@@ -143,7 +143,7 @@ mod tests {
     fn test_exact_match() {
         reset();
         assert_cli!("plugin", "add", "tiny");
-        let plugin = Asdf::new(String::from("tiny"));
+        let plugin = AsdfBackend::new(String::from("tiny"));
         let version = plugin
             .latest_version(Some("1.0.0".into()))
             .unwrap()
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn test_latest_stable() {
         reset();
-        let plugin = Asdf::new(String::from("dummy"));
+        let plugin = AsdfBackend::new(String::from("dummy"));
         let version = plugin.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");
     }

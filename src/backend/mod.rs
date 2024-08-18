@@ -14,8 +14,6 @@ use regex::Regex;
 use strum::IntoEnumIterator;
 use versions::Versioning;
 
-use crate::backend::asdf::Asdf;
-use crate::backend::cargo::CargoBackend;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
@@ -81,7 +79,7 @@ fn load_backends() -> BackendMap {
         return backends.clone();
     }
     let mut plugins = CORE_PLUGINS.clone();
-    plugins.extend(Asdf::list().expect("failed to list plugins"));
+    plugins.extend(asdf::AsdfBackend::list().expect("failed to list plugins"));
     plugins.extend(list_installed_backends().expect("failed to list backends"));
     let settings = Settings::get();
     plugins.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
@@ -100,9 +98,9 @@ fn list_installed_backends() -> eyre::Result<BackendList> {
             let id = BackendMeta::read(&dir).id;
             let fa: BackendArg = id.as_str().into();
             match fa.backend_type {
-                BackendType::Asdf => Arc::new(Asdf::new(fa.name)) as ABackend,
-                BackendType::Cargo => Arc::new(CargoBackend::new(fa.name)) as ABackend,
-                BackendType::Core => Arc::new(Asdf::new(fa.name)) as ABackend,
+                BackendType::Asdf => Arc::new(asdf::AsdfBackend::new(fa.name)) as ABackend,
+                BackendType::Cargo => Arc::new(cargo::CargoBackend::new(fa.name)) as ABackend,
+                BackendType::Core => Arc::new(asdf::AsdfBackend::new(fa.name)) as ABackend,
                 BackendType::Npm => Arc::new(npm::NPMBackend::new(fa.name)) as ABackend,
                 BackendType::Go => Arc::new(go::GoBackend::new(fa.name)) as ABackend,
                 BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(fa.name)) as ABackend,
@@ -132,9 +130,9 @@ pub fn get(fa: &BackendArg) -> ABackend {
         backends
             .entry(fa.clone())
             .or_insert_with(|| match fa.backend_type {
-                BackendType::Asdf => Arc::new(Asdf::new(name)),
-                BackendType::Cargo => Arc::new(CargoBackend::new(name)),
-                BackendType::Core => Arc::new(Asdf::new(name)),
+                BackendType::Asdf => Arc::new(asdf::AsdfBackend::new(name)),
+                BackendType::Cargo => Arc::new(cargo::CargoBackend::new(name)),
+                BackendType::Core => Arc::new(asdf::AsdfBackend::new(name)),
                 BackendType::Npm => Arc::new(npm::NPMBackend::new(name)),
                 BackendType::Go => Arc::new(go::GoBackend::new(name)),
                 BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(name)),
