@@ -31,7 +31,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
-pub struct Asdf {
+pub struct AsdfBackend {
     pub fa: BackendArg,
     pub name: String,
     pub plugin_path: PathBuf,
@@ -45,7 +45,7 @@ pub struct Asdf {
     legacy_filename_cache: CacheManager<Vec<String>>,
 }
 
-impl Asdf {
+impl AsdfBackend {
     pub fn new(name: String) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
         let mut toml_path = plugin_path.join("mise.plugin.toml");
@@ -264,21 +264,21 @@ impl Asdf {
     }
 }
 
-impl Eq for Asdf {}
+impl Eq for AsdfBackend {}
 
-impl PartialEq for Asdf {
+impl PartialEq for AsdfBackend {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl Hash for Asdf {
+impl Hash for AsdfBackend {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
 }
 
-impl Backend for Asdf {
+impl Backend for AsdfBackend {
     fn fa(&self) -> &BackendArg {
         &self.fa
     }
@@ -445,7 +445,7 @@ impl Backend for Asdf {
     }
 }
 
-impl Debug for Asdf {
+impl Debug for AsdfBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExternalPlugin")
             .field("name", &self.name)
@@ -467,7 +467,7 @@ pub struct ExternalPluginCache {
 impl ExternalPluginCache {
     pub fn list_bin_paths<F>(
         &self,
-        plugin: &Asdf,
+        plugin: &AsdfBackend,
         tv: &ToolVersion,
         fetch: F,
     ) -> eyre::Result<Vec<String>>
@@ -496,7 +496,7 @@ impl ExternalPluginCache {
     pub fn exec_env<F>(
         &self,
         config: &Config,
-        plugin: &Asdf,
+        plugin: &AsdfBackend,
         tv: &ToolVersion,
         fetch: F,
     ) -> eyre::Result<BTreeMap<String, String>>
@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn test_debug() {
         reset();
-        let plugin = Asdf::new(String::from("dummy"));
+        let plugin = AsdfBackend::new(String::from("dummy"));
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }
 }
