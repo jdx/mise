@@ -19,7 +19,7 @@ use crate::{file, github};
 
 #[derive(Debug)]
 pub struct SPMBackend {
-    fa: BackendArg,
+    ba: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
@@ -30,7 +30,7 @@ impl Backend for SPMBackend {
     }
 
     fn fa(&self) -> &BackendArg {
-        &self.fa
+        &self.ba
     }
 
     fn get_dependencies(
@@ -85,13 +85,12 @@ impl Backend for SPMBackend {
 }
 
 impl SPMBackend {
-    pub fn new(name: String) -> Self {
-        let fa = BackendArg::new(BackendType::Spm, &name);
+    pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
+                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
             ),
-            fa,
+            ba,
         }
     }
 

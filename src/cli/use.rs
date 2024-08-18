@@ -68,7 +68,8 @@ pub struct Use {
 
     /// Specify a path to a config file or directory
     /// If a directory is specified, it will look for .mise.toml (default) or .tool-versions
-    #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
+    #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath
+    )]
     path: Option<PathBuf>,
 
     /// Save exact version to config file

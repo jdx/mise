@@ -11,7 +11,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use url::Url;
 
-use crate::backend::{ABackend, Backend, BackendList, BackendType};
+use crate::backend::{ABackend, Backend, BackendList};
 use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -32,7 +32,7 @@ use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct AsdfBackend {
-    pub fa: BackendArg,
+    pub ba: BackendArg,
     pub name: String,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
@@ -46,33 +46,33 @@ pub struct AsdfBackend {
 }
 
 impl AsdfBackend {
-    pub fn new(name: String) -> Self {
+    pub fn from_arg(ba: BackendArg) -> Self {
+        let name = ba.short.to_string();
         let plugin_path = dirs::PLUGINS.join(&name);
         let mut toml_path = plugin_path.join("mise.plugin.toml");
         if plugin_path.join("rtx.plugin.toml").exists() {
             toml_path = plugin_path.join("rtx.plugin.toml");
         }
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
-        let fa = BackendArg::new(BackendType::Asdf, &name);
         Self {
             cache: ExternalPluginCache::default(),
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
+                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
             )
             .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/list-all")),
             latest_stable_cache: CacheManager::new(
-                fa.cache_path.join("latest_stable-$KEY.msgpack.z"),
+                ba.cache_path.join("latest_stable-$KEY.msgpack.z"),
             )
             .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/latest-stable")),
-            alias_cache: CacheManager::new(fa.cache_path.join("aliases-$KEY.msgpack.z"))
+            alias_cache: CacheManager::new(ba.cache_path.join("aliases-$KEY.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases")),
             legacy_filename_cache: CacheManager::new(
-                fa.cache_path.join("legacy_filenames-$KEY.msgpack.z"),
+                ba.cache_path.join("legacy_filenames-$KEY.msgpack.z"),
             )
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
@@ -81,7 +81,7 @@ impl AsdfBackend {
             repo_url: None,
             toml,
             name,
-            fa,
+            ba,
         }
     }
     pub fn plugin(&self) -> &dyn Plugin {
@@ -91,7 +91,7 @@ impl AsdfBackend {
     pub fn list() -> Result<BackendList> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()
-            .map(|name| Arc::new(Self::new(name)) as ABackend)
+            .map(|name| Arc::new(Self::from_arg(name.into())) as ABackend)
             .collect())
     }
 
@@ -149,7 +149,7 @@ impl AsdfBackend {
     }
 
     fn legacy_cache_file_path(&self, legacy_file: &Path) -> PathBuf {
-        self.fa
+        self.ba
             .cache_path
             .join("legacy")
             .join(&self.name)
@@ -280,7 +280,7 @@ impl Hash for AsdfBackend {
 
 impl Backend for AsdfBackend {
     fn fa(&self) -> &BackendArg {
-        &self.fa
+        &self.ba
     }
 
     fn get_plugin_type(&self) -> PluginType {
@@ -404,7 +404,7 @@ impl Backend for AsdfBackend {
         }
         ctx.pr.set_message("installing".into());
         run_script(&Install)?;
-        file::remove_dir(&self.fa.downloads_path)?;
+        file::remove_dir(&self.ba.downloads_path)?;
 
         Ok(())
     }
@@ -450,9 +450,9 @@ impl Debug for AsdfBackend {
         f.debug_struct("ExternalPlugin")
             .field("name", &self.name)
             .field("plugin_path", &self.plugin_path)
-            .field("cache_path", &self.fa.cache_path)
-            .field("downloads_path", &self.fa.downloads_path)
-            .field("installs_path", &self.fa.installs_path)
+            .field("cache_path", &self.ba.cache_path)
+            .field("downloads_path", &self.ba.downloads_path)
+            .field("installs_path", &self.ba.installs_path)
             .field("repo_url", &self.repo_url)
             .finish()
     }
@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn test_debug() {
         reset();
-        let plugin = AsdfBackend::new(String::from("dummy"));
+        let plugin = AsdfBackend::from_arg("dummy".into());
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }
 }
