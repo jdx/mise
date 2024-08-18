@@ -34,7 +34,7 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 });
 
 pub fn get(name: &str) -> ABackend {
-    BackendArg::new(BackendType::Asdf, name).into()
+    BackendArg::new(name, name).into()
 }
 
 pub fn list() -> BackendList {
@@ -143,7 +143,7 @@ mod tests {
     fn test_exact_match() {
         reset();
         assert_cli!("plugin", "add", "tiny");
-        let plugin = AsdfBackend::new(String::from("tiny"));
+        let plugin = AsdfBackend::from_arg("tiny".into());
         let version = plugin
             .latest_version(Some("1.0.0".into()))
             .unwrap()
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn test_latest_stable() {
         reset();
-        let plugin = AsdfBackend::new(String::from("dummy"));
+        let plugin = AsdfBackend::from_arg("dummy".into());
         let version = plugin.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");
     }

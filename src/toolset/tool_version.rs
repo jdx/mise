@@ -94,7 +94,7 @@ impl ToolVersion {
     pub fn style(&self) -> String {
         format!(
             "{}{}",
-            style(&self.backend.id).blue().for_stderr(),
+            style(&self.backend.full).blue().for_stderr(),
             style(&format!("@{}", &self.version)).for_stderr()
         )
     }
@@ -239,13 +239,13 @@ impl ToolVersion {
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", &self.backend.id, &self.version)
+        write!(f, "{}@{}", &self.backend.full, &self.version)
     }
 }
 
 impl PartialEq for ToolVersion {
     fn eq(&self, other: &Self) -> bool {
-        self.backend.id == other.backend.id && self.version == other.version
+        self.backend.full == other.backend.full && self.version == other.version
     }
 }
 
@@ -259,7 +259,7 @@ impl PartialOrd for ToolVersion {
 
 impl Ord for ToolVersion {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.backend.id.cmp(&other.backend.id) {
+        match self.backend.full.cmp(&other.backend.full) {
             Ordering::Equal => self.version.cmp(&other.version),
             o => o,
         }
@@ -268,7 +268,7 @@ impl Ord for ToolVersion {
 
 impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.backend.id.hash(state);
+        self.backend.full.hash(state);
         self.version.hash(state);
     }
 }

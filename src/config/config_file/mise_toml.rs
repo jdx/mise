@@ -286,14 +286,17 @@ impl ConfigFile for MiseToml {
             .as_table_mut()
             .unwrap();
 
+        // if a short name is used like "node", make sure we remove any long names like "core:node"
+        tools.remove(&fa.full.to_string());
+
         if versions.len() == 1 {
-            tools.insert(&fa.to_string(), value(versions[0].clone()));
+            tools.insert(&fa.short, value(versions[0].clone()));
         } else {
             let mut arr = Array::new();
             for v in versions {
                 arr.push(v);
             }
-            tools.insert(&fa.to_string(), Item::Value(Value::Array(arr)));
+            tools.insert(&fa.short, Item::Value(Value::Array(arr)));
         }
 
         Ok(())

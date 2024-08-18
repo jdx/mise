@@ -10,7 +10,7 @@ use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
 pub struct GoBackend {
-    fa: BackendArg,
+    ba: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
@@ -20,7 +20,7 @@ impl Backend for GoBackend {
     }
 
     fn fa(&self) -> &BackendArg {
-        &self.fa
+        &self.ba
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
@@ -83,13 +83,12 @@ impl Backend for GoBackend {
 }
 
 impl GoBackend {
-    pub fn new(name: String) -> Self {
-        let fa = BackendArg::new(BackendType::Go, &name);
+    pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
+                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
             ),
-            fa,
+            ba,
         }
     }
 }

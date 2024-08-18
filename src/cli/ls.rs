@@ -162,7 +162,7 @@ impl Ls {
         //     .map(|(plugin, tv, source)| (plugin.to_string(), tv.to_string()))
         //     .collect_vec();
         let rows = runtimes.into_iter().map(|(p, tv, source)| Row {
-            plugin: p.clone(),
+            tool: p.clone(),
             version: (p.as_ref(), &tv, &source).into(),
             requested: match source.is_some() {
                 true => Some(tv.request.version()),
@@ -258,8 +258,8 @@ type RuntimeRow = (Arc<dyn Backend>, ToolVersion, Option<ToolSource>);
 #[derive(Tabled)]
 #[tabled(rename_all = "PascalCase")]
 struct Row {
-    #[tabled(display_with = "Self::display_plugin")]
-    plugin: Arc<dyn Backend>,
+    #[tabled(display_with = "Self::display_tool")]
+    tool: Arc<dyn Backend>,
     version: VersionStatus,
     #[tabled(rename = "Config Source", display_with = "Self::display_source")]
     source: Option<ToolSource>,
@@ -274,8 +274,8 @@ impl Row {
             None => String::new(),
         }
     }
-    fn display_plugin(plugin: &Arc<dyn Backend>) -> String {
-        style(plugin).blue().to_string()
+    fn display_tool(tool: &Arc<dyn Backend>) -> String {
+        style(tool).blue().to_string()
     }
     fn display_source(source: &Option<ToolSource>) -> String {
         match source {

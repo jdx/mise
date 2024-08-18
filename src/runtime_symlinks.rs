@@ -125,7 +125,7 @@ mod tests {
         reset();
         assert_cli!("install", "tiny@2");
         let config = Config::load().unwrap();
-        let plugin = AsdfBackend::new(String::from("tiny"));
+        let plugin = AsdfBackend::from_arg("tiny".into());
         let plugin = Arc::new(plugin);
         let symlinks = list_symlinks(&config, plugin).unwrap();
         assert_debug_snapshot!(symlinks);

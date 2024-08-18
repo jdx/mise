@@ -37,7 +37,7 @@ pub mod spm;
 pub mod ubi;
 
 pub type ABackend = Arc<dyn Backend>;
-pub type BackendMap = BTreeMap<BackendArg, ABackend>;
+pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 
 #[derive(
@@ -71,41 +71,39 @@ impl Display for BackendType {
     }
 }
 
-static FORGES: Mutex<Option<BackendMap>> = Mutex::new(None);
+static TOOLS: Mutex<Option<BackendMap>> = Mutex::new(None);
 
-fn load_backends() -> BackendMap {
-    let mut backends = FORGES.lock().unwrap();
-    if let Some(backends) = &*backends {
+fn load_tools() -> BackendMap {
+    if let Some(backends) = TOOLS.lock().unwrap().as_ref() {
         return backends.clone();
     }
-    let mut plugins = CORE_PLUGINS.clone();
-    plugins.extend(asdf::AsdfBackend::list().expect("failed to list plugins"));
-    plugins.extend(list_installed_backends().expect("failed to list backends"));
+    let mut tools = CORE_PLUGINS.clone();
+    tools.extend(asdf::AsdfBackend::list().expect("failed to list plugins"));
+    tools.extend(list_installed_backends().expect("failed to list backends"));
     let settings = Settings::get();
-    plugins.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
-    let plugins: BackendMap = plugins
+    tools.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
+    let tools: BackendMap = tools
         .into_iter()
-        .map(|plugin| (plugin.fa().clone(), plugin))
+        .map(|plugin| (plugin.id().to_string(), plugin))
         .collect();
-    *backends = Some(plugins.clone());
-    plugins
+    *TOOLS.lock().unwrap() = Some(tools.clone());
+    tools
 }
 
 fn list_installed_backends() -> eyre::Result<BackendList> {
     Ok(file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
         .map(|dir| {
-            let id = BackendMeta::read(&dir).id;
-            let fa: BackendArg = id.as_str().into();
-            match fa.backend_type {
-                BackendType::Asdf => Arc::new(asdf::AsdfBackend::new(fa.name)) as ABackend,
-                BackendType::Cargo => Arc::new(cargo::CargoBackend::new(fa.name)) as ABackend,
-                BackendType::Core => Arc::new(asdf::AsdfBackend::new(fa.name)) as ABackend,
-                BackendType::Npm => Arc::new(npm::NPMBackend::new(fa.name)) as ABackend,
-                BackendType::Go => Arc::new(go::GoBackend::new(fa.name)) as ABackend,
-                BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(fa.name)) as ABackend,
-                BackendType::Spm => Arc::new(spm::SPMBackend::new(fa.name)) as ABackend,
-                BackendType::Ubi => Arc::new(ubi::UbiBackend::new(fa.name)) as ABackend,
+            let ba: BackendArg = BackendMeta::read(&dir).into();
+            match ba.backend_type {
+                BackendType::Asdf => Arc::new(asdf::AsdfBackend::from_arg(ba)) as ABackend,
+                BackendType::Cargo => Arc::new(cargo::CargoBackend::from_arg(ba)) as ABackend,
+                BackendType::Core => Arc::new(asdf::AsdfBackend::from_arg(ba)) as ABackend,
+                BackendType::Npm => Arc::new(npm::NPMBackend::from_arg(ba)) as ABackend,
+                BackendType::Go => Arc::new(go::GoBackend::from_arg(ba)) as ABackend,
+                BackendType::Pipx => Arc::new(pipx::PIPXBackend::from_arg(ba)) as ABackend,
+                BackendType::Spm => Arc::new(spm::SPMBackend::from_arg(ba)) as ABackend,
+                BackendType::Ubi => Arc::new(ubi::UbiBackend::from_arg(ba)) as ABackend,
             }
         })
         .filter(|f| f.fa().backend_type != BackendType::Asdf)
@@ -113,7 +111,7 @@ fn list_installed_backends() -> eyre::Result<BackendList> {
 }
 
 pub fn list() -> BackendList {
-    load_backends().values().cloned().collect()
+    load_tools().values().cloned().collect()
 }
 
 pub fn list_backend_types() -> Vec<BackendType> {
@@ -121,23 +119,23 @@ pub fn list_backend_types() -> Vec<BackendType> {
 }
 
 pub fn get(fa: &BackendArg) -> ABackend {
-    if let Some(backend) = load_backends().get(fa) {
+    if let Some(backend) = load_tools().get(&fa.short) {
         backend.clone()
     } else {
-        let mut m = FORGES.lock().unwrap();
+        let mut m = TOOLS.lock().unwrap();
         let backends = m.as_mut().unwrap();
-        let name = fa.name.to_string();
+        let fa = fa.clone();
         backends
-            .entry(fa.clone())
+            .entry(fa.short.clone())
             .or_insert_with(|| match fa.backend_type {
-                BackendType::Asdf => Arc::new(asdf::AsdfBackend::new(name)),
-                BackendType::Cargo => Arc::new(cargo::CargoBackend::new(name)),
-                BackendType::Core => Arc::new(asdf::AsdfBackend::new(name)),
-                BackendType::Npm => Arc::new(npm::NPMBackend::new(name)),
-                BackendType::Go => Arc::new(go::GoBackend::new(name)),
-                BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(name)),
-                BackendType::Spm => Arc::new(spm::SPMBackend::new(name)),
-                BackendType::Ubi => Arc::new(ubi::UbiBackend::new(name)),
+                BackendType::Asdf => Arc::new(asdf::AsdfBackend::from_arg(fa)),
+                BackendType::Cargo => Arc::new(cargo::CargoBackend::from_arg(fa)),
+                BackendType::Core => Arc::new(asdf::AsdfBackend::from_arg(fa)),
+                BackendType::Npm => Arc::new(npm::NPMBackend::from_arg(fa)),
+                BackendType::Go => Arc::new(go::GoBackend::from_arg(fa)),
+                BackendType::Pipx => Arc::new(pipx::PIPXBackend::from_arg(fa)),
+                BackendType::Spm => Arc::new(spm::SPMBackend::from_arg(fa)),
+                BackendType::Ubi => Arc::new(ubi::UbiBackend::from_arg(fa)),
             })
             .clone()
     }
@@ -157,7 +155,7 @@ impl From<&BackendArg> for ABackend {
 
 pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
-        &self.fa().id
+        &self.fa().short
     }
     fn name(&self) -> &str {
         &self.fa().name
@@ -557,5 +555,5 @@ impl Ord for dyn Backend {
 
 #[cfg(test)]
 pub fn reset() {
-    *FORGES.lock().unwrap() = None;
+    *TOOLS.lock().unwrap() = None;
 }
