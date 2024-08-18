@@ -26,7 +26,6 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::{dirs, file};
 
 #[derive(Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct MiseToml {
     #[serde(default, deserialize_with = "deserialize_version")]
     min_version: Option<Versioning>,
@@ -85,7 +84,10 @@ impl MiseToml {
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
         trace!("parsing: {}", display_path(path));
         let body = file::read_to_string(path)?;
-        let mut rf: MiseToml = toml::from_str(&body)?;
+        let des = toml::Deserializer::new(&body);
+        let mut rf: MiseToml = serde_ignored::deserialize(des, |p| {
+            warn!("unknown field in {}: {p}", display_path(path));
+        })?;
         rf.context = BASE_CONTEXT.clone();
         rf.context
             .insert("config_root", path.parent().unwrap().to_str().unwrap());
@@ -1157,15 +1159,6 @@ mod tests {
         assert_snapshot!(cf.dump().unwrap());
         assert_snapshot!(cf);
         assert_debug_snapshot!(cf);
-    }
-
-    #[test]
-    fn test_fail_with_unknown_key() {
-        reset();
-        let _ = toml::from_str::<MiseToml>(&formatdoc! {r#"
-        invalid_key = true
-        "#})
-        .unwrap_err();
     }
 
     #[test]
