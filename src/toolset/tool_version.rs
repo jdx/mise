@@ -7,12 +7,12 @@ use std::path::PathBuf;
 use console::style;
 use eyre::Result;
 
+use crate::backend;
 use crate::backend::{ABackend, Backend};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::hash::hash_to_str;
 use crate::toolset::{tool_request, ToolRequest, ToolVersionOptions};
-use crate::{backend, file};
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
