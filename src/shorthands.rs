@@ -12,7 +12,7 @@ pub type Shorthands = HashMap<String, String>;
 
 pub fn get_shorthands(settings: &Settings) -> Shorthands {
     let mut shorthands = HashMap::new();
-    if !settings.disable_default_shorthands {
+    if !settings.disable_default_shorthands && settings.asdf {
         shorthands.extend(
             DEFAULT_SHORTHANDS
                 .iter()

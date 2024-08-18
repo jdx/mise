@@ -27,7 +27,7 @@ pub struct NodePlugin {
 impl NodePlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new("node".into()),
+            core: CorePlugin::new(BackendArg::new("node", "node")),
         }
     }
 

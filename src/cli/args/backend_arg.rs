@@ -123,6 +123,7 @@ mod tests {
         let cargo = |s, id, name| t(s, id, name, BackendType::Cargo);
         // let core = |s, id, name| t(s, id, name, BackendType::Core);
         let npm = |s, id, name| t(s, id, name, BackendType::Npm);
+        let vfox = |s, id, name| t(s, id, name, BackendType::Vfox);
 
         asdf("asdf:poetry", "asdf:poetry", "poetry");
         asdf("poetry", "poetry", "poetry");
@@ -131,6 +132,11 @@ mod tests {
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
         npm("npm:prettier", "npm:prettier", "prettier");
+        vfox(
+            "vfox:version-fox/vfox-nodejs",
+            "vfox:version-fox/vfox-nodejs",
+            "version-fox/vfox-nodejs",
+        );
     }
 
     #[test]
@@ -147,5 +153,10 @@ mod tests {
         t("cargo:eza", "cargo-eza");
         t("npm:@antfu/ni", "npm-antfu-ni");
         t("npm:prettier", "npm-prettier");
+        t(
+            "vfox:version-fox/vfox-nodejs",
+            "vfox-version-fox-vfox-nodejs",
+        );
+        t("vfox:version-fox/nodejs", "vfox-version-fox-nodejs");
     }
 }

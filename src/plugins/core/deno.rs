@@ -26,7 +26,7 @@ pub struct DenoPlugin {
 
 impl DenoPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("deno".into());
+        let core = CorePlugin::new(BackendArg::new("deno", "deno"));
         Self { core }
     }
 

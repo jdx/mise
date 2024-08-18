@@ -119,6 +119,7 @@ toml_edit = { version = "0.22.12", features = ["parse"] }
 url = "2.5.0"
 usage-lib = { version = "0.3", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
+vfox = "0.1"
 walkdir = "2.5.0"
 which = "6.0.1"
 xx = { version = "1.0.0", features = ["glob"] }
@@ -130,6 +131,7 @@ nix = {version="0.29", features=["signal", "user"]}
 
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2"] }
+cfg_aliases = "0.2"
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
@@ -160,4 +162,4 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["built", "openssl"]
+ignored = ["built", "openssl", "cfg_aliases"]

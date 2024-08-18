@@ -27,7 +27,7 @@ pub struct PythonPlugin {
 
 impl PythonPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("python".into());
+        let core = CorePlugin::new(BackendArg::new("python", "python"));
         Self {
             precompiled_cache: CacheManager::new(
                 core.fa.cache_path.join("precompiled-$KEY.msgpack.z"),

@@ -62,7 +62,7 @@ impl PluginsInstall {
         if git_url.is_some() {
             self.install_one(name, git_url, &mpr)?;
         } else {
-            let is_core = CORE_PLUGINS.iter().any(|p| p.id() == name);
+            let is_core = CORE_PLUGINS.contains_key(&name);
             if is_core {
                 let name = style::eblue(name);
                 bail!("{name} is a core plugin and does not need to be installed");
