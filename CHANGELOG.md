@@ -1,5 +1,24 @@
 # Changelog
 
+## [2024.8.9](https://github.com/jdx/mise/compare/v2024.8.8..v2024.8.9) - 2024-08-18
+
+### 🚀 Features
+
+- use registry shortname for mise.toml/install dirs by [@jdx](https://github.com/jdx) in [#2470](https://github.com/jdx/mise/pull/2470)
+- vfox backend by [@jdx](https://github.com/jdx) in [#2187](https://github.com/jdx/mise/pull/2187)
+
+### 🐛 Bug Fixes
+
+- hide file tasks starting with "." by [@jdx](https://github.com/jdx) in [#2466](https://github.com/jdx/mise/pull/2466)
+- mise prune removes tool versions which are in use by [@roele](https://github.com/roele) in [#2469](https://github.com/jdx/mise/pull/2469)
+- cargo_binstall missing from set commands by [@roele](https://github.com/roele) in [#2471](https://github.com/jdx/mise/pull/2471)
+- only warn if config properties are not found by [@jdx](https://github.com/jdx) in [#2472](https://github.com/jdx/mise/pull/2472)
+
+### 🚜 Refactor
+
+- Asdf -> AsdfBackend by [@jdx](https://github.com/jdx) in [#2467](https://github.com/jdx/mise/pull/2467)
+- backend repetition by [@jdx](https://github.com/jdx) in [d2f7f33](https://github.com/jdx/mise/commit/d2f7f33d81906aaee80ab0e333935111c7307b36)
+
 ## [2024.8.8](https://github.com/jdx/mise/compare/v2024.8.7..v2024.8.8) - 2024-08-17
 
 ### 🚜 Refactor
