@@ -76,7 +76,7 @@ fn handle_err(err: Report) -> eyre::Result<()> {
             return Ok(());
         }
     }
-    if cfg!(not(debug_assertions)) || log::max_level() < log::LevelFilter::Debug {
+    if cfg!(not(debug_assertions)) && log::max_level() < log::LevelFilter::Debug {
         display_friendly_err(err);
         exit(1);
     }

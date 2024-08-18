@@ -42,10 +42,10 @@ impl Backend for VfoxBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let plugin = self.vfox.install_plugin_from_url(&self.get_url()?)?;
+                self.ensure_plugin_installed()?;
                 let versions = self
                     .runtime()?
-                    .block_on(self.vfox.list_available_versions(&plugin.name))?;
+                    .block_on(self.vfox.list_available_versions(&self.pathname))?;
                 Ok(versions
                     .into_iter()
                     .rev()
@@ -58,9 +58,9 @@ impl Backend for VfoxBackend {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let settings = Settings::get();
         settings.ensure_experimental("vfox backend")?;
-        let plugin = self.vfox.install_plugin_from_url(&self.get_url()?)?;
+        self.ensure_plugin_installed()?;
         self.runtime()?.block_on(self.vfox.install(
-            &plugin.name,
+            &self.pathname,
             &ctx.tv.version,
             ctx.tv.install_path(),
         ))?;
@@ -68,7 +68,6 @@ impl Backend for VfoxBackend {
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
-        dbg!(self._exec_env(tv)?);
         let path = self
             ._exec_env(tv)?
             .get("PATH")
@@ -169,5 +168,14 @@ impl VfoxBackend {
             self.repo.set(repo).unwrap();
             self.repo()
         }
+    }
+
+    fn ensure_plugin_installed(&self) -> eyre::Result<()> {
+        if !self.plugin_path.exists() {
+            let url = self.get_url()?;
+            trace!("Cloning vfox plugin: {url}");
+            self.repo()?.clone(url.as_str())?;
+        }
+        Ok(())
     }
 }

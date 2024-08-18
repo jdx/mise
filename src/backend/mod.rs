@@ -188,6 +188,7 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.ensure_dependencies_installed()?;
+        trace!("Listing remote versions for {}", self.fa().to_string());
         self._list_remote_versions()
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
@@ -297,6 +298,7 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+        trace!("Ensuring dependencies installed for {}", self.id());
         let deps = self
             .get_all_dependencies(&ToolRequest::System(self.id().into()))?
             .into_iter()
