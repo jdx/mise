@@ -82,22 +82,38 @@ pub fn reset() {
     env::remove_var("MISE_FAILURE");
     file::remove_all(&*dirs::TRUSTED_CONFIGS).unwrap();
     file::remove_all(&*dirs::TRACKED_CONFIGS).unwrap();
-    file::create_dir_all(".mise/tasks").unwrap();
+    file::create_dir_all(".mise/tasks/.hidden").unwrap();
+    file::write(
+        ".mise/tasks/.hidden/executable",
+        indoc! {r#"#!/usr/bin/env bash
+        echo "this should not be a task"
+        "#},
+    )
+    .unwrap();
+    file::make_executable(".mise/tasks/.hidden/executable").unwrap();
+    file::write(
+        ".mise/tasks/.hidden-executable",
+        indoc! {r#"#!/usr/bin/env bash
+        echo "this should not be a task"
+        "#},
+    )
+    .unwrap();
+    file::make_executable(".mise/tasks/.hidden-executable").unwrap();
     file::write(
         ".mise/tasks/filetask",
         indoc! {r#"#!/usr/bin/env bash
-# mise alias=["ft"]
-# mise description="This is a test build script"
-# mise depends=["lint", "test"]
-# mise sources=[".test-tool-versions"]
-# mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
-# mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+        # mise alias=["ft"]
+        # mise description="This is a test build script"
+        # mise depends=["lint", "test"]
+        # mise sources=[".test-tool-versions"]
+        # mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+        # mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
 
-set -euxo pipefail
-cd "$MISE_PROJECT_ROOT" || exit 1
-echo "running test-build script"
-echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.txt
-    "#},
+        set -euxo pipefail
+        cd "$MISE_PROJECT_ROOT" || exit 1
+        echo "running test-build script"
+        echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.txt
+        "#},
     )
     .unwrap();
     file::make_executable(".mise/tasks/filetask").unwrap();
