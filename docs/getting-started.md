@@ -187,7 +187,6 @@ Supported os/arch:
 - `linux-armv7-musl`
 
 If you need something else, compile it with `cargo install mise` (see below).
-[Windows isn't currently supported.](https://github.com/jdx/mise/discussions/66)
 
 ### apk
 
@@ -328,6 +327,14 @@ yum install -y yum-utils
 yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
 ```
+
+### Windows
+
+Download the latest release from [GitHub](https://github.com/jdx/mise/releases). Add the binary
+to your PATH and edit PATH to include the shims directory (by default:
+`%USERPROFILE%\.local\share\mise\shims`).
+
+Note that Windows support is very minimal for now.
 
 ## Shells
 
