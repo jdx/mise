@@ -9,8 +9,8 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use rayon::prelude::*;
-
 pub use settings::Settings;
+use walkdir::WalkDir;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -309,7 +309,17 @@ impl Config {
     }
 
     fn load_tasks_includes(&self, root: &Path) -> Result<Vec<Task>> {
-        file::recursive_ls(root)?
+        if !root.is_dir() {
+            return Ok(vec![]);
+        }
+        let files: Vec<PathBuf> = WalkDir::new(root)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'))
+            .filter_ok(|e| e.file_type().is_file())
+            .map_ok(|e| e.path().to_path_buf())
+            .try_collect()?;
+        files
             .into_par_iter()
             .filter(|p| file::is_executable(p))
             .map(|path| Task::from_path(&path))
