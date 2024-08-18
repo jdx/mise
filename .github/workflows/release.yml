@@ -105,6 +105,8 @@ jobs:
           if-no-files-found: error
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-cache }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
       - run: ${SCCACHE_PATH} --show-stats
