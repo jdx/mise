@@ -13,29 +13,45 @@ use crate::config::Settings;
 use crate::env;
 use crate::env::PATH_KEY;
 use crate::http::HTTP_FETCH;
+#[cfg(unix)]
 use crate::plugins::core::bun::BunPlugin;
+#[cfg(unix)]
 use crate::plugins::core::deno::DenoPlugin;
+#[cfg(unix)]
 use crate::plugins::core::erlang::ErlangPlugin;
+#[cfg(unix)]
 use crate::plugins::core::go::GoPlugin;
+#[cfg(unix)]
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
+#[cfg(unix)]
 use crate::plugins::core::ruby::RubyPlugin;
+#[cfg(unix)]
 use crate::plugins::core::zig::ZigPlugin;
 use crate::plugins::{Plugin, PluginList, PluginType};
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 
+#[cfg(unix)]
 mod bun;
+#[cfg(unix)]
 mod deno;
+#[cfg(unix)]
 mod erlang;
+#[cfg(unix)]
 mod go;
+#[cfg(unix)]
 mod java;
 mod node;
+#[cfg(unix)]
 mod python;
+#[cfg(unix)]
 mod ruby;
+#[cfg(unix)]
 mod zig;
 
 pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
+    #[cfg(unix)]
     let mut plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
@@ -46,8 +62,19 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
     ];
+    #[cfg(windows)]
+    let mut plugins: Vec<Arc<dyn Backend>> = vec![
+        // Arc::new(BunPlugin::new()),
+        // Arc::new(DenoPlugin::new()),
+        // Arc::new(ErlangPlugin::new()),
+        // Arc::new(GoPlugin::new()),
+        // Arc::new(JavaPlugin::new()),
+        Arc::new(NodePlugin::new()),
+        // Arc::new(PythonPlugin::new()),
+        // Arc::new(RubyPlugin::new()),
+    ];
     let settings = Settings::get();
-    if settings.experimental {
+    if cfg!(unix) && settings.experimental {
         plugins.push(Arc::new(ZigPlugin::new()));
     }
     plugins
