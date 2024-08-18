@@ -1,10 +1,9 @@
 use heck::ToKebabCase;
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
-
-use once_cell::sync::Lazy;
 
 use crate::backend::backend_meta::BackendMeta;
 use crate::backend::{unalias_backend, BackendType};
