@@ -1701,6 +1701,7 @@ dependencies = [
  "self_update",
  "serde",
  "serde_derive",
+ "serde_ignored",
  "serde_json",
  "sha2",
  "shell-escape",
@@ -2666,6 +2667,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.74",
+]
+
+[[package]]
+name = "serde_ignored"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8e319a36d1b52126a0d608f24e93b2d81297091818cd70625fcf50a15d84ddf"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
