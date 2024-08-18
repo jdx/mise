@@ -1,5 +1,33 @@
 # Changelog
 
+## [2024.8.10](https://github.com/jdx/mise/compare/v2024.8.9..v2024.8.10) - 2024-08-18
+
+### 🚀 Features
+
+- python on windows by [@jdx](https://github.com/jdx) in [2d4cee2](https://github.com/jdx/mise/commit/2d4cee239f8e7d53f7be176369f6e2502f3c3032)
+
+### 🐛 Bug Fixes
+
+- hide non-working core plugins on windows by [@jdx](https://github.com/jdx) in [16a08fc](https://github.com/jdx/mise/commit/16a08fc0fa00fc8f9751f7a25cc4f5f5fc87b94d)
+- windows compat by [@jdx](https://github.com/jdx) in [2084a37](https://github.com/jdx/mise/commit/2084a37436fd7f7af8958501adc7b6535f608816)
+- vfox tweaks by [@jdx](https://github.com/jdx) in [c260ab2](https://github.com/jdx/mise/commit/c260ab220a31241eaca971d6ddf4046f1f57865b)
+- remove windows warning by [@jdx](https://github.com/jdx) in [9be937e](https://github.com/jdx/mise/commit/9be937e15dece684c574bcccd6f66499361cb935)
+
+### 📚 Documentation
+
+- windows by [@jdx](https://github.com/jdx) in [437b63c](https://github.com/jdx/mise/commit/437b63cff94b5302a0527881d6b6e461e1e4d628)
+
+### 🧪 Testing
+
+- fixing tests by [@jdx](https://github.com/jdx) in [1206497](https://github.com/jdx/mise/commit/12064971a43f74cdb0f34276e07fb02aaf240096)
+- reset test by [@jdx](https://github.com/jdx) in [c740cfd](https://github.com/jdx/mise/commit/c740cfddf45703444a52388d899c1deb52b73134)
+
+### 🔍 Other Changes
+
+- clippy by [@jdx](https://github.com/jdx) in [ee005ff](https://github.com/jdx/mise/commit/ee005ffac65093aad8949cdbfaf0761df4595851)
+- fix windows build by [@jdx](https://github.com/jdx) in [28c5cb6](https://github.com/jdx/mise/commit/28c5cb64bd6506bf6db08769885d65c192fb20ce)
+- set GITHUB_TOKEN in release task by [@jdx](https://github.com/jdx) in [0ae049b](https://github.com/jdx/mise/commit/0ae049baedaf2daf3056ec7d2043a8ba27f09df1)
+
 ## [2024.8.9](https://github.com/jdx/mise/compare/v2024.8.8..v2024.8.9) - 2024-08-18
 
 ### 🚀 Features
