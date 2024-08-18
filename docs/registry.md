@@ -4,6 +4,7 @@ editLink: false
 | Short | Full |
 | ----------- | --------------- |
 | 1password-cli | [asdf:NeoHsu/asdf-1password-cli](https://github.com/NeoHsu/asdf-1password-cli) |
+| aapt2 | [asdf:ronnnnn/asdf-aapt2](https://github.com/ronnnnn/asdf-aapt2) |
 | act | [asdf:gr1m0h/asdf-act](https://github.com/gr1m0h/asdf-act) |
 | action-validator | [asdf:mpalmer/action-validator](https://github.com/mpalmer/action-validator) |
 | actionlint | [asdf:crazy-matt/asdf-actionlint](https://github.com/crazy-matt/asdf-actionlint) |
@@ -26,6 +27,7 @@ editLink: false
 | apollo-ios-cli | [asdf:MacPaw/asdf-apollo-ios-cli](https://github.com/MacPaw/asdf-apollo-ios-cli) |
 | apollo-router | [asdf:safx/asdf-apollo-router](https://github.com/safx/asdf-apollo-router) |
 | arc | [asdf:ORCID/asdf-arc](https://github.com/ORCID/asdf-arc) |
+| arduino-cli | [asdf:egnor/asdf-arduino-cli](https://github.com/egnor/asdf-arduino-cli) |
 | argo | [asdf:sudermanjr/asdf-argo](https://github.com/sudermanjr/asdf-argo) |
 | argo-rollouts | [asdf:abatilo/asdf-argo-rollouts](https://github.com/abatilo/asdf-argo-rollouts) |
 | argocd | [asdf:beardix/asdf-argocd](https://github.com/beardix/asdf-argocd) |

@@ -15,6 +15,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | .Net                          | [hensou/asdf-dotnet](https://github.com/hensou/asdf-dotnet)                                                       |
 | .Net Core                     | [emersonsoares/asdf-dotnet-core](https://github.com/emersonsoares/asdf-dotnet-core)                               |
 | 1password-cli                 | [NeoHsu/asdf-1password-cli](https://github.com/NeoHsu/asdf-1password-cli)                                         |
+| AAPT2                         | [ronnnnn/asdf-aapt2](https://github.com/ronnnnn/asdf-aapt2)                                                       |
 | act                           | [gr1m0h/asdf-act](https://github.com/gr1m0h/asdf-act)                                                             |
 | action-validator              | [mpalmer/action-validator](https://github.com/mpalmer/action-validator)                                           |
 | actionlint                    | [crazy-matt/asdf-actionlint](https://github.com/crazy-matt/asdf-actionlint)                                       |
@@ -38,6 +39,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | apollo-ios-cli                | [MacPaw/asdf-apollo-ios-cli](https://github.com/MacPaw/asdf-apollo-ios-cli)                                       |
 | Apollo Router                 | [safx/asdf-apollo-router](https://github.com/safx/asdf-apollo-router)                                             |
 | arc                           | [ORCID/asdf-arc](https://github.com/ORCID/asdf-arc)                                                               |
+| Arduino CLI                   | [egnor/asdf-arduino-cli](https://github.com/egnor/asdf-arduino-cli)                                               |
 | argo                          | [sudermanjr/asdf-argo](https://github.com/sudermanjr/asdf-argo)                                                   |
 | argo-rollouts                 | [abatilo/asdf-argo-rollouts](https://github.com/abatilo/asdf-argo-rollouts)                                       |
 | argocd                        | [beardix/asdf-argocd](https://github.com/beardix/asdf-argocd)                                                     |
