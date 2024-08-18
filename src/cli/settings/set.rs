@@ -25,6 +25,7 @@ impl SettingsSet {
             "always_keep_download" => parse_bool(&self.value)?,
             "always_keep_install" => parse_bool(&self.value)?,
             "asdf_compat" => parse_bool(&self.value)?,
+            "cargo_binstall" => parse_bool(&self.value)?,
             "color" => parse_bool(&self.value)?,
             "disable_default_shorthands" => parse_bool(&self.value)?,
             "disable_tools" => self.value.split(',').map(|s| s.to_string()).collect(),
@@ -39,11 +40,17 @@ impl SettingsSet {
             "http_timeout" => parse_i64(&self.value)?,
             "jobs" => parse_i64(&self.value)?,
             "legacy_version_file" => parse_bool(&self.value)?,
+            "legacy_version_file_disable_tools" => {
+                self.value.split(',').map(|s| s.to_string()).collect()
+            }
+            "libgit2" => parse_bool(&self.value)?,
             "node_compile" => parse_bool(&self.value)?,
             "not_found_auto_install" => parse_bool(&self.value)?,
             "paranoid" => parse_bool(&self.value)?,
             "plugin_autoupdate_last_check_duration" => self.value.into(),
             "python_compile" => parse_bool(&self.value)?,
+            "python_default_packages_file" => self.value.into(),
+            "python_pyenv_repo" => self.value.into(),
             "python_venv_auto_create" => parse_bool(&self.value)?,
             "quiet" => parse_bool(&self.value)?,
             "raw" => parse_bool(&self.value)?,
