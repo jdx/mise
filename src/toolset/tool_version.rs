@@ -11,6 +11,8 @@ use crate::backend;
 use crate::backend::{ABackend, Backend};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
+#[cfg(windows)]
+use crate::file;
 use crate::hash::hash_to_str;
 use crate::toolset::{tool_request, ToolRequest, ToolVersionOptions};
 
