@@ -93,19 +93,7 @@ fn load_tools() -> BackendMap {
 fn list_installed_backends() -> eyre::Result<BackendList> {
     Ok(file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
-        .map(|dir| {
-            let ba: BackendArg = BackendMeta::read(&dir).into();
-            match ba.backend_type {
-                BackendType::Asdf => Arc::new(asdf::AsdfBackend::from_arg(ba)) as ABackend,
-                BackendType::Cargo => Arc::new(cargo::CargoBackend::from_arg(ba)) as ABackend,
-                BackendType::Core => Arc::new(asdf::AsdfBackend::from_arg(ba)) as ABackend,
-                BackendType::Npm => Arc::new(npm::NPMBackend::from_arg(ba)) as ABackend,
-                BackendType::Go => Arc::new(go::GoBackend::from_arg(ba)) as ABackend,
-                BackendType::Pipx => Arc::new(pipx::PIPXBackend::from_arg(ba)) as ABackend,
-                BackendType::Spm => Arc::new(spm::SPMBackend::from_arg(ba)) as ABackend,
-                BackendType::Ubi => Arc::new(ubi::UbiBackend::from_arg(ba)) as ABackend,
-            }
-        })
+        .map(|dir| arg_to_backend(BackendMeta::read(&dir).into()))
         .filter(|f| f.fa().backend_type != BackendType::Asdf)
         .collect())
 }
@@ -127,17 +115,21 @@ pub fn get(fa: &BackendArg) -> ABackend {
         let fa = fa.clone();
         backends
             .entry(fa.short.clone())
-            .or_insert_with(|| match fa.backend_type {
-                BackendType::Asdf => Arc::new(asdf::AsdfBackend::from_arg(fa)),
-                BackendType::Cargo => Arc::new(cargo::CargoBackend::from_arg(fa)),
-                BackendType::Core => Arc::new(asdf::AsdfBackend::from_arg(fa)),
-                BackendType::Npm => Arc::new(npm::NPMBackend::from_arg(fa)),
-                BackendType::Go => Arc::new(go::GoBackend::from_arg(fa)),
-                BackendType::Pipx => Arc::new(pipx::PIPXBackend::from_arg(fa)),
-                BackendType::Spm => Arc::new(spm::SPMBackend::from_arg(fa)),
-                BackendType::Ubi => Arc::new(ubi::UbiBackend::from_arg(fa)),
-            })
+            .or_insert_with(|| arg_to_backend(fa))
             .clone()
+    }
+}
+
+pub fn arg_to_backend(ba: BackendArg) -> ABackend {
+    match ba.backend_type {
+        BackendType::Asdf => Arc::new(asdf::AsdfBackend::from_arg(ba)),
+        BackendType::Cargo => Arc::new(cargo::CargoBackend::from_arg(ba)),
+        BackendType::Core => Arc::new(asdf::AsdfBackend::from_arg(ba)),
+        BackendType::Npm => Arc::new(npm::NPMBackend::from_arg(ba)),
+        BackendType::Go => Arc::new(go::GoBackend::from_arg(ba)),
+        BackendType::Pipx => Arc::new(pipx::PIPXBackend::from_arg(ba)),
+        BackendType::Spm => Arc::new(spm::SPMBackend::from_arg(ba)),
+        BackendType::Ubi => Arc::new(ubi::UbiBackend::from_arg(ba)),
     }
 }
 
