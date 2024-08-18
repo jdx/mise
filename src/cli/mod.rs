@@ -215,7 +215,7 @@ impl Cli {
         logger::init();
         migrate::run();
 
-        #[cfg(windows)]
+        #[cfg(all(windows, not(debug_assertions)))]
         warn_windows(&args[1])?;
 
         debug!("ARGS: {}", &args.join(" "));
@@ -229,7 +229,7 @@ impl Cli {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, not(debug_assertions)))]
 fn warn_windows(arg1: &str) -> Result<()> {
     warn!("mise is not yet supported on windows. Do not expect anything to work.");
     let settings = Settings::try_get()?;

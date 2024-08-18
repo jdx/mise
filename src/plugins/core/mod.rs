@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 use std::ffi::OsString;
 use std::sync::Arc;
 
+#[cfg(unix)]
 pub use python::PythonPlugin;
 
 use crate::backend::{Backend, BackendMap};
@@ -73,9 +74,12 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         // Arc::new(PythonPlugin::new()),
         // Arc::new(RubyPlugin::new()),
     ];
-    let settings = Settings::get();
-    if cfg!(unix) && settings.experimental {
-        plugins.push(Arc::new(ZigPlugin::new()));
+    #[cfg(unix)]
+    {
+        let settings = Settings::get();
+        if settings.experimental {
+            plugins.push(Arc::new(ZigPlugin::new()));
+        }
     }
     plugins
         .into_iter()
