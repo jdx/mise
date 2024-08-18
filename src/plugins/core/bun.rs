@@ -24,7 +24,7 @@ pub struct BunPlugin {
 
 impl BunPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("bun".into());
+        let core = CorePlugin::new(BackendArg::new("bun", "bun"));
         Self { core }
     }
 

@@ -54,6 +54,7 @@ mod tests {
         all_compile = false
         always_keep_download = true
         always_keep_install = true
+        asdf = true
         asdf_compat = false
         cargo_binstall = true
         color = true
@@ -81,6 +82,7 @@ mod tests {
         raw = false
         trusted_config_paths = []
         verbose = true
+        vfox = false
         yes = true
 
         [status]

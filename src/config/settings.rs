@@ -30,6 +30,12 @@ pub struct Settings {
     pub always_keep_download: bool,
     #[config(env = "MISE_ALWAYS_KEEP_INSTALL", default = false)]
     pub always_keep_install: bool,
+    #[cfg(asdf)]
+    #[config(env = "MISE_ASDF", default = true)]
+    pub asdf: bool,
+    #[cfg(not(asdf))]
+    #[config(env = "MISE_ASDF", default = false)]
+    pub asdf: bool,
     /// default to asdf-compatible behavior
     /// this means that the global config file will be ~/.tool-versions
     /// also, the default behavior of `mise global` will be --pin
@@ -121,6 +127,12 @@ pub struct Settings {
     pub quiet: bool,
     #[config(env = "MISE_VERBOSE", default = false)]
     pub verbose: bool,
+    #[cfg(vfox)]
+    #[config(env = "MISE_VFOX", default = true)]
+    pub vfox: bool,
+    #[cfg(not(vfox))]
+    #[config(env = "MISE_VFOX", default = false)]
+    pub vfox: bool,
     #[config(env = "MISE_YES", default = false)]
     pub yes: bool,
 

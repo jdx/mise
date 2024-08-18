@@ -26,7 +26,7 @@ pub struct GoPlugin {
 impl GoPlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new("go".into()),
+            core: CorePlugin::new(BackendArg::new("go", "go")),
         }
     }
 

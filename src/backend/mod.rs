@@ -30,11 +30,13 @@ use self::backend_meta::BackendMeta;
 pub mod asdf;
 pub mod backend_meta;
 pub mod cargo;
+mod external_plugin_cache;
 pub mod go;
 pub mod npm;
 pub mod pipx;
 pub mod spm;
 pub mod ubi;
+pub mod vfox;
 
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
@@ -63,6 +65,7 @@ pub enum BackendType {
     Pipx,
     Spm,
     Ubi,
+    Vfox,
 }
 
 impl Display for BackendType {
@@ -77,10 +80,18 @@ fn load_tools() -> BackendMap {
     if let Some(backends) = TOOLS.lock().unwrap().as_ref() {
         return backends.clone();
     }
-    let mut tools = CORE_PLUGINS.clone();
-    tools.extend(asdf::AsdfBackend::list().expect("failed to list plugins"));
-    tools.extend(list_installed_backends().expect("failed to list backends"));
+    let mut tools = CORE_PLUGINS
+        .iter()
+        .map(|(_, p)| p.clone())
+        .collect::<Vec<ABackend>>();
     let settings = Settings::get();
+    if settings.asdf {
+        tools.extend(asdf::AsdfBackend::list().expect("failed to list asdf plugins"));
+    }
+    if settings.vfox {
+        tools.extend(vfox::VfoxBackend::list().expect("failed to list vfox plugins"));
+    }
+    tools.extend(list_installed_backends().expect("failed to list backends"));
     tools.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
     let tools: BackendMap = tools
         .into_iter()
@@ -130,6 +141,7 @@ pub fn arg_to_backend(ba: BackendArg) -> ABackend {
         BackendType::Pipx => Arc::new(pipx::PIPXBackend::from_arg(ba)),
         BackendType::Spm => Arc::new(spm::SPMBackend::from_arg(ba)),
         BackendType::Ubi => Arc::new(ubi::UbiBackend::from_arg(ba)),
+        BackendType::Vfox => Arc::new(vfox::VfoxBackend::from_arg(ba)),
     }
 }
 
