@@ -4580,9 +4580,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "1.1.6"
+version = "1.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de8994f4da2802246b39d260c7915b652cc009a79840aee6eb27cb0acd13a82c"
+checksum = "f7e01857b62b702bfdbaba2d4bba205c4948549cc15183530c48968f40ca542b"
 dependencies = [
  "bzip2",
  "duct",

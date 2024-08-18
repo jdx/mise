@@ -4,7 +4,6 @@ use once_cell::sync::Lazy;
 use std::ffi::OsString;
 use std::sync::Arc;
 
-#[cfg(unix)]
 pub use python::PythonPlugin;
 
 use crate::backend::{Backend, BackendMap};
@@ -44,7 +43,6 @@ mod go;
 #[cfg(unix)]
 mod java;
 mod node;
-#[cfg(unix)]
 mod python;
 #[cfg(unix)]
 mod ruby;
@@ -71,7 +69,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         // Arc::new(GoPlugin::new()),
         // Arc::new(JavaPlugin::new()),
         Arc::new(NodePlugin::new()),
-        // Arc::new(PythonPlugin::new()),
+        Arc::new(PythonPlugin::new()),
         // Arc::new(RubyPlugin::new()),
     ];
     #[cfg(unix)]

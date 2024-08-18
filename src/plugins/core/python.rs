@@ -94,7 +94,11 @@ impl PythonPlugin {
     }
 
     fn python_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_short_path().join("bin/python")
+        if cfg!(windows) {
+            tv.install_path().join("python.exe")
+        } else {
+            tv.install_path().join("bin/python")
+        }
     }
 
     fn fetch_precompiled_remote_versions(&self) -> eyre::Result<&Vec<(String, String, String)>> {
@@ -131,11 +135,13 @@ impl PythonPlugin {
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
             None => {
-                if Settings::get().python_compile == Some(false) {
+                if cfg!(windows) || Settings::get().python_compile == Some(false) {
                     bail!(
-                        "no precompiled python found for {}.\n\
+                        "no precompiled python found for {} on {}-{}.\n\
                         To compile python from source, run: mise settings set python_compile 1",
-                        ctx.tv.version
+                        ctx.tv.version,
+                        python_arch(&Settings::get()),
+                        python_os(&Settings::get()),
                     );
                 }
                 debug!("no precompiled python found for {}", ctx.tv.version);
@@ -164,6 +170,7 @@ impl PythonPlugin {
         file::untar(&tarball_path, &download)?;
         file::remove_all(&install)?;
         file::rename(download.join("python"), &install)?;
+        #[cfg(unix)]
         file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
         Ok(())
     }
@@ -330,6 +337,11 @@ impl Backend for PythonPlugin {
         }
     }
 
+    #[cfg(windows)]
+    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+        Ok(vec![tv.install_path()])
+    }
+
     fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".python-version".to_string()])
     }
@@ -337,7 +349,7 @@ impl Backend for PythonPlugin {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::get();
         let settings = Settings::try_get()?;
-        if settings.python_compile == Some(true) {
+        if cfg!(windows) && settings.python_compile == Some(true) {
             self.install_compiled(ctx)?;
         } else {
             self.install_precompiled(ctx)?;
@@ -380,7 +392,9 @@ fn python_os(settings: &Settings) -> String {
     if let Some(os) = &settings.python_precompiled_os {
         return os.clone();
     }
-    if cfg!(target_os = "macos") {
+    if cfg!(windows) {
+        "pc-windows-msvc-shared-install_only_stripped".into()
+    } else if cfg!(target_os = "macos") {
         "apple-darwin".into()
     } else {
         let os = &built_info::CFG_OS;
@@ -393,7 +407,9 @@ fn python_arch(settings: &Settings) -> &str {
     if let Some(arch) = &settings.python_precompiled_arch {
         return arch.as_str();
     }
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(windows) {
+        "x86_64"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         if cfg!(target_feature = "avx512f") {
             "x86_64_v4"
         } else if cfg!(target_feature = "avx2") {
