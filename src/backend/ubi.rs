@@ -12,7 +12,7 @@ use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
 pub struct UbiBackend {
-    fa: BackendArg,
+    ba: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
@@ -24,7 +24,7 @@ impl Backend for UbiBackend {
     }
 
     fn fa(&self) -> &BackendArg {
-        &self.fa
+        &self.ba
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
@@ -78,13 +78,12 @@ impl Backend for UbiBackend {
 }
 
 impl UbiBackend {
-    pub fn new(name: String) -> Self {
-        let fa = BackendArg::new(BackendType::Ubi, &name);
+    pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
+                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
             ),
-            fa,
+            ba,
         }
     }
 }
