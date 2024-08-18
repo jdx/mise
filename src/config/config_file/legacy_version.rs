@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::backend::BackendList;
+use crate::backend::{self, BackendList};
 use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
@@ -14,6 +14,13 @@ pub struct LegacyVersionFile {
 }
 
 impl LegacyVersionFile {
+    pub fn init(path: PathBuf) -> Self {
+        Self {
+            path,
+            tools: ToolRequestSet::new(),
+        }
+    }
+
     pub fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
         let source = ToolSource::LegacyVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();
@@ -27,6 +34,19 @@ impl LegacyVersionFile {
         }
 
         Ok(Self { tools, path })
+    }
+
+    pub fn from_file(path: &Path) -> Result<Self> {
+        trace!("parsing legacy version: {}", path.display());
+        let file_name = &path.file_name().unwrap().to_string_lossy().to_string();
+        let tools = backend::list()
+            .into_iter()
+            .filter(|f| match f.legacy_filenames() {
+                Ok(f) => f.contains(file_name),
+                Err(_) => false,
+            })
+            .collect::<Vec<_>>();
+        Self::parse(path.to_path_buf(), tools)
     }
 }
 
