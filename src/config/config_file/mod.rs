@@ -378,6 +378,7 @@ mod tests {
 
     #[test]
     fn test_detect_config_file_type() {
+        reset();
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.nvmrc")),
             Some(ConfigFileType::LegacyVersion)
