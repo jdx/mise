@@ -7,12 +7,12 @@ use std::path::PathBuf;
 use console::style;
 use eyre::Result;
 
-use crate::backend;
 use crate::backend::{ABackend, Backend};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::hash::hash_to_str;
 use crate::toolset::{tool_request, ToolRequest, ToolVersionOptions};
+use crate::{backend, file};
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
@@ -67,9 +67,25 @@ impl ToolVersion {
             ToolRequest::Path(_, p) => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
-        self.backend.installs_path.join(pathname)
+        let path = self.backend.installs_path.join(pathname);
+
+        // handle non-symlinks on windows
+        // TODO: make this a utility function in xx
+        #[cfg(windows)]
+        if path.is_file() {
+            if let Ok(p) = file::read_to_string(&path).map(PathBuf::from) {
+                let path = self.backend.installs_path.join(p);
+                if path.exists() {
+                    return path;
+                }
+            }
+        }
+        path
     }
     pub fn install_short_path(&self) -> PathBuf {
+        if cfg!(windows) {
+            return self.install_path();
+        }
         let pathname = match &self.request {
             ToolRequest::Path(_, p) => p.to_string_lossy().to_string(),
             _ => self.tv_short_pathname(),

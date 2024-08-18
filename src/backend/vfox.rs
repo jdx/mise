@@ -70,8 +70,9 @@ impl Backend for VfoxBackend {
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
         let path = self
             ._exec_env(tv)?
-            .get("PATH")
-            .cloned()
+            .into_iter()
+            .find(|(k, _)| k.to_uppercase() == "PATH")
+            .map(|(_, v)| v.to_string())
             .unwrap_or("bin".to_string());
         Ok(env::split_paths(&path).collect())
     }

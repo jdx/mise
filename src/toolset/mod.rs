@@ -375,6 +375,7 @@ impl Toolset {
                     Vec::new()
                 }
             })
+            .filter(|(k, _)| k.to_uppercase() != "PATH")
             .collect::<Vec<(String, String)>>();
         let add_paths = entries
             .iter()
