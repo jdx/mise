@@ -1,5 +1,11 @@
 # Changelog
 
+## [2024.8.11](https://github.com/jdx/mise/compare/v2024.8.10..v2024.8.11) - 2024-08-19
+
+### 🐛 Bug Fixes
+
+- bump xx by [@jdx](https://github.com/jdx) in [9a9d3c1](https://github.com/jdx/mise/commit/9a9d3c11e46028bcea0c7ec2fee10bf5c9b1fbe6)
+
 ## [2024.8.10](https://github.com/jdx/mise/compare/v2024.8.9..v2024.8.10) - 2024-08-18
 
 ### 🚀 Features
