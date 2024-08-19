@@ -4580,9 +4580,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "1.1.7"
+version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7e01857b62b702bfdbaba2d4bba205c4948549cc15183530c48968f40ca542b"
+checksum = "fb963ecf2940991825550e580efaaa1ab882191027f45362c4376de15d09bfe9"
 dependencies = [
  "bzip2",
  "duct",
@@ -4598,17 +4598,8 @@ dependencies = [
  "tar",
  "thiserror",
  "tokio",
- "xz",
- "zip",
-]
-
-[[package]]
-name = "xz"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c887690ff2a2e233e8e49633461521f98ec57fbff9d59a884c9a4f04ec1da34"
-dependencies = [
  "xz2",
+ "zip",
 ]
 
 [[package]]
