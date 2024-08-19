@@ -165,12 +165,14 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
     use pretty_assertions::assert_eq;
 
     use super::*;
 
     #[test]
     fn test_tool_arg() {
+        reset();
         let tool = ToolArg::from_str("node").unwrap();
         assert_eq!(
             tool,
@@ -185,6 +187,7 @@ mod tests {
 
     #[test]
     fn test_tool_arg_with_version() {
+        reset();
         let tool = ToolArg::from_str("node@20").unwrap();
         assert_eq!(
             tool,
@@ -199,6 +202,7 @@ mod tests {
 
     #[test]
     fn test_tool_arg_with_version_and_alias() {
+        reset();
         let tool = ToolArg::from_str("nodejs@lts").unwrap();
         assert_eq!(
             tool,
@@ -213,6 +217,7 @@ mod tests {
 
     #[test]
     fn test_tool_arg_parse_input() {
+        reset();
         let t = |input, f, v| {
             let (backend, version) = parse_input(input);
             assert_eq!(backend, f);
