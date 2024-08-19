@@ -31,6 +31,14 @@
       "description": "disables built-in shorthands",
       "type": "boolean"
     },
+    "disable_hints": {
+      "description": "disable hints for mise commands",
+      "type": "array",
+      "items": {
+        "description": "command name or * for all commands",
+        "type": "string"
+      }
+    },
     "disable_tools": {
       "description": "tools that should not be used",
       "items": {
@@ -42,6 +50,34 @@
     "experimental": {
       "description": "enable experimental features",
       "type": "boolean"
+    },
+    "go_default_packages_file": {
+      "description": "path to file containing default go packages",
+      "type": "string"
+    },
+    "go_download_mirror": {
+      "description": "url to use as a mirror for go downloads",
+      "type": "string"
+    },
+    "go_repo": {
+      "description": "url to use as a mirror for go modules",
+      "type": "string"
+    },
+    "go_set_gopath": {
+      "description": "set GOPATH to the directory containing the go tool",
+      "type": "boolean"
+    },
+    "go_set_goroot": {
+      "description": "set GOROOT to the directory containing the go tool",
+      "type": "boolean"
+    },
+    "go_skip_checksum": {
+      "description": "skip checksum verification for go downloads",
+      "type": "boolean"
+    },
+    "http_timeout": {
+      "description": "timeout for http requests in seconds",
+      "type": "integer"
     },
     "jobs": {
       "description": "number of tools to install in parallel, default is 4",
@@ -58,6 +94,11 @@
         "type": "string"
       },
       "type": "array"
+    },
+    "libgit2": {
+      "description": "use libgit2 for git operations",
+      "type": "boolean",
+      "default": true
     },
     "node_compile": {
       "description": "do not use precompiled binaries for node",
@@ -80,8 +121,16 @@
       "description": "do not use precompiled binaries for python",
       "type": "boolean"
     },
+    "python_default_packages_file": {
+      "description": "path to file containing default python packages",
+      "type": "string"
+    },
     "python_venv_auto_create": {
       "description": "automatically create a virtualenv for python tools",
+      "type": "boolean"
+    },
+    "quiet": {
+      "description": "suppress all non-error output",
       "type": "boolean"
     },
     "raw": {
@@ -91,6 +140,27 @@
     "shorthands_file": {
       "description": "path to file containing shorthand mappings",
       "type": "string"
+    },
+    "status": {
+      "description": "configure messages displayed when changing directories or executing tools",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "missing_tools": {
+          "description": "display warning when a tool is not installed",
+          "type": "string",
+          "enum": ["if_other_versions_installed", "always", "never"],
+          "default": "if_other_versions_installed"
+        },
+        "show_env": {
+          "description": "display configured mise environment variables",
+          "type": "boolean"
+        },
+        "show_tools": {
+          "description": "display active tools",
+          "type": "boolean"
+        }
+      }
     },
     "task_output": {
       "default": "prefix",
@@ -105,10 +175,6 @@
         "type": "string"
       },
       "type": "array"
-    },
-    "quiet": {
-      "description": "suppress all non-error output",
-      "type": "boolean"
     },
     "verbose": {
       "description": "display extra output",
