@@ -128,7 +128,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
-nix = {version="0.29", features=["signal", "user"]}
+nix = { version = "0.29", features = ["signal", "user"] }
 
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2"] }
