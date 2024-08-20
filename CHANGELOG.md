@@ -1,5 +1,22 @@
 # Changelog
 
+## [2024.8.12](https://github.com/jdx/mise/compare/v2024.8.11..v2024.8.12) - 2024-08-20
+
+### 🐛 Bug Fixes
+
+- vendor git2 openssl by [@jdx](https://github.com/jdx) in [#2481](https://github.com/jdx/mise/pull/2481)
+- python-compile setting by [@jdx](https://github.com/jdx) in [#2482](https://github.com/jdx/mise/pull/2482)
+
+### 🧪 Testing
+
+- reset test by [@jdx](https://github.com/jdx) in [000fdb8](https://github.com/jdx/mise/commit/000fdb8560b9994e7678924978cf1866bd58e623)
+- reset test by [@jdx](https://github.com/jdx) in [2deb6ce](https://github.com/jdx/mise/commit/2deb6cef5bca37a5bb8e769293e4a665f533209e)
+- reset test by [@jdx](https://github.com/jdx) in [385c09b](https://github.com/jdx/mise/commit/385c09b88013281af6a5adc9706a9d85e951ff61)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.3.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2478](https://github.com/jdx/mise/pull/2478)
+
 ## [2024.8.11](https://github.com/jdx/mise/compare/v2024.8.10..v2024.8.11) - 2024-08-19
 
 ### 🐛 Bug Fixes
