@@ -21,6 +21,7 @@ env:
 
 jobs:
   release:
+    if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

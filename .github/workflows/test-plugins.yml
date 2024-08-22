@@ -20,6 +20,9 @@ env:
 
 jobs:
   build-linux:
+    if: >
+      github.event_name == 'workflow_dispatch'
+      || github.repository == 'jdx/mise'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
