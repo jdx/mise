@@ -123,6 +123,7 @@ walkdir = "2.5.0"
 which = "6"
 xx = { version = "1.0.0", features = ["glob"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+backtrace = "0.3.71"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"

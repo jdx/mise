@@ -1970,6 +1970,7 @@ name = "mise"
 version = "2024.9.11"
 dependencies = [
  "assert_cmd",
+ "backtrace",
  "base64",
  "built",
  "calm_io",

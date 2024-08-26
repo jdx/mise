@@ -1,13 +1,13 @@
+use color_eyre::Help;
+use console::style;
+use eyre::{ensure, Result, WrapErr};
+use indexmap::IndexMap;
+use itertools::Itertools;
+use serde_derive::Serialize;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
-
-use console::style;
-use eyre::{ensure, Result};
-use indexmap::IndexMap;
-use itertools::Itertools;
-use serde_derive::Serialize;
 use tabled::{Table, Tabled};
 use versions::Versioning;
 
@@ -71,6 +71,20 @@ pub struct Ls {
 
 impl Ls {
     pub fn run(mut self) -> Result<()> {
+        return Err(eyre::eyre!("error1")
+            .section("section1")
+            .section("section2")
+            .suggestion("suggestion1")
+            .warning("warning1")
+            .note("note1"))
+        .wrap_err_with(|| {
+            eyre::eyre!("error0")
+                .section("section3")
+                .section("section4")
+                .suggestion("suggestion2")
+                .warning("warning2")
+                .note("note2")
+        });
         let config = Config::try_get()?;
         self.plugin = self
             .plugin

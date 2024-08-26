@@ -250,7 +250,7 @@ fn get_env_diff() -> EnvDiff {
     }
 }
 
-fn var_is_true(key: &str) -> bool {
+pub fn var_is_true(key: &str) -> bool {
     match var(key) {
         Ok(v) => {
             let v = v.to_lowercase();

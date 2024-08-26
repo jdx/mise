@@ -62,7 +62,7 @@ mod ui;
 
 fn main() -> eyre::Result<()> {
     let args = env::args().collect_vec();
-    color_eyre::install()?;
+    errors::install()?;
 
     match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
         Ok(()) => Ok(()),
@@ -76,17 +76,6 @@ fn handle_err(err: Report) -> eyre::Result<()> {
             return Ok(());
         }
     }
-    if cfg!(not(debug_assertions)) && log::max_level() < log::LevelFilter::Debug {
-        display_friendly_err(err);
-        exit(1);
-    }
-    Err(err)
-}
-
-fn display_friendly_err(err: Report) {
-    for err in err.chain() {
-        error!("{err}");
-    }
-    let msg = ui::style::edim("Run with --verbose or MISE_VERBOSE=1 for more information");
-    error!("{msg}");
+    eprintln!("{err:?}");
+    exit(1);
 }

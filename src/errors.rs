@@ -1,11 +1,12 @@
+use std::fmt;
 use std::path::PathBuf;
 use std::process::ExitStatus;
 
-use eyre::Report;
-use thiserror::Error;
-
 use crate::file::display_path;
 use crate::toolset::{ToolRequest, ToolSource};
+use crate::{env, ui};
+use eyre::{EyreHandler, Report};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -48,5 +49,71 @@ impl Error {
                 )
             })
             .unwrap_or(false)
+    }
+}
+
+fn debug_enabled() -> bool {
+    // TODO:
+    // if cfg!(debug_assertions) {
+    //     return true;
+    // }
+    if env::args()
+        .take_while(|arg| arg != "--")
+        .any(|arg| arg == "--debug" || arg == "--trace")
+    {
+        return true;
+    }
+    if let Ok(log_level) = env::var("MISE_LOG_LEVEL") {
+        if log_level == "debug" || log_level == "trace" {
+            return true;
+        }
+    }
+    env::var_is_true("MISE_DEBUG") || env::var_is_true("MISE_TRACE")
+}
+
+pub fn install() -> eyre::Result<()> {
+    if debug_enabled() {
+        color_eyre::install()?;
+    } else {
+        let hook = Hook {};
+        eyre::set_hook(Box::new(move |e| Box::new(hook.make_handler(e))))?;
+    }
+    Ok(())
+}
+
+pub struct Hook {}
+
+struct Handler {}
+
+impl Hook {
+    fn make_handler(&self, _error: &(dyn std::error::Error + 'static)) -> Handler {
+        Handler {}
+    }
+}
+
+impl EyreHandler for Handler {
+    fn debug(
+        &self,
+        error: &(dyn std::error::Error + 'static),
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        if f.alternate() {
+            return fmt::Debug::fmt(error, f);
+        }
+
+        let mise = ui::style::ered("mise");
+        let mut error = Some(error);
+
+        // let mut suggestions = vec![];
+
+        while let Some(e) = error {
+            write!(f, "{mise} {e}\n")?;
+            error = e.source();
+        }
+
+        let msg = ui::style::edim("Run with --verbose or MISE_VERBOSE=1 for more information");
+        write!(f, "{mise} {msg}")?;
+
+        Ok(())
     }
 }
