@@ -13,7 +13,8 @@ directory. Other projects on your machine can use a different set of versions.
 
 mise is inspired by [asdf](https://asdf-vm.com) and uses asdf's vast [plugin ecosystem](https://github.com/rtx-plugins/registry)
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
-For more on how mise compares to asdf, [see below](./comparison-to-asdf).
+For more on how mise compares to asdf, [see below](./comparison-to-asdf). See plugins available for mise with
+[`mise plugins ls-remote`](https://mise.jdx.dev/cli/#mise-plugins-ls-remote-options).
 
 mise can be configured in many ways. The most typical is by `.mise.toml`, but it's also compatible
 with asdf `.tool-versions` files. It can also use idiomatic version files like `.node-version` and
@@ -49,9 +50,11 @@ See [plugins](/plugins) below.
 
 ## Common commands
 
-Here are some of the most important commands when it comes to working with dev tools.
+Here are some of the most important commands when it comes to working with dev tools. Click the header
+for each command to go to its reference documentation page to see all available flags/options and more
+examples.
 
-### `mise use`
+### [`mise use`](https://mise.jdx.dev/cli/#mise-use-options-tool-version)
 
 For some users, `mise use` might be the only command you need to learn. It will do the following:
 
@@ -66,7 +69,7 @@ config file in the local directory. Anytime you're in that directory, that versi
 unless there is a config file in the local directory hierarchy, node-20 will be the default version for
 the user.
 
-### `mise install`
+### [`mise install`](https://mise.jdx.dev/cli/#mise-install-options-tool-version)
 
 `mise install` will install but not activate tools—meaning it will download/build/compile the tool
 into `~/.local/share/mise/installs` but you won't be able to use it without "setting" the version
@@ -92,7 +95,7 @@ These are hidden from the CLI help and remain for asdf-compatibility. The recomm
 to use `mise use` instead because that will do the same thing but also install the tool if it does
 not already exists.
 
-### `mise exec`|`mise x`
+### [`mise exec`|`mise x`](https://mise.jdx.dev/cli/#mise-use-options-tool-version)
 
 `mise x` can be used for one-off commands using specific tools. e.g.: if you want to run a script with python3.12:
 
@@ -120,6 +123,10 @@ alias mx="mise x --"
 :::
 
 Similarly, `mise run` can be used to [execute tasks](/tasks/) which will also activate the mise environment with all of your tools.
+
+### [`mise registry`](https://mise.jdx.dev/cli/#mise-registry)
+
+Lists 
 
 ## Tool Options
 
