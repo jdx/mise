@@ -15,6 +15,7 @@ pub struct RenderHelp {}
 impl RenderHelp {
     pub fn run(self) -> Result<()> {
         xx::file::mkdirp("docs/cli")?;
+        xx::file::mkdirp("docs/.vitepress")?;
         let readme = file::read_to_string("docs/cli/index.md")?;
         let mut current_readme = readme.split("<!-- MISE:COMMANDS -->");
 
