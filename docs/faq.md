@@ -62,7 +62,7 @@ never modify PATH because it never displays a prompt. For this type of setup, yo
 `mise hook-env` manually every time you wish to update PATH, or use [shims](/dev-tools/shims.md)
 instead (preferred).
 Or if you only need to use mise for certain commands, just prefix the commands with
-[`mise x --`](./cli/#mise-exec-options-tool-version-command).
+[`mise x --`](./cli/exec).
 For example, `mise x -- npm test` or `mise x -- ./my_script.sh`.
 
 `mise hook-env` will exit early in different situations if no changes have been made. This prevents
