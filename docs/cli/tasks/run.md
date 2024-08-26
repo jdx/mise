@@ -1,0 +1,99 @@
+## `mise tasks run [OPTIONS] [TASK] [ARGS]...`
+
+**Aliases:** `r`
+
+```text
+[experimental] Run a tasks
+
+This command will run a tasks, or multiple tasks in parallel.
+Tasks may have dependencies on other tasks or on source files.
+If source is configured on a tasks, it will only run if the source
+files have changed.
+
+Tasks can be defined in .mise.toml or as standalone scripts.
+In .mise.toml, tasks take this form:
+
+    [tasks.build]
+    run = "npm run build"
+    sources = ["src/**/*.ts"]
+    outputs = ["dist/**/*.js"]
+
+Alternatively, tasks can be defined as standalone scripts.
+These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+The name of the script will be the name of the tasks.
+
+    $ cat .mise/tasks/build<<EOF
+    #!/usr/bin/env bash
+    npm run build
+    EOF
+    $ mise run build
+
+Usage: tasks run [OPTIONS] [TASK] [ARGS]...
+
+Arguments:
+  [TASK]
+          Tasks to run
+          Can specify multiple tasks by separating with `:::`
+          e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
+          
+          [default: default]
+
+  [ARGS]...
+          Arguments to pass to the tasks. Use ":::" to separate tasks
+
+Options:
+  -C, --cd <CD>
+          Change to this directory before executing the command
+
+  -n, --dry-run
+          Don't actually run the tasks(s), just print them in order of execution
+
+  -f, --force
+          Force the tasks to run even if outputs are up to date
+
+  -p, --prefix
+          Print stdout/stderr by line, prefixed with the tasks's label
+          Defaults to true if --jobs > 1
+          Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+
+  -i, --interleave
+          Print directly to stdout/stderr instead of by line
+          Defaults to true if --jobs == 1
+          Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+
+  -t, --tool <TOOL@VERSION>
+          Tool(s) to also add e.g.: node@20 python@3.10
+
+  -j, --jobs <JOBS>
+          Number of tasks to run in parallel
+          [default: 4]
+          Configure with `jobs` config or `MISE_JOBS` env var
+          
+          [env: MISE_JOBS=]
+
+  -r, --raw
+          Read/write directly to stdin/stdout/stderr instead of by line
+          Configure with `raw` config or `MISE_RAW` env var
+
+      --timings
+          Shows elapsed time after each tasks
+
+Examples:
+
+    # Runs the "lint" tasks. This needs to either be defined in .mise.toml
+    # or as a standalone script. See the project README for more information.
+    $ mise run lint
+
+    # Forces the "build" tasks to run even if its sources are up-to-date.
+    $ mise run build --force
+
+    # Run "test" with stdin/stdout/stderr all connected to the current terminal.
+    # This forces `--jobs=1` to prevent interleaving of output.
+    $ mise run test --raw
+
+    # Runs the "lint", "test", and "check" tasks in parallel.
+    $ mise run lint ::: test ::: check
+
+    # Execute multiple tasks each with their own arguments.
+    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+```
