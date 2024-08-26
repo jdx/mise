@@ -338,6 +338,10 @@ impl Plugin for AsdfPlugin {
             self.uninstall(pr)?;
         }
 
+        if regex!(r"^[/~]").is_match(&repo_url) {
+            Err(eyre!("Invalid repository URL: {}", repo_url).suggestion(r#"If you are trying to link to a local directory, use `mise plugins link` instead.
+Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#))?;
+        }
         let git = Git::new(&self.plugin_path);
         pr.set_message(format!("cloning {repo_url}"));
         git.clone(&repo_url)?;
