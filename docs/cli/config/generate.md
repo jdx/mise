@@ -1,4 +1,4 @@
-## `mise config generate [OPTIONS]`
+## `mise config generate [OPTIONS]` <Badge type="warning" text="experimental" />
 
 **Aliases:** `g`
 

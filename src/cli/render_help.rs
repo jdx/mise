@@ -102,9 +102,13 @@ fn render_command(parent: Option<&str>, c: &clap::Command) -> String {
     let about = strip_ansi_codes(&c.render_long_help().to_string())
         .trim()
         .to_string();
+    let mut badge = String::new();
+    if about.starts_with("[experimental]") {
+        badge = " <Badge type=\"warning\" text=\"experimental\" />".to_string();
+    }
     formatdoc!(
         "
-        ## `mise {usage}`
+        ## `mise {usage}`{badge}
         {aliases}
         ```text
         {about}

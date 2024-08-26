@@ -1,4 +1,4 @@
-## `mise config ls [OPTIONS]`
+## `mise config ls [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List config files currently in use

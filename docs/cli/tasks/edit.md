@@ -1,4 +1,4 @@
-## `mise tasks edit [OPTIONS] <TASK>`
+## `mise tasks edit [OPTIONS] <TASK>` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Edit a tasks with $EDITOR

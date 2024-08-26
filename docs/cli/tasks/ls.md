@@ -1,4 +1,4 @@
-## `mise tasks ls [OPTIONS]`
+## `mise tasks ls [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List available tasks to execute

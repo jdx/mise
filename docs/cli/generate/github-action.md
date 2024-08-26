@@ -1,4 +1,4 @@
-## `mise generate github-action [OPTIONS]`
+## `mise generate github-action [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Generate a GitHub Action workflow file

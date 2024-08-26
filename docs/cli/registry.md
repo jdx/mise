@@ -1,4 +1,4 @@
-## `mise registry`
+## `mise registry` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List available tools
