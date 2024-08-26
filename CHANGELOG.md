@@ -1,5 +1,31 @@
 # Changelog
 
+## [2024.8.13](https://github.com/jdx/mise/compare/v2024.8.12..v2024.8.13) - 2024-08-26
+
+### 🐛 Bug Fixes
+
+- add suggestion for invalid use of repo_url by [@jdx](https://github.com/jdx) in [#2501](https://github.com/jdx/mise/pull/2501)
+
+### 📚 Documentation
+
+- add individual page for every CLI command by [@jdx](https://github.com/jdx) in [acea81c](https://github.com/jdx/mise/commit/acea81ca090fab76c4974a77a25c9557822d6263)
+- add individual page for every CLI command by [@jdx](https://github.com/jdx) in [e379df7](https://github.com/jdx/mise/commit/e379df732bd85d77faead4fce650e388993f5999)
+- add experimental badges to cli commands by [@jdx](https://github.com/jdx) in [4e50f33](https://github.com/jdx/mise/commit/4e50f330968b93b1af2ad4c93a78e82f9514324b)
+- lint by [@jdx](https://github.com/jdx) in [26ebdec](https://github.com/jdx/mise/commit/26ebdec2765416c26adc1001451abb6a2ce71978)
+
+### 🧪 Testing
+
+- fixed render_help test by [@jdx](https://github.com/jdx) in [d39d861](https://github.com/jdx/mise/commit/d39d86152814e1f24ec8b648e79235a2e1f2bba5)
+
+### 🔍 Other Changes
+
+- make some gh workflows only run on jdx/mise by [@CharString](https://github.com/CharString) in [#2489](https://github.com/jdx/mise/pull/2489)
+- Update index.md by [@jdx](https://github.com/jdx) in [b2c25f3](https://github.com/jdx/mise/commit/b2c25f39cd736c02174462d2e94cc0605d6c8e22)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.3.4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2499](https://github.com/jdx/mise/pull/2499)
+
 ## [2024.8.12](https://github.com/jdx/mise/compare/v2024.8.11..v2024.8.12) - 2024-08-20
 
 ### 🐛 Bug Fixes
