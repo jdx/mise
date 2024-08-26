@@ -14,13 +14,14 @@ pub struct RenderHelp {}
 
 impl RenderHelp {
     pub fn run(self) -> Result<()> {
+        xx::file::mkdirp("docs/cli")?;
         let readme = file::read_to_string("docs/cli/index.md")?;
         let mut current_readme = readme.split("<!-- MISE:COMMANDS -->");
 
         let mut doc = String::new();
         doc.push_str(current_readme.next().unwrap());
         current_readme.next(); // discard existing commands
-        doc.push_str(render_commands().as_str());
+        doc.push_str(render_commands()?.as_str());
         doc.push_str(current_readme.next().unwrap());
         doc = remove_trailing_spaces(&doc) + "\n";
         file::write("docs/cli/index.md", &doc)?;
@@ -28,7 +29,7 @@ impl RenderHelp {
     }
 }
 
-fn render_commands() -> String {
+fn render_commands() -> Result<String> {
     let mut cli = Cli::command()
         .term_width(80)
         .max_term_width(80)
@@ -50,27 +51,34 @@ fn render_commands() -> String {
             true => {
                 let name = command.get_name().to_string();
                 for subcommand in command.get_subcommands_mut() {
-                    if let Some(output) = render_command(Some(&name), subcommand) {
+                    let output = render_command(Some(&name), subcommand);
+                    if !subcommand.is_hide_set() {
                         doc.push_str(&output);
                     }
+                    let output = output.trim().to_string() + "\n";
+                    xx::file::mkdirp(format!("docs/cli/{}", name))?;
+                    file::write(
+                        format!("docs/cli/{}/{}.md", name, subcommand.get_name()),
+                        &output,
+                    )?;
                 }
             }
             false => {
-                if let Some(output) = render_command(None, command) {
+                let output = render_command(None, command);
+                if !command.is_hide_set() {
                     doc.push_str(&output);
                 }
+                let output = output.trim().to_string() + "\n";
+                file::write(format!("docs/cli/{}.md", command.get_name()), &output)?;
             }
         }
     }
     doc.push_str("<!-- MISE:COMMANDS -->");
-    doc
+    Ok(doc)
 }
 
-fn render_command(parent: Option<&str>, c: &clap::Command) -> Option<String> {
+fn render_command(parent: Option<&str>, c: &clap::Command) -> String {
     let mut c = c.clone().disable_help_flag(true);
-    if c.is_hide_set() {
-        return None;
-    }
     let strip_usage = |s: StyledStr| {
         s.to_string()
             .strip_prefix("Usage: ")
@@ -93,7 +101,7 @@ fn render_command(parent: Option<&str>, c: &clap::Command) -> Option<String> {
     let about = strip_ansi_codes(&c.render_long_help().to_string())
         .trim()
         .to_string();
-    Some(formatdoc!(
+    formatdoc!(
         "
         ## `mise {usage}`
         {aliases}
@@ -102,7 +110,7 @@ fn render_command(parent: Option<&str>, c: &clap::Command) -> Option<String> {
         ```
 
         ",
-    ))
+    )
 }
 
 fn remove_trailing_spaces(s: &str) -> String {
