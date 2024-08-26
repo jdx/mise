@@ -1,4 +1,4 @@
-## `mise watch [OPTIONS] [ARGS]...`
+## `mise watch [OPTIONS] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `w`
 

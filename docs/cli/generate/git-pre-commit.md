@@ -1,4 +1,4 @@
-## `mise generate git-pre-commit [OPTIONS]`
+## `mise generate git-pre-commit [OPTIONS]` <Badge type="warning" text="experimental" />
 
 **Aliases:** `pre-commit`
 

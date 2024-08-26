@@ -1,4 +1,4 @@
-## `mise run [OPTIONS] [TASK] [ARGS]...`
+## `mise run [OPTIONS] [TASK] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `r`
 

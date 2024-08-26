@@ -1,4 +1,4 @@
-## `mise tasks deps [OPTIONS] [TASKS]...`
+## `mise tasks deps [OPTIONS] [TASKS]...` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Display a tree visualization of a dependency graph

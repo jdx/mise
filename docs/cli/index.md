@@ -213,7 +213,7 @@ Examples:
     $ mise completion fish > ~/.config/fish/completions/mise.fish
 ```
 
-## `mise config ls [OPTIONS]`
+## `mise config ls [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List config files currently in use
@@ -229,7 +229,7 @@ Examples:
     $ mise config ls
 ```
 
-## `mise config generate [OPTIONS]`
+## `mise config generate [OPTIONS]` <Badge type="warning" text="experimental" />
 
 **Aliases:** `g`
 
@@ -412,7 +412,7 @@ Examples:
     $ mise x -C /path/to/project node@20 -- node ./app.js
 ```
 
-## `mise generate git-pre-commit [OPTIONS]`
+## `mise generate git-pre-commit [OPTIONS]` <Badge type="warning" text="experimental" />
 
 **Aliases:** `pre-commit`
 
@@ -444,7 +444,7 @@ Examples:
     $ git commit -m "feat: add new feature" # runs `mise run pre-commit`
 ```
 
-## `mise generate github-action [OPTIONS]`
+## `mise generate github-action [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Generate a GitHub Action workflow file
@@ -962,7 +962,7 @@ Examples:
     rm -rf ~/.local/share/mise/versions/node/20.0.1
 ```
 
-## `mise registry`
+## `mise registry` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List available tools
@@ -1005,7 +1005,7 @@ Examples:
     v20.0.0
 ```
 
-## `mise run [OPTIONS] [TASK] [ARGS]...`
+## `mise run [OPTIONS] [TASK] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `r`
 
@@ -1340,7 +1340,7 @@ Examples:
     $ mise use -g python@3.11.0 - uses pyenv-provided python
 ```
 
-## `mise tasks deps [OPTIONS] [TASKS]...`
+## `mise tasks deps [OPTIONS] [TASKS]...` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Display a tree visualization of a dependency graph
@@ -1372,7 +1372,7 @@ Examples:
     $ mise tasks deps --dot
 ```
 
-## `mise tasks edit [OPTIONS] <TASK>`
+## `mise tasks edit [OPTIONS] <TASK>` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Edit a tasks with $EDITOR
@@ -1395,7 +1395,7 @@ Examples:
     $ mise tasks edit test
 ```
 
-## `mise tasks ls [OPTIONS]`
+## `mise tasks ls [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List available tasks to execute
@@ -1436,7 +1436,7 @@ Examples:
     $ mise tasks ls
 ```
 
-## `mise tasks run [OPTIONS] [TASK] [ARGS]...`
+## `mise tasks run [OPTIONS] [TASK] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `r`
 
@@ -1745,7 +1745,7 @@ Show mise version
 Usage: version
 ```
 
-## `mise watch [OPTIONS] [ARGS]...`
+## `mise watch [OPTIONS] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `w`
 
