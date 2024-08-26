@@ -232,6 +232,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | flarectl                      | [mise-plugins/asdf-flarectl](https://github.com/mise-plugins/asdf-flarectl)                                       |
 | flatc                         | [TheOpenDictionary/asdf-flatc](https://github.com/TheOpenDictionary/asdf-flatc)                                   |
 | Flutter                       | [oae/asdf-flutter](https://github.com/oae/asdf-flutter)                                                           |
+| FlutterGen                    | [FlutterGen/asdf-fluttergen](https://github.com/FlutterGen/asdf-fluttergen)                                       |
 | Flux2                         | [tablexi/asdf-flux2](https://github.com/tablexi/asdf-flux2)                                                       |
 | Fluxctl                       | [stefansedich/asdf-fluxctl](https://github.com/stefansedich/asdf-fluxctl)                                         |
 | fly                           | [vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf)                     |
@@ -253,7 +254,6 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | ghorg                         | [gbloquel/asdf-ghorg](https://github.com/gbloquel/asdf-ghorg)                                                     |
 | ghq                           | [kajisha/asdf-ghq](https://github.com/kajisha/asdf-ghq)                                                           |
 | ginkgo                        | [jimmidyson/asdf-ginkgo](https://github.com/jimmidyson/asdf-ginkgo)                                               |
-| git                           | [jcaigitlab/asdf-git](https://gitlab.com/jcaigitlab/asdf-git)                                                     |
 | git-chglog                    | [GoodwayGroup/asdf-git-chglog](https://github.com/GoodwayGroup/asdf-git-chglog)                                   |
 | git-cliff                     | [jylenhof/asdf-git-cliff](https://github.com/jylenhof/asdf-git-cliff)                                             |
 | gitconfig                     | [0ghny/asdf-gitconfig](https://github.com/0ghny/asdf-gitconfig)                                                   |
@@ -266,7 +266,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Gleam                         | [asdf-community/asdf-gleam](https://github.com/asdf-community/asdf-gleam)                                         |
 | Glen                          | [bradym/asdf-glen](https://github.com/bradym/asdf-glen)                                                           |
 | glooctl                       | [halilkaya/asdf-glooctl](https://github.com/halilkaya/asdf-glooctl)                                               |
-| glow                          | [chessmango/asdf-glow](https://github.com/chessmango/asdf-glow)                                                   |
+| glow                          | [gr1m0h/asdf-glow](https://github.com/gr1m0h/asdf-glow)                                                           |
 | GNU Guile                     | [indiebrain/asdf-guile](https://github.com/indiebrain/asdf-guile)                                                 |
 | GNU nano                      | [mfakane/asdf-nano](https://github.com/mfakane/asdf-nano)                                                         |
 | go-sdk                        | [yacchi/asdf-go-sdk](https://github.com/yacchi/asdf-go-sdk)                                                       |
