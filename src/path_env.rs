@@ -1,4 +1,5 @@
 use std::env::join_paths;
+use std::env::split_paths;
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -27,14 +28,8 @@ impl PathEnv {
     }
 
     pub fn add(&mut self, path: PathBuf) {
-        let path_string: &str = &path.to_string_lossy();
-        if path_string.contains(':') {
-            let parts: Vec<&str> = path_string.split(':').collect();
-            for part in parts {
-                self.mise.push(PathBuf::from(part));
-            }
-        } else {
-            self.mise.push(path);
+        for part in split_paths(&path) {
+            self.mise.push(part);
         }
     }
 
