@@ -48,6 +48,7 @@ impl SettingsSet {
             "node_compile" => parse_bool(&self.value)?,
             "not_found_auto_install" => parse_bool(&self.value)?,
             "paranoid" => parse_bool(&self.value)?,
+            "pipx_uvx" => parse_bool(&self.value)?,
             "plugin_autoupdate_last_check_duration" => self.value.into(),
             "python_compile" => parse_bool(&self.value)?,
             "python_default_packages_file" => self.value.into(),
@@ -158,6 +159,7 @@ pub mod tests {
         node_compile = false
         not_found_auto_install = true
         paranoid = false
+        pipx_uvx = false
         plugin_autoupdate_last_check_duration = "1"
         python_default_packages_file = "~/.default-python-packages"
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"

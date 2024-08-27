@@ -383,6 +383,11 @@
           "description": "extra-security mode, see https://mise.jdx.dev/paranoid.html for details",
           "type": "boolean"
         },
+        "pipx_uvx": {
+          "description": "use uv to install python tools if available",
+          "type": "boolean",
+          "default": false
+        },
         "plugin_autoupdate_last_check_duration": {
           "description": "how often to check for plugin updates",
           "type": "string"
