@@ -9,11 +9,10 @@ use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
-use crate::{env, github};
+use crate::{env, file, github};
 
 #[derive(Debug)]
 pub struct PIPXBackend {
