@@ -14,7 +14,7 @@ use crate::env::{self, GITHUB_TOKEN};
 use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolRequest;
+use crate::toolset::{ToolRequest, ToolVersion};
 
 #[derive(Debug)]
 pub struct CargoBackend {
@@ -63,7 +63,7 @@ impl Backend for CargoBackend {
         let install_arg = format!("{}@{}", self.name(), ctx.tv.version);
 
         let cmd = CmdLineRunner::new("cargo").arg("install");
-        let cmd = if let Some(url) = self.git_url() {
+        let mut cmd = if let Some(url) = self.git_url() {
             let mut cmd = cmd.arg(format!("--git={url}"));
             if let Some(rev) = ctx.tv.version.strip_prefix("rev:") {
                 cmd = cmd.arg(format!("--rev={rev}"));
@@ -79,7 +79,7 @@ impl Backend for CargoBackend {
                 ))?;
             }
             cmd
-        } else if self.is_binstall_enabled() {
+        } else if self.is_binstall_enabled(&ctx.tv) {
             let mut cmd = CmdLineRunner::new("cargo-binstall").arg("-y");
             if let Some(token) = &*GITHUB_TOKEN {
                 cmd = cmd.env("GITHUB_TOKEN", token)
@@ -88,6 +88,16 @@ impl Backend for CargoBackend {
         } else {
             cmd.arg(install_arg)
         };
+
+        let opts = ctx.tv.request.options();
+        if let Some(features) = opts.get("features") {
+            cmd = cmd.arg(format!("--features={}", features));
+        }
+        if let Some(default_features) = opts.get("default-features") {
+            if default_features.to_lowercase() == "false" {
+                cmd = cmd.arg("--no-default-features");
+            }
+        }
 
         cmd.arg("--locked")
             .arg("--root")
@@ -112,9 +122,17 @@ impl CargoBackend {
         }
     }
 
-    fn is_binstall_enabled(&self) -> bool {
+    fn is_binstall_enabled(&self, tv: &ToolVersion) -> bool {
         let settings = Settings::get();
-        settings.cargo_binstall && file::which_non_pristine("cargo-binstall").is_some()
+        if !settings.cargo_binstall || file::which_non_pristine("cargo-binstall").is_none() {
+            return false;
+        }
+        let opts = tv.request.options();
+        if opts.contains_key("features") || opts.contains_key("default-features") {
+            info!("not using cargo-binstall because features are specified");
+            return false;
+        }
+        true
     }
 
     /// if the name is a git repo, return the git url
