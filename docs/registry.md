@@ -258,7 +258,7 @@ editLink: false
 | gleam | [asdf:asdf-community/asdf-gleam](https://github.com/asdf-community/asdf-gleam) |
 | glen | [asdf:bradym/asdf-glen](https://github.com/bradym/asdf-glen) |
 | glooctl | [asdf:halilkaya/asdf-glooctl](https://github.com/halilkaya/asdf-glooctl) |
-| glow | [asdf:gr1m0h/asdf-glow](https://github.com/gr1m0h/asdf-glow) |
+| glow | [asdf:mise-plugins/asdf-glow](https://github.com/mise-plugins/asdf-glow) |
 | go-containerregistry | [asdf:dex4er/asdf-go-containerregistry](https://github.com/dex4er/asdf-go-containerregistry) |
 | go-getter | [asdf:ryodocx/asdf-go-getter](https://github.com/ryodocx/asdf-go-getter) |
 | go-jira | [asdf:dguihal/asdf-go-jira](https://github.com/dguihal/asdf-go-jira) |
