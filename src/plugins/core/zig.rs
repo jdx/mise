@@ -3,10 +3,11 @@ use std::path::{Path, PathBuf};
 use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
+use regex::Regex;
 use versions::Versioning;
 
 use crate::backend::Backend;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::file;
@@ -77,12 +78,21 @@ impl ZigPlugin {
     }
 
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+        let dev_regex = ZigPlugin::get_zig_dev_version_regex();
+
         let url = if tv.version == "ref:master" {
             format!(
                 "https://ziglang.org/builds/zig-{}-{}-{}.tar.xz",
                 os(),
                 arch(),
                 self.get_master_version()?
+            )
+        } else if dev_regex.is_match(&tv.version) {
+            format!(
+                "https://ziglang.org/builds/zig-{}-{}-{}.tar.xz",
+                os(),
+                arch(),
+                tv.version
             )
         } else {
             format!(
@@ -134,6 +144,10 @@ impl ZigPlugin {
         self.test_zig(ctx)
     }
 
+    fn get_zig_dev_version_regex() -> regex::Regex {
+        return Regex::new(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").unwrap();
+    }
+
     fn get_master_version(&self) -> Result<String> {
         let version_json: serde_json::Value =
             HTTP_FETCH.json("https://ziglang.org/download/index.json")?;
@@ -155,6 +169,28 @@ impl Backend for ZigPlugin {
             .remote_version_cache
             .get_or_try_init(|| self.fetch_remote_versions())
             .cloned()
+    }
+
+    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+        self.ensure_dependencies_installed()?;
+        trace!("Listing remote versions for {}", self.fa().to_string());
+        let versions = self
+            ._list_remote_versions()?
+            .into_iter()
+            .filter(|v| match v.parse::<ToolVersionType>() {
+                Ok(ToolVersionType::Version(_)) => true,
+                _ => {
+                    let regex = ZigPlugin::get_zig_dev_version_regex();
+                    if !regex.is_match(v) && v != "ref:master" {
+                        warn!("Invalid version: {}@{v}", self.id());
+                        false
+                    } else {
+                        true
+                    }
+                }
+            })
+            .collect();
+        Ok(versions)
     }
 
     fn legacy_filenames(&self) -> Result<Vec<String>> {
