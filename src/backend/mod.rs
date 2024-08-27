@@ -14,7 +14,7 @@ use regex::Regex;
 use strum::IntoEnumIterator;
 use versions::Versioning;
 
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
@@ -189,7 +189,18 @@ pub trait Backend: Debug + Send + Sync {
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.ensure_dependencies_installed()?;
         trace!("Listing remote versions for {}", self.fa().to_string());
-        self._list_remote_versions()
+        let versions = self
+            ._list_remote_versions()?
+            .into_iter()
+            .filter(|v| match v.parse::<ToolVersionType>() {
+                Ok(ToolVersionType::Version(_)) => true,
+                _ => {
+                    warn!("Invalid version: {}@{v}", self.id());
+                    false
+                }
+            })
+            .collect();
+        Ok(versions)
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
