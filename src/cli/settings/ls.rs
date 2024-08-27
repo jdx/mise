@@ -84,6 +84,7 @@ mod tests {
         node_compile = false
         not_found_auto_install = true
         paranoid = false
+        pipx_uvx = false
         plugin_autoupdate_last_check_duration = "20m"
         python_default_packages_file = "~/.default-python-packages"
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
@@ -130,6 +131,7 @@ mod tests {
         node_compile
         not_found_auto_install
         paranoid
+        pipx_uvx
         plugin_autoupdate_last_check_duration
         python_default_packages_file
         python_pyenv_repo
