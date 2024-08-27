@@ -27,7 +27,15 @@ impl PathEnv {
     }
 
     pub fn add(&mut self, path: PathBuf) {
-        self.mise.push(path);
+        let path_string: &str = &path.to_string_lossy();
+        if path_string.contains(':') {
+            let parts: Vec<&str> = path_string.split(':').collect();
+            for part in parts {
+                self.mise.push(PathBuf::from(part));
+            }
+        } else {
+            self.mise.push(path);
+        }
     }
 
     pub fn to_vec(&self) -> Vec<PathBuf> {
@@ -144,15 +152,15 @@ mod tests {
         reset();
         let mut path_env = PathEnv::from_iter(
             [
-                "/before1",
-                "/before2"
+                "/item1",
+                "/item2"
             ]
             .map(PathBuf::from),
         );
-        path_env.add("/after1:/after2".into());
+        path_env.add("/1:/2".into());
         assert_eq!(
             path_env.to_string(),
-            format!("/before1:/before2:/after1:/after2")
+            format!("/1:/2:/item1:/item2")
         );
     }
 }
