@@ -1,5 +1,4 @@
-use std::env::join_paths;
-use std::env::split_paths;
+use std::env::{join_paths, split_paths};
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
