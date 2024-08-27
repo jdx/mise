@@ -139,4 +139,20 @@ mod tests {
             format!("/1:/2:/3:/before-1:/before-2:/before-3:/after-1:/after-2:/after-3")
         );
     }
+    #[test]
+    fn test_path_env_with_colon() {
+        reset();
+        let mut path_env = PathEnv::from_iter(
+            [
+                "/before1",
+                "/before2"
+            ]
+            .map(PathBuf::from),
+        );
+        path_env.add("/after1:/after2".into());
+        assert_eq!(
+            path_env.to_string(),
+            format!("/before1:/before2:/after1:/after2")
+        );
+    }
 }
