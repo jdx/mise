@@ -15,7 +15,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::install_context::InstallContext;
-use crate::{file, github};
+use crate::{env, file, github};
 
 #[derive(Debug)]
 pub struct SPMBackend {
@@ -89,7 +89,8 @@ impl SPMBackend {
         Self {
             remote_version_cache: CacheManager::new(
                 ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
-            ),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             ba,
         }
     }

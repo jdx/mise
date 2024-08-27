@@ -10,10 +10,10 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file;
-use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
+use crate::{env, github};
 
 #[derive(Debug)]
 pub struct PIPXBackend {
@@ -125,10 +125,12 @@ impl PIPXBackend {
         Self {
             remote_version_cache: CacheManager::new(
                 ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
-            ),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             latest_version_cache: CacheManager::new(
                 ba.cache_path.join("latest_version-$KEY.msgpack.z"),
-            ),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             ba,
         }
     }
