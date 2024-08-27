@@ -266,7 +266,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Gleam                         | [asdf-community/asdf-gleam](https://github.com/asdf-community/asdf-gleam)                                         |
 | Glen                          | [bradym/asdf-glen](https://github.com/bradym/asdf-glen)                                                           |
 | glooctl                       | [halilkaya/asdf-glooctl](https://github.com/halilkaya/asdf-glooctl)                                               |
-| glow                          | [gr1m0h/asdf-glow](https://github.com/gr1m0h/asdf-glow)                                                           |
+| glow                          | [mise-plugins/asdf-glow](https://github.com/mise-plugins/asdf-glow)                                               |
 | GNU Guile                     | [indiebrain/asdf-guile](https://github.com/indiebrain/asdf-guile)                                                 |
 | GNU nano                      | [mfakane/asdf-nano](https://github.com/mfakane/asdf-nano)                                                         |
 | go-sdk                        | [yacchi/asdf-go-sdk](https://github.com/yacchi/asdf-go-sdk)                                                       |

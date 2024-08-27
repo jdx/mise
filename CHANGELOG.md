@@ -1,5 +1,29 @@
 # Changelog
 
+## [2024.8.14](https://github.com/jdx/mise/compare/v2024.8.13..v2024.8.14) - 2024-08-27
+
+### 🚀 Features
+
+- **(cargo)** allow specifying features via tool options by [@jdx](https://github.com/jdx) in [#2515](https://github.com/jdx/mise/pull/2515)
+- **(zig)** make dev builds installable by [@jdx](https://github.com/jdx) in [#2514](https://github.com/jdx/mise/pull/2514)
+- add support for using `uv tool` as a replacement for pipx by [@antoniomdk](https://github.com/antoniomdk) in [#2509](https://github.com/jdx/mise/pull/2509)
+
+### 🐛 Bug Fixes
+
+- **(src/path_env.rs)** Issue 2504: Fix for JoinPathsError by [@mcallaway](https://github.com/mcallaway) in [#2511](https://github.com/jdx/mise/pull/2511)
+- block remote versions which are not simple versions by [@jdx](https://github.com/jdx) in [ba90c3b](https://github.com/jdx/mise/commit/ba90c3bbe71bd33d628df607326da9f0cf363af1)
+- npm backend not finding updates by [@roele](https://github.com/roele) in [#2512](https://github.com/jdx/mise/pull/2512)
+
+### 🔍 Other Changes
+
+- Update contributing.md by [@jdx](https://github.com/jdx) in [e9cc129](https://github.com/jdx/mise/commit/e9cc129f703ac2949900307a3b828c3a095644ca)
+- fix nightly lint warning by [@jdx](https://github.com/jdx) in [6796a46](https://github.com/jdx/mise/commit/6796a46f95227286f3337bce374e7447536e9503)
+
+### New Contributors
+
+* @mcallaway made their first contribution in [#2511](https://github.com/jdx/mise/pull/2511)
+* @antoniomdk made their first contribution in [#2509](https://github.com/jdx/mise/pull/2509)
+
 ## [2024.8.13](https://github.com/jdx/mise/compare/v2024.8.12..v2024.8.13) - 2024-08-26
 
 ### 🐛 Bug Fixes
