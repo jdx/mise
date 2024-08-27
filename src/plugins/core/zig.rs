@@ -145,7 +145,7 @@ impl ZigPlugin {
     }
 
     fn get_zig_dev_version_regex() -> regex::Regex {
-        return Regex::new(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").unwrap();
+        Regex::new(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").unwrap()
     }
 
     fn get_master_version(&self) -> Result<String> {
