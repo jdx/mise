@@ -9,6 +9,7 @@ use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::file;
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -84,23 +85,42 @@ impl Backend for PIPXBackend {
             .parse::<PipxRequest>()?
             .pipx_request(&ctx.tv.version);
 
-        CmdLineRunner::new("pipx")
-            .arg("install")
-            .arg(pipx_request)
-            .with_pr(ctx.pr.as_ref())
-            .env("PIPX_HOME", ctx.tv.install_path())
-            .env("PIPX_BIN_DIR", ctx.tv.install_path().join("bin"))
-            .envs(ctx.ts.env_with_path(&config)?)
-            .prepend_path(ctx.ts.list_paths())?
-            // Prepend install path so pipx doesn't issue a warning about missing path
-            .prepend_path(vec![ctx.tv.install_path().join("bin")])?
-            .execute()?;
-
+        if self.is_uvx_enabled() {
+            CmdLineRunner::new("uv")
+                .arg("tool")
+                .arg("install")
+                .arg(pipx_request)
+                .with_pr(ctx.pr.as_ref())
+                .env("UV_TOOL_DIR", ctx.tv.install_path())
+                .env("UV_TOOL_BIN_DIR", ctx.tv.install_path().join("bin"))
+                .envs(ctx.ts.env_with_path(&config)?)
+                .prepend_path(ctx.ts.list_paths())?
+                // Prepend install path so pipx doesn't issue a warning about missing path
+                .prepend_path(vec![ctx.tv.install_path().join("bin")])?
+                .execute()?;
+        } else {
+            CmdLineRunner::new("pipx")
+                .arg("install")
+                .arg(pipx_request)
+                .with_pr(ctx.pr.as_ref())
+                .env("PIPX_HOME", ctx.tv.install_path())
+                .env("PIPX_BIN_DIR", ctx.tv.install_path().join("bin"))
+                .envs(ctx.ts.env_with_path(&config)?)
+                .prepend_path(ctx.ts.list_paths())?
+                // Prepend install path so pipx doesn't issue a warning about missing path
+                .prepend_path(vec![ctx.tv.install_path().join("bin")])?
+                .execute()?;
+        }
         Ok(())
     }
 }
 
 impl PIPXBackend {
+    fn is_uvx_enabled(&self) -> bool {
+        let settings = Settings::get();
+        settings.pipx_uvx && file::which_non_pristine("uv").is_some()
+    }
+
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
