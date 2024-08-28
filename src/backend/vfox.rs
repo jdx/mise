@@ -145,6 +145,7 @@ impl VfoxBackend {
 
     fn _exec_env(&self, tv: &ToolVersion) -> eyre::Result<&BTreeMap<String, String>> {
         self.exec_env_cache.get_or_try_init(|| {
+            self.ensure_plugin_installed()?;
             Ok(self
                 .runtime()?
                 .block_on(self.vfox.env_keys(&self.pathname, &tv.version))?
