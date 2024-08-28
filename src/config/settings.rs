@@ -127,6 +127,8 @@ pub struct Settings {
     pub trusted_config_paths: BTreeSet<PathBuf>,
     #[config(env = "MISE_QUIET", default = false)]
     pub quiet: bool,
+    #[config(env = "MISE_USE_VERSIONS_HOST", default = true)]
+    pub use_versions_host: bool,
     #[config(env = "MISE_VERBOSE", default = false)]
     pub verbose: bool,
     #[cfg(vfox)]

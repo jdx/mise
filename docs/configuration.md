@@ -331,6 +331,14 @@ tool.
 Use libgit2 for git operations. This is generally faster but may not be as compatible if the
 system's libgit2 is not the same version as the one used by mise.
 
+### `paranoid`
+
+* Type: `bool`
+* Env: `MISE_PARANOID`
+* Default: `false`
+
+Enables extra-secure behavior. See [Paranoid](/paranoid).
+
 ### `status.missing_tools`
 
 * Type: `enum`
@@ -364,6 +372,19 @@ Show configured env vars when entering a directory with a `.mise.toml` file.
 * Default: `false`
 
 Show active tools when entering a directory with a `.mise.toml` file.
+
+### `use_versions_host`
+
+* Type: `bool`
+* Env: `MISE_USE_VERSIONS_HOST`
+* Default: `true`
+
+Set to "false" to disable using [mise-versions](https://mise-versions.jdx.dev) as
+a quick way for mise to query for new versions. This host regularly grabs all the
+latest versions of core and community plugins. It's faster than running a plugin's
+`list-all` command and gets around GitHub rate limiting problems when using it.
+
+See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
 
 ### `vfox`
 
@@ -436,17 +457,6 @@ to use this feature.
 Set to a filename to read from env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.
 Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
-### `MISE_USE_VERSIONS_HOST`
-
-Default: `true`
-
-Set to "false" to disable using [mise-versions](https://mise-versions.jdx.dev) as
-a quick way for mise to query for new versions. This host regularly grabs all the
-latest versions of core and community plugins. It's faster than running a plugin's
-`list-all` command and gets around GitHub rate limiting problems when using it.
-
-See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
-
 ### `MISE_${PLUGIN}_VERSION`
 
 Set the version for a runtime. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
@@ -513,10 +523,6 @@ Equivalent to `MISE_LOG_LEVEL=debug`.
 ### `MISE_QUIET=1`
 
 Equivalent to `MISE_LOG_LEVEL=warn`.
-
-### `MISE_PARANOID=0`
-
-Enables extra-secure behavior. See [Paranoid](/paranoid).
 
 ### `MISE_HTTP_TIMEOUT`
 

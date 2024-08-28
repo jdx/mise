@@ -15,7 +15,7 @@ use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::{ABackend, Backend, BackendList};
 use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::default_shorthands::DEFAULT_SHORTHANDS;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::git::Git;
@@ -111,9 +111,14 @@ impl AsdfBackend {
         if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
             return Ok(None);
         }
+        let settings = Settings::get();
+        let raw_versions = match settings.paranoid {
+            true => HTTP_FETCH.get_text(format!("https://mise-versions.jdx.dev/{}", self.name)),
+            false => HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", self.name)),
+        };
         let versions =
             // using http is not a security concern and enabling tls makes mise significantly slower
-            match HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", self.name)) {
+            match raw_versions {
                 Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
                 res => res?,
             };

@@ -7,6 +7,8 @@ use versions::Versioning;
 
 use crate::build_time::{git_sha, BUILD_TIME};
 use crate::cli::self_update::SelfUpdate;
+#[cfg(not(test))]
+use crate::config::Settings;
 use crate::file::modified_duration;
 use crate::{dirs, duration, env, file};
 
@@ -108,9 +110,14 @@ fn get_latest_version_call() -> Option<String> {
 
 #[cfg(not(test))]
 fn get_latest_version_call() -> Option<String> {
-    const URL: &str = "http://mise.jdx.dev/VERSION";
-    debug!("checking mise version from {}", URL);
-    match crate::http::HTTP_VERSION_CHECK.get_text(URL) {
+    let settings = Settings::get();
+    let url = match settings.paranoid {
+        true => "https://mise.jdx.dev/VERSION",
+        // using http is not a security concern and enabling tls makes mise significantly slower
+        false => "http://mise.jdx.dev/VERSION",
+    };
+    debug!("checking mise version from {}", url);
+    match crate::http::HTTP_VERSION_CHECK.get_text(url) {
         Ok(text) => {
             debug!("got version {text}");
             Some(text.trim().to_string())
