@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+require_cmd cargo
+
+cat <<EOF >mise.toml
+[tools]
+"cargo:cargo-edit" = {version = "0.12.3", default-features = "false", features = "add"}
+EOF
+
+mise i cargo:cargo-edit
+# TODO: assert feature is working
+# assert "mise x cargo:cargo-edit -- cargo-add" "XXXXXX"
