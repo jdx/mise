@@ -15,7 +15,7 @@ shell automatically switch to the correct node and ruby versions when you `cd` i
 directory. Other projects on your machine can use a different set of versions.
 
 mise is inspired by [asdf](https://asdf-vm.com) and uses asdf's
-vast [plugin ecosystem](https://github.com/rtx-plugins/registry)
+vast [plugin ecosystem](https://github.com/mise-plugins/registry)
 under the hood. However, it is _much_ faster than asdf and has a more friendly user experience.
 For more on how mise compares to asdf, [see below](./comparison-to-asdf). See plugins available for
 mise with

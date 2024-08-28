@@ -871,7 +871,7 @@ Usage: plugins ls-remote [OPTIONS]
 
 Options:
   -u, --urls
-          Show the git url for each plugin e.g.: https://github.com/mise-plugins/rtx-nodejs.git
+          Show the git url for each plugin e.g.: https://github.com/mise-plugins/mise-poetry.git
 
       --only-names
           Only show the name of each plugin by default it will show a "*" next to installed plugins

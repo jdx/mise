@@ -156,7 +156,7 @@ plugin's repository.
 
 e.g.: how does `mise plugin install elixir` know to fetch <https://github.com/asdf-vm/asdf-elixir>?
 
-We maintain [an index](https://github.com/rtx-plugins/registry) of shorthands that mise uses as a
+We maintain [an index](https://github.com/mise-plugins/registry) of shorthands that mise uses as a
 base.
 This is regularly updated every time that mise has a release. This repository is stored directly
 into
