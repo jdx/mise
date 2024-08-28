@@ -291,6 +291,15 @@ If you want to always use the mise versions of tools despite what is in your she
 to `true`.
 In that case, using this example again, `/some/other/python` will be after mise's python in PATH.
 
+### `asdf`
+
+* Type: `bool`
+* Env: `MISE_ASDF`
+* Default: `true`
+
+Use asdf as a default plugin backend. This means running something like `mise use cmake` will
+default to using an asdf plugin for cmake.
+
 ### `asdf_compat`
 
 * Type: `bool`
@@ -355,6 +364,15 @@ Show configured env vars when entering a directory with a `.mise.toml` file.
 * Default: `false`
 
 Show active tools when entering a directory with a `.mise.toml` file.
+
+### `vfox`
+
+* Type: `bool`
+* Env: `MISE_VFOX`
+* Default: `false`
+
+Use vfox as a default plugin backend. This means running something like `mise use cmake` will
+default to using an vfox plugin for cmake.
 
 ## Environment variables
 

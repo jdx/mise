@@ -53,6 +53,7 @@ export default defineConfig({
               {text: 'pipx', link: '/dev-tools/backends/pipx'},
               {text: 'spm', link: '/dev-tools/backends/spm'},
               {text: 'ubi', link: '/dev-tools/backends/ubi'},
+              {text: 'vfox', link: '/dev-tools/backends/vfox'},
             ]
           }
         ],
