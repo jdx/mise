@@ -456,6 +456,11 @@
           },
           "type": "array"
         },
+        "use_versions_host": {
+          "description": "set to false to disable using mise-versions.jdx.dev to quickly fetch versions rather than listing them with the plugin",
+          "type": "boolean",
+          "default": true
+        },
         "verbose": {
           "description": "display extra output",
           "type": "boolean"

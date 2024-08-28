@@ -166,6 +166,7 @@ pub mod tests {
         quiet = false
         raw = false
         trusted_config_paths = []
+        use_versions_host = true
         verbose = true
         vfox = false
         yes = true
