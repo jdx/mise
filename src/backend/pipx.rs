@@ -12,7 +12,7 @@ use crate::config::{Config, Settings};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
-use crate::{env, file, github};
+use crate::{env, github};
 
 #[derive(Debug)]
 pub struct PIPXBackend {
@@ -31,7 +31,7 @@ impl Backend for PIPXBackend {
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        Ok(vec!["pipx".into()])
+        Ok(vec!["pipx".into(), "uv".into()])
     }
 
     /*
@@ -84,7 +84,7 @@ impl Backend for PIPXBackend {
             .parse::<PipxRequest>()?
             .pipx_request(&ctx.tv.version);
 
-        if self.is_uvx_enabled() {
+        if settings.pipx_uvx {
             CmdLineRunner::new("uv")
                 .arg("tool")
                 .arg("install")
@@ -115,11 +115,6 @@ impl Backend for PIPXBackend {
 }
 
 impl PIPXBackend {
-    fn is_uvx_enabled(&self) -> bool {
-        let settings = Settings::get();
-        settings.pipx_uvx && file::which_non_pristine("uv").is_some()
-    }
-
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
