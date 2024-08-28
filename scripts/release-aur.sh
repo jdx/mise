@@ -46,7 +46,7 @@ package() {
   install -Dm755 target/release/mise "\$pkgdir/usr/bin/mise"
   install -Dm644 man/man1/mise.1 "\$pkgdir/usr/share/man/man1/mise.1"
   install -Dm644 completions/mise.bash "\$pkgdir/usr/share/bash-completion/completions/mise"
-  install -Dm644 completions/mise.fish "\$pkgdir/usr/share/fish/completions/mise.fish"
+  install -Dm644 completions/mise.fish "\$pkgdir/usr/share/fish/vendor_completions.d/mise.fish"
   install -Dm644 completions/_mise "\$pkgdir/usr/share/zsh/site-functions/_mise"
 }
 
