@@ -55,7 +55,7 @@ impl Backend for PIPXBackend {
                 PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
                     let repo = url.strip_prefix("https://github.com/").unwrap();
                     let data = github::list_releases(repo)?;
-                    Ok(data.into_iter().map(|r| r.tag_name).collect())
+                    Ok(data.into_iter().rev().map(|r| r.tag_name).collect())
                 }
                 PipxRequest::Git { .. } => Ok(vec!["latest".to_string()]),
             })
