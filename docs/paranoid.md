@@ -45,6 +45,15 @@ mise plugin install shfmt https://github.com/luizm/asdf-shfmt
 
 Unlike in normal mode where `mise plugin install shfmt` would be sufficient.
 
+## Always uses HTTPS
+
+Some endpoints in mise are fetched over HTTP such as checking for the latest mise
+version and pulling version lists of tools. These are not security risks and a
+malicious actor injecting false data would not introduce a security risk.
+Normally mise uses HTTP because loading the TLS module takes about 10ms and this
+affects commonly used commands so it is a noticeably delay.
+In paranoid mode, all endpoints will be fetched over HTTPS.
+
 ## More?
 
 If you have suggestions for more that could be added to paranoid, please let
