@@ -107,12 +107,13 @@ static REGISTRY_BACKEND_MAP: Lazy<HashMap<&'static str, BackendArg>> = Lazy::new
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::{assert_eq, assert_str_eq};
-
     use super::*;
+    use crate::test::reset;
+    use pretty_assertions::{assert_eq, assert_str_eq};
 
     #[test]
     fn test_backend_arg() {
+        reset();
         let t = |s: &str, id, name, t| {
             let fa: BackendArg = s.into();
             assert_str_eq!(fa.full, id);
@@ -141,6 +142,7 @@ mod tests {
 
     #[test]
     fn test_backend_arg_pathname() {
+        reset();
         let t = |s: &str, expected| {
             let fa: BackendArg = s.into();
             let actual = fa.installs_path.to_string_lossy();
