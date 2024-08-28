@@ -97,7 +97,8 @@ impl AsdfBackend {
     }
 
     fn fetch_versions(&self) -> Result<Option<Vec<String>>> {
-        if !*env::MISE_USE_VERSIONS_HOST {
+        let settings = Settings::get();
+        if !settings.use_versions_host {
             return Ok(None);
         }
         // ensure that we're using a default shorthand plugin

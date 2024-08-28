@@ -164,9 +164,6 @@ pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
         .ok()
 });
 
-pub static MISE_USE_VERSIONS_HOST: Lazy<bool> =
-    Lazy::new(|| !var_is_false("MISE_USE_VERSIONS_HOST"));
-
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
