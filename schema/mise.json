@@ -291,6 +291,11 @@
           "description": "should mise keep install files after installation even if the installation fails",
           "type": "boolean"
         },
+        "asdf": {
+          "description": "use asdf as a default plugin backend",
+          "type": "boolean",
+          "default": true
+        },
         "asdf_compat": {
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
           "type": "boolean"
@@ -454,6 +459,11 @@
         "verbose": {
           "description": "display extra output",
           "type": "boolean"
+        },
+        "vfox": {
+          "description": "use vfox as a default plugin backend",
+          "type": "boolean",
+          "default": false
         },
         "yes": {
           "description": "assume yes for all prompts",
