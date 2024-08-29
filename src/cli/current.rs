@@ -76,7 +76,7 @@ impl Current {
                 continue;
             }
             for tv in versions {
-                if !plugin.is_version_installed(tv) {
+                if !plugin.is_version_installed(tv, true) {
                     let source = ts.versions.get(&tv.backend).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",

@@ -128,11 +128,10 @@ impl ToolRequest {
     }
 
     pub fn is_installed(&self) -> bool {
-        // TODO: dispatch to backend
-        match self {
-            Self::System(_) => true,
-            _ => self.install_path().is_some_and(|p| p.exists()),
-        }
+        let backend = backend::get(self.backend());
+        let tv = ToolVersion::new(backend.as_ref(), self.clone(), self.version());
+
+        backend.is_version_installed(&tv, false)
     }
 
     pub fn install_path(&self) -> Option<PathBuf> {

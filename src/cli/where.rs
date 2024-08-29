@@ -55,7 +55,7 @@ impl Where {
             .as_ref()
             .map(|tvr| tvr.resolve(plugin.as_ref(), false))
         {
-            Some(Ok(tv)) if plugin.is_version_installed(&tv) => {
+            Some(Ok(tv)) if plugin.is_version_installed(&tv, true) => {
                 miseprintln!("{}", tv.install_path().to_string_lossy());
                 Ok(())
             }

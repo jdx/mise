@@ -174,7 +174,7 @@ impl ToolVersion {
         }
 
         let existing = build(v.clone())?;
-        if backend.is_version_installed(&existing) {
+        if backend.is_version_installed(&existing, true) {
             // if the version is already installed, no need to fetch all the remote versions
             return Ok(existing);
         }

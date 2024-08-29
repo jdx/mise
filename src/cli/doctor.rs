@@ -140,7 +140,7 @@ impl Doctor {
         let tools = ts
             .list_current_versions()
             .into_iter()
-            .map(|(f, tv)| match f.is_version_installed(&tv) {
+            .map(|(f, tv)| match f.is_version_installed(&tv, true) {
                 true => (tv.to_string(), style::nstyle("")),
                 false => (tv.to_string(), style::ndim("(missing)")),
             })
