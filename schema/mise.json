@@ -291,6 +291,11 @@
           "description": "should mise keep install files after installation even if the installation fails",
           "type": "boolean"
         },
+        "asdf": {
+          "description": "use asdf as a default plugin backend",
+          "type": "boolean",
+          "default": true
+        },
         "asdf_compat": {
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
           "type": "boolean"
@@ -383,6 +388,11 @@
           "description": "extra-security mode, see https://mise.jdx.dev/paranoid.html for details",
           "type": "boolean"
         },
+        "pipx_uvx": {
+          "description": "use uv to install python tools if available",
+          "type": "boolean",
+          "default": false
+        },
         "plugin_autoupdate_last_check_duration": {
           "description": "how often to check for plugin updates",
           "type": "string"
@@ -446,9 +456,19 @@
           },
           "type": "array"
         },
+        "use_versions_host": {
+          "description": "set to false to disable using mise-versions.jdx.dev to quickly fetch versions rather than listing them with the plugin",
+          "type": "boolean",
+          "default": true
+        },
         "verbose": {
           "description": "display extra output",
           "type": "boolean"
+        },
+        "vfox": {
+          "description": "use vfox as a default plugin backend",
+          "type": "boolean",
+          "default": false
         },
         "yes": {
           "description": "assume yes for all prompts",

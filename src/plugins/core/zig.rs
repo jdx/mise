@@ -43,16 +43,7 @@ impl ZigPlugin {
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
         match self.core.fetch_remote_versions_from_mise() {
             Ok(Some(versions)) => {
-                return Ok(versions
-                    .into_iter()
-                    .map(|r| {
-                        if r == "master" {
-                            "ref:master".to_string()
-                        } else {
-                            r
-                        }
-                    })
-                    .collect())
+                return Ok(versions);
             }
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
@@ -63,13 +54,6 @@ impl ZigPlugin {
         let versions = releases
             .into_iter()
             .map(|r| r.tag_name)
-            .map(|r| {
-                if r == "master" {
-                    "ref:master".to_string()
-                } else {
-                    r
-                }
-            })
             .unique()
             .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
             .collect();
@@ -83,6 +67,13 @@ impl ZigPlugin {
                 os(),
                 arch(),
                 self.get_master_version()?
+            )
+        } else if regex!(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").is_match(&tv.version) {
+            format!(
+                "https://ziglang.org/builds/zig-{}-{}-{}.tar.xz",
+                os(),
+                arch(),
+                tv.version
             )
         } else {
             format!(
@@ -160,7 +151,8 @@ impl Backend for ZigPlugin {
     fn legacy_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".zig-version".into()])
     }
-    #[requires(matches ! (ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
+
+    #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
         self.install(ctx, &tarball_path)?;

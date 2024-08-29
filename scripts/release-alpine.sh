@@ -45,7 +45,7 @@ fi
 open_mr="$(glab mr list -R alpine/aports --author=@me)"
 if [[ "$open_mr" != "Showing"* ]]; then
   if [ "$DRY_RUN" == 0 ]; then
-    glab mr create --fill --yes -H jdxcode/aports -R alpine/aports
+    DEBUG=1 glab mr create --fill --yes -H jdxcode/aports -R alpine/aports
   fi
 fi
 #git show

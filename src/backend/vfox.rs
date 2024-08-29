@@ -1,8 +1,8 @@
+use crate::env;
 use eyre::{eyre, Report};
 use heck::ToKebabCase;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
-use std::env;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -16,7 +16,7 @@ use crate::config::{Config, Settings};
 use crate::git::Git;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, Toolset};
-use crate::{dirs, file};
+use crate::{dirs, file, registry};
 use vfox::Vfox;
 
 #[derive(Debug)]
@@ -87,15 +87,19 @@ impl Backend for VfoxBackend {
     }
 }
 
-fn vfox_to_url(version: &str) -> eyre::Result<Url> {
-    let res = if let Some(caps) = regex!(r#"^([^/]+)/([^/]+)$"#).captures(version) {
+fn vfox_to_url(name: &str) -> eyre::Result<Url> {
+    if let Some(full) = registry::REGISTRY_VFOX.get(name) {
+        // bun -> version-fox/vfox-bun
+        return vfox_to_url(full.split_once(':').unwrap().1);
+    }
+    let res = if let Some(caps) = regex!(r#"^([^/]+)/([^/]+)$"#).captures(name) {
         let user = caps.get(1).unwrap().as_str();
         let repo = caps.get(2).unwrap().as_str();
         format!("https://github.com/{user}/{repo}").parse()
     } else {
-        version.to_string().parse()
+        name.to_string().parse()
     };
-    res.map_err(|e| eyre!("Invalid version: {}: {}", version, e))
+    res.map_err(|e| eyre!("Invalid version: {}: {}", name, e))
 }
 
 impl VfoxBackend {
@@ -120,6 +124,7 @@ impl VfoxBackend {
             remote_version_cache: CacheManager::new(
                 ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
             )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
             .with_fresh_file(dirs::DATA.to_path_buf())
             .with_fresh_file(plugin_path.to_path_buf())
             .with_fresh_file(ba.installs_path.to_path_buf()),
@@ -145,6 +150,7 @@ impl VfoxBackend {
 
     fn _exec_env(&self, tv: &ToolVersion) -> eyre::Result<&BTreeMap<String, String>> {
         self.exec_env_cache.get_or_try_init(|| {
+            self.ensure_plugin_installed()?;
             Ok(self
                 .runtime()?
                 .block_on(self.vfox.env_keys(&self.pathname, &tv.version))?

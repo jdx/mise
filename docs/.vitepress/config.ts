@@ -22,7 +22,6 @@ export default defineConfig({
     sidebar: [
       {text: 'Getting Started', link: '/getting-started'},
       {text: 'About', link: '/about'},
-      {text: 'Coming from rtx', link: '/rtx'},
       {text: 'Configuration', link: '/configuration'},
       {text: 'Continuous Integration', link: '/continuous-integration'},
       {text: 'Demo', link: '/demo'},
@@ -32,6 +31,7 @@ export default defineConfig({
       {text: 'Paranoid', link: '/paranoid'},
       {text: 'Registry', link: '/registry'},
       {text: 'Plugins', link: '/plugins'},
+      {text: 'Coming from rtx', link: '/rtx'},
       {text: 'Team', link: '/team'},
       {text: 'Contributing', link: '/contributing'},
       {text: 'Tips & Tricks', link: '/tips-and-tricks'},
@@ -53,6 +53,7 @@ export default defineConfig({
               {text: 'pipx', link: '/dev-tools/backends/pipx'},
               {text: 'spm', link: '/dev-tools/backends/spm'},
               {text: 'ubi', link: '/dev-tools/backends/ubi'},
+              {text: 'vfox', link: '/dev-tools/backends/vfox'},
             ]
           }
         ],

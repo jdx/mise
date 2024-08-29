@@ -275,7 +275,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("gleam", "https://github.com/asdf-community/asdf-gleam.git"),
     ("glen", "https://github.com/bradym/asdf-glen"),
     ("glooctl", "https://github.com/halilkaya/asdf-glooctl.git"),
-    ("glow", "https://github.com/gr1m0h/asdf-glow.git"),
+    ("glow", "https://github.com/mise-plugins/asdf-glow.git"),
     ("go-containerregistry", "https://github.com/dex4er/asdf-go-containerregistry.git"),
     ("go-getter", "https://github.com/ryodocx/asdf-go-getter.git"),
     ("go-jira", "https://github.com/dguihal/asdf-go-jira.git"),

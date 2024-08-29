@@ -95,6 +95,9 @@ pub struct Settings {
     pub not_found_auto_install: bool,
     #[config(env = "MISE_PARANOID", default = false)]
     pub paranoid: bool,
+    /// use uvx instead of pipx if available
+    #[config(env = "MISE_PIPX_UVX", default = false)]
+    pub pipx_uvx: bool,
     #[config(env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
     pub plugin_autoupdate_last_check_duration: String,
     #[config(env = "MISE_PYTHON_COMPILE")]
@@ -124,6 +127,8 @@ pub struct Settings {
     pub trusted_config_paths: BTreeSet<PathBuf>,
     #[config(env = "MISE_QUIET", default = false)]
     pub quiet: bool,
+    #[config(env = "MISE_USE_VERSIONS_HOST", default = true)]
+    pub use_versions_host: bool,
     #[config(env = "MISE_VERBOSE", default = false)]
     pub verbose: bool,
     #[cfg(vfox)]

@@ -9,10 +9,10 @@ use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersionOptions};
+use crate::{env, github};
 
 #[derive(Debug)]
 pub struct PIPXBackend {
@@ -32,7 +32,7 @@ impl Backend for PIPXBackend {
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        Ok(vec!["pipx".into()])
+        Ok(vec!["pipx".into(), "uv".into()])
     }
 
     /*
@@ -56,7 +56,7 @@ impl Backend for PIPXBackend {
                 PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
                     let repo = url.strip_prefix("https://github.com/").unwrap();
                     let data = github::list_releases(repo)?;
-                    Ok(data.into_iter().map(|r| r.tag_name).collect())
+                    Ok(data.into_iter().rev().map(|r| r.tag_name).collect())
                 }
                 PipxRequest::Git { .. } => Ok(vec!["latest".to_string()]),
             })
@@ -85,18 +85,32 @@ impl Backend for PIPXBackend {
             .parse::<PipxRequest>()?
             .pipx_request(&ctx.tv.version, &ctx.tv.request.options());
 
-        CmdLineRunner::new("pipx")
-            .arg("install")
-            .arg(pipx_request)
-            .with_pr(ctx.pr.as_ref())
-            .env("PIPX_HOME", ctx.tv.install_path())
-            .env("PIPX_BIN_DIR", ctx.tv.install_path().join("bin"))
-            .envs(ctx.ts.env_with_path(&config)?)
-            .prepend_path(ctx.ts.list_paths())?
-            // Prepend install path so pipx doesn't issue a warning about missing path
-            .prepend_path(vec![ctx.tv.install_path().join("bin")])?
-            .execute()?;
-
+        if settings.pipx_uvx {
+            CmdLineRunner::new("uv")
+                .arg("tool")
+                .arg("install")
+                .arg(pipx_request)
+                .with_pr(ctx.pr.as_ref())
+                .env("UV_TOOL_DIR", ctx.tv.install_path())
+                .env("UV_TOOL_BIN_DIR", ctx.tv.install_path().join("bin"))
+                .envs(ctx.ts.env_with_path(&config)?)
+                .prepend_path(ctx.ts.list_paths())?
+                // Prepend install path so pipx doesn't issue a warning about missing path
+                .prepend_path(vec![ctx.tv.install_path().join("bin")])?
+                .execute()?;
+        } else {
+            CmdLineRunner::new("pipx")
+                .arg("install")
+                .arg(pipx_request)
+                .with_pr(ctx.pr.as_ref())
+                .env("PIPX_HOME", ctx.tv.install_path())
+                .env("PIPX_BIN_DIR", ctx.tv.install_path().join("bin"))
+                .envs(ctx.ts.env_with_path(&config)?)
+                .prepend_path(ctx.ts.list_paths())?
+                // Prepend install path so pipx doesn't issue a warning about missing path
+                .prepend_path(vec![ctx.tv.install_path().join("bin")])?
+                .execute()?;
+        }
         Ok(())
     }
 }
@@ -106,10 +120,12 @@ impl PIPXBackend {
         Self {
             remote_version_cache: CacheManager::new(
                 ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
-            ),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             latest_version_cache: CacheManager::new(
                 ba.cache_path.join("latest_version-$KEY.msgpack.z"),
-            ),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             ba,
         }
     }
