@@ -21,7 +21,6 @@ pub struct PIPXBackend {
     latest_version_cache: CacheManager<Option<String>>,
 }
 
-
 impl Backend for PIPXBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Pipx
@@ -153,7 +152,7 @@ impl PipxRequest {
         if v == "latest" {
             match self {
                 PipxRequest::Git(url) => format!("git+{url}.git"),
-                PipxRequest::Pypi(package) => format!("{}{}", package.to_string(), extras),
+                PipxRequest::Pypi(package) => format!("{}{}", package, extras),
             }
         } else {
             match self {
