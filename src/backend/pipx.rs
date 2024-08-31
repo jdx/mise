@@ -11,7 +11,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolRequest;
+use crate::toolset::{ToolRequest, ToolVersionOptions};
 use crate::{env, github};
 
 #[derive(Debug)]
@@ -82,7 +82,7 @@ impl Backend for PIPXBackend {
         let pipx_request = self
             .name()
             .parse::<PipxRequest>()?
-            .pipx_request(&ctx.tv.version);
+            .pipx_request(&ctx.tv.version, &ctx.tv.request.options());
 
         if settings.pipx_uvx {
             CmdLineRunner::new("uv")
@@ -139,16 +139,25 @@ enum PipxRequest {
 }
 
 impl PipxRequest {
-    fn pipx_request(&self, v: &str) -> String {
+    fn extras_from_opts(&self, opts: &ToolVersionOptions) -> String {
+        match opts.get("extras") {
+            Some(extras) => format!("[{}]", extras),
+            None => String::new(),
+        }
+    }
+
+    fn pipx_request(&self, v: &str, opts: &ToolVersionOptions) -> String {
+        let extras = self.extras_from_opts(opts);
+
         if v == "latest" {
             match self {
                 PipxRequest::Git(url) => format!("git+{url}.git"),
-                PipxRequest::Pypi(package) => package.to_string(),
+                PipxRequest::Pypi(package) => format!("{}{}", package, extras),
             }
         } else {
             match self {
                 PipxRequest::Git(url) => format!("git+{}.git@{}", url, v),
-                PipxRequest::Pypi(package) => format!("{}=={}", package, v),
+                PipxRequest::Pypi(package) => format!("{}{}=={}", package, extras, v),
             }
         }
     }
