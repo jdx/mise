@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+# Create a system pipx that always fail and push it to the front of PATH
+cat >"$HOME/bin/pipx" <<'EOF'
+#!/usr/bin/env bash
+echo "CALL TO SYSTEM pipx! args: $*" >&2
+exit 1
+EOF
+chmod +x "$HOME"/bin/pipx
+export PATH="$HOME/bin:$PATH"
+
+# Just to be sure...
+assert_fail "pipx"
+
+# Use precompiled python
+export MISE_PYTHON_COMPILE=0
+
+# Set up a 2-step installation: pipx@1.5.0 > pipx:mkdocs@1.6.0
+cat >.mise.toml <<EOF
+[tools]
+pipx = "1.5.0"
+"pipx:harlequin" = {version = "1.24.0", extras = "s3"}
+EOF
+
+# Install the tools
+mise install
+
+assert_contains "mise x -- harlequin --version" "1.24.0"
