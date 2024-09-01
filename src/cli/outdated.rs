@@ -57,7 +57,7 @@ impl Outdated {
         let currents = outdated
             .iter()
             .map(|(t, tv, _)| {
-                if t.is_version_installed(tv) {
+                if t.is_version_installed(tv, true) {
                     tv.version.clone()
                 } else {
                     "MISSING".to_string()
