@@ -63,7 +63,8 @@ impl Backend for UbiBackend {
             .arg(self.name())
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path(&config)?)
-            .prepend_path(ctx.ts.list_paths())?;
+            .prepend_path(ctx.ts.list_paths())?
+            .prepend_path(self.depedency_toolset()?.list_paths())?;
 
         if let Some(token) = &*GITHUB_TOKEN {
             cmd = cmd.env("GITHUB_TOKEN", token);
