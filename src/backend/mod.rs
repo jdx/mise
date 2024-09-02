@@ -476,7 +476,7 @@ pub trait Backend: Debug + Send + Sync {
         tv.cache_path().join("incomplete")
     }
 
-    fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
+    fn depedency_toolset(&self) -> eyre::Result<Toolset> {
         let config = Config::get();
         let dependencies = self
             .get_all_dependencies(&ToolRequest::System(self.name().into()))?
@@ -487,7 +487,11 @@ pub trait Backend: Debug + Send + Sync {
             .filter_by_tool(&dependencies)
             .into();
         ts.resolve()?;
-        ts.full_env()
+        Ok(ts)
+    }
+
+    fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
+        self.depedency_toolset()?.full_env()
     }
 }
 
