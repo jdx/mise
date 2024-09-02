@@ -1,4 +1,4 @@
-FROM fedora:38
+FROM fedora:42
 LABEL maintainer="jdx"
 
 RUN dnf install -y rpm-build rpm-sign ruby ruby-devel gcc \
