@@ -372,8 +372,7 @@ Execute a command with tool(s) set
 
 use this to avoid modifying the shell session or running ad-hoc commands with mise tools set.
 
-Tools will be loaded from .mise.toml/.tool-versions, though they can be overridden with <RUNTIME>
-args
+Tools will be loaded from .mise.toml/.tool-versions, though they can be overridden with <RUNTIME> args
 Note that only the plugin specified will be overridden, so if a `.tool-versions` file
 includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
 
@@ -504,8 +503,7 @@ Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
 Installing alone will not activate the tools so they won't be in PATH.
 To install and/or activate in one command, use `mise use` which will create a `.mise.toml` file
 in the current directory to activate this tool when inside the directory.
-Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating
-config files.
+Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
 
 Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
@@ -531,8 +529,7 @@ Options:
   -v, --verbose...
           Show installation output
 
-          This argument will print plugin output such as download, configuration, and compilation
-          output.
+          This argument will print plugin output such as download, configuration, and compilation output.
 
 Examples:
 
@@ -628,8 +625,7 @@ Options:
           Only show tool versions currently specified in a the global .tool-versions/.mise.toml
 
   -i, --installed
-          Only show tool versions that are installed (Hides tools defined in
-          .tool-versions/.mise.toml but not installed)
+          Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)
 
   -J, --json
           Output in JSON format
@@ -870,6 +866,7 @@ The full list is here: https://github.com/jdx/mise/blob/main/src/default_shortha
 Examples:
   $ mise plugins ls-remote
 
+
 Usage: plugins ls-remote [OPTIONS]
 
 Options:
@@ -953,8 +950,7 @@ Options:
           Do not actually delete anything
 
       --configs
-          Prune only tracked and trusted configuration links that point to non-existent
-          configurations
+          Prune only tracked and trusted configuration links that point to non-existent configurations
 
       --tools
           Prune only unused versions of tools
@@ -1717,8 +1713,7 @@ Options:
           Remove the plugin(s) from config file
 
   -p, --path <PATH>
-          Specify a path to a config file or directory If a directory is specified, it will look for
-          .mise.toml (default) or .tool-versions
+          Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions
 
       --pin
           Save exact version to config file

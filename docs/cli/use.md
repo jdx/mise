@@ -46,8 +46,7 @@ Options:
           Remove the plugin(s) from config file
 
   -p, --path <PATH>
-          Specify a path to a config file or directory If a directory is specified, it will look for
-          .mise.toml (default) or .tool-versions
+          Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions
 
       --pin
           Save exact version to config file

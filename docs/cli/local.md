@@ -20,16 +20,14 @@ Arguments:
 Options:
   -p, --parent
           Recurse up to find a .tool-versions file rather than using the current directory only
-          by default this command will only set the tool in the current directory
-          ("$PWD/.tool-versions")
+          by default this command will only set the tool in the current directory ("$PWD/.tool-versions")
 
       --pin
           Save exact version to `.tool-versions`
           e.g.: `mise local --pin node@20` will save `node 20.0.0` to .tool-versions
 
       --fuzzy
-          Save fuzzy version to `.tool-versions` e.g.: `mise local --fuzzy node@20` will save `node
-          20` to .tool-versions This is the default behavior unless MISE_ASDF_COMPAT=1
+          Save fuzzy version to `.tool-versions` e.g.: `mise local --fuzzy node@20` will save `node 20` to .tool-versions This is the default behavior unless MISE_ASDF_COMPAT=1
 
       --remove <PLUGIN>
           Remove the plugin(s) from .tool-versions

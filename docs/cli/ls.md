@@ -25,8 +25,7 @@ Options:
           Only show tool versions currently specified in a the global .tool-versions/.mise.toml
 
   -i, --installed
-          Only show tool versions that are installed (Hides tools defined in
-          .tool-versions/.mise.toml but not installed)
+          Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)
 
   -J, --json
           Output in JSON format

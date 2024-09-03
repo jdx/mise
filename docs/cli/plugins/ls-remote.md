@@ -10,6 +10,7 @@ The full list is here: https://github.com/jdx/mise/blob/main/src/default_shortha
 Examples:
   $ mise plugins ls-remote
 
+
 Usage: plugins ls-remote [OPTIONS]
 
 Options:
