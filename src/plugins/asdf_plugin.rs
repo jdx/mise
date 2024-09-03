@@ -14,6 +14,7 @@ use crate::{dirs, lock_file};
 use clap::Command;
 use color_eyre::Help;
 use console::style;
+use contracts::requires;
 use eyre::{bail, eyre, Context};
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -35,6 +36,7 @@ pub struct AsdfPlugin {
 }
 
 impl AsdfPlugin {
+    #[requires(!name.is_empty())]
     pub fn new(name: String) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
         let repo = Git::new(&plugin_path);
@@ -332,7 +334,7 @@ impl Plugin for AsdfPlugin {
         let config = Config::get();
         let repository = self.get_repo_url(&config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
-        debug!("install {} {:?}", self.name, repository);
+        debug!("asdf_plugin[{}]:install {:?}", self.name, repository);
 
         if self.is_installed() {
             self.uninstall(pr)?;
