@@ -49,14 +49,7 @@ impl Install {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         match &self.tool {
-            Some(runtime) => {
-                hint!(
-                    "install",
-                    "install multiple versions simultaneously with",
-                    "mise install python@3.8 python@3.9"
-                );
-                self.install_runtimes(&config, runtime)?
-            }
+            Some(runtime) => self.install_runtimes(&config, runtime)?,
             None => self.install_missing_runtimes(&config)?,
         };
         Ok(())

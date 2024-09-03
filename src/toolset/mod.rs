@@ -154,6 +154,7 @@ impl Toolset {
         if versions.is_empty() {
             return Ok(vec![]);
         }
+        show_python_install_hint(&versions);
         let leaf_deps = get_leaf_dependencies(&versions)?;
         if leaf_deps.len() < versions.len() {
             debug!("installing {} leaf tools first", leaf_deps.len());
@@ -499,6 +500,21 @@ impl Toolset {
         let fa = fa.to_string();
         settings.disable_tools.iter().any(|s| s == &fa)
     }
+}
+
+fn show_python_install_hint(versions: &[ToolRequest]) {
+    let num_python = versions
+        .iter()
+        .filter(|tr| tr.backend().name == "python")
+        .count();
+    if num_python != 1 {
+        return;
+    }
+    hint!(
+        "python_multi",
+        "use multiple versions simultaneously with",
+        "mise use python@3.12 python@3.11"
+    );
 }
 
 impl Display for Toolset {

@@ -116,7 +116,14 @@ macro_rules! hint {
             .any(|hint| hint == $arg1 || hint == "*")
             || !console::user_attended()
         {
-            let prefix = console::style("mise hint").dim().for_stderr();
+            let prefix = console::style("mise ").dim().for_stderr().to_string();
+            let prefix = prefix
+                + console::style("hint")
+                    .dim()
+                    .yellow()
+                    .for_stderr()
+                    .to_string()
+                    .as_str();
             let cmd = console::style($arg3).bold().for_stderr();
             let disable_single =
                 console::style(format!("mise settings set disable_hints {}", $arg1))
