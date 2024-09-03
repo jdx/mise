@@ -56,3 +56,6 @@ pub static REGISTRY: Lazy<BTreeMap<&str, String>> = Lazy::new(|| {
         .map(|(k, v)| (*k, v.to_string()))
         .collect()
 });
+
+pub static REGISTRY_VFOX: Lazy<BTreeMap<&str, &str>> =
+    Lazy::new(|| _REGISTRY_VFOX.iter().map(|(k, v)| (*k, *v)).collect());

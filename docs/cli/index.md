@@ -213,7 +213,7 @@ Examples:
     $ mise completion fish > ~/.config/fish/completions/mise.fish
 ```
 
-## `mise config ls [OPTIONS]`
+## `mise config ls [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List config files currently in use
@@ -229,7 +229,7 @@ Examples:
     $ mise config ls
 ```
 
-## `mise config generate [OPTIONS]`
+## `mise config generate [OPTIONS]` <Badge type="warning" text="experimental" />
 
 **Aliases:** `g`
 
@@ -372,7 +372,8 @@ Execute a command with tool(s) set
 
 use this to avoid modifying the shell session or running ad-hoc commands with mise tools set.
 
-Tools will be loaded from .mise.toml/.tool-versions, though they can be overridden with <RUNTIME> args
+Tools will be loaded from .mise.toml/.tool-versions, though they can be overridden with <RUNTIME>
+args
 Note that only the plugin specified will be overridden, so if a `.tool-versions` file
 includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
 
@@ -412,7 +413,7 @@ Examples:
     $ mise x -C /path/to/project node@20 -- node ./app.js
 ```
 
-## `mise generate git-pre-commit [OPTIONS]`
+## `mise generate git-pre-commit [OPTIONS]` <Badge type="warning" text="experimental" />
 
 **Aliases:** `pre-commit`
 
@@ -444,7 +445,7 @@ Examples:
     $ git commit -m "feat: add new feature" # runs `mise run pre-commit`
 ```
 
-## `mise generate github-action [OPTIONS]`
+## `mise generate github-action [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Generate a GitHub Action workflow file
@@ -503,7 +504,8 @@ Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
 Installing alone will not activate the tools so they won't be in PATH.
 To install and/or activate in one command, use `mise use` which will create a `.mise.toml` file
 in the current directory to activate this tool when inside the directory.
-Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
+Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating
+config files.
 
 Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
@@ -529,7 +531,8 @@ Options:
   -v, --verbose...
           Show installation output
 
-          This argument will print plugin output such as download, configuration, and compilation output.
+          This argument will print plugin output such as download, configuration, and compilation
+          output.
 
 Examples:
 
@@ -625,7 +628,8 @@ Options:
           Only show tool versions currently specified in a the global .tool-versions/.mise.toml
 
   -i, --installed
-          Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)
+          Only show tool versions that are installed (Hides tools defined in
+          .tool-versions/.mise.toml but not installed)
 
   -J, --json
           Output in JSON format
@@ -866,12 +870,11 @@ The full list is here: https://github.com/jdx/mise/blob/main/src/default_shortha
 Examples:
   $ mise plugins ls-remote
 
-
 Usage: plugins ls-remote [OPTIONS]
 
 Options:
   -u, --urls
-          Show the git url for each plugin e.g.: https://github.com/mise-plugins/rtx-nodejs.git
+          Show the git url for each plugin e.g.: https://github.com/mise-plugins/mise-poetry.git
 
       --only-names
           Only show the name of each plugin by default it will show a "*" next to installed plugins
@@ -950,7 +953,8 @@ Options:
           Do not actually delete anything
 
       --configs
-          Prune only tracked and trusted configuration links that point to non-existent configurations
+          Prune only tracked and trusted configuration links that point to non-existent
+          configurations
 
       --tools
           Prune only unused versions of tools
@@ -962,7 +966,7 @@ Examples:
     rm -rf ~/.local/share/mise/versions/node/20.0.1
 ```
 
-## `mise registry`
+## `mise registry` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List available tools
@@ -974,6 +978,7 @@ Examples:
     $ mise registry
     node    core:node
     poetry  asdf:mise-plugins/mise-poetry
+    ubi     cargo:ubi
 ```
 
 ## `mise reshim`
@@ -1004,7 +1009,7 @@ Examples:
     v20.0.0
 ```
 
-## `mise run [OPTIONS] [TASK] [ARGS]...`
+## `mise run [OPTIONS] [TASK] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `r`
 
@@ -1339,7 +1344,7 @@ Examples:
     $ mise use -g python@3.11.0 - uses pyenv-provided python
 ```
 
-## `mise tasks deps [OPTIONS] [TASKS]...`
+## `mise tasks deps [OPTIONS] [TASKS]...` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Display a tree visualization of a dependency graph
@@ -1371,7 +1376,7 @@ Examples:
     $ mise tasks deps --dot
 ```
 
-## `mise tasks edit [OPTIONS] <TASK>`
+## `mise tasks edit [OPTIONS] <TASK>` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Edit a tasks with $EDITOR
@@ -1394,7 +1399,7 @@ Examples:
     $ mise tasks edit test
 ```
 
-## `mise tasks ls [OPTIONS]`
+## `mise tasks ls [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List available tasks to execute
@@ -1435,7 +1440,7 @@ Examples:
     $ mise tasks ls
 ```
 
-## `mise tasks run [OPTIONS] [TASK] [ARGS]...`
+## `mise tasks run [OPTIONS] [TASK] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `r`
 
@@ -1712,7 +1717,8 @@ Options:
           Remove the plugin(s) from config file
 
   -p, --path <PATH>
-          Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions
+          Specify a path to a config file or directory If a directory is specified, it will look for
+          .mise.toml (default) or .tool-versions
 
       --pin
           Save exact version to config file
@@ -1744,7 +1750,7 @@ Show mise version
 Usage: version
 ```
 
-## `mise watch [OPTIONS] [ARGS]...`
+## `mise watch [OPTIONS] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `w`
 

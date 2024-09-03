@@ -126,11 +126,15 @@ impl CorePlugin {
     }
 
     pub fn fetch_remote_versions_from_mise(&self) -> Result<Option<Vec<String>>> {
-        if !*env::MISE_USE_VERSIONS_HOST {
+        let settings = Settings::get();
+        if !settings.use_versions_host {
             return Ok(None);
         }
         // using http is not a security concern and enabling tls makes mise significantly slower
-        let raw = HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", &self.fa.name))?;
+        let raw = match settings.paranoid {
+            true => HTTP_FETCH.get_text(format!("https://mise-versions.jdx.dev/{}", &self.fa.name)),
+            false => HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", &self.fa.name)),
+        }?;
         let versions = raw
             .lines()
             .map(|v| v.trim().to_string())

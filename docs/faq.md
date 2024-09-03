@@ -62,7 +62,7 @@ never modify PATH because it never displays a prompt. For this type of setup, yo
 `mise hook-env` manually every time you wish to update PATH, or use [shims](/dev-tools/shims.md)
 instead (preferred).
 Or if you only need to use mise for certain commands, just prefix the commands with
-[`mise x --`](./cli/#mise-exec-options-tool-version-command).
+[`mise x --`](./cli/exec).
 For example, `mise x -- npm test` or `mise x -- ./my_script.sh`.
 
 `mise hook-env` will exit early in different situations if no changes have been made. This prevents
@@ -156,7 +156,7 @@ plugin's repository.
 
 e.g.: how does `mise plugin install elixir` know to fetch <https://github.com/asdf-vm/asdf-elixir>?
 
-We maintain [an index](https://github.com/rtx-plugins/registry) of shorthands that mise uses as a
+We maintain [an index](https://github.com/mise-plugins/registry) of shorthands that mise uses as a
 base.
 This is regularly updated every time that mise has a release. This repository is stored directly
 into

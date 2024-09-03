@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.8.12"
+version = "2024.8.14"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -117,7 +117,7 @@ tokio = { version = "1.37.0", features = [
 ] }
 toml = { version = "0.8.12", features = ["parse"] }
 toml_edit = { version = "0.22.12", features = ["parse"] }
-ubi = "0.1.0"
+ubi = {version = "0.1", default-features = false}
 url = "2.5.0"
 usage-lib = { version = "0.3", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
@@ -146,9 +146,9 @@ test-log = "0.2"
 
 [features]
 default = ["native-tls"]
-native-tls = ["reqwest/native-tls"]
-rustls = ["reqwest/rustls-tls", "self_update/rustls"]
-rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls"]
+native-tls = ["reqwest/native-tls", "ubi/native-tls"]
+rustls = ["reqwest/rustls-tls", "self_update/rustls", "ubi/rustls-tls"]
+rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls", "ubi/rustls-tls-native-roots"]
 
 [package.metadata.binstall]
 bin-dir = "mise/bin/mise"

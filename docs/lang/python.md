@@ -93,6 +93,14 @@ A local directory containing patch files to pass to python-build.
 
 Packages list to install with pip after installing a Python version.
 
+### `python_venv_auto_create`
+
+* Type: `bool`
+* Env: `MISE_PYTHON_VENV_AUTO_CREATE`
+* Default: `false`
+
+Automatically create a virtualenv in the directory specified by `_.python.venv` if it doesn't exist.
+
 ## Default Python packages
 
 mise can automatically install a default set of Python packages with pip right after installing a

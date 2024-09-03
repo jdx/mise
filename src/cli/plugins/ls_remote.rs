@@ -12,7 +12,7 @@ use crate::plugins;
 #[clap(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, verbatim_doc_comment)]
 pub struct PluginsLsRemote {
     /// Show the git url for each plugin
-    /// e.g.: https://github.com/mise-plugins/rtx-nodejs.git
+    /// e.g.: https://github.com/mise-plugins/mise-poetry.git
     #[clap(short, long)]
     pub urls: bool,
 

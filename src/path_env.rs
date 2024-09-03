@@ -1,4 +1,4 @@
-use std::env::join_paths;
+use std::env::{join_paths, split_paths};
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -27,7 +27,9 @@ impl PathEnv {
     }
 
     pub fn add(&mut self, path: PathBuf) {
-        self.mise.push(path);
+        for part in split_paths(&path) {
+            self.mise.push(part);
+        }
     }
 
     pub fn to_vec(&self) -> Vec<PathBuf> {
@@ -138,5 +140,12 @@ mod tests {
             path_env.to_string(),
             format!("/1:/2:/3:/before-1:/before-2:/before-3:/after-1:/after-2:/after-3")
         );
+    }
+    #[test]
+    fn test_path_env_with_colon() {
+        reset();
+        let mut path_env = PathEnv::from_iter(["/item1", "/item2"].map(PathBuf::from));
+        path_env.add("/1:/2".into());
+        assert_eq!(path_env.to_string(), format!("/1:/2:/item1:/item2"));
     }
 }
