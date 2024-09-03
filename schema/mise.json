@@ -314,6 +314,14 @@
           "description": "disables built-in shorthands",
           "type": "boolean"
         },
+        "disable_hints": {
+          "description": "disable hints for mise commands",
+          "type": "array",
+          "items": {
+            "description": "command name or * for all commands",
+            "type": "string"
+          }
+        },
         "disable_tools": {
           "description": "tools that should not be used",
           "items": {

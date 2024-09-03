@@ -139,9 +139,13 @@ impl PythonPlugin {
             Some((_, tag, filename)) => (tag, filename),
             None => {
                 if cfg!(windows) || Settings::get().python_compile == Some(false) {
+                    hint!(
+                        "install",
+                        "To compile python from source, run",
+                        "mise settings set python_compile 1"
+                    );
                     bail!(
-                        "no precompiled python found for {} on {}-{}.\n\
-                        To compile python from source, run: mise settings set python_compile 1",
+                        "no precompiled python found for {} on {}-{}",
                         ctx.tv.version,
                         python_arch(&Settings::get()),
                         python_os(&Settings::get()),
@@ -154,9 +158,12 @@ impl PythonPlugin {
             }
         };
 
-        warn!("installing precompiled python from indygreg/python-build-standalone");
-        warn!("if you experience issues with this python (e.g.: running poetry), switch to python-build");
-        warn!("by running: mise settings set python_compile 1");
+        hint!(
+            "install",
+            "installing precompiled python from indygreg/python-build-standalone\n\
+            if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
+            "mise settings set python_compile 1"
+        );
 
         let url = format!(
             "https://github.com/indygreg/python-build-standalone/releases/download/{tag}/{filename}"

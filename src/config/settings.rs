@@ -47,6 +47,8 @@ pub struct Settings {
     pub color: bool,
     #[config(env = "MISE_DISABLE_DEFAULT_SHORTHANDS", default = false)]
     pub disable_default_shorthands: bool,
+    #[config(env = "MISE_DISABLE_HINTS", default = [], parse_env = list_by_comma)]
+    pub disable_hints: BTreeSet<String>,
     #[config(env = "MISE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub disable_tools: BTreeSet<String>,
     #[config(env = "MISE_EXPERIMENTAL", default = false)]
