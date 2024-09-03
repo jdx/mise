@@ -81,11 +81,6 @@ pub struct Use {
 
 impl Use {
     pub fn run(self) -> Result<()> {
-        hint!(
-            "use",
-            "install multiple versions simultaneously with",
-            "mise use python@3.8 python@3.9"
-        );
         let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new().build(&config)?;
         let mpr = MultiProgressReport::get();
@@ -245,47 +240,32 @@ mod tests {
         let cf_path = env::current_dir().unwrap().join(".test.mise.toml");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@2", @r###"
-        mise ~/cwd/.test.mise.toml tools: tiny@2.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"
         "###);
 
-        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @r###"
-        mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @"mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = ["1", "2", "3"]
         "###);
 
-        assert_cli_snapshot!("use", "--pin", "tiny", @r###"
-        mise ~/cwd/.test.mise.toml tools: tiny@3.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "--pin", "tiny", @"mise ~/cwd/.test.mise.toml tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "3.1.0"
         "###);
 
-        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @r###"
-        mise ~/cwd/.test.mise.toml tools: tiny@2.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = "2"
         "###);
 
         let p = cf_path.to_string_lossy().to_string();
-        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @r###"
-        mise ~/cwd/.test.mise.toml tools:
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"mise ~/cwd/.test.mise.toml tools:");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @"");
 
         let _ = file::remove_file(&cf_path);
@@ -297,47 +277,32 @@ mod tests {
         let _ = file::remove_file(env::current_dir().unwrap().join(".test-tool-versions"));
         let cf_path = env::current_dir().unwrap().join(".test.mise.toml");
 
-        assert_cli_snapshot!("use", "tiny@2", @r###"
-        mise ~/cwd/.test.mise.toml tools: tiny@2.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
       [tools]
       tiny = "2"
       "###);
 
-        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @r###"
-        mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @"mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
       [tools]
       tiny = ["1", "2", "3"]
       "###);
 
-        assert_cli_snapshot!("use", "--pin", "tiny", @r###"
-        mise ~/cwd/.test.mise.toml tools: tiny@3.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "--pin", "tiny", @"mise ~/cwd/.test.mise.toml tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
       [tools]
       tiny = "3.1.0"
       "###);
 
-        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @r###"
-        mise ~/cwd/.test.mise.toml tools: tiny@2.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
       [tools]
       tiny = "2"
       "###);
 
         let p = cf_path.to_string_lossy().to_string();
-        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @r###"
-        mise ~/cwd/.test.mise.toml tools:
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"mise ~/cwd/.test.mise.toml tools:");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @"");
 
         let _ = file::remove_file(&cf_path);
@@ -349,10 +314,7 @@ mod tests {
         let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
         file::write(&cf_path, "").unwrap();
 
-        assert_cli_snapshot!("use", "tiny@3", @r###"
-        mise ~/cwd/.test-tool-versions tools: tiny@3.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "tiny@3", @"mise ~/cwd/.test-tool-versions tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         tiny 3
         "###);
@@ -365,10 +327,7 @@ mod tests {
         reset();
         let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
 
-        assert_cli_snapshot!("use", "tiny@3", @r###"
-        mise ~/cwd/.test-tool-versions tools: tiny@3.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
-        "###);
+        assert_cli_snapshot!("use", "tiny@3", @"mise ~/cwd/.test-tool-versions tools: tiny@3.1.0");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         tiny 3
         "###);
@@ -384,7 +343,6 @@ mod tests {
 
         assert_cli_snapshot!("use", "-g", "tiny@2", @r###"
         mise ~/config/config.toml tools: tiny@2.1.0
-        mise hint install multiple versions simultaneously with mise use python@3.8 python@3.9
         mise tiny is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
         "###);
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"

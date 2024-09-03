@@ -140,7 +140,7 @@ impl PythonPlugin {
             None => {
                 if cfg!(windows) || Settings::get().python_compile == Some(false) {
                     hint!(
-                        "install",
+                        "python_compile",
                         "To compile python from source, run",
                         "mise settings set python_compile 1"
                     );
@@ -159,7 +159,7 @@ impl PythonPlugin {
         };
 
         hint!(
-            "install",
+            "python_precompiled",
             "installing precompiled python from indygreg/python-build-standalone\n\
             if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
             "mise settings set python_compile 1"
