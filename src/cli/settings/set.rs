@@ -29,6 +29,7 @@ impl SettingsSet {
             "cargo_binstall" => parse_bool(&self.value)?,
             "color" => parse_bool(&self.value)?,
             "disable_default_shorthands" => parse_bool(&self.value)?,
+            "disable_hints" => self.value.split(',').map(|s| s.to_string()).collect(),
             "disable_tools" => self.value.split(',').map(|s| s.to_string()).collect(),
             "experimental" => parse_bool(&self.value)?,
             "go_default_packages_file" => self.value.into(),
@@ -143,6 +144,7 @@ pub mod tests {
         cargo_binstall = true
         color = true
         disable_default_shorthands = false
+        disable_hints = []
         disable_tools = []
         experimental = true
         go_default_packages_file = "~/.default-go-packages"

@@ -2,4 +2,4 @@
 source: src/cli/install.rs
 expression: output
 ---
-
+mise hint install multiple versions simultaneously with mise install python@3.8 python@3.9

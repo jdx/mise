@@ -90,6 +90,7 @@ mod tests {
         dummy
         tiny
         tiny-link
+        mise hint see available plugins with mise registry
         "###);
         assert_cli_snapshot!("plugin", "uninstall", "tiny-link", @"");
     }

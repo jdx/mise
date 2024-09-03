@@ -59,6 +59,7 @@ mod tests {
         cargo_binstall = true
         color = true
         disable_default_shorthands = false
+        disable_hints = []
         disable_tools = []
         experimental = true
         go_default_packages_file = "~/.default-go-packages"
