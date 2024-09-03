@@ -138,7 +138,7 @@ fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Opt
 }
 
 fn get_name_from_url(url: &str) -> Result<String> {
-    if let Ok(url) = Url::parse(url) {
+    if let Ok(url) = Url::parse(url.trim_end_matches('/')) {
         if let Some(segments) = url.path_segments() {
             let last = segments.last().unwrap_or_default();
             let name = last.strip_prefix("asdf-").unwrap_or(last);
