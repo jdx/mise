@@ -127,7 +127,7 @@ impl Toolset {
         let versions = self
             .list_current_versions()
             .into_iter()
-            .filter(|(p, tv)| opts.force || !p.is_version_installed(tv))
+            .filter(|(p, tv)| opts.force || !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
             .filter(|tv| matches!(self.versions[&tv.backend].source, ToolSource::Argument))
             .map(|tv| tv.request)
@@ -249,7 +249,7 @@ impl Toolset {
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
         self.list_current_versions()
             .into_iter()
-            .filter(|(p, tv)| !p.is_version_installed(tv))
+            .filter(|(p, tv)| !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
             .collect()
     }
@@ -312,7 +312,7 @@ impl Toolset {
     pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_versions()
             .into_iter()
-            .filter(|(p, v)| p.is_version_installed(v))
+            .filter(|(p, v)| p.is_version_installed(v, true))
             .collect()
     }
     pub fn list_outdated_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion, String)> {
@@ -330,7 +330,7 @@ impl Toolset {
                         return None;
                     }
                 };
-                if !t.is_version_installed(&tv)
+                if !t.is_version_installed(&tv, true)
                     || is_outdated_version(tv.version.as_str(), latest.as_str())
                 {
                     Some((t, tv, latest))

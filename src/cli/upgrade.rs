@@ -81,7 +81,7 @@ impl Upgrade {
 
         let to_remove = outdated
             .into_iter()
-            .filter(|(tool, tv, _)| tool.is_version_installed(tv))
+            .filter(|(tool, tv, _)| tool.is_version_installed(tv, true))
             .map(|(tool, tv, _)| (tool, tv))
             .collect::<Vec<_>>();
 

@@ -84,10 +84,10 @@ impl Ls {
             runtimes.retain(|(_, _, source)| source.is_some());
         }
         if self.installed {
-            runtimes.retain(|(p, tv, _)| p.is_version_installed(tv));
+            runtimes.retain(|(p, tv, _)| p.is_version_installed(tv, true));
         }
         if self.missing {
-            runtimes.retain(|(p, tv, _)| !p.is_version_installed(tv));
+            runtimes.retain(|(p, tv, _)| !p.is_version_installed(tv, true));
         }
         if let Some(prefix) = &self.prefix {
             runtimes.retain(|(_, tv, _)| tv.version.starts_with(prefix));
@@ -143,7 +143,7 @@ impl Ls {
         let tvs = runtimes
             .into_iter()
             .map(|(p, tv, _)| (p, tv))
-            .filter(|(p, tv)| p.is_version_installed(tv))
+            .filter(|(p, tv)| p.is_version_installed(tv, true))
             .map(|(_, tv)| tv);
         for tv in tvs {
             if self.plugin.is_some() {
@@ -226,7 +226,7 @@ impl Ls {
                 (p, tv, source)
             })
             // if it isn't installed and it's not specified, don't show it
-            .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv))
+            .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv, true))
             .filter(|(p, _, _)| match &self.plugin {
                 Some(backend) => backend.contains(p.fa()),
                 None => true,
@@ -312,7 +312,7 @@ impl From<(&dyn Backend, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
     fn from((p, tv, source): (&dyn Backend, &ToolVersion, &Option<ToolSource>)) -> Self {
         if p.symlink_path(tv).is_some() {
             VersionStatus::Symlink(tv.version.clone(), source.is_some())
-        } else if !p.is_version_installed(tv) {
+        } else if !p.is_version_installed(tv, true) {
             VersionStatus::Missing(tv.version.clone())
         } else if source.is_some() {
             VersionStatus::Active(tv.version.clone(), p.is_version_outdated(tv, p))

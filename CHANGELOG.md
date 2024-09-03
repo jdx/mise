@@ -1,5 +1,40 @@
 # Changelog
 
+## [2024.8.15](https://github.com/jdx/mise/compare/v2024.8.14..v2024.8.15) - 2024-08-28
+
+### 🚀 Features
+
+- **(vfox)** added aliases like vfox:cmake -> vfox:version-fox/vfox-cmake by [@jdx](https://github.com/jdx) in [0654f6c](https://github.com/jdx/mise/commit/0654f6c3a4b15640fa64d5cee6cfec3f2f08a580)
+- use https-only in paranoid by [@jdx](https://github.com/jdx) in [ad9f959](https://github.com/jdx/mise/commit/ad9f959ee0c7659596d8c3dc4e9ca33e82fec041)
+- make use_versions_host a setting by [@jdx](https://github.com/jdx) in [d9d4d23](https://github.com/jdx/mise/commit/d9d4d23c56d1181c2ed5b7ce62475b9c469b9da4)
+
+### 🐛 Bug Fixes
+
+- **(pipx)** allow using uv provided by mise by [@jdx](https://github.com/jdx) in [b608a73](https://github.com/jdx/mise/commit/b608a736d94f3a97c4cd06226b194bef41b15d9d)
+- **(pipx)** order pipx github releases correctly by [@jdx](https://github.com/jdx) in [054ff85](https://github.com/jdx/mise/commit/054ff85609d385ac0cd07dd9014a7bd6fe376271)
+- **(vfox)** ensure plugin is installed before listing env vars by [@jdx](https://github.com/jdx) in [914d0b4](https://github.com/jdx/mise/commit/914d0b4ca78ef8144158ecde6158f7276879f4d8)
+- correct aur fish completion directory by [@jdx](https://github.com/jdx) in [ff2f652](https://github.com/jdx/mise/commit/ff2f652a1419ccc7be2fd212a3275491e7f5cd49)
+
+### 📚 Documentation
+
+- **(readme)** remove failing green color by [@duhow](https://github.com/duhow) in [#2477](https://github.com/jdx/mise/pull/2477)
+- document vfox by [@jdx](https://github.com/jdx) in [1084fc4](https://github.com/jdx/mise/commit/1084fc4896eec08921481ba24e263cda0b760875)
+- render registry with asdf and not vfox by [@jdx](https://github.com/jdx) in [cc6876e](https://github.com/jdx/mise/commit/cc6876e51534d24a485c9f07568d11954bc87f90)
+- document python_venv_auto_create by [@jdx](https://github.com/jdx) in [7fc7bd8](https://github.com/jdx/mise/commit/7fc7bd8c479e23242ce9afa071a99870cda40270)
+- removed some references to rtx by [@jdx](https://github.com/jdx) in [44a7d2e](https://github.com/jdx/mise/commit/44a7d2e4558f1756677785b2afe2917cff8dfe63)
+
+### 🧪 Testing
+
+- set RUST_BACKTRACE in e2e tests by [@jdx](https://github.com/jdx) in [e1efb7f](https://github.com/jdx/mise/commit/e1efb7fd8dca45c8a337def418f48862ef63e1c6)
+- added cargo_features test by [@jdx](https://github.com/jdx) in [3aa5f57](https://github.com/jdx/mise/commit/3aa5f5784ec63ec04f0ffeb5c1d2246687a65314)
+- reset test by [@jdx](https://github.com/jdx) in [131cb0a](https://github.com/jdx/mise/commit/131cb0ada079efb7865e6666a12e6bf99e4d8150)
+
+### 🔍 Other Changes
+
+- set DEBUG=1 for alpine to find out why it is not creating MRs by [@jdx](https://github.com/jdx) in [313a2a0](https://github.com/jdx/mise/commit/313a2a062d08128c2d04484135ce3c2a9adb41f3)
+- bump vfox.rs by [@jdx](https://github.com/jdx) in [9fbc562](https://github.com/jdx/mise/commit/9fbc56274ef134ddb8e1d400fc72765868981fb5)
+- apply code lint fixes by [@jdx](https://github.com/jdx) in [c18dbc2](https://github.com/jdx/mise/commit/c18dbc2428ae2e585ecf5860a5577f7f93e30fdd)
+
 ## [2024.8.14](https://github.com/jdx/mise/compare/v2024.8.13..v2024.8.14) - 2024-08-27
 
 ### 🚀 Features

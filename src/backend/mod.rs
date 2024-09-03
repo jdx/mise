@@ -219,13 +219,15 @@ pub trait Backend: Debug + Send + Sync {
             false => vec![],
         })
     }
-    fn is_version_installed(&self, tv: &ToolVersion) -> bool {
+    fn is_version_installed(&self, tv: &ToolVersion, check_symlink: bool) -> bool {
         match tv.request {
             ToolRequest::System(_) => true,
             _ => {
-                tv.install_path().exists()
-                    && !self.incomplete_file_path(tv).exists()
-                    && !is_runtime_symlink(&tv.install_path())
+                let is_installed = tv.install_path().exists();
+                let is_not_incomplete = !self.incomplete_file_path(tv).exists();
+                let is_valid_symlink = !check_symlink || !is_runtime_symlink(&tv.install_path());
+
+                is_installed && is_not_incomplete && is_valid_symlink
             }
         }
     }
@@ -241,7 +243,7 @@ pub trait Backend: Debug + Send + Sync {
                 return false;
             }
         };
-        !self.is_version_installed(tv) || tv.version != latest
+        !self.is_version_installed(tv, true) || tv.version != latest
     }
     fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
         match tv.install_path() {
@@ -352,7 +354,7 @@ pub trait Backend: Debug + Send + Sync {
         }
         let config = Config::get();
         let settings = Settings::try_get()?;
-        if self.is_version_installed(&ctx.tv) {
+        if self.is_version_installed(&ctx.tv, true) {
             if ctx.force {
                 self.uninstall_version(&ctx.tv, ctx.pr.as_ref(), false)?;
                 ctx.pr.set_message("installing".into());
@@ -474,7 +476,7 @@ pub trait Backend: Debug + Send + Sync {
         tv.cache_path().join("incomplete")
     }
 
-    fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
+    fn depedency_toolset(&self) -> eyre::Result<Toolset> {
         let config = Config::get();
         let dependencies = self
             .get_all_dependencies(&ToolRequest::System(self.name().into()))?
@@ -485,7 +487,11 @@ pub trait Backend: Debug + Send + Sync {
             .filter_by_tool(&dependencies)
             .into();
         ts.resolve()?;
-        ts.full_env()
+        Ok(ts)
+    }
+
+    fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
+        self.depedency_toolset()?.full_env()
     }
 }
 
