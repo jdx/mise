@@ -8,6 +8,7 @@ use xx::file;
 use crate::backend;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -159,7 +160,10 @@ impl ToolRequest {
             } => match file::ls(&backend.installs_path) {
                 Ok(installs) => installs
                     .iter()
-                    .find(|p| p.file_name().unwrap().to_string_lossy().starts_with(prefix))
+                    .find(|p| {
+                        !is_runtime_symlink(p)
+                            && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
+                    })
                     .cloned(),
                 Err(_) => None,
             },
