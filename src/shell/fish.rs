@@ -75,7 +75,7 @@ impl Shell for Fish {
         "#});
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"
-            if functions -q fish_command_not_found and not functions -q __mise_fish_command_not_found
+            if functions -q fish_command_not_found; and not functions -q __mise_fish_command_not_found
                 functions -e __mise_fish_command_not_found
                 functions -c fish_command_not_found __mise_fish_command_not_found
             end
