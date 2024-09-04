@@ -223,11 +223,19 @@ pub trait Backend: Debug + Send + Sync {
         match tv.request {
             ToolRequest::System(_) => true,
             _ => {
-                let is_installed = tv.install_path().exists();
-                let is_not_incomplete = !self.incomplete_file_path(tv).exists();
-                let is_valid_symlink = !check_symlink || !is_runtime_symlink(&tv.install_path());
+                let check_path = |install_path: &Path| {
+                    let is_installed = install_path.exists();
+                    let is_not_incomplete = !self.incomplete_file_path(tv).exists();
+                    let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
 
-                is_installed && is_not_incomplete && is_valid_symlink
+                    is_installed && is_not_incomplete && is_valid_symlink
+                };
+                if let Some(install_path) = tv.request.install_path() {
+                    if check_path(&install_path) {
+                        return true;
+                    }
+                }
+                check_path(&tv.install_path())
             }
         }
     }
