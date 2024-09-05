@@ -432,6 +432,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Levant                        | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                                 |
 | LFE                           | [asdf-community/asdf-lfe](https://github.com/asdf-community/asdf-lfe)                                             |
 | libsql-server                 | [jonasb/asdf-libsql-server](https://github.com/jonasb/asdf-libsql-server)                                         |
+| license-plist                 | [MacPaw/asdf-license-plist](https://github.com/MacPaw/asdf-license-plist)                                         |
 | Lima                          | [CrouchingMuppet/asdf-lima](https://github.com/CrouchingMuppet/asdf-lima)                                         |
 | Link (system tools)           | [asdf-community/asdf-link](https://github.com/asdf-community/asdf-link)                                           |
 | Linkerd                       | [kforsthoevel/asdf-linkerd](https://github.com/kforsthoevel/asdf-linkerd)                                         |
@@ -662,6 +663,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | svu                           | [asdf-community/asdf-svu](https://github.com/asdf-community/asdf-svu)                                             |
 | swag                          | [behoof4mind/asdf-swag](https://github.com/behoof4mind/asdf-swag)                                                 |
 | Swift                         | [fcrespo82/asdf-swift](https://github.com/fcrespo82/asdf-swift)                                                   |
+| swift-package-list            | [MacPaw/asdf-swift-package-list](https://github.com/MacPaw/asdf-swift-package-list)                               |
 | SwiftFormat                   | [younke/asdf-swiftformat](https://github.com/younke/asdf-swiftformat)                                             |
 | SwiftGen                      | [younke/asdf-swiftgen](https://github.com/younke/asdf-swiftgen)                                                   |
 | Swiftlint                     | [klundberg/asdf-swiftlint](https://github.com/klundberg/asdf-swiftlint)                                           |
