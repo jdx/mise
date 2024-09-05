@@ -424,6 +424,7 @@ editLink: false
 | levant | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | lfe | [asdf:asdf-community/asdf-lfe](https://github.com/asdf-community/asdf-lfe) |
 | libsql-server | [asdf:jonasb/asdf-libsql-server](https://github.com/jonasb/asdf-libsql-server) |
+| license-plist | [asdf:MacPaw/asdf-license-plist](https://github.com/MacPaw/asdf-license-plist) |
 | lima | [asdf:CrouchingMuppet/asdf-lima](https://github.com/CrouchingMuppet/asdf-lima) |
 | link | [asdf:asdf-community/asdf-link](https://github.com/asdf-community/asdf-link) |
 | linkerd | [asdf:kforsthoevel/asdf-linkerd](https://github.com/kforsthoevel/asdf-linkerd) |
@@ -655,6 +656,7 @@ editLink: false
 | svu | [asdf:asdf-community/asdf-svu](https://github.com/asdf-community/asdf-svu) |
 | swag | [asdf:behoof4mind/asdf-swag](https://github.com/behoof4mind/asdf-swag) |
 | swift | [asdf:fcrespo82/asdf-swift](https://github.com/fcrespo82/asdf-swift) |
+| swift-package-list | [asdf:MacPaw/asdf-swift-package-list](https://github.com/MacPaw/asdf-swift-package-list) |
 | swiftformat | [asdf:younke/asdf-swiftformat](https://github.com/younke/asdf-swiftformat) |
 | swiftgen | [asdf:younke/asdf-swiftgen](https://github.com/younke/asdf-swiftgen) |
 | swiftlint | [asdf:klundberg/asdf-swiftlint](https://github.com/klundberg/asdf-swiftlint) |
