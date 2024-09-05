@@ -1,5 +1,32 @@
 # Changelog
 
+## [2024.9.0](https://github.com/jdx/mise/compare/v2024.8.15..v2024.9.0) - 2024-09-05
+
+### 🚀 Features
+
+- **(pipx)** add support for specifying package extras by [@antoniomdk](https://github.com/antoniomdk) in [#2510](https://github.com/jdx/mise/pull/2510)
+- mise hints by [@roele](https://github.com/roele) in [#2479](https://github.com/jdx/mise/pull/2479)
+
+### 🐛 Bug Fixes
+
+- **(asdf)** handle plugin URLs with trailing slash by [@jdx](https://github.com/jdx) in [4541fbe](https://github.com/jdx/mise/commit/4541fbe92700d6598a03479aa77278bfbc7035c0)
+- ls-remote doesn't support @sub-X style versions by [@roele](https://github.com/roele) in [#2525](https://github.com/jdx/mise/pull/2525)
+- ensure `mise install` installs missing runtimes listed in `mise ls` by [@stanhu](https://github.com/stanhu) in [#2524](https://github.com/jdx/mise/pull/2524)
+- Ensure dependencies are available for alternative backends by [@xavdid](https://github.com/xavdid) in [#2532](https://github.com/jdx/mise/pull/2532)
+- tweak hints by [@jdx](https://github.com/jdx) in [732fc58](https://github.com/jdx/mise/commit/732fc58deda43339e5dd0e5136c5b71dab275232)
+- Update fish.rs for activation of mise by [@Shobhit0109](https://github.com/Shobhit0109) in [#2542](https://github.com/jdx/mise/pull/2542)
+- resolve issue with prefixed dependencies by [@jdx](https://github.com/jdx) in [#2541](https://github.com/jdx/mise/pull/2541)
+
+### 🧪 Testing
+
+- added e2e env vars by [@jdx](https://github.com/jdx) in [585024f](https://github.com/jdx/mise/commit/585024fc882559beeef65c5a9772f40c8e1b5235)
+
+### New Contributors
+
+* @Shobhit0109 made their first contribution in [#2542](https://github.com/jdx/mise/pull/2542)
+* @xavdid made their first contribution in [#2532](https://github.com/jdx/mise/pull/2532)
+* @stanhu made their first contribution in [#2524](https://github.com/jdx/mise/pull/2524)
+
 ## [2024.8.15](https://github.com/jdx/mise/compare/v2024.8.14..v2024.8.15) - 2024-08-28
 
 ### 🚀 Features
@@ -57,7 +84,6 @@
 ### New Contributors
 
 * @mcallaway made their first contribution in [#2511](https://github.com/jdx/mise/pull/2511)
-* @antoniomdk made their first contribution in [#2509](https://github.com/jdx/mise/pull/2509)
 
 ## [2024.8.13](https://github.com/jdx/mise/compare/v2024.8.12..v2024.8.13) - 2024-08-26
 
