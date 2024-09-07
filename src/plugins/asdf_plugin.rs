@@ -55,6 +55,7 @@ impl AsdfPlugin {
             Ok(dirs) => {
                 let plugins = dirs
                     .into_par_iter()
+                    .filter(|dir| dir.is_dir())
                     .map(|dir| {
                         let name = dir.file_name().unwrap().to_string_lossy().to_string();
                         Box::new(AsdfPlugin::new(name)) as Box<dyn Plugin>
