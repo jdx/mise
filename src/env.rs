@@ -11,6 +11,7 @@ use log::LevelFilter;
 use once_cell::sync::Lazy;
 use url::Url;
 
+use crate::cli::args::ProfileArg;
 use crate::duration::HOURLY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
@@ -71,8 +72,7 @@ pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
 });
 pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> =
     Lazy::new(|| var("MISE_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".mise.toml".into()));
-pub static MISE_ENV: Lazy<Option<String>> =
-    Lazy::new(|| var("MISE_ENV").or_else(|_| var("MISE_ENVIRONMENT")).ok());
+pub static MISE_ENV: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 pub static MISE_SETTINGS_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SETTINGS_FILE").unwrap_or_else(|| MISE_CONFIG_DIR.join("settings.toml"))
 });
@@ -368,6 +368,30 @@ fn prefer_stale(args: &[String]) -> bool {
         "env", "hook-env", "x", "exec", "direnv", "activate", "current", "ls", "where",
     ]
     .contains(&c.as_str());
+}
+
+fn environment(args: &[String]) -> Option<String> {
+    args.windows(2)
+        .find_map(|window| {
+            if window[0] == ProfileArg::arg().get_long().unwrap_or_default()
+                || window[0]
+                    == ProfileArg::arg()
+                        .get_short()
+                        .unwrap_or_default()
+                        .to_string()
+            {
+                Some(window[1].clone())
+            } else {
+                None
+            }
+        })
+        .or_else(|| match var("MISE_ENV") {
+            Ok(env) => Some(env),
+            _ => match var("MISE_ENVIRONMENT") {
+                Ok(env) => Some(env),
+                _ => None,
+            },
+        })
 }
 
 fn log_file_level() -> Option<LevelFilter> {
