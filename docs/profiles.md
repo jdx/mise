@@ -1,8 +1,9 @@
 # Profiles
 
 It's possible to have separate `.mise.toml` files in the same directory for different
-environments like `development` and `production`. To enable, set `MISE_ENV` to an environment like
-`development` or `production`. mise will then look for a `.mise.{MISE_ENV}.toml` file in the current directory.
+environments like `development` and `production`. To enable, either set the `-P,--profile` option or `MISE_ENV` environment
+variable to an environment like `development` or `production`. mise will then look for a `.mise.{MISE_ENV}.toml` file
+in the current directory.
 
 mise will also look for "local" files like `.mise.local.toml` and `.mise.{MISE_ENV}.local.toml` in
 the current directory. These are intended to not be committed to version control.
