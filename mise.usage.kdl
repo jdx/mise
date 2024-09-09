@@ -216,10 +216,7 @@ cmd "deactivate" help="Disable mise for current shell session" {
 This can be used to temporarily disable mise in a shell session."
     after_long_help r"Examples:
 
-    $ mise deactivate bash
-    $ mise deactivate zsh
-    $ mise deactivate fish
-    $ execx($(mise deactivate xonsh))
+    $ mise deactivate
 "
 }
 cmd "direnv" help="Output direnv function to use mise inside direnv" {
