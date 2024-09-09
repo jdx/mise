@@ -190,6 +190,7 @@ impl Cli {
                 .subcommand_required(true)
                 .after_long_help(AFTER_LONG_HELP)
                 .arg(args::CdArg::arg())
+                .arg(args::ProfileArg::arg())
                 .arg(args::DebugArg::arg())
                 .arg(args::LogLevelArg::arg())
                 .arg(args::QuietArg::arg())
