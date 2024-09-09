@@ -79,6 +79,7 @@ once_cell = "1.19.0"
 openssl = { version = "0.10.66", optional = true }
 path-absolutize = "3.1.1"
 petgraph = "0.6.4"
+platform-info = "2.0.3" # cross-platform platform information
 rand = "0.8.5"
 rayon = "1.10.0"
 regex = "1.10.4"
