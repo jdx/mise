@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.9.1](https://github.com/jdx/mise/compare/v2024.9.0..v2024.9.1) - 2024-09-10
+
+### 🚀 Features
+
+- add global --env argument by [@roele](https://github.com/roele) in [#2553](https://github.com/jdx/mise/pull/2553)
+
+### 🐛 Bug Fixes
+
+- mise plugins ls command should ignore .DS_Store file on macOS by [@roele](https://github.com/roele) in [#2549](https://github.com/jdx/mise/pull/2549)
+- mise deactivate zsh does not work, but mise deactivate does by [@roele](https://github.com/roele) in [#2550](https://github.com/jdx/mise/pull/2550)
+
+### 🔍 Other Changes
+
+- ignore RUSTSEC-2024-0370 by [@jdx](https://github.com/jdx) in [2de83b1](https://github.com/jdx/mise/commit/2de83b1af9e4c408886e8d756e734fa70f62e477)
+
 ## [2024.9.0](https://github.com/jdx/mise/compare/v2024.8.15..v2024.9.0) - 2024-09-05
 
 ### 🚀 Features
