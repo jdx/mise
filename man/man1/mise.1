@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH mise 1  "mise 2024.9.0" 
+.TH mise 1  "mise 2024.9.1" 
 .SH NAME
 mise \- The front\-end to your dev env
 .SH SYNOPSIS
-\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-P\fR|\fB\-\-profile\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 mise is a tool for managing runtime versions. https://github.com/jdx/mise
 .PP
@@ -18,6 +18,9 @@ https://asdf\-vm.com/
 .TP
 \fB\-C\fR, \fB\-\-cd\fR=\fIDIR\fR
 Change directory before running command
+.TP
+\fB\-P\fR, \fB\-\-profile\fR=\fIPROFILE\fR
+Set the profile (environment)
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress non\-error messages
@@ -192,6 +195,6 @@ Examples:
     $ mise settings                  Show settings in use
     $ mise settings set color 0      Disable color by modifying global config file
 .SH VERSION
-v2024.9.0
+v2024.9.1
 .SH AUTHORS
 Jeff Dickey <@jdx>
