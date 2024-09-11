@@ -114,7 +114,7 @@ macro_rules! hint {
             .disable_hints
             .iter()
             .any(|hint| hint == $arg1 || hint == "*")
-            || !console::user_attended()
+            && console::user_attended()
         {
             let prefix = console::style("mise ").dim().for_stderr().to_string();
             let prefix = prefix
