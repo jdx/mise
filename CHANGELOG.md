@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.9.2](https://github.com/jdx/mise/compare/v2024.9.1..v2024.9.2) - 2024-09-11
+
+### 🚀 Features
+
+- implement a few tera functions for mise toml config by [@erickguan](https://github.com/erickguan) in [#2561](https://github.com/jdx/mise/pull/2561)
+
+### 🐛 Bug Fixes
+
+- ruby ls-remote not showing alternative implementations by [@roele](https://github.com/roele) in [#2555](https://github.com/jdx/mise/pull/2555)
+- cannot disable hints during Zsh completion by [@roele](https://github.com/roele) in [#2559](https://github.com/jdx/mise/pull/2559)
+
+### 📚 Documentation
+
+- Create zig.md by [@MustCodeAl](https://github.com/MustCodeAl) in [#2563](https://github.com/jdx/mise/pull/2563)
+
 ## [2024.9.1](https://github.com/jdx/mise/compare/v2024.9.0..v2024.9.1) - 2024-09-10
 
 ### 🚀 Features

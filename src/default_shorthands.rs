@@ -226,6 +226,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("envsubst", "https://github.com/dex4er/asdf-envsubst.git"),
     ("ephemeral-postgres", "https://github.com/smashedtoatoms/asdf-ephemeral-postgres.git"),
     ("erlang", "https://github.com/asdf-vm/asdf-erlang.git"),
+    ("esc", "https://github.com/fxsalazar/asdf-esc.git"),
     ("esy", "https://github.com/asdf-community/asdf-esy.git"),
     ("etcd", "https://github.com/particledecay/asdf-etcd.git"),
     ("evans", "https://github.com/goki90210/asdf-evans.git"),
