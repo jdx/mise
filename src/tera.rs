@@ -75,7 +75,7 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
     tera.register_function(
         "invocation_directory",
         move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            let path = env::current_dir().unwrap_or(PathBuf::default());
+            let path = env::current_dir().unwrap_or_default();
 
             let result = String::from(path.to_string_lossy());
 
@@ -128,7 +128,7 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
         "quote",
         move |input: &Value, _args: &HashMap<String, Value>| match input {
             Value::String(s) => {
-                let result = format!("'{}'", s.replace("'", "\'"));
+                let result = format!("'{}'", s.replace("'", "\\'"));
 
                 Ok(Value::String(result))
             }
