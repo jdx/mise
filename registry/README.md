@@ -217,6 +217,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | EnvCLI                        | [zekker6/asdf-envcli](https://github.com/zekker6/asdf-envcli)                                                     |
 | envsubst                      | [dex4er/asdf-envsubst](https://github.com/dex4er/asdf-envsubst)                                                   |
 | Ephemeral Postgres            | [smashedtoatoms/asdf-ephemeral-postgres](https://github.com/smashedtoatoms/asdf-ephemeral-postgres)               |
+| esc                           | [fxsalazar/asdf-esc](https://github.com/fxsalazar/asdf-esc)                                                       |
 | esy                           | [asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy)                                             |
 | etcd                          | [particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd)                                             |
 | Evans                         | [goki90210/asdf-evans](https://github.com/goki90210/asdf-evans)                                                   |

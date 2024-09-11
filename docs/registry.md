@@ -209,6 +209,7 @@ editLink: false
 | envsubst | [asdf:dex4er/asdf-envsubst](https://github.com/dex4er/asdf-envsubst) |
 | ephemeral-postgres | [asdf:smashedtoatoms/asdf-ephemeral-postgres](https://github.com/smashedtoatoms/asdf-ephemeral-postgres) |
 | erlang | [asdf:asdf-vm/asdf-erlang](https://github.com/asdf-vm/asdf-erlang) |
+| esc | [asdf:fxsalazar/asdf-esc](https://github.com/fxsalazar/asdf-esc) |
 | esy | [asdf:asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy) |
 | etcd | [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) |
 | evans | [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
