@@ -164,11 +164,7 @@ impl RubyPlugin {
         let ruby_build_bin = self.ruby_build_bin();
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {
             let output = cmd!(ruby_build_bin, "--definitions").read()?;
-            let versions = output
-                .split('\n')
-                .filter(|s| regex!(r"^[0-9].+$").is_match(s))
-                .map(|s| s.to_string())
-                .collect();
+            let versions = output.split('\n').map(|s| s.to_string()).collect();
             Ok(versions)
         })?;
         Ok(versions)
