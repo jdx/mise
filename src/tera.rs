@@ -309,7 +309,7 @@ mod tests {
             .render_str("{{ \"quoted'str\" | quote }}", &Context::default())
             .unwrap();
 
-        assert_eq!("'quoted\'str'", result);
+        assert_eq!("'quoted\\'str'", result);
     }
 
     #[test]
