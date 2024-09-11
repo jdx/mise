@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 
 export MISE_PYTHON_COMPILE=0
-assert_contains "mise use python@3.12.3 2>&1" "precompiled"
+assert_contains "mise use python@3.12.3 2>&1" "cpython-"
 assert_contains "mise x -- python --version" "Python 3.12.3"
