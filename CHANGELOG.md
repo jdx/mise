@@ -1,5 +1,21 @@
 # Changelog
 
+## [2024.9.3](https://github.com/jdx/mise/compare/v2024.9.2..v2024.9.3) - 2024-09-12
+
+### 🐛 Bug Fixes
+
+- Look for `-P` or `--profile` to get mise environment. by [@fiadliel](https://github.com/fiadliel) in [#2566](https://github.com/jdx/mise/pull/2566)
+- use consistent names for tera platform information by [@jdx](https://github.com/jdx) in [#2569](https://github.com/jdx/mise/pull/2569)
+
+### 📚 Documentation
+
+- added contributors to readme by [@jdx](https://github.com/jdx) in [16cccdd](https://github.com/jdx/mise/commit/16cccdd821a2b78f6a2144ea82ea16f09cacf84f)
+- pdate getting-started.md by [@fesplugas](https://github.com/fesplugas) in [#2570](https://github.com/jdx/mise/pull/2570)
+
+### New Contributors
+
+* @fesplugas made their first contribution in [#2570](https://github.com/jdx/mise/pull/2570)
+
 ## [2024.9.2](https://github.com/jdx/mise/compare/v2024.9.1..v2024.9.2) - 2024-09-11
 
 ### 🚀 Features
