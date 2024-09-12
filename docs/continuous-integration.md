@@ -17,7 +17,7 @@ To ensure you run the version of the tools installed by Mise, make sure you run 
 
 ```yaml
 script: |
-  mise x npm -- test
+  mise x -- npm test
 ```
 
 Alternatively, you can add the [shims](/dev-tools/shims.md) directory to your `PATH`, if the CI provider allows it.
@@ -39,7 +39,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
           version: 2023.12.0 # [default: latest] mise version to install

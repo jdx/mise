@@ -42,6 +42,24 @@ macro_rules! miseprint {
 
 #[cfg(test)]
 #[macro_export]
+macro_rules! hint {
+    ($arg1:expr, $arg2:expr, $arg3:expr) => {{
+        let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
+        if !$crate::config::Settings::get()
+            .disable_hints
+            .iter()
+            .any(|hint| hint == $arg1 || hint == "*")
+            || !console::user_attended()
+        {
+            let prefix = console::style("mise hint").dim().for_stderr();
+            let cmd = console::style($arg3).bold().for_stderr();
+            stderr.push(format!("{} {} {}", prefix, format!($arg2), cmd));
+        }
+    }};
+}
+
+#[cfg(test)]
+#[macro_export]
 macro_rules! info {
         ($($arg:tt)*) => {{
             let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
@@ -85,6 +103,43 @@ macro_rules! trace {
 macro_rules! debug {
     ($($arg:tt)*) => {{
         log::debug!($($arg)*);
+    }};
+}
+
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! hint {
+    ($arg1:expr, $arg2:expr, $arg3:expr) => {{
+        if !$crate::config::Settings::get()
+            .disable_hints
+            .iter()
+            .any(|hint| hint == $arg1 || hint == "*")
+            && console::user_attended()
+        {
+            let prefix = console::style("mise ").dim().for_stderr().to_string();
+            let prefix = prefix
+                + console::style("hint")
+                    .dim()
+                    .yellow()
+                    .for_stderr()
+                    .to_string()
+                    .as_str();
+            let cmd = console::style($arg3).bold().for_stderr();
+            let disable_single =
+                console::style(format!("mise settings set disable_hints {}", $arg1))
+                    .bold()
+                    .for_stderr();
+            let disable_all = console::style("mise settings set disable_hints \"*\"")
+                .bold()
+                .for_stderr();
+            info_unprefix!("{} {} {}", prefix, format!($arg2), cmd);
+            info_unprefix!(
+                "{} disable this hint with {} or all with {}",
+                prefix,
+                disable_single,
+                disable_all
+            );
+        }
     }};
 }
 

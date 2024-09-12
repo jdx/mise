@@ -9,8 +9,8 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use rayon::prelude::*;
-
 pub use settings::Settings;
+use walkdir::WalkDir;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -78,13 +78,11 @@ impl Config {
         trace!("load: config_paths: {:?}", config_paths);
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
 
-        let repo_urls = config_files.values().flat_map(|cf| cf.plugins()).collect();
-
         let config = Self {
-            aliases: load_aliases(&config_files),
+            aliases: load_aliases(&config_files)?,
             project_root: get_project_root(&config_files),
+            repo_urls: load_plugins(&config_files)?,
             config_files,
-            repo_urls,
             ..Default::default()
         };
 
@@ -315,7 +313,17 @@ impl Config {
     }
 
     fn load_tasks_includes(&self, root: &Path) -> Result<Vec<Task>> {
-        file::recursive_ls(root)?
+        if !root.is_dir() {
+            return Ok(vec![]);
+        }
+        let files: Vec<PathBuf> = WalkDir::new(root)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'))
+            .filter_ok(|e| e.file_type().is_file())
+            .map_ok(|e| e.path().to_path_buf())
+            .try_collect()?;
+        files
             .into_par_iter()
             .filter(|p| file::is_executable(p))
             .map(|path| Task::from_path(&path))
@@ -515,11 +523,8 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
 
     // The current directory is not always available, e.g.
     // when a directory was deleted or inside FUSE mounts.
-    match &*dirs::CWD {
-        Some(current_dir) => {
-            config_files.extend(file::FindUp::new(current_dir, config_filenames));
-        }
-        None => {}
+    if let Some(current_dir) = &*dirs::CWD {
+        config_files.extend(file::FindUp::new(current_dir, config_filenames));
     };
 
     config_files.extend(global_config_files());
@@ -608,18 +613,28 @@ fn parse_config_file(
     }
 }
 
-fn load_aliases(config_files: &ConfigMap) -> AliasMap {
+fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     let mut aliases: AliasMap = AliasMap::new();
 
     for config_file in config_files.values() {
-        for (plugin, plugin_aliases) in config_file.aliases() {
+        for (plugin, plugin_aliases) in config_file.aliases()? {
             for (from, to) in plugin_aliases {
                 aliases.entry(plugin.clone()).or_default().insert(from, to);
             }
         }
     }
 
-    aliases
+    Ok(aliases)
+}
+
+fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
+    let mut plugins = HashMap::new();
+    for config_file in config_files.values() {
+        for (plugin, url) in config_file.plugins()? {
+            plugins.insert(plugin.clone(), url.clone());
+        }
+    }
+    Ok(plugins)
 }
 
 impl Debug for Config {

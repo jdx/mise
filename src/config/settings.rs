@@ -19,7 +19,6 @@ use crate::{config, dirs, env, file};
 #[rustfmt::skip]
 #[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
-#[config(partial_attr(serde(deny_unknown_fields)))]
 pub struct Settings {
     /// push tools to the front of PATH instead of allowing modifications of PATH after activation to take precedence
     #[config(env = "MISE_ACTIVATE_AGGRESSIVE", default = false)]
@@ -30,6 +29,12 @@ pub struct Settings {
     pub always_keep_download: bool,
     #[config(env = "MISE_ALWAYS_KEEP_INSTALL", default = false)]
     pub always_keep_install: bool,
+    #[cfg(asdf)]
+    #[config(env = "MISE_ASDF", default = true)]
+    pub asdf: bool,
+    #[cfg(not(asdf))]
+    #[config(env = "MISE_ASDF", default = false)]
+    pub asdf: bool,
     /// default to asdf-compatible behavior
     /// this means that the global config file will be ~/.tool-versions
     /// also, the default behavior of `mise global` will be --pin
@@ -42,6 +47,8 @@ pub struct Settings {
     pub color: bool,
     #[config(env = "MISE_DISABLE_DEFAULT_SHORTHANDS", default = false)]
     pub disable_default_shorthands: bool,
+    #[config(env = "MISE_DISABLE_HINTS", default = [], parse_env = list_by_comma)]
+    pub disable_hints: BTreeSet<String>,
     #[config(env = "MISE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub disable_tools: BTreeSet<String>,
     #[config(env = "MISE_EXPERIMENTAL", default = false)]
@@ -82,12 +89,17 @@ pub struct Settings {
     pub legacy_version_file: bool,
     #[config(env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
     pub legacy_version_file_disable_tools: BTreeSet<String>,
+    #[config(env = "MISE_LIBGIT2", default = true)]
+    pub libgit2: bool,
     #[config(env = "MISE_NODE_COMPILE", default = false)]
     pub node_compile: bool,
     #[config(env = "MISE_NOT_FOUND_AUTO_INSTALL", default = true)]
     pub not_found_auto_install: bool,
     #[config(env = "MISE_PARANOID", default = false)]
     pub paranoid: bool,
+    /// use uvx instead of pipx if available
+    #[config(env = "MISE_PIPX_UVX", default = false)]
+    pub pipx_uvx: bool,
     #[config(env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
     pub plugin_autoupdate_last_check_duration: String,
     #[config(env = "MISE_PYTHON_COMPILE")]
@@ -117,8 +129,16 @@ pub struct Settings {
     pub trusted_config_paths: BTreeSet<PathBuf>,
     #[config(env = "MISE_QUIET", default = false)]
     pub quiet: bool,
+    #[config(env = "MISE_USE_VERSIONS_HOST", default = true)]
+    pub use_versions_host: bool,
     #[config(env = "MISE_VERBOSE", default = false)]
     pub verbose: bool,
+    #[cfg(vfox)]
+    #[config(env = "MISE_VFOX", default = true)]
+    pub vfox: bool,
+    #[cfg(not(vfox))]
+    #[config(env = "MISE_VFOX", default = false)]
+    pub vfox: bool,
     #[config(env = "MISE_YES", default = false)]
     pub yes: bool,
 
@@ -422,7 +442,9 @@ impl Settings {
     }
 
     pub fn as_dict(&self) -> eyre::Result<toml::Table> {
-        Ok(self.to_string().parse()?)
+        let s = toml::to_string(self)?;
+        let table = toml::from_str(&s)?;
+        Ok(table)
     }
 }
 

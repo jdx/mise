@@ -11,10 +11,10 @@ chmod u+x ~/bin/cargo-binstall
 export PATH="$HOME/bin:$PATH"
 
 # This should reuse the existing GITHUB_TOKEN variable
-assert_contains "GITHUB_TOKEN=foobar mise install -f cargo:eza@0.17.0 2>&1" "token=foobar"
+assert_contains "GITHUB_TOKEN=foobar mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"
 
 # This should use the GITHUB_API_TOKEN variable
-assert_contains "GITHUB_API_TOKEN=foobar mise install -f cargo:eza@0.17.0 2>&1" "token=foobar"
+assert_contains "GITHUB_API_TOKEN=foobar mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"
 
 # This should prefer GITHUB_API_TOKEN
-assert_contains "GITHUB_TOKEN=foobar GITHUB_API_TOKEN=barquz mise install -f cargo:eza@0.17.0 2>&1" "token=foobar"
+assert_contains "GITHUB_TOKEN=foobar GITHUB_API_TOKEN=barquz mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"

@@ -213,7 +213,7 @@ Examples:
     $ mise completion fish > ~/.config/fish/completions/mise.fish
 ```
 
-## `mise config ls [OPTIONS]`
+## `mise config ls [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List config files currently in use
@@ -229,7 +229,7 @@ Examples:
     $ mise config ls
 ```
 
-## `mise config generate [OPTIONS]`
+## `mise config generate [OPTIONS]` <Badge type="warning" text="experimental" />
 
 **Aliases:** `g`
 
@@ -289,10 +289,7 @@ Usage: deactivate
 
 Examples:
 
-    $ mise deactivate bash
-    $ mise deactivate zsh
-    $ mise deactivate fish
-    $ execx($(mise deactivate xonsh))
+    $ mise deactivate
 ```
 
 ## `mise direnv activate`
@@ -412,7 +409,7 @@ Examples:
     $ mise x -C /path/to/project node@20 -- node ./app.js
 ```
 
-## `mise generate git-pre-commit [OPTIONS]`
+## `mise generate git-pre-commit [OPTIONS]` <Badge type="warning" text="experimental" />
 
 **Aliases:** `pre-commit`
 
@@ -444,12 +441,12 @@ Examples:
     $ git commit -m "feat: add new feature" # runs `mise run pre-commit`
 ```
 
-## `mise generate github-action [OPTIONS]`
+## `mise generate github-action [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
-[experimental] Generate a Github Action workflow file
+[experimental] Generate a GitHub Action workflow file
 
-This command generates a Github Action workflow file that runs a mise task like `mise run ci`
+This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
 when you push changes to your repository.
 
 Usage: generate github-action [OPTIONS]
@@ -472,7 +469,7 @@ Examples:
 
     $ mise generate github-action --write --task=ci
     $ git commit -m "feat: add new feature"
-    $ git push # runs `mise run ci` on Github
+    $ git push # runs `mise run ci` on GitHub
 ```
 
 ## `mise implode [OPTIONS]`
@@ -871,7 +868,7 @@ Usage: plugins ls-remote [OPTIONS]
 
 Options:
   -u, --urls
-          Show the git url for each plugin e.g.: https://github.com/mise-plugins/rtx-nodejs.git
+          Show the git url for each plugin e.g.: https://github.com/mise-plugins/mise-poetry.git
 
       --only-names
           Only show the name of each plugin by default it will show a "*" next to installed plugins
@@ -962,7 +959,7 @@ Examples:
     rm -rf ~/.local/share/mise/versions/node/20.0.1
 ```
 
-## `mise registry`
+## `mise registry` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List available tools
@@ -1005,7 +1002,7 @@ Examples:
     v20.0.0
 ```
 
-## `mise run [OPTIONS] [TASK] [ARGS]...`
+## `mise run [OPTIONS] [TASK] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `r`
 
@@ -1340,7 +1337,7 @@ Examples:
     $ mise use -g python@3.11.0 - uses pyenv-provided python
 ```
 
-## `mise tasks deps [OPTIONS] [TASKS]...`
+## `mise tasks deps [OPTIONS] [TASKS]...` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Display a tree visualization of a dependency graph
@@ -1372,7 +1369,7 @@ Examples:
     $ mise tasks deps --dot
 ```
 
-## `mise tasks edit [OPTIONS] <TASK>`
+## `mise tasks edit [OPTIONS] <TASK>` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] Edit a tasks with $EDITOR
@@ -1395,7 +1392,7 @@ Examples:
     $ mise tasks edit test
 ```
 
-## `mise tasks ls [OPTIONS]`
+## `mise tasks ls [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
 [experimental] List available tasks to execute
@@ -1436,7 +1433,7 @@ Examples:
     $ mise tasks ls
 ```
 
-## `mise tasks run [OPTIONS] [TASK] [ARGS]...`
+## `mise tasks run [OPTIONS] [TASK] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `r`
 
@@ -1561,6 +1558,10 @@ Options:
 
       --untrust
           No longer trust this config
+
+      --show
+          Show the trusted status of config files from the current directory and its parents.
+          Does not trust or untrust any files.
 
 Examples:
     # trusts ~/some_dir/.mise.toml
@@ -1741,7 +1742,7 @@ Show mise version
 Usage: version
 ```
 
-## `mise watch [OPTIONS] [ARGS]...`
+## `mise watch [OPTIONS] [ARGS]...` <Badge type="warning" text="experimental" />
 
 **Aliases:** `w`
 

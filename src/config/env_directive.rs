@@ -10,6 +10,7 @@ use serde::{Deserialize, Deserializer};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
 use crate::config::{Config, Settings};
+use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::file::display_path;
 use crate::tera::{get_tera, BASE_CONTEXT};
@@ -254,13 +255,13 @@ impl EnvResults {
                         let path = ts
                             .list_paths()
                             .into_iter()
-                            .chain(env::split_paths(&env_vars["PATH"]))
+                            .chain(env::split_paths(&env_vars[&*PATH_KEY]))
                             .collect::<Vec<_>>();
                         let cmd = CmdLineRunner::new("python3")
                             .args(["-m", "venv", &venv.to_string_lossy()])
                             .envs(&env_vars)
                             .env(
-                                "PATH",
+                                PATH_KEY.to_string(),
                                 env::join_paths(&path)?.to_string_lossy().to_string(),
                             );
                         if ts

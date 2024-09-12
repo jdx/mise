@@ -4,7 +4,7 @@ You may install python packages directly from:
 
 - PyPI
 - Git
-- Github
+- GitHub
 - Http
 
 The code for this is inside of the mise repository at [`./src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
@@ -45,10 +45,30 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 | ------------------------------------- | ------------------------------------------------------ |
 | PyPI shorthand latest version         | `pipx:black`                                           |
 | PyPI shorthand for specific version   | `pipx:black@24.3.0`                                    |
-| Github shorthand for latest version   | `pipx:psf/black`                                       |
-| Github shorthand for specific version | `pipx:psf/black@24.3.0`                                |
+| GitHub shorthand for latest version   | `pipx:psf/black`                                       |
+| GitHub shorthand for specific version | `pipx:psf/black@24.3.0`                                |
 | Git syntax for latest version         | `pipx:git+https://github.com/psf/black`                |
 | Git syntax for a branch               | `pipx:git+https://github.com/psf/black.git@main`       |
 | Https with zipfile                    | `pipx:https://github.com/psf/black/archive/18.9b0.zip` |
 
 Other syntax may work but is unsupported and untested.
+
+## Configuration
+
+Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
+
+### `pipx_uvx`
+
+* Type: `bool`
+* Env: `MISE_PIPX_UVX`
+* Default: `false`
+
+If true, mise will use `uvx` instead of `pipx` if
+[`uv`](https://docs.astral.sh/uv/) is installed and on PATH.
+This makes installing CLIs _much_ faster by using `uv` as the package manager.
+
+You can install it with mise:
+
+```sh
+mise use -g uv
+```

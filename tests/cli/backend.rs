@@ -2,7 +2,7 @@ use crate::cli::prelude::*;
 use eyre::Result;
 
 const EXPECTED_EZA_OUTPUT: &str = "eza - A modern, maintained replacement for ls
-v0.17.0 [+git]
+v0.18.24 [+git]
 https://github.com/eza-community/eza
 ";
 
@@ -12,13 +12,13 @@ https://github.com/eza-community/eza
 fn test_cargo_binstall() -> Result<()> {
     mise! {
         when!(
-            given!(args "rm", "cargo:eza@0.17.0");
+            given!(args "rm", "cargo:eza@0.18.24");
             should!(succeed)
         ),
         when!(
             given!(env_var "MISE_EXPERIMENTAL", "1"),
             given!(env_var "MISE_CARGO_BINSTALL", "1"),
-            given!(args "x", "cargo:eza@0.17.0", "--", "eza", "-v");
+            given!(args "x", "cargo:eza@0.18.24", "--", "eza", "-v");
             should!(output_exactly EXPECTED_EZA_OUTPUT),
             should!(succeed)
         )
@@ -31,12 +31,12 @@ fn test_cargo_binstall() -> Result<()> {
 fn test_cargo_local_build() -> Result<()> {
     mise! {
         when!(
-            given!(args "rm", "cargo:eza@0.17.0");
+            given!(args "rm", "cargo:eza@0.18.24");
             should!(succeed)
         ),
         when!(
             given!(env_var "MISE_EXPERIMENTAL", "1"),
-            given!(args "x", "cargo:eza@0.17.0", "--", "eza", "-v");
+            given!(args "x", "cargo:eza@0.18.24", "--", "eza", "-v");
             should!(output_exactly EXPECTED_EZA_OUTPUT),
             should!(succeed)
         )

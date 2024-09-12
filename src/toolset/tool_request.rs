@@ -8,6 +8,7 @@ use xx::file;
 use crate::backend;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub enum ToolRequest {
     Ref {
         backend: BackendArg,
         ref_: String,
+        ref_type: String,
         options: ToolVersionOptions,
     },
     Sub {
@@ -39,13 +41,14 @@ pub enum ToolRequest {
 impl ToolRequest {
     pub fn new(backend: BackendArg, s: &str) -> eyre::Result<Self> {
         let s = match s.split_once('-') {
-            Some(("ref", r)) => format!("ref:{}", r),
+            Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => format!("{ref_type}:{r}"),
             _ => s.to_string(),
         };
         Ok(match s.split_once(':') {
-            Some(("ref", r)) => Self::Ref {
+            Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => Self::Ref {
                 backend,
                 ref_: r.to_string(),
+                ref_type: ref_type.to_string(),
                 options: Default::default(),
             },
             Some(("prefix", p)) => Self::Prefix {
@@ -105,7 +108,9 @@ impl ToolRequest {
         match self {
             Self::Version { version: v, .. } => v.clone(),
             Self::Prefix { prefix: p, .. } => format!("prefix:{p}"),
-            Self::Ref { ref_: r, .. } => format!("ref:{r}"),
+            Self::Ref {
+                ref_: r, ref_type, ..
+            } => format!("{ref_type}:{r}"),
             Self::Path(_, p) => format!("path:{}", p.display()),
             Self::Sub {
                 sub, orig_version, ..
@@ -124,11 +129,10 @@ impl ToolRequest {
     }
 
     pub fn is_installed(&self) -> bool {
-        // TODO: dispatch to backend
-        match self {
-            Self::System(_) => true,
-            _ => self.install_path().is_some_and(|p| p.exists()),
-        }
+        let backend = backend::get(self.backend());
+        let tv = ToolVersion::new(backend.as_ref(), self.clone(), self.version());
+
+        backend.is_version_installed(&tv, false)
     }
 
     pub fn install_path(&self) -> Option<PathBuf> {
@@ -136,9 +140,12 @@ impl ToolRequest {
             Self::Version {
                 backend, version, ..
             } => Some(backend.installs_path.join(version)),
-            Self::Ref { backend, ref_, .. } => {
-                Some(backend.installs_path.join(format!("ref-{}", ref_)))
-            }
+            Self::Ref {
+                backend,
+                ref_,
+                ref_type,
+                ..
+            } => Some(backend.installs_path.join(format!("{ref_type}-{ref_}"))),
             Self::Sub {
                 backend,
                 sub,
@@ -153,7 +160,10 @@ impl ToolRequest {
             } => match file::ls(&backend.installs_path) {
                 Ok(installs) => installs
                     .iter()
-                    .find(|p| p.file_name().unwrap().to_string_lossy().starts_with(prefix))
+                    .find(|p| {
+                        !is_runtime_symlink(p)
+                            && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
+                    })
                     .cloned(),
                 Err(_) => None,
             },

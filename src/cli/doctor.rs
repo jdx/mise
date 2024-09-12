@@ -103,11 +103,13 @@ impl Doctor {
         section("backends", render_backends())?;
         section("plugins", render_plugins())?;
 
-        for plugin in backend::list() {
-            if !plugin.is_installed() {
-                self.errors
-                    .push(format!("plugin {} is not installed", &plugin.id()));
-                continue;
+        for backend in backend::list() {
+            if let Some(plugin) = backend.plugin() {
+                if !plugin.is_installed() {
+                    self.errors
+                        .push(format!("plugin {} is not installed", &plugin.name()));
+                    continue;
+                }
             }
         }
 
@@ -138,7 +140,7 @@ impl Doctor {
         let tools = ts
             .list_current_versions()
             .into_iter()
-            .map(|(f, tv)| match f.is_version_installed(&tv) {
+            .map(|(f, tv)| match f.is_version_installed(&tv, true) {
                 true => (tv.to_string(), style::nstyle("")),
                 false => (tv.to_string(), style::ndim("(missing)")),
             })
@@ -187,7 +189,7 @@ impl Doctor {
 
     fn analyze_plugins(&mut self) {
         for plugin in backend::list() {
-            let is_core = CORE_PLUGINS.iter().any(|fg| fg.id() == plugin.id());
+            let is_core = CORE_PLUGINS.contains_key(plugin.id());
             let plugin_type = plugin.get_plugin_type();
 
             if is_core && plugin_type == PluginType::Asdf {
@@ -256,7 +258,10 @@ fn render_backends() -> String {
 fn render_plugins() -> String {
     let plugins = backend::list()
         .into_iter()
-        .filter(|p| p.is_installed() && p.get_type() == BackendType::Asdf)
+        .filter(|b| {
+            b.plugin()
+                .is_some_and(|p| p.is_installed() && b.get_type() == BackendType::Asdf)
+        })
         .collect::<Vec<_>>();
     let max_plugin_name_len = plugins
         .iter()
@@ -331,11 +336,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 fn section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
+    let body = file::replace_paths_in_string(body);
     miseprintln!("\n{}: \n{}", style(header).bold(), indent_by(body, "  "));
     Ok(())
 }
 
 fn inline_section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
+    let body = file::replace_paths_in_string(body);
     miseprintln!("{}: {body}", style(header).bold());
     Ok(())
 }

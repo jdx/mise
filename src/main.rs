@@ -1,3 +1,5 @@
+use std::process::exit;
+
 use color_eyre::{Section, SectionExt};
 use eyre::Report;
 use itertools::Itertools;
@@ -19,14 +21,14 @@ mod regex;
 mod cmd;
 
 mod backend;
-pub mod build_time;
+pub(crate) mod build_time;
 mod cache;
 mod cli;
 mod config;
 mod default_shorthands;
 mod direnv;
 mod dirs;
-pub mod duration;
+pub(crate) mod duration;
 mod env;
 mod env_diff;
 mod errors;
@@ -34,7 +36,7 @@ mod errors;
 mod fake_asdf;
 mod file;
 mod git;
-pub mod github;
+pub(crate) mod github;
 mod hash;
 mod hook_env;
 mod http;
@@ -46,21 +48,19 @@ mod path_env;
 mod plugins;
 mod rand;
 mod registry;
+pub(crate) mod result;
 mod runtime_symlinks;
 mod shell;
 mod shims;
 mod shorthands;
 mod task;
-pub mod tera;
-pub mod timeout;
+pub(crate) mod tera;
+pub(crate) mod timeout;
 mod toml;
 mod toolset;
 mod ui;
 
 fn main() -> eyre::Result<()> {
-    #[cfg(windows)]
-    warn!("mise is supported on windows. Do not expect anything to work.");
-
     let args = env::args().collect_vec();
     color_eyre::install()?;
 
@@ -76,17 +76,17 @@ fn handle_err(err: Report) -> eyre::Result<()> {
             return Ok(());
         }
     }
-    // if log::max_level() < log::LevelFilter::Debug {
-    //     display_friendly_err(err);
-    //     exit(1);
-    // }
+    if cfg!(not(debug_assertions)) && log::max_level() < log::LevelFilter::Debug {
+        display_friendly_err(err);
+        exit(1);
+    }
     Err(err)
 }
 
-// fn display_friendly_err(err: Report) {
-//     for err in err.chain() {
-//         error!("{err}");
-//     }
-//     let msg = style::edim("Run with --verbose or MISE_VERBOSE=1 for more information");
-//     error!("{msg}");
-// }
+fn display_friendly_err(err: Report) {
+    for err in err.chain() {
+        error!("{err}");
+    }
+    let msg = ui::style::edim("Run with --verbose or MISE_VERBOSE=1 for more information");
+    error!("{msg}");
+}

@@ -8,11 +8,11 @@
 <!--   <img alt="mise logo" width="617" src="./docs/logo-light@2x.png"> -->
 <!-- </picture></a> -->
 <a href="https://crates.io/crates/mise"><img alt="Crates.io" src="https://img.shields.io/crates/v/mise?style=for-the-badge"></a>
-<a href="https://github.com/jdx/mise/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdx/mise?color=%2320A920&style=for-the-badge"></a>
-<a href="https://github.com/jdx/mise/actions/workflows/test.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdx/mise/test.yml?color=%2320A920&style=for-the-badge"></a>
-<a href="https://app.codacy.com/gh/jdx/mise/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage"><img alt="Codacy coverage (branch)" src="https://img.shields.io/codacy/coverage/af322e1f36ca41f0a296f49733a705f5/main?color=%2320A920&style=for-the-badge"></a>
+<a href="https://github.com/jdx/mise/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdx/mise?color=%2344CC11&style=for-the-badge"></a>
+<a href="https://github.com/jdx/mise/actions/workflows/test.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdx/mise/test.yml?style=for-the-badge"></a>
+<a href="https://app.codacy.com/gh/jdx/mise/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage"><img alt="Codacy coverage (branch)" src="https://img.shields.io/codacy/coverage/af322e1f36ca41f0a296f49733a705f5/main?color=%2344CC11&style=for-the-badge"></a>
 <a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge"></a>
-<p><em>The front-end to your dev env. (<a href="https://mise.jdx.dev/rtx.html">formerly called "rtx"</a>)</em></p>
+<p><em>The front-end to your dev env.</em></p>
 </div>
 
 ## What is it?
@@ -36,7 +36,7 @@ Install mise (other methods [here](https://mise.jdx.dev/getting-started.html)):
 ```sh-session
 $ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
-mise 2024.6.6
+mise 2024.9.2
 ```
 
 or install a specific a version:
@@ -44,7 +44,7 @@ or install a specific a version:
 ```sh-session
 $ curl https://mise.run | MISE_VERSION=v2024.5.16 sh
 $ ~/.local/bin/mise --version
-mise 2024.6.6
+mise 2024.9.2
 ```
 
 Hook mise into your shell (pick the right one for your shell):
@@ -68,3 +68,7 @@ v20.0.0
 ## Full Documentation
 
 See [mise.jdx.dev](https://mise.jdx.dev)
+
+## Contributors
+
+[![Contributors](https://contrib.rocks/image?repo=jdx/mise)](https://github.com/jdx/mise/graphs/contributors)

@@ -1,6 +1,8 @@
 # FAQs
 
-## I don't want to put a `.tool-versions` file into my project since git shows it as an untracked file
+## I don't want to put a
+
+`.tool-versions` file into my project since git shows it as an untracked file
 
 You can make git ignore these files in 3 different ways:
 
@@ -26,7 +28,8 @@ While this change is rolling out, there is some migration code that will move in
 the "nodejs" and "golang" directories to the new names. If this runs for you you'll see a message
 but it should not run again unless there is some kind of problem. In this case, it's probably
 easiest to just
-run `rm -rf ~/.local/share/mise/installs/{golang,nodejs} ~/.local/share/mise/plugins/{golang,nodejs}`.
+run
+`rm -rf ~/.local/share/mise/installs/{golang,nodejs} ~/.local/share/mise/plugins/{golang,nodejs}`.
 
 Once most users have migrated over this migration code will be removed.
 
@@ -59,7 +62,7 @@ never modify PATH because it never displays a prompt. For this type of setup, yo
 `mise hook-env` manually every time you wish to update PATH, or use [shims](/dev-tools/shims.md)
 instead (preferred).
 Or if you only need to use mise for certain commands, just prefix the commands with
-[`mise x --`](./cli/#mise-exec-options-tool-version-command).
+[`mise x --`](./cli/exec).
 For example, `mise x -- npm test` or `mise x -- ./my_script.sh`.
 
 `mise hook-env` will exit early in different situations if no changes have been made. This prevents
@@ -134,9 +137,11 @@ setting `MISE_USE_VERSIONS_HOST=0`.
 
 ## Windows support?
 
-This is something we'd like to add! <https://github.com/jdx/mise/discussions/66>
+Very basic support for windows is currently available, however because Windows can't support asdf
+plugins, they must use core and vfox only—which means only a handful of tools are available on
+Windows.
 
-It's not a near-term goal and it would require plugin modifications, but it should be feasible.
+As of this writing, env var management and task execution are not yet supported on Windows.
 
 ## How do I use mise with http proxies?
 
@@ -151,7 +156,7 @@ plugin's repository.
 
 e.g.: how does `mise plugin install elixir` know to fetch <https://github.com/asdf-vm/asdf-elixir>?
 
-We maintain [an index](https://github.com/rtx-plugins/registry) of shorthands that mise uses as a
+We maintain [an index](https://github.com/mise-plugins/registry) of shorthands that mise uses as a
 base.
 This is regularly updated every time that mise has a release. This repository is stored directly
 into

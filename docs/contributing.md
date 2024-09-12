@@ -133,6 +133,19 @@ Run `mise run release -x [minor|patch]`. (minor if it is the first release in a 
 mise run render
 ```
 
+## Adding a new setting
+
+Settings require some boilerplate. The easiest way to find everything needed to add a new
+setting is to look at the git history for [`src/config/settings.rs`](https://github.com/jdx/mise/commits/main/src/config/settings.rs).
+Find a recent commit adding a new setting to find everything required. Some of the requirements are:
+
+* Setting added to [`src/config/settings.rs`](https://github.com/jdx/mise/commits/main/src/config/settings.rs).
+* Documentation added to [`docs/configruation.md`](https://github.com/jdx/mise/commits/main/src/docs/configuration.md).
+* JSON Schema added to [`schema/mise.json`](https://github.com/jdx/mise/commits/main/schema/mise.json).
+* Test snapshots updated `mise run snapshots` (this updates the test snapshots so you don't need to do it manually).
+
+Note that code changes may alter this list so the best way to find the current requirements is to look at a recent commit.
+
 ## Testing packaging
 
 This is only necessary to test if actually changing the packaging setup.

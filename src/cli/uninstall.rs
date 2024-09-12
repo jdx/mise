@@ -48,7 +48,7 @@ impl Uninstall {
 
         let mpr = MultiProgressReport::get();
         for (plugin, tv) in tool_versions {
-            if !plugin.is_version_installed(&tv) {
+            if !plugin.is_version_installed(&tv, true) {
                 warn!("{} is not installed", tv.style());
                 continue;
             }

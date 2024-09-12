@@ -13,18 +13,18 @@ use itertools::Itertools;
 use rayon::prelude::*;
 
 pub use builder::ToolsetBuilder;
+pub use tool_request::ToolRequest;
 pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::ToolVersion;
 pub use tool_version_list::ToolVersionList;
-pub use tool_version_request::ToolRequest;
 use versions::Version;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::settings::SettingsStatusMissingTools;
 use crate::config::{Config, Settings};
-use crate::env::TERM_WIDTH;
+use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::errors::Error;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
@@ -32,11 +32,11 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, env, runtime_symlinks, shims};
 
 mod builder;
+mod tool_request;
 mod tool_request_set;
 mod tool_source;
 mod tool_version;
 mod tool_version_list;
-mod tool_version_request;
 
 pub type ToolVersionOptions = BTreeMap<String, String>;
 
@@ -127,7 +127,7 @@ impl Toolset {
         let versions = self
             .list_current_versions()
             .into_iter()
-            .filter(|(p, tv)| opts.force || !p.is_version_installed(tv))
+            .filter(|(p, tv)| opts.force || !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
             .filter(|tv| matches!(self.versions[&tv.backend].source, ToolSource::Argument))
             .map(|tv| tv.request)
@@ -139,7 +139,7 @@ impl Toolset {
         self.versions
             .keys()
             .map(backend::get)
-            .filter(|p| !p.is_installed())
+            .filter(|b| b.plugin().is_some_and(|p| !p.is_installed()))
             .map(|p| p.id().into())
             .collect()
     }
@@ -154,6 +154,7 @@ impl Toolset {
         if versions.is_empty() {
             return Ok(vec![]);
         }
+        show_python_install_hint(&versions);
         let leaf_deps = get_leaf_dependencies(&versions)?;
         if leaf_deps.len() < versions.len() {
             debug!("installing {} leaf tools first", leaf_deps.len());
@@ -168,15 +169,17 @@ impl Toolset {
             .into_iter()
             .map(|(fa, v)| (backend::get(&fa), v.collect_vec()))
             .collect();
-        for (t, _) in &queue {
-            if !t.is_installed() {
-                t.ensure_installed(mpr, false).or_else(|err| {
-                    if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
-                        Ok(())
-                    } else {
-                        Err(err)
-                    }
-                })?;
+        for (backend, _) in &queue {
+            if let Some(plugin) = backend.plugin() {
+                if !plugin.is_installed() {
+                    plugin.ensure_installed(mpr, false).or_else(|err| {
+                        if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
+                            Ok(())
+                        } else {
+                            Err(err)
+                        }
+                    })?;
+                }
             }
         }
         let queue = Arc::new(Mutex::new(queue));
@@ -247,7 +250,7 @@ impl Toolset {
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
         self.list_current_versions()
             .into_iter()
-            .filter(|(p, tv)| !p.is_version_installed(tv))
+            .filter(|(p, tv)| !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
             .collect()
     }
@@ -310,7 +313,7 @@ impl Toolset {
     pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_versions()
             .into_iter()
-            .filter(|(p, v)| p.is_version_installed(v))
+            .filter(|(p, v)| p.is_version_installed(v, true))
             .collect()
     }
     pub fn list_outdated_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion, String)> {
@@ -328,7 +331,7 @@ impl Toolset {
                         return None;
                     }
                 };
-                if !t.is_version_installed(&tv)
+                if !t.is_version_installed(&tv, true)
                     || is_outdated_version(tv.version.as_str(), latest.as_str())
                 {
                     Some((t, tv, latest))
@@ -352,13 +355,13 @@ impl Toolset {
             path_env.add(p);
         }
         let mut env = self.env(config)?;
-        if let Some(path) = env.get("PATH") {
+        if let Some(path) = env.get(&*PATH_KEY) {
             path_env.add(PathBuf::from(path));
         }
         for p in self.list_paths() {
             path_env.add(p);
         }
-        env.insert("PATH".to_string(), path_env.to_string());
+        env.insert(PATH_KEY.to_string(), path_env.to_string());
         Ok(env)
     }
     pub fn env(&self, config: &Config) -> Result<BTreeMap<String, String>> {
@@ -373,6 +376,7 @@ impl Toolset {
                     Vec::new()
                 }
             })
+            .filter(|(k, _)| k.to_uppercase() != "PATH")
             .collect::<Vec<(String, String)>>();
         let add_paths = entries
             .iter()
@@ -388,7 +392,7 @@ impl Toolset {
             .rev()
             .collect();
         if !add_paths.is_empty() {
-            entries.insert("PATH".to_string(), add_paths);
+            entries.insert(PATH_KEY.to_string(), add_paths);
         }
         entries.extend(config.env()?.clone());
         Ok(entries)
@@ -496,6 +500,21 @@ impl Toolset {
         let fa = fa.to_string();
         settings.disable_tools.iter().any(|s| s == &fa)
     }
+}
+
+fn show_python_install_hint(versions: &[ToolRequest]) {
+    let num_python = versions
+        .iter()
+        .filter(|tr| tr.backend().name == "python")
+        .count();
+    if num_python != 1 {
+        return;
+    }
+    hint!(
+        "python_multi",
+        "use multiple versions simultaneously with",
+        "mise use python@3.12 python@3.11"
+    );
 }
 
 impl Display for Toolset {

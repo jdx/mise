@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+echo "this should not show as a task"

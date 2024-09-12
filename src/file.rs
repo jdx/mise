@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs;
 use std::fs::File;
 #[cfg(unix)]
@@ -162,6 +163,13 @@ pub fn display_path<P: AsRef<Path>>(path: P) -> String {
     }
 }
 
+/// replaces $HOME in a string with "~" and $PATH with "$PATH", generally used to clean up output
+/// after it is rendered
+pub fn replace_paths_in_string<S: Display>(input: S) -> String {
+    let home = env::HOME.to_string_lossy().to_string();
+    input.to_string().replace(&home, "~")
+}
+
 /// replaces "~" with $HOME
 pub fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
     let path = path.as_ref();
@@ -249,25 +257,52 @@ pub fn recursive_ls(dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 #[cfg(unix)]
-pub fn make_symlink(target: &Path, link: &Path) -> Result<()> {
+pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     trace!("ln -sf {} {}", target.display(), link.display());
     if link.is_file() || link.is_symlink() {
         fs::remove_file(link)?;
     }
     symlink(target, link)
         .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
-    Ok(())
+    Ok((target.to_path_buf(), link.to_path_buf()))
 }
 
 #[cfg(windows)]
-pub fn make_symlink(_target: &Path, _link: &Path) -> Result<()> {
+//#[deprecated]
+pub fn make_symlink(_target: &Path, _link: &Path) -> Result<(PathBuf, PathBuf)> {
     unimplemented!("make_symlink is not implemented on Windows")
 }
 
-pub fn remove_symlinks_with_target_prefix(symlink_dir: &Path, target_prefix: &Path) -> Result<()> {
-    if !symlink_dir.exists() {
-        return Ok(());
+#[cfg(windows)]
+pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
+    trace!("ln -sf {} {}", target.display(), link.display());
+    if link.is_file() || link.is_symlink() {
+        // remove existing file if exists
+        fs::remove_file(link)?;
     }
+    xx::file::write(link, target.to_string_lossy().to_string())?;
+    Ok(())
+}
+
+#[cfg(unix)]
+pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
+    trace!("ln -sf {} {}", target.display(), link.display());
+    if link.is_file() || link.is_symlink() {
+        // remove existing file if exists
+        fs::remove_file(link)?;
+    }
+    make_symlink(target, link)?;
+    Ok(())
+}
+
+pub fn remove_symlinks_with_target_prefix(
+    symlink_dir: &Path,
+    target_prefix: &Path,
+) -> Result<Vec<PathBuf>> {
+    if !symlink_dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut removed = vec![];
     for entry in symlink_dir.read_dir()? {
         let entry = entry?;
         let path = entry.path();
@@ -275,10 +310,11 @@ pub fn remove_symlinks_with_target_prefix(symlink_dir: &Path, target_prefix: &Pa
             let target = path.read_link()?;
             if target.starts_with(target_prefix) {
                 fs::remove_file(&path)?;
+                removed.push(path);
             }
         }
     }
-    Ok(())
+    Ok(removed)
 }
 
 #[cfg(unix)]

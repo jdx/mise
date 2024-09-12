@@ -13,6 +13,9 @@ usage "Usage: mise [OPTIONS] <COMMAND>"
 flag "-C --cd" help="Change directory before running command" global=true {
     arg "<DIR>"
 }
+flag "-P --profile" help="Set the profile (environment)" global=true {
+    arg "<PROFILE>"
+}
 flag "--debug" help="Sets log level to debug" hide=true global=true
 flag "--log-level" help="Set the log output verbosity" hide=true global=true {
     arg "<LEVEL>"
@@ -216,10 +219,7 @@ cmd "deactivate" help="Disable mise for current shell session" {
 This can be used to temporarily disable mise in a shell session."
     after_long_help r"Examples:
 
-    $ mise deactivate bash
-    $ mise deactivate zsh
-    $ mise deactivate fish
-    $ execx($(mise deactivate xonsh))
+    $ mise deactivate
 "
 }
 cmd "direnv" help="Output direnv function to use mise inside direnv" {
@@ -328,16 +328,16 @@ when you commit changes to your repository."
         }
         flag "-w --write" help="write to .git/hooks/pre-commit and make it executable"
     }
-    cmd "github-action" help="[experimental] Generate a Github Action workflow file" {
-        long_help r"[experimental] Generate a Github Action workflow file
+    cmd "github-action" help="[experimental] Generate a GitHub Action workflow file" {
+        long_help r"[experimental] Generate a GitHub Action workflow file
 
-This command generates a Github Action workflow file that runs a mise task like `mise run ci`
+This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
 when you push changes to your repository."
         after_long_help r#"Examples:
 
     $ mise generate github-action --write --task=ci
     $ git commit -m "feat: add new feature"
-    $ git push # runs `mise run ci` on Github
+    $ git push # runs `mise run ci` on GitHub
 "#
         flag "-n --name" help="the name of the workflow to generate" {
             arg "<NAME>"
@@ -680,7 +680,7 @@ The full list is here: https://github.com/jdx/mise/blob/main/src/default_shortha
 Examples:
   $ mise plugins ls-remote
 "
-        flag "-u --urls" help="Show the git url for each plugin e.g.: https://github.com/mise-plugins/rtx-nodejs.git"
+        flag "-u --urls" help="Show the git url for each plugin e.g.: https://github.com/mise-plugins/mise-poetry.git"
         flag "--only-names" help="Only show the name of each plugin by default it will show a \"*\" next to installed plugins"
     }
     cmd "uninstall" help="Removes a plugin" {
@@ -1119,6 +1119,7 @@ This includes:
 "
     flag "-a --all" help="Trust all config files in the current directory and its parents"
     flag "--untrust" help="No longer trust this config"
+    flag "--show" help="Show the trusted status of config files from the current directory and its parents.\nDoes not trust or untrust any files."
     arg "[CONFIG_FILE]" help="The config file to trust"
 }
 cmd "uninstall" help="Removes runtime versions" {

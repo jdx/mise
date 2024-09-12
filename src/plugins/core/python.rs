@@ -27,7 +27,7 @@ pub struct PythonPlugin {
 
 impl PythonPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new("python".into());
+        let core = CorePlugin::new(BackendArg::new("python", "python"));
         Self {
             precompiled_cache: CacheManager::new(
                 core.fa.cache_path.join("precompiled-$KEY.msgpack.z"),
@@ -94,14 +94,21 @@ impl PythonPlugin {
     }
 
     fn python_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_short_path().join("bin/python")
+        if cfg!(windows) {
+            tv.install_path().join("python.exe")
+        } else {
+            tv.install_path().join("bin/python")
+        }
     }
 
     fn fetch_precompiled_remote_versions(&self) -> eyre::Result<&Vec<(String, String, String)>> {
         self.precompiled_cache.get_or_try_init(|| {
             let settings = Settings::get();
-            // using http is not a security concern and enabling tls makes mise significantly slower
-            let raw = HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled")?;
+            let raw = match settings.paranoid {
+                true => HTTP_FETCH.get_text("https://mise-versions.jdx.dev/python-precompiled"),
+                // using http is not a security concern and enabling tls makes mise significantly slower
+                false => HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled"),
+            }?;
             let platform = format!("{}-{}", python_arch(&settings), python_os(&settings));
             let versions = raw
                 .lines()
@@ -131,11 +138,17 @@ impl PythonPlugin {
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
             None => {
-                if Settings::get().python_compile == Some(false) {
+                if cfg!(windows) || Settings::get().python_compile == Some(false) {
+                    hint!(
+                        "python_compile",
+                        "To compile python from source, run",
+                        "mise settings set python_compile 1"
+                    );
                     bail!(
-                        "no precompiled python found for {}.\n\
-                        To compile python from source, run: mise settings set python_compile 1",
-                        ctx.tv.version
+                        "no precompiled python found for {} on {}-{}",
+                        ctx.tv.version,
+                        python_arch(&Settings::get()),
+                        python_os(&Settings::get()),
                     );
                 }
                 debug!("no precompiled python found for {}", ctx.tv.version);
@@ -145,9 +158,12 @@ impl PythonPlugin {
             }
         };
 
-        warn!("installing precompiled python from indygreg/python-build-standalone");
-        warn!("if you experience issues with this python (e.g.: running poetry), switch to python-build");
-        warn!("by running: mise settings set python_compile 1");
+        hint!(
+            "python_precompiled",
+            "installing precompiled python from indygreg/python-build-standalone\n\
+            if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
+            "mise settings set python_compile 1"
+        );
 
         let url = format!(
             "https://github.com/indygreg/python-build-standalone/releases/download/{tag}/{filename}"
@@ -164,6 +180,7 @@ impl PythonPlugin {
         file::untar(&tarball_path, &download)?;
         file::remove_all(&install)?;
         file::rename(download.join("python"), &install)?;
+        #[cfg(unix)]
         file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
         Ok(())
     }
@@ -330,6 +347,11 @@ impl Backend for PythonPlugin {
         }
     }
 
+    #[cfg(windows)]
+    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+        Ok(vec![tv.install_path()])
+    }
+
     fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".python-version".to_string()])
     }
@@ -337,7 +359,7 @@ impl Backend for PythonPlugin {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::get();
         let settings = Settings::try_get()?;
-        if settings.python_compile == Some(true) {
+        if cfg!(windows) || settings.python_compile == Some(true) {
             self.install_compiled(ctx)?;
         } else {
             self.install_precompiled(ctx)?;
@@ -380,7 +402,9 @@ fn python_os(settings: &Settings) -> String {
     if let Some(os) = &settings.python_precompiled_os {
         return os.clone();
     }
-    if cfg!(target_os = "macos") {
+    if cfg!(windows) {
+        "pc-windows-msvc-shared-install_only_stripped".into()
+    } else if cfg!(target_os = "macos") {
         "apple-darwin".into()
     } else {
         let os = &built_info::CFG_OS;
@@ -393,7 +417,9 @@ fn python_arch(settings: &Settings) -> &str {
     if let Some(arch) = &settings.python_precompiled_arch {
         return arch.as_str();
     }
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(windows) {
+        "x86_64"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         if cfg!(target_feature = "avx512f") {
             "x86_64_v4"
         } else if cfg!(target_feature = "avx2") {

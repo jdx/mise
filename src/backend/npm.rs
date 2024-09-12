@@ -7,12 +7,13 @@ use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::env;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
 pub struct NPMBackend {
-    fa: BackendArg,
+    ba: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
     latest_version_cache: CacheManager<Option<String>>,
 }
@@ -23,7 +24,7 @@ impl Backend for NPMBackend {
     }
 
     fn fa(&self) -> &BackendArg {
-        &self.fa
+        &self.ba
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
@@ -64,12 +65,13 @@ impl Backend for NPMBackend {
         CmdLineRunner::new("npm")
             .arg("install")
             .arg("-g")
-            .arg(&format!("{}@{}", self.name(), ctx.tv.version))
+            .arg(format!("{}@{}", self.name(), ctx.tv.version))
             .arg("--prefix")
             .arg(ctx.tv.install_path())
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path(&config)?)
             .prepend_path(ctx.ts.list_paths())?
+            .prepend_path(self.depedency_toolset()?.list_paths())?
             .execute()?;
 
         Ok(())
@@ -77,16 +79,17 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
-    pub fn new(name: String) -> Self {
-        let fa = BackendArg::new(BackendType::Npm, &name);
+    pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
-            ),
+                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
             latest_version_cache: CacheManager::new(
-                fa.cache_path.join("latest_version-$KEY.msgpack.z"),
-            ),
-            fa,
+                ba.cache_path.join("latest_version-$KEY.msgpack.z"),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            ba,
         }
     }
 }

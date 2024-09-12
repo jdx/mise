@@ -1,5 +1,429 @@
 # Changelog
 
+## [2024.9.2](https://github.com/jdx/mise/compare/v2024.9.1..v2024.9.2) - 2024-09-11
+
+### 🚀 Features
+
+- implement a few tera functions for mise toml config by [@erickguan](https://github.com/erickguan) in [#2561](https://github.com/jdx/mise/pull/2561)
+
+### 🐛 Bug Fixes
+
+- ruby ls-remote not showing alternative implementations by [@roele](https://github.com/roele) in [#2555](https://github.com/jdx/mise/pull/2555)
+- cannot disable hints during Zsh completion by [@roele](https://github.com/roele) in [#2559](https://github.com/jdx/mise/pull/2559)
+
+### 📚 Documentation
+
+- Create zig.md by [@MustCodeAl](https://github.com/MustCodeAl) in [#2563](https://github.com/jdx/mise/pull/2563)
+
+## [2024.9.1](https://github.com/jdx/mise/compare/v2024.9.0..v2024.9.1) - 2024-09-10
+
+### 🚀 Features
+
+- add global --env argument by [@roele](https://github.com/roele) in [#2553](https://github.com/jdx/mise/pull/2553)
+
+### 🐛 Bug Fixes
+
+- mise plugins ls command should ignore .DS_Store file on macOS by [@roele](https://github.com/roele) in [#2549](https://github.com/jdx/mise/pull/2549)
+- mise deactivate zsh does not work, but mise deactivate does by [@roele](https://github.com/roele) in [#2550](https://github.com/jdx/mise/pull/2550)
+
+### 🔍 Other Changes
+
+- ignore RUSTSEC-2024-0370 by [@jdx](https://github.com/jdx) in [2de83b1](https://github.com/jdx/mise/commit/2de83b1af9e4c408886e8d756e734fa70f62e477)
+
+## [2024.9.0](https://github.com/jdx/mise/compare/v2024.8.15..v2024.9.0) - 2024-09-05
+
+### 🚀 Features
+
+- **(pipx)** add support for specifying package extras by [@antoniomdk](https://github.com/antoniomdk) in [#2510](https://github.com/jdx/mise/pull/2510)
+- mise hints by [@roele](https://github.com/roele) in [#2479](https://github.com/jdx/mise/pull/2479)
+
+### 🐛 Bug Fixes
+
+- **(asdf)** handle plugin URLs with trailing slash by [@jdx](https://github.com/jdx) in [4541fbe](https://github.com/jdx/mise/commit/4541fbe92700d6598a03479aa77278bfbc7035c0)
+- ls-remote doesn't support @sub-X style versions by [@roele](https://github.com/roele) in [#2525](https://github.com/jdx/mise/pull/2525)
+- ensure `mise install` installs missing runtimes listed in `mise ls` by [@stanhu](https://github.com/stanhu) in [#2524](https://github.com/jdx/mise/pull/2524)
+- Ensure dependencies are available for alternative backends by [@xavdid](https://github.com/xavdid) in [#2532](https://github.com/jdx/mise/pull/2532)
+- tweak hints by [@jdx](https://github.com/jdx) in [732fc58](https://github.com/jdx/mise/commit/732fc58deda43339e5dd0e5136c5b71dab275232)
+- Update fish.rs for activation of mise by [@Shobhit0109](https://github.com/Shobhit0109) in [#2542](https://github.com/jdx/mise/pull/2542)
+- resolve issue with prefixed dependencies by [@jdx](https://github.com/jdx) in [#2541](https://github.com/jdx/mise/pull/2541)
+
+### 🧪 Testing
+
+- added e2e env vars by [@jdx](https://github.com/jdx) in [585024f](https://github.com/jdx/mise/commit/585024fc882559beeef65c5a9772f40c8e1b5235)
+
+### New Contributors
+
+* @Shobhit0109 made their first contribution in [#2542](https://github.com/jdx/mise/pull/2542)
+* @xavdid made their first contribution in [#2532](https://github.com/jdx/mise/pull/2532)
+* @stanhu made their first contribution in [#2524](https://github.com/jdx/mise/pull/2524)
+
+## [2024.8.15](https://github.com/jdx/mise/compare/v2024.8.14..v2024.8.15) - 2024-08-28
+
+### 🚀 Features
+
+- **(vfox)** added aliases like vfox:cmake -> vfox:version-fox/vfox-cmake by [@jdx](https://github.com/jdx) in [0654f6c](https://github.com/jdx/mise/commit/0654f6c3a4b15640fa64d5cee6cfec3f2f08a580)
+- use https-only in paranoid by [@jdx](https://github.com/jdx) in [ad9f959](https://github.com/jdx/mise/commit/ad9f959ee0c7659596d8c3dc4e9ca33e82fec041)
+- make use_versions_host a setting by [@jdx](https://github.com/jdx) in [d9d4d23](https://github.com/jdx/mise/commit/d9d4d23c56d1181c2ed5b7ce62475b9c469b9da4)
+
+### 🐛 Bug Fixes
+
+- **(pipx)** allow using uv provided by mise by [@jdx](https://github.com/jdx) in [b608a73](https://github.com/jdx/mise/commit/b608a736d94f3a97c4cd06226b194bef41b15d9d)
+- **(pipx)** order pipx github releases correctly by [@jdx](https://github.com/jdx) in [054ff85](https://github.com/jdx/mise/commit/054ff85609d385ac0cd07dd9014a7bd6fe376271)
+- **(vfox)** ensure plugin is installed before listing env vars by [@jdx](https://github.com/jdx) in [914d0b4](https://github.com/jdx/mise/commit/914d0b4ca78ef8144158ecde6158f7276879f4d8)
+- correct aur fish completion directory by [@jdx](https://github.com/jdx) in [ff2f652](https://github.com/jdx/mise/commit/ff2f652a1419ccc7be2fd212a3275491e7f5cd49)
+
+### 📚 Documentation
+
+- **(readme)** remove failing green color by [@duhow](https://github.com/duhow) in [#2477](https://github.com/jdx/mise/pull/2477)
+- document vfox by [@jdx](https://github.com/jdx) in [1084fc4](https://github.com/jdx/mise/commit/1084fc4896eec08921481ba24e263cda0b760875)
+- render registry with asdf and not vfox by [@jdx](https://github.com/jdx) in [cc6876e](https://github.com/jdx/mise/commit/cc6876e51534d24a485c9f07568d11954bc87f90)
+- document python_venv_auto_create by [@jdx](https://github.com/jdx) in [7fc7bd8](https://github.com/jdx/mise/commit/7fc7bd8c479e23242ce9afa071a99870cda40270)
+- removed some references to rtx by [@jdx](https://github.com/jdx) in [44a7d2e](https://github.com/jdx/mise/commit/44a7d2e4558f1756677785b2afe2917cff8dfe63)
+
+### 🧪 Testing
+
+- set RUST_BACKTRACE in e2e tests by [@jdx](https://github.com/jdx) in [e1efb7f](https://github.com/jdx/mise/commit/e1efb7fd8dca45c8a337def418f48862ef63e1c6)
+- added cargo_features test by [@jdx](https://github.com/jdx) in [3aa5f57](https://github.com/jdx/mise/commit/3aa5f5784ec63ec04f0ffeb5c1d2246687a65314)
+- reset test by [@jdx](https://github.com/jdx) in [131cb0a](https://github.com/jdx/mise/commit/131cb0ada079efb7865e6666a12e6bf99e4d8150)
+
+### 🔍 Other Changes
+
+- set DEBUG=1 for alpine to find out why it is not creating MRs by [@jdx](https://github.com/jdx) in [313a2a0](https://github.com/jdx/mise/commit/313a2a062d08128c2d04484135ce3c2a9adb41f3)
+- bump vfox.rs by [@jdx](https://github.com/jdx) in [9fbc562](https://github.com/jdx/mise/commit/9fbc56274ef134ddb8e1d400fc72765868981fb5)
+- apply code lint fixes by [@jdx](https://github.com/jdx) in [c18dbc2](https://github.com/jdx/mise/commit/c18dbc2428ae2e585ecf5860a5577f7f93e30fdd)
+
+## [2024.8.14](https://github.com/jdx/mise/compare/v2024.8.13..v2024.8.14) - 2024-08-27
+
+### 🚀 Features
+
+- **(cargo)** allow specifying features via tool options by [@jdx](https://github.com/jdx) in [#2515](https://github.com/jdx/mise/pull/2515)
+- **(zig)** make dev builds installable by [@jdx](https://github.com/jdx) in [#2514](https://github.com/jdx/mise/pull/2514)
+- add support for using `uv tool` as a replacement for pipx by [@antoniomdk](https://github.com/antoniomdk) in [#2509](https://github.com/jdx/mise/pull/2509)
+
+### 🐛 Bug Fixes
+
+- **(src/path_env.rs)** Issue 2504: Fix for JoinPathsError by [@mcallaway](https://github.com/mcallaway) in [#2511](https://github.com/jdx/mise/pull/2511)
+- block remote versions which are not simple versions by [@jdx](https://github.com/jdx) in [ba90c3b](https://github.com/jdx/mise/commit/ba90c3bbe71bd33d628df607326da9f0cf363af1)
+- npm backend not finding updates by [@roele](https://github.com/roele) in [#2512](https://github.com/jdx/mise/pull/2512)
+
+### 🔍 Other Changes
+
+- Update contributing.md by [@jdx](https://github.com/jdx) in [e9cc129](https://github.com/jdx/mise/commit/e9cc129f703ac2949900307a3b828c3a095644ca)
+- fix nightly lint warning by [@jdx](https://github.com/jdx) in [6796a46](https://github.com/jdx/mise/commit/6796a46f95227286f3337bce374e7447536e9503)
+
+### New Contributors
+
+* @mcallaway made their first contribution in [#2511](https://github.com/jdx/mise/pull/2511)
+
+## [2024.8.13](https://github.com/jdx/mise/compare/v2024.8.12..v2024.8.13) - 2024-08-26
+
+### 🐛 Bug Fixes
+
+- add suggestion for invalid use of repo_url by [@jdx](https://github.com/jdx) in [#2501](https://github.com/jdx/mise/pull/2501)
+
+### 📚 Documentation
+
+- add individual page for every CLI command by [@jdx](https://github.com/jdx) in [acea81c](https://github.com/jdx/mise/commit/acea81ca090fab76c4974a77a25c9557822d6263)
+- add individual page for every CLI command by [@jdx](https://github.com/jdx) in [e379df7](https://github.com/jdx/mise/commit/e379df732bd85d77faead4fce650e388993f5999)
+- add experimental badges to cli commands by [@jdx](https://github.com/jdx) in [4e50f33](https://github.com/jdx/mise/commit/4e50f330968b93b1af2ad4c93a78e82f9514324b)
+- lint by [@jdx](https://github.com/jdx) in [26ebdec](https://github.com/jdx/mise/commit/26ebdec2765416c26adc1001451abb6a2ce71978)
+
+### 🧪 Testing
+
+- fixed render_help test by [@jdx](https://github.com/jdx) in [d39d861](https://github.com/jdx/mise/commit/d39d86152814e1f24ec8b648e79235a2e1f2bba5)
+
+### 🔍 Other Changes
+
+- make some gh workflows only run on jdx/mise by [@CharString](https://github.com/CharString) in [#2489](https://github.com/jdx/mise/pull/2489)
+- Update index.md by [@jdx](https://github.com/jdx) in [b2c25f3](https://github.com/jdx/mise/commit/b2c25f39cd736c02174462d2e94cc0605d6c8e22)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.3.4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2499](https://github.com/jdx/mise/pull/2499)
+
+## [2024.8.12](https://github.com/jdx/mise/compare/v2024.8.11..v2024.8.12) - 2024-08-20
+
+### 🐛 Bug Fixes
+
+- vendor git2 openssl by [@jdx](https://github.com/jdx) in [#2481](https://github.com/jdx/mise/pull/2481)
+- python-compile setting by [@jdx](https://github.com/jdx) in [#2482](https://github.com/jdx/mise/pull/2482)
+
+### 🧪 Testing
+
+- reset test by [@jdx](https://github.com/jdx) in [000fdb8](https://github.com/jdx/mise/commit/000fdb8560b9994e7678924978cf1866bd58e623)
+- reset test by [@jdx](https://github.com/jdx) in [2deb6ce](https://github.com/jdx/mise/commit/2deb6cef5bca37a5bb8e769293e4a665f533209e)
+- reset test by [@jdx](https://github.com/jdx) in [385c09b](https://github.com/jdx/mise/commit/385c09b88013281af6a5adc9706a9d85e951ff61)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.3.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2478](https://github.com/jdx/mise/pull/2478)
+
+## [2024.8.11](https://github.com/jdx/mise/compare/v2024.8.10..v2024.8.11) - 2024-08-19
+
+### 🐛 Bug Fixes
+
+- bump xx by [@jdx](https://github.com/jdx) in [9a9d3c1](https://github.com/jdx/mise/commit/9a9d3c11e46028bcea0c7ec2fee10bf5c9b1fbe6)
+
+## [2024.8.10](https://github.com/jdx/mise/compare/v2024.8.9..v2024.8.10) - 2024-08-18
+
+### 🚀 Features
+
+- python on windows by [@jdx](https://github.com/jdx) in [2d4cee2](https://github.com/jdx/mise/commit/2d4cee239f8e7d53f7be176369f6e2502f3c3032)
+
+### 🐛 Bug Fixes
+
+- hide non-working core plugins on windows by [@jdx](https://github.com/jdx) in [16a08fc](https://github.com/jdx/mise/commit/16a08fc0fa00fc8f9751f7a25cc4f5f5fc87b94d)
+- windows compat by [@jdx](https://github.com/jdx) in [2084a37](https://github.com/jdx/mise/commit/2084a37436fd7f7af8958501adc7b6535f608816)
+- vfox tweaks by [@jdx](https://github.com/jdx) in [c260ab2](https://github.com/jdx/mise/commit/c260ab220a31241eaca971d6ddf4046f1f57865b)
+- remove windows warning by [@jdx](https://github.com/jdx) in [9be937e](https://github.com/jdx/mise/commit/9be937e15dece684c574bcccd6f66499361cb935)
+
+### 📚 Documentation
+
+- windows by [@jdx](https://github.com/jdx) in [437b63c](https://github.com/jdx/mise/commit/437b63cff94b5302a0527881d6b6e461e1e4d628)
+
+### 🧪 Testing
+
+- fixing tests by [@jdx](https://github.com/jdx) in [1206497](https://github.com/jdx/mise/commit/12064971a43f74cdb0f34276e07fb02aaf240096)
+- reset test by [@jdx](https://github.com/jdx) in [c740cfd](https://github.com/jdx/mise/commit/c740cfddf45703444a52388d899c1deb52b73134)
+
+### 🔍 Other Changes
+
+- clippy by [@jdx](https://github.com/jdx) in [ee005ff](https://github.com/jdx/mise/commit/ee005ffac65093aad8949cdbfaf0761df4595851)
+- fix windows build by [@jdx](https://github.com/jdx) in [28c5cb6](https://github.com/jdx/mise/commit/28c5cb64bd6506bf6db08769885d65c192fb20ce)
+- set GITHUB_TOKEN in release task by [@jdx](https://github.com/jdx) in [0ae049b](https://github.com/jdx/mise/commit/0ae049baedaf2daf3056ec7d2043a8ba27f09df1)
+
+## [2024.8.9](https://github.com/jdx/mise/compare/v2024.8.8..v2024.8.9) - 2024-08-18
+
+### 🚀 Features
+
+- use registry shortname for mise.toml/install dirs by [@jdx](https://github.com/jdx) in [#2470](https://github.com/jdx/mise/pull/2470)
+- vfox backend by [@jdx](https://github.com/jdx) in [#2187](https://github.com/jdx/mise/pull/2187)
+
+### 🐛 Bug Fixes
+
+- hide file tasks starting with "." by [@jdx](https://github.com/jdx) in [#2466](https://github.com/jdx/mise/pull/2466)
+- mise prune removes tool versions which are in use by [@roele](https://github.com/roele) in [#2469](https://github.com/jdx/mise/pull/2469)
+- cargo_binstall missing from set commands by [@roele](https://github.com/roele) in [#2471](https://github.com/jdx/mise/pull/2471)
+- only warn if config properties are not found by [@jdx](https://github.com/jdx) in [#2472](https://github.com/jdx/mise/pull/2472)
+
+### 🚜 Refactor
+
+- Asdf -> AsdfBackend by [@jdx](https://github.com/jdx) in [#2467](https://github.com/jdx/mise/pull/2467)
+- backend repetition by [@jdx](https://github.com/jdx) in [d2f7f33](https://github.com/jdx/mise/commit/d2f7f33d81906aaee80ab0e333935111c7307b36)
+
+## [2024.8.8](https://github.com/jdx/mise/compare/v2024.8.7..v2024.8.8) - 2024-08-17
+
+### 🚜 Refactor
+
+- split asdf into forge+plugin by [@jdx](https://github.com/jdx) in [#2226](https://github.com/jdx/mise/pull/2226)
+
+### 🧪 Testing
+
+- fix home directory for win tests by [@jdx](https://github.com/jdx) in [#2464](https://github.com/jdx/mise/pull/2464)
+
+### 📦️ Dependency Updates
+
+- update rust crate tabled to 0.16.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2452](https://github.com/jdx/mise/pull/2452)
+
+## [2024.8.7](https://github.com/jdx/mise/compare/v2024.8.6..v2024.8.7) - 2024-08-16
+
+### 🐛 Bug Fixes
+
+- mise treats escaped newlines in env files differently than dotenvy by [@roele](https://github.com/roele) in [#2455](https://github.com/jdx/mise/pull/2455)
+- wait for spawned tasks to die before exiting by [@jdx](https://github.com/jdx) in [#2461](https://github.com/jdx/mise/pull/2461)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.3.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2450](https://github.com/jdx/mise/pull/2450)
+
+## [2024.8.6](https://github.com/jdx/mise/compare/v2024.8.5..v2024.8.6) - 2024-08-12
+
+### 🐛 Bug Fixes
+
+- spm backend doesn't allow a GitHub repo name containing a dot by [@roele](https://github.com/roele) in [#2449](https://github.com/jdx/mise/pull/2449)
+
+### 🚜 Refactor
+
+- renamed tool_request_version to tool_request to match the class by [@jdx](https://github.com/jdx) in [76a611a](https://github.com/jdx/mise/commit/76a611ac0f3cfbc7ac58fdc87a528e86ef73507e)
+
+### 📚 Documentation
+
+- fix typos again by [@kianmeng](https://github.com/kianmeng) in [#2446](https://github.com/jdx/mise/pull/2446)
+- add executable permission after installation by [@kianmeng](https://github.com/kianmeng) in [#2447](https://github.com/jdx/mise/pull/2447)
+
+## [2024.8.5](https://github.com/jdx/mise/compare/v2024.8.4..v2024.8.5) - 2024-08-03
+
+### 🚀 Features
+
+- show friendly errors when not in verbose/debug mode by [@jdx](https://github.com/jdx) in [#2431](https://github.com/jdx/mise/pull/2431)
+- allow installing cargo packages with `--git` by [@jdx](https://github.com/jdx) in [#2430](https://github.com/jdx/mise/pull/2430)
+- some ux improvements to `mise sync nvm` by [@jdx](https://github.com/jdx) in [#2432](https://github.com/jdx/mise/pull/2432)
+
+### 🐛 Bug Fixes
+
+- display untrusted file on error by [@jdx](https://github.com/jdx) in [#2423](https://github.com/jdx/mise/pull/2423)
+- `mise trust` issue with unstable hashing by [@jdx](https://github.com/jdx) in [#2427](https://github.com/jdx/mise/pull/2427)
+- use newer eza in e2e test by [@jdx](https://github.com/jdx) in [eec3989](https://github.com/jdx/mise/commit/eec3989d8602ebc10304adbd5ded0574fc2981f0)
+- take out home directory paths from `mise dr` output by [@jdx](https://github.com/jdx) in [#2433](https://github.com/jdx/mise/pull/2433)
+
+### 🔍 Other Changes
+
+- use pub(crate) to get notified about dead code by [@jdx](https://github.com/jdx) in [#2426](https://github.com/jdx/mise/pull/2426)
+
+## [2024.8.4](https://github.com/jdx/mise/compare/v2024.8.3..v2024.8.4) - 2024-08-02
+
+### 🐛 Bug Fixes
+
+- alpine key madness by [@jdx](https://github.com/jdx) in [a7156e0](https://github.com/jdx/mise/commit/a7156e0042cf10fc3d43723ffd6a92860b4faa0a)
+- alpine github key by [@jdx](https://github.com/jdx) in [a52b68d](https://github.com/jdx/mise/commit/a52b68d024a8ce9955bd84347cc591b249717312)
+- alpine github key by [@jdx](https://github.com/jdx) in [ebc923f](https://github.com/jdx/mise/commit/ebc923ff3c140c6c282bb0c1a2896ad758b4a3c2)
+- spm - cannot install package with null release name field by [@roele](https://github.com/roele) in [#2419](https://github.com/jdx/mise/pull/2419)
+
+### 🔍 Other Changes
+
+- removed dead code by [@jdx](https://github.com/jdx) in [#2416](https://github.com/jdx/mise/pull/2416)
+
+## [2024.8.3](https://github.com/jdx/mise/compare/v2024.8.2..v2024.8.3) - 2024-08-01
+
+### 🧪 Testing
+
+- clean up global config test by [@jdx](https://github.com/jdx) in [c9f2ec5](https://github.com/jdx/mise/commit/c9f2ec514082c6b1816c52378ce5c29d24aa73cc)
+
+### 🔍 Other Changes
+
+- set extra alpine key by [@jdx](https://github.com/jdx) in [c6b152b](https://github.com/jdx/mise/commit/c6b152bd1864b49c392ad64becbff1b1722be52f)
+- test alpine releases by [@jdx](https://github.com/jdx) in [08f7730](https://github.com/jdx/mise/commit/08f77301c772eb55cee376908f9d907e42c7fe4b)
+- perform alpine at the very end by [@jdx](https://github.com/jdx) in [7c31e17](https://github.com/jdx/mise/commit/7c31e17cc6ff612298c8bdb335d86cab95c9473b)
+- chmod by [@jdx](https://github.com/jdx) in [a3fe85b](https://github.com/jdx/mise/commit/a3fe85b7b71faecb220b33d6cc3b630884b4343a)
+- added jq/gh to alpine docker by [@jdx](https://github.com/jdx) in [e1514cf](https://github.com/jdx/mise/commit/e1514cf95cc625085530c12afc6a7ceb57ff0b64)
+
+## [2024.8.2](https://github.com/jdx/mise/compare/v2024.8.1..v2024.8.2) - 2024-08-01
+
+### 🐛 Bug Fixes
+
+- windows bug fixes by [@jdx](https://github.com/jdx) in [465ea89](https://github.com/jdx/mise/commit/465ea894f317eda025783e66a68f58ab10319790)
+- made cmd! work on windows by [@jdx](https://github.com/jdx) in [c0cef5b](https://github.com/jdx/mise/commit/c0cef5b0941b476badfdbb4f46f24b117d72698d)
+- got node to install on windows by [@jdx](https://github.com/jdx) in [e5aa94e](https://github.com/jdx/mise/commit/e5aa94ecb14c7700823ff7dd58a6e633ced5e054)
+- windows shims by [@jdx](https://github.com/jdx) in [fc2cd48](https://github.com/jdx/mise/commit/fc2cd489babe834546424831a9613e1d0558aa7d)
+- windows paths by [@jdx](https://github.com/jdx) in [a06bcce](https://github.com/jdx/mise/commit/a06bcce484ce405342e68a1ac5dbb667db376f5e)
+
+### 🔍 Other Changes
+
+- fix build by [@jdx](https://github.com/jdx) in [9d85182](https://github.com/jdx/mise/commit/9d8518249c783819a82366f8541f1ea20959e771)
+- dry-run alpine releases by [@jdx](https://github.com/jdx) in [0ef2727](https://github.com/jdx/mise/commit/0ef2727905ce904e44b25cfe46c29645fd41405a)
+- update bun version in e2e test by [@jdx](https://github.com/jdx) in [f4b339f](https://github.com/jdx/mise/commit/f4b339f7974dbb261e7e8a387d082f4090e01f21)
+- fix bun test by [@jdx](https://github.com/jdx) in [00d7054](https://github.com/jdx/mise/commit/00d70543a5f3e0db891b7bfb505e65dacb66d8f0)
+
+## [2024.8.1](https://github.com/jdx/mise/compare/v2024.8.0..v2024.8.1) - 2024-08-01
+
+### 🐛 Bug Fixes
+
+- various windows bug fixes by [@jdx](https://github.com/jdx) in [90b02eb](https://github.com/jdx/mise/commit/90b02eb49055bc7d458cd3cbfb0de00119539dfb)
+- ignore PROMPT_DIRTRIM in diffing logic by [@jdx](https://github.com/jdx) in [7b5563c](https://github.com/jdx/mise/commit/7b5563cd007edf26bc17f07e6cddabacad451e00)
+
+### 📚 Documentation
+
+- added information on rolling alpine tokens by [@jdx](https://github.com/jdx) in [bd693b0](https://github.com/jdx/mise/commit/bd693b02fb4d1060ff7a07dcea07b4a7c5584a8b)
+
+### 🔍 Other Changes
+
+- mark releases as draft until they have been fully released by [@jdx](https://github.com/jdx) in [508f125](https://github.com/jdx/mise/commit/508f125dcea9c6d0457b59c36293204d25adc7ef)
+- fix windows builds by [@jdx](https://github.com/jdx) in [91c90a2](https://github.com/jdx/mise/commit/91c90a2b2d373998433c64196254f7e4d0d8cd82)
+- fix alpine release builds by [@jdx](https://github.com/jdx) in [a7534bb](https://github.com/jdx/mise/commit/a7534bbdd961e6a16852c947f1594d6a52034e58)
+- only edit releases when not a dry run by [@jdx](https://github.com/jdx) in [2255522](https://github.com/jdx/mise/commit/2255522b5045e45ce0dea3699f6555a22a271971)
+
+## [2024.8.0](https://github.com/jdx/mise/compare/v2024.7.5..v2024.8.0) - 2024-08-01
+
+### 📚 Documentation
+
+- Fix 'mise x' command snippet in the Continuous Integration section by [@mollyIV](https://github.com/mollyIV) in [#2411](https://github.com/jdx/mise/pull/2411)
+
+### 🔍 Other Changes
+
+- retry mise tests for docker-dev-test workflow by [@jdx](https://github.com/jdx) in [cc014dd](https://github.com/jdx/mise/commit/cc014dde3dedd1d891dab62fc37e4633dc995226)
+- add BSD-2-Clause to allowed dep licenses by [@jdx](https://github.com/jdx) in [b4ea53c](https://github.com/jdx/mise/commit/b4ea53c4b2b01103ed93fc185dbca858730c3207)
+- create new alpine gitlab token to replace the expired one by [@jdx](https://github.com/jdx) in [b30db04](https://github.com/jdx/mise/commit/b30db04aaa1f13ef0dcdf02e6df2f2afbdd73c94)
+
+### New Contributors
+
+* @mollyIV made their first contribution in [#2411](https://github.com/jdx/mise/pull/2411)
+
+## [2024.7.5](https://github.com/jdx/mise/compare/v2024.7.4..v2024.7.5) - 2024-07-29
+
+### 🐛 Bug Fixes
+
+- mise use does not create a local .mise.toml anymore by [@roele](https://github.com/roele) in [#2406](https://github.com/jdx/mise/pull/2406)
+- transform `master` to `ref:master` in ls-remote for zig by [@chasinglogic](https://github.com/chasinglogic) in [#2409](https://github.com/jdx/mise/pull/2409)
+
+### 📦️ Dependency Updates
+
+- bump openssl from 0.10.64 to 0.10.66 by [@dependabot[bot]](https://github.com/dependabot[bot]) in [#2397](https://github.com/jdx/mise/pull/2397)
+
+### New Contributors
+
+* @chasinglogic made their first contribution in [#2409](https://github.com/jdx/mise/pull/2409)
+
+## [2024.7.4](https://github.com/jdx/mise/compare/v2024.7.3..v2024.7.4) - 2024-07-19
+
+### 🚀 Features
+
+- added MISE_LIBGIT2 setting by [@jdx](https://github.com/jdx) in [#2386](https://github.com/jdx/mise/pull/2386)
+
+### 🐛 Bug Fixes
+
+- keep RUBYLIB env var by [@jdx](https://github.com/jdx) in [#2387](https://github.com/jdx/mise/pull/2387)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.3.1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2376](https://github.com/jdx/mise/pull/2376)
+- update docker/build-push-action action to v6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2377](https://github.com/jdx/mise/pull/2377)
+
+## [2024.7.3](https://github.com/jdx/mise/compare/v2024.7.2..v2024.7.3) - 2024-07-14
+
+### 🔍 Other Changes
+
+- Use correct capitalization of GitHub by [@jahands](https://github.com/jahands) in [#2372](https://github.com/jdx/mise/pull/2372)
+- loosen git2 requirements by [@jdx](https://github.com/jdx) in [#2374](https://github.com/jdx/mise/pull/2374)
+
+### New Contributors
+
+* @jahands made their first contribution in [#2372](https://github.com/jdx/mise/pull/2372)
+
+## [2024.7.2](https://github.com/jdx/mise/compare/v2024.7.1..v2024.7.2) - 2024-07-13
+
+### 🚀 Features
+
+- support env vars in plugin urls by [@roele](https://github.com/roele) in [#2370](https://github.com/jdx/mise/pull/2370)
+
+### 📦️ Dependency Updates
+
+- update rust crate self_update to 0.41 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2359](https://github.com/jdx/mise/pull/2359)
+- update dependency vitepress to v1.3.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2358](https://github.com/jdx/mise/pull/2358)
+
+## [2024.7.1](https://github.com/jdx/mise/compare/v2024.7.0..v2024.7.1) - 2024-07-08
+
+### 🔍 Other Changes
+
+- Fix link to Python venv activation doc section by [@gzurowski](https://github.com/gzurowski) in [#2353](https://github.com/jdx/mise/pull/2353)
+
+### 📦️ Dependency Updates
+
+- update built to 0.7.4 and git2 to 0.19.0 by [@roele](https://github.com/roele) in [#2357](https://github.com/jdx/mise/pull/2357)
+
+### New Contributors
+
+* @gzurowski made their first contribution in [#2353](https://github.com/jdx/mise/pull/2353)
+
+## [2024.7.0](https://github.com/jdx/mise/compare/v2024.6.6..v2024.7.0) - 2024-07-03
+
+### 📚 Documentation
+
+- update actions/checkout version by [@light-planck](https://github.com/light-planck) in [#2349](https://github.com/jdx/mise/pull/2349)
+
+### New Contributors
+
+* @light-planck made their first contribution in [#2349](https://github.com/jdx/mise/pull/2349)
+
 ## [2024.6.6](https://github.com/jdx/mise/compare/v2024.6.5..v2024.6.6) - 2024-06-20
 
 ### 🐛 Bug Fixes

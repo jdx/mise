@@ -6,6 +6,7 @@ use xx::file;
 
 use crate::config::Config;
 use crate::env;
+use crate::env::PATH_KEY;
 use crate::hash::hash_to_str;
 use crate::toolset::ToolsetBuilder;
 
@@ -35,7 +36,7 @@ impl Envrc {
             writeln!(file, "watch_file {}", cf.to_string_lossy())?;
         }
         for (k, v) in ts.env(config)? {
-            if k == "PATH" {
+            if k == *PATH_KEY {
                 writeln!(file, "PATH_add {}", v)?;
             } else {
                 writeln!(

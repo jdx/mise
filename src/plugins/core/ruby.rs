@@ -10,6 +10,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
+use crate::env::PATH_KEY;
 use crate::git::Git;
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -28,7 +29,7 @@ pub struct RubyPlugin {
 impl RubyPlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new("ruby".into()),
+            core: CorePlugin::new(BackendArg::new("ruby", "ruby")),
         }
     }
 
@@ -163,11 +164,7 @@ impl RubyPlugin {
         let ruby_build_bin = self.ruby_build_bin();
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {
             let output = cmd!(ruby_build_bin, "--definitions").read()?;
-            let versions = output
-                .split('\n')
-                .filter(|s| regex!(r"^[0-9].+$").is_match(s))
-                .map(|s| s.to_string())
-                .collect();
+            let versions = output.split('\n').map(|s| s.to_string()).collect();
             Ok(versions)
         })?;
         Ok(versions)
@@ -204,7 +201,7 @@ impl RubyPlugin {
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
                 None => cmd = cmd.arg(package),
             };
-            cmd.env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            cmd.env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
         Ok(())
@@ -225,7 +222,7 @@ impl RubyPlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env()?)
-            .env("PATH", CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
             .execute()
     }
 

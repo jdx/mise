@@ -7,6 +7,10 @@ do anything though.
 
 Change directory before running command
 
+## `-P, --profile <PROFILE>`
+
+Set the profile (environment)
+
 ## `-q, --quiet`
 
 Suppress non-error messages

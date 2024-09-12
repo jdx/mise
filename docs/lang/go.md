@@ -73,7 +73,7 @@ method to install Go CLIs.
 * Default: `false`
 
 Sets `GOPATH` to `~/.local/share/mise/go/installs/[VERSION]/packages`. This retains behavior from
-asdf and older mise/rtx versions. There is no known reason for this to be enabled but it is available
+asdf and older mise versions. There is no known reason for this to be enabled but it is available
 (for now) just in case anyone relies on it.
 
 ### `go_skip_checksum`

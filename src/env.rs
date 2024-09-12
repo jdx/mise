@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 pub use std::env::*;
+use std::path;
 use std::path::PathBuf;
+use std::string::ToString;
 use std::sync::RwLock;
 use std::time::Duration;
 
@@ -9,6 +11,7 @@ use log::LevelFilter;
 use once_cell::sync::Lazy;
 use url::Url;
 
+use crate::cli::args::ProfileArg;
 use crate::duration::HOURLY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
@@ -18,8 +21,13 @@ pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 
 // paths and directories
+#[cfg(test)]
+pub static HOME: Lazy<PathBuf> =
+    Lazy::new(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
+#[cfg(not(test))]
 pub static HOME: Lazy<PathBuf> =
     Lazy::new(|| home::home_dir().unwrap_or_else(|| PathBuf::from("/")));
+
 pub static EDITOR: Lazy<String> =
     Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
 
@@ -32,9 +40,9 @@ pub static XDG_CACHE_HOME: Lazy<PathBuf> =
 pub static XDG_CONFIG_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CONFIG_HOME").unwrap_or_else(|| HOME.join(".config")));
 pub static XDG_DATA_HOME: Lazy<PathBuf> =
-    Lazy::new(|| var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local/share")));
+    Lazy::new(|| var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local").join("share")));
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
-    Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local/state")));
+    Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
 pub static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
@@ -64,8 +72,7 @@ pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
 });
 pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> =
     Lazy::new(|| var("MISE_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".mise.toml".into()));
-pub static MISE_ENV: Lazy<Option<String>> =
-    Lazy::new(|| var("MISE_ENV").or_else(|_| var("MISE_ENVIRONMENT")).ok());
+pub static MISE_ENV: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 pub static MISE_SETTINGS_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SETTINGS_FILE").unwrap_or_else(|| MISE_CONFIG_DIR.join("settings.toml"))
 });
@@ -133,11 +140,18 @@ pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unw
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<HashMap<String, String>> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
-pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get("PATH") {
+pub static PATH_KEY: Lazy<String> = Lazy::new(|| {
+    vars()
+        .map(|(k, _)| k)
+        .find_or_first(|k| k.to_uppercase() == "PATH")
+        .map(|k| k.to_string())
+        .unwrap_or("PATH".into())
+});
+pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get(&*PATH_KEY) {
     Some(path) => split_paths(path).collect(),
     None => vec![],
 });
-pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var("PATH") {
+pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var(&*PATH_KEY) {
     Ok(ref path) => split_paths(path).collect(),
     Err(_) => vec![],
 });
@@ -149,9 +163,6 @@ pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
         .or_else(|_| var("GITHUB_API_TOKEN"))
         .ok()
 });
-
-pub static MISE_USE_VERSIONS_HOST: Lazy<bool> =
-    Lazy::new(|| !var_is_false("MISE_USE_VERSIONS_HOST"));
 
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
@@ -305,7 +316,7 @@ fn get_pristine_env(
     let mut env = apply_patches(&orig_env, &patches);
 
     // get the current path as a vector
-    let path = match env.get("PATH") {
+    let path = match env.get(&*PATH_KEY) {
         Some(path) => split_paths(path).collect(),
         None => vec![],
     };
@@ -320,7 +331,7 @@ fn get_pristine_env(
 
     // put the pristine PATH back into the environment
     env.insert(
-        "PATH".into(),
+        PATH_KEY.to_string(),
         join_paths(path).unwrap().to_string_lossy().to_string(),
     );
     env
@@ -359,6 +370,30 @@ fn prefer_stale(args: &[String]) -> bool {
     .contains(&c.as_str());
 }
 
+fn environment(args: &[String]) -> Option<String> {
+    args.windows(2)
+        .find_map(|window| {
+            if window[0] == ProfileArg::arg().get_long().unwrap_or_default()
+                || window[0]
+                    == ProfileArg::arg()
+                        .get_short()
+                        .unwrap_or_default()
+                        .to_string()
+            {
+                Some(window[1].clone())
+            } else {
+                None
+            }
+        })
+        .or_else(|| match var("MISE_ENV") {
+            Ok(env) => Some(env),
+            _ => match var("MISE_ENVIRONMENT") {
+                Ok(env) => Some(env),
+                _ => None,
+            },
+        })
+}
+
 fn log_file_level() -> Option<LevelFilter> {
     let log_level = var("MISE_LOG_FILE_LEVEL").unwrap_or_default();
     log_level.parse::<LevelFilter>().ok()
@@ -372,7 +407,9 @@ fn linux_distro() -> Option<String> {
 }
 
 fn filename(path: &str) -> &str {
-    path.rsplit_once('/').map(|(_, file)| file).unwrap_or(path)
+    path.rsplit_once(path::MAIN_SEPARATOR_STR)
+        .map(|(_, file)| file)
+        .unwrap_or(path)
 }
 
 fn is_ninja_on_path() -> bool {

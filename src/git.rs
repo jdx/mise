@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use duct::Expression;
 use eyre::{eyre, Result, WrapErr};
@@ -7,6 +7,7 @@ use once_cell::sync::OnceCell;
 use xx::file;
 
 use crate::cmd;
+use crate::config::Settings;
 use crate::file::touch_dir;
 
 pub struct Git {
@@ -35,16 +36,20 @@ macro_rules! git_cmd_read {
 }
 
 impl Git {
-    pub fn new(dir: PathBuf) -> Self {
+    pub fn new<P: AsRef<Path>>(dir: P) -> Self {
         Self {
-            dir,
+            dir: dir.as_ref().to_path_buf(),
             repo: OnceCell::new(),
         }
     }
 
     pub fn repo(&self) -> Result<&git2::Repository> {
         self.repo.get_or_try_init(|| {
-            trace!("opening git repository at {:?}", self.dir);
+            if !Settings::get().libgit2 {
+                trace!("libgit2 is disabled");
+                return Err(eyre!("libgit2 is disabled"));
+            }
+            trace!("opening git repository via libgit2 at {:?}", self.dir);
             git2::Repository::open(&self.dir)
                 .wrap_err_with(|| format!("failed to open git repository at {:?}", self.dir))
                 .inspect_err(|err| warn!("{err:#}"))

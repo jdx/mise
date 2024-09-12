@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use eyre::eyre;
+use legacy_version::LegacyVersionFile;
 use once_cell::sync::Lazy;
 use serde_derive::Deserialize;
 use versions::Versioning;
@@ -33,7 +34,7 @@ pub mod tool_versions;
 pub enum ConfigFileType {
     MiseToml,
     ToolVersions,
-    // LegacyVersion,
+    LegacyVersion,
 }
 
 pub trait ConfigFile: Debug + Send + Sync {
@@ -60,8 +61,8 @@ pub trait ConfigFile: Debug + Send + Sync {
             None => None,
         }
     }
-    fn plugins(&self) -> HashMap<String, String> {
-        Default::default()
+    fn plugins(&self) -> eyre::Result<HashMap<String, String>> {
+        Ok(Default::default())
     }
     fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
         Ok(Default::default())
@@ -77,8 +78,8 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.to_tool_request_set()?.into())
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
-    fn aliases(&self) -> AliasMap {
-        Default::default()
+    fn aliases(&self) -> eyre::Result<AliasMap> {
+        Ok(Default::default())
     }
     fn task_config(&self) -> &TaskConfig {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
@@ -167,6 +168,9 @@ fn init(path: &Path) -> Box<dyn ConfigFile> {
     match detect_config_file_type(path) {
         Some(ConfigFileType::MiseToml) => Box::new(MiseToml::init(path)),
         Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path)),
+        Some(ConfigFileType::LegacyVersion) => {
+            Box::new(LegacyVersionFile::init(path.to_path_buf()))
+        }
         _ => panic!("Unknown config file type: {}", path.display()),
     }
 }
@@ -188,6 +192,7 @@ pub fn parse(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
     match detect_config_file_type(path) {
         Some(ConfigFileType::MiseToml) => Ok(Box::new(MiseToml::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
+        Some(ConfigFileType::LegacyVersion) => Ok(Box::new(LegacyVersionFile::from_file(path)?)),
         #[allow(clippy::box_default)]
         _ => Ok(Box::new(MiseToml::default())),
     }
@@ -211,7 +216,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
             return Ok(());
         }
     }
-    Err(UntrustedConfig())?
+    Err(UntrustedConfig(path.into()))?
 }
 
 static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
@@ -220,7 +225,10 @@ pub fn is_trusted(path: &Path) -> bool {
     let mut cached = IS_TRUSTED.lock().unwrap();
     let canonicalized_path = match path.canonicalize() {
         Ok(p) => p,
-        Err(_) => return false,
+        Err(err) => {
+            debug!("trust canonicalize: {err}");
+            return false;
+        }
     };
     if cached.contains(canonicalized_path.as_path()) {
         return true;
@@ -240,7 +248,10 @@ pub fn is_trusted(path: &Path) -> bool {
         if !trusted {
             return false;
         }
-    } else if !(trust_path(path).exists() || ci_info::is_ci() && !cfg!(test)) {
+    } else if cfg!(test) || ci_info::is_ci() {
+        // in tests/CI we trust everything
+        return true;
+    } else if !trust_path(path).exists() {
         // the file isn't trusted, and we're not on a CI system where we generally assume we can
         // trust config files
         return false;
@@ -253,7 +264,7 @@ pub fn trust(path: &Path) -> eyre::Result<()> {
     let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
-        file::make_symlink(path.canonicalize()?.as_path(), &hashed_path)?;
+        file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
     }
     let trust_hash_path = hashed_path.with_extension("hash");
     let hash = file_hash_sha256(path)?;
@@ -317,6 +328,12 @@ fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         f if env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
         }
+        f if backend::list()
+            .iter()
+            .any(|b| b.legacy_filenames().unwrap().contains(&f.to_string())) =>
+        {
+            Some(ConfigFileType::LegacyVersion)
+        }
         _ => None,
     }
 }
@@ -361,6 +378,15 @@ mod tests {
 
     #[test]
     fn test_detect_config_file_type() {
+        reset();
+        assert_eq!(
+            detect_config_file_type(Path::new("/foo/bar/.nvmrc")),
+            Some(ConfigFileType::LegacyVersion)
+        );
+        assert_eq!(
+            detect_config_file_type(Path::new("/foo/bar/.ruby-version")),
+            Some(ConfigFileType::LegacyVersion)
+        );
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")),
             Some(ConfigFileType::ToolVersions)

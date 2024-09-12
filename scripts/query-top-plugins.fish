@@ -5,7 +5,7 @@
 
 if test -n (type -t gh)
 else
-    echo "Github CLI Missing! Aborting!"
+    echo "GitHub CLI Missing! Aborting!"
     exit 1
 end
 

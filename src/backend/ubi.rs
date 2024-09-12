@@ -5,14 +5,14 @@ use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::env::GITHUB_TOKEN;
+use crate::env::{self, GITHUB_TOKEN};
 use crate::github;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
 pub struct UbiBackend {
-    fa: BackendArg,
+    ba: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
@@ -24,7 +24,7 @@ impl Backend for UbiBackend {
     }
 
     fn fa(&self) -> &BackendArg {
-        &self.fa
+        &self.ba
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
@@ -63,7 +63,8 @@ impl Backend for UbiBackend {
             .arg(self.name())
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path(&config)?)
-            .prepend_path(ctx.ts.list_paths())?;
+            .prepend_path(ctx.ts.list_paths())?
+            .prepend_path(self.depedency_toolset()?.list_paths())?;
 
         if let Some(token) = &*GITHUB_TOKEN {
             cmd = cmd.env("GITHUB_TOKEN", token);
@@ -78,13 +79,13 @@ impl Backend for UbiBackend {
 }
 
 impl UbiBackend {
-    pub fn new(name: String) -> Self {
-        let fa = BackendArg::new(BackendType::Ubi, &name);
+    pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
-            ),
-            fa,
+                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            ba,
         }
     }
 }

@@ -77,4 +77,6 @@ if [[ "$DRY_RUN" != 1 ]]; then
   #  NPM_PREFIX=mise-cli ./scripts/release-npm.sh
   echo "::group::Publish r2"
   ./scripts/publish-r2.sh
+  echo "::group::Publish GitHub releases"
+  gh release edit --draft=false "$MISE_VERSION"
 fi

@@ -17,15 +17,15 @@ use signal_hook::iterator::Signals;
 
 use crate::config::Settings;
 use crate::env;
+use crate::env::PATH_KEY;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
 
-/// Create a command with any number of of positional arguments, which may be
-/// different types (anything that implements
-/// [`Into<OsString>`](https://doc.rust-lang.org/std/convert/trait.From.html)).
-/// See also the [`cmd`](fn.cmd.html) function, which takes a collection of
-/// arguments.
+/// Create a command with any number of of positional arguments
+///
+/// may be different types (anything that implements [`Into<OsString>`](https://doc.rust-lang.org/std/convert/trait.From.html)).
+/// See also the [`cmd`](fn.cmd.html) function, which takes a collection of arguments.
 ///
 /// # Example
 ///
@@ -90,7 +90,18 @@ where
     let display_command = [display_name.into(), display_args].join(" ");
     debug!("$ {display_command}");
 
-    duct::cmd(program, args)
+    if cfg!(windows) {
+        let program = program.to_string_lossy().to_string();
+        let mut args = args
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        args.insert(0, program);
+        args.insert(0, "/c".to_string());
+        duct::cmd("cmd.exe", args)
+    } else {
+        duct::cmd(program, args)
+    }
 }
 
 pub struct CmdLineRunner<'a> {
@@ -171,14 +182,14 @@ impl<'a> CmdLineRunner<'a> {
 
     pub fn prepend_path(mut self, paths: Vec<PathBuf>) -> eyre::Result<Self> {
         let existing = self
-            .get_env("PATH")
+            .get_env(&PATH_KEY)
             .map(|c| c.to_owned())
-            .unwrap_or_else(|| env::var_os("PATH").unwrap());
+            .unwrap_or_else(|| env::var_os(&*PATH_KEY).unwrap());
         let paths = paths
             .into_iter()
             .chain(env::split_paths(&existing))
             .collect::<Vec<_>>();
-        self.cmd.env("PATH", env::join_paths(paths)?);
+        self.cmd.env(&*PATH_KEY, env::join_paths(paths)?);
         Ok(self)
     }
 
@@ -311,7 +322,10 @@ impl<'a> CmdLineRunner<'a> {
                 #[cfg(not(any(test, target_os = "windows")))]
                 ChildProcessOutput::Signal(sig) => {
                     if sig != SIGINT {
-                        cmd!("kill", format!("-{sig}"), id.to_string()).run()?;
+                        debug!("Received signal {}, {id}", sig);
+                        let pid = nix::unistd::Pid::from_raw(id as i32);
+                        let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
+                        nix::sys::signal::kill(pid, sig)?;
                     }
                 }
             }

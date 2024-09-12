@@ -23,7 +23,7 @@ use crate::{backend, dirs, env, fake_asdf, file, logger};
 pub fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
-    if regex!(r"^(mise|rtx)(\-.*)?$").is_match(bin_name) || cfg!(test) {
+    if regex!(r"^(mise|rtx)(\-.*)?(\.exe)?$").is_match(bin_name) || cfg!(test) {
         return Ok(());
     }
     logger::init();
@@ -100,13 +100,7 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 
     for shim in shims_to_add {
         let symlink_path = dirs::SHIMS.join(shim);
-        file::make_symlink(&mise_bin, &symlink_path).wrap_err_with(|| {
-            eyre!(
-                "Failed to create symlink from {} to {}",
-                display_path(&mise_bin),
-                display_path(&symlink_path)
-            )
-        })?;
+        add_shim(&mise_bin, &symlink_path)?;
     }
     for shim in shims_to_remove {
         let symlink_path = dirs::SHIMS.join(shim);
@@ -128,6 +122,37 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+#[cfg(windows)]
+fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
+    file::write(
+        symlink_path.with_extension("cmd"),
+        formatdoc! {r#"
+        @echo off
+        setlocal
+        mise x -- %*
+        "#},
+    )
+    .wrap_err_with(|| {
+        eyre!(
+            "Failed to create symlink from {} to {}",
+            display_path(mise_bin),
+            display_path(symlink_path)
+        )
+    })
+}
+
+#[cfg(unix)]
+fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
+    file::make_symlink(mise_bin, symlink_path).wrap_err_with(|| {
+        eyre!(
+            "Failed to create symlink from {} to {}",
+            display_path(mise_bin),
+            display_path(symlink_path)
+        )
+    })?;
     Ok(())
 }
 

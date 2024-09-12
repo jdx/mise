@@ -52,9 +52,9 @@ impl Install {
             Some(runtime) => self.install_runtimes(&config, runtime)?,
             None => self.install_missing_runtimes(&config)?,
         };
-
         Ok(())
     }
+
     fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
         let tools: HashSet<BackendArg> = runtimes.iter().map(|ta| ta.backend.clone()).collect();

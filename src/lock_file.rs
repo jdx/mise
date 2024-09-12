@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 
 use crate::dirs;
-use crate::file::create_dir_all;
+use crate::file::{create_dir_all, display_path};
 use crate::hash::hash_to_str;
 
 pub type OnLockedFn = Box<dyn Fn(&Path)>;
@@ -43,4 +43,18 @@ impl LockFile {
         }
         Ok(lock)
     }
+}
+
+pub(crate) fn get(path: &Path, force: bool) -> eyre::Result<Option<fslock::LockFile>> {
+    let lock = if force {
+        None
+    } else {
+        let lock = LockFile::new(path)
+            .with_callback(|l| {
+                debug!("waiting for lock on {}", display_path(l));
+            })
+            .lock()?;
+        Some(lock)
+    };
+    Ok(lock)
 }

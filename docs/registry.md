@@ -4,6 +4,7 @@ editLink: false
 | Short | Full |
 | ----------- | --------------- |
 | 1password-cli | [asdf:NeoHsu/asdf-1password-cli](https://github.com/NeoHsu/asdf-1password-cli) |
+| aapt2 | [asdf:ronnnnn/asdf-aapt2](https://github.com/ronnnnn/asdf-aapt2) |
 | act | [asdf:gr1m0h/asdf-act](https://github.com/gr1m0h/asdf-act) |
 | action-validator | [asdf:mpalmer/action-validator](https://github.com/mpalmer/action-validator) |
 | actionlint | [asdf:crazy-matt/asdf-actionlint](https://github.com/crazy-matt/asdf-actionlint) |
@@ -26,6 +27,7 @@ editLink: false
 | apollo-ios-cli | [asdf:MacPaw/asdf-apollo-ios-cli](https://github.com/MacPaw/asdf-apollo-ios-cli) |
 | apollo-router | [asdf:safx/asdf-apollo-router](https://github.com/safx/asdf-apollo-router) |
 | arc | [asdf:ORCID/asdf-arc](https://github.com/ORCID/asdf-arc) |
+| arduino-cli | [asdf:egnor/asdf-arduino-cli](https://github.com/egnor/asdf-arduino-cli) |
 | argo | [asdf:sudermanjr/asdf-argo](https://github.com/sudermanjr/asdf-argo) |
 | argo-rollouts | [asdf:abatilo/asdf-argo-rollouts](https://github.com/abatilo/asdf-argo-rollouts) |
 | argocd | [asdf:beardix/asdf-argocd](https://github.com/beardix/asdf-argocd) |
@@ -33,7 +35,7 @@ editLink: false
 | asciidoctorj | [asdf:gliwka/asdf-asciidoctorj](https://github.com/gliwka/asdf-asciidoctorj) |
 | asdf-plugin-manager | [asdf:asdf-community/asdf-plugin-manager](https://github.com/asdf-community/asdf-plugin-manager) |
 | assh | [asdf:zekker6/asdf-assh](https://github.com/zekker6/asdf-assh) |
-| atlas | [asdf:pbr0ck3r/asdf-atlas](https://github.com/pbr0ck3r/asdf-atlas) |
+| atlas | [asdf:komi1230/asdf-atlas](https://github.com/komi1230/asdf-atlas) |
 | auto-doc | [asdf:looztra/asdf-auto-doc](https://github.com/looztra/asdf-auto-doc) |
 | aws-amplify-cli | [asdf:LozanoMatheus/asdf-aws-amplify-cli](https://github.com/LozanoMatheus/asdf-aws-amplify-cli) |
 | aws-copilot | [asdf:NeoHsu/asdf-copilot](https://github.com/NeoHsu/asdf-copilot) |
@@ -207,6 +209,7 @@ editLink: false
 | envsubst | [asdf:dex4er/asdf-envsubst](https://github.com/dex4er/asdf-envsubst) |
 | ephemeral-postgres | [asdf:smashedtoatoms/asdf-ephemeral-postgres](https://github.com/smashedtoatoms/asdf-ephemeral-postgres) |
 | erlang | [asdf:asdf-vm/asdf-erlang](https://github.com/asdf-vm/asdf-erlang) |
+| esc | [asdf:fxsalazar/asdf-esc](https://github.com/fxsalazar/asdf-esc) |
 | esy | [asdf:asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy) |
 | etcd | [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) |
 | evans | [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
@@ -222,6 +225,7 @@ editLink: false
 | flarectl | [asdf:mise-plugins/asdf-flarectl](https://github.com/mise-plugins/asdf-flarectl) |
 | flatc | [asdf:TheOpenDictionary/asdf-flatc](https://github.com/TheOpenDictionary/asdf-flatc) |
 | flutter | [asdf:oae/asdf-flutter](https://github.com/oae/asdf-flutter) |
+| fluttergen | [asdf:FlutterGen/asdf-fluttergen](https://github.com/FlutterGen/asdf-fluttergen) |
 | flux2 | [asdf:tablexi/asdf-flux2](https://github.com/tablexi/asdf-flux2) |
 | fluxctl | [asdf:stefansedich/asdf-fluxctl](https://github.com/stefansedich/asdf-fluxctl) |
 | fly | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
@@ -243,7 +247,6 @@ editLink: false
 | ghorg | [asdf:gbloquel/asdf-ghorg](https://github.com/gbloquel/asdf-ghorg) |
 | ghq | [asdf:kajisha/asdf-ghq](https://github.com/kajisha/asdf-ghq) |
 | ginkgo | [asdf:jimmidyson/asdf-ginkgo](https://github.com/jimmidyson/asdf-ginkgo) |
-| git | [asdf:https://gitlab.com/jcaigitlab/asdf-git.git](https://gitlab.com/jcaigitlab/asdf-git) |
 | git-chglog | [asdf:GoodwayGroup/asdf-git-chglog](https://github.com/GoodwayGroup/asdf-git-chglog) |
 | git-cliff | [asdf:jylenhof/asdf-git-cliff](https://github.com/jylenhof/asdf-git-cliff) |
 | gitconfig | [asdf:0ghny/asdf-gitconfig](https://github.com/0ghny/asdf-gitconfig) |
@@ -256,7 +259,7 @@ editLink: false
 | gleam | [asdf:asdf-community/asdf-gleam](https://github.com/asdf-community/asdf-gleam) |
 | glen | [asdf:bradym/asdf-glen](https://github.com/bradym/asdf-glen) |
 | glooctl | [asdf:halilkaya/asdf-glooctl](https://github.com/halilkaya/asdf-glooctl) |
-| glow | [asdf:chessmango/asdf-glow](https://github.com/chessmango/asdf-glow) |
+| glow | [asdf:mise-plugins/asdf-glow](https://github.com/mise-plugins/asdf-glow) |
 | go-containerregistry | [asdf:dex4er/asdf-go-containerregistry](https://github.com/dex4er/asdf-go-containerregistry) |
 | go-getter | [asdf:ryodocx/asdf-go-getter](https://github.com/ryodocx/asdf-go-getter) |
 | go-jira | [asdf:dguihal/asdf-go-jira](https://github.com/dguihal/asdf-go-jira) |
@@ -422,6 +425,7 @@ editLink: false
 | levant | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | lfe | [asdf:asdf-community/asdf-lfe](https://github.com/asdf-community/asdf-lfe) |
 | libsql-server | [asdf:jonasb/asdf-libsql-server](https://github.com/jonasb/asdf-libsql-server) |
+| license-plist | [asdf:MacPaw/asdf-license-plist](https://github.com/MacPaw/asdf-license-plist) |
 | lima | [asdf:CrouchingMuppet/asdf-lima](https://github.com/CrouchingMuppet/asdf-lima) |
 | link | [asdf:asdf-community/asdf-link](https://github.com/asdf-community/asdf-link) |
 | linkerd | [asdf:kforsthoevel/asdf-linkerd](https://github.com/kforsthoevel/asdf-linkerd) |
@@ -653,6 +657,7 @@ editLink: false
 | svu | [asdf:asdf-community/asdf-svu](https://github.com/asdf-community/asdf-svu) |
 | swag | [asdf:behoof4mind/asdf-swag](https://github.com/behoof4mind/asdf-swag) |
 | swift | [asdf:fcrespo82/asdf-swift](https://github.com/fcrespo82/asdf-swift) |
+| swift-package-list | [asdf:MacPaw/asdf-swift-package-list](https://github.com/MacPaw/asdf-swift-package-list) |
 | swiftformat | [asdf:younke/asdf-swiftformat](https://github.com/younke/asdf-swiftformat) |
 | swiftgen | [asdf:younke/asdf-swiftgen](https://github.com/younke/asdf-swiftgen) |
 | swiftlint | [asdf:klundberg/asdf-swiftlint](https://github.com/klundberg/asdf-swiftlint) |
@@ -739,6 +744,7 @@ editLink: false
 | vhs | [asdf:chessmango/asdf-vhs](https://github.com/chessmango/asdf-vhs) |
 | viddy | [asdf:ryodocx/asdf-viddy](https://github.com/ryodocx/asdf-viddy) |
 | vim | [asdf:tsuyoshicho/asdf-vim](https://github.com/tsuyoshicho/asdf-vim) |
+| virtualos | [asdf:tuist/asdf-virtualos](https://github.com/tuist/asdf-virtualos) |
 | vlt | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | vultr-cli | [asdf:ikuradon/asdf-vultr-cli](https://github.com/ikuradon/asdf-vultr-cli) |
 | wasi-sdk | [asdf:coolreader18/asdf-wasi-sdk](https://github.com/coolreader18/asdf-wasi-sdk) |

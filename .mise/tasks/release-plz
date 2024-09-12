@@ -13,7 +13,7 @@ if ! echo "$released_versions" | grep -q "^$cur_version$"; then
   changelog="$(echo "$changelog" | tail -n +3)"
   git tag "v$cur_version" -s -m "$changelog"
   git push --tags
-  gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog"
+  gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
   exit 0
 fi
 

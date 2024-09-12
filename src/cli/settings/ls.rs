@@ -63,10 +63,12 @@ mod tests {
         all_compile = false
         always_keep_download = true
         always_keep_install = true
+        asdf = true
         asdf_compat = false
         cargo_binstall = true
         color = true
         disable_default_shorthands = false
+        disable_hints = []
         disable_tools = []
         experimental = true
         go_default_packages_file = "~/.default-go-packages"
@@ -79,16 +81,20 @@ mod tests {
         jobs = 2
         legacy_version_file = true
         legacy_version_file_disable_tools = []
+        libgit2 = true
         node_compile = false
         not_found_auto_install = true
         paranoid = false
+        pipx_uvx = false
         plugin_autoupdate_last_check_duration = "20m"
         python_default_packages_file = "~/.default-python-packages"
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
         quiet = false
         raw = false
         trusted_config_paths = []
+        use_versions_host = true
         verbose = true
+        vfox = false
         yes = true
 
         [status]
@@ -106,10 +112,12 @@ mod tests {
         all_compile
         always_keep_download
         always_keep_install
+        asdf
         asdf_compat
         cargo_binstall
         color
         disable_default_shorthands
+        disable_hints
         disable_tools
         experimental
         go_default_packages_file
@@ -122,9 +130,11 @@ mod tests {
         jobs
         legacy_version_file
         legacy_version_file_disable_tools
+        libgit2
         node_compile
         not_found_auto_install
         paranoid
+        pipx_uvx
         plugin_autoupdate_last_check_duration
         python_default_packages_file
         python_pyenv_repo
@@ -135,7 +145,9 @@ mod tests {
         status.show_env
         status.show_tools
         trusted_config_paths
+        use_versions_host
         verbose
+        vfox
         yes
         "###);
     }

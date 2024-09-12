@@ -12,7 +12,7 @@ use crate::plugins;
 #[clap(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, verbatim_doc_comment)]
 pub struct PluginsLsRemote {
     /// Show the git url for each plugin
-    /// e.g.: https://github.com/mise-plugins/rtx-nodejs.git
+    /// e.g.: https://github.com/mise-plugins/mise-poetry.git
     #[clap(short, long)]
     pub urls: bool,
 
@@ -26,7 +26,7 @@ impl PluginsLsRemote {
     pub fn run(self, config: &Config) -> Result<()> {
         let installed_plugins = plugins::list()
             .into_iter()
-            .filter(|p| p.is_installed())
+            .filter(|b| b.plugin().is_some_and(|p| p.is_installed()))
             .map(|p| p.id().to_string())
             .collect::<HashSet<_>>();
 

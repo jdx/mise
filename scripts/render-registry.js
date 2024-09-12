@@ -3,6 +3,9 @@
 const { execSync } = require("node:child_process");
 const fs = require("node:fs");
 
+process.env.MISE_ASDF = 1;
+process.env.MISE_VFOX = 0;
+
 const stdout = execSync("mise registry", { encoding: "utf-8" });
 // Regular expression to match plugin name and repository URL
 // e.g.: zprint asdf:carlduevel/asdf-zprint

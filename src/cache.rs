@@ -158,12 +158,13 @@ static KEY: Lazy<String> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
-
     use super::*;
+    use crate::test::reset;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_cache() {
+        reset();
         // does not fail with invalid path
         let cache = CacheManager::new("/invalid:path/to/cache");
         cache.clear().unwrap();

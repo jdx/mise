@@ -15,11 +15,11 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::install_context::InstallContext;
-use crate::{file, github};
+use crate::{env, file, github};
 
 #[derive(Debug)]
 pub struct SPMBackend {
-    fa: BackendArg,
+    ba: BackendArg,
     remote_version_cache: CacheManager<Vec<String>>,
 }
 
@@ -30,7 +30,7 @@ impl Backend for SPMBackend {
     }
 
     fn fa(&self) -> &BackendArg {
-        &self.fa
+        &self.ba
     }
 
     fn get_dependencies(
@@ -85,13 +85,13 @@ impl Backend for SPMBackend {
 }
 
 impl SPMBackend {
-    pub fn new(name: String) -> Self {
-        let fa = BackendArg::new(BackendType::Spm, &name);
+    pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
-            ),
-            fa,
+                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            )
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            ba,
         }
     }
 
@@ -213,10 +213,11 @@ struct SwiftPackageRepo {
 }
 
 impl SwiftPackageRepo {
+    /// Parse the slug or the full URL of a GitHub package repository.
     fn new(name: &str) -> Result<Self, eyre::Error> {
-        let shorthand_regex = regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$");
+        let shorthand_regex = regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+$");
         let shorthand_in_url_regex =
-            regex!(r"https://github.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+)\.git");
+            regex!(r"https://github.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+)\.git");
 
         let shorthand = if let Some(Some(m)) =
             shorthand_in_url_regex.captures(name).map(|c| c.get(1))
@@ -243,13 +244,14 @@ impl SwiftPackageRepo {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::config::config_file::reset;
     use pretty_assertions::assert_str_eq;
     use test_log::test;
 
-    use super::*;
-
     #[test]
     fn test_spm_repo_init_by_shorthand() {
+        reset();
         let package_name = "nicklockwood/SwiftFormat";
         let package_repo = SwiftPackageRepo::new(package_name).unwrap();
         assert_str_eq!(
@@ -260,7 +262,29 @@ mod tests {
     }
 
     #[test]
+    fn test_spm_repo_init_name() {
+        reset();
+        assert!(
+            SwiftPackageRepo::new("owner/name.swift").is_ok(),
+            "name part can contain ."
+        );
+        assert!(
+            SwiftPackageRepo::new("owner/name_swift").is_ok(),
+            "name part can contain _"
+        );
+        assert!(
+            SwiftPackageRepo::new("owner/name-swift").is_ok(),
+            "name part can contain -"
+        );
+        assert!(
+            SwiftPackageRepo::new("owner/name$swift").is_err(),
+            "name part cannot contain characters other than a-zA-Z0-9._-"
+        );
+    }
+
+    #[test]
     fn test_spm_repo_init_by_url() {
+        reset();
         let package_name = "https://github.com/nicklockwood/SwiftFormat.git";
         let package_repo = SwiftPackageRepo::new(package_name).unwrap();
         assert_str_eq!(

@@ -27,4 +27,4 @@ asdf plugin add <name> <git_url>
 
 ---
 
-For the asdf core Security Policy, see https://github.com/asdf-vm/asdf/blob/master/SECURITY.md
+For the asdf core Security Policy, see <https://github.com/asdf-vm/asdf/blob/master/SECURITY.md>
