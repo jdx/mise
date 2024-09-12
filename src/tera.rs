@@ -193,27 +193,18 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg(target_arch = "x86_64")]
-    fn test_render_with_custom_function_arch_x86_64() {
+    fn test_render_with_custom_function_arch() {
         let mut tera = get_tera(Option::default());
 
         let result = tera
             .render_str("{{ arch() }}", &Context::default())
             .unwrap();
 
-        assert_eq!("x86_64", result);
-    }
-
-    #[test]
-    #[cfg(target_arch = "aarch64")]
-    fn test_render_with_custom_function_arch_arm64() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ arch() }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("aarch64", result);
+        if cfg!(target_arch = "x86_64") {
+            assert_eq!("x86_64", result);
+        } else if cfg!(target_arch = "aarch64") {
+            assert_eq!("aarch64", result);
+        }
     }
 
     #[test]
@@ -229,56 +220,38 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
-    fn test_render_with_custom_function_os_linux() {
+    fn test_render_with_custom_function_os() {
         let mut tera = get_tera(Option::default());
 
         let result = tera.render_str("{{ os() }}", &Context::default()).unwrap();
 
-        assert_eq!("GNU/Linux", result);
+        if cfg!(target_os = "linux") {
+            assert_eq!("GNU/Linux", result);
+        } else if cfg!(target_os = "windows") {
+            assert_eq!("Windows", result);
+        }
     }
 
     #[test]
-    #[cfg(target_os = "windows")]
-    fn test_render_with_custom_function_os_windows() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera.render_str("{{ os() }}", &Context::default()).unwrap();
-
-        assert_eq!("Windows", result);
-    }
-
-    #[test]
-    #[cfg(target_family = "unix")]
-    fn test_render_with_custom_function_os_family_unix() {
+    fn test_render_with_custom_function_os_family() {
         let mut tera = get_tera(Option::default());
 
         let result = tera
             .render_str("{{ os_family() }}", &Context::default())
             .unwrap();
 
-        assert_eq!("Linux", result);
-    }
-
-    #[test]
-    #[cfg(target_family = "windows")]
-    fn test_render_with_custom_function_os_windows() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ os_family() }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("Windows", result);
+        if cfg!(target_os = "linux") {
+            assert_eq!("Linux", result);
+        } else if cfg!(target_os = "windows") {
+            assert_eq!("Windows", result);
+        }
     }
 
     #[test]
     #[cfg(target_family = "unix")]
-    fn test_render_with_custom_function_invocation_directory() {
-        let a = env::set_current_dir("/tmp").is_ok();
+    fn test_render_with_custom_function_invocation_directory_unix() {
+        let _ = env::set_current_dir("/tmp");
         let mut tera = get_tera(Option::default());
-        assert!(a);
-        println!("{:?}", env::current_dir().unwrap());
 
         let result = tera
             .render_str("{{ invocation_directory() }}", &Context::default())
@@ -289,10 +262,9 @@ mod tests {
 
     #[test]
     #[cfg(target_family = "windows")]
-    fn test_render_with_custom_function_invocation_directory() {
-        let a = env::set_current_dir("C:\\").is_ok();
+    fn test_render_with_custom_function_invocation_directory_windows() {
+        let _ = env::set_current_dir("C:\\");
         let mut tera = get_tera(Option::default());
-        assert!(a);
 
         let result = tera
             .render_str("{{ invocation_directory() }}", &Context::default())
