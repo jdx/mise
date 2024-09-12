@@ -68,3 +68,7 @@ v20.0.0
 ## Full Documentation
 
 See [mise.jdx.dev](https://mise.jdx.dev)
+
+## Contributors
+
+[![Contributors](https://contrib.rocks/image?repo=jdx/mise)](https://github.com/jdx/mise/graphs/contributors)
