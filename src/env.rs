@@ -371,15 +371,12 @@ fn prefer_stale(args: &[String]) -> bool {
 }
 
 fn environment(args: &[String]) -> Option<String> {
+    let long_arg = format!("--{}", ProfileArg::arg().get_long().unwrap_or_default());
+    let short_arg = format!("-{}", ProfileArg::arg().get_short().unwrap_or_default());
+
     args.windows(2)
         .find_map(|window| {
-            if window[0] == ProfileArg::arg().get_long().unwrap_or_default()
-                || window[0]
-                    == ProfileArg::arg()
-                        .get_short()
-                        .unwrap_or_default()
-                        .to_string()
-            {
+            if window[0] == long_arg || window[0] == short_arg {
                 Some(window[1].clone())
             } else {
                 None
