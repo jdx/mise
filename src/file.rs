@@ -22,6 +22,12 @@ use zip::ZipArchive;
 
 use crate::{dirs, env};
 
+pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
+    let path = path.as_ref();
+    trace!("open {}", display_path(path));
+    File::open(path).wrap_err_with(|| format!("failed open: {}", display_path(path)))
+}
+
 pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     match path.metadata().map(|m| m.file_type()) {
