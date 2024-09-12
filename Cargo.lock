@@ -1978,7 +1978,6 @@ dependencies = [
  "openssl",
  "path-absolutize",
  "petgraph",
- "platform-info",
  "predicates",
  "pretty_assertions",
  "rand",
@@ -2547,16 +2546,6 @@ name = "pkg-config"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
-
-[[package]]
-name = "platform-info"
-version = "2.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5ff316b9c4642feda973c18f0decd6c8b0919d4722566f6e4337cce0dd88217"
-dependencies = [
- "libc",
- "winapi",
-]
 
 [[package]]
 name = "portable-atomic"

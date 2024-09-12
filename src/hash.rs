@@ -1,16 +1,15 @@
 use std::collections::HashMap;
-use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::path::Path;
 
+use crate::file;
+use crate::file::display_path;
+use crate::ui::progress_report::SingleReport;
 use eyre::{ensure, Result};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 use siphasher::sip::SipHasher;
-
-use crate::file::display_path;
-use crate::ui::progress_report::SingleReport;
 
 pub fn hash_to_str<T: Hash>(t: &T) -> String {
     let mut s = SipHasher::new();
@@ -18,12 +17,18 @@ pub fn hash_to_str<T: Hash>(t: &T) -> String {
     format!("{:x}", s.finish())
 }
 
+pub fn hash_sha256_to_str(s: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(s);
+    format!("{:x}", hasher.finalize())
+}
+
 pub fn file_hash_sha256(path: &Path) -> Result<String> {
     file_hash_sha256_prog(path, None)
 }
 
 pub fn file_hash_sha256_prog(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
-    let mut file = File::open(path)?;
+    let mut file = file::open(path)?;
     if let Some(pr) = pr {
         pr.set_length(file.metadata()?.len());
     }
