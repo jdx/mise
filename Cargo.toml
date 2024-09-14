@@ -41,6 +41,7 @@ lto = true
 
 [dependencies]
 base64 = "0.22.1"
+blake3 = { version = "1.5", features = ["rayon", "mmap", "neon"] }
 calm_io = "0.1.1"
 chrono = { version = "0.4.38", default-features = false, features = [
     "std",
@@ -119,6 +120,7 @@ toml = { version = "0.8.12", features = ["parse"] }
 toml_edit = { version = "0.22.12", features = ["parse"] }
 url = "2.5.0"
 usage-lib = { version = "0.3", features = ["clap"] }
+uuid = { version = "1.10", features = ["v4", "fast-rng", "macro-diagnostics"] }
 versions = { version = "6.2.0", features = ["serde"] }
 vfox = "0.1"
 walkdir = "2.5.0"
