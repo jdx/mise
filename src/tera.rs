@@ -305,7 +305,7 @@ mod tests {
     use insta::assert_snapshot;
 
     #[test]
-    fn test_render_with_custom_function_arch() {
+    fn test_arch() {
         reset();
         if cfg!(target_arch = "x86_64") {
             assert_eq!(render("{{arch()}}"), "x64");
@@ -317,20 +317,15 @@ mod tests {
     }
 
     #[test]
-    fn test_render_with_custom_function_num_cpus() {
+    fn test_num_cpus() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ num_cpus() }}", &Context::default())
-            .unwrap();
-
-        let num = result.parse::<u32>().unwrap();
+        let s = render("{{ num_cpus() }}");
+        let num = s.parse::<u32>().unwrap();
         assert!(num > 0);
     }
 
     #[test]
-    fn test_render_with_custom_function_os() {
+    fn test_os() {
         reset();
         if cfg!(target_os = "linux") {
             assert_eq!(render("{{os()}}"), "linux");
@@ -342,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_with_custom_function_os_family() {
+    fn test_os_family() {
         reset();
         if cfg!(target_family = "unix") {
             assert_eq!(render("{{os_family()}}"), "unix");
@@ -352,87 +347,52 @@ mod tests {
     }
 
     #[test]
-    fn test_render_with_custom_filter_quote() {
+    fn test_quote() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"quoted'str\" | quote }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("'quoted\\'str'", result);
+        let s = render("{{ \"quoted'str\" | quote }}");
+        assert_eq!(s, "'quoted\\'str'");
     }
 
     #[test]
-    fn test_render_with_custom_filter_kebabcase() {
+    fn test_kebabcase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"thisFilter\" | kebabcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("this-filter", result);
+        let s = render("{{ \"thisFilter\" | kebabcase }}");
+        assert_eq!(s, "this-filter");
     }
 
     #[test]
-    fn test_render_with_custom_filter_lowercamelcase() {
+    fn test_lowercamelcase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"Camel-case\" | lowercamelcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("camelCase", result);
+        let s = render("{{ \"Camel-case\" | lowercamelcase }}");
+        assert_eq!(s, "camelCase");
     }
 
     #[test]
-    fn test_render_with_custom_filter_shoutykebabcase() {
+    fn test_shoutykebabcase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"kebabCase\" | shoutykebabcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("KEBAB-CASE", result);
+        let s = render("{{ \"kebabCase\" | shoutykebabcase }}");
+        assert_eq!(s, "KEBAB-CASE");
     }
 
     #[test]
-    fn test_render_with_custom_filter_shoutysnakecase() {
+    fn test_shoutysnakecase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"snakeCase\" | shoutysnakecase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("SNAKE_CASE", result);
+        let s = render("{{ \"snakeCase\" | shoutysnakecase }}");
+        assert_eq!(s, "SNAKE_CASE");
     }
 
     #[test]
-    fn test_render_with_custom_filter_snakecase() {
+    fn test_snakecase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"snakeCase\" | snakecase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("snake_case", result);
+        let s = render("{{ \"snakeCase\" | snakecase }}");
+        assert_eq!(s, "snake_case");
     }
 
     #[test]
-    fn test_render_with_custom_filter_uppercamelcase() {
+    fn test_uppercamelcase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"CamelCase\" | uppercamelcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("CamelCase", result);
+        let s = render("{{ \"CamelCase\" | uppercamelcase }}");
+        assert_eq!(s, "CamelCase");
     }
 
     #[test]
