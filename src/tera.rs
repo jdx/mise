@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use eyre::{eyre, Result};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
@@ -19,6 +20,24 @@ pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     }
     context
 });
+
+const DEFAULT_HASH_DIGEST_FUNCTION: &str = "sha256";
+
+fn file_digest(path: &Path, function: &str) -> Result<String> {
+    match function {
+        "sha256" => hash::file_hash_sha256(path),
+        "blake3" => hash::file_hash_blake3(path),
+        _ => Err(eyre!("hash function {} is not supported", function)),
+    }
+}
+
+fn digest(s: &str, function: &str) -> Result<String> {
+    match function {
+        "sha256" => Ok(hash::sha256_digest(s)),
+        "blake3" => Ok(hash::blake3_digest(s)),
+        _ => Err(eyre!("hash function {} is not supported", function)),
+    }
+}
 
 pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = Tera::default();
@@ -76,10 +95,15 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
         move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
                 let path = Path::new(s);
-                let mut hash = hash::file_hash_sha256(path).unwrap();
+                let function = args
+                    .get("function")
+                    .and_then(Value::as_str)
+                    .unwrap_or(DEFAULT_HASH_DIGEST_FUNCTION);
+                let mut hash = file_digest(path, function).unwrap();
                 if let Some(len) = args.get("len").and_then(Value::as_u64) {
                     hash = hash.chars().take(len as usize).collect();
                 }
+
                 Ok(Value::String(hash))
             }
             _ => Err("hash input must be a string".into()),
@@ -89,13 +113,24 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
         "hash",
         move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
-                let mut hash = hash::hash_sha256_to_str(s);
+                let function = args
+                    .get("function")
+                    .and_then(Value::as_str)
+                    .unwrap_or(DEFAULT_HASH_DIGEST_FUNCTION);
+                let mut hash = digest(s, function).unwrap();
                 if let Some(len) = args.get("len").and_then(Value::as_u64) {
                     hash = hash.chars().take(len as usize).collect();
                 }
                 Ok(Value::String(hash))
             }
             _ => Err("hash input must be a string".into()),
+        },
+    );
+    tera.register_function(
+        "uuid",
+        move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
+            let result = uuid::Uuid::new_v4().to_string();
+            Ok(Value::String(result))
         },
     );
     tera.register_filter(
@@ -408,10 +443,33 @@ mod tests {
     }
 
     #[test]
+    fn test_hash_blake3() {
+        reset();
+        let s = render("{{ \"foo\" | hash(function=\"blake3\", len=8) }}");
+        assert_eq!(s, "04e0bb39");
+    }
+
+    #[test]
     fn test_hash_file() {
         reset();
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
         assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
+    }
+
+    #[test]
+    fn test_hash_file_blake3() {
+        reset();
+        let s = render(
+            "{{ \"../fixtures/shorthands.toml\" | hash_file(function=\"blake3\", len=64) }}",
+        );
+        assert_snapshot!(s, @"ce17f44735ea2083038e61c4b291ed31593e6cf4d93f5dc147e97e62962ac4e6");
+    }
+
+    #[test]
+    fn test_uuid() {
+        reset();
+        let s = render("{{ uuid() }}");
+        assert_eq!(s.len(), 36);
     }
 
     #[test]

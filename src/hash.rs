@@ -17,17 +17,27 @@ pub fn hash_to_str<T: Hash>(t: &T) -> String {
     format!("{:x}", s.finish())
 }
 
-pub fn hash_sha256_to_str(s: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(s);
-    format!("{:x}", hasher.finalize())
+pub fn sha256_digest(s: &str) -> String {
+    format!("{:x}", Sha256::digest(s))
+}
+
+pub fn blake3_digest(s: &str) -> String {
+    blake3::hash(s.as_bytes()).to_string()
 }
 
 pub fn file_hash_sha256(path: &Path) -> Result<String> {
     file_hash_sha256_prog(path, None)
 }
 
-pub fn file_hash_sha256_prog(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
+pub fn file_hash_blake3(path: &Path) -> Result<String> {
+    let mut file = file::open(path)?;
+    let mut hasher = blake3::Hasher::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    let hash = hasher.finalize();
+    Ok(format!("{}", hash))
+}
+
+pub fn file_hash_sha256_prog(path: &Path, pr: Option<&dyn SingleReport>) -> eyre::Result<String> {
     let mut file = file::open(path)?;
     if let Some(pr) = pr {
         pr.set_length(file.metadata()?.len());
@@ -95,5 +105,29 @@ mod tests {
         let path = Path::new(".test-tool-versions");
         let hash = file_hash_sha256(path).unwrap();
         assert_snapshot!(hash);
+    }
+
+    #[test]
+    fn test_file_hash_blake3() {
+        reset();
+        let path = Path::new(".test-tool-versions");
+        let hash = file_hash_blake3(path).unwrap();
+        assert_snapshot!(hash, @"783621d50cfdb9c28c1340cfd8f9aa8457865d88c4e0a681540c769379ed5689");
+    }
+
+    #[test]
+    fn test_sha256_digest() {
+        assert_eq!(
+            sha256_digest("text"),
+            "982d9e3eb996f559e633f4d194def3761d909f5a3b647d1a851fead67c32c9d1"
+        );
+    }
+
+    #[test]
+    fn test_blake3_digest() {
+        assert_eq!(
+            blake3_digest("text"),
+            "831c6831fdc9a309a4c66cc3cb2fa3740a100da8b86d6fe86e9ba40deb50aa19"
+        );
     }
 }

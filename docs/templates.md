@@ -20,15 +20,18 @@ As well as these functions:
 - `os() -> String` – return the operating system, e.g. `linux`, `macos`, `windows`
 - `os_family() -> String` – return the operating system family, e.g. `unix`, `windows`
 - `num_cpus() -> usize` – return the number of CPUs on the system
+- `uuid() -> String` – return a random UUIDv4
 
 And these filters:
 
 - `str | hash -> String` – return the SHA256 hash of the input string
 - `str | hash(len=usize) -> String` – return the SHA256 hash of the input string truncated to `len`
   characters
+- `str | hash(function="blake3") -> String` – return the BLAKE3 hash of the input string
 - `path | hash_file -> String` – return the SHA256 hash of the file at the input path
 - `path | hash_file(len=usize) -> String` – return the SHA256 hash of the file at the input path
   truncated to `len` characters
+- `path | hash_file(function="blake3") -> String` – return the BLAKE3 hash of the file at the input path
 - `path | canonicalize -> String` – return the canonicalized path
 - `path | dirname -> String` – return the directory path for a file, e.g. `/foo/bar/baz.txt` ->
   `/foo/bar`
