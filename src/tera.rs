@@ -105,7 +105,7 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
                 let p = Path::new(s).canonicalize()?;
                 Ok(Value::String(p.to_string_lossy().to_string()))
             }
-            _ => Err("hash input must be a string".into()),
+            _ => Err("canonicalize input must be a string".into()),
         },
     );
     tera.register_filter(
@@ -170,7 +170,7 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
                 let modified = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
                 Ok(Value::Number(modified.as_secs().into()))
             }
-            _ => Err("hash input must be a string".into()),
+            _ => Err("last_modified input must be a string".into()),
         },
     );
     tera.register_filter(
