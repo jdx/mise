@@ -552,6 +552,17 @@ pub fn global_config_files() -> Vec<PathBuf> {
     if global_config.is_file() {
         config_files.push(global_config);
     }
+    if let Some(env) = &*env::MISE_ENV {
+        let global_profile_files = vec![
+            dirs::CONFIG.join(format!("config.{env}.toml")),
+            dirs::CONFIG.join(format!("mise.{env}.toml")),
+        ];
+        for f in global_profile_files {
+            if f.is_file() {
+                config_files.push(f);
+            }
+        }
+    }
     config_files
 }
 
