@@ -14,7 +14,7 @@ get_os() {
       echo "macos"
       ;;
     *-windows-*)
-      echo "win"
+      echo "windows"
       ;;
     *-linux-*)
       echo "linux"
