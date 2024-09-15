@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use chrono::{Local, Utc};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
 use once_cell::sync::Lazy;
+use rand::{seq::SliceRandom, thread_rng};
 use tera::{Context, Tera, Value};
 use versions::{Requirement, Versioning};
 
@@ -72,6 +74,58 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
         "os_family",
         move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
             Ok(Value::String(env::consts::FAMILY.to_string()))
+        },
+    );
+    tera.register_function(
+        "error",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            match args.get("message") {
+                Some(Value::String(message)) => Err(message.clone().into()),
+                _ => Err("error message must be a string".into()),
+            }
+        },
+    );
+    tera.register_function(
+        "choice",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            match args.get("n") {
+                Some(Value::Number(n)) => {
+                    let n = n.as_u64().unwrap();
+                    match args.get("alphabet") {
+                        Some(Value::String(alphabet)) => {
+                            let alphabet = alphabet.chars().collect::<Vec<char>>();
+                            let mut rng = thread_rng();
+                            let result =
+                                (0..n).map(|_| alphabet.choose(&mut rng).unwrap()).collect();
+                            Ok(Value::String(result))
+                        }
+                        _ => Err("choice alphtbet must be an string".into()),
+                    }
+                }
+                _ => Err("choice n must be an integer".into()),
+            }
+        },
+    );
+    tera.register_function(
+        "datetime",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            let format = match args.get("format") {
+                Some(Value::String(format)) => format,
+                _ => "%+",
+            };
+            let result = Local::now().format(format).to_string();
+            Ok(Value::String(result))
+        },
+    );
+    tera.register_function(
+        "datetime_utc",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            let format = match args.get("format") {
+                Some(Value::String(format)) => format,
+                _ => "%+",
+            };
+            let result = Utc::now().format(format).to_string();
+            Ok(Value::String(result))
         },
     );
     tera.register_filter(
@@ -286,6 +340,7 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
 mod tests {
     use super::*;
     use crate::test::reset;
+    use chrono::Datelike;
     use insta::assert_snapshot;
 
     #[test]
@@ -293,17 +348,24 @@ mod tests {
         reset();
         assert_eq!(render("{{config_root}}"), "/");
     }
-    
+
     #[test]
     fn test_cwd() {
         reset();
         assert_eq!(render("{{cwd}}"), "/");
     }
-    
+
     #[test]
     fn test_mise_bin() {
         reset();
-        assert_eq!(render("{{mise_bin}}"), env::current_exe().unwrap().into_os_string().into_string().unwrap());
+        assert_eq!(
+            render("{{mise_bin}}"),
+            env::current_exe()
+                .unwrap()
+                .into_os_string()
+                .into_string()
+                .unwrap()
+        );
     }
 
     #[test]
@@ -354,6 +416,34 @@ mod tests {
         } else if cfg!(target_os = "windows") {
             assert_eq!(render("{{os_family()}}"), "windows");
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_error() {
+        reset();
+        render("{{error(\"message\")}}");
+    }
+
+    #[test]
+    fn test_choice() {
+        reset();
+        let result = render("{{choice(n=8, alphabet=\"abcdefgh\")}}");
+        assert_eq!(result.trim().len(), 8);
+    }
+
+    #[test]
+    fn test_datetime() {
+        reset();
+        let result = render("{{datetime(format=\"%Y\")}}");
+        assert_eq!(result, Local::now().year().to_string());
+    }
+
+    #[test]
+    fn test_datetime_utc() {
+        reset();
+        let result = render("{{datetime_utc(format=\"%m\")}}");
+        assert_eq!(result, format!("{:0>2}", Utc::now().month().to_string()));
     }
 
     #[test]

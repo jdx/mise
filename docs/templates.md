@@ -22,6 +22,18 @@ As well as these functions:
 - `os() -> String` – return the operating system, e.g. `linux`, `macos`, `windows`
 - `os_family() -> String` – return the operating system family, e.g. `unix`, `windows`
 - `num_cpus() -> usize` – return the number of CPUs on the system
+- `error(message) -> String` - Abort execution and report error `message` to user.
+- `choice(n, alphabet)` - Generate a string of `n` with random sample with replacement 
+  of `alphabet`. For example, `choice('64', HEX)` will generate a random
+  64-character lowercase hex string.
+- `datetime()` - Return local time with ISO 8601 format
+- `datetime(format)` - Return local time with `format`. Read the 
+  [`chrono` library docs](https://docs.rs/chrono/latest/chrono/format/strftime/index.html)
+  for the format
+- `datetime_utc()` - Return UTC time with ISO 8601 format
+- `datetime_utc(format)` - Return UTC time with `format`. Read the
+  [`chrono` library docs](https://docs.rs/chrono/latest/chrono/format/strftime/index.html)
+  for the format
 
 And these filters:
 
