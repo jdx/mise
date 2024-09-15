@@ -274,11 +274,11 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_installed_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
     fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
     fn latest_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {
@@ -501,27 +501,29 @@ pub trait Backend: Debug + Send + Sync {
     fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
         self.depedency_toolset()?.full_env()
     }
-}
 
-fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
-    let mut query = query;
-    if query == "latest" {
-        query = "v?[0-9].*";
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+        let escaped_query = regex::escape(query);
+        let query = if query == "latest" {
+            "v?[0-9].*"
+        } else {
+            &escaped_query
+        };
+        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
+        let versions = versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if VERSION_REGEX.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect();
+        Ok(versions)
     }
-    let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
-    let versions = versions
-        .into_iter()
-        .filter(|v| {
-            if query == v {
-                return true;
-            }
-            if VERSION_REGEX.is_match(v) {
-                return false;
-            }
-            query_regex.is_match(v)
-        })
-        .collect();
-    Ok(versions)
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
