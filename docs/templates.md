@@ -14,6 +14,10 @@ The following context objects are available inside templates:
   `.mise` directory with config file.
 - `mise_bin` - the path to the current mise executable
 - `mise_pid` - the pid of the current mise process
+- `xdg_cache_home` - the directory of XDG cache home
+- `xdg_config_home` - the directory of XDG config home
+- `xdg_data_home` - the directory of XDG data home
+- `xdg_state_home` - the directory of XDG state home
 
 As well as these functions:
 

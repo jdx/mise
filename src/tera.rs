@@ -400,14 +400,14 @@ mod tests {
     fn test_xdg_data_home() {
         reset();
         let s = render("{{xdg_data_home}}");
-        assert!(s.ends_with("/.local")); // test dir is not deterministic
+        assert!(s.ends_with("/.local/share")); // test dir is not deterministic
     }
 
     #[test]
     fn test_xdg_state_home() {
         reset();
         let s = render("{{xdg_state_home}}");
-        assert!(s.ends_with("/.local")); // test dir is not deterministic
+        assert!(s.ends_with("/.local/state")); // test dir is not deterministic
     }
 
     #[test]
