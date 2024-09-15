@@ -7,6 +7,7 @@ use heck::{
 };
 use once_cell::sync::Lazy;
 use tera::{Context, Tera, Value};
+use versions::{Requirement, Versioning};
 
 use crate::cmd::cmd;
 use crate::{env, hash};
@@ -259,6 +260,22 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
             _ => Err("exists input must be a string".into()),
         },
     );
+    tera.register_tester(
+        "semver_matching",
+        move |input: Option<&Value>, args: &[Value]| match input {
+            Some(Value::String(version)) => match args.first() {
+                Some(Value::String(requirement)) => {
+                    println!("{}", requirement);
+                    let result = Requirement::new(requirement)
+                        .unwrap()
+                        .matches(&Versioning::new(version).unwrap());
+                    Ok(result)
+                }
+                _ => Err("semver_matching argument must be a string".into()),
+            },
+            _ => Err("semver_matching input must be a string".into()),
+        },
+    );
 
     tera
 }
@@ -467,6 +484,15 @@ mod tests {
     fn test_exists() {
         reset();
         let s = render(r#"{% set p = ".test-tool-versions" %}{% if p is exists %} ok {% endif %}"#);
+        assert_eq!(s.trim(), "ok");
+    }
+
+    #[test]
+    fn test_semver_matching() {
+        reset();
+        let s = render(
+            r#"{% set p = "1.10.2" %}{% if p is semver_matching("^1.10.0") %} ok {% endif %}"#,
+        );
         assert_eq!(s.trim(), "ok");
     }
 
