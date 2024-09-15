@@ -15,6 +15,8 @@ use crate::{env, hash};
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
+    context.insert("mise_bin", &*env::MISE_BIN);
+    context.insert("mise_pid", &*env::MISE_PID);
     if let Ok(dir) = env::current_dir() {
         context.insert("cwd", &dir);
     }
@@ -287,6 +289,32 @@ mod tests {
     use insta::assert_snapshot;
 
     #[test]
+    fn test_config_root() {
+        reset();
+        assert_eq!(render("{{config_root}}"), "/");
+    }
+    
+    #[test]
+    fn test_cwd() {
+        reset();
+        assert_eq!(render("{{cwd}}"), "/");
+    }
+    
+    #[test]
+    fn test_mise_bin() {
+        reset();
+        assert_eq!(render("{{mise_bin}}"), env::current_exe().unwrap().into_os_string().into_string().unwrap());
+    }
+
+    #[test]
+    fn test_mise_pid() {
+        reset();
+        let s = render("{{mise_pid}}");
+        let pid = s.trim().parse::<u32>().unwrap();
+        assert!(pid > 0);
+    }
+
+    #[test]
     fn test_arch() {
         reset();
         if cfg!(target_arch = "x86_64") {
@@ -457,8 +485,11 @@ mod tests {
     }
 
     fn render(s: &str) -> String {
-        let mut tera = get_tera(Option::default());
-
-        tera.render_str(s, &Context::default()).unwrap()
+        let config_root = Path::new("/");
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("config_root", &config_root);
+        tera_ctx.insert("cwd", "/");
+        let mut tera = get_tera(Option::from(config_root));
+        tera.render_str(s, &tera_ctx).unwrap()
     }
 }

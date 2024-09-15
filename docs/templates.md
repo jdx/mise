@@ -12,6 +12,8 @@ The following context objects are available inside templates:
 - `cwd: PathBuf` – current working directory
 - `config_root: PathBuf` – directory containing the `mise.toml` file or directory containing
   `.mise` directory with config file.
+- `mise_bin` - the path to the current mise executable
+- `mise_pid` - the pid of the current mise process
 
 As well as these functions:
 
