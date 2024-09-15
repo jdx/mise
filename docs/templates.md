@@ -52,6 +52,7 @@ And these testers:
 - `if path is dir` – if the path is a directory
 - `if path is file` – if the path is a file
 - `if path is exists` – if the path exists
+- `if version is semver_matching(String)` - if a version matches semantically (e.g. `if "1.10.2" is semver_matching("^1.10.0")` ).
 
 Templates are parsed with [tera](https://keats.github.io/tera/docs/)—which is quite powerful. For
 example, this snippet will get the directory name of the project:
