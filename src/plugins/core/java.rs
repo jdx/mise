@@ -315,12 +315,12 @@ impl Backend for JavaPlugin {
 
     fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_installed_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
 
     fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
@@ -391,6 +391,29 @@ impl Backend for JavaPlugin {
         )]);
         Ok(map)
     }
+
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+        let escaped_query = regex::escape(query);
+        let query = if query == "latest" {
+            "[0-9].*"
+        } else {
+            &escaped_query
+        };
+        let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
+        let versions = versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if VERSION_REGEX.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect();
+        Ok(versions)
+    }
 }
 
 fn os() -> &'static str {
@@ -411,27 +434,6 @@ fn arch() -> &'static str {
     } else {
         &ARCH
     }
-}
-
-fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
-    let mut query = query;
-    if query == "latest" {
-        query = "[0-9].*";
-    }
-    let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
-    let versions = versions
-        .into_iter()
-        .filter(|v| {
-            if query == v {
-                return true;
-            }
-            if VERSION_REGEX.is_match(v) {
-                return false;
-            }
-            query_regex.is_match(v)
-        })
-        .collect();
-    Ok(versions)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

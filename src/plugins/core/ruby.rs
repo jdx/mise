@@ -430,6 +430,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_list_versions_matching() {
+        let plugin = RubyPlugin::new();
+        assert!(
+            !plugin.list_versions_matching("3").unwrap().is_empty(),
+            "versions for 3 should not be empty"
+        );
+        assert!(
+            !plugin
+                .list_versions_matching("truffleruby-24")
+                .unwrap()
+                .is_empty(),
+            "versions for truffleruby-24 should not be empty"
+        );
+        assert!(
+            !plugin
+                .list_versions_matching("truffleruby+graalvm-24")
+                .unwrap()
+                .is_empty(),
+            "versions for truffleruby+graalvm-24 should not be empty"
+        );
+    }
+
+    #[test]
     fn test_parse_gemfile() {
         assert_eq!(
             parse_gemfile(indoc! {r#"
