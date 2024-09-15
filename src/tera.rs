@@ -6,8 +6,8 @@ use heck::{
     ToUpperCamelCase,
 };
 use once_cell::sync::Lazy;
-use semver::{Version, VersionReq};
 use tera::{Context, Tera, Value};
+use versions::{Requirement, Versioning};
 
 use crate::cmd::cmd;
 use crate::{env, hash};
@@ -265,13 +265,11 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
         move |input: Option<&Value>, args: &[Value]| match input {
             Some(Value::String(version)) => match args.first() {
                 Some(Value::String(requirement)) => {
-                    let result = requirement
-                        .parse::<VersionReq>()
-                        .map_err(|err| format!("invalid semver requirement: {err}"))?
+                    println!("{}", requirement);
+                    let result = Requirement::new(requirement)
+                        .unwrap()
                         .matches(
-                            &version
-                                .parse::<Version>()
-                                .map_err(|err| format!("invalid semver input {err}"))?,
+                            &Versioning::new(version).unwrap()
                         );
                     Ok(result)
                 }
@@ -495,7 +493,7 @@ mod tests {
     fn test_semver_matching() {
         reset();
         let s = render(
-            r#"{% set p = "1.10.2" %}{% if p is semver_matching("~ 1.10.0") %} ok {% endif %}"#,
+            r#"{% set p = "1.10.2" %}{% if p is semver_matching("^1.10.0") %} ok {% endif %}"#,
         );
         assert_eq!(s.trim(), "ok");
     }
