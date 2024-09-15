@@ -6,6 +6,7 @@ use heck::{
     ToUpperCamelCase,
 };
 use once_cell::sync::Lazy;
+use rand::{seq::SliceRandom, thread_rng};
 use tera::{Context, Tera, Value};
 use versions::{Requirement, Versioning};
 
@@ -15,9 +16,15 @@ use crate::{env, hash};
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
+    context.insert("mise_bin", &*env::MISE_BIN);
+    context.insert("mise_pid", &*env::MISE_PID);
     if let Ok(dir) = env::current_dir() {
         context.insert("cwd", &dir);
     }
+    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
+    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
+    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
+    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
     context
 });
 
@@ -72,6 +79,27 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
             Ok(Value::String(env::consts::FAMILY.to_string()))
         },
     );
+    tera.register_function(
+        "choice",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            match args.get("n") {
+                Some(Value::Number(n)) => {
+                    let n = n.as_u64().unwrap();
+                    match args.get("alphabet") {
+                        Some(Value::String(alphabet)) => {
+                            let alphabet = alphabet.chars().collect::<Vec<char>>();
+                            let mut rng = thread_rng();
+                            let result =
+                                (0..n).map(|_| alphabet.choose(&mut rng).unwrap()).collect();
+                            Ok(Value::String(result))
+                        }
+                        _ => Err("choice alphabet must be an string".into()),
+                    }
+                }
+                _ => Err("choice n must be an integer".into()),
+            }
+        },
+    );
     tera.register_filter(
         "hash_file",
         move |input: &Value, args: &HashMap<String, Value>| match input {
@@ -99,6 +127,8 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
             _ => Err("hash input must be a string".into()),
         },
     );
+    // TODO: add `absolute` feature.
+    // wait until #![feature(absolute_path)] hits Rust stable release channel
     tera.register_filter(
         "canonicalize",
         move |input: &Value, _args: &HashMap<String, Value>| match input {
@@ -287,7 +317,68 @@ mod tests {
     use insta::assert_snapshot;
 
     #[test]
-    fn test_render_with_custom_function_arch() {
+    fn test_config_root() {
+        reset();
+        assert_eq!(render("{{config_root}}"), "/");
+    }
+
+    #[test]
+    fn test_cwd() {
+        reset();
+        assert_eq!(render("{{cwd}}"), "/");
+    }
+
+    #[test]
+    fn test_mise_bin() {
+        reset();
+        assert_eq!(
+            render("{{mise_bin}}"),
+            env::current_exe()
+                .unwrap()
+                .into_os_string()
+                .into_string()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_mise_pid() {
+        reset();
+        let s = render("{{mise_pid}}");
+        let pid = s.trim().parse::<u32>().unwrap();
+        assert!(pid > 0);
+    }
+
+    #[test]
+    fn test_xdg_cache_home() {
+        reset();
+        let s = render("{{xdg_cache_home}}");
+        assert!(s.ends_with("/.cache")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_xdg_config_home() {
+        reset();
+        let s = render("{{xdg_config_home}}");
+        assert!(s.ends_with("/.config")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_xdg_data_home() {
+        reset();
+        let s = render("{{xdg_data_home}}");
+        assert!(s.ends_with("/.local/share")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_xdg_state_home() {
+        reset();
+        let s = render("{{xdg_state_home}}");
+        assert!(s.ends_with("/.local/state")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_arch() {
         reset();
         if cfg!(target_arch = "x86_64") {
             assert_eq!(render("{{arch()}}"), "x64");
@@ -299,20 +390,15 @@ mod tests {
     }
 
     #[test]
-    fn test_render_with_custom_function_num_cpus() {
+    fn test_num_cpus() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ num_cpus() }}", &Context::default())
-            .unwrap();
-
-        let num = result.parse::<u32>().unwrap();
+        let s = render("{{ num_cpus() }}");
+        let num = s.parse::<u32>().unwrap();
         assert!(num > 0);
     }
 
     #[test]
-    fn test_render_with_custom_function_os() {
+    fn test_os() {
         reset();
         if cfg!(target_os = "linux") {
             assert_eq!(render("{{os()}}"), "linux");
@@ -324,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_with_custom_function_os_family() {
+    fn test_os_family() {
         reset();
         if cfg!(target_family = "unix") {
             assert_eq!(render("{{os_family()}}"), "unix");
@@ -334,87 +420,59 @@ mod tests {
     }
 
     #[test]
-    fn test_render_with_custom_filter_quote() {
+    fn test_choice() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"quoted'str\" | quote }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("'quoted\\'str'", result);
+        let result = render("{{choice(n=8, alphabet=\"abcdefgh\")}}");
+        assert_eq!(result.trim().len(), 8);
     }
 
     #[test]
-    fn test_render_with_custom_filter_kebabcase() {
+    fn test_quote() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"thisFilter\" | kebabcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("this-filter", result);
+        let s = render("{{ \"quoted'str\" | quote }}");
+        assert_eq!(s, "'quoted\\'str'");
     }
 
     #[test]
-    fn test_render_with_custom_filter_lowercamelcase() {
+    fn test_kebabcase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"Camel-case\" | lowercamelcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("camelCase", result);
+        let s = render("{{ \"thisFilter\" | kebabcase }}");
+        assert_eq!(s, "this-filter");
     }
 
     #[test]
-    fn test_render_with_custom_filter_shoutykebabcase() {
+    fn test_lowercamelcase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"kebabCase\" | shoutykebabcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("KEBAB-CASE", result);
+        let s = render("{{ \"Camel-case\" | lowercamelcase }}");
+        assert_eq!(s, "camelCase");
     }
 
     #[test]
-    fn test_render_with_custom_filter_shoutysnakecase() {
+    fn test_shoutykebabcase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"snakeCase\" | shoutysnakecase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("SNAKE_CASE", result);
+        let s = render("{{ \"kebabCase\" | shoutykebabcase }}");
+        assert_eq!(s, "KEBAB-CASE");
     }
 
     #[test]
-    fn test_render_with_custom_filter_snakecase() {
+    fn test_shoutysnakecase() {
         reset();
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"snakeCase\" | snakecase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("snake_case", result);
+        let s = render("{{ \"snakeCase\" | shoutysnakecase }}");
+        assert_eq!(s, "SNAKE_CASE");
     }
 
     #[test]
-    fn test_render_with_custom_filter_uppercamelcase() {
+    fn test_snakecase() {
         reset();
-        let mut tera = get_tera(Option::default());
+        let s = render("{{ \"snakeCase\" | snakecase }}");
+        assert_eq!(s, "snake_case");
+    }
 
-        let result = tera
-            .render_str("{{ \"CamelCase\" | uppercamelcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("CamelCase", result);
+    #[test]
+    fn test_uppercamelcase() {
+        reset();
+        let s = render("{{ \"CamelCase\" | uppercamelcase }}");
+        assert_eq!(s, "CamelCase");
     }
 
     #[test]
@@ -429,6 +487,13 @@ mod tests {
         reset();
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
         assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
+    }
+
+    #[test]
+    fn test_canonicalize() {
+        reset();
+        let s = render("{{ \"../fixtures/shorthands.toml\" | canonicalize }}");
+        assert!(s.ends_with("/fixtures/shorthands.toml")); // test dir is not deterministic
     }
 
     #[test]
@@ -467,6 +532,21 @@ mod tests {
     }
 
     #[test]
+    fn test_last_modified() {
+        reset();
+        let s = render(r#"{{ "../fixtures/shorthands.toml" | last_modified }}"#);
+        let timestamp = s.parse::<u64>().unwrap();
+        assert!(timestamp >= 1725000000 && timestamp <= 2725000000);
+    }
+
+    #[test]
+    fn test_join_path() {
+        reset();
+        let s = render(r#"{{ ["..", "fixtures", "shorthands.toml"] | join_path }}"#);
+        assert_eq!(s, "../fixtures/shorthands.toml");
+    }
+
+    #[test]
     fn test_is_dir() {
         reset();
         let s = render(r#"{% set p = ".mise" %}{% if p is dir %} ok {% endif %}"#);
@@ -497,8 +577,11 @@ mod tests {
     }
 
     fn render(s: &str) -> String {
-        let mut tera = get_tera(Option::default());
-
-        tera.render_str(s, &Context::default()).unwrap()
+        let config_root = Path::new("/");
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("config_root", &config_root);
+        tera_ctx.insert("cwd", "/");
+        let mut tera = get_tera(Option::from(config_root));
+        tera.render_str(s, &tera_ctx).unwrap()
     }
 }
