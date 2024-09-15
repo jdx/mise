@@ -92,6 +92,7 @@ self_update = { version = "0.41", default-features = false, features = [
     "compression-flate2",
     "signatures",
 ] }
+semver = "1"
 serde = "1.0.199"
 serde_derive = "1.0.199"
 serde_ignored = "0.1"
