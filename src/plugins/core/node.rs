@@ -143,7 +143,7 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn sh<'a>(&'a self, ctx: &'a InstallContext, opts: &BuildOpts) -> eyre::Result<CmdLineRunner> {
+    fn sh<'a>(&self, ctx: &'a InstallContext, opts: &BuildOpts) -> eyre::Result<CmdLineRunner<'a>> {
         let mut cmd = CmdLineRunner::new("sh")
             .prepend_path(opts.path.clone())?
             .with_pr(ctx.pr.as_ref())
