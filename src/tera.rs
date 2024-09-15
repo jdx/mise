@@ -22,6 +22,10 @@ pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     if let Ok(dir) = env::current_dir() {
         context.insert("cwd", &dir);
     }
+    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
+    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
+    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
+    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
     context
 });
 
@@ -155,6 +159,8 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
             _ => Err("hash input must be a string".into()),
         },
     );
+    // TODO: add `absolute` feature.
+    // wait until #![feature(absolute_path)] hits Rust stable release channel
     tera.register_filter(
         "canonicalize",
         move |input: &Value, _args: &HashMap<String, Value>| match input {
@@ -377,6 +383,34 @@ mod tests {
     }
 
     #[test]
+    fn test_xdg_cache_home() {
+        reset();
+        let s = render("{{xdg_cache_home}}");
+        assert!(s.ends_with("/.cache")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_xdg_config_home() {
+        reset();
+        let s = render("{{xdg_config_home}}");
+        assert!(s.ends_with("/.config")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_xdg_data_home() {
+        reset();
+        let s = render("{{xdg_data_home}}");
+        assert!(s.ends_with("/.local")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_xdg_state_home() {
+        reset();
+        let s = render("{{xdg_state_home}}");
+        assert!(s.ends_with("/.local")); // test dir is not deterministic
+    }
+
+    #[test]
     fn test_arch() {
         reset();
         if cfg!(target_arch = "x86_64") {
@@ -510,6 +544,13 @@ mod tests {
     }
 
     #[test]
+    fn test_canonicalize() {
+        reset();
+        let s = render("{{ \"../fixtures/shorthands.toml\" | canonicalize }}");
+        assert!(s.ends_with("/fixtures/shorthands.toml")); // test dir is not deterministic
+    }
+
+    #[test]
     fn test_dirname() {
         reset();
         let s = render(r#"{{ "a/b/c" | dirname }}"#);
@@ -542,6 +583,21 @@ mod tests {
         reset();
         let s = render(r#"{{ "../fixtures/shorthands.toml" | file_size }}"#);
         assert_eq!(s, "48");
+    }
+
+    #[test]
+    fn test_last_modified() {
+        reset();
+        let s = render(r#"{{ "../fixtures/shorthands.toml" | last_modified }}"#);
+        let timestamp = s.parse::<u64>().unwrap();
+        assert!(timestamp >= 1725000000 && timestamp <= 2725000000);
+    }
+
+    #[test]
+    fn test_join_path() {
+        reset();
+        let s = render(r#"{{ ["..", "fixtures", "shorthands.toml"] | join_path }}"#);
+        assert_eq!(s, "../fixtures/shorthands.toml");
     }
 
     #[test]
