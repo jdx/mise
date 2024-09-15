@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::path;
 use std::path::PathBuf;
+use std::process;
 use std::string::ToString;
 use std::sync::RwLock;
 use std::time::Duration;
@@ -126,6 +127,7 @@ pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
         .or_else(|| current_exe().ok())
         .unwrap_or_else(|| "mise".into())
 });
+pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
