@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{Local, Utc};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
@@ -108,28 +107,6 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
                 }
                 _ => Err("choice n must be an integer".into()),
             }
-        },
-    );
-    tera.register_function(
-        "datetime",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            let format = match args.get("format") {
-                Some(Value::String(format)) => format,
-                _ => "%+",
-            };
-            let result = Local::now().format(format).to_string();
-            Ok(Value::String(result))
-        },
-    );
-    tera.register_function(
-        "datetime_utc",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            let format = match args.get("format") {
-                Some(Value::String(format)) => format,
-                _ => "%+",
-            };
-            let result = Utc::now().format(format).to_string();
-            Ok(Value::String(result))
         },
     );
     tera.register_filter(
@@ -346,7 +323,6 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
 mod tests {
     use super::*;
     use crate::test::reset;
-    use chrono::Datelike;
     use insta::assert_snapshot;
 
     #[test]
@@ -464,20 +440,6 @@ mod tests {
         reset();
         let result = render("{{choice(n=8, alphabet=\"abcdefgh\")}}");
         assert_eq!(result.trim().len(), 8);
-    }
-
-    #[test]
-    fn test_datetime() {
-        reset();
-        let result = render("{{datetime(format=\"%Y\")}}");
-        assert_eq!(result, Local::now().year().to_string());
-    }
-
-    #[test]
-    fn test_datetime_utc() {
-        reset();
-        let result = render("{{datetime_utc(format=\"%m\")}}");
-        assert_eq!(result, format!("{:0>2}", Utc::now().month().to_string()));
     }
 
     #[test]
