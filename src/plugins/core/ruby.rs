@@ -252,11 +252,11 @@ impl RubyPlugin {
     }
 
     fn install_cmd<'a>(
-        &'a self,
-        config: &'a Config,
+        &self,
+        config: &Config,
         tv: &ToolVersion,
         pr: &'a dyn SingleReport,
-    ) -> Result<CmdLineRunner> {
+    ) -> Result<CmdLineRunner<'a>> {
         let cmd = if *env::MISE_RUBY_INSTALL {
             CmdLineRunner::new(self.ruby_install_bin()).args(self.install_args_ruby_install(tv)?)
         } else {
