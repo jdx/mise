@@ -6,7 +6,8 @@ use heck::{
     ToUpperCamelCase,
 };
 use once_cell::sync::Lazy;
-use rand::{seq::SliceRandom, thread_rng};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use tera::{Context, Tera, Value};
 use versions::{Requirement, Versioning};
 
@@ -536,7 +537,7 @@ mod tests {
         reset();
         let s = render(r#"{{ "../fixtures/shorthands.toml" | last_modified }}"#);
         let timestamp = s.parse::<u64>().unwrap();
-        assert!(timestamp >= 1725000000 && timestamp <= 2725000000);
+        assert!((1725000000..=2725000000).contains(&timestamp));
     }
 
     #[test]

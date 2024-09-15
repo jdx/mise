@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet};
 pub use std::env::*;
-use std::path;
 use std::path::PathBuf;
-use std::process;
 use std::string::ToString;
 use std::sync::RwLock;
 use std::time::Duration;
+use std::{path, process};
 
 use itertools::Itertools;
 use log::LevelFilter;

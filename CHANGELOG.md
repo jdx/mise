@@ -1,5 +1,33 @@
 # Changelog
 
+## [2024.9.4](https://github.com/jdx/mise/compare/v2024.9.3..v2024.9.4) - 2024-09-15
+
+### 🚀 Features
+
+- support for global configuration profiles by [@roele](https://github.com/roele) in [#2575](https://github.com/jdx/mise/pull/2575)
+- add Atmos by [@mtweeman](https://github.com/mtweeman) in [#2577](https://github.com/jdx/mise/pull/2577)
+- add semver matching in mise templates by [@erickguan](https://github.com/erickguan) in [#2578](https://github.com/jdx/mise/pull/2578)
+- add rest of tera features for templates by [@erickguan](https://github.com/erickguan) in [#2582](https://github.com/jdx/mise/pull/2582)
+
+### 🐛 Bug Fixes
+
+- fix a few tera filter error messages by [@erickguan](https://github.com/erickguan) in [#2574](https://github.com/jdx/mise/pull/2574)
+- use "windows" instead of "win" by [@jdx](https://github.com/jdx) in [3327e8c](https://github.com/jdx/mise/commit/3327e8c5eca4dc39529790c4b830fdcca57ebe65)
+- fixed release-plz by [@jdx](https://github.com/jdx) in [bc4fae3](https://github.com/jdx/mise/commit/bc4fae3f1acefdf0fb05f8b97a0ec1703a216f57)
+- cannot install truffelruby by [@roele](https://github.com/roele) in [#2581](https://github.com/jdx/mise/pull/2581)
+
+### 📚 Documentation
+
+- wrong version in the README example when install specific version by [@roele](https://github.com/roele) in [#2579](https://github.com/jdx/mise/pull/2579)
+
+### 🔍 Other Changes
+
+- fix nightly lint warning by [@jdx](https://github.com/jdx) in [0a41dc6](https://github.com/jdx/mise/commit/0a41dc67aa7b1faf6301a67386eabb3ebd31ed4d)
+
+### New Contributors
+
+* @mtweeman made their first contribution in [#2577](https://github.com/jdx/mise/pull/2577)
+
 ## [2024.9.3](https://github.com/jdx/mise/compare/v2024.9.2..v2024.9.3) - 2024-09-12
 
 ### 🐛 Bug Fixes
