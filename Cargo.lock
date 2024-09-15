@@ -1986,7 +1986,6 @@ dependencies = [
  "reqwest",
  "rmp-serde",
  "self_update",
- "semver",
  "serde",
  "serde_derive",
  "serde_ignored",
