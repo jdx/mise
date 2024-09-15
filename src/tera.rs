@@ -268,9 +268,7 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
                     println!("{}", requirement);
                     let result = Requirement::new(requirement)
                         .unwrap()
-                        .matches(
-                            &Versioning::new(version).unwrap()
-                        );
+                        .matches(&Versioning::new(version).unwrap());
                     Ok(result)
                 }
                 _ => Err("semver_matching argument must be a string".into()),
