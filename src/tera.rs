@@ -80,15 +80,6 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
         },
     );
     tera.register_function(
-        "error",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            match args.get("message") {
-                Some(Value::String(message)) => Err(message.clone().into()),
-                _ => Err("error message must be a string".into()),
-            }
-        },
-    );
-    tera.register_function(
         "choice",
         move |args: &HashMap<String, Value>| -> tera::Result<Value> {
             match args.get("n") {
@@ -426,13 +417,6 @@ mod tests {
         } else if cfg!(target_os = "windows") {
             assert_eq!(render("{{os_family()}}"), "windows");
         }
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_error() {
-        reset();
-        render("{{error(\"message\")}}");
     }
 
     #[test]
