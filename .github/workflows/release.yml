@@ -3,7 +3,7 @@ name: release
 on:
   push:
     tags: ["v*"]
-    branches: ["release", "win", "docs"]
+    branches: ["release", "windows", "docs"]
   workflow_dispatch:
 
 concurrency:
@@ -64,7 +64,7 @@ jobs:
             target: aarch64-apple-darwin
             runs-on: macos-14
     #          - os: windows
-    #            name: win-x64
+    #            name: windows-x64
     #            target: x86_64-pc-windows-gnu
     #            runs-on: ubuntu-latest
     steps:
@@ -110,8 +110,8 @@ jobs:
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
       - run: ${SCCACHE_PATH} --show-stats
-  build-tarball-win:
-    name: build-tarball-win-${{matrix.arch}}
+  build-tarball-windows:
+    name: build-tarball-windows-${{matrix.arch}}
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -143,7 +143,7 @@ jobs:
           restore-keys: cargo-registry
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
-          OS: win
+          OS: windows
           ARCH: ${{matrix.arch}}
       - uses: actions/upload-artifact@v4
         with:
@@ -249,7 +249,7 @@ jobs:
       - rpm
       - deb
       - e2e-linux
-      - build-tarball-win
+      - build-tarball-windows
     steps:
       - uses: actions/checkout@v4
       - uses: crazy-max/ghaction-import-gpg@v6

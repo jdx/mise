@@ -35,11 +35,11 @@ for platform in "${platforms[@]}"; do
   cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform"
 done
 
-win_platforms=(
-  win-arm64
-  win-x64
+windows_platforms=(
+  windows-arm64
+  windows-x64
 )
-for platform in "${win_platforms[@]}"; do
+for platform in "${windows_platforms[@]}"; do
   cp artifacts/*/"mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip"
   zipsign sign zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" ~/.zipsign/mise.priv
   zipsign verify zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$BASE_DIR/zipsign.pub"
