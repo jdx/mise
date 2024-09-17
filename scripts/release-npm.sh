@@ -87,10 +87,10 @@ function installArchSpecificPackage(version) {
 
     process.env.npm_config_global = 'false';
 
-    var platform = process.platform == 'win32' ? 'win' : process.platform;
-    var arch = platform == 'win' && process.arch == 'ia32' ? 'x86' : process.arch;
+    var platform = process.platform == 'win32' ? 'windows' : process.platform;
+    var arch = platform == 'windows' && process.arch == 'ia32' ? 'x86' : process.arch;
 
-    var cp = spawn(platform == 'win' ? 'npm.cmd' : 'npm', ['install', '--no-save', ['$NPM_PREFIX', platform, arch].join('-') + '@' + version], {
+    var cp = spawn(platform == 'windows' ? 'npm.cmd' : 'npm', ['install', '--no-save', ['$NPM_PREFIX', platform, arch].join('-') + '@' + version], {
         stdio: 'inherit',
         shell: true
     });
@@ -111,7 +111,7 @@ function installArchSpecificPackage(version) {
 
         linkSync(bin, path.resolve(process.cwd(), executable));
 
-        if (platform == 'win') {
+        if (platform == 'windows') {
             var pkg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'package.json')));
             fs.writeFileSync(path.resolve(process.cwd(), 'bin/mise'), 'This file intentionally left blank');
             pkg.bin.mise = 'bin/mise.exe';

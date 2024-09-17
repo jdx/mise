@@ -84,7 +84,7 @@ cp "target/$RUST_TRIPLE/serious/mise"* dist/mise/bin
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
 
-if [[ "$os" != "win" ]]; then
+if [[ "$os" != "windows" ]]; then
   cp {,dist/mise/}man/man1/mise.1
   cp {,dist/mise/}share/fish/vendor_conf.d/mise-activate.fish
 fi
@@ -95,7 +95,7 @@ if [[ "$os" == "macos" ]]; then
   codesign -f -s "Developer ID Application: Jeffrey Dickey (4993Y37DX6)" mise/bin/mise
 fi
 
-if [[ "$os" == "win" ]]; then
+if [[ "$os" == "windows" ]]; then
   zip -r "$basename.zip" mise
   ls -oh "$basename.zip"
 else

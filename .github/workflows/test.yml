@@ -215,7 +215,7 @@ jobs:
         with:
           recreate: true
           path: code-coverage-results.md
-  win:
+  windows:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
