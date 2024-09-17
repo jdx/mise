@@ -3137,6 +3137,7 @@ dependencies = [
  "tar",
  "tempfile",
  "urlencoding",
+ "zip",
  "zipsign-api",
 ]
 
