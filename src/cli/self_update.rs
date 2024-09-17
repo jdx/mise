@@ -86,6 +86,14 @@ impl SelfUpdate {
         if self.force || self.version.is_some() {
             update.target_version_tag(&v);
         }
+        #[cfg(windows)]
+        let target = format!("mise-{v}-{target}.zip");
+        #[cfg(not(windows))]
+        let target = format!("mise-{v}-{target}.tar.gz");
+        #[cfg(windows)]
+        let bin_path_in_archive = "mise/bin/mise.exe";
+        #[cfg(not(windows))]
+        let bin_path_in_archive = "mise/bin/mise";
         let status = update
             .repo_owner("jdx")
             .repo_name("mise")
@@ -94,8 +102,8 @@ impl SelfUpdate {
             .show_download_progress(true)
             .current_version(cargo_crate_version!())
             .target(&target)
-            .bin_path_in_archive("mise/bin/mise")
-            .target(&format!("mise-{v}-{target}.tar.gz"))
+            .bin_path_in_archive(bin_path_in_archive)
+            .target(&target)
             .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
             .build()?
             .update()?;

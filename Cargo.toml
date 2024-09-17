@@ -87,11 +87,6 @@ reqwest = { version = "0.12", default-features = false, features = [
     "gzip",
 ] }
 rmp-serde = "1.3.0"
-self_update = { version = "0.41", default-features = false, features = [
-    "archive-tar",
-    "compression-flate2",
-    "signatures",
-] }
 serde = "1.0.199"
 serde_derive = "1.0.199"
 serde_ignored = "0.1"
@@ -129,6 +124,17 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.29", features = ["signal", "user"] }
+self_update = { version = "0.41", default-features = false, features = [
+    "archive-tar",
+    "compression-flate2",
+    "signatures",
+] }
+
+[target.'cfg(windows)'.dependencies]
+self_update = { version = "0.41", default-features = false, features = [
+    "archive-zip",
+    "signatures",
+] }
 
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2"] }
