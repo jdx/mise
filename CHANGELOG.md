@@ -1,5 +1,11 @@
 # Changelog
 
+## [2024.9.5](https://github.com/jdx/mise/compare/v2024.9.4..v2024.9.5) - 2024-09-17
+
+### 🔍 Other Changes
+
+- change win -> windows by [@jdx](https://github.com/jdx) in [e45623c](https://github.com/jdx/mise/commit/e45623c88662a11f08db93068ac765efb3813855)
+
 ## [2024.9.4](https://github.com/jdx/mise/compare/v2024.9.3..v2024.9.4) - 2024-09-15
 
 ### 🚀 Features
