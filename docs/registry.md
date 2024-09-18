@@ -36,6 +36,7 @@ editLink: false
 | asdf-plugin-manager | [asdf:asdf-community/asdf-plugin-manager](https://github.com/asdf-community/asdf-plugin-manager) |
 | assh | [asdf:zekker6/asdf-assh](https://github.com/zekker6/asdf-assh) |
 | atlas | [asdf:komi1230/asdf-atlas](https://github.com/komi1230/asdf-atlas) |
+| atmos | [asdf:cloudposse/asdf-atmos](https://github.com/cloudposse/asdf-atmos) |
 | auto-doc | [asdf:looztra/asdf-auto-doc](https://github.com/looztra/asdf-auto-doc) |
 | aws-amplify-cli | [asdf:LozanoMatheus/asdf-aws-amplify-cli](https://github.com/LozanoMatheus/asdf-aws-amplify-cli) |
 | aws-copilot | [asdf:NeoHsu/asdf-copilot](https://github.com/NeoHsu/asdf-copilot) |
