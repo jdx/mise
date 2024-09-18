@@ -220,10 +220,20 @@ fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
         .list_installed_versions()?
         .into_par_iter()
         .flat_map(|(t, tv)| {
-            list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
+            let bins = list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
-            })
+            });
+            if cfg!(windows) {
+                bins.into_iter()
+                    .map(|b| {
+                        let p = PathBuf::from(&b);
+                        p.with_extension("cmd").to_string_lossy().to_string()
+                    })
+                    .collect()
+            } else {
+                bins
+            }
         })
         .collect())
 }
