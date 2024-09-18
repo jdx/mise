@@ -54,6 +54,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("asdf-plugin-manager", "https://github.com/asdf-community/asdf-plugin-manager"),
     ("assh", "https://github.com/zekker6/asdf-assh.git"),
     ("atlas", "https://github.com/komi1230/asdf-atlas.git"),
+    ("atmos", "https://github.com/cloudposse/asdf-atmos.git"),
     ("auto-doc", "https://github.com/looztra/asdf-auto-doc.git"),
     ("aws-amplify-cli", "https://github.com/LozanoMatheus/asdf-aws-amplify-cli.git"),
     ("aws-copilot", "https://github.com/NeoHsu/asdf-copilot"),
