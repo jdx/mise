@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn test_settings_ls() {
         reset();
-        assert_cli_snapshot!("settings", @r###"
+        assert_cli_snapshot!("settings", @r#"
         activate_aggressive = false
         all_compile = false
         always_keep_download = true
@@ -97,17 +97,23 @@ mod tests {
         vfox = false
         yes = true
 
+        [ruby]
+        default_packages_file = "~/.default-gems"
+        ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
+        ruby_install = false
+        ruby_install_repo = "https://github.com/postmodern/ruby-install.git"
+
         [status]
         missing_tools = "if_other_versions_installed"
         show_env = false
         show_tools = false
-        "###);
+        "#);
     }
 
     #[test]
     fn test_settings_ls_keys() {
         reset();
-        assert_cli_snapshot!("settings", "--keys", @r###"
+        assert_cli_snapshot!("settings", "--keys", @r#"
         activate_aggressive
         all_compile
         always_keep_download
@@ -140,6 +146,11 @@ mod tests {
         python_pyenv_repo
         quiet
         raw
+        ruby
+        ruby.default_packages_file
+        ruby.ruby_build_repo
+        ruby.ruby_install
+        ruby.ruby_install_repo
         status
         status.missing_tools
         status.show_env
@@ -149,6 +160,6 @@ mod tests {
         verbose
         vfox
         yes
-        "###);
+        "#);
     }
 }
