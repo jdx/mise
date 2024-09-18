@@ -62,7 +62,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(RubyPlugin::new()),
     ];
     #[cfg(windows)]
-    let mut plugins: Vec<Arc<dyn Backend>> = vec![
+    let plugins: Vec<Arc<dyn Backend>> = vec![
         // Arc::new(BunPlugin::new()),
         // Arc::new(DenoPlugin::new()),
         // Arc::new(ErlangPlugin::new()),

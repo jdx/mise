@@ -120,7 +120,15 @@ fn parse_command(
         (Some(command), _) => {
             let (program, args) = command.split_first().unwrap();
 
-            (program.clone(), args.into())
+            if cfg!(windows) {
+                let args = vec!["/c".into(), program.into()]
+                    .into_iter()
+                    .chain(args.iter().cloned())
+                    .collect();
+                (shell.into(), args)
+            } else {
+                (program.clone(), args.into())
+            }
         }
         _ => (shell.into(), vec!["-c".into(), c.clone().unwrap()]),
     }
