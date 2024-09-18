@@ -49,7 +49,11 @@ impl Version {
 }
 
 pub fn print_version_if_requested(args: &[String]) -> std::io::Result<()> {
-    if args.len() == 2 && *env::MISE_BIN_NAME == "mise" {
+    #[cfg(unix)]
+    let mise_bin = "mise";
+    #[cfg(windows)]
+    let mise_bin = "mise.exe";
+    if args.len() == 2 && *env::MISE_BIN_NAME == mise_bin {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
             show_version()?;
