@@ -296,9 +296,18 @@ impl Run {
             let filename = file.display().to_string();
             self.exec(&filename, args, task, env, prefix)
         } else {
-            let script = format!("{} {}", script, shell_words::join(args));
-            let args = vec!["-c".to_string(), script];
-            self.exec("sh", &args, task, env, prefix)
+            #[cfg(windows)]
+            {
+                let script = format!("{} {}", script, args.join(" "));
+                let args = vec!["/c".to_string(), script];
+                self.exec("cmd", &args, task, env, prefix)
+            }
+            #[cfg(unix)]
+            {
+                let script = format!("{} {}", script, shell_words::join(args));
+                let args = vec!["-c".to_string(), script];
+                self.exec("sh", &args, task, env, prefix)
+            }
         }
     }
 
