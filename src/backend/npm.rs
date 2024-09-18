@@ -6,7 +6,7 @@ use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::env;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
@@ -59,8 +59,6 @@ impl Backend for NPMBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::get();
-        settings.ensure_experimental("npm backend")?;
 
         CmdLineRunner::new("npm")
             .arg("install")
