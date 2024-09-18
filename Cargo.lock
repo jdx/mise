@@ -2009,6 +2009,7 @@ dependencies = [
  "log",
  "nix 0.29.0",
  "num_cpus",
+ "number_prefix",
  "once_cell",
  "openssl",
  "path-absolutize",

@@ -65,6 +65,7 @@ mod tests {
         always_keep_install = true
         asdf = true
         asdf_compat = false
+        cache_prune_age = "0"
         cargo_binstall = true
         color = true
         disable_default_shorthands = false
@@ -120,6 +121,7 @@ mod tests {
         always_keep_install
         asdf
         asdf_compat
+        cache_prune_age
         cargo_binstall
         color
         disable_default_shorthands
