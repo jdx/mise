@@ -185,7 +185,11 @@ pub(crate) fn auto_prune() -> Result<()> {
             return Ok(());
         }
     }
+    let empty = file::ls(*dirs::CACHE).unwrap_or_default().is_empty();
     xx::file::touch_dir(&auto_prune_file)?;
+    if empty {
+        return Ok(());
+    }
     info!("pruning old cache files, this behavior can be modified with the MISE_CACHE_PRUNE_AGE setting");
     prune(
         *dirs::CACHE,
