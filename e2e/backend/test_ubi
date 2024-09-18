@@ -1,5 +1,3 @@
 #!/usr/bin/env bash
 
-curl -sSf -L https://raw.githubusercontent.com/houseabsolute/ubi/master/bootstrap/bootstrap-ubi.sh | TARGET="$HOME/bin" sh
-
 assert "mise x ubi:goreleaser/goreleaser@v1.25.0 -- goreleaser -v | grep -o 1.25.0" "1.25.0"
