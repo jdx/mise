@@ -16,12 +16,12 @@ use crate::{dirs, duration, env, file};
 #[clap(about = "Show mise version", alias = "v")]
 pub struct Version {}
 
-pub static OS: Lazy<String> = Lazy::new(|| std::env::consts::OS.into());
+pub static OS: Lazy<String> = Lazy::new(|| env::consts::OS.into());
 pub static ARCH: Lazy<String> = Lazy::new(|| {
-    match std::env::consts::ARCH {
+    match env::consts::ARCH {
         "x86_64" => "x64",
         "aarch64" => "arm64",
-        _ => std::env::consts::ARCH,
+        _ => env::consts::ARCH,
     }
     .to_string()
 });
@@ -49,7 +49,11 @@ impl Version {
 }
 
 pub fn print_version_if_requested(args: &[String]) -> std::io::Result<()> {
-    if args.len() == 2 && *env::MISE_BIN_NAME == "mise" {
+    #[cfg(unix)]
+    let mise_bin = "mise";
+    #[cfg(windows)]
+    let mise_bin = "mise.exe";
+    if args.len() == 2 && *env::MISE_BIN_NAME == mise_bin {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
             show_version()?;
