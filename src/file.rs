@@ -476,6 +476,12 @@ pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
         .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))
 }
 
+#[cfg(windows)]
+pub fn un7z(archive: &Path, dest: &Path) -> Result<()> {
+    sevenz_rust::decompress_file(archive, dest)
+        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Deref;

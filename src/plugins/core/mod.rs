@@ -26,6 +26,8 @@ use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 #[cfg(unix)]
 use crate::plugins::core::ruby::RubyPlugin;
+#[cfg(windows)]
+use crate::plugins::core::ruby_windows::RubyPlugin;
 #[cfg(unix)]
 use crate::plugins::core::zig::ZigPlugin;
 use crate::plugins::{Plugin, PluginList, PluginType};
@@ -46,6 +48,8 @@ mod node;
 mod python;
 #[cfg(unix)]
 mod ruby;
+#[cfg(windows)]
+mod ruby_windows;
 #[cfg(unix)]
 mod zig;
 
@@ -70,7 +74,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         // Arc::new(JavaPlugin::new()),
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
-        // Arc::new(RubyPlugin::new()),
+        Arc::new(RubyPlugin::new()),
     ];
     #[cfg(unix)]
     {

@@ -233,20 +233,27 @@ pub static NODENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("NODENV_ROOT").unwrap_or_else(|| HOME.join(".nodenv")));
 
 // ruby
+#[cfg(unix)]
 pub static MISE_RUBY_BUILD_REPO: Lazy<String> = Lazy::new(|| {
     var("MISE_RUBY_BUILD_REPO").unwrap_or_else(|_| "https://github.com/rbenv/ruby-build.git".into())
 });
+#[cfg(unix)]
 pub static MISE_RUBY_INSTALL_REPO: Lazy<String> = Lazy::new(|| {
     var("MISE_RUBY_INSTALL_REPO")
         .unwrap_or_else(|_| "https://github.com/postmodern/ruby-install.git".into())
 });
+#[cfg(unix)]
 pub static MISE_RUBY_INSTALL: Lazy<bool> = Lazy::new(|| var_is_true("MISE_RUBY_INSTALL"));
+#[cfg(unix)]
 pub static MISE_RUBY_APPLY_PATCHES: Lazy<Option<String>> =
     Lazy::new(|| var("MISE_RUBY_APPLY_PATCHES").ok());
+#[cfg(unix)]
 pub static MISE_RUBY_VERBOSE_INSTALL: Lazy<Option<bool>> =
     Lazy::new(|| var_option_bool("MISE_RUBY_VERBOSE_INSTALL"));
+#[cfg(unix)]
 pub static MISE_RUBY_INSTALL_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
     Lazy::new(|| shell_words::split(&var("MISE_RUBY_INSTALL_OPTS").unwrap_or_default()));
+#[cfg(unix)]
 pub static MISE_RUBY_BUILD_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
     Lazy::new(|| shell_words::split(&var("MISE_RUBY_BUILD_OPTS").unwrap_or_default()));
 pub static MISE_RUBY_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
