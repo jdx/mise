@@ -54,6 +54,7 @@ mod shell;
 mod shims;
 mod shorthands;
 mod task;
+mod task_parser;
 pub(crate) mod tera;
 pub(crate) mod timeout;
 mod toml;
