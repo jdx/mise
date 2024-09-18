@@ -61,14 +61,15 @@ fn init() {
     env::remove_var("MISE_TRUSTED_CONFIG_PATHS");
     env::remove_var("MISE_DISABLE_TOOLS");
     env::set_var("NO_COLOR", "1");
-    env::set_var("MISE_YES", "1");
-    env::set_var("MISE_USE_TOML", "0");
-    env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
-    env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
-    env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
+    env::set_var("MISE_CACHE_PRUNE_AGE", "0");
     env::set_var("MISE_CACHE_DIR", env::HOME.join("data").join("cache"));
-    env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
+    env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
+    env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
     env::set_var("MISE_DEFAULT_CONFIG_FILENAME", ".test.mise.toml");
+    env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
+    env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
+    env::set_var("MISE_USE_TOML", "0");
+    env::set_var("MISE_YES", "1");
     //env::set_var("TERM", "dumb");
 }
 

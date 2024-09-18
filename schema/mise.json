@@ -300,6 +300,11 @@
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
           "type": "boolean"
         },
+        "cache_prune_age": {
+          "description": "age to keep cached files, e.g.: 30d",
+          "default": "30d",
+          "type": "string"
+        },
         "cargo_binstall": {
           "description": "use cargo-binstall to install rust tools if available",
           "type": "boolean",

@@ -141,6 +141,7 @@ pub mod tests {
         always_keep_install = true
         asdf = true
         asdf_compat = false
+        cache_prune_age = "0"
         cargo_binstall = true
         color = true
         disable_default_shorthands = false

@@ -313,6 +313,17 @@ as non-pinned versions.
 This will also change the default global tool config to be `~/.tool-versions` instead
 of `~/.config/mise/config.toml`.
 
+### `cache_prune_age`
+
+* Type: `string`
+* Env: `MISE_CACHE_PRUNE_AGE`
+* Default: `30d`
+
+The age of the cache before it is considered stale. mise will occasionally delete cache files which
+have not been accessed in this amount of time.
+
+Set to `0` to keep cache files indefinitely.
+
 ### `disable_tools`
 
 * Type: `string[]` (comma-delimited)
