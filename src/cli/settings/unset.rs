@@ -49,7 +49,7 @@ mod tests {
 
         assert_cli!("settings", "unset", "jobs");
 
-        assert_cli_snapshot!("settings", @r###"
+        assert_cli_snapshot!("settings", @r#"
         activate_aggressive = false
         all_compile = false
         always_keep_download = true
@@ -88,11 +88,17 @@ mod tests {
         vfox = false
         yes = true
 
+        [ruby]
+        default_packages_file = "~/.default-gems"
+        ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
+        ruby_install = false
+        ruby_install_repo = "https://github.com/postmodern/ruby-install.git"
+
         [status]
         missing_tools = "if_other_versions_installed"
         show_env = false
         show_tools = false
-        "###);
+        "#);
 
         reset();
     }

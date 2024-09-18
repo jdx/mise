@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::env::PATH_KEY;
 use crate::github::GithubRelease;
 use crate::http::HTTP;
@@ -67,7 +67,9 @@ impl RubyPlugin {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        let body = file::read_to_string(&*env::MISE_RUBY_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let settings = Settings::get();
+        let default_gems_file = file::replace_path(&settings.ruby.default_packages_file);
+        let body = file::read_to_string(&default_gems_file).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {

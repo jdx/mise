@@ -24,6 +24,7 @@ env:
   SCCACHE_S3_NO_CREDENTIALS: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID && '0' || '1' }}
   MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
   MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 permissions:
   pull-requests: write
