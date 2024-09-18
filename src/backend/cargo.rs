@@ -58,8 +58,6 @@ impl Backend for CargoBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::get();
-        settings.ensure_experimental("cargo backend")?;
         let install_arg = format!("{}@{}", self.name(), ctx.tv.version);
 
         let cmd = CmdLineRunner::new("cargo").arg("install");
