@@ -1,7 +1,14 @@
 # Script Tasks
 
-In addition to defining tasks through the configuration, they can also be defined as standalone script files in
-`.mise/tasks/:task_name` such as the following build script for cargo:
+In addition to defining tasks through the configuration, they can also be defined as standalone script files in one of the following directories:
+
+* `mise-tasks/:task_name`
+* `.mise-tasks/:task_name`
+* `mise/tasks/:task_name`
+* `.mise/tasks/:task_name`
+* `.config/mise/tasks/:task_name`
+
+Here is an example of a script task that builds a Rust CLI:
 
 ```bash
 #!/usr/bin/env bash

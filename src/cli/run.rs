@@ -45,7 +45,8 @@ use super::args::ToolArg;
 ///     outputs = ["dist/**/*.js"]
 ///
 /// Alternatively, tasks can be defined as standalone scripts.
-/// These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+/// These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+/// `.config/mise/tasks`.
 /// The name of the script will be the name of the tasks.
 ///
 ///     $ cat .mise/tasks/build<<EOF
