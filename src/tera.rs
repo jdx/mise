@@ -316,6 +316,7 @@ mod tests {
     use super::*;
     use crate::test::reset;
     use insta::assert_snapshot;
+    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_config_root() {
@@ -354,7 +355,7 @@ mod tests {
     fn test_xdg_cache_home() {
         reset();
         let s = render("{{xdg_cache_home}}");
-        assert!(s.ends_with("/.cache")); // test dir is not deterministic
+        assert_str_eq!(s, env::XDG_CACHE_HOME.to_string_lossy());
     }
 
     #[test]
