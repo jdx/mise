@@ -157,25 +157,6 @@ static KEY: Lazy<String> = Lazy::new(|| {
     hash_to_str(&parts).chars().take(5).collect()
 });
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test::reset;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn test_cache() {
-        reset();
-        // does not fail with invalid path
-        let cache = CacheManager::new("/invalid:path/to/cache");
-        cache.clear().unwrap();
-        let val = cache.get_or_try_init(|| Ok(1)).unwrap();
-        assert_eq!(val, &1);
-        let val = cache.get_or_try_init(|| Ok(2)).unwrap();
-        assert_eq!(val, &1);
-    }
-}
-
 pub(crate) struct PruneResults {
     pub(crate) size: u64,
     pub(crate) count: u64,
@@ -255,4 +236,23 @@ pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
         }
     }
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::reset;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_cache() {
+        reset();
+        // does not fail with invalid path
+        let cache = CacheManager::new("/invalid:path/to/cache");
+        cache.clear().unwrap();
+        let val = cache.get_or_try_init(|| Ok(1)).unwrap();
+        assert_eq!(val, &1);
+        let val = cache.get_or_try_init(|| Ok(2)).unwrap();
+        assert_eq!(val, &1);
+    }
 }
