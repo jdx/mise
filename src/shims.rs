@@ -99,8 +99,8 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
     let (shims_to_add, shims_to_remove) = get_shim_diffs(&mise_bin, ts)?;
 
     for shim in shims_to_add {
-        let symlink_path = dirs::SHIMS.join(shim);
-        add_shim(&mise_bin, &symlink_path)?;
+        let symlink_path = dirs::SHIMS.join(&shim);
+        add_shim(&mise_bin, &symlink_path, &shim)?;
     }
     for shim in shims_to_remove {
         let symlink_path = dirs::SHIMS.join(shim);
@@ -126,13 +126,14 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
+fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
+    let shim = shim.trim_end_matches(".cmd");
     file::write(
         symlink_path.with_extension("cmd"),
         formatdoc! {r#"
         @echo off
         setlocal
-        mise x -- %*
+        mise x -- {shim} %*
         "#},
     )
     .wrap_err_with(|| {
@@ -145,7 +146,7 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
+fn add_shim(mise_bin: &Path, symlink_path: &Path, _shim: &str) -> Result<()> {
     file::make_symlink(mise_bin, symlink_path).wrap_err_with(|| {
         eyre!(
             "Failed to create symlink from {} to {}",
