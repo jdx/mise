@@ -18,7 +18,10 @@ use crate::file::replace_path;
 use crate::hook_env::{deserialize_watches, HookEnvWatches};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
+#[cfg(unix)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
+#[cfg(windows)]
+pub static SHELL: Lazy<String> = Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
 
 // paths and directories
 #[cfg(test)]
