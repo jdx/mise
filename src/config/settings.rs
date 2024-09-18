@@ -4,6 +4,9 @@ use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
+use crate::file::FindUp;
+use crate::{config, dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
@@ -11,10 +14,6 @@ use eyre::{bail, Result};
 use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
-
-use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
-use crate::file::FindUp;
-use crate::{config, dirs, env, file};
 
 #[rustfmt::skip]
 #[derive(Config, Default, Debug, Clone, Serialize)]
@@ -118,6 +117,8 @@ pub struct Settings {
     pub python_pyenv_repo: String,
     #[config(env = "MISE_RAW", default = false)]
     pub raw: bool,
+    #[config(nested)]
+    pub ruby: SettingsRuby,
     #[config(env = "MISE_SHORTHANDS_FILE")]
     pub shorthands_file: Option<PathBuf>,
     /// what level of status messages to display when entering directories
@@ -157,6 +158,29 @@ pub struct Settings {
     pub log_level: String,
     #[config(env = "MISE_PYTHON_VENV_AUTO_CREATE", default = false)]
     pub python_venv_auto_create: bool,
+}
+
+#[derive(Config, Default, Debug, Clone, Serialize)]
+#[config(partial_attr(derive(Clone, Serialize, Default)))]
+#[config(partial_attr(serde(deny_unknown_fields)))]
+#[rustfmt::skip]
+pub struct SettingsRuby {
+    #[config(env = "MISE_RUBY_APPLY_PATCHES")]
+    pub apply_patches: Option<String>,
+    #[config(env = "MISE_RUBY_DEFAULT_PACKAGES_FILE", default = "~/.default-gems")]
+    pub default_packages_file: String,
+    #[config(env = "MISE_RUBY_BUILD_REPO", default = "https://github.com/rbenv/ruby-build.git")]
+    pub ruby_build_repo: String,
+    #[config(env = "MISE_RUBY_BUILD_OPTS")]
+    pub ruby_build_opts: Option<String>,
+    #[config(env = "MISE_RUBY_INSTALL", default = false)]
+    pub ruby_install: bool,
+    #[config(env = "MISE_RUBY_INSTALL_REPO", default = "https://github.com/postmodern/ruby-install.git")]
+    pub ruby_install_repo: String,
+    #[config(env = "MISE_RUBY_INSTALL_OPTS")]
+    pub ruby_install_opts: Option<String>,
+    #[config(env = "MISE_RUBY_VERBOSE_INSTALL")]
+    pub verbose_install: Option<bool>,
 }
 
 #[derive(Config, Default, Debug, Clone, Serialize)]

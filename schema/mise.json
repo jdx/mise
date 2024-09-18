@@ -429,6 +429,45 @@
           "description": "path to file containing shorthand mappings",
           "type": "string"
         },
+        "ruby": {
+          "description": "settings specific to ruby",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "apply_patches": {
+              "description": "A list of patches (files or URLs) to apply to Ruby source code before building",
+              "type": "string"
+            },
+            "verbose_install": {
+              "description": "Show verbose output during installation (passes --verbose to ruby-build)",
+              "type": "boolean"
+            },
+            "ruby_build_repo": {
+              "description": "The git repository to use for getting ruby-build",
+              "type": "string"
+            },
+            "ruby_build_opts": {
+              "description": "Command line options to pass to ruby-build when installing",
+              "type": "string"
+            },
+            "ruby_install": {
+              "description": "Build with ruby-install instead of ruby-build",
+              "type": "boolean"
+            },
+            "ruby_install_repo": {
+              "description": "The git repository to use for getting ruby-install",
+              "type": "string"
+            },
+            "ruby_install_opts": {
+              "description": "Command line options to pass to ruby-install when installing (if MISE_RUBY_INSTALL=1)",
+              "type": "string"
+            },
+            "default_packages_file": {
+              "description": "Location of file containing a list of gems to install after installing a new ruby version.",
+              "type": "string"
+            }
+          }
+        },
         "status": {
           "description": "configure messages displayed when changing directories or executing tools",
           "type": "object",
