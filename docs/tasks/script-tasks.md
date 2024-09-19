@@ -66,3 +66,26 @@ build                         .../.mise/tasks/build
 test:integration              .../.mise/tasks/test/integration
 test:units                    .../.mise/tasks/test/units
 ```
+
+### Argument parsing with usage
+
+[usage](https://usage.jdx.dev) spec can be used within these files to provide argument parsing, autocompletion, and help documentation.
+
+Here is an example of a script task that builds a Rust CLI using some of the features of usage:
+
+```bash
+#!/usr/bin/env -S usage bash
+set -e
+
+#USAGE flag "-c --clean" help="Clean the build directory before building"
+#USAGE flag "-p --profile <profile>" help="Build with the specified profile" 
+#USAGE arg "<target>" help="The target to build" 
+
+if [ "$usage_clean" = "true" ]; then
+  cargo clean
+fi
+
+cargo build --profile "${usage_profile:-debug}" --target "$usage_target"
+```
+
+(Note that autocompletion and help are not yet implemented in mise as of this writing but that is planned.)

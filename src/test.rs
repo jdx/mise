@@ -109,11 +109,14 @@ pub fn reset() {
         # mise sources=[".test-tool-versions"]
         # mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
         # mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+        
+        #USAGE flag "--user <user>" help="The user to run as"
 
-        set -euxo pipefail
+        set -exo pipefail
         cd "$MISE_PROJECT_ROOT" || exit 1
         echo "running test-build script"
         echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.txt
+        echo "user=$usage_user"
         "#},
     )
     .unwrap();
