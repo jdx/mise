@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use eyre::{bail, Result};
+use eyre::{bail, ensure, Result};
 use serde_derive::Deserialize;
 use tempfile::tempdir_in;
 use url::Url;
@@ -324,6 +324,10 @@ impl Backend for NodePlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+        ensure!(
+            ctx.tv.version != "latest",
+            "version should not be 'latest' for node, something is wrong"
+        );
         let config = Config::get();
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx)?;
