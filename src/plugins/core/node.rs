@@ -349,6 +349,11 @@ impl Backend for NodePlugin {
 
         Ok(())
     }
+
+    #[cfg(windows)]
+    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+        Ok(vec![tv.install_path()])
+    }
 }
 
 #[derive(Debug)]
