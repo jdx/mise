@@ -190,7 +190,7 @@ pub(crate) fn auto_prune() -> Result<()> {
     if empty {
         return Ok(());
     }
-    info!("pruning old cache files, this behavior can be modified with the MISE_CACHE_PRUNE_AGE setting");
+    debug!("pruning old cache files, this behavior can be modified with the MISE_CACHE_PRUNE_AGE setting");
     prune(
         *dirs::CACHE,
         &PruneOptions {
