@@ -69,6 +69,15 @@ Then running `mise run test foo bar` will pass `foo bar` to `cargo test`. `mise 
 
 These are defined in scripts with <span v-pre>`{{arg()}}`</span>. They are used for positional arguments where the order matters.
 
+Example:
+
+```toml
+[tasks.test]
+run = 'cargo test {{arg(name="file")}}'
+# execute: mise run test my-test-file
+# runs: cargo test my-test-file
+```
+
 - `i`: The index of the argument. This can be used to specify the order of arguments. Defaults to the order they're defined in the scripts.
 - `name`: The name of the argument. This is used for help/error messages.
 - `var`: If `true`, multiple arguments can be passed.
@@ -78,6 +87,15 @@ These are defined in scripts with <span v-pre>`{{arg()}}`</span>. They are used 
 
 These are defined in scripts with <span v-pre>`{{option()}}`</span>. They are used for named arguments where the order doesn't matter.
 
+Example:
+
+```toml
+[tasks.test]
+run = 'cargo test {{arg(name="file")}}'
+# execute: mise run test --file my-test-file
+# runs: cargo test my-test-file
+```
+
 - `name`: The name of the argument. This is used for help/error messages.
 - `var`: If `true`, multiple values can be passed.
 - `default`: The default value if the option is not provided.
@@ -85,6 +103,15 @@ These are defined in scripts with <span v-pre>`{{option()}}`</span>. They are us
 ### Flags
 
 Flags are like options except they don't take values. They are defined in scripts with <span v-pre>`{{flag()}}`</span>.
+
+Example:
+
+```toml
+[tasks.echo]
+run = 'echo {{flag(name=("myflag")}}'
+# execute: mise run echo --myflag
+# runs: echo true
+```
 
 - `name`: The name of the flag. This is used for help/error messages.
 
