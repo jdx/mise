@@ -192,8 +192,8 @@ impl Backend for RubyPlugin {
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let config = Config::get();
         let tarball = self.download(&ctx.tv, ctx.pr.as_ref())?;
-        self.install(&ctx, &tarball)?;
-        self.verify(&ctx)?;
+        self.install(ctx, &tarball)?;
+        self.verify(ctx)?;
         self.install_rubygems_hook(&ctx.tv)?;
         self.test_gem(&config, &ctx.tv, ctx.pr.as_ref())?;
         if let Err(err) = self.install_default_gems(&config, &ctx.tv, ctx.pr.as_ref()) {
@@ -251,6 +251,7 @@ fn parse_gemfile(body: &str) -> String {
     v
 }
 
+#[allow(clippy::if_same_then_else)]
 fn arch() -> &'static str {
     if cfg!(target_arch = "aarch64") {
         "x64"

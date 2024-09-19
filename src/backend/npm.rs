@@ -1,6 +1,6 @@
-use std::fmt::Debug;
-
 use serde_json::Value;
+use std::fmt::Debug;
+use std::path::PathBuf;
 
 use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
@@ -9,7 +9,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::env;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolRequest;
+use crate::toolset::{ToolRequest, ToolVersion};
 
 #[derive(Debug)]
 pub struct NPMBackend {
@@ -73,6 +73,11 @@ impl Backend for NPMBackend {
             .execute()?;
 
         Ok(())
+    }
+
+    #[cfg(windows)]
+    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+        Ok(vec![tv.install_path()])
     }
 }
 
