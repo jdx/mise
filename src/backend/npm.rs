@@ -1,6 +1,5 @@
 use serde_json::Value;
 use std::fmt::Debug;
-use std::path::PathBuf;
 
 use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
@@ -9,7 +8,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::env;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersion};
+use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
 pub struct NPMBackend {
