@@ -91,7 +91,7 @@ Example:
 
 ```toml
 [tasks.test]
-run = 'cargo test {{arg(name="file")}}'
+run = 'cargo test {{option(name="file")}}'
 # execute: mise run test --file my-test-file
 # runs: cargo test my-test-file
 ```
