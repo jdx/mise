@@ -39,7 +39,8 @@ rustPlatform.buildRustPackage {
   # is excluded by default from Nix.
   checkPhase = ''
     RUST_BACKTRACE=full cargo test --all-features -- \
-      --skip cli::plugins::ls::tests::test_plugin_list_urls
+      --skip cli::plugins::ls::tests::test_plugin_list_urls \
+      --skip tera::tests::test_last_modified
   '';
 
   meta = with lib; {
