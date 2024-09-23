@@ -117,7 +117,13 @@ static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
 impl<'a> CmdLineRunner<'a> {
     pub fn new<P: AsRef<OsStr>>(program: P) -> Self {
-        let mut cmd = Command::new(program);
+        let mut cmd = if cfg!(windows) {
+            let mut cmd = Command::new("cmd.exe");
+            cmd.arg("/c").arg(program);
+            cmd
+        } else {
+            Command::new(program)
+        };
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
