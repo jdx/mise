@@ -316,7 +316,6 @@ mod tests {
     use super::*;
     use crate::test::reset;
     use insta::assert_snapshot;
-    use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_config_root() {
@@ -352,6 +351,15 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
+    fn test_xdg_cache_home() {
+        reset();
+        let s = render("{{xdg_cache_home}}");
+        assert!(s.ends_with("/Library/Caches")); // test dir is not deterministic
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
     fn test_xdg_cache_home() {
         reset();
         let s = render("{{xdg_cache_home}}");
