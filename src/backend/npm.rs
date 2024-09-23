@@ -75,7 +75,10 @@ impl Backend for NPMBackend {
     }
 
     #[cfg(windows)]
-    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+    fn list_bin_paths(
+        &self,
+        tv: &crate::toolset::ToolVersion,
+    ) -> eyre::Result<Vec<std::path::PathBuf>> {
         Ok(vec![tv.install_path()])
     }
 }
