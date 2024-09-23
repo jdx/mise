@@ -44,6 +44,19 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
+pub fn remove_file_or_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    match path.metadata().map(|m| m.file_type()) {
+        Ok(x) if x.is_dir() => {
+            remove_dir(path)?;
+        }
+        _ => {
+            remove_file(path)?;
+        }
+    };
+    Ok(())
+}
+
 pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("rm {}", display_path(path));
@@ -224,7 +237,7 @@ pub fn dir_subdirs(dir: &Path) -> Result<Vec<String>> {
     for entry in dir.read_dir()? {
         let entry = entry?;
         let ft = entry.file_type()?;
-        if ft.is_dir() || ft.is_symlink() {
+        if ft.is_dir() || (ft.is_symlink() && entry.path().read_link()?.is_dir()) {
             output.push(entry.file_name().into_string().unwrap());
         }
     }
@@ -241,9 +254,7 @@ pub fn ls(dir: &Path) -> Result<Vec<PathBuf>> {
 
     for entry in dir.read_dir()? {
         let entry = entry?;
-        if entry.file_type()?.is_file() {
-            output.push(entry.path());
-        }
+        output.push(entry.path());
     }
 
     Ok(output)
@@ -288,6 +299,14 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     }
     xx::file::write(link, target.to_string_lossy().to_string())?;
     Ok(())
+}
+
+pub fn resolve_symlink(link: &Path) -> Result<PathBuf> {
+    if cfg!(windows) {
+        Ok(fs::read_to_string(link)?.into())
+    } else {
+        Ok(fs::read_link(link)?)
+    }
 }
 
 #[cfg(unix)]
@@ -474,6 +493,12 @@ pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
         .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
         .extract(dest)
         .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))
+}
+
+#[cfg(windows)]
+pub fn un7z(archive: &Path, dest: &Path) -> Result<()> {
+    sevenz_rust::decompress_file(archive, dest)
+        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))
 }
 
 #[cfg(test)]

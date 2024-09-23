@@ -13,10 +13,11 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::build_time::built_info;
-use crate::file;
+use crate::config::Settings;
 use crate::file::{display_path, modified_duration};
 use crate::hash::hash_to_str;
 use crate::rand::random_string;
+use crate::{dirs, file};
 
 #[derive(Debug, Clone)]
 pub struct CacheManager<T>
@@ -155,6 +156,91 @@ static KEY: Lazy<String> = Lazy::new(|| {
     }
     hash_to_str(&parts).chars().take(5).collect()
 });
+
+pub(crate) struct PruneResults {
+    pub(crate) size: u64,
+    pub(crate) count: u64,
+}
+
+pub(crate) struct PruneOptions {
+    pub(crate) dry_run: bool,
+    pub(crate) verbose: bool,
+    pub(crate) age: Duration,
+}
+
+pub(crate) fn auto_prune() -> Result<()> {
+    if rand::random::<u8>() % 10 != 0 {
+        return Ok(()); // only prune 10% of the time
+    }
+    let settings = Settings::get();
+    let age = match settings.cache_prune_age_duration() {
+        Some(age) => age,
+        None => {
+            return Ok(());
+        }
+    };
+    let auto_prune_file = dirs::CACHE.join(".auto_prune");
+    if let Ok(Ok(modified)) = auto_prune_file.metadata().map(|m| m.modified()) {
+        if modified.elapsed().unwrap_or_default() < age {
+            return Ok(());
+        }
+    }
+    let empty = file::ls(*dirs::CACHE).unwrap_or_default().is_empty();
+    xx::file::touch_dir(&auto_prune_file)?;
+    if empty {
+        return Ok(());
+    }
+    debug!("pruning old cache files, this behavior can be modified with the MISE_CACHE_PRUNE_AGE setting");
+    prune(
+        *dirs::CACHE,
+        &PruneOptions {
+            dry_run: false,
+            verbose: false,
+            age,
+        },
+    )?;
+    Ok(())
+}
+
+pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
+    let mut results = PruneResults { size: 0, count: 0 };
+    let remove = |file: &Path| {
+        if opts.dry_run || opts.verbose {
+            info!("pruning {}", display_path(file));
+        } else {
+            debug!("pruning {}", display_path(file));
+        }
+        if !opts.dry_run {
+            file::remove_file_or_dir(file)?;
+        }
+        Ok::<(), color_eyre::Report>(())
+    };
+    for subdir in file::dir_subdirs(dir)? {
+        let subdir = dir.join(&subdir);
+        let r = prune(&subdir, opts)?;
+        results.size += r.size;
+        results.count += r.count;
+        let metadata = subdir.metadata()?;
+        // only delete empty directories if they're old
+        if file::ls(&subdir)?.is_empty()
+            && metadata.modified()?.elapsed().unwrap_or_default() > opts.age
+        {
+            remove(&subdir)?;
+            results.count += 1;
+        }
+    }
+    for f in file::ls(dir)? {
+        let path = dir.join(&f);
+        let metadata = path.metadata()?;
+        let elapsed = metadata.accessed()?.elapsed().unwrap_or_default();
+        if elapsed > opts.age {
+            remove(&path)?;
+            results.size += metadata.len();
+            results.count += 1;
+        }
+    }
+    Ok(results)
+}
 
 #[cfg(test)]
 mod tests {

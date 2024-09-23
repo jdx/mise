@@ -18,7 +18,10 @@ use crate::file::replace_path;
 use crate::hook_env::{deserialize_watches, HookEnvWatches};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
+#[cfg(unix)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
+#[cfg(windows)]
+pub static SHELL: Lazy<String> = Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
 
 // paths and directories
 #[cfg(test)]
@@ -228,27 +231,6 @@ pub static NVM_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("NVM_DIR").unwrap_or_else(|| HOME.join(".nvm")));
 pub static NODENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("NODENV_ROOT").unwrap_or_else(|| HOME.join(".nodenv")));
-
-// ruby
-pub static MISE_RUBY_BUILD_REPO: Lazy<String> = Lazy::new(|| {
-    var("MISE_RUBY_BUILD_REPO").unwrap_or_else(|_| "https://github.com/rbenv/ruby-build.git".into())
-});
-pub static MISE_RUBY_INSTALL_REPO: Lazy<String> = Lazy::new(|| {
-    var("MISE_RUBY_INSTALL_REPO")
-        .unwrap_or_else(|_| "https://github.com/postmodern/ruby-install.git".into())
-});
-pub static MISE_RUBY_INSTALL: Lazy<bool> = Lazy::new(|| var_is_true("MISE_RUBY_INSTALL"));
-pub static MISE_RUBY_APPLY_PATCHES: Lazy<Option<String>> =
-    Lazy::new(|| var("MISE_RUBY_APPLY_PATCHES").ok());
-pub static MISE_RUBY_VERBOSE_INSTALL: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("MISE_RUBY_VERBOSE_INSTALL"));
-pub static MISE_RUBY_INSTALL_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
-    Lazy::new(|| shell_words::split(&var("MISE_RUBY_INSTALL_OPTS").unwrap_or_default()));
-pub static MISE_RUBY_BUILD_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
-    Lazy::new(|| shell_words::split(&var("MISE_RUBY_BUILD_OPTS").unwrap_or_default()));
-pub static MISE_RUBY_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_RUBY_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-gems"))
-});
 
 fn get_env_diff() -> EnvDiff {
     let env = vars().collect::<HashMap<_, _>>();

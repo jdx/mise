@@ -1,4 +1,4 @@
-# Cargo Backend <Badge type="warning" text="experimental" />
+# Cargo Backend
 
 You may install packages directly from [Cargo Crates](https://crates.io/) even if there
 isn't an asdf plugin for it.

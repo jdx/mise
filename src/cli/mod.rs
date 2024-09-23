@@ -215,6 +215,9 @@ impl Cli {
         Settings::add_cli_matches(&matches);
         logger::init();
         migrate::run();
+        if let Err(err) = crate::cache::auto_prune() {
+            warn!("auto_prune failed: {err:?}");
+        }
 
         debug!("ARGS: {}", &args.join(" "));
         match Commands::from_arg_matches(&matches) {

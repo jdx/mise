@@ -1,9 +1,6 @@
-use std::collections::{BTreeSet, HashSet};
-use std::fmt::{Debug, Display, Formatter};
-use std::iter::once;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
-
+use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
+use crate::file::FindUp;
+use crate::{config, dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
@@ -11,10 +8,12 @@ use eyre::{bail, Result};
 use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
-
-use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
-use crate::file::FindUp;
-use crate::{config, dirs, env, file};
+use std::collections::{BTreeSet, HashSet};
+use std::fmt::{Debug, Display, Formatter};
+use std::iter::once;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 #[rustfmt::skip]
 #[derive(Config, Default, Debug, Clone, Serialize)]
@@ -40,6 +39,9 @@ pub struct Settings {
     /// also, the default behavior of `mise global` will be --pin
     #[config(env = "MISE_ASDF_COMPAT", default = false)]
     pub asdf_compat: bool,
+    /// delete files in cache that have not been accessed in this duration
+    #[config(env = "MISE_CACHE_PRUNE_AGE", default = "30d")]
+    pub cache_prune_age: String,
     /// use cargo-binstall instead of cargo install if available
     #[config(env = "MISE_CARGO_BINSTALL", default = true)]
     pub cargo_binstall: bool,
@@ -118,6 +120,8 @@ pub struct Settings {
     pub python_pyenv_repo: String,
     #[config(env = "MISE_RAW", default = false)]
     pub raw: bool,
+    #[config(nested)]
+    pub ruby: SettingsRuby,
     #[config(env = "MISE_SHORTHANDS_FILE")]
     pub shorthands_file: Option<PathBuf>,
     /// what level of status messages to display when entering directories
@@ -157,6 +161,29 @@ pub struct Settings {
     pub log_level: String,
     #[config(env = "MISE_PYTHON_VENV_AUTO_CREATE", default = false)]
     pub python_venv_auto_create: bool,
+}
+
+#[derive(Config, Default, Debug, Clone, Serialize)]
+#[config(partial_attr(derive(Clone, Serialize, Default)))]
+#[config(partial_attr(serde(deny_unknown_fields)))]
+#[rustfmt::skip]
+pub struct SettingsRuby {
+    #[config(env = "MISE_RUBY_APPLY_PATCHES")]
+    pub apply_patches: Option<String>,
+    #[config(env = "MISE_RUBY_DEFAULT_PACKAGES_FILE", default = "~/.default-gems")]
+    pub default_packages_file: String,
+    #[config(env = "MISE_RUBY_BUILD_REPO", default = "https://github.com/rbenv/ruby-build.git")]
+    pub ruby_build_repo: String,
+    #[config(env = "MISE_RUBY_BUILD_OPTS")]
+    pub ruby_build_opts: Option<String>,
+    #[config(env = "MISE_RUBY_INSTALL", default = false)]
+    pub ruby_install: bool,
+    #[config(env = "MISE_RUBY_INSTALL_REPO", default = "https://github.com/postmodern/ruby-install.git")]
+    pub ruby_install_repo: String,
+    #[config(env = "MISE_RUBY_INSTALL_OPTS")]
+    pub ruby_install_opts: Option<String>,
+    #[config(env = "MISE_RUBY_VERBOSE_INSTALL")]
+    pub verbose_install: Option<bool>,
 }
 
 #[derive(Config, Default, Debug, Clone, Serialize)]
@@ -445,6 +472,13 @@ impl Settings {
         let s = toml::to_string(self)?;
         let table = toml::from_str(&s)?;
         Ok(table)
+    }
+
+    pub fn cache_prune_age_duration(&self) -> Option<Duration> {
+        if self.cache_prune_age == "0" {
+            return None;
+        }
+        Some(humantime::parse_duration(&self.cache_prune_age).unwrap())
     }
 }
 

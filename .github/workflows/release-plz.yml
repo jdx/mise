@@ -43,8 +43,8 @@ jobs:
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
-          key: mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: mise-tools
+          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools-ubuntu-latest
       - run: mise install
       - run: |
           set -euxo pipefail

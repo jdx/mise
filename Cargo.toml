@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.9.5"
+version = "2024.9.6"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -63,11 +63,11 @@ filetime = "0.2.23"
 flate2 = "1.0.30"
 fslock = "0.2.1"
 git2 = "<1"
-glob = "0.3.1"
-globset = "0.4.14"
+glob = "0.3"
+globset = "0.4"
 heck = "0.5"
 home = "0.5.9"
-humantime = "2.1.0"
+humantime = "2"
 indenter = "0.3.3"
 indexmap = { version = "2.2.6", features = ["serde"] }
 indicatif = { version = "0.17.8", features = ["default", "improved_unicode"] }
@@ -75,6 +75,7 @@ indoc = "2.0.5"
 itertools = "0.13"
 log = "0.4.21"
 num_cpus = "1"
+number_prefix = "0.4"
 once_cell = "1.19.0"
 openssl = { version = "0.10.66", optional = true }
 path-absolutize = "3.1.1"
@@ -135,6 +136,7 @@ self_update = { version = "0.41", default-features = false, features = [
     "archive-zip",
     "signatures",
 ] }
+sevenz-rust = "0.6"
 
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2"] }

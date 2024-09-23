@@ -678,6 +678,8 @@ impl Debug for Config {
 
 fn default_task_includes() -> Vec<PathBuf> {
     vec![
+        "mise-tasks".into(),
+        ".mise-tasks".into(),
         ".mise/tasks".into(),
         ".config/mise/tasks".into(),
         "mise/tasks".into(),

@@ -1,5 +1,32 @@
 # Changelog
 
+## [2024.9.6](https://github.com/jdx/mise/compare/v2024.9.5..v2024.9.6) - 2024-09-18
+
+### 🚀 Features
+
+- **(tasks)** allow mise-tasks or .mise-tasks directories by [@jdx](https://github.com/jdx) in [#2610](https://github.com/jdx/mise/pull/2610)
+- **(windows)** added ruby core plugin by [@jdx](https://github.com/jdx) in [#2599](https://github.com/jdx/mise/pull/2599)
+- periodically prune old cache files by [@jdx](https://github.com/jdx) in [#2603](https://github.com/jdx/mise/pull/2603)
+- take npm/cargo backends out of experimental by [@jdx](https://github.com/jdx) in [5496cef](https://github.com/jdx/mise/commit/5496cef30819a3998a52a8f5e6e2d91cfa3e86b0)
+
+### 🐛 Bug Fixes
+
+- **(ruby)** fixed MISE_RUBY_BUILD_OPTS by [@jdx](https://github.com/jdx) in [#2609](https://github.com/jdx/mise/pull/2609)
+- **(windows)** self_update by [@jdx](https://github.com/jdx) in [#2588](https://github.com/jdx/mise/pull/2588)
+- **(windows)** mise -v by [@jdx](https://github.com/jdx) in [fcc2d35](https://github.com/jdx/mise/commit/fcc2d354b962aa4fe8cc1b422b96a7e455107adc)
+- **(windows)** make tasks work by [@jdx](https://github.com/jdx) in [#2591](https://github.com/jdx/mise/pull/2591)
+- **(windows)** mise doctor fixes by [@jdx](https://github.com/jdx) in [#2597](https://github.com/jdx/mise/pull/2597)
+- **(windows)** make exec work by [@jdx](https://github.com/jdx) in [#2598](https://github.com/jdx/mise/pull/2598)
+- **(windows)** fixed shims by [@jdx](https://github.com/jdx) in [#2600](https://github.com/jdx/mise/pull/2600)
+
+### 🧪 Testing
+
+- add macos to CI by [@jdx](https://github.com/jdx) in [#2605](https://github.com/jdx/mise/pull/2605)
+
+### 🔍 Other Changes
+
+- clean up console output during project linting by [@jdx](https://github.com/jdx) in [#2607](https://github.com/jdx/mise/pull/2607)
+
 ## [2024.9.5](https://github.com/jdx/mise/compare/v2024.9.4..v2024.9.5) - 2024-09-17
 
 ### 🔍 Other Changes

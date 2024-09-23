@@ -24,26 +24,24 @@ env:
   SCCACHE_S3_NO_CREDENTIALS: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID && '0' || '1' }}
   MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
   MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 permissions:
   pull-requests: write
 
 jobs:
   unit:
-    runs-on: ubuntu-latest
-    #container: ghcr.io/jdx/mise:github-actions
-    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix: { os: [ubuntu-latest, macos-latest] }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
-      - if: ${{ env.SCCACHE_S3_NO_CREDENTIALS == '0' }}
-        run: |
-          echo "AWS_ACCESS_KEY_ID=$MINIO_AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
-          echo "AWS_SECRET_ACCESS_KEY=$MINIO_AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
-      - uses: mozilla-actions/sccache-action@v0.0.4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with: { toolchain: stable, components: rustfmt }
       - uses: taiki-e/install-action@v2
@@ -62,8 +60,8 @@ jobs:
       - name: cache mise
         uses: actions/cache@v4
         with:
-          key: mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: mise-tools
+          key: mise-tools-${{ matrix.os }}-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools-${{ matrix.os }}
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
@@ -79,7 +77,6 @@ jobs:
           author_email: 123107610+mise-en-dev@users.noreply.github.com
       - uses: actions-rust-lang/rustfmt@v1
       - run: mise run lint
-      - run: ${SCCACHE_PATH} --show-stats
 
   nightly:
     runs-on: ubuntu-latest
@@ -104,8 +101,8 @@ jobs:
       - name: cache mise
         uses: actions/cache@v4
         with:
-          key: mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: mise-tools
+          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools-ubuntu-latest
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins

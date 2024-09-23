@@ -152,6 +152,16 @@ Run `mise cache` with no args to view the current cache directory."
         alias "clean" hide=true
         arg "[PLUGIN]..." help="Plugin(s) to clear cache for e.g.: node, python" var=true
     }
+    cmd "prune" help="Removes stale mise cache files" {
+        alias "p"
+        long_help r"Removes stale mise cache files
+
+By default, this command will remove files that have not been accessed in 30 days.
+Change this with the MISE_CACHE_PRUNE_AGE environment variable."
+        flag "--dry-run" help="Just show what would be pruned"
+        flag "-v --verbose" help="Show pruned files" var=true count=true
+        arg "[PLUGIN]..." help="Plugin(s) to clear cache for e.g.: node, python" var=true
+    }
 }
 cmd "completion" help="Generate shell completions" {
     alias "complete" "completions" hide=true
@@ -552,7 +562,7 @@ cmd "ls-remote" help="List runtime versions available for install" {
     alias "list-all" "list-remote" hide=true
     long_help r"List runtime versions available for install
 
-note that the results are cached for 24 hours
+note that the results are cached
 run `mise cache clean` to clear the cache and get fresh results"
     after_long_help r"Examples:
 
@@ -780,7 +790,8 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+`.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
@@ -1054,7 +1065,8 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+`.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF

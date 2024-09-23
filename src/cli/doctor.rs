@@ -34,6 +34,7 @@ pub struct Doctor {
 impl Doctor {
     pub fn run(mut self) -> eyre::Result<()> {
         inline_section("version", &*VERSION)?;
+        #[cfg(unix)]
         inline_section("activated", yn(env::is_activated()))?;
         inline_section("shims_on_path", yn(shims_on_path()))?;
 
@@ -114,15 +115,22 @@ impl Doctor {
         }
 
         if !env::is_activated() && !shims_on_path() {
-            let cmd = style::nyellow("mise help activate");
-            let url = style::nunderline("https://mise.jdx.dev");
             let shims = style::ncyan(display_path(*dirs::SHIMS));
-            self.errors.push(formatdoc!(
-                r#"mise is not activated, run {cmd} or
-                    read documentation at {url} for activation instructions.
-                    Alternatively, add the shims directory {shims} to PATH.
-                    Using the shims directory is preferred for non-interactive setups."#
-            ));
+            if cfg!(windows) {
+                self.errors.push(formatdoc!(
+                    r#"mise shims are not on PATH
+                    Add this directory to PATH: {shims}"#
+                ));
+            } else {
+                let cmd = style::nyellow("mise help activate");
+                let url = style::nunderline("https://mise.jdx.dev");
+                self.errors.push(formatdoc!(
+                    r#"mise is not activated, run {cmd} or
+                        read documentation at {url} for activation instructions.
+                        Alternatively, add the shims directory {shims} to PATH.
+                        Using the shims directory is preferred for non-interactive setups."#
+                ));
+            }
         }
 
         match ToolsetBuilder::new().build(config) {

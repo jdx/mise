@@ -193,6 +193,30 @@ Arguments:
           Plugin(s) to clear cache for e.g.: node, python
 ```
 
+## `mise cache prune [OPTIONS] [PLUGIN]...`
+
+**Aliases:** `p`
+
+```text
+Removes stale mise cache files
+
+By default, this command will remove files that have not been accessed in 30 days.
+Change this with the MISE_CACHE_PRUNE_AGE environment variable.
+
+Usage: cache prune [OPTIONS] [PLUGIN]...
+
+Arguments:
+  [PLUGIN]...
+          Plugin(s) to clear cache for e.g.: node, python
+
+Options:
+      --dry-run
+          Just show what would be pruned
+
+  -v, --verbose...
+          Show pruned files
+```
+
 ## `mise completion [SHELL]`
 
 ```text
@@ -668,7 +692,7 @@ Examples:
 ```text
 List runtime versions available for install
 
-note that the results are cached for 24 hours
+note that the results are cached
 run `mise cache clean` to clear the cache and get fresh results
 
 Usage: ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]
@@ -1023,7 +1047,8 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+`.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
@@ -1454,7 +1479,8 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+`.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF

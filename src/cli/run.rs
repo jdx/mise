@@ -17,17 +17,17 @@ use glob::glob;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
+use super::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::task::{Deps, GetMatchingExt, Task};
+use crate::task_parser::TaskParser;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, style};
 use crate::{env, file, ui};
-
-use super::args::ToolArg;
 
 /// [experimental] Run a tasks
 ///
@@ -45,7 +45,8 @@ use super::args::ToolArg;
 ///     outputs = ["dist/**/*.js"]
 ///
 /// Alternatively, tasks can be defined as standalone scripts.
-/// These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+/// These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+/// `.config/mise/tasks`.
 /// The name of the script will be the name of the tasks.
 ///
 ///     $ cat .mise/tasks/build<<EOF
@@ -251,12 +252,19 @@ impl Run {
         if let Some(file) = &task.file {
             self.exec_file(file, task, &env, &prefix)?;
         } else {
-            for (i, cmd) in task.run.iter().enumerate() {
-                let args = match i == task.run.len() - 1 {
-                    true => task.args.iter().cloned().collect_vec(),
-                    false => vec![],
-                };
-                self.exec_script(cmd, &args, task, &env, &prefix)?;
+            let parser = TaskParser::new(self.cd.clone()).parse_run_scripts(&task.run)?;
+            if parser.has_any_args_defined() {
+                for script in parser.render(&self.args) {
+                    self.exec_script(&script, &[], task, &env, &prefix)?;
+                }
+            } else {
+                for (i, script) in task.run.iter().enumerate() {
+                    let args = match parser.has_any_args_defined() && i == task.run.len() - 1 {
+                        true => task.args.iter().cloned().collect_vec(),
+                        false => vec![],
+                    };
+                    self.exec_script(script, &args, task, &env, &prefix)?;
+                }
             }
         }
 

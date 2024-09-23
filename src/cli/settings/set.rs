@@ -134,13 +134,14 @@ pub mod tests {
             "1"
         );
 
-        assert_cli_snapshot!("settings", @r###"
+        assert_cli_snapshot!("settings", @r#"
         activate_aggressive = false
         all_compile = false
         always_keep_download = true
         always_keep_install = true
         asdf = true
         asdf_compat = false
+        cache_prune_age = "0"
         cargo_binstall = true
         color = true
         disable_default_shorthands = false
@@ -173,11 +174,17 @@ pub mod tests {
         vfox = false
         yes = true
 
+        [ruby]
+        default_packages_file = "~/.default-gems"
+        ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
+        ruby_install = false
+        ruby_install_repo = "https://github.com/postmodern/ruby-install.git"
+
         [status]
         missing_tools = "never"
         show_env = false
         show_tools = false
-        "###);
+        "#);
         reset();
     }
 }
