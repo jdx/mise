@@ -26,8 +26,8 @@ mise install
 
 eval "$(mise activate bash --shims)"
 
-assert "mise x go:github.com/DarthSim/hivemind@v1.1.0 -- hivemind --version" "Hivemind version 1.1.0"
-assert "mise x go:github.com/go-task/task/v3/cmd/task@v3.34.1 -- task --version" "Task version: v3.34.1 (h1:yAAxUM54zoaHv+OtDnGgkWSVeiRuaOCn1lPUXPQQA0o=)"
+assert "mise x go:github.com/DarthSim/hivemind@1.1.0 -- hivemind --version" "Hivemind version 1.1.0"
+assert "mise x go:github.com/go-task/task/v3/cmd/task@3.34.1 -- task --version" "Task version: v3.34.1 (h1:yAAxUM54zoaHv+OtDnGgkWSVeiRuaOCn1lPUXPQQA0o=)"
 # See https://github.com/jdx/mise/issues/1667
 assert "mise x go:github.com/jdx/go-example@e16a340 -- go-example" "hello world"
 

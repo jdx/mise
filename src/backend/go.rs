@@ -79,9 +79,9 @@ impl Backend for GoBackend {
                 .execute()
         };
 
-        if install(ctx.tv.version.to_string()).is_err() {
+        if install(format!("v{}", &ctx.tv.version)).is_err() {
             warn!("Failed to install, trying again without added 'v' prefix");
-            install(format!("v{}", &ctx.tv.version))?;
+            install(ctx.tv.version.to_string())?;
         }
 
         Ok(())
