@@ -4,15 +4,15 @@
 
 `mise.toml` is the config file for mise. It can use any of the following file paths (in order of precedence, top is highest):
 
-- `.mise.local.toml`
+- `.mise.local.toml` - used for local config, this should not be committed to source control
 - `mise.local.toml`
 - `.mise.$MISE_ENV.toml`
-- `mise.$MISE_ENV.toml`
+- `mise.$MISE_ENV.toml` - used for environment-specific config such as `mise.staging.toml`
 - `.mise.toml`
 - `.mise/config.toml`
 - `mise.toml`
 - `mise/config.toml`
-- `.config/mise.toml`
+- `.config/mise.toml` - use this in order to group config files into a common directory
 - `.config/mise/config.toml`
 
 See [Profiles](/profiles) for more information about `.mise.$MISE_ENV.toml` files.
