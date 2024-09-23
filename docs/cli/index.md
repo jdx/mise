@@ -692,7 +692,7 @@ Examples:
 ```text
 List runtime versions available for install
 
-note that the results are cached for 24 hours
+note that the results are cached
 run `mise cache clean` to clear the cache and get fresh results
 
 Usage: ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]

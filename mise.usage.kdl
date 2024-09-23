@@ -562,7 +562,7 @@ cmd "ls-remote" help="List runtime versions available for install" {
     alias "list-all" "list-remote" hide=true
     long_help r"List runtime versions available for install
 
-note that the results are cached for 24 hours
+note that the results are cached
 run `mise cache clean` to clear the cache and get fresh results"
     after_long_help r"Examples:
 

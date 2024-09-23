@@ -126,8 +126,7 @@ detected with your setup. If you submit a bug report, please include the output 
 
 There are 2 places that versions are cached so a brand new release might not appear right away.
 
-The first is that the mise CLI caches versions for 24 hours. This can be cleared
-with `mise cache clear`.
+The first is that the mise CLI caches versions for. The cache can be cleared with `mise cache clear`.
 
 The second uses the mise-versions.jdx.dev host as a centralized
 place to list all of the versions of most plugins. This is intended to speed up mise and also
