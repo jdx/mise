@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use eyre::bail;
+
 use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
@@ -63,21 +65,24 @@ impl Backend for GoBackend {
         let settings = Settings::get();
         settings.ensure_experimental("go backend")?;
 
-        // if the (semantic) version has no v prefix, add it
-        // we allow max. 6 digits for the major version to prevent clashes with Git commit hashes
-        let version = if regex!(r"^\d{1,6}(\.\d+)*([+-.].+)?$").is_match(&ctx.tv.version) {
-            format!("v{}", ctx.tv.version)
-        } else {
-            ctx.tv.version.clone()
+        if ctx.tv.version.starts_with("v") {
+            bail!("versions should not start with a 'v', please remove it");
+        }
+
+        let install = |v| {
+            CmdLineRunner::new("go")
+                .arg("install")
+                .arg(format!("{}@{v}", self.name()))
+                .with_pr(ctx.pr.as_ref())
+                .envs(self.dependency_env()?)
+                .env("GOBIN", ctx.tv.install_path().join("bin"))
+                .execute()
         };
 
-        CmdLineRunner::new("go")
-            .arg("install")
-            .arg(format!("{}@{}", self.name(), version))
-            .with_pr(ctx.pr.as_ref())
-            .envs(self.dependency_env()?)
-            .env("GOBIN", ctx.tv.install_path().join("bin"))
-            .execute()?;
+        if install(ctx.tv.version.to_string()).is_err() {
+            warn!("Failed to install, trying again without added 'v' prefix");
+            install(format!("v{}", &ctx.tv.version))?;
+        }
 
         Ok(())
     }
