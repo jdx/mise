@@ -301,6 +301,14 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn resolve_symlink(link: &Path) -> Result<PathBuf> {
+    if cfg!(windows) {
+        Ok(fs::read_to_string(link)?.into())
+    } else {
+        Ok(fs::read_link(link)?)
+    }
+}
+
 #[cfg(unix)]
 pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     trace!("ln -sf {} {}", target.display(), link.display());
