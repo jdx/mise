@@ -1,17 +1,8 @@
 # Configuration
 
-## `.mise.toml`
+## `mise.toml`
 
-`.mise.toml` is a new config file that replaces asdf-style `.tool-versions` files with a file
-that has lot more flexibility. It supports functionality that is not possible with `.tool-versions`,
-such as:
-
-- setting arbitrary env vars while inside the directory
-- passing options to plugins like `virtualenv=".venv"`
-  for [python](https://github.com/jdx/mise/blob/main/docs/lang/python.md#automatic-virtualenv-activation).
-- specifying custom plugin URLs
-
-They can use any of the following file locations (in order of precedence, top is highest):
+`mise.toml` is the config file for mise. It can use any of the following file paths (in order of precedence, top is highest):
 
 - `.mise.local.toml`
 - `mise.local.toml`
