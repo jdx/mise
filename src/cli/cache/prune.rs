@@ -59,13 +59,17 @@ fn bytes_str(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+
     #[test]
     fn test_cache_prune() {
+        reset();
         assert_cli!("cache", "prune");
     }
 
     #[test]
     fn test_cache_prune_plugin() {
+        reset();
         assert_cli!("cache", "prune", "tiny");
     }
 }
