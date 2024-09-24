@@ -1,5 +1,5 @@
 use crate::backend::asdf::AsdfBackend;
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Config;
 use crate::dirs;
 use crate::hash::hash_to_str;
@@ -32,15 +32,16 @@ impl ExternalPluginCache {
                 Some(key) => {
                     let config = Config::get();
                     let key = render_cache_key(&config, tv, key);
-                    let filename = format!("{}-$KEY.msgpack.z", key);
+                    let filename = format!("{}.msgpack.z", key);
                     tv.cache_path().join("list_bin_paths").join(filename)
                 }
-                None => tv.cache_path().join("list_bin_paths-$KEY.msgpack.z"),
+                None => tv.cache_path().join("list_bin_paths.msgpack.z"),
             };
-            CacheManager::new(list_bin_paths_filename)
+            CacheManagerBuilder::new(list_bin_paths_filename)
                 .with_fresh_file(dirs::DATA.to_path_buf())
                 .with_fresh_file(plugin.plugin_path.clone())
                 .with_fresh_file(tv.install_path())
+                .build()
         });
         cm.get_or_try_init(fetch).cloned()
     }
@@ -60,15 +61,16 @@ impl ExternalPluginCache {
             let exec_env_filename = match &plugin.toml.exec_env.cache_key {
                 Some(key) => {
                     let key = render_cache_key(config, tv, key);
-                    let filename = format!("{}-$KEY.msgpack.z", key);
+                    let filename = format!("{}.msgpack.z", key);
                     tv.cache_path().join("exec_env").join(filename)
                 }
-                None => tv.cache_path().join("exec_env-$KEY.msgpack.z"),
+                None => tv.cache_path().join("exec_env.msgpack.z"),
             };
-            CacheManager::new(exec_env_filename)
+            CacheManagerBuilder::new(exec_env_filename)
                 .with_fresh_file(dirs::DATA.to_path_buf())
                 .with_fresh_file(plugin.plugin_path.clone())
                 .with_fresh_file(tv.install_path())
+                .build()
         });
         cm.get_or_try_init(fetch).cloned()
     }

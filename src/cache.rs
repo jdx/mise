@@ -19,34 +19,33 @@ use crate::hash::hash_to_str;
 use crate::rand::random_string;
 use crate::{dirs, file};
 
-#[derive(Debug, Clone)]
-pub struct CacheManager<T>
-where
-    T: Serialize + DeserializeOwned,
-{
+#[derive(Debug)]
+pub struct CacheManagerBuilder {
     cache_file_path: PathBuf,
+    cache_keys: Vec<String>,
     fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
-    cache: Box<OnceCell<T>>,
-    no_cache: bool,
 }
 
-impl<T> CacheManager<T>
-where
-    T: Serialize + DeserializeOwned,
-{
+pub static BASE_CACHE_KEYS: Lazy<Vec<String>> = Lazy::new(|| {
+    [
+        built_info::FEATURES_STR,
+        built_info::PKG_VERSION,
+        built_info::PROFILE,
+        built_info::TARGET,
+    ]
+    .into_iter()
+    .map(|s| s.to_string())
+    .collect()
+});
+
+impl CacheManagerBuilder {
     pub fn new(cache_file_path: impl AsRef<Path>) -> Self {
-        // "replace $KEY in path with key()
-        let cache_file_path = regex!(r#"\$KEY"#)
-            .replace_all(cache_file_path.as_ref().to_str().unwrap(), &*KEY)
-            .to_string()
-            .into();
         Self {
-            cache_file_path,
-            cache: Box::new(OnceCell::new()),
+            cache_file_path: cache_file_path.as_ref().to_path_buf(),
+            cache_keys: BASE_CACHE_KEYS.clone(),
             fresh_files: Vec::new(),
             fresh_duration: None,
-            no_cache: false,
         }
     }
 
@@ -60,13 +59,54 @@ where
         self
     }
 
+    pub fn with_cache_key(mut self, key: String) -> Self {
+        self.cache_keys.push(key);
+        self
+    }
+
+    fn cache_key(&self) -> String {
+        hash_to_str(&self.cache_keys).chars().take(5).collect()
+    }
+
+    pub fn build<T>(self) -> CacheManager<T>
+    where
+        T: Serialize + DeserializeOwned,
+    {
+        let key = self.cache_key();
+        let (base, ext) = file::split_file_name(&self.cache_file_path);
+        let mut cache_file_path = self.cache_file_path;
+        cache_file_path.set_file_name(format!("{base}-{key}.{ext}"));
+        CacheManager {
+            cache_file_path,
+            cache: Box::new(OnceCell::new()),
+            fresh_files: self.fresh_files,
+            fresh_duration: self.fresh_duration,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheManager<T>
+where
+    T: Serialize + DeserializeOwned,
+{
+    cache_file_path: PathBuf,
+    fresh_duration: Option<Duration>,
+    fresh_files: Vec<PathBuf>,
+    cache: Box<OnceCell<T>>,
+}
+
+impl<T> CacheManager<T>
+where
+    T: Serialize + DeserializeOwned,
+{
     pub fn get_or_try_init<F>(&self, fetch: F) -> Result<&T>
     where
         F: FnOnce() -> Result<T>,
     {
         let val = self.cache.get_or_try_init(|| {
             let path = &self.cache_file_path;
-            if !self.no_cache && self.is_fresh() {
+            if self.is_fresh() {
                 match self.parse() {
                     Ok(val) => return Ok::<_, color_eyre::Report>(val),
                     Err(err) => {
@@ -143,19 +183,6 @@ where
         freshest
     }
 }
-
-static KEY: Lazy<String> = Lazy::new(|| {
-    let mut parts = vec![
-        built_info::FEATURES_STR,
-        //built_info::PKG_VERSION, # TODO: put this in for non-debug when we autoclean cache (#2139)
-        built_info::PROFILE,
-        built_info::TARGET,
-    ];
-    if cfg!(debug_assertions) {
-        parts.push(built_info::PKG_VERSION);
-    }
-    hash_to_str(&parts).chars().take(5).collect()
-});
 
 pub(crate) struct PruneResults {
     pub(crate) size: u64,
@@ -251,8 +278,7 @@ mod tests {
     #[test]
     fn test_cache() {
         reset();
-        // does not fail with invalid path
-        let cache = CacheManager::new("/invalid:path/to/cache");
+        let cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
         cache.clear().unwrap();
         let val = cache.get_or_try_init(|| Ok(1)).unwrap();
         assert_eq!(val, &1);

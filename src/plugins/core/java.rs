@@ -13,7 +13,7 @@ use serde_derive::{Deserialize, Serialize};
 use versions::Versioning;
 
 use crate::backend::Backend;
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
@@ -37,18 +37,20 @@ impl JavaPlugin {
     pub fn new() -> Self {
         let core = CorePlugin::new(BackendArg::new("java", "java"));
         let java_metadata_ga_cache_filename =
-            format!("java_metadata_ga_{}_{}-$KEY.msgpack.z", os(), arch());
+            format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch());
         let java_metadata_ea_cache_filename =
-            format!("java_metadata_ea_{}_{}-$KEY.msgpack.z", os(), arch());
+            format!("java_metadata_ea_{}_{}.msgpack.z", os(), arch());
         Self {
-            java_metadata_ea_cache: CacheManager::new(
+            java_metadata_ea_cache: CacheManagerBuilder::new(
                 core.fa.cache_path.join(java_metadata_ea_cache_filename),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
-            java_metadata_ga_cache: CacheManager::new(
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .build(),
+            java_metadata_ga_cache: CacheManagerBuilder::new(
                 core.fa.cache_path.join(java_metadata_ga_cache_filename),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .build(),
             core,
         }
     }

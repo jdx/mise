@@ -501,6 +501,14 @@ pub fn un7z(archive: &Path, dest: &Path) -> Result<()> {
         .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))
 }
 
+pub fn split_file_name(path: &Path) -> (String, String) {
+    let file_name = path.file_name().unwrap().to_string_lossy();
+    let (file_name_base, ext) = file_name
+        .split_once('.')
+        .unwrap_or((file_name.as_ref(), ""));
+    (file_name_base.to_string(), ext.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Deref;
