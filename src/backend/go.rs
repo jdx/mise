@@ -1,7 +1,5 @@
 use std::fmt::Debug;
 
-use eyre::bail;
-
 use crate::backend::{Backend, BackendType};
 use crate::cache::CacheManager;
 use crate::cli::args::BackendArg;
@@ -65,9 +63,12 @@ impl Backend for GoBackend {
         let settings = Settings::get();
         settings.ensure_experimental("go backend")?;
 
-        if ctx.tv.version.starts_with("v") {
-            bail!("versions should not start with a 'v', please remove it");
-        }
+        let version = if ctx.tv.version.starts_with("v") {
+            warn!("usage of a 'v' prefix in the version is discouraged");
+            ctx.tv.version.to_string().replacen("v", "", 1)
+        } else {
+            ctx.tv.version.to_string()
+        };
 
         let install = |v| {
             CmdLineRunner::new("go")
@@ -79,9 +80,9 @@ impl Backend for GoBackend {
                 .execute()
         };
 
-        if install(format!("v{}", &ctx.tv.version)).is_err() {
+        if install(format!("v{}", version)).is_err() {
             warn!("Failed to install, trying again without added 'v' prefix");
-            install(ctx.tv.version.to_string())?;
+            install(version)?;
         }
 
         Ok(())
