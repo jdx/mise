@@ -434,6 +434,26 @@
           "description": "path to file containing shorthand mappings",
           "type": "string"
         },
+        "node": {
+          "description": "settings specific to node",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "compile": {
+              "type": "boolean",
+              "description": "do not use precompiled binaries for node"
+            },
+            "flavor": {
+              "type": "string",
+              "description": "node flavor to use, generally used for unofficial builds"
+            },
+            "mirror_url": {
+              "type": "string",
+              "description": "url to use as a mirror for node downloads",
+              "default": "https://nodejs.org/dist"
+            }
+          }
+        },
         "ruby": {
           "description": "settings specific to ruby",
           "type": "object",

@@ -83,7 +83,6 @@ mod tests {
         legacy_version_file = true
         legacy_version_file_disable_tools = []
         libgit2 = true
-        node_compile = false
         not_found_auto_install = true
         paranoid = false
         pipx_uvx = false
@@ -97,6 +96,8 @@ mod tests {
         verbose = true
         vfox = false
         yes = true
+
+        [node]
 
         [ruby]
         default_packages_file = "~/.default-gems"
@@ -139,7 +140,7 @@ mod tests {
         legacy_version_file
         legacy_version_file_disable_tools
         libgit2
-        node_compile
+        node
         not_found_auto_install
         paranoid
         pipx_uvx
