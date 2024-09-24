@@ -12,15 +12,16 @@ license = "MIT"
 keywords = ["mise"]
 categories = ["command-line-utilities"]
 include = [
-    "src/**/*.rs",
-    "src/plugins/core/assets/**",
-    "src/assets/**",
-    "/completions/*",
     "/Cargo.lock",
     "/LICENSE",
     "/README.md",
     "/build.rs",
+    "/completions/*",
+    "/settings.toml",
     "/zipsign.pub",
+    "src/**/*.rs",
+    "src/assets/**",
+    "src/plugins/core/assets/**",
 ]
 rust-version = "1.76.0"
 build = "build.rs"
@@ -69,7 +70,7 @@ heck = "0.5"
 home = "0.5.9"
 humantime = "2"
 indenter = "0.3.3"
-indexmap = { version = "2.2.6", features = ["serde"] }
+indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17.8", features = ["default", "improved_unicode"] }
 indoc = "2.0.5"
 itertools = "0.13"
@@ -111,8 +112,8 @@ tokio = { version = "1.37.0", features = [
     "rt",
     "time",
 ] }
-toml = { version = "0.8.12", features = ["parse"] }
-toml_edit = { version = "0.22.12", features = ["parse"] }
+toml = { version = "0.8", features = ["parse"] }
+toml_edit = { version = "0.22", features = ["parse"] }
 url = "2.5.0"
 usage-lib = { version = "0.3", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
@@ -141,6 +142,9 @@ sevenz-rust = "0.6"
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2"] }
 cfg_aliases = "0.2"
+heck = "0.5"
+toml = "0.8"
+indexmap = "2"
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
