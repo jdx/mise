@@ -7,8 +7,9 @@ use std::sync::Arc;
 pub use python::PythonPlugin;
 
 use crate::backend::{Backend, BackendMap};
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
+use crate::config::settings::SETTINGS;
 use crate::config::Settings;
 use crate::env;
 use crate::env::PATH_KEY;
@@ -107,10 +108,13 @@ impl CorePlugin {
 
     pub fn new(fa: BackendArg) -> Self {
         Self {
-            remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            remote_version_cache: CacheManagerBuilder::new(
+                fa.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
+            .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())
+            .build(),
             fa,
         }
     }

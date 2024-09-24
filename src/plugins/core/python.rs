@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use crate::backend::Backend;
 use crate::build_time::built_info;
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -29,10 +29,11 @@ impl PythonPlugin {
     pub fn new() -> Self {
         let core = CorePlugin::new(BackendArg::new("python", "python"));
         Self {
-            precompiled_cache: CacheManager::new(
-                core.fa.cache_path.join("precompiled-$KEY.msgpack.z"),
+            precompiled_cache: CacheManagerBuilder::new(
+                core.fa.cache_path.join("precompiled.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .build(),
             core,
         }
     }
