@@ -46,7 +46,9 @@ impl SettingsSet {
                 self.value.split(',').map(|s| s.to_string()).collect()
             }
             "libgit2" => parse_bool(&self.value)?,
-            "node_compile" => parse_bool(&self.value)?,
+            "node.compile" => parse_bool(&self.value)?,
+            "node.flavor" => self.value.into(),
+            "node.mirror_url" => self.value.into(),
             "not_found_auto_install" => parse_bool(&self.value)?,
             "paranoid" => parse_bool(&self.value)?,
             "pipx_uvx" => parse_bool(&self.value)?,
@@ -57,6 +59,14 @@ impl SettingsSet {
             "python_venv_auto_create" => parse_bool(&self.value)?,
             "quiet" => parse_bool(&self.value)?,
             "raw" => parse_bool(&self.value)?,
+            "ruby.apply_patches" => self.value.into(),
+            "ruby.default_packages_file" => self.value.into(),
+            "ruby.ruby_build_repo" => self.value.into(),
+            "ruby.ruby_build_opts" => self.value.into(),
+            "ruby.ruby_install" => parse_bool(&self.value)?,
+            "ruby.ruby_install_repo" => self.value.into(),
+            "ruby.ruby_install_opts" => self.value.into(),
+            "ruby.verbose_install" => parse_bool(&self.value)?,
             "shorthands_file" => self.value.into(),
             "status.missing_tools" => self.value.into(),
             "status.show_env" => parse_bool(&self.value)?,
@@ -77,13 +87,14 @@ impl SettingsSet {
             config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
         }
         let settings = config["settings"].as_table_mut().unwrap();
-        if self.setting.as_str().starts_with("status.") {
+        if self.setting.as_str().contains(".") {
+            let mut parts = self.setting.splitn(2, '.');
             let status = settings
-                .entry("status")
+                .entry(parts.next().unwrap())
                 .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
                 .as_table_mut()
                 .unwrap();
-            status.insert(&self.setting[7..], toml_edit::Item::Value(value));
+            status.insert(parts.next().unwrap(), toml_edit::Item::Value(value));
         } else {
             settings.insert(&self.setting, toml_edit::Item::Value(value));
         }
@@ -159,7 +170,6 @@ pub mod tests {
         legacy_version_file = false
         legacy_version_file_disable_tools = []
         libgit2 = true
-        node_compile = false
         not_found_auto_install = true
         paranoid = false
         pipx_uvx = false
@@ -173,6 +183,8 @@ pub mod tests {
         verbose = true
         vfox = false
         yes = true
+
+        [node]
 
         [ruby]
         default_packages_file = "~/.default-gems"

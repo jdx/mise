@@ -199,7 +199,10 @@ pub trait Backend: Debug + Send + Sync {
                     false
                 }
             })
-            .collect();
+            .collect_vec();
+        if versions.is_empty() {
+            warn!("No versions found for {}", self.id());
+        }
         Ok(versions)
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;

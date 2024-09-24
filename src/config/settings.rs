@@ -14,6 +14,9 @@ use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
+use url::Url;
+
+pub static SETTINGS: Lazy<Arc<Settings>> = Lazy::new(Settings::get);
 
 #[rustfmt::skip]
 #[derive(Config, Default, Debug, Clone, Serialize)]
@@ -93,8 +96,8 @@ pub struct Settings {
     pub legacy_version_file_disable_tools: BTreeSet<String>,
     #[config(env = "MISE_LIBGIT2", default = true)]
     pub libgit2: bool,
-    #[config(env = "MISE_NODE_COMPILE", default = false)]
-    pub node_compile: bool,
+    #[config(nested)]
+    pub node: SettingsNode,
     #[config(env = "MISE_NOT_FOUND_AUTO_INSTALL", default = true)]
     pub not_found_auto_install: bool,
     #[config(env = "MISE_PARANOID", default = false)]
@@ -167,6 +170,19 @@ pub struct Settings {
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
 #[config(partial_attr(serde(deny_unknown_fields)))]
 #[rustfmt::skip]
+pub struct SettingsNode {
+    #[config(env = "MISE_NODE_COMPILE")]
+    pub compile: Option<bool>,
+    #[config(env = "MISE_NODE_FLAVOR")]
+    pub flavor: Option<String>,
+    #[config(env = "MISE_NODE_MIRROR_URL")]
+    pub mirror_url: Option<String>
+}
+
+#[derive(Config, Default, Debug, Clone, Serialize)]
+#[config(partial_attr(derive(Clone, Serialize, Default)))]
+#[config(partial_attr(serde(deny_unknown_fields)))]
+#[rustfmt::skip]
 pub struct SettingsRuby {
     #[config(env = "MISE_RUBY_APPLY_PATCHES")]
     pub apply_patches: Option<String>,
@@ -221,7 +237,7 @@ pub enum SettingsStatusMissingTools {
 
 pub type SettingsPartial = <Settings as Config>::Partial;
 
-static SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
+static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
@@ -245,7 +261,7 @@ impl Settings {
         Self::try_get().unwrap()
     }
     pub fn try_get() -> Result<Arc<Self>> {
-        if let Some(settings) = SETTINGS.read().unwrap().as_ref() {
+        if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
         }
 
@@ -306,13 +322,13 @@ impl Settings {
             settings.yes = true;
         }
         if settings.all_compile {
-            settings.node_compile = true;
+            settings.node.compile = Some(true);
             if settings.python_compile.is_none() {
                 settings.python_compile = Some(true);
             }
         }
         let settings = Arc::new(settings);
-        *SETTINGS.write().unwrap() = Some(settings.clone());
+        *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
         Ok(settings)
     }
     pub fn add_cli_matches(m: &clap::ArgMatches) {
@@ -429,7 +445,7 @@ impl Settings {
 
     pub fn reset(cli_settings: Option<SettingsPartial>) {
         *CLI_SETTINGS.lock().unwrap() = cli_settings;
-        *SETTINGS.write().unwrap() = None;
+        *BASE_SETTINGS.write().unwrap() = None;
     }
 
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {
@@ -493,4 +509,17 @@ impl Display for Settings {
 
 pub fn ensure_experimental(what: &str) -> Result<()> {
     Settings::get().ensure_experimental(what)
+}
+
+pub const DEFAULT_NODE_MIRROR_URL: &str = "https://nodejs.org/dist/";
+
+impl SettingsNode {
+    pub fn mirror_url(&self) -> Url {
+        let s = self
+            .mirror_url
+            .clone()
+            .or(env::var("NODE_BUILD_MIRROR_URL").ok())
+            .unwrap_or_else(|| DEFAULT_NODE_MIRROR_URL.to_string());
+        Url::parse(&s).unwrap()
+    }
 }
