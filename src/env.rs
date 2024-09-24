@@ -9,7 +9,6 @@ use std::{path, process};
 use itertools::Itertools;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
-use url::Url;
 
 use crate::cli::args::ProfileArg;
 use crate::duration::HOURLY;
@@ -173,11 +172,6 @@ pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 
 // node
-pub static MISE_NODE_MIRROR_URL: Lazy<Url> = Lazy::new(|| {
-    var_url("MISE_NODE_MIRROR_URL")
-        .or_else(|| var_url("NODE_BUILD_MIRROR_URL"))
-        .unwrap_or_else(|| Url::parse("https://nodejs.org/dist/").unwrap())
-});
 pub static MISE_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
     var("MISE_NODE_CONCURRENCY")
         .ok()
@@ -277,10 +271,6 @@ fn var_option_bool(key: &str) -> Option<bool> {
 
 pub fn var_path(key: &str) -> Option<PathBuf> {
     var_os(key).map(PathBuf::from).map(replace_path)
-}
-
-fn var_url(key: &str) -> Option<Url> {
-    var(key).ok().map(|v| Url::parse(&v).unwrap())
 }
 
 fn var_duration(key: &str) -> Option<Duration> {
