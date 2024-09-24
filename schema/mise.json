@@ -11,7 +11,9 @@
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$"
     },
-    "env": { "$ref": "#/$defs/env" },
+    "env": {
+      "$ref": "#/$defs/env"
+    },
     "tools": {
       "description": "dev tools to use",
       "type": "object",
@@ -19,16 +21,22 @@
         "oneOf": [
           {
             "type": "array",
-            "items": { "$ref": "#/$defs/tool" }
+            "items": {
+              "$ref": "#/$defs/tool"
+            }
           },
-          { "$ref": "#/$defs/tool" }
+          {
+            "$ref": "#/$defs/tool"
+          }
         ]
       }
     },
     "tasks": {
       "description": "task runner tasks",
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/task" }
+      "additionalProperties": {
+        "$ref": "#/$defs/task"
+      }
     },
     "plugins": {
       "description": "plugins to use",
@@ -68,7 +76,10 @@
           "properties": {
             "file": {
               "oneOf": [
-                { "type": "string", "description": "dotenv file to load" },
+                {
+                  "type": "string",
+                  "description": "dotenv file to load"
+                },
                 {
                   "type": "array",
                   "description": "dotenv files to load",
@@ -81,7 +92,10 @@
             },
             "path": {
               "oneOf": [
-                { "type": "string", "description": "PATH entry to add" },
+                {
+                  "type": "string",
+                  "description": "PATH entry to add"
+                },
                 {
                   "type": "array",
                   "description": "PATH entries to add",
@@ -94,7 +108,10 @@
             },
             "source": {
               "oneOf": [
-                { "type": "string", "description": "bash script to load" },
+                {
+                  "type": "string",
+                  "description": "bash script to load"
+                },
                 {
                   "type": "array",
                   "description": "bash scripts to load",
@@ -118,7 +135,9 @@
                     {
                       "description": "virtualenv options",
                       "type": "object",
-                      "required": ["path"],
+                      "required": [
+                        "path"
+                      ],
                       "properties": {
                         "path": {
                           "description": "path to python virtual environment to use",
@@ -140,9 +159,18 @@
       },
       "additionalProperties": {
         "oneOf": [
-          { "type": "string" },
-          { "type": "number" },
-          { "type": "boolean", "enum": [false] }
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          }
         ]
       }
     },
@@ -160,7 +188,9 @@
               "type": "string"
             }
           },
-          "required": ["version"]
+          "required": [
+            "version"
+          ]
         }
       ]
     },
@@ -234,9 +264,18 @@
               "type": "object",
               "additionalProperties": {
                 "oneOf": [
-                  { "type": "string" },
-                  { "type": "number" },
-                  { "type": "boolean", "enum": [false] }
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  }
                 ]
               }
             },
@@ -501,7 +540,11 @@
             "missing_tools": {
               "description": "display warning when a tool is not installed",
               "type": "string",
-              "enum": ["if_other_versions_installed", "always", "never"],
+              "enum": [
+                "if_other_versions_installed",
+                "always",
+                "never"
+              ],
               "default": "if_other_versions_installed"
             },
             "show_env": {
@@ -517,7 +560,10 @@
         "task_output": {
           "default": "prefix",
           "description": "how to display task output",
-          "enum": ["prefix", "interleave"],
+          "enum": [
+            "prefix",
+            "interleave"
+          ],
           "type": "string"
         },
         "trusted_config_paths": {
