@@ -42,7 +42,7 @@ pub mod tests {
         reset();
         assert_cli!("alias", "set", "tiny", "my/alias", "3.0");
 
-        assert_cli_snapshot!("aliases", @r###"
+        assert_cli_snapshot!("aliases", @r#"
         java  lts          21   
         node  lts          20   
         node  lts-argon    4    
@@ -57,7 +57,7 @@ pub mod tests {
         tiny  lts          3.1.0
         tiny  lts-prev     2.0.0
         tiny  my/alias     3.0
-        "###);
+        "#);
         reset();
     }
 }

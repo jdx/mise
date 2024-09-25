@@ -18,8 +18,13 @@ use serde_derive::Deserialize;
 use crate::config::config_file::toml::{deserialize_arr, TomlParser};
 use crate::config::Config;
 use crate::file;
+use crate::task::task_script_parser::{
+    has_any_args_defined, replace_template_placeholders_with_args, TaskScriptParser,
+};
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::ui::tree::TreeItem;
+
+mod task_script_parser;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Deserialize)]
 pub struct Task {
@@ -156,6 +161,47 @@ impl Task {
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect()
+    }
+
+    pub fn parse_usage_spec(&self, cwd: Option<PathBuf>) -> Result<(usage::Spec, Vec<String>)> {
+        if let Some(file) = &self.file {
+            let spec = usage::Spec::parse_script(file)
+                .inspect_err(|e| debug!("failed to parse task file with usage: {e}"))
+                .unwrap_or_default();
+            Ok((spec, vec![]))
+        } else {
+            let (scripts, spec) = TaskScriptParser::new(cwd).parse_run_scripts(&self.run)?;
+            Ok((spec, scripts))
+        }
+    }
+
+    pub fn render_run_scripts_with_args(
+        &self,
+        cwd: Option<PathBuf>,
+        args: &[String],
+    ) -> Result<Vec<(String, Vec<String>)>> {
+        let (spec, scripts) = self.parse_usage_spec(cwd)?;
+        if has_any_args_defined(&spec) {
+            Ok(
+                replace_template_placeholders_with_args(&spec, &scripts, args)
+                    .into_iter()
+                    .map(|s| (s, vec![]))
+                    .collect(),
+            )
+        } else {
+            Ok(self
+                .run
+                .iter()
+                .enumerate()
+                .map(|(i, script)| {
+                    // only pass args to the last script if no formal args are defined
+                    match i == self.run.len() - 1 {
+                        true => (script.clone(), args.iter().cloned().collect_vec()),
+                        false => (script.clone(), vec![]),
+                    }
+                })
+                .collect())
+        }
     }
 }
 

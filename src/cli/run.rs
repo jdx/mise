@@ -24,7 +24,6 @@ use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::task::{Deps, GetMatchingExt, Task};
-use crate::task_parser::TaskParser;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, style};
 use crate::{env, file, ui};
@@ -206,6 +205,9 @@ impl Run {
             };
             let rx = tasks.lock().unwrap().subscribe();
             while let Some(task) = rx.recv().unwrap() {
+                if exit_status.lock().unwrap().is_some() {
+                    break;
+                }
                 run(&task);
             }
         });
@@ -252,20 +254,8 @@ impl Run {
         if let Some(file) = &task.file {
             self.exec_file(file, task, &env, &prefix)?;
         } else {
-            let parser = TaskParser::new(self.cd.clone()).parse_run_scripts(&task.run)?;
-            if parser.has_any_args_defined() {
-                for script in parser.render(&self.args) {
-                    self.exec_script(&script, &[], task, &env, &prefix)?;
-                }
-            } else {
-                for (i, script) in task.run.iter().enumerate() {
-                    // only pass args to the last script if no formal args are defined
-                    let args = match i == task.run.len() - 1 {
-                        true => task.args.iter().cloned().collect_vec(),
-                        false => vec![],
-                    };
-                    self.exec_script(script, &args, task, &env, &prefix)?;
-                }
+            for (script, args) in task.render_run_scripts_with_args(self.cd.clone(), &task.args)? {
+                self.exec_script(&script, &args, task, &env, &prefix)?;
             }
         }
 
@@ -327,14 +317,23 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
+        let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
+        let (spec, _) = task.parse_usage_spec(self.cd.clone())?;
+        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
+            let args = once(command.clone()).chain(args.clone()).collect_vec();
+            let po = usage::cli::parse(&spec, &args).map_err(|err| eyre!(err))?;
+            for (k, v) in po.as_env() {
+                env.insert(k, v);
+            }
+        }
 
         let cmd = format!("{} {}", display_path(file), args.join(" "));
         let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
         info_unprefix_trunc!("{prefix} {cmd}");
 
-        self.exec(&command, &args, task, env, prefix)
+        self.exec(&command, &args, task, &env, prefix)
     }
 
     fn exec(
@@ -624,8 +623,7 @@ mod tests {
         assert_cli_snapshot!(
             "r",
             "filetask",
-            "arg1",
-            "arg2",
+            "--user=jdx",
             ":::",
             "configtask",
             "arg3",
