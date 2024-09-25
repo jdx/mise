@@ -4,7 +4,6 @@
 # mise description="run end-to-end tests"
 set -euo pipefail
 
-env
 export RUST_TEST_THREADS=1
 
 if [[ "${1:-all}" == all ]]; then
