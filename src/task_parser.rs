@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TaskParseArg {
     i: usize,
     name: String,
@@ -18,7 +18,7 @@ pub struct TaskParseArg {
     // choices: Vec<String>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct TaskParseResults {
     scripts: Vec<String>,
     args: Vec<TaskParseArg>,
