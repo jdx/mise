@@ -1,5 +1,32 @@
 # Changelog
 
+## [2024.9.9](https://github.com/jdx/mise/compare/v2024.9.8..v2024.9.9) - 2024-09-25
+
+### 🐛 Bug Fixes
+
+- added nodejs to alpine build by [@jdx](https://github.com/jdx) in [550f64c](https://github.com/jdx/mise/commit/550f64cb9c0377e4102be24486491a5b9d7947f3)
+- bug with exec on windows by [@jdx](https://github.com/jdx) in [#2648](https://github.com/jdx/mise/pull/2648)
+- only show hints once per execution by [@jdx](https://github.com/jdx) in [#2647](https://github.com/jdx/mise/pull/2647)
+- task args regression by [@jdx](https://github.com/jdx) in [#2651](https://github.com/jdx/mise/pull/2651)
+- use correct xdg paths on windows by [@jdx](https://github.com/jdx) in [#2653](https://github.com/jdx/mise/pull/2653)
+
+### 🧪 Testing
+
+- added windows e2e tests by [@jdx](https://github.com/jdx) in [#2643](https://github.com/jdx/mise/pull/2643)
+- added windows e2e tests by [@jdx](https://github.com/jdx) in [#2645](https://github.com/jdx/mise/pull/2645)
+- reset by [@jdx](https://github.com/jdx) in [57d0223](https://github.com/jdx/mise/commit/57d0223ab2dfa731088f1634d0d12a6edd8dd8a6)
+- fix mise cache in CI by [@jdx](https://github.com/jdx) in [#2649](https://github.com/jdx/mise/pull/2649)
+- allow specifying full e2e test names by [@jdx](https://github.com/jdx) in [#2650](https://github.com/jdx/mise/pull/2650)
+- split windows into windows-unit and windows-e2e by [@jdx](https://github.com/jdx) in [#2652](https://github.com/jdx/mise/pull/2652)
+
+### 🔍 Other Changes
+
+- **(docs)** fix `arch()` template doc by [@cwegener](https://github.com/cwegener) in [#2644](https://github.com/jdx/mise/pull/2644)
+
+### New Contributors
+
+* @cwegener made their first contribution in [#2644](https://github.com/jdx/mise/pull/2644)
+
 ## [2024.9.8](https://github.com/jdx/mise/compare/v2024.9.7..v2024.9.8) - 2024-09-25
 
 ### 🚀 Features
