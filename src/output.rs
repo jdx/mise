@@ -47,19 +47,6 @@ macro_rules! miseprint {
 
 #[cfg(test)]
 #[macro_export]
-macro_rules! hint {
-    ($id:expr, $message:expr, $example_cmd:expr) => {{
-        let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-        if !$crate::output::should_display_hint($id) {
-            let prefix = console::style("mise hint").dim().for_stderr();
-            let cmd = console::style($example_cmd).bold().for_stderr();
-            stderr.push(format!("{} {} {}", prefix, format!($message), cmd));
-        }
-    }};
-}
-
-#[cfg(test)]
-#[macro_export]
 macro_rules! info {
         ($($arg:tt)*) => {{
             let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
@@ -107,6 +94,9 @@ macro_rules! debug {
 }
 
 pub fn should_display_hint(id: &str) -> bool {
+    if cfg!(test) {
+        return false;
+    }
     if SETTINGS
         .disable_hints
         .iter()
@@ -127,7 +117,6 @@ pub fn should_display_hint(id: &str) -> bool {
     }
 }
 
-#[cfg(not(test))]
 #[macro_export]
 macro_rules! hint {
     ($id:expr, $message:expr, $example_cmd:expr) => {{
