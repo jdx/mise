@@ -48,7 +48,6 @@ pub struct Settings {"#
                     parse_env.as_str().unwrap().to_string(),
                 );
             }
-            dbg!(&opts);
             lines.push(format!(
                 "    #[config({})]",
                 opts.iter()
