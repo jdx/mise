@@ -11,6 +11,7 @@
     "docs:preview": "vitepress preview"
   },
   "dependencies": {
+    "@types/node": "^22.7.0",
     "@types/markdown-it": "^14.1.2",
     "markdown-it": "^14.1.0",
     "toml": "^3.0.0"

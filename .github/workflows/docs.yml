@@ -31,9 +31,9 @@ jobs:
         with:
           install_args: bun
           working_directory: docs
-      - run: bun install
+      - run: npm install
         working-directory: docs
-      - run: bun run docs:build
+      - run: npm run docs:build
         working-directory: docs
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: mise run release-docs

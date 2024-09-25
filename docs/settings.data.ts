@@ -7,11 +7,11 @@ const md = markdownit();
 export default {
   watch: ['./settings.toml'],
   load() {
-    const settings = {};
+    const settings: any = {};
     const raw = fs.readFileSync('./settings.toml', 'utf-8');
     const doc = toml.parse(raw);
 
-    function buildElement(key, props) {
+    function buildElement(key: string, props: any) {
       let type = props.type;
       let optional = false;
       if (type.startsWith('Option<')) {
