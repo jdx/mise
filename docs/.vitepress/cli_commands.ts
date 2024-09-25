@@ -235,6 +235,17 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  "toml": {
+    hide: false,
+    subcommands: {
+      "get": {
+        hide: false,
+      },
+      "set": {
+        hide: false,
+      },
+    },
+  },
   "trust": {
     hide: false,
   },
