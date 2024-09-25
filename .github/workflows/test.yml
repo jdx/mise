@@ -50,6 +50,7 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: npm i
       - run: mise install
       - run: mise x -- cargo nextest run --all-features
       - run: cargo deny check
@@ -151,6 +152,7 @@ jobs:
             pipx \
             python3-venv \
             zsh
+      - run: npm i
       - run: |
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"

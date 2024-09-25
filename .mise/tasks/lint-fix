@@ -12,6 +12,7 @@ shfmt -w  -i 2 -ci -bn "${scripts_dirs[@]}"
 prettier -w $(git ls-files '*.yml' '*.yaml')
 markdownlint --fix .
 actionlint
+toml-sort -i settings.toml --spaces-indent-inline-array 4
 
 cat >rustfmt.toml <<EOF
 unstable_features = true

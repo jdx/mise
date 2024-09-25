@@ -472,7 +472,7 @@ impl Toolset {
         let missing = self
             .list_missing_versions()
             .into_iter()
-            .filter(|tv| match settings.status.missing_tools {
+            .filter(|tv| match settings.status.missing_tools() {
                 SettingsStatusMissingTools::Never => false,
                 SettingsStatusMissingTools::Always => true,
                 SettingsStatusMissingTools::IfOtherVersionsInstalled => tv

@@ -85,10 +85,10 @@ fn load_tools() -> BackendMap {
         .map(|(_, p)| p.clone())
         .collect::<Vec<ABackend>>();
     let settings = Settings::get();
-    if settings.asdf {
+    if !cfg!(windows) || settings.asdf {
         tools.extend(asdf::AsdfBackend::list().expect("failed to list asdf plugins"));
     }
-    if settings.vfox {
+    if cfg!(windows) || settings.vfox {
         tools.extend(vfox::VfoxBackend::list().expect("failed to list vfox plugins"));
     }
     tools.extend(list_installed_backends().expect("failed to list backends"));

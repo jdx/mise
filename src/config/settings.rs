@@ -12,213 +12,16 @@ use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::once;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use url::Url;
 
 pub static SETTINGS: Lazy<Arc<Settings>> = Lazy::new(Settings::get);
 
-#[rustfmt::skip]
-#[derive(Config, Default, Debug, Clone, Serialize)]
-#[config(partial_attr(derive(Clone, Serialize, Default)))]
-pub struct Settings {
-    /// push tools to the front of PATH instead of allowing modifications of PATH after activation to take precedence
-    #[config(env = "MISE_ACTIVATE_AGGRESSIVE", default = false)]
-    pub activate_aggressive: bool,
-    #[config(env = "MISE_ALL_COMPILE", default = false)]
-    pub all_compile: bool,
-    #[config(env = "MISE_ALWAYS_KEEP_DOWNLOAD", default = false)]
-    pub always_keep_download: bool,
-    #[config(env = "MISE_ALWAYS_KEEP_INSTALL", default = false)]
-    pub always_keep_install: bool,
-    #[cfg(asdf)]
-    #[config(env = "MISE_ASDF", default = true)]
-    pub asdf: bool,
-    #[cfg(not(asdf))]
-    #[config(env = "MISE_ASDF", default = false)]
-    pub asdf: bool,
-    /// default to asdf-compatible behavior
-    /// this means that the global config file will be ~/.tool-versions
-    /// also, the default behavior of `mise global` will be --pin
-    #[config(env = "MISE_ASDF_COMPAT", default = false)]
-    pub asdf_compat: bool,
-    /// delete files in cache that have not been accessed in this duration
-    #[config(env = "MISE_CACHE_PRUNE_AGE", default = "30d")]
-    pub cache_prune_age: String,
-    /// use cargo-binstall instead of cargo install if available
-    #[config(env = "MISE_CARGO_BINSTALL", default = true)]
-    pub cargo_binstall: bool,
-    #[config(env = "MISE_COLOR", default = true)]
-    pub color: bool,
-    #[config(env = "MISE_DISABLE_DEFAULT_SHORTHANDS", default = false)]
-    pub disable_default_shorthands: bool,
-    #[config(env = "MISE_DISABLE_HINTS", default = [], parse_env = list_by_comma)]
-    pub disable_hints: BTreeSet<String>,
-    #[config(env = "MISE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
-    pub disable_tools: BTreeSet<String>,
-    #[config(env = "MISE_EXPERIMENTAL", default = false)]
-    pub experimental: bool,
-    /// after installing a go version, run `go install` on packages listed in this file
-    #[config(env = "MISE_GO_DEFAULT_PACKAGES_FILE", default = "~/.default-go-packages")]
-    pub go_default_packages_file: PathBuf,
-    /// url to fetch go sdks from
-    #[config(env = "MISE_GO_DOWNLOAD_MIRROR", default = "https://dl.google.com/go")]
-    pub go_download_mirror: String,
-    /// used for fetching go versions
-    #[config(env = "MISE_GO_REPO", default = "https://github.com/golang/go")]
-    pub go_repo: String,
-    /// changes where `go install` installs binaries to
-    /// defaults to ~/.local/share/mise/installs/go/.../bin
-    /// set to true to override GOBIN if previously set
-    /// set to false to not set GOBIN (default is ${GOPATH:-$HOME/go}/bin)
-    #[config(env = "MISE_GO_SET_GOBIN")]
-    pub go_set_gobin: Option<bool>,
-    /// [deprecated] set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages
-    /// use to make mise behave like asdf but there are no known use-cases where this is necessary.
-    /// See https://github.com/jdx/mise/discussions/1638
-    #[config(env = "MISE_GO_SET_GOPATH", default = false)]
-    pub go_set_gopath: bool,
-    /// sets GOROOT=~/.local/share/mise/installs/go/.../
-    /// you probably always want this set to be set unless you want GOROOT to point to something
-    /// other than the sdk mise is currently set to
-    #[config(env = "MISE_GO_SET_GOROOT", default = true)]
-    pub go_set_goroot: bool,
-    /// set to true to skip checksum verification when downloading go sdk tarballs
-    #[config(env = "MISE_GO_SKIP_CHECKSUM", default = false)]
-    pub go_skip_checksum: bool,
-    #[config(env = "MISE_HTTP_TIMEOUT", default = 30)]
-    pub http_timeout: u64,
-    #[config(env = "MISE_JOBS", default = 4)]
-    pub jobs: usize,
-    #[config(env = "MISE_LEGACY_VERSION_FILE", default = true)]
-    pub legacy_version_file: bool,
-    #[config(env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS", default = [], parse_env = list_by_comma)]
-    pub legacy_version_file_disable_tools: BTreeSet<String>,
-    #[config(env = "MISE_LIBGIT2", default = true)]
-    pub libgit2: bool,
-    #[config(nested)]
-    pub node: SettingsNode,
-    #[config(env = "MISE_NOT_FOUND_AUTO_INSTALL", default = true)]
-    pub not_found_auto_install: bool,
-    #[config(env = "MISE_PARANOID", default = false)]
-    pub paranoid: bool,
-    /// use uvx instead of pipx if available
-    #[config(env = "MISE_PIPX_UVX", default = false)]
-    pub pipx_uvx: bool,
-    #[config(env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION", default = "7d")]
-    pub plugin_autoupdate_last_check_duration: String,
-    #[config(env = "MISE_PYTHON_COMPILE")]
-    pub python_compile: Option<bool>,
-    #[config(env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE")]
-    pub python_default_packages_file: Option<PathBuf>,
-    #[config(env = "MISE_PYTHON_PATCH_URL")]
-    pub python_patch_url: Option<String>,
-    #[config(env = "MISE_PYTHON_PATCHES_DIRECTORY")]
-    pub python_patches_directory: Option<PathBuf>,
-    #[config(env = "MISE_PYTHON_PRECOMPILED_ARCH")]
-    pub python_precompiled_arch: Option<String>,
-    #[config(env = "MISE_PYTHON_PRECOMPILED_OS")]
-    pub python_precompiled_os: Option<String>,
-    #[config(env = "MISE_PYENV_REPO", default = "https://github.com/pyenv/pyenv.git")]
-    pub python_pyenv_repo: String,
-    #[config(env = "MISE_RAW", default = false)]
-    pub raw: bool,
-    #[config(nested)]
-    pub ruby: SettingsRuby,
-    #[config(env = "MISE_SHORTHANDS_FILE")]
-    pub shorthands_file: Option<PathBuf>,
-    /// what level of status messages to display when entering directories
-    #[config(nested)]
-    pub status: SettingsStatus,
-    #[config(env = "MISE_TASK_OUTPUT")]
-    pub task_output: Option<String>,
-    #[config(env = "MISE_TRUSTED_CONFIG_PATHS", default = [], parse_env = list_by_colon)]
-    pub trusted_config_paths: BTreeSet<PathBuf>,
-    #[config(env = "MISE_QUIET", default = false)]
-    pub quiet: bool,
-    #[config(env = "MISE_USE_VERSIONS_HOST", default = true)]
-    pub use_versions_host: bool,
-    #[config(env = "MISE_VERBOSE", default = false)]
-    pub verbose: bool,
-    #[cfg(vfox)]
-    #[config(env = "MISE_VFOX", default = true)]
-    pub vfox: bool,
-    #[cfg(not(vfox))]
-    #[config(env = "MISE_VFOX", default = false)]
-    pub vfox: bool,
-    #[config(env = "MISE_YES", default = false)]
-    pub yes: bool,
-
-    // hidden settings
-    #[config(env = "CI", default = false)]
-    pub ci: bool,
-    #[config(env = "MISE_CD")]
-    pub cd: Option<PathBuf>,
-    #[config(env = "MISE_DEBUG", default = false)]
-    pub debug: bool,
-    #[config(env = "MISE_ENV_FILE")]
-    pub env_file: Option<PathBuf>,
-    #[config(env = "MISE_TRACE", default = false)]
-    pub trace: bool,
-    #[config(env = "MISE_LOG_LEVEL", default = "info")]
-    pub log_level: String,
-    #[config(env = "MISE_PYTHON_VENV_AUTO_CREATE", default = false)]
-    pub python_venv_auto_create: bool,
-}
-
-#[derive(Config, Default, Debug, Clone, Serialize)]
-#[config(partial_attr(derive(Clone, Serialize, Default)))]
-#[config(partial_attr(serde(deny_unknown_fields)))]
-#[rustfmt::skip]
-pub struct SettingsNode {
-    #[config(env = "MISE_NODE_COMPILE")]
-    pub compile: Option<bool>,
-    #[config(env = "MISE_NODE_FLAVOR")]
-    pub flavor: Option<String>,
-    #[config(env = "MISE_NODE_MIRROR_URL")]
-    pub mirror_url: Option<String>
-}
-
-#[derive(Config, Default, Debug, Clone, Serialize)]
-#[config(partial_attr(derive(Clone, Serialize, Default)))]
-#[config(partial_attr(serde(deny_unknown_fields)))]
-#[rustfmt::skip]
-pub struct SettingsRuby {
-    #[config(env = "MISE_RUBY_APPLY_PATCHES")]
-    pub apply_patches: Option<String>,
-    #[config(env = "MISE_RUBY_DEFAULT_PACKAGES_FILE", default = "~/.default-gems")]
-    pub default_packages_file: String,
-    #[config(env = "MISE_RUBY_BUILD_REPO", default = "https://github.com/rbenv/ruby-build.git")]
-    pub ruby_build_repo: String,
-    #[config(env = "MISE_RUBY_BUILD_OPTS")]
-    pub ruby_build_opts: Option<String>,
-    #[config(env = "MISE_RUBY_INSTALL", default = false)]
-    pub ruby_install: bool,
-    #[config(env = "MISE_RUBY_INSTALL_REPO", default = "https://github.com/postmodern/ruby-install.git")]
-    pub ruby_install_repo: String,
-    #[config(env = "MISE_RUBY_INSTALL_OPTS")]
-    pub ruby_install_opts: Option<String>,
-    #[config(env = "MISE_RUBY_VERBOSE_INSTALL")]
-    pub verbose_install: Option<bool>,
-}
-
-#[derive(Config, Default, Debug, Clone, Serialize)]
-#[config(partial_attr(derive(Clone, Serialize, Default)))]
-#[config(partial_attr(serde(deny_unknown_fields)))]
-pub struct SettingsStatus {
-    /// warn if a tool is missing
-    #[config(
-        env = "MISE_STATUS_MESSAGE_MISSING_TOOLS",
-        default = "if_other_versions_installed"
-    )]
-    pub missing_tools: SettingsStatusMissingTools,
-    /// show env var keys when entering directories
-    #[config(env = "MISE_STATUS_MESSAGE_SHOW_ENV", default = false)]
-    pub show_env: bool,
-    /// show active tools when entering directories
-    #[config(env = "MISE_STATUS_MESSAGE_SHOW_TOOLS", default = false)]
-    pub show_tools: bool,
-}
+// settings are generated from settings.toml in the project root
+// make sure you run `mise run render` after updating settings.toml
+include!(concat!(env!("OUT_DIR"), "/settings.rs"));
 
 #[derive(
     Debug, Clone, Copy, Serialize, Deserialize, Default, strum::EnumString, strum::Display,
@@ -521,5 +324,11 @@ impl SettingsNode {
             .or(env::var("NODE_BUILD_MIRROR_URL").ok())
             .unwrap_or_else(|| DEFAULT_NODE_MIRROR_URL.to_string());
         Url::parse(&s).unwrap()
+    }
+}
+
+impl SettingsStatus {
+    pub fn missing_tools(&self) -> SettingsStatusMissingTools {
+        SettingsStatusMissingTools::from_str(&self.missing_tools).unwrap()
     }
 }

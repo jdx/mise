@@ -1,4 +1,8 @@
 {
+  "$id": "https://mise.jdx.dev/schema/mise.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "mise",
+  "type": "object",
   "$defs": {
     "env": {
       "additionalProperties": {
@@ -111,7 +115,7 @@
     "settings": {
       "properties": {
         "activate_aggressive": {
-          "description": "push tools to the front of PATH instead of allowing modifications of PATH after activation to take precedence",
+          "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
           "type": "boolean"
         },
         "all_compile": {
@@ -137,255 +141,306 @@
         },
         "cache_prune_age": {
           "default": "30d",
-          "description": "age to keep cached files, e.g.: 30d",
+          "description": "Delete files in cache that have not been accessed in this duration",
           "type": "string"
         },
         "cargo_binstall": {
           "default": true,
-          "description": "use cargo-binstall to install rust tools if available",
+          "description": "Use cargo-binstall instead of cargo install if available",
+          "type": "boolean"
+        },
+        "cd": {
+          "description": "Path to change to after launching mise",
+          "type": "string"
+        },
+        "ci": {
+          "description": "Set to true if running in a CI environment",
           "type": "boolean"
         },
         "color": {
           "default": true,
-          "description": "colorize output",
+          "description": "Use color in mise terminal output",
+          "type": "boolean"
+        },
+        "debug": {
+          "description": "Sets log level to debug",
           "type": "boolean"
         },
         "disable_default_shorthands": {
-          "description": "disables built-in shorthands",
+          "description": "Disables built-in shorthands to asdf/vfox plugins",
           "type": "boolean"
         },
         "disable_hints": {
-          "description": "disable hints for mise commands",
+          "default": [],
+          "description": "Turns off helpful hints when using different mise features",
+          "type": "array",
           "items": {
-            "description": "command name or * for all commands",
             "type": "string"
-          },
-          "type": "array"
+          }
         },
         "disable_tools": {
-          "description": "tools that should not be used",
+          "default": [],
+          "description": "Tools defined in mise.toml that should be ignored",
+          "type": "array",
           "items": {
-            "description": "tool name",
             "type": "string"
-          },
-          "type": "array"
+          }
+        },
+        "env_file": {
+          "description": "Path to a file containing environment variables.",
+          "type": "string"
         },
         "experimental": {
-          "description": "enable experimental features",
+          "description": "Enable experimental mise features which are incomplete or unstable—breakings changes may occur",
           "type": "boolean"
         },
         "go_default_packages_file": {
-          "description": "path to file containing default go packages",
+          "default": "~/.default-go-packages",
+          "description": "Path to a file containing default go packages to install when installing go",
           "type": "string"
         },
         "go_download_mirror": {
-          "description": "url to use as a mirror for go downloads",
+          "default": "https://dl.google.com/go",
+          "description": "Mirror to download go sdk tarballs from.",
           "type": "string"
         },
         "go_repo": {
-          "description": "url to use as a mirror for go modules",
+          "default": "https://github.com/golang/go",
+          "description": "URL to fetch go from.",
           "type": "string"
         },
+        "go_set_gobin": {
+          "description": "Changes where `go install` installs binaries to.",
+          "type": "boolean"
+        },
         "go_set_gopath": {
-          "description": "set GOPATH to the directory containing the go tool",
+          "description": "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages.",
+          "deprecated": "Use env._go.set_goroot instead.",
           "type": "boolean"
         },
         "go_set_goroot": {
-          "description": "set GOROOT to the directory containing the go tool",
+          "default": true,
+          "description": "Sets GOROOT=~/.local/share/mise/installs/go/.../.",
           "type": "boolean"
         },
         "go_skip_checksum": {
-          "description": "skip checksum verification for go downloads",
+          "description": "Set to true to skip checksum verification when downloading go sdk tarballs.",
           "type": "boolean"
         },
         "http_timeout": {
-          "description": "timeout for http requests in seconds",
-          "type": "integer"
+          "default": 30,
+          "description": "Timeout in seconds for all HTTP requests in mise.",
+          "type": "number"
         },
         "jobs": {
-          "description": "number of tools to install in parallel, default is 4",
-          "type": "integer"
+          "default": 4,
+          "description": "How many jobs to run concurrently such as tool installs.",
+          "type": "number"
         },
         "legacy_version_file": {
-          "description": "should mise parse legacy version files (e.g. .node-version)",
+          "default": true,
+          "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
           "type": "boolean"
         },
         "legacy_version_file_disable_tools": {
-          "description": "tools that should not have their legacy version files parsed",
+          "default": [],
+          "description": "Specific tools to disable idiomatic version files for.",
+          "type": "array",
           "items": {
-            "description": "tool name",
             "type": "string"
-          },
-          "type": "array"
+          }
         },
         "libgit2": {
           "default": true,
-          "description": "use libgit2 for git operations",
+          "description": "Use libgit2 for git operations, set to false to shell out to git.",
           "type": "boolean"
+        },
+        "log_level": {
+          "default": "info",
+          "description": "Show more/less output.",
+          "type": "string",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
         },
         "node": {
           "additionalProperties": false,
-          "description": "settings specific to node",
           "properties": {
             "compile": {
-              "description": "do not use precompiled binaries for node",
+              "description": "Compile node from source.",
               "type": "boolean"
             },
             "flavor": {
-              "description": "node flavor to use, generally used for unofficial builds",
+              "description": "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo.",
               "type": "string"
             },
             "mirror_url": {
-              "default": "https://nodejs.org/dist",
-              "description": "url to use as a mirror for node downloads",
+              "description": "Mirror to download node tarballs from.",
               "type": "string"
             }
-          },
-          "type": "object"
-        },
-        "node_compile": {
-          "description": "do not use precompiled binaries for node",
-          "type": "boolean"
+          }
         },
         "not_found_auto_install": {
           "default": true,
-          "description": "adds a shell hook to `mise activate` and shims to automatically install tools when they need to be installed",
+          "description": "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions.",
           "type": "boolean"
         },
         "paranoid": {
-          "description": "extra-security mode, see https://mise.jdx.dev/paranoid.html for details",
+          "description": "Enables extra-secure behavior.",
           "type": "boolean"
         },
         "pipx_uvx": {
-          "default": false,
-          "description": "use uv to install python tools if available",
+          "description": "Use uvx instead of pipx if uv is installed and on PATH.",
           "type": "boolean"
         },
         "plugin_autoupdate_last_check_duration": {
-          "description": "how often to check for plugin updates",
+          "default": "7d",
+          "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
           "type": "string"
         },
         "python_compile": {
-          "description": "do not use precompiled binaries for python",
+          "description": "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
           "type": "boolean"
         },
         "python_default_packages_file": {
-          "description": "path to file containing default python packages",
+          "description": "Path to a file containing default python packages to install when installing python.",
+          "type": "string"
+        },
+        "python_patch_url": {
+          "description": "URL to fetch python patches from.",
+          "type": "string"
+        },
+        "python_patches_directory": {
+          "description": "Directory to fetch python patches from.",
+          "type": "string"
+        },
+        "python_precompiled_arch": {
+          "description": "Specify the architecture to use for precompiled binaries.",
+          "type": "string"
+        },
+        "python_precompiled_os": {
+          "description": "Specify the OS to use for precompiled binaries.",
+          "type": "string"
+        },
+        "python_pyenv_repo": {
+          "default": "https://github.com/pyenv/pyenv.git",
+          "description": "URL to fetch pyenv from for compiling python.",
           "type": "string"
         },
         "python_venv_auto_create": {
-          "description": "automatically create a virtualenv for python tools",
+          "description": "Automatically create virtualenvs for python tools.",
+          "deprecated": "Use env._python.venv instead.",
           "type": "boolean"
         },
         "quiet": {
-          "description": "suppress all non-error output",
+          "description": "Suppress all output except errors.",
           "type": "boolean"
         },
         "raw": {
-          "description": "directly connect plugin scripts to stdin/stdout, implies --jobs=1",
+          "description": "Connect stdin/stdout/stderr to child processes.",
           "type": "boolean"
         },
         "ruby": {
           "additionalProperties": false,
-          "description": "settings specific to ruby",
           "properties": {
             "apply_patches": {
-              "description": "A list of patches (files or URLs) to apply to Ruby source code before building",
+              "description": "A list of patch files or URLs to apply to ruby source.",
               "type": "string"
             },
             "default_packages_file": {
-              "description": "Location of file containing a list of gems to install after installing a new ruby version.",
+              "default": "~/.default-gems",
+              "description": "Path to a file containing default ruby gems to install when installing ruby.",
               "type": "string"
             },
             "ruby_build_opts": {
-              "description": "Command line options to pass to ruby-build when installing",
+              "description": "Options to pass to ruby-build.",
               "type": "string"
             },
             "ruby_build_repo": {
-              "description": "The git repository to use for getting ruby-build",
+              "default": "https://github.com/rbenv/ruby-build.git",
+              "description": "URL to fetch ruby-build from.",
               "type": "string"
             },
             "ruby_install": {
-              "description": "Build with ruby-install instead of ruby-build",
+              "description": "Use ruby-install instead of ruby-build.",
               "type": "boolean"
             },
             "ruby_install_opts": {
-              "description": "Command line options to pass to ruby-install when installing (if MISE_RUBY_INSTALL=1)",
+              "description": "Options to pass to ruby-install.",
               "type": "string"
             },
             "ruby_install_repo": {
-              "description": "The git repository to use for getting ruby-install",
+              "default": "https://github.com/postmodern/ruby-install.git",
+              "description": "URL to fetch ruby-install from.",
               "type": "string"
             },
             "verbose_install": {
-              "description": "Show verbose output during installation (passes --verbose to ruby-build)",
+              "description": "Set to true to enable verbose output during ruby installation.",
               "type": "boolean"
             }
-          },
-          "type": "object"
+          }
         },
         "shorthands_file": {
-          "description": "path to file containing shorthand mappings",
+          "description": "Path to a file containing custom tool shorthands.",
           "type": "string"
         },
         "status": {
           "additionalProperties": false,
-          "description": "configure messages displayed when changing directories or executing tools",
           "properties": {
             "missing_tools": {
               "default": "if_other_versions_installed",
-              "description": "display warning when a tool is not installed",
-              "enum": [
-                "if_other_versions_installed",
-                "always",
-                "never"
-              ],
+              "description": "Show a warning if tools are not installed when entering a directory with a mise.toml file.",
               "type": "string"
             },
             "show_env": {
-              "description": "display configured mise environment variables",
+              "description": "Show configured env vars when entering a directory with a mise.toml file.",
               "type": "boolean"
             },
             "show_tools": {
-              "description": "display active tools",
+              "description": "Show configured env vars when entering a directory with a mise.toml file.",
               "type": "boolean"
             }
-          },
-          "type": "object"
+          }
         },
         "task_output": {
-          "default": "prefix",
-          "description": "how to display task output",
+          "description": "Change output style when executing tasks.",
+          "type": "string",
           "enum": [
             "prefix",
             "interleave"
-          ],
-          "type": "string"
+          ]
+        },
+        "trace": {
+          "description": "Sets log level to trace",
+          "type": "boolean"
         },
         "trusted_config_paths": {
-          "description": "config files with these prefixes will be trusted by default",
+          "default": [],
+          "description": "This is a list of config paths that mise will automatically mark as trusted.",
+          "type": "array",
           "items": {
-            "description": "a path to add to PATH",
             "type": "string"
-          },
-          "type": "array"
+          }
         },
         "use_versions_host": {
           "default": true,
-          "description": "set to false to disable using mise-versions.jdx.dev to quickly fetch versions rather than listing them with the plugin",
+          "description": "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions.",
           "type": "boolean"
         },
         "verbose": {
-          "description": "display extra output",
+          "description": "Shows more verbose output such as installation logs when installing tools.",
           "type": "boolean"
         },
         "vfox": {
-          "default": false,
-          "description": "use vfox as a default plugin backend",
+          "description": "Use vfox as a default plugin backend instead of asdf.",
           "type": "boolean"
         },
         "yes": {
-          "description": "assume yes for all prompts",
+          "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
         }
       }
@@ -529,8 +584,6 @@
       ]
     }
   },
-  "$id": "https://mise.jdx.dev/schema/mise.json",
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "description": "config file for mise version manager (.mise.toml)",
   "properties": {
@@ -592,7 +645,5 @@
       "description": "dev tools to use",
       "type": "object"
     }
-  },
-  "title": "mise",
-  "type": "object"
+  }
 }
