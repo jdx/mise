@@ -222,6 +222,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build
       - run: Add-Content $env:GITHUB_PATH "$PWD\target\debug"
+      - run: pwsh e2e-win\run_all.ps1
       - run: cargo test
         continue-on-error: true
-      - run: pwsh e2e-win\run_all.ps1
