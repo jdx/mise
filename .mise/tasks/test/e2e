@@ -4,13 +4,14 @@
 # mise description="run end-to-end tests"
 set -euo pipefail
 
+env
 export RUST_TEST_THREADS=1
 
 if [[ "${1:-all}" == all ]]; then
   ./e2e/run_all_tests
 else
   pushd e2e
-  FILES="$(fd "test_$1")"
+  FILES="$(fd -tf "$1" --and "^test_")"
   popd
   if [[ -z $FILES ]]; then
     echo "Not test matches $1" >&2
