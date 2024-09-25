@@ -79,7 +79,7 @@ num_cpus = "1"
 number_prefix = "0.4"
 once_cell = "1.19.0"
 openssl = { version = "0.10.66", optional = true }
-path-absolutize = "3.1.1"
+path-absolutize = "3"
 petgraph = "0.6.4"
 rand = "0.8.5"
 rayon = "1.10.0"
@@ -119,7 +119,7 @@ usage-lib = { version = "0.3", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
 vfox = "0.1"
 walkdir = "2.5.0"
-which = "6.0.1"
+which = "6"
 xx = { version = "1.0.0", features = ["glob"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
