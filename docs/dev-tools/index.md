@@ -155,5 +155,12 @@ mise plugins may accept configuration in the form of tool options specified in `
 mytool = { version = '3.10', foo = 'bar' }
 ```
 
+All tools can accept a `postinstall` option which is a shell command to run after the tool is installed:
+
+```toml
+[tools]
+node = { version = '20', postinstall = 'corepack enable' }
+```
+
 Unfortunately at the time of this writing, it's not possible to specify this via the CLI in
 `mise use` or other commands though. See <https://github.com/jdx/mise/issues/2309>
