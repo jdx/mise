@@ -22,7 +22,7 @@ The following context objects are available inside templates:
 As well as these functions:
 
 - `exec(command) -> String` – execute a command and return the output
-- `arch() -> String` – return the system architecture, e.g. `x86_64`, `arm64`
+- `arch() -> String` – return the system architecture, e.g. `x64`, `arm64`
 - `os() -> String` – return the operating system, e.g. `linux`, `macos`, `windows`
 - `os_family() -> String` – return the operating system family, e.g. `unix`, `windows`
 - `num_cpus() -> usize` – return the number of CPUs on the system
