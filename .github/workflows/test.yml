@@ -213,7 +213,15 @@ jobs:
         with:
           recreate: true
           path: code-coverage-results.md
-  windows:
+  windows-unit:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+        continue-on-error: true
+  windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -222,5 +230,3 @@ jobs:
       - run: cargo build
       - run: Add-Content $env:GITHUB_PATH "$PWD\target\debug"
       - run: pwsh e2e-win\run_all.ps1
-      - run: cargo test
-        continue-on-error: true
