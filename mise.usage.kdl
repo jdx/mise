@@ -1112,6 +1112,28 @@ The name of the script will be the name of the tasks.
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
     }
 }
+cmd "toml" help="Edit mise.toml files" {
+    cmd "get" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise toml get tools.python
+    3.12
+"
+        arg "<KEY>" help="The path of the config to display"
+        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
+    }
+    cmd "set" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise toml set tools.python 3.12
+    $ mise toml set settings.always_keep_download true
+    $ mise toml set env.TEST_ENV_VAR ABC
+"
+        arg "<KEY>" help="The path of the config to display"
+        arg "<VALUE>" help="The value to set the key to"
+        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
+    }
+}
 cmd "trust" help="Marks a config file as trusted" {
     long_help r"Marks a config file as trusted
 
