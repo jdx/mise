@@ -53,9 +53,9 @@ body = """
 {% if commit.scope %}**({{commit.scope}})** {% endif -%}
 {% if commit.breaking %}**breaking** {% endif -%}
 {{ commit.message | split(pat="\n") | first | trim }} by \
-{% if commit.github.username %}[@{{commit.github.username}}](https://github.com/{{commit.github.username}})\
+{% if commit.remote.username %}[@{{commit.remote.username}}](https://github.com/{{commit.remote.username}})\
 {% else %}{{commit.author.name}}{% endif %} in \
-{% if commit.github.pr_number %}[#{{ commit.github.pr_number }}]($REPO/pull/{{ commit.github.pr_number }})\
+{% if commit.remote.pr_number %}[#{{ commit.remote.pr_number }}]($REPO/pull/{{ commit.remote.pr_number }})\
 {% else %}[{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }})\
 {%- endif %}
 {% endmacro commit -%}
