@@ -1,0 +1,319 @@
+{
+  "$id": "https://mise.jdx.dev/schema/mise.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "mise",
+  "type": "object",
+  "$defs": {
+    "env": {
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "enum": [
+              false
+            ],
+            "type": "boolean"
+          }
+        ]
+      },
+      "description": "environment variables",
+      "properties": {
+        "_": {
+          "description": "environment modules",
+          "properties": {
+            "file": {
+              "oneOf": [
+                {
+                  "description": "dotenv file to load",
+                  "type": "string"
+                },
+                {
+                  "description": "dotenv files to load",
+                  "items": {
+                    "description": "dotenv file to load",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "path": {
+              "oneOf": [
+                {
+                  "description": "PATH entry to add",
+                  "type": "string"
+                },
+                {
+                  "description": "PATH entries to add",
+                  "items": {
+                    "description": "PATH entry to add",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "python": {
+              "description": "python environment",
+              "properties": {
+                "venv": {
+                  "oneOf": [
+                    {
+                      "description": "path to python virtual environment to use",
+                      "type": "string"
+                    },
+                    {
+                      "description": "virtualenv options",
+                      "properties": {
+                        "create": {
+                          "default": false,
+                          "description": "create a new virtual environment if one does not exist",
+                          "type": "boolean"
+                        },
+                        "path": {
+                          "description": "path to python virtual environment to use",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "path"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "source": {
+              "oneOf": [
+                {
+                  "description": "bash script to load",
+                  "type": "string"
+                },
+                {
+                  "description": "bash scripts to load",
+                  "items": {
+                    "description": "bash script to load",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "settings": {
+      "properties": {{settings_json}}
+    },
+    "task": {
+      "oneOf": [
+        {
+          "description": "script to run",
+          "type": "string"
+        },
+        {
+          "description": "script to run",
+          "items": {
+            "description": "script to run",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "alias": {
+              "oneOf": [
+                {
+                  "description": "alias for this task",
+                  "type": "string"
+                },
+                {
+                  "description": "alias for this task",
+                  "items": {
+                    "description": "alias for this task",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "depends": {
+              "description": "other tasks to run before this task",
+              "items": {
+                "description": "task to run before this task",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": {
+              "description": "description of task",
+              "type": "string"
+            },
+            "dir": {
+              "description": "directory to run script in, default is current working directory",
+              "type": "string"
+            },
+            "env": {
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "enum": [
+                      false
+                    ],
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "description": "environment variables",
+              "type": "object"
+            },
+            "hide": {
+              "description": "do not display this task",
+              "type": "boolean"
+            },
+            "outputs": {
+              "description": "files created by this task",
+              "items": {
+                "description": "glob pattern or path to files created by this task",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "quiet": {
+              "description": "do not display mise information for this task",
+              "type": "boolean"
+            },
+            "raw": {
+              "description": "directly connect task to stdin/stdout/stderr",
+              "type": "boolean"
+            },
+            "run": {
+              "oneOf": [
+                {
+                  "description": "script to run",
+                  "type": "string"
+                },
+                {
+                  "description": "script to run",
+                  "items": {
+                    "description": "script to run",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "sources": {
+              "description": "files that this task depends on",
+              "items": {
+                "description": "glob pattern or path to files that this task depends on",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "tool": {
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "properties": {
+            "version": {
+              "description": "version of the tool to install",
+              "type": "string"
+            }
+          },
+          "required": [
+            "version"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "description": "config file for mise version manager (.mise.toml)",
+  "properties": {
+    "alias": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "description": "version alias points to",
+          "type": "string"
+        },
+        "description": "plugin to set aliases for",
+        "type": "object"
+      },
+      "description": "custom shorthands for versions",
+      "type": "object"
+    },
+    "env": {
+      "$ref": "#/$defs/env"
+    },
+    "min_version": {
+      "description": "minimum version of mise required to use this config",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "type": "string"
+    },
+    "plugins": {
+      "additionalProperties": {
+        "description": "url to plugin repository",
+        "type": "string"
+      },
+      "description": "plugins to use",
+      "type": "object"
+    },
+    "settings": {
+      "$ref": "#/$defs/settings",
+      "additionalProperties": false,
+      "description": "mise settings",
+      "type": "object"
+    },
+    "tasks": {
+      "additionalProperties": {
+        "$ref": "#/$defs/task"
+      },
+      "description": "task runner tasks",
+      "type": "object"
+    },
+    "tools": {
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/tool"
+            },
+            "type": "array"
+          },
+          {
+            "$ref": "#/$defs/tool"
+          }
+        ]
+      },
+      "description": "dev tools to use",
+      "type": "object"
+    }
+  }
+}
