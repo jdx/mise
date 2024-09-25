@@ -259,7 +259,8 @@ impl Run {
                 }
             } else {
                 for (i, script) in task.run.iter().enumerate() {
-                    let args = match parser.has_any_args_defined() && i == task.run.len() - 1 {
+                    // only pass args to the last script if no formal args are defined
+                    let args = match i == task.run.len() - 1 {
                         true => task.args.iter().cloned().collect_vec(),
                         false => vec![],
                     };
