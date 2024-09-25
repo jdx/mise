@@ -1,13 +1,8 @@
-$ErrorActionPreference = "Stop"
-$PSNativeCommandUseErrorActionPreference = $true
-Set-StrictMode -Version Latest
+$config = New-PesterConfiguration
+$config.Run.Path = $PSScriptRoot
+$config.Run.Exit = $true
+$config.TestResult.Enabled = $true
 
-Install-Module -Name Pester
+$env:MISE_DEBUG = "1"
 
-Invoke-Pester -Output Detailed e2e-win
-# foreach($file in Get-ChildItem -Path .\e2e-win -Filter test_*.ps1) {
-#   Write-Output "Running $($file.Name)"
-#   pwsh -File $file
-# }
-#
-Write-Output "All tests passed"
+Invoke-Pester -Configuration $config

@@ -25,3 +25,4 @@ megalinter-reports/
 .dev/
 
 .vscode/
+testResults.xml
