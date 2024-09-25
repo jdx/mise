@@ -1,5 +1,29 @@
 # Changelog
 
+## [2024.9.8](https://github.com/jdx/mise/compare/v2024.9.7..v2024.9.8) - 2024-09-25
+
+### 🚀 Features
+
+- **(node)** allow using node unofficial build flavors by [@jdx](https://github.com/jdx) in [#2637](https://github.com/jdx/mise/pull/2637)
+- codegen settings by [@jdx](https://github.com/jdx) in [#2640](https://github.com/jdx/mise/pull/2640)
+
+### 🐛 Bug Fixes
+
+- release 2024.9.7 breaks configurations that were using v in version names with go backend by [@roele](https://github.com/roele) in [#2636](https://github.com/jdx/mise/pull/2636)
+- add node mirror/flavor to cache key by [@jdx](https://github.com/jdx) in [#2638](https://github.com/jdx/mise/pull/2638)
+
+### 📚 Documentation
+
+- Update faq.md by [@jdx](https://github.com/jdx) in [9036759](https://github.com/jdx/mise/commit/903675950d3ccc7abb49a40d6794d75d52695e5e)
+- Update configuration.md by [@jdx](https://github.com/jdx) in [1bc8342](https://github.com/jdx/mise/commit/1bc8342920cfb0259e35e578f68d1ec857420787)
+- Update configuration.md by [@jdx](https://github.com/jdx) in [#2630](https://github.com/jdx/mise/pull/2630)
+- document java shorthand and its limitations by [@roele](https://github.com/roele) in [#2635](https://github.com/jdx/mise/pull/2635)
+
+### 🔍 Other Changes
+
+- format schema by [@jdx](https://github.com/jdx) in [418bc24](https://github.com/jdx/mise/commit/418bc24292cacdec0d643a7c93355c0dea550678)
+- format schema by [@jdx](https://github.com/jdx) in [a8f7493](https://github.com/jdx/mise/commit/a8f7493cd63535ae8e46d77545acfecf9a1451b2)
+
 ## [2024.9.7](https://github.com/jdx/mise/compare/v2024.9.6..v2024.9.7) - 2024-09-23
 
 ### 🚀 Features
