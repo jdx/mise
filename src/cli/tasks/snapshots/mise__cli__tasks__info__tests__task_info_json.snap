@@ -1,0 +1,92 @@
+---
+source: src/cli/tasks/info.rs
+expression: output
+---
+{
+  "aliases": "ft",
+  "depends": "lint, test",
+  "description": "This is a test build script",
+  "dir": null,
+  "env": {
+    "BOOLEAN_VAR": true,
+    "TEST_BUILDSCRIPT_ENV_VAR": "VALID"
+  },
+  "file": "~/cwd/.mise/tasks/filetask",
+  "hide": false,
+  "name": "filetask",
+  "outputs": [
+    "$MISE_PROJECT_ROOT/test/test-build-output.txt"
+  ],
+  "raw": false,
+  "run": [],
+  "source": "~/cwd/.mise/tasks/filetask",
+  "sources": [
+    ".test-tool-versions"
+  ],
+  "usage_spec": {
+    "about": null,
+    "author": null,
+    "bin": "filetask",
+    "cmd": {
+      "after_help": null,
+      "after_long_help": null,
+      "aliases": [],
+      "args": [],
+      "before_help": null,
+      "before_long_help": null,
+      "deprecated": null,
+      "examples": [],
+      "flags": [
+        {
+          "arg": {
+            "choices": null,
+            "default": null,
+            "help": null,
+            "hide": false,
+            "long_help": null,
+            "name": "user",
+            "required": true,
+            "usage": "",
+            "var": false,
+            "var_max": null,
+            "var_min": null
+          },
+          "count": false,
+          "default": null,
+          "deprecated": null,
+          "global": false,
+          "help": "The user to run as",
+          "hide": false,
+          "long": [
+            "user"
+          ],
+          "long_help": null,
+          "name": "user",
+          "negate": null,
+          "required": false,
+          "short": [],
+          "usage": "--user <user>",
+          "var": false
+        }
+      ],
+      "full_cmd": [],
+      "help": null,
+      "hidden_aliases": [],
+      "hide": false,
+      "long_help": null,
+      "mounts": [],
+      "name": "filetask",
+      "subcommand_required": false,
+      "subcommands": {},
+      "usage": " [flags]"
+    },
+    "complete": {},
+    "config": {
+      "props": {}
+    },
+    "long_about": null,
+    "name": "filetask",
+    "usage": "",
+    "version": null
+  }
+}

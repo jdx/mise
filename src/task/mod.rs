@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -13,7 +13,7 @@ use eyre::{eyre, Result};
 use globset::Glob;
 use itertools::Itertools;
 use petgraph::prelude::*;
-use serde_derive::Deserialize;
+use serde_derive::{Deserialize, Serialize};
 
 use crate::config::config_file::toml::{deserialize_arr, TomlParser};
 use crate::config::Config;
@@ -39,7 +39,7 @@ pub struct Task {
     #[serde(default)]
     pub depends: Vec<String>,
     #[serde(default)]
-    pub env: HashMap<String, EitherStringOrBool>,
+    pub env: BTreeMap<String, EitherStringOrBool>,
     #[serde(default)]
     pub dir: Option<PathBuf>,
     #[serde(default)]
@@ -68,8 +68,23 @@ pub struct Task {
     pub file: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct EitherStringOrBool(#[serde(with = "either::serde_untagged")] pub Either<String, bool>);
+
+impl Display for EitherStringOrBool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Either::Left(s) => write!(f, "\"{}\"", s),
+            Either::Right(b) => write!(f, "{}", b),
+        }
+    }
+}
+
+impl Debug for EitherStringOrBool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
 
 impl Task {
     pub fn new(name: String, config_source: PathBuf) -> Task {

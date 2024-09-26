@@ -1,0 +1,55 @@
+---
+source: src/cli/tasks/info.rs
+expression: output
+---
+{
+  "aliases": "",
+  "depends": "",
+  "description": "",
+  "dir": null,
+  "env": {},
+  "file": null,
+  "hide": false,
+  "name": "test",
+  "outputs": [],
+  "raw": false,
+  "run": [
+    "echo \"testing!\""
+  ],
+  "source": "~/config/config.toml",
+  "sources": [],
+  "usage_spec": {
+    "about": null,
+    "author": null,
+    "bin": "",
+    "cmd": {
+      "after_help": null,
+      "after_long_help": null,
+      "aliases": [],
+      "args": [],
+      "before_help": null,
+      "before_long_help": null,
+      "deprecated": null,
+      "examples": [],
+      "flags": [],
+      "full_cmd": [],
+      "help": null,
+      "hidden_aliases": [],
+      "hide": false,
+      "long_help": null,
+      "mounts": [],
+      "name": "test",
+      "subcommand_required": false,
+      "subcommands": {},
+      "usage": ""
+    },
+    "complete": {},
+    "config": {
+      "props": {}
+    },
+    "long_about": null,
+    "name": "",
+    "usage": "",
+    "version": null
+  }
+}
