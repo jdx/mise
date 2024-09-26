@@ -56,6 +56,15 @@ impl TaskScriptParser {
                         .map(|r| r.as_bool().unwrap())
                         .unwrap_or(false);
                     let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
+                    let choices = args.get("choices").map(|c| {
+                        let choices = c
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|c| c.as_str().unwrap().to_string())
+                            .collect();
+                        usage::SpecChoices { choices }
+                    });
                     let arg = usage::SpecArg {
                         name: name.clone(),
                         usage,
@@ -67,6 +76,7 @@ impl TaskScriptParser {
                         var_max,
                         hide,
                         default,
+                        choices,
                     };
                     input_args.lock().unwrap().push((i, arg));
                     Ok(tera::Value::String(template_key(name)))
@@ -122,6 +132,15 @@ impl TaskScriptParser {
                         .map(|r| r.as_bool().unwrap())
                         .unwrap_or(false);
                     let negate = args.get("negate").map(|r| r.to_string());
+                    let choices = args.get("choices").map(|c| {
+                        let choices = c
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|c| c.as_str().unwrap().to_string())
+                            .collect();
+                        usage::SpecChoices { choices }
+                    });
                     let flag = usage::SpecFlag {
                         name: name.clone(),
                         short,
@@ -140,6 +159,7 @@ impl TaskScriptParser {
                         arg: Some(usage::SpecArg {
                             name: name.clone(),
                             var,
+                            choices,
                             ..Default::default()
                         }),
                     };
