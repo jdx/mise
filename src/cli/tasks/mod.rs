@@ -5,6 +5,7 @@ use crate::cli::run;
 
 mod deps;
 mod edit;
+mod info;
 mod ls;
 
 /// [experimental] Manage tasks
@@ -22,6 +23,7 @@ pub struct Tasks {
 enum Commands {
     Deps(deps::TasksDeps),
     Edit(edit::TasksEdit),
+    Info(info::TasksInfo),
     Ls(ls::TasksLs),
     Run(run::Run),
 }
@@ -31,6 +33,7 @@ impl Commands {
         match self {
             Self::Deps(cmd) => cmd.run(),
             Self::Edit(cmd) => cmd.run(),
+            Self::Info(cmd) => cmd.run(),
             Self::Ls(cmd) => cmd.run(),
             Self::Run(cmd) => cmd.run(),
         }

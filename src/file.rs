@@ -176,7 +176,7 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
 pub fn display_path<P: AsRef<Path>>(path: P) -> String {
     let home = dirs::HOME.to_string_lossy();
     let path = path.as_ref();
-    match path.starts_with(home.as_ref()) && home != "/" {
+    match cfg!(unix) && path.starts_with(home.as_ref()) && home != "/" {
         true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
         false => path.to_string_lossy().to_string(),
     }

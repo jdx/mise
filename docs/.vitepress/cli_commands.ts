@@ -227,6 +227,9 @@ export const commands: { [key: string]: Command } = {
       "edit": {
         hide: false,
       },
+      "info": {
+        hide: false,
+      },
       "ls": {
         hide: false,
       },
