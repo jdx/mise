@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use crate::backend::Backend;
 use crate::build_time::built_info;
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -29,10 +29,11 @@ impl PythonPlugin {
     pub fn new() -> Self {
         let core = CorePlugin::new(BackendArg::new("python", "python"));
         Self {
-            precompiled_cache: CacheManager::new(
-                core.fa.cache_path.join("precompiled-$KEY.msgpack.z"),
+            precompiled_cache: CacheManagerBuilder::new(
+                core.fa.cache_path.join("precompiled.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .build(),
             core,
         }
     }
@@ -45,6 +46,7 @@ impl PythonPlugin {
             .join("plugins/python-build/bin/python-build")
     }
     fn install_or_update_python_build(&self) -> eyre::Result<()> {
+        ensure_not_windows()?;
         if self.python_build_path().exists() {
             self.update_python_build()
         } else {
@@ -139,11 +141,13 @@ impl PythonPlugin {
             Some((_, tag, filename)) => (tag, filename),
             None => {
                 if cfg!(windows) || Settings::get().python_compile == Some(false) {
-                    hint!(
-                        "python_compile",
-                        "To compile python from source, run",
-                        "mise settings set python_compile 1"
-                    );
+                    if !cfg!(windows) {
+                        hint!(
+                            "python_compile",
+                            "To compile python from source, run",
+                            "mise settings set python_compile 1"
+                        );
+                    }
                     bail!(
                         "no precompiled python found for {} on {}-{}",
                         ctx.tv.version,
@@ -158,12 +162,14 @@ impl PythonPlugin {
             }
         };
 
-        hint!(
-            "python_precompiled",
-            "installing precompiled python from indygreg/python-build-standalone\n\
-            if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
-            "mise settings set python_compile 1"
-        );
+        if cfg!(unix) {
+            hint!(
+                "python_precompiled",
+                "installing precompiled python from indygreg/python-build-standalone\n\
+                if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
+                "mise settings set python_compile 1"
+            );
+        }
 
         let url = format!(
             "https://github.com/indygreg/python-build-standalone/releases/download/{tag}/{filename}"
@@ -432,4 +438,11 @@ fn python_arch(settings: &Settings) -> &str {
     } else {
         built_info::CFG_TARGET_ARCH
     }
+}
+
+fn ensure_not_windows() -> eyre::Result<()> {
+    if cfg!(windows) {
+        bail!("python can not currently be compiled on windows");
+    }
+    Ok(())
 }

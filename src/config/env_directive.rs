@@ -167,6 +167,7 @@ impl EnvResults {
                 .map(Path::to_path_buf)
                 .or_else(|| dirs::CWD.clone())
                 .unwrap_or_default();
+            ctx.insert("cwd", &*dirs::CWD);
             ctx.insert("config_root", &config_root);
             let env_vars = env
                 .iter()

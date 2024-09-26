@@ -90,18 +90,7 @@ where
     let display_command = [display_name.into(), display_args].join(" ");
     debug!("$ {display_command}");
 
-    if cfg!(windows) {
-        let program = program.to_string_lossy().to_string();
-        let mut args = args
-            .iter()
-            .map(|s| s.to_string_lossy().to_string())
-            .collect::<Vec<_>>();
-        args.insert(0, program);
-        args.insert(0, "/c".to_string());
-        duct::cmd("cmd.exe", args)
-    } else {
-        duct::cmd(program, args)
-    }
+    duct::cmd(program, args)
 }
 
 pub struct CmdLineRunner<'a> {
@@ -117,7 +106,13 @@ static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
 impl<'a> CmdLineRunner<'a> {
     pub fn new<P: AsRef<OsStr>>(program: P) -> Self {
-        let mut cmd = Command::new(program);
+        let mut cmd = if cfg!(windows) {
+            let mut cmd = Command::new("cmd.exe");
+            cmd.arg("/c").arg(program);
+            cmd
+        } else {
+            Command::new(program)
+        };
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());

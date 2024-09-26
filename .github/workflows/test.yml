@@ -24,26 +24,24 @@ env:
   SCCACHE_S3_NO_CREDENTIALS: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID && '0' || '1' }}
   MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
   MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 permissions:
   pull-requests: write
 
 jobs:
   unit:
-    runs-on: ubuntu-latest
-    #container: ghcr.io/jdx/mise:github-actions
-    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix: { os: [ubuntu-latest, macos-latest] }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
-      - if: ${{ env.SCCACHE_S3_NO_CREDENTIALS == '0' }}
-        run: |
-          echo "AWS_ACCESS_KEY_ID=$MINIO_AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
-          echo "AWS_SECRET_ACCESS_KEY=$MINIO_AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
-      - uses: mozilla-actions/sccache-action@v0.0.4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with: { toolchain: stable, components: rustfmt }
       - uses: taiki-e/install-action@v2
@@ -52,6 +50,15 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: npm i
+      - name: cache mise
+        uses: actions/cache@v4
+        with:
+          key: mise-tools-${{ matrix.os }}-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools-${{ matrix.os }}
+          path: |
+            ~/.local/share/mise/installs
+            ~/.local/share/mise/plugins
       - run: mise install
       - run: mise x -- cargo nextest run --all-features
       - run: cargo deny check
@@ -59,15 +66,6 @@ jobs:
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
       - run: mise settings set experimental true
-      - name: cache mise
-        uses: actions/cache@v4
-        with:
-          key: mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: mise-tools
-          path: |
-            ~/.local/share/mise/installs
-            ~/.local/share/mise/plugins
-      - run: mise install
       - run: mise run render
       - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
         run: mise run lint-fix && git diff HEAD
@@ -79,7 +77,6 @@ jobs:
           author_email: 123107610+mise-en-dev@users.noreply.github.com
       - uses: actions-rust-lang/rustfmt@v1
       - run: mise run lint
-      - run: ${SCCACHE_PATH} --show-stats
 
   nightly:
     runs-on: ubuntu-latest
@@ -104,8 +101,8 @@ jobs:
       - name: cache mise
         uses: actions/cache@v4
         with:
-          key: mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: mise-tools
+          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools-ubuntu-latest
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
@@ -154,6 +151,7 @@ jobs:
             pipx \
             python3-venv \
             zsh
+      - run: npm i
       - run: |
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
@@ -215,13 +213,34 @@ jobs:
         with:
           recreate: true
           path: code-coverage-results.md
-  win:
+  windows-unit:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build
-      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      # TODO: enable when we can remove continue-on-error:
+      # - name: cargo test
+      #   uses: nick-fields/retry@v3
+      #   with:
+      #     timeout_minutes: 30
+      #     retry_wait_seconds: 30
+      #     max_attempts: 2
+      #     command: cargo test
       - run: cargo test
         continue-on-error: true
+  windows-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build
+      - run: Add-Content $env:GITHUB_PATH "$PWD\target\debug"
+      - name: e2e
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          retry_wait_seconds: 30
+          max_attempts: 2
+          command: pwsh e2e-win\run_all.ps1

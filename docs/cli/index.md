@@ -193,6 +193,30 @@ Arguments:
           Plugin(s) to clear cache for e.g.: node, python
 ```
 
+## `mise cache prune [OPTIONS] [PLUGIN]...`
+
+**Aliases:** `p`
+
+```text
+Removes stale mise cache files
+
+By default, this command will remove files that have not been accessed in 30 days.
+Change this with the MISE_CACHE_PRUNE_AGE environment variable.
+
+Usage: cache prune [OPTIONS] [PLUGIN]...
+
+Arguments:
+  [PLUGIN]...
+          Plugin(s) to clear cache for e.g.: node, python
+
+Options:
+      --dry-run
+          Just show what would be pruned
+
+  -v, --verbose...
+          Show pruned files
+```
+
 ## `mise completion [SHELL]`
 
 ```text
@@ -668,7 +692,7 @@ Examples:
 ```text
 List runtime versions available for install
 
-note that the results are cached for 24 hours
+note that the results are cached
 run `mise cache clean` to clear the cache and get fresh results
 
 Usage: ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]
@@ -1023,7 +1047,8 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+`.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
@@ -1392,6 +1417,50 @@ Examples:
     $ mise tasks edit test
 ```
 
+## `mise tasks info [OPTIONS] <TASK>` <Badge type="warning" text="experimental" />
+
+```text
+[experimental] Get information about a task
+
+Usage: tasks info [OPTIONS] <TASK>
+
+Arguments:
+  <TASK>
+          Name of the task to get information about
+
+Options:
+  -J, --json
+          Output in JSON format
+
+Examples:
+
+    $ mise tasks info
+    Name: test
+    Aliases: t
+    Description: Test the application
+    Source: ~/src/myproj/mise.toml
+
+    $ mise tasks info test --json
+    {
+      "name": "test",
+      "aliases": "t",
+      "description": "Test the application",
+      "source": "~/src/myproj/mise.toml",
+      "depends": [],
+      "env": {},
+      "dir": null,
+      "hide": false,
+      "raw": false,
+      "sources": [],
+      "outputs": [],
+      "run": [
+        "echo \"testing!\""
+      ],
+      "file": null,
+      "usage_spec": {}
+    }
+```
+
 ## `mise tasks ls [OPTIONS]` <Badge type="warning" text="experimental" />
 
 ```text
@@ -1454,7 +1523,8 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+`.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
@@ -1531,6 +1601,54 @@ Examples:
 
     # Execute multiple tasks each with their own arguments.
     $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+```
+
+## `mise toml get <KEY> [FILE]`
+
+```text
+Display the value of a setting in a mise.toml file
+
+Usage: toml get <KEY> [FILE]
+
+Arguments:
+  <KEY>
+          The path of the config to display
+
+  [FILE]
+          The path to the mise.toml file to edit
+
+          If not provided, the nearest mise.toml file will be used
+
+Examples:
+
+    $ mise toml get tools.python
+    3.12
+```
+
+## `mise toml set <KEY> <VALUE> [FILE]`
+
+```text
+Display the value of a setting in a mise.toml file
+
+Usage: toml set <KEY> <VALUE> [FILE]
+
+Arguments:
+  <KEY>
+          The path of the config to display
+
+  <VALUE>
+          The value to set the key to
+
+  [FILE]
+          The path to the mise.toml file to edit
+
+          If not provided, the nearest mise.toml file will be used
+
+Examples:
+
+    $ mise toml set tools.python 3.12
+    $ mise toml set settings.always_keep_download true
+    $ mise toml set env.TEST_ENV_VAR ABC
 ```
 
 ## `mise trust [OPTIONS] [CONFIG_FILE]`

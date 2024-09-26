@@ -17,11 +17,12 @@ shfmt = "3"
 jq = "latest"
 "cargo:cargo-edit" = "latest"
 "cargo:cargo-show" = "latest"
-"cargo:git-cliff" = "latest"
+"cargo:git-cliff" = "2.4" # TODO: upgrade when https://github.com/orhun/git-cliff/issues/863 is fixed
 "npm:markdownlint-cli" = "0.38"
 "npm:prettier" = "3"
 direnv = "latest"
 actionlint = "latest"
+"pipx:toml-sort" = "latest"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 #ruby = "3.1"
 
@@ -37,6 +38,7 @@ release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"
 ci = { depends = ["format", "build", "test"] }
 pre-commit = { depends = ["render", "lint"] }
+lint = { depends = ["lint:*"] }
 
 [tasks.build]
 alias = "b"
@@ -72,7 +74,7 @@ run = "mise render-mangen"
 [tasks."render:help"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
-run = ["mise render-help", "mise x node@latest -- npx markdown-magic"]
+run = ["mise render-help", "mise run show-output-on-failure -- mise x node@latest -- npx markdown-magic"]
 sources = ["mise"]
 outputs = ["README.md"]
 

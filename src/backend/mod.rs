@@ -14,18 +14,18 @@ use regex::Regex;
 use strum::IntoEnumIterator;
 use versions::Versioning;
 
+use self::backend_meta::BackendMeta;
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::{Config, Settings};
+use crate::cmd::CmdLineRunner;
+use crate::config::{Config, Settings, CONFIG};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
-use crate::plugins::core::CORE_PLUGINS;
+use crate::plugins::core::{CorePlugin, CORE_PLUGINS};
 use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, file, lock_file};
-
-use self::backend_meta::BackendMeta;
+use crate::{dirs, env, file, lock_file};
 
 pub mod asdf;
 pub mod backend_meta;
@@ -85,10 +85,10 @@ fn load_tools() -> BackendMap {
         .map(|(_, p)| p.clone())
         .collect::<Vec<ABackend>>();
     let settings = Settings::get();
-    if settings.asdf {
+    if !cfg!(windows) || settings.asdf {
         tools.extend(asdf::AsdfBackend::list().expect("failed to list asdf plugins"));
     }
-    if settings.vfox {
+    if cfg!(windows) || settings.vfox {
         tools.extend(vfox::VfoxBackend::list().expect("failed to list vfox plugins"));
     }
     tools.extend(list_installed_backends().expect("failed to list backends"));
@@ -199,7 +199,10 @@ pub trait Backend: Debug + Send + Sync {
                     false
                 }
             })
-            .collect();
+            .collect_vec();
+        if versions.is_empty() {
+            warn!("No versions found for {}", self.id());
+        }
         Ok(versions)
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
@@ -274,11 +277,11 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_installed_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
     fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
     fn latest_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {
@@ -298,10 +301,10 @@ pub trait Backend: Debug + Send + Sync {
             None => {
                 let installed_symlink = self.fa().installs_path.join("latest");
                 if installed_symlink.exists() {
-                    if !installed_symlink.is_symlink() {
+                    if installed_symlink.is_dir() && !installed_symlink.is_symlink() {
                         return Ok(Some("latest".to_string()));
                     }
-                    let target = installed_symlink.read_link()?;
+                    let target = file::resolve_symlink(&installed_symlink)?;
                     let version = target
                         .file_name()
                         .ok_or_else(|| eyre!("Invalid symlink target"))?
@@ -393,8 +396,24 @@ pub trait Backend: Debug + Send + Sync {
         if let Err(err) = file::remove_file(self.incomplete_file_path(&ctx.tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
+        if let Some(script) = ctx.tv.request.options().get("postinstall") {
+            ctx.pr
+                .finish_with_message("running custom postinstall hook".to_string());
+            self.run_postinstall_hook(&ctx, script)?;
+        }
         ctx.pr.finish_with_message("installed".to_string());
 
+        Ok(())
+    }
+
+    fn run_postinstall_hook(&self, ctx: &InstallContext, script: &str) -> eyre::Result<()> {
+        CmdLineRunner::new(&*env::SHELL)
+            .env(&*env::PATH_KEY, CorePlugin::path_env_with_tv_path(&ctx.tv)?)
+            .with_pr(ctx.pr.as_ref())
+            .arg("-c")
+            .arg(script)
+            .envs(self.exec_env(&CONFIG, ctx.ts, &ctx.tv)?)
+            .execute()?;
         Ok(())
     }
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()>;
@@ -501,27 +520,29 @@ pub trait Backend: Debug + Send + Sync {
     fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
         self.depedency_toolset()?.full_env()
     }
-}
 
-fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
-    let mut query = query;
-    if query == "latest" {
-        query = "v?[0-9].*";
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+        let escaped_query = regex::escape(query);
+        let query = if query == "latest" {
+            "v?[0-9].*"
+        } else {
+            &escaped_query
+        };
+        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
+        let versions = versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if VERSION_REGEX.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect();
+        Ok(versions)
     }
-    let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
-    let versions = versions
-        .into_iter()
-        .filter(|v| {
-            if query == v {
-                return true;
-            }
-            if VERSION_REGEX.is_match(v) {
-                return false;
-            }
-            query_regex.is_match(v)
-        })
-        .collect();
-    Ok(versions)
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {

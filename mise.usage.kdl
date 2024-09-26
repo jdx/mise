@@ -152,6 +152,16 @@ Run `mise cache` with no args to view the current cache directory."
         alias "clean" hide=true
         arg "[PLUGIN]..." help="Plugin(s) to clear cache for e.g.: node, python" var=true
     }
+    cmd "prune" help="Removes stale mise cache files" {
+        alias "p"
+        long_help r"Removes stale mise cache files
+
+By default, this command will remove files that have not been accessed in 30 days.
+Change this with the MISE_CACHE_PRUNE_AGE environment variable."
+        flag "--dry-run" help="Just show what would be pruned"
+        flag "-v --verbose" help="Show pruned files" var=true count=true
+        arg "[PLUGIN]..." help="Plugin(s) to clear cache for e.g.: node, python" var=true
+    }
 }
 cmd "completion" help="Generate shell completions" {
     alias "complete" "completions" hide=true
@@ -552,7 +562,7 @@ cmd "ls-remote" help="List runtime versions available for install" {
     alias "list-all" "list-remote" hide=true
     long_help r"List runtime versions available for install
 
-note that the results are cached for 24 hours
+note that the results are cached
 run `mise cache clean` to clear the cache and get fresh results"
     after_long_help r"Examples:
 
@@ -780,7 +790,8 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+`.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
@@ -822,8 +833,7 @@ The name of the script will be the name of the tasks.
     }
     flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
     flag "--timings" help="Shows elapsed time after each tasks"
-    arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
-    arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
+    mount run="mise tasks --usage"
 }
 cmd "self-update" help="Updates mise itself" {
     long_help r"Updates mise itself
@@ -985,6 +995,7 @@ cmd "tasks" help="[experimental] Manage tasks" {
         arg "<SORT_ORDER>"
     }
     flag "-J --json" help="Output in JSON format"
+    flag "--usage" hide=true
     cmd "deps" help="[experimental] Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
 
@@ -1013,6 +1024,38 @@ The tasks will be created as a standalone script if it does not already exist."
         flag "-p --path" help="Display the path to the tasks instead of editing it"
         arg "<TASK>" help="Tasks to edit"
     }
+    cmd "info" help="[experimental] Get information about a task" {
+        after_long_help r#"Examples:
+
+    $ mise tasks info
+    Name: test
+    Aliases: t
+    Description: Test the application
+    Source: ~/src/myproj/mise.toml
+
+    $ mise tasks info test --json
+    {
+      "name": "test",
+      "aliases": "t",
+      "description": "Test the application",
+      "source": "~/src/myproj/mise.toml",
+      "depends": [],
+      "env": {},
+      "dir": null,
+      "hide": false,
+      "raw": false,
+      "sources": [],
+      "outputs": [],
+      "run": [
+        "echo \"testing!\""
+      ],
+      "file": null,
+      "usage_spec": {}
+    }
+"#
+        flag "-J --json" help="Output in JSON format"
+        arg "<TASK>" help="Name of the task to get information about"
+    }
     cmd "ls" help="[experimental] List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list." {
         long_help r"[experimental] List available tasks to execute
 These may be included from the config file or from the project's .mise/tasks directory
@@ -1035,6 +1078,7 @@ tasks will override the global ones if they have the same name."
             arg "<SORT_ORDER>"
         }
         flag "-J --json" help="Output in JSON format"
+        flag "--usage" hide=true
     }
     cmd "run" help="[experimental] Run a tasks" {
         alias "r"
@@ -1054,7 +1098,8 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+`.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
@@ -1098,6 +1143,28 @@ The name of the script will be the name of the tasks.
         flag "--timings" help="Shows elapsed time after each tasks"
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
+    }
+}
+cmd "toml" help="Edit mise.toml files" {
+    cmd "get" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise toml get tools.python
+    3.12
+"
+        arg "<KEY>" help="The path of the config to display"
+        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
+    }
+    cmd "set" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise toml set tools.python 3.12
+    $ mise toml set settings.always_keep_download true
+    $ mise toml set env.TEST_ENV_VAR ABC
+"
+        arg "<KEY>" help="The path of the config to display"
+        arg "<VALUE>" help="The value to set the key to"
+        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
     }
 }
 cmd "trust" help="Marks a config file as trusted" {

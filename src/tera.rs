@@ -6,19 +6,26 @@ use heck::{
     ToUpperCamelCase,
 };
 use once_cell::sync::Lazy;
-use platform_info::{PlatformInfo, PlatformInfoAPI, UNameAPI};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use tera::{Context, Tera, Value};
+use versions::{Requirement, Versioning};
 
 use crate::cmd::cmd;
-use crate::env;
-use crate::hash::hash_to_str;
+use crate::{env, hash};
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
+    context.insert("mise_bin", &*env::MISE_BIN);
+    context.insert("mise_pid", &*env::MISE_PID);
     if let Ok(dir) = env::current_dir() {
         context.insert("cwd", &dir);
     }
+    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
+    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
+    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
+    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
     context
 });
 
@@ -44,9 +51,14 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
     tera.register_function(
         "arch",
         move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            let info = PlatformInfo::new().expect("unable to determine platform info");
-            let result = String::from(info.machine().to_string_lossy()); // ignore potential UTF-8 convension error
-            Ok(Value::String(result))
+            let arch = if cfg!(target_arch = "x86_64") {
+                "x64"
+            } else if cfg!(target_arch = "aarch64") {
+                "arm64"
+            } else {
+                env::consts::ARCH
+            };
+            Ok(Value::String(arch.to_string()))
         },
     );
     tera.register_function(
@@ -59,36 +71,65 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
     tera.register_function(
         "os",
         move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            let info = PlatformInfo::new().expect("unable to determine platform info");
-            let result = String::from(info.osname().to_string_lossy()); // ignore potential UTF-8 convension error
-            Ok(Value::String(result))
+            Ok(Value::String(env::consts::OS.to_string()))
         },
     );
     tera.register_function(
         "os_family",
         move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            let info = PlatformInfo::new().expect("unable to determine platform info");
-            let result = String::from(info.sysname().to_string_lossy()); // ignore potential UTF-8 convension error
-            Ok(Value::String(result))
+            Ok(Value::String(env::consts::FAMILY.to_string()))
         },
     );
     tera.register_function(
-        "invocation_directory",
-        move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            let path = env::current_dir().unwrap_or_default();
-
-            let result = String::from(path.to_string_lossy());
-
-            Ok(Value::String(result))
+        "choice",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            match args.get("n") {
+                Some(Value::Number(n)) => {
+                    let n = n.as_u64().unwrap();
+                    match args.get("alphabet") {
+                        Some(Value::String(alphabet)) => {
+                            let alphabet = alphabet.chars().collect::<Vec<char>>();
+                            let mut rng = thread_rng();
+                            let result =
+                                (0..n).map(|_| alphabet.choose(&mut rng).unwrap()).collect();
+                            Ok(Value::String(result))
+                        }
+                        _ => Err("choice alphabet must be an string".into()),
+                    }
+                }
+                _ => Err("choice n must be an integer".into()),
+            }
+        },
+    );
+    tera.register_filter(
+        "hash_file",
+        move |input: &Value, args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let path = Path::new(s);
+                let mut hash = hash::file_hash_sha256(path).unwrap();
+                if let Some(len) = args.get("len").and_then(Value::as_u64) {
+                    hash = hash.chars().take(len as usize).collect();
+                }
+                Ok(Value::String(hash))
+            }
+            _ => Err("hash input must be a string".into()),
         },
     );
     tera.register_filter(
         "hash",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => Ok(Value::String(hash_to_str(s))),
+        move |input: &Value, args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let mut hash = hash::hash_sha256_to_str(s);
+                if let Some(len) = args.get("len").and_then(Value::as_u64) {
+                    hash = hash.chars().take(len as usize).collect();
+                }
+                Ok(Value::String(hash))
+            }
             _ => Err("hash input must be a string".into()),
         },
     );
+    // TODO: add `absolute` feature.
+    // wait until #![feature(absolute_path)] hits Rust stable release channel
     tera.register_filter(
         "canonicalize",
         move |input: &Value, _args: &HashMap<String, Value>| match input {
@@ -96,7 +137,59 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
                 let p = Path::new(s).canonicalize()?;
                 Ok(Value::String(p.to_string_lossy().to_string()))
             }
-            _ => Err("hash input must be a string".into()),
+            _ => Err("canonicalize input must be a string".into()),
+        },
+    );
+    tera.register_filter(
+        "dirname",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let p = Path::new(s).parent().unwrap();
+                Ok(Value::String(p.to_string_lossy().to_string()))
+            }
+            _ => Err("dirname input must be a string".into()),
+        },
+    );
+    tera.register_filter(
+        "basename",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let p = Path::new(s).file_name().unwrap();
+                Ok(Value::String(p.to_string_lossy().to_string()))
+            }
+            _ => Err("basename input must be a string".into()),
+        },
+    );
+    tera.register_filter(
+        "extname",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let p = Path::new(s).extension().unwrap();
+                Ok(Value::String(p.to_string_lossy().to_string()))
+            }
+            _ => Err("extname input must be a string".into()),
+        },
+    );
+    tera.register_filter(
+        "file_stem",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let p = Path::new(s).file_stem().unwrap();
+                Ok(Value::String(p.to_string_lossy().to_string()))
+            }
+            _ => Err("filename input must be a string".into()),
+        },
+    );
+    tera.register_filter(
+        "file_size",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let p = Path::new(s);
+                let metadata = p.metadata()?;
+                let size = metadata.len();
+                Ok(Value::Number(size.into()))
+            }
+            _ => Err("file_size input must be a string".into()),
         },
     );
     tera.register_filter(
@@ -109,7 +202,7 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
                 let modified = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
                 Ok(Value::Number(modified.as_secs().into()))
             }
-            _ => Err("hash input must be a string".into()),
+            _ => Err("last_modified input must be a string".into()),
         },
     );
     tera.register_filter(
@@ -178,10 +271,40 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
         },
     );
     tera.register_tester(
-        "file_exists",
+        "dir",
+        move |input: Option<&Value>, _args: &[Value]| match input {
+            Some(Value::String(s)) => Ok(Path::new(s).is_dir()),
+            _ => Err("is_dir input must be a string".into()),
+        },
+    );
+    tera.register_tester(
+        "file",
+        move |input: Option<&Value>, _args: &[Value]| match input {
+            Some(Value::String(s)) => Ok(Path::new(s).is_file()),
+            _ => Err("is_file input must be a string".into()),
+        },
+    );
+    tera.register_tester(
+        "exists",
         move |input: Option<&Value>, _args: &[Value]| match input {
             Some(Value::String(s)) => Ok(Path::new(s).exists()),
-            _ => Err("file_exists input must be a string".into()),
+            _ => Err("exists input must be a string".into()),
+        },
+    );
+    tera.register_tester(
+        "semver_matching",
+        move |input: Option<&Value>, args: &[Value]| match input {
+            Some(Value::String(version)) => match args.first() {
+                Some(Value::String(requirement)) => {
+                    println!("{}", requirement);
+                    let result = Requirement::new(requirement)
+                        .unwrap()
+                        .matches(&Versioning::new(version).unwrap());
+                    Ok(result)
+                }
+                _ => Err("semver_matching argument must be a string".into()),
+            },
+            _ => Err("semver_matching input must be a string".into()),
         },
     );
 
@@ -191,190 +314,276 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::reset;
+    use insta::assert_snapshot;
+    use pretty_assertions::assert_str_eq;
 
     #[test]
-    #[cfg(target_arch = "x86_64")]
-    fn test_render_with_custom_function_arch_x86_64() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ arch() }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("x86_64", result);
+    fn test_config_root() {
+        reset();
+        assert_eq!(render("{{config_root}}"), "/");
     }
 
     #[test]
-    #[cfg(target_arch = "aarch64")]
-    fn test_render_with_custom_function_arch_arm64() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ arch() }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("aarch64", result);
+    fn test_cwd() {
+        reset();
+        assert_eq!(render("{{cwd}}"), "/");
     }
 
     #[test]
-    fn test_render_with_custom_function_num_cpus() {
-        let mut tera = get_tera(Option::default());
+    fn test_mise_bin() {
+        reset();
+        assert_eq!(
+            render("{{mise_bin}}"),
+            env::current_exe()
+                .unwrap()
+                .into_os_string()
+                .into_string()
+                .unwrap()
+        );
+    }
 
-        let result = tera
-            .render_str("{{ num_cpus() }}", &Context::default())
-            .unwrap();
+    #[test]
+    fn test_mise_pid() {
+        reset();
+        let s = render("{{mise_pid}}");
+        let pid = s.trim().parse::<u32>().unwrap();
+        assert!(pid > 0);
+    }
 
-        let num = result.parse::<u32>().unwrap();
+    #[test]
+    fn test_xdg_cache_home() {
+        reset();
+        let s = render("{{xdg_cache_home}}");
+        assert_str_eq!(s, env::XDG_CACHE_HOME.to_string_lossy());
+    }
+
+    #[test]
+    fn test_xdg_config_home() {
+        reset();
+        let s = render("{{xdg_config_home}}");
+        assert!(s.ends_with("/.config")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_xdg_data_home() {
+        reset();
+        let s = render("{{xdg_data_home}}");
+        assert!(s.ends_with("/.local/share")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_xdg_state_home() {
+        reset();
+        let s = render("{{xdg_state_home}}");
+        assert!(s.ends_with("/.local/state")); // test dir is not deterministic
+    }
+
+    #[test]
+    fn test_arch() {
+        reset();
+        if cfg!(target_arch = "x86_64") {
+            assert_eq!(render("{{arch()}}"), "x64");
+        } else if cfg!(target_arch = "aarch64") {
+            assert_eq!(render("{{arch()}}"), "arm64");
+        } else {
+            assert_eq!(render("{{arch()}}"), env::consts::ARCH);
+        }
+    }
+
+    #[test]
+    fn test_num_cpus() {
+        reset();
+        let s = render("{{ num_cpus() }}");
+        let num = s.parse::<u32>().unwrap();
         assert!(num > 0);
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
-    fn test_render_with_custom_function_os_linux() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera.render_str("{{ os() }}", &Context::default()).unwrap();
-
-        assert_eq!("GNU/Linux", result);
+    fn test_os() {
+        reset();
+        if cfg!(target_os = "linux") {
+            assert_eq!(render("{{os()}}"), "linux");
+        } else if cfg!(target_os = "macos") {
+            assert_eq!(render("{{os()}}"), "macos");
+        } else if cfg!(target_os = "windows") {
+            assert_eq!(render("{{os()}}"), "windows");
+        }
     }
 
     #[test]
-    #[cfg(target_os = "windows")]
-    fn test_render_with_custom_function_os_windows() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera.render_str("{{ os() }}", &Context::default()).unwrap();
-
-        assert_eq!("Windows", result);
+    fn test_os_family() {
+        reset();
+        if cfg!(target_family = "unix") {
+            assert_eq!(render("{{os_family()}}"), "unix");
+        } else if cfg!(target_os = "windows") {
+            assert_eq!(render("{{os_family()}}"), "windows");
+        }
     }
 
     #[test]
-    #[cfg(target_family = "unix")]
-    fn test_render_with_custom_function_os_family_unix() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ os_family() }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("Linux", result);
+    fn test_choice() {
+        reset();
+        let result = render("{{choice(n=8, alphabet=\"abcdefgh\")}}");
+        assert_eq!(result.trim().len(), 8);
     }
 
     #[test]
-    #[cfg(target_family = "windows")]
-    fn test_render_with_custom_function_os_windows() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ os_family() }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("Windows", result);
+    fn test_quote() {
+        reset();
+        let s = render("{{ \"quoted'str\" | quote }}");
+        assert_eq!(s, "'quoted\\'str'");
     }
 
     #[test]
-    #[cfg(target_family = "unix")]
-    fn test_render_with_custom_function_invocation_directory() {
-        let a = env::set_current_dir("/tmp").is_ok();
-        let mut tera = get_tera(Option::default());
-        assert!(a);
-        println!("{:?}", env::current_dir().unwrap());
-
-        let result = tera
-            .render_str("{{ invocation_directory() }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("/tmp", result);
+    fn test_kebabcase() {
+        reset();
+        let s = render("{{ \"thisFilter\" | kebabcase }}");
+        assert_eq!(s, "this-filter");
     }
 
     #[test]
-    #[cfg(target_family = "windows")]
-    fn test_render_with_custom_function_invocation_directory() {
-        let a = env::set_current_dir("C:\\").is_ok();
-        let mut tera = get_tera(Option::default());
-        assert!(a);
-
-        let result = tera
-            .render_str("{{ invocation_directory() }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("C:\\", result);
+    fn test_lowercamelcase() {
+        reset();
+        let s = render("{{ \"Camel-case\" | lowercamelcase }}");
+        assert_eq!(s, "camelCase");
     }
 
     #[test]
-    fn test_render_with_custom_filter_quote() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"quoted'str\" | quote }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("'quoted\\'str'", result);
+    fn test_shoutykebabcase() {
+        reset();
+        let s = render("{{ \"kebabCase\" | shoutykebabcase }}");
+        assert_eq!(s, "KEBAB-CASE");
     }
 
     #[test]
-    fn test_render_with_custom_filter_kebabcase() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"thisFilter\" | kebabcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("this-filter", result);
+    fn test_shoutysnakecase() {
+        reset();
+        let s = render("{{ \"snakeCase\" | shoutysnakecase }}");
+        assert_eq!(s, "SNAKE_CASE");
     }
 
     #[test]
-    fn test_render_with_custom_filter_lowercamelcase() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"Camel-case\" | lowercamelcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("camelCase", result);
+    fn test_snakecase() {
+        reset();
+        let s = render("{{ \"snakeCase\" | snakecase }}");
+        assert_eq!(s, "snake_case");
     }
 
     #[test]
-    fn test_render_with_custom_filter_shoutykebabcase() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"kebabCase\" | shoutykebabcase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("KEBAB-CASE", result);
+    fn test_uppercamelcase() {
+        reset();
+        let s = render("{{ \"CamelCase\" | uppercamelcase }}");
+        assert_eq!(s, "CamelCase");
     }
 
     #[test]
-    fn test_render_with_custom_filter_shoutysnakecase() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"snakeCase\" | shoutysnakecase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("SNAKE_CASE", result);
+    fn test_hash() {
+        reset();
+        let s = render("{{ \"foo\" | hash(len=8) }}");
+        assert_eq!(s, "2c26b46b");
     }
 
     #[test]
-    fn test_render_with_custom_filter_snakecase() {
-        let mut tera = get_tera(Option::default());
-
-        let result = tera
-            .render_str("{{ \"snakeCase\" | snakecase }}", &Context::default())
-            .unwrap();
-
-        assert_eq!("snake_case", result);
+    fn test_hash_file() {
+        reset();
+        let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
+        assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
     }
 
     #[test]
-    fn test_render_with_custom_filter_uppercamelcase() {
-        let mut tera = get_tera(Option::default());
+    fn test_canonicalize() {
+        reset();
+        let s = render("{{ \"../fixtures/shorthands.toml\" | canonicalize }}");
+        assert!(s.ends_with("/fixtures/shorthands.toml")); // test dir is not deterministic
+    }
 
-        let result = tera
-            .render_str("{{ \"CamelCase\" | uppercamelcase }}", &Context::default())
-            .unwrap();
+    #[test]
+    fn test_dirname() {
+        reset();
+        let s = render(r#"{{ "a/b/c" | dirname }}"#);
+        assert_eq!(s, "a/b");
+    }
 
-        assert_eq!("CamelCase", result);
+    #[test]
+    fn test_basename() {
+        reset();
+        let s = render(r#"{{ "a/b/c" | basename }}"#);
+        assert_eq!(s, "c");
+    }
+
+    #[test]
+    fn test_extname() {
+        reset();
+        let s = render(r#"{{ "a/b/c.txt" | extname }}"#);
+        assert_eq!(s, "txt");
+    }
+
+    #[test]
+    fn test_file_stem() {
+        reset();
+        let s = render(r#"{{ "a/b/c.txt" | file_stem }}"#);
+        assert_eq!(s, "c");
+    }
+
+    #[test]
+    fn test_file_size() {
+        reset();
+        let s = render(r#"{{ "../fixtures/shorthands.toml" | file_size }}"#);
+        assert_eq!(s, "48");
+    }
+
+    #[test]
+    fn test_last_modified() {
+        reset();
+        let s = render(r#"{{ "../fixtures/shorthands.toml" | last_modified }}"#);
+        let timestamp = s.parse::<u64>().unwrap();
+        assert!((1725000000..=2725000000).contains(&timestamp));
+    }
+
+    #[test]
+    fn test_join_path() {
+        reset();
+        let s = render(r#"{{ ["..", "fixtures", "shorthands.toml"] | join_path }}"#);
+        assert_eq!(s, "../fixtures/shorthands.toml");
+    }
+
+    #[test]
+    fn test_is_dir() {
+        reset();
+        let s = render(r#"{% set p = ".mise" %}{% if p is dir %} ok {% endif %}"#);
+        assert_eq!(s.trim(), "ok");
+    }
+
+    #[test]
+    fn test_is_file() {
+        reset();
+        let s = render(r#"{% set p = ".test-tool-versions" %}{% if p is file %} ok {% endif %}"#);
+        assert_eq!(s.trim(), "ok");
+    }
+
+    #[test]
+    fn test_exists() {
+        reset();
+        let s = render(r#"{% set p = ".test-tool-versions" %}{% if p is exists %} ok {% endif %}"#);
+        assert_eq!(s.trim(), "ok");
+    }
+
+    #[test]
+    fn test_semver_matching() {
+        reset();
+        let s = render(
+            r#"{% set p = "1.10.2" %}{% if p is semver_matching("^1.10.0") %} ok {% endif %}"#,
+        );
+        assert_eq!(s.trim(), "ok");
+    }
+
+    fn render(s: &str) -> String {
+        let config_root = Path::new("/");
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("config_root", &config_root);
+        tera_ctx.insert("cwd", "/");
+        let mut tera = get_tera(Option::from(config_root));
+        tera.render_str(s, &tera_ctx).unwrap()
     }
 }

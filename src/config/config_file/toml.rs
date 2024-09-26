@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::fmt::Debug;
+use std::collections::BTreeMap;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
@@ -55,7 +55,7 @@ impl<'a> TomlParser<'a> {
     pub fn parse_env(
         &self,
         key: &str,
-    ) -> eyre::Result<Option<HashMap<String, EitherStringOrBool>>> {
+    ) -> eyre::Result<Option<BTreeMap<String, EitherStringOrBool>>> {
         self.table
             .get(key)
             .and_then(|value| value.as_table())
@@ -81,7 +81,7 @@ impl<'a> TomlParser<'a> {
                             })?;
                         Ok((key.clone(), v))
                     })
-                    .collect::<eyre::Result<HashMap<String, EitherStringOrBool>>>()
+                    .collect::<eyre::Result<_>>()
             })
             .transpose()
     }

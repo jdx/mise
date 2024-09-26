@@ -13,39 +13,39 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::build_time::built_info;
-use crate::file;
+use crate::config::Settings;
 use crate::file::{display_path, modified_duration};
 use crate::hash::hash_to_str;
 use crate::rand::random_string;
+use crate::{dirs, file};
 
-#[derive(Debug, Clone)]
-pub struct CacheManager<T>
-where
-    T: Serialize + DeserializeOwned,
-{
+#[derive(Debug)]
+pub struct CacheManagerBuilder {
     cache_file_path: PathBuf,
+    cache_keys: Vec<String>,
     fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
-    cache: Box<OnceCell<T>>,
-    no_cache: bool,
 }
 
-impl<T> CacheManager<T>
-where
-    T: Serialize + DeserializeOwned,
-{
+pub static BASE_CACHE_KEYS: Lazy<Vec<String>> = Lazy::new(|| {
+    [
+        built_info::FEATURES_STR,
+        built_info::PKG_VERSION,
+        built_info::PROFILE,
+        built_info::TARGET,
+    ]
+    .into_iter()
+    .map(|s| s.to_string())
+    .collect()
+});
+
+impl CacheManagerBuilder {
     pub fn new(cache_file_path: impl AsRef<Path>) -> Self {
-        // "replace $KEY in path with key()
-        let cache_file_path = regex!(r#"\$KEY"#)
-            .replace_all(cache_file_path.as_ref().to_str().unwrap(), &*KEY)
-            .to_string()
-            .into();
         Self {
-            cache_file_path,
-            cache: Box::new(OnceCell::new()),
+            cache_file_path: cache_file_path.as_ref().to_path_buf(),
+            cache_keys: BASE_CACHE_KEYS.clone(),
             fresh_files: Vec::new(),
             fresh_duration: None,
-            no_cache: false,
         }
     }
 
@@ -59,13 +59,54 @@ where
         self
     }
 
+    pub fn with_cache_key(mut self, key: String) -> Self {
+        self.cache_keys.push(key);
+        self
+    }
+
+    fn cache_key(&self) -> String {
+        hash_to_str(&self.cache_keys).chars().take(5).collect()
+    }
+
+    pub fn build<T>(self) -> CacheManager<T>
+    where
+        T: Serialize + DeserializeOwned,
+    {
+        let key = self.cache_key();
+        let (base, ext) = file::split_file_name(&self.cache_file_path);
+        let mut cache_file_path = self.cache_file_path;
+        cache_file_path.set_file_name(format!("{base}-{key}.{ext}"));
+        CacheManager {
+            cache_file_path,
+            cache: Box::new(OnceCell::new()),
+            fresh_files: self.fresh_files,
+            fresh_duration: self.fresh_duration,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheManager<T>
+where
+    T: Serialize + DeserializeOwned,
+{
+    cache_file_path: PathBuf,
+    fresh_duration: Option<Duration>,
+    fresh_files: Vec<PathBuf>,
+    cache: Box<OnceCell<T>>,
+}
+
+impl<T> CacheManager<T>
+where
+    T: Serialize + DeserializeOwned,
+{
     pub fn get_or_try_init<F>(&self, fetch: F) -> Result<&T>
     where
         F: FnOnce() -> Result<T>,
     {
         let val = self.cache.get_or_try_init(|| {
             let path = &self.cache_file_path;
-            if !self.no_cache && self.is_fresh() {
+            if self.is_fresh() {
                 match self.parse() {
                     Ok(val) => return Ok::<_, color_eyre::Report>(val),
                     Err(err) => {
@@ -143,18 +184,90 @@ where
     }
 }
 
-static KEY: Lazy<String> = Lazy::new(|| {
-    let mut parts = vec![
-        built_info::FEATURES_STR,
-        //built_info::PKG_VERSION, # TODO: put this in for non-debug when we autoclean cache (#2139)
-        built_info::PROFILE,
-        built_info::TARGET,
-    ];
-    if cfg!(debug_assertions) {
-        parts.push(built_info::PKG_VERSION);
+pub(crate) struct PruneResults {
+    pub(crate) size: u64,
+    pub(crate) count: u64,
+}
+
+pub(crate) struct PruneOptions {
+    pub(crate) dry_run: bool,
+    pub(crate) verbose: bool,
+    pub(crate) age: Duration,
+}
+
+pub(crate) fn auto_prune() -> Result<()> {
+    if rand::random::<u8>() % 10 != 0 {
+        return Ok(()); // only prune 10% of the time
     }
-    hash_to_str(&parts).chars().take(5).collect()
-});
+    let settings = Settings::get();
+    let age = match settings.cache_prune_age_duration() {
+        Some(age) => age,
+        None => {
+            return Ok(());
+        }
+    };
+    let auto_prune_file = dirs::CACHE.join(".auto_prune");
+    if let Ok(Ok(modified)) = auto_prune_file.metadata().map(|m| m.modified()) {
+        if modified.elapsed().unwrap_or_default() < age {
+            return Ok(());
+        }
+    }
+    let empty = file::ls(*dirs::CACHE).unwrap_or_default().is_empty();
+    xx::file::touch_dir(&auto_prune_file)?;
+    if empty {
+        return Ok(());
+    }
+    debug!("pruning old cache files, this behavior can be modified with the MISE_CACHE_PRUNE_AGE setting");
+    prune(
+        *dirs::CACHE,
+        &PruneOptions {
+            dry_run: false,
+            verbose: false,
+            age,
+        },
+    )?;
+    Ok(())
+}
+
+pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
+    let mut results = PruneResults { size: 0, count: 0 };
+    let remove = |file: &Path| {
+        if opts.dry_run || opts.verbose {
+            info!("pruning {}", display_path(file));
+        } else {
+            debug!("pruning {}", display_path(file));
+        }
+        if !opts.dry_run {
+            file::remove_file_or_dir(file)?;
+        }
+        Ok::<(), color_eyre::Report>(())
+    };
+    for subdir in file::dir_subdirs(dir)? {
+        let subdir = dir.join(&subdir);
+        let r = prune(&subdir, opts)?;
+        results.size += r.size;
+        results.count += r.count;
+        let metadata = subdir.metadata()?;
+        // only delete empty directories if they're old
+        if file::ls(&subdir)?.is_empty()
+            && metadata.modified()?.elapsed().unwrap_or_default() > opts.age
+        {
+            remove(&subdir)?;
+            results.count += 1;
+        }
+    }
+    for f in file::ls(dir)? {
+        let path = dir.join(&f);
+        let metadata = path.metadata()?;
+        let elapsed = metadata.accessed()?.elapsed().unwrap_or_default();
+        if elapsed > opts.age {
+            remove(&path)?;
+            results.size += metadata.len();
+            results.count += 1;
+        }
+    }
+    Ok(results)
+}
 
 #[cfg(test)]
 mod tests {
@@ -165,8 +278,7 @@ mod tests {
     #[test]
     fn test_cache() {
         reset();
-        // does not fail with invalid path
-        let cache = CacheManager::new("/invalid:path/to/cache");
+        let cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
         cache.clear().unwrap();
         let val = cache.get_or_try_init(|| Ok(1)).unwrap();
         assert_eq!(val, &1);

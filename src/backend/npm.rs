@@ -1,12 +1,11 @@
+use serde_json::Value;
 use std::fmt::Debug;
 
-use serde_json::Value;
-
 use crate::backend::{Backend, BackendType};
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::env;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
@@ -59,8 +58,6 @@ impl Backend for NPMBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::get();
-        settings.ensure_experimental("npm backend")?;
 
         CmdLineRunner::new("npm")
             .arg("install")
@@ -76,19 +73,29 @@ impl Backend for NPMBackend {
 
         Ok(())
     }
+
+    #[cfg(windows)]
+    fn list_bin_paths(
+        &self,
+        tv: &crate::toolset::ToolVersion,
+    ) -> eyre::Result<Vec<std::path::PathBuf>> {
+        Ok(vec![tv.install_path()])
+    }
 }
 
 impl NPMBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
-            remote_version_cache: CacheManager::new(
-                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            remote_version_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
-            latest_version_cache: CacheManager::new(
-                ba.cache_path.join("latest_version-$KEY.msgpack.z"),
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .build(),
+            latest_version_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("latest_version.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .build(),
             ba,
         }
     }

@@ -30,6 +30,7 @@ export default defineConfig({
       {text: 'IDE Integration', link: '/ide-integration'},
       {text: 'Paranoid', link: '/paranoid'},
       {text: 'Registry', link: '/registry'},
+      {text: 'Settings', link: '/settings'},
       {text: 'Plugins', link: '/plugins'},
       {text: 'Coming from rtx', link: '/rtx'},
       {text: 'Team', link: '/team'},
@@ -72,7 +73,7 @@ export default defineConfig({
         link: '/tasks/',
         items: [
           {text: 'Running Tasks', link: '/tasks/running-tasks'},
-          {text: 'Script Tasks', link: '/tasks/script-tasks'},
+          {text: 'File Tasks', link: '/tasks/file-tasks'},
           {text: 'TOML Tasks', link: '/tasks/toml-tasks'},
         ],
       },

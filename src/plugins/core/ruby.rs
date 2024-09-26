@@ -49,7 +49,8 @@ impl RubyPlugin {
     }
 
     fn lock_build_tool(&self) -> Result<fslock::LockFile> {
-        let build_tool_path = if *env::MISE_RUBY_INSTALL {
+        let settings = Settings::get();
+        let build_tool_path = if settings.ruby.ruby_install {
             self.ruby_build_bin()
         } else {
             self.ruby_install_bin()
@@ -62,7 +63,8 @@ impl RubyPlugin {
     }
 
     fn update_build_tool(&self) -> Result<()> {
-        if *env::MISE_RUBY_INSTALL {
+        let settings = Settings::get();
+        if settings.ruby.ruby_install {
             self.update_ruby_install()
                 .wrap_err("failed to update ruby-install")?;
         }
@@ -71,6 +73,7 @@ impl RubyPlugin {
     }
 
     fn install_ruby_build(&self) -> Result<()> {
+        let settings = Settings::get();
         debug!(
             "Installing ruby-build to {}",
             self.ruby_build_path().display()
@@ -79,7 +82,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let git = Git::new(tmp.clone());
-        git.clone(&env::MISE_RUBY_BUILD_REPO)?;
+        git.clone(&settings.ruby.ruby_build_repo)?;
 
         cmd!("sh", "install.sh")
             .env("PREFIX", self.ruby_build_path())
@@ -112,6 +115,7 @@ impl RubyPlugin {
     }
 
     fn install_ruby_install(&self) -> Result<()> {
+        let settings = Settings::get();
         debug!(
             "Installing ruby-install to {}",
             self.ruby_install_path().display()
@@ -120,7 +124,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let git = Git::new(tmp.clone());
-        git.clone(&env::MISE_RUBY_INSTALL_REPO)?;
+        git.clone(&settings.ruby.ruby_install_repo)?;
 
         cmd!("make", "install")
             .env("PREFIX", self.ruby_install_path())
@@ -184,7 +188,9 @@ impl RubyPlugin {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        let body = file::read_to_string(&*env::MISE_RUBY_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let settings = Settings::get();
+        let default_gems_file = file::replace_path(&settings.ruby.default_packages_file);
+        let body = file::read_to_string(&default_gems_file).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -252,12 +258,13 @@ impl RubyPlugin {
     }
 
     fn install_cmd<'a>(
-        &'a self,
-        config: &'a Config,
+        &self,
+        config: &Config,
         tv: &ToolVersion,
         pr: &'a dyn SingleReport,
-    ) -> Result<CmdLineRunner> {
-        let cmd = if *env::MISE_RUBY_INSTALL {
+    ) -> Result<CmdLineRunner<'a>> {
+        let settings = Settings::get();
+        let cmd = if settings.ruby.ruby_install {
             CmdLineRunner::new(self.ruby_install_bin()).args(self.install_args_ruby_install(tv)?)
         } else {
             CmdLineRunner::new(self.ruby_build_bin())
@@ -267,18 +274,24 @@ impl RubyPlugin {
         Ok(cmd.with_pr(pr).envs(config.env()?))
     }
     fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
-        let mut args = env::MISE_RUBY_BUILD_OPTS.clone()?;
+        let settings = Settings::get();
+        let mut args = vec![];
         if self.verbose_install() {
             args.push("--verbose".into());
         }
-        if env::MISE_RUBY_APPLY_PATCHES.is_some() {
+        if settings.ruby.apply_patches.is_some() {
             args.push("--patch".into());
         }
         args.push(tv.version.clone());
         args.push(tv.install_path().to_string_lossy().to_string());
+        if let Some(opts) = &settings.ruby.ruby_build_opts {
+            args.push("--".into());
+            args.extend(shell_words::split(opts)?);
+        }
         Ok(args)
     }
     fn install_args_ruby_install(&self, tv: &ToolVersion) -> Result<Vec<String>> {
+        let settings = Settings::get();
         let mut args = vec![];
         for patch in self.fetch_patch_sources() {
             args.push("--patch".into());
@@ -292,18 +305,22 @@ impl RubyPlugin {
         args.push(version.into());
         args.push("--install-dir".into());
         args.push(tv.install_path().to_string_lossy().to_string());
-        args.extend(env::MISE_RUBY_INSTALL_OPTS.clone()?);
+        if let Some(opts) = &settings.ruby.ruby_install_opts {
+            args.push("--".into());
+            args.extend(shell_words::split(opts)?);
+        }
         Ok(args)
     }
 
     fn verbose_install(&self) -> bool {
         let settings = Settings::get();
-        let verbose_env = *env::MISE_RUBY_VERBOSE_INSTALL;
+        let verbose_env = settings.ruby.verbose_install;
         verbose_env == Some(true) || (settings.verbose && verbose_env != Some(false))
     }
 
     fn fetch_patch_sources(&self) -> Vec<String> {
-        let patch_sources = env::MISE_RUBY_APPLY_PATCHES.clone().unwrap_or_default();
+        let settings = Settings::get();
+        let patch_sources = settings.ruby.apply_patches.clone().unwrap_or_default();
         patch_sources
             .split('\n')
             .map(|s| s.to_string())
@@ -428,6 +445,29 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn test_list_versions_matching() {
+        let plugin = RubyPlugin::new();
+        assert!(
+            !plugin.list_versions_matching("3").unwrap().is_empty(),
+            "versions for 3 should not be empty"
+        );
+        assert!(
+            !plugin
+                .list_versions_matching("truffleruby-24")
+                .unwrap()
+                .is_empty(),
+            "versions for truffleruby-24 should not be empty"
+        );
+        assert!(
+            !plugin
+                .list_versions_matching("truffleruby+graalvm-24")
+                .unwrap()
+                .is_empty(),
+            "versions for truffleruby+graalvm-24 should not be empty"
+        );
+    }
 
     #[test]
     fn test_parse_gemfile() {

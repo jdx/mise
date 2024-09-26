@@ -1,15 +1,14 @@
 use std::collections::{HashMap, HashSet};
 pub use std::env::*;
-use std::path;
 use std::path::PathBuf;
 use std::string::ToString;
 use std::sync::RwLock;
 use std::time::Duration;
+use std::{path, process};
 
 use itertools::Itertools;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
-use url::Url;
 
 use crate::cli::args::ProfileArg;
 use crate::duration::HOURLY;
@@ -18,7 +17,10 @@ use crate::file::replace_path;
 use crate::hook_env::{deserialize_watches, HookEnvWatches};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
+#[cfg(unix)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
+#[cfg(windows)]
+pub static SHELL: Lazy<String> = Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
 
 // paths and directories
 #[cfg(test)]
@@ -31,16 +33,29 @@ pub static HOME: Lazy<PathBuf> =
 pub static EDITOR: Lazy<String> =
     Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
 
-#[cfg(target_os = "macos")]
+#[cfg(macos)]
 pub static XDG_CACHE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CACHE_HOME").unwrap_or_else(|| HOME.join("Library/Caches")));
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+pub static XDG_CACHE_HOME: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("XDG_CACHE_HOME")
+        .or_else(|| var_path("TEMP"))
+        .unwrap_or_else(|| temp_dir())
+});
+#[cfg(all(not(windows), not(macos)))]
 pub static XDG_CACHE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CACHE_HOME").unwrap_or_else(|| HOME.join(".cache")));
 pub static XDG_CONFIG_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CONFIG_HOME").unwrap_or_else(|| HOME.join(".config")));
+#[cfg(unix)]
 pub static XDG_DATA_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local").join("share")));
+#[cfg(windows)]
+pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("XDG_DATA_HOME")
+        .or(var_path("LOCALAPPDATA"))
+        .unwrap_or_else(|| HOME.join("AppData/Local"))
+});
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
@@ -126,6 +141,7 @@ pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
         .or_else(|| current_exe().ok())
         .unwrap_or_else(|| "mise".into())
 });
+pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
@@ -169,11 +185,6 @@ pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
 
 // node
-pub static MISE_NODE_MIRROR_URL: Lazy<Url> = Lazy::new(|| {
-    var_url("MISE_NODE_MIRROR_URL")
-        .or_else(|| var_url("NODE_BUILD_MIRROR_URL"))
-        .unwrap_or_else(|| Url::parse("https://nodejs.org/dist/").unwrap())
-});
 pub static MISE_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
     var("MISE_NODE_CONCURRENCY")
         .ok()
@@ -228,27 +239,6 @@ pub static NVM_DIR: Lazy<PathBuf> =
 pub static NODENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("NODENV_ROOT").unwrap_or_else(|| HOME.join(".nodenv")));
 
-// ruby
-pub static MISE_RUBY_BUILD_REPO: Lazy<String> = Lazy::new(|| {
-    var("MISE_RUBY_BUILD_REPO").unwrap_or_else(|_| "https://github.com/rbenv/ruby-build.git".into())
-});
-pub static MISE_RUBY_INSTALL_REPO: Lazy<String> = Lazy::new(|| {
-    var("MISE_RUBY_INSTALL_REPO")
-        .unwrap_or_else(|_| "https://github.com/postmodern/ruby-install.git".into())
-});
-pub static MISE_RUBY_INSTALL: Lazy<bool> = Lazy::new(|| var_is_true("MISE_RUBY_INSTALL"));
-pub static MISE_RUBY_APPLY_PATCHES: Lazy<Option<String>> =
-    Lazy::new(|| var("MISE_RUBY_APPLY_PATCHES").ok());
-pub static MISE_RUBY_VERBOSE_INSTALL: Lazy<Option<bool>> =
-    Lazy::new(|| var_option_bool("MISE_RUBY_VERBOSE_INSTALL"));
-pub static MISE_RUBY_INSTALL_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
-    Lazy::new(|| shell_words::split(&var("MISE_RUBY_INSTALL_OPTS").unwrap_or_default()));
-pub static MISE_RUBY_BUILD_OPTS: Lazy<Result<Vec<String>, shell_words::ParseError>> =
-    Lazy::new(|| shell_words::split(&var("MISE_RUBY_BUILD_OPTS").unwrap_or_default()));
-pub static MISE_RUBY_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_RUBY_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| HOME.join(".default-gems"))
-});
-
 fn get_env_diff() -> EnvDiff {
     let env = vars().collect::<HashMap<_, _>>();
     match env.get("__MISE_DIFF") {
@@ -294,10 +284,6 @@ fn var_option_bool(key: &str) -> Option<bool> {
 
 pub fn var_path(key: &str) -> Option<PathBuf> {
     var_os(key).map(PathBuf::from).map(replace_path)
-}
-
-fn var_url(key: &str) -> Option<Url> {
-    var(key).ok().map(|v| Url::parse(&v).unwrap())
 }
 
 fn var_duration(key: &str) -> Option<Duration> {
@@ -364,22 +350,19 @@ fn prefer_stale(args: &[String]) -> bool {
         .filter(|a| !a.starts_with('-'))
         .nth(1)
         .unwrap_or(&binding);
-    return [
+    [
         "env", "hook-env", "x", "exec", "direnv", "activate", "current", "ls", "where",
     ]
-    .contains(&c.as_str());
+    .contains(&c.as_str())
 }
 
 fn environment(args: &[String]) -> Option<String> {
+    let long_arg = format!("--{}", ProfileArg::arg().get_long().unwrap_or_default());
+    let short_arg = format!("-{}", ProfileArg::arg().get_short().unwrap_or_default());
+
     args.windows(2)
         .find_map(|window| {
-            if window[0] == ProfileArg::arg().get_long().unwrap_or_default()
-                || window[0]
-                    == ProfileArg::arg()
-                        .get_short()
-                        .unwrap_or_default()
-                        .to_string()
-            {
+            if window[0] == long_arg || window[0] == short_arg {
                 Some(window[1].clone())
             } else {
                 None

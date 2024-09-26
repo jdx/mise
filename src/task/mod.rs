@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -13,13 +13,18 @@ use eyre::{eyre, Result};
 use globset::Glob;
 use itertools::Itertools;
 use petgraph::prelude::*;
-use serde_derive::Deserialize;
+use serde_derive::{Deserialize, Serialize};
 
 use crate::config::config_file::toml::{deserialize_arr, TomlParser};
 use crate::config::Config;
 use crate::file;
+use crate::task::task_script_parser::{
+    has_any_args_defined, replace_template_placeholders_with_args, TaskScriptParser,
+};
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::ui::tree::TreeItem;
+
+mod task_script_parser;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Deserialize)]
 pub struct Task {
@@ -34,7 +39,7 @@ pub struct Task {
     #[serde(default)]
     pub depends: Vec<String>,
     #[serde(default)]
-    pub env: HashMap<String, EitherStringOrBool>,
+    pub env: BTreeMap<String, EitherStringOrBool>,
     #[serde(default)]
     pub dir: Option<PathBuf>,
     #[serde(default)]
@@ -63,8 +68,23 @@ pub struct Task {
     pub file: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct EitherStringOrBool(#[serde(with = "either::serde_untagged")] pub Either<String, bool>);
+
+impl Display for EitherStringOrBool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Either::Left(s) => write!(f, "\"{}\"", s),
+            Either::Right(b) => write!(f, "{}", b),
+        }
+    }
+}
+
+impl Debug for EitherStringOrBool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
 
 impl Task {
     pub fn new(name: String, config_source: PathBuf) -> Task {
@@ -157,6 +177,49 @@ impl Task {
             .filter_ok(|t| t.name != self.name)
             .collect()
     }
+
+    pub fn parse_usage_spec(&self, cwd: Option<PathBuf>) -> Result<(usage::Spec, Vec<String>)> {
+        if let Some(file) = &self.file {
+            let mut spec = usage::Spec::parse_script(file)
+                .inspect_err(|e| debug!("failed to parse task file with usage: {e}"))
+                .unwrap_or_default();
+            spec.cmd.name = self.name.clone();
+            Ok((spec, vec![]))
+        } else {
+            let (scripts, mut spec) = TaskScriptParser::new(cwd).parse_run_scripts(&self.run)?;
+            spec.cmd.name = self.name.clone();
+            Ok((spec, scripts))
+        }
+    }
+
+    pub fn render_run_scripts_with_args(
+        &self,
+        cwd: Option<PathBuf>,
+        args: &[String],
+    ) -> Result<Vec<(String, Vec<String>)>> {
+        let (spec, scripts) = self.parse_usage_spec(cwd)?;
+        if has_any_args_defined(&spec) {
+            Ok(
+                replace_template_placeholders_with_args(&spec, &scripts, args)
+                    .into_iter()
+                    .map(|s| (s, vec![]))
+                    .collect(),
+            )
+        } else {
+            Ok(self
+                .run
+                .iter()
+                .enumerate()
+                .map(|(i, script)| {
+                    // only pass args to the last script if no formal args are defined
+                    match i == self.run.len() - 1 {
+                        true => (script.clone(), args.iter().cloned().collect_vec()),
+                        false => (script.clone(), vec![]),
+                    }
+                })
+                .collect())
+        }
+    }
 }
 
 fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
@@ -164,6 +227,8 @@ fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<Stri
         .as_ref()
         .strip_prefix(root)
         .map(|p| match p {
+            p if p.starts_with("mise-tasks") => p.strip_prefix("mise-tasks"),
+            p if p.starts_with(".mise-tasks") => p.strip_prefix(".mise-tasks"),
             p if p.starts_with(".mise/tasks") => p.strip_prefix(".mise/tasks"),
             p if p.starts_with("mise/tasks") => p.strip_prefix("mise/tasks"),
             p if p.starts_with(".config/mise/tasks") => p.strip_prefix(".config/mise/tasks"),
@@ -332,6 +397,14 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
 
 fn config_root(config_source: &impl AsRef<Path>) -> Option<&Path> {
     for ancestor in config_source.as_ref().ancestors() {
+        if ancestor.ends_with("mise-tasks") {
+            return ancestor.parent();
+        }
+
+        if ancestor.ends_with(".mise-tasks") {
+            return ancestor.parent();
+        }
+
         if ancestor.ends_with(".mise/tasks") {
             return ancestor.parent()?.parent();
         }

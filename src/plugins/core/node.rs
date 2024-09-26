@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use eyre::{bail, Result};
+use eyre::{bail, ensure, Result};
 use serde_derive::Deserialize;
 use tempfile::tempdir_in;
 use url::Url;
@@ -10,8 +10,8 @@ use crate::backend::Backend;
 use crate::build_time::built_info;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::{DEFAULT_NODE_MIRROR_URL, SETTINGS};
 use crate::config::{Config, Settings};
-use crate::env::{MISE_NODE_MIRROR_URL, PATH_KEY};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -32,9 +32,8 @@ impl NodePlugin {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        let node_url_overridden = env::var("MISE_NODE_MIRROR_URL")
-            .or(env::var("NODE_BUILD_MIRROR_URL"))
-            .is_ok();
+        let settings = Settings::get();
+        let node_url_overridden = settings.node.mirror_url().as_str() != DEFAULT_NODE_MIRROR_URL;
         if !node_url_overridden {
             match self.core.fetch_remote_versions_from_mise() {
                 Ok(Some(versions)) => return Ok(versions),
@@ -42,12 +41,22 @@ impl NodePlugin {
                 Err(e) => warn!("failed to fetch remote versions: {}", e),
             }
         }
-        self.fetch_remote_versions_from_node(&MISE_NODE_MIRROR_URL)
+        self.fetch_remote_versions_from_node(&settings.node.mirror_url())
     }
     fn fetch_remote_versions_from_node(&self, base: &Url) -> Result<Vec<String>> {
+        let settings = Settings::get();
         let versions = HTTP_FETCH
             .json::<Vec<NodeVersion>, _>(base.join("index.json")?)?
             .into_iter()
+            .filter(|v| {
+                if let Some(flavor) = &settings.node.flavor {
+                    v.files
+                        .iter()
+                        .any(|f| f == &format!("{}-{}-{}", os(), arch(), flavor))
+                } else {
+                    true
+                }
+            })
             .map(|v| {
                 if regex!(r"^v\d+\.").is_match(&v.version) {
                     v.version.strip_prefix('v').unwrap().to_string()
@@ -61,13 +70,17 @@ impl NodePlugin {
     }
 
     fn install_precompiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
+        let settings = Settings::get();
         match self.fetch_tarball(
             ctx.pr.as_ref(),
             &opts.binary_tarball_url,
             &opts.binary_tarball_path,
             &opts.version,
         ) {
-            Err(e) if matches!(http::error_code(&e), Some(404)) => {
+            Err(e)
+                if settings.node.compile != Some(false)
+                    && matches!(http::error_code(&e), Some(404)) =>
+            {
                 debug!("precompiled node not found");
                 return self.install_compiled(ctx, opts);
             }
@@ -78,8 +91,10 @@ impl NodePlugin {
         let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
         file::untar(&opts.binary_tarball_path, tmp_extract_path.path())?;
         file::remove_all(&opts.install_path)?;
-        let slug = format!("node-v{}-{}-{}", &opts.version, os(), arch());
-        file::rename(tmp_extract_path.path().join(slug), &opts.install_path)?;
+        file::rename(
+            tmp_extract_path.path().join(slug(&opts.version)),
+            &opts.install_path,
+        )?;
         Ok(())
     }
 
@@ -100,8 +115,10 @@ impl NodePlugin {
         let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
         file::unzip(&opts.binary_tarball_path, tmp_extract_path.path())?;
         file::remove_all(&opts.install_path)?;
-        let slug = format!("node-v{}-{}-{}", &opts.version, os(), arch());
-        file::rename(tmp_extract_path.path().join(slug), &opts.install_path)?;
+        file::rename(
+            tmp_extract_path.path().join(slug(&opts.version)),
+            &opts.install_path,
+        )?;
         Ok(())
     }
 
@@ -143,7 +160,7 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn sh<'a>(&'a self, ctx: &'a InstallContext, opts: &BuildOpts) -> eyre::Result<CmdLineRunner> {
+    fn sh<'a>(&self, ctx: &'a InstallContext, opts: &BuildOpts) -> eyre::Result<CmdLineRunner<'a>> {
         let mut cmd = CmdLineRunner::new("sh")
             .prepend_path(opts.path.clone())?
             .with_pr(ctx.pr.as_ref())
@@ -218,7 +235,7 @@ impl NodePlugin {
                 .arg("--global")
                 .arg(package)
                 .envs(config.env()?)
-                .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+                .env(&*env::PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
         Ok(())
@@ -237,7 +254,7 @@ impl NodePlugin {
         CmdLineRunner::new(corepack)
             .with_pr(pr)
             .arg("enable")
-            .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*env::PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
             .execute()?;
         Ok(())
     }
@@ -254,7 +271,7 @@ impl NodePlugin {
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         pr.set_message("npm -v".into());
         CmdLineRunner::new(self.npm_path(tv))
-            .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*env::PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
             .envs(config.env()?)
@@ -263,7 +280,11 @@ impl NodePlugin {
 
     fn shasums_url(&self, v: &str) -> Result<Url> {
         // let url = MISE_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt.asc"))?;
-        let url = MISE_NODE_MIRROR_URL.join(&format!("v{v}/SHASUMS256.txt"))?;
+        let settings = Settings::get();
+        let url = settings
+            .node
+            .mirror_url()
+            .join(&format!("v{v}/SHASUMS256.txt"))?;
         Ok(url)
     }
 }
@@ -324,13 +345,17 @@ impl Backend for NodePlugin {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+        ensure!(
+            ctx.tv.version != "latest",
+            "version should not be 'latest' for node, something is wrong"
+        );
         let config = Config::get();
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx)?;
         trace!("node build opts: {:#?}", opts);
         if cfg!(windows) {
             self.install_windows(ctx, &opts)?;
-        } else if settings.node_compile {
+        } else if settings.node.compile == Some(true) {
             self.install_compiled(ctx, &opts)?;
         } else {
             self.install_precompiled(ctx, &opts)?;
@@ -348,6 +373,11 @@ impl Backend for NodePlugin {
         }
 
         Ok(())
+    }
+
+    #[cfg(windows)]
+    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+        Ok(vec![tv.install_path()])
     }
 }
 
@@ -374,10 +404,11 @@ impl BuildOpts {
         let install_path = ctx.tv.install_path();
         let source_tarball_name = format!("node-v{v}.tar.gz");
 
+        let slug = slug(v);
         #[cfg(windows)]
-        let binary_tarball_name = format!("node-v{v}-{}-{}.zip", os(), arch());
+        let binary_tarball_name = format!("{slug}.zip");
         #[cfg(not(windows))]
-        let binary_tarball_name = format!("node-v{v}-{}-{}.tar.gz", os(), arch());
+        let binary_tarball_name = format!("{slug}.tar.gz");
 
         Ok(Self {
             version: v.clone(),
@@ -387,11 +418,15 @@ impl BuildOpts {
             make_cmd: make_cmd(),
             make_install_cmd: make_install_cmd(),
             source_tarball_path: ctx.tv.download_path().join(&source_tarball_name),
-            source_tarball_url: env::MISE_NODE_MIRROR_URL
+            source_tarball_url: SETTINGS
+                .node
+                .mirror_url()
                 .join(&format!("v{v}/{source_tarball_name}"))?,
             source_tarball_name,
             binary_tarball_path: ctx.tv.download_path().join(&binary_tarball_name),
-            binary_tarball_url: env::MISE_NODE_MIRROR_URL
+            binary_tarball_url: SETTINGS
+                .node
+                .mirror_url()
                 .join(&format!("v{v}/{binary_tarball_name}"))?,
             binary_tarball_name,
             install_path,
@@ -447,7 +482,15 @@ fn arch() -> &'static str {
     } else if cfg!(target_arch = "x86_64") {
         "x64"
     } else if cfg!(target_arch = "arm") {
-        "armv7l"
+        if cfg!(target_feature = "v6") {
+            "armv6l"
+        } else {
+            "armv7l"
+        }
+    } else if cfg!(target_arch = "loongarch64") {
+        "loong64"
+    } else if cfg!(target_arch = "riscv64") {
+        "riscv64"
     } else if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
@@ -455,7 +498,16 @@ fn arch() -> &'static str {
     }
 }
 
+fn slug(v: &str) -> String {
+    if let Some(flavor) = &SETTINGS.node.flavor {
+        format!("node-v{v}-{}-{}-{flavor}", os(), arch())
+    } else {
+        format!("node-v{v}-{}-{}", os(), arch())
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct NodeVersion {
     version: String,
+    files: Vec<String>,
 }

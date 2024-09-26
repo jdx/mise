@@ -17,6 +17,7 @@ use glob::glob;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
+use super::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::errors::Error;
@@ -26,8 +27,6 @@ use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, style};
 use crate::{env, file, ui};
-
-use super::args::ToolArg;
 
 /// [experimental] Run a tasks
 ///
@@ -45,7 +44,8 @@ use super::args::ToolArg;
 ///     outputs = ["dist/**/*.js"]
 ///
 /// Alternatively, tasks can be defined as standalone scripts.
-/// These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+/// These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+/// `.config/mise/tasks`.
 /// The name of the script will be the name of the tasks.
 ///
 ///     $ cat .mise/tasks/build<<EOF
@@ -205,6 +205,9 @@ impl Run {
             };
             let rx = tasks.lock().unwrap().subscribe();
             while let Some(task) = rx.recv().unwrap() {
+                if exit_status.lock().unwrap().is_some() {
+                    break;
+                }
                 run(&task);
             }
         });
@@ -251,12 +254,8 @@ impl Run {
         if let Some(file) = &task.file {
             self.exec_file(file, task, &env, &prefix)?;
         } else {
-            for (i, cmd) in task.run.iter().enumerate() {
-                let args = match i == task.run.len() - 1 {
-                    true => task.args.iter().cloned().collect_vec(),
-                    false => vec![],
-                };
-                self.exec_script(cmd, &args, task, &env, &prefix)?;
+            for (script, args) in task.render_run_scripts_with_args(self.cd.clone(), &task.args)? {
+                self.exec_script(&script, &args, task, &env, &prefix)?;
             }
         }
 
@@ -296,9 +295,18 @@ impl Run {
             let filename = file.display().to_string();
             self.exec(&filename, args, task, env, prefix)
         } else {
-            let script = format!("{} {}", script, shell_words::join(args));
-            let args = vec!["-c".to_string(), script];
-            self.exec("sh", &args, task, env, prefix)
+            #[cfg(windows)]
+            {
+                let script = format!("{} {}", script, args.join(" "));
+                let args = vec!["/c".to_string(), script];
+                self.exec("cmd", &args, task, env, prefix)
+            }
+            #[cfg(unix)]
+            {
+                let script = format!("{} {}", script, shell_words::join(args));
+                let args = vec!["-c".to_string(), script];
+                self.exec("sh", &args, task, env, prefix)
+            }
         }
     }
 
@@ -309,14 +317,23 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
+        let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
+        let (spec, _) = task.parse_usage_spec(self.cd.clone())?;
+        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
+            let args = once(command.clone()).chain(args.clone()).collect_vec();
+            let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
+            for (k, v) in po.as_env() {
+                env.insert(k, v);
+            }
+        }
 
         let cmd = format!("{} {}", display_path(file), args.join(" "));
         let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
         info_unprefix_trunc!("{prefix} {cmd}");
 
-        self.exec(&command, &args, task, env, prefix)
+        self.exec(&command, &args, task, &env, prefix)
     }
 
     fn exec(
@@ -606,8 +623,7 @@ mod tests {
         assert_cli_snapshot!(
             "r",
             "filetask",
-            "arg1",
-            "arg2",
+            "--user=jdx",
             ":::",
             "configtask",
             "arg3",

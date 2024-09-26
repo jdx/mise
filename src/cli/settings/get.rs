@@ -59,6 +59,7 @@ mod tests {
 
     #[test]
     fn test_settings_get_unknown() {
+        reset();
         let err = assert_cli_err!("settings", "get", "unknown");
         assert_snapshot!(err, @"Unknown setting: unknown");
     }

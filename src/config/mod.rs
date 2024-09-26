@@ -50,18 +50,19 @@ pub struct Config {
     tool_request_set: OnceCell<ToolRequestSet>,
 }
 
-static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
+pub static CONFIG: Lazy<Arc<Config>> = Lazy::new(Config::get);
+static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 
 impl Config {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
     }
     pub fn try_get() -> Result<Arc<Self>> {
-        if let Some(config) = &*CONFIG.read().unwrap() {
+        if let Some(config) = &*_CONFIG.read().unwrap() {
             return Ok(config.clone());
         }
         let config = Arc::new(Self::load()?);
-        *CONFIG.write().unwrap() = Some(config.clone());
+        *_CONFIG.write().unwrap() = Some(config.clone());
         Ok(config)
     }
     pub fn load() -> Result<Self> {
@@ -421,7 +422,7 @@ impl Config {
     #[cfg(test)]
     pub fn reset() {
         Settings::reset(None);
-        CONFIG.write().unwrap().take();
+        _CONFIG.write().unwrap().take();
     }
 }
 
@@ -557,6 +558,17 @@ pub fn global_config_files() -> Vec<PathBuf> {
     if global_config.is_file() {
         config_files.push(global_config);
     }
+    if let Some(env) = &*env::MISE_ENV {
+        let global_profile_files = vec![
+            dirs::CONFIG.join(format!("config.{env}.toml")),
+            dirs::CONFIG.join(format!("mise.{env}.toml")),
+        ];
+        for f in global_profile_files {
+            if f.is_file() {
+                config_files.push(f);
+            }
+        }
+    }
     config_files
 }
 
@@ -672,6 +684,8 @@ impl Debug for Config {
 
 fn default_task_includes() -> Vec<PathBuf> {
     vec![
+        "mise-tasks".into(),
+        ".mise-tasks".into(),
         ".mise/tasks".into(),
         ".config/mise/tasks".into(),
         "mise/tasks".into(),

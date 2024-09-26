@@ -48,6 +48,9 @@ export const commands: { [key: string]: Command } = {
       "clear": {
         hide: false,
       },
+      "prune": {
+        hide: false,
+      },
     },
   },
   "completion": {
@@ -224,10 +227,24 @@ export const commands: { [key: string]: Command } = {
       "edit": {
         hide: false,
       },
+      "info": {
+        hide: false,
+      },
       "ls": {
         hide: false,
       },
       "run": {
+        hide: false,
+      },
+    },
+  },
+  "toml": {
+    hide: false,
+    subcommands: {
+      "get": {
+        hide: false,
+      },
+      "set": {
         hide: false,
       },
     },

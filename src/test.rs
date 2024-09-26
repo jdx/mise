@@ -61,14 +61,15 @@ fn init() {
     env::remove_var("MISE_TRUSTED_CONFIG_PATHS");
     env::remove_var("MISE_DISABLE_TOOLS");
     env::set_var("NO_COLOR", "1");
-    env::set_var("MISE_YES", "1");
-    env::set_var("MISE_USE_TOML", "0");
-    env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
-    env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
-    env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
+    env::set_var("MISE_CACHE_PRUNE_AGE", "0");
     env::set_var("MISE_CACHE_DIR", env::HOME.join("data").join("cache"));
-    env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
+    env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
+    env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
     env::set_var("MISE_DEFAULT_CONFIG_FILENAME", ".test.mise.toml");
+    env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
+    env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
+    env::set_var("MISE_USE_TOML", "0");
+    env::set_var("MISE_YES", "1");
     //env::set_var("TERM", "dumb");
 }
 
@@ -107,12 +108,15 @@ pub fn reset() {
         # mise depends=["lint", "test"]
         # mise sources=[".test-tool-versions"]
         # mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
-        # mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+        # mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID", BOOLEAN_VAR = true}
+        
+        #USAGE flag "--user <user>" help="The user to run as"
 
-        set -euxo pipefail
+        set -exo pipefail
         cd "$MISE_PROJECT_ROOT" || exit 1
         echo "running test-build script"
         echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.txt
+        echo "user=$usage_user"
         "#},
     )
     .unwrap();

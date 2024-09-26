@@ -7,8 +7,9 @@ use std::sync::Arc;
 pub use python::PythonPlugin;
 
 use crate::backend::{Backend, BackendMap};
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
+use crate::config::settings::SETTINGS;
 use crate::config::Settings;
 use crate::env;
 use crate::env::PATH_KEY;
@@ -26,6 +27,8 @@ use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 #[cfg(unix)]
 use crate::plugins::core::ruby::RubyPlugin;
+#[cfg(windows)]
+use crate::plugins::core::ruby_windows::RubyPlugin;
 #[cfg(unix)]
 use crate::plugins::core::zig::ZigPlugin;
 use crate::plugins::{Plugin, PluginList, PluginType};
@@ -46,6 +49,8 @@ mod node;
 mod python;
 #[cfg(unix)]
 mod ruby;
+#[cfg(windows)]
+mod ruby_windows;
 #[cfg(unix)]
 mod zig;
 
@@ -62,7 +67,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(RubyPlugin::new()),
     ];
     #[cfg(windows)]
-    let mut plugins: Vec<Arc<dyn Backend>> = vec![
+    let plugins: Vec<Arc<dyn Backend>> = vec![
         // Arc::new(BunPlugin::new()),
         // Arc::new(DenoPlugin::new()),
         // Arc::new(ErlangPlugin::new()),
@@ -70,7 +75,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         // Arc::new(JavaPlugin::new()),
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
-        // Arc::new(RubyPlugin::new()),
+        Arc::new(RubyPlugin::new()),
     ];
     #[cfg(unix)]
     {
@@ -103,10 +108,13 @@ impl CorePlugin {
 
     pub fn new(fa: BackendArg) -> Self {
         Self {
-            remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            remote_version_cache: CacheManagerBuilder::new(
+                fa.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
+            .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())
+            .build(),
             fa,
         }
     }
