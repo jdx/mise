@@ -323,7 +323,7 @@ impl Run {
         let (spec, _) = task.parse_usage_spec(self.cd.clone())?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args = once(command.clone()).chain(args.clone()).collect_vec();
-            let po = usage::cli::parse(&spec, &args).map_err(|err| eyre!(err))?;
+            let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
             for (k, v) in po.as_env() {
                 env.insert(k, v);
             }
