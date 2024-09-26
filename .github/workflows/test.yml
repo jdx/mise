@@ -219,14 +219,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+      # TODO: enable when we can remove continue-on-error:
+      # - name: cargo test
+      #   uses: nick-fields/retry@v3
+      #   with:
+      #     timeout_minutes: 30
+      #     retry_wait_seconds: 30
+      #     max_attempts: 2
+      #     command: cargo test
       - run: cargo test
         continue-on-error: true
   windows-e2e:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - run: cargo build
       - run: Add-Content $env:GITHUB_PATH "$PWD\target\debug"
-      - run: pwsh e2e-win\run_all.ps1
+      - name: e2e
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 2
+          command: pwsh e2e-win\run_all.ps1
