@@ -1,6 +1,7 @@
 use crate::config::{load_config_paths, DEFAULT_CONFIG_FILENAMES};
+use crate::file;
 use clap::Subcommand;
-use eyre::Result;
+use eyre::{bail, Result};
 use once_cell::sync::Lazy;
 use std::path::PathBuf;
 
@@ -47,8 +48,15 @@ impl Commands {
 
 impl Toml {
     pub fn run(self) -> Result<()> {
-        let cmd = self.command.unwrap();
+        if let Some(cmd) = self.command {
+            return cmd.run();
+        }
+        if let Some(toml_config) = top_toml_config() {
+            miseprintln!("{}", file::read_to_string(&toml_config)?);
+        } else {
+            bail!("No mise.toml file found");
+        }
 
-        cmd.run()
+        Ok(())
     }
 }

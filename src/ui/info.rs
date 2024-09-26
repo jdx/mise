@@ -23,6 +23,6 @@ pub fn indent_by<S: Display>(s: S, ind: &'static str) -> String {
     out
 }
 
-fn trim_line_end_whitespace(s: &str) -> String {
+pub fn trim_line_end_whitespace(s: &str) -> String {
     s.lines().map(str::trim_end).collect::<Vec<_>>().join("\n")
 }

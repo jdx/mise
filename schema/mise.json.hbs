@@ -233,6 +233,21 @@
         }
       ]
     },
+    "task_config": {
+      "description": "configration for task execution/management",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "includes": {
+          "description": "files/directories to include searching for tasks",
+          "items": {
+            "description": "file/directory root to include in task execution",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      }
+    },
     "tool": {
       "oneOf": [
         {

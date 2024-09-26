@@ -247,6 +247,10 @@ version files since they're version files not specific to asdf/mise and can be u
 
 See [Settings](/settings) for the full list of settings.
 
+## Tasks
+
+See [Tasks](/tasks/) for the full list of configuration options.
+
 ## Environment variables
 
 mise can also be configured via environment variables. The following options are available:

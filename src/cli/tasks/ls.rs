@@ -6,6 +6,7 @@ use tabled::Tabled;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::task::Task;
+use crate::ui::info::trim_line_end_whitespace;
 use crate::ui::{style, table};
 
 /// [experimental] List available tasks to execute
@@ -91,7 +92,8 @@ impl TasksLs {
         if !self.extended {
             table::disable_columns(&mut table, vec![1]);
         }
-        miseprintln!("{table}");
+        let table = format!("{table}");
+        miseprintln!("{}", trim_line_end_whitespace(&table));
         Ok(())
     }
 
@@ -191,12 +193,12 @@ mod tests {
     #[test]
     fn test_task_ls() {
         reset();
-        assert_cli_snapshot!("t", "--no-headers", @r###"
-        configtask                               ~/config/config.toml       
-        filetask    This is a test build script  ~/cwd/.mise/tasks/filetask 
-        lint                                     ~/config/config.toml       
+        assert_cli_snapshot!("t", "--no-headers", @r#"
+        configtask                               ~/config/config.toml
+        filetask    This is a test build script  ~/cwd/.mise/tasks/filetask
+        lint                                     ~/config/config.toml
         test                                     ~/config/config.toml
-        "###);
+        "#);
     }
 
     #[test]
