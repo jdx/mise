@@ -833,8 +833,7 @@ The name of the script will be the name of the tasks.
     }
     flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
     flag "--timings" help="Shows elapsed time after each tasks"
-    arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
-    arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
+    mount run="mise tasks --usage"
 }
 cmd "self-update" help="Updates mise itself" {
     long_help r"Updates mise itself
@@ -996,6 +995,7 @@ cmd "tasks" help="[experimental] Manage tasks" {
         arg "<SORT_ORDER>"
     }
     flag "-J --json" help="Output in JSON format"
+    flag "--usage" hide=true
     cmd "deps" help="[experimental] Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
 
@@ -1046,6 +1046,7 @@ tasks will override the global ones if they have the same name."
             arg "<SORT_ORDER>"
         }
         flag "-J --json" help="Output in JSON format"
+        flag "--usage" hide=true
     }
     cmd "run" help="[experimental] Run a tasks" {
         alias "r"

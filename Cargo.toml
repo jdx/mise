@@ -105,7 +105,7 @@ tabled = { version = "0.16", features = ["ansi"] }
 tar = "0.4.40"
 tempfile = "3.10.1"
 tera = "1.19"
-terminal_size = "0.3.0"
+terminal_size = "0.4"
 thiserror = "1.0.59"
 tokio = { version = "1.37.0", features = [
     "io-std",
@@ -115,7 +115,8 @@ tokio = { version = "1.37.0", features = [
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
 url = "2.5.0"
-usage-lib = { version = "0.5", features = ["clap"] }
+#usage-lib = { path = "../usage/lib" }
+usage-lib = { version = "0.6", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
 vfox = "0.1"
 walkdir = "2.5.0"

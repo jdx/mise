@@ -41,6 +41,9 @@ pub struct TasksLs {
     /// Output in JSON format
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
+
+    #[clap(long, hide = true)]
+    pub usage: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -70,7 +73,9 @@ impl TasksLs {
             .sorted_by(|a, b| self.sort(a, b))
             .collect::<Vec<Task>>();
 
-        if self.json {
+        if self.usage {
+            self.display_usage(tasks)?;
+        } else if self.json {
             self.display_json(tasks)?;
         } else {
             self.display(tasks)?;
@@ -87,6 +92,19 @@ impl TasksLs {
             table::disable_columns(&mut table, vec![1]);
         }
         miseprintln!("{table}");
+        Ok(())
+    }
+
+    fn display_usage(&self, tasks: Vec<Task>) -> Result<()> {
+        let mut usage = usage::Spec::default();
+        for task in tasks {
+            let (task_spec, _) = task.parse_usage_spec(None)?;
+            usage
+                .cmd
+                .subcommands
+                .insert(task.name.clone(), task_spec.cmd);
+        }
+        miseprintln!("{}", usage.to_string());
         Ok(())
     }
 
