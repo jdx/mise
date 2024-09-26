@@ -46,13 +46,27 @@ impl TaskScriptParser {
                         .get("name")
                         .map(|n| n.as_str().unwrap().to_string())
                         .unwrap_or(i.to_string());
-                    // let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
+                    let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
+                    let help = args.get("help").map(|r| r.to_string());
+                    let long_help = args.get("long_help").map(|r| r.to_string());
+                    let var_min = args.get("var_min").map(|r| r.as_i64().unwrap() as usize);
+                    let var_max = args.get("var_max").map(|r| r.as_i64().unwrap() as usize);
+                    let hide = args
+                        .get("hide")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
                     let arg = usage::SpecArg {
                         name: name.clone(),
+                        usage,
+                        help,
+                        long_help,
                         required,
                         var,
-                        // default,
-                        ..Default::default()
+                        var_min,
+                        var_max,
+                        hide,
+                        default,
                     };
                     input_args.lock().unwrap().push((i, arg));
                     Ok(tera::Value::String(template_key(name)))
@@ -68,21 +82,66 @@ impl TaskScriptParser {
                         .get("name")
                         .map(|n| n.as_str().unwrap().to_string())
                         .unwrap();
+                    let short = args
+                        .get("short")
+                        .map(|s| s.to_string().chars().collect())
+                        .unwrap_or_default();
+                    let long = args
+                        .get("long")
+                        .map(|l| {
+                            l.as_str()
+                                .unwrap()
+                                .split_whitespace()
+                                .map(|s| s.to_string())
+                                .collect()
+                        })
+                        .unwrap_or_else(|| vec![name.clone()]);
+                    let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
                     let var = args
                         .get("var")
                         .map(|r| r.as_bool().unwrap())
                         .unwrap_or(false);
-                    // let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
+                    let deprecated = args.get("deprecated").map(|r| r.to_string());
+                    let help = args.get("help").map(|r| r.to_string());
+                    let long_help = args.get("long_help").map(|r| r.to_string());
+                    let hide = args
+                        .get("hide")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let global = args
+                        .get("global")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let count = args
+                        .get("count")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
+                    let required = args
+                        .get("required")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let negate = args.get("negate").map(|r| r.to_string());
                     let flag = usage::SpecFlag {
                         name: name.clone(),
+                        short,
+                        long,
+                        default,
                         var,
+                        hide,
+                        global,
+                        count,
+                        deprecated,
+                        help,
+                        usage,
+                        long_help,
+                        required,
+                        negate,
                         arg: Some(usage::SpecArg {
                             name: name.clone(),
                             var,
                             ..Default::default()
                         }),
-                        // default,
-                        ..Default::default()
                     };
                     input_flags.lock().unwrap().push(flag);
                     Ok(tera::Value::String(template_key(name)))
@@ -97,11 +156,62 @@ impl TaskScriptParser {
                         .get("name")
                         .map(|n| n.as_str().unwrap().to_string())
                         .unwrap();
-                    // let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
+                    let short = args
+                        .get("short")
+                        .map(|s| s.to_string().chars().collect())
+                        .unwrap_or_default();
+                    let long = args
+                        .get("long")
+                        .map(|l| {
+                            l.as_str()
+                                .unwrap()
+                                .split_whitespace()
+                                .map(|s| s.to_string())
+                                .collect()
+                        })
+                        .unwrap_or_else(|| vec![name.clone()]);
+                    let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
+                    let var = args
+                        .get("var")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let deprecated = args.get("deprecated").map(|r| r.to_string());
+                    let help = args.get("help").map(|r| r.to_string());
+                    let long_help = args.get("long_help").map(|r| r.to_string());
+                    let hide = args
+                        .get("hide")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let global = args
+                        .get("global")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let count = args
+                        .get("count")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
+                    let required = args
+                        .get("required")
+                        .map(|r| r.as_bool().unwrap())
+                        .unwrap_or(false);
+                    let negate = args.get("negate").map(|r| r.to_string());
                     let flag = usage::SpecFlag {
                         name: name.clone(),
-                        // default,
-                        ..Default::default()
+                        short,
+                        long,
+                        default,
+                        var,
+                        hide,
+                        global,
+                        count,
+                        deprecated,
+                        help,
+                        usage,
+                        long_help,
+                        required,
+                        negate,
+                        arg: None,
                     };
                     input_flags.lock().unwrap().push(flag);
                     Ok(tera::Value::String(template_key(name)))

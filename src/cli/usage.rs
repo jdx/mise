@@ -13,7 +13,13 @@ pub struct Usage {}
 impl Usage {
     pub fn run(self) -> Result<()> {
         let cli = cli::Cli::command().version(Resettable::Reset);
-        let spec: usage::Spec = cli.into();
+        let mut spec: usage::Spec = cli.into();
+        let run = spec.cmd.subcommands.get_mut("run").unwrap();
+        run.args = vec![];
+        run.mounts.push(usage::SpecMount {
+            run: "mise tasks --usage".to_string(),
+        });
+
         let extra = include_str!("../assets/mise-extra.usage.kdl");
         println!("{spec}\n{extra}");
         Ok(())
