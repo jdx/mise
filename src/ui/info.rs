@@ -1,8 +1,7 @@
 use crate::file;
 use console::style;
 use indenter::indented;
-use std::fmt::Display;
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 
 pub fn section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
     let body = file::replace_paths_in_string(body);
