@@ -73,7 +73,7 @@ export default defineConfig({
         link: '/tasks/',
         items: [
           {text: 'Running Tasks', link: '/tasks/running-tasks'},
-          {text: 'Script Tasks', link: '/tasks/script-tasks'},
+          {text: 'File Tasks', link: '/tasks/file-tasks'},
           {text: 'TOML Tasks', link: '/tasks/toml-tasks'},
         ],
       },

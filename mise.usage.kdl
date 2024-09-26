@@ -1024,6 +1024,38 @@ The tasks will be created as a standalone script if it does not already exist."
         flag "-p --path" help="Display the path to the tasks instead of editing it"
         arg "<TASK>" help="Tasks to edit"
     }
+    cmd "info" help="[experimental] Get information about a task" {
+        after_long_help r#"Examples:
+
+    $ mise tasks info
+    Name: test
+    Aliases: t
+    Description: Test the application
+    Source: ~/src/myproj/mise.toml
+
+    $ mise tasks info test --json
+    {
+      "name": "test",
+      "aliases": "t",
+      "description": "Test the application",
+      "source": "~/src/myproj/mise.toml",
+      "depends": [],
+      "env": {},
+      "dir": null,
+      "hide": false,
+      "raw": false,
+      "sources": [],
+      "outputs": [],
+      "run": [
+        "echo \"testing!\""
+      ],
+      "file": null,
+      "usage_spec": {}
+    }
+"#
+        flag "-J --json" help="Output in JSON format"
+        arg "<TASK>" help="Name of the task to get information about"
+    }
     cmd "ls" help="[experimental] List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list." {
         long_help r"[experimental] List available tasks to execute
 These may be included from the config file or from the project's .mise/tasks directory

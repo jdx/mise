@@ -108,7 +108,7 @@ pub fn reset() {
         # mise depends=["lint", "test"]
         # mise sources=[".test-tool-versions"]
         # mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
-        # mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+        # mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID", BOOLEAN_VAR = true}
         
         #USAGE flag "--user <user>" help="The user to run as"
 
