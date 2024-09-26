@@ -165,12 +165,14 @@ impl Task {
 
     pub fn parse_usage_spec(&self, cwd: Option<PathBuf>) -> Result<(usage::Spec, Vec<String>)> {
         if let Some(file) = &self.file {
-            let spec = usage::Spec::parse_script(file)
+            let mut spec = usage::Spec::parse_script(file)
                 .inspect_err(|e| debug!("failed to parse task file with usage: {e}"))
                 .unwrap_or_default();
+            spec.cmd.name = self.name.clone();
             Ok((spec, vec![]))
         } else {
-            let (scripts, spec) = TaskScriptParser::new(cwd).parse_run_scripts(&self.run)?;
+            let (scripts, mut spec) = TaskScriptParser::new(cwd).parse_run_scripts(&self.run)?;
+            spec.cmd.name = self.name.clone();
             Ok((spec, scripts))
         }
     }

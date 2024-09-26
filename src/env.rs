@@ -350,10 +350,10 @@ fn prefer_stale(args: &[String]) -> bool {
         .filter(|a| !a.starts_with('-'))
         .nth(1)
         .unwrap_or(&binding);
-    return [
+    [
         "env", "hook-env", "x", "exec", "direnv", "activate", "current", "ls", "where",
     ]
-    .contains(&c.as_str());
+    .contains(&c.as_str())
 }
 
 fn environment(args: &[String]) -> Option<String> {
