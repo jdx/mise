@@ -48,6 +48,7 @@ mod settings;
 mod shell;
 mod sync;
 mod tasks;
+mod toml;
 mod trust;
 mod uninstall;
 mod unset;
@@ -100,6 +101,7 @@ pub enum Commands {
     Shell(shell::Shell),
     Sync(sync::Sync),
     Tasks(tasks::Tasks),
+    Toml(toml::Toml),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Unset(unset::Unset),
@@ -158,6 +160,7 @@ impl Commands {
             Self::Shell(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run(),
             Self::Tasks(cmd) => cmd.run(),
+            Self::Toml(cmd) => cmd.run(),
             Self::Trust(cmd) => cmd.run(),
             Self::Uninstall(cmd) => cmd.run(),
             Self::Unset(cmd) => cmd.run(),

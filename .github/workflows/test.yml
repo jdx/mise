@@ -50,13 +50,7 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - run: mise install
-      - run: mise x -- cargo nextest run --all-features
-      - run: cargo deny check
-      - run: cargo msrv verify
-      - run: cargo machete --with-metadata
-      - run: ./scripts/test-standalone.sh
-      - run: mise settings set experimental true
+      - run: npm i
       - name: cache mise
         uses: actions/cache@v4
         with:
@@ -66,6 +60,12 @@ jobs:
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
       - run: mise install
+      - run: mise x -- cargo nextest run --all-features
+      - run: cargo deny check
+      - run: cargo msrv verify
+      - run: cargo machete --with-metadata
+      - run: ./scripts/test-standalone.sh
+      - run: mise settings set experimental true
       - run: mise run render
       - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
         run: mise run lint-fix && git diff HEAD
@@ -151,6 +151,7 @@ jobs:
             pipx \
             python3-venv \
             zsh
+      - run: npm i
       - run: |
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
@@ -212,13 +213,20 @@ jobs:
         with:
           recreate: true
           path: code-coverage-results.md
-  windows:
+  windows-unit:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+        continue-on-error: true
+  windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - run: cargo build
-      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - run: cargo test
-        continue-on-error: true
+      - run: Add-Content $env:GITHUB_PATH "$PWD\target\debug"
+      - run: pwsh e2e-win\run_all.ps1

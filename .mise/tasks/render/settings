@@ -1,0 +1,72 @@
+#!/usr/bin/env node
+
+const fs = require('fs');
+const toml = require('toml');
+const child_process = require('child_process');
+const Handlebars = require('handlebars');
+
+const doc = toml.parse(fs.readFileSync('settings.toml', 'utf-8'));
+const settings = {};
+
+function buildElement(key, props) {
+  let type = props.type;
+  if (type.startsWith('Option<')) {
+    type = type.slice(7, -1);
+  }
+  type = type.replaceAll('PathBuf', 'String');
+  if (type === 'bool') {
+    type = 'boolean';
+  } else if (type === "String" || type === "PathBuf") {
+    type = 'string';
+  } else if (type === "usize" || type === "u64") {
+    type = 'number';
+  } else if (type === "BTreeSet<String>" || type === "HashSet<String>" || type === "Vec<String>") {
+    type = 'string[]';
+  } else {
+    throw new Error(`Unknown type: ${type}`);
+  }
+  if (!props.description) {
+    console.error(`Missing description for ${key}`);
+    process.exit(1);
+  }
+  const ele = {
+    default: props.default,
+    description: props.description,
+    deprecated: props.deprecated,
+    type,
+  };
+  if (props.enum) {
+    ele.enum = props.enum.map((e) => e[0]);
+  }
+  if (type === 'string[]') {
+    ele.type = 'array';
+    ele.items = {
+      type: 'string',
+    };
+  }
+  return ele;
+}
+
+for (const key in doc) {
+  const props = doc[key];
+  if (props.type) {
+    settings[key] = buildElement(key, props);
+  } else {
+    for (const subkey in props) {
+      settings[key] = settings[key] || {
+        additionalProperties: false,
+        description: props.description,
+        properties: {},
+      };
+      settings[key].properties[subkey] = buildElement(`${key}.${subkey}`, props[subkey]);
+    }
+  }
+}
+
+const schema_tmpl = Handlebars.compile(fs.readFileSync('schema/mise.json.hbs', 'utf-8'));
+fs.writeFileSync('schema/mise.json.tmp', schema_tmpl({
+  settings_json: new Handlebars.SafeString(JSON.stringify(settings, null, 2)),
+}));
+
+child_process.execSync('jq . < schema/mise.json.tmp > schema/mise.json');
+fs.unlinkSync('schema/mise.json.tmp');

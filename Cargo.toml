@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.9.6"
+version = "2024.9.9"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -12,15 +12,16 @@ license = "MIT"
 keywords = ["mise"]
 categories = ["command-line-utilities"]
 include = [
-    "src/**/*.rs",
-    "src/plugins/core/assets/**",
-    "src/assets/**",
-    "/completions/*",
     "/Cargo.lock",
     "/LICENSE",
     "/README.md",
     "/build.rs",
+    "/completions/*",
+    "/settings.toml",
     "/zipsign.pub",
+    "src/**/*.rs",
+    "src/assets/**",
+    "src/plugins/core/assets/**",
 ]
 rust-version = "1.76.0"
 build = "build.rs"
@@ -69,7 +70,7 @@ heck = "0.5"
 home = "0.5.9"
 humantime = "2"
 indenter = "0.3.3"
-indexmap = { version = "2.2.6", features = ["serde"] }
+indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17.8", features = ["default", "improved_unicode"] }
 indoc = "2.0.5"
 itertools = "0.13"
@@ -78,7 +79,7 @@ num_cpus = "1"
 number_prefix = "0.4"
 once_cell = "1.19.0"
 openssl = { version = "0.10.66", optional = true }
-path-absolutize = "3.1.1"
+path-absolutize = "3"
 petgraph = "0.6.4"
 rand = "0.8.5"
 rayon = "1.10.0"
@@ -111,14 +112,14 @@ tokio = { version = "1.37.0", features = [
     "rt",
     "time",
 ] }
-toml = { version = "0.8.12", features = ["parse"] }
-toml_edit = { version = "0.22.12", features = ["parse"] }
+toml = { version = "0.8", features = ["parse"] }
+toml_edit = { version = "0.22", features = ["parse"] }
 url = "2.5.0"
-usage-lib = { version = "0.3", features = ["clap"] }
+usage-lib = { version = "0.5", features = ["clap"] }
 versions = { version = "6.2.0", features = ["serde"] }
 vfox = "0.1"
 walkdir = "2.5.0"
-which = "6.0.1"
+which = "6"
 xx = { version = "1.0.0", features = ["glob"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
@@ -141,6 +142,9 @@ sevenz-rust = "0.6"
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2"] }
 cfg_aliases = "0.2"
+heck = "0.5"
+toml = "0.8"
+indexmap = "2"
 
 [dev-dependencies]
 assert_cmd = "2.0.14"

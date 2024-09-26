@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+toml-sort --check settings.toml --spaces-indent-inline-array 4

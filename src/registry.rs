@@ -45,7 +45,7 @@ const _REGISTRY_VFOX: &[(&str, &str)] = &[
 pub static REGISTRY: Lazy<BTreeMap<&str, String>> = Lazy::new(|| {
     let settings = Settings::get();
 
-    let registry = if settings.vfox {
+    let registry = if cfg!(windows) || settings.vfox {
         _REGISTRY.iter().chain(_REGISTRY_VFOX.iter()).collect_vec()
     } else {
         _REGISTRY.iter().collect_vec()

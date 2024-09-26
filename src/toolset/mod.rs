@@ -202,17 +202,17 @@ impl Toolset {
                         let mut installed = vec![];
                         while let Some((t, versions)) = next_job() {
                             installing.lock().unwrap().insert(t.id().into());
-                            for tv in versions {
+                            for tr in versions {
                                 // TODO: this logic should be able to be removed now I think
-                                for dep in t.get_all_dependencies(&tv)? {
+                                for dep in t.get_all_dependencies(&tr)? {
                                     while installing.lock().unwrap().contains(&dep.to_string()) {
                                         trace!(
-                                        "{tv} waiting for dependency {dep} to finish installing"
+                                        "{tr} waiting for dependency {dep} to finish installing"
                                     );
                                         sleep(Duration::from_millis(100));
                                     }
                                 }
-                                let tv = tv.resolve(t.as_ref(), opts.latest_versions)?;
+                                let tv = tr.resolve(t.as_ref(), opts.latest_versions)?;
                                 let ctx = InstallContext {
                                     ts,
                                     pr: mpr.add(&tv.style()),
@@ -472,7 +472,7 @@ impl Toolset {
         let missing = self
             .list_missing_versions()
             .into_iter()
-            .filter(|tv| match settings.status.missing_tools {
+            .filter(|tv| match settings.status.missing_tools() {
                 SettingsStatusMissingTools::Never => false,
                 SettingsStatusMissingTools::Always => true,
                 SettingsStatusMissingTools::IfOtherVersionsInstalled => tv

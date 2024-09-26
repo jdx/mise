@@ -1,3 +1,8 @@
+use crate::config::settings::SETTINGS;
+use once_cell::sync::Lazy;
+use std::collections::HashSet;
+use std::sync::Mutex;
+
 #[cfg(test)]
 #[macro_export]
 macro_rules! miseprintln {
@@ -38,24 +43,6 @@ macro_rules! miseprint {
     ($($arg:tt)*) => {{
         calm_io::stdout!($($arg)*)
     }}
-}
-
-#[cfg(test)]
-#[macro_export]
-macro_rules! hint {
-    ($arg1:expr, $arg2:expr, $arg3:expr) => {{
-        let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-        if !$crate::config::Settings::get()
-            .disable_hints
-            .iter()
-            .any(|hint| hint == $arg1 || hint == "*")
-            || !console::user_attended()
-        {
-            let prefix = console::style("mise hint").dim().for_stderr();
-            let cmd = console::style($arg3).bold().for_stderr();
-            stderr.push(format!("{} {} {}", prefix, format!($arg2), cmd));
-        }
-    }};
 }
 
 #[cfg(test)]
@@ -106,16 +93,34 @@ macro_rules! debug {
     }};
 }
 
-#[cfg(not(test))]
+pub fn should_display_hint(id: &str) -> bool {
+    if cfg!(test) {
+        return false;
+    }
+    if SETTINGS
+        .disable_hints
+        .iter()
+        .any(|hint| hint == id || hint == "*")
+    {
+        return true;
+    }
+    if !console::user_attended() {
+        return false;
+    }
+    static DISPLAYED_HINTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(Default::default);
+    let displayed_hints = &mut DISPLAYED_HINTS.lock().unwrap();
+    if displayed_hints.contains(id) {
+        true
+    } else {
+        displayed_hints.insert(id.to_string());
+        false
+    }
+}
+
 #[macro_export]
 macro_rules! hint {
-    ($arg1:expr, $arg2:expr, $arg3:expr) => {{
-        if !$crate::config::Settings::get()
-            .disable_hints
-            .iter()
-            .any(|hint| hint == $arg1 || hint == "*")
-            && console::user_attended()
-        {
+    ($id:expr, $message:expr, $example_cmd:expr) => {{
+        if !$crate::output::should_display_hint($id) {
             let prefix = console::style("mise ").dim().for_stderr().to_string();
             let prefix = prefix
                 + console::style("hint")
@@ -124,15 +129,14 @@ macro_rules! hint {
                     .for_stderr()
                     .to_string()
                     .as_str();
-            let cmd = console::style($arg3).bold().for_stderr();
-            let disable_single =
-                console::style(format!("mise settings set disable_hints {}", $arg1))
-                    .bold()
-                    .for_stderr();
+            let cmd = console::style($example_cmd).bold().for_stderr();
+            let disable_single = console::style(format!("mise settings set disable_hints {}", $id))
+                .bold()
+                .for_stderr();
             let disable_all = console::style("mise settings set disable_hints \"*\"")
                 .bold()
                 .for_stderr();
-            info_unprefix!("{} {} {}", prefix, format!($arg2), cmd);
+            info_unprefix!("{} {} {}", prefix, format!($message), cmd);
             info_unprefix!(
                 "{} disable this hint with {} or all with {}",
                 prefix,

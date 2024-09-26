@@ -1,10 +1,10 @@
 # FAQs
 
-## I don't want to put a
+## I don't want to put a `.tool-versions`/`mise.toml` file into my project since git shows it as an untracked file
 
-`.tool-versions` file into my project since git shows it as an untracked file
+Use [`mise.local.toml`](https://mise.jdx.dev/configuration.html#mise-toml) and put that into your global gitignore file. This file should never be committed.
 
-You can make git ignore these files in 3 different ways:
+Or you can make git ignore these files in 3 different ways:
 
 - Adding `.tool-versions` to project's `.gitignore` file. This has the downside that you need to
   commit the change to the ignore file.
@@ -126,8 +126,7 @@ detected with your setup. If you submit a bug report, please include the output 
 
 There are 2 places that versions are cached so a brand new release might not appear right away.
 
-The first is that the mise CLI caches versions for 24 hours. This can be cleared
-with `mise cache clear`.
+The first is that the mise CLI caches versions for. The cache can be cleared with `mise cache clear`.
 
 The second uses the mise-versions.jdx.dev host as a centralized
 place to list all of the versions of most plugins. This is intended to speed up mise and also

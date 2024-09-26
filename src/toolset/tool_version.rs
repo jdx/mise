@@ -4,9 +4,6 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use console::style;
-use eyre::Result;
-
 use crate::backend;
 use crate::backend::{ABackend, Backend};
 use crate::cli::args::BackendArg;
@@ -15,6 +12,10 @@ use crate::config::Config;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::toolset::{tool_request, ToolRequest, ToolVersionOptions};
+use console::style;
+use eyre::Result;
+#[cfg(windows)]
+use path_absolutize::Absolutize;
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
@@ -78,7 +79,10 @@ impl ToolVersion {
             if let Ok(p) = file::read_to_string(&path).map(PathBuf::from) {
                 let path = self.backend.installs_path.join(p);
                 if path.exists() {
-                    return path;
+                    return path
+                        .absolutize()
+                        .expect("failed to absolutize path")
+                        .to_path_buf();
                 }
             }
         }

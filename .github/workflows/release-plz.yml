@@ -37,6 +37,7 @@ jobs:
         with: { toolchain: nightly, components: rustfmt }
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: npm i
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: actions/cache/restore@v4
         with:

@@ -1,5 +1,86 @@
 # Changelog
 
+## [2024.9.9](https://github.com/jdx/mise/compare/v2024.9.8..v2024.9.9) - 2024-09-25
+
+### 🐛 Bug Fixes
+
+- added nodejs to alpine build by [@jdx](https://github.com/jdx) in [550f64c](https://github.com/jdx/mise/commit/550f64cb9c0377e4102be24486491a5b9d7947f3)
+- bug with exec on windows by [@jdx](https://github.com/jdx) in [#2648](https://github.com/jdx/mise/pull/2648)
+- only show hints once per execution by [@jdx](https://github.com/jdx) in [#2647](https://github.com/jdx/mise/pull/2647)
+- task args regression by [@jdx](https://github.com/jdx) in [#2651](https://github.com/jdx/mise/pull/2651)
+- use correct xdg paths on windows by [@jdx](https://github.com/jdx) in [#2653](https://github.com/jdx/mise/pull/2653)
+
+### 🧪 Testing
+
+- added windows e2e tests by [@jdx](https://github.com/jdx) in [#2643](https://github.com/jdx/mise/pull/2643)
+- added windows e2e tests by [@jdx](https://github.com/jdx) in [#2645](https://github.com/jdx/mise/pull/2645)
+- reset by [@jdx](https://github.com/jdx) in [57d0223](https://github.com/jdx/mise/commit/57d0223ab2dfa731088f1634d0d12a6edd8dd8a6)
+- fix mise cache in CI by [@jdx](https://github.com/jdx) in [#2649](https://github.com/jdx/mise/pull/2649)
+- allow specifying full e2e test names by [@jdx](https://github.com/jdx) in [#2650](https://github.com/jdx/mise/pull/2650)
+- split windows into windows-unit and windows-e2e by [@jdx](https://github.com/jdx) in [#2652](https://github.com/jdx/mise/pull/2652)
+
+### 🔍 Other Changes
+
+- **(docs)** fix `arch()` template doc by [@cwegener](https://github.com/cwegener) in [#2644](https://github.com/jdx/mise/pull/2644)
+
+### New Contributors
+
+* @cwegener made their first contribution in [#2644](https://github.com/jdx/mise/pull/2644)
+
+## [2024.9.8](https://github.com/jdx/mise/compare/v2024.9.7..v2024.9.8) - 2024-09-25
+
+### 🚀 Features
+
+- **(node)** allow using node unofficial build flavors by [@jdx](https://github.com/jdx) in [#2637](https://github.com/jdx/mise/pull/2637)
+- codegen settings by [@jdx](https://github.com/jdx) in [#2640](https://github.com/jdx/mise/pull/2640)
+
+### 🐛 Bug Fixes
+
+- release 2024.9.7 breaks configurations that were using v in version names with go backend by [@roele](https://github.com/roele) in [#2636](https://github.com/jdx/mise/pull/2636)
+- add node mirror/flavor to cache key by [@jdx](https://github.com/jdx) in [#2638](https://github.com/jdx/mise/pull/2638)
+
+### 📚 Documentation
+
+- Update faq.md by [@jdx](https://github.com/jdx) in [9036759](https://github.com/jdx/mise/commit/903675950d3ccc7abb49a40d6794d75d52695e5e)
+- Update configuration.md by [@jdx](https://github.com/jdx) in [1bc8342](https://github.com/jdx/mise/commit/1bc8342920cfb0259e35e578f68d1ec857420787)
+- Update configuration.md by [@jdx](https://github.com/jdx) in [#2630](https://github.com/jdx/mise/pull/2630)
+- document java shorthand and its limitations by [@roele](https://github.com/roele) in [#2635](https://github.com/jdx/mise/pull/2635)
+
+### 🔍 Other Changes
+
+- format schema by [@jdx](https://github.com/jdx) in [418bc24](https://github.com/jdx/mise/commit/418bc24292cacdec0d643a7c93355c0dea550678)
+- format schema by [@jdx](https://github.com/jdx) in [a8f7493](https://github.com/jdx/mise/commit/a8f7493cd63535ae8e46d77545acfecf9a1451b2)
+
+## [2024.9.7](https://github.com/jdx/mise/compare/v2024.9.6..v2024.9.7) - 2024-09-23
+
+### 🚀 Features
+
+- task argument declarations by [@jdx](https://github.com/jdx) in [#2612](https://github.com/jdx/mise/pull/2612)
+
+### 🐛 Bug Fixes
+
+- **(windows)** node bin path by [@jdx](https://github.com/jdx) in [eed0ecf](https://github.com/jdx/mise/commit/eed0ecfb528aa1fa04efcadf44afd353db76a7c4)
+- **(windows)** fixed npm backend by [@jdx](https://github.com/jdx) in [#2617](https://github.com/jdx/mise/pull/2617)
+- ensure that version is not "latest" in node by [@jdx](https://github.com/jdx) in [0e196d6](https://github.com/jdx/mise/commit/0e196d6d9c0b0851148ba9894191d766c0386356)
+- prevent attempting to use python-build in windows by [@jdx](https://github.com/jdx) in [e15545b](https://github.com/jdx/mise/commit/e15545bb623da98bae72a41a57fa10ec311ee881)
+- skip last modified time test for nix by [@laozc](https://github.com/laozc) in [#2622](https://github.com/jdx/mise/pull/2622)
+- go backend can't install tools without 'v' prefix in git repo tags by [@roele](https://github.com/roele) in [#2606](https://github.com/jdx/mise/pull/2606)
+- use "v" prefix first for go backend by [@jdx](https://github.com/jdx) in [8444597](https://github.com/jdx/mise/commit/8444597add58353f8fc3a84662e7a024a72104c8)
+
+### 📚 Documentation
+
+- Fix Options example in documentation by [@gauravkumar37](https://github.com/gauravkumar37) in [#2619](https://github.com/jdx/mise/pull/2619)
+- remove reference to cache duration by [@jdx](https://github.com/jdx) in [bef6086](https://github.com/jdx/mise/commit/bef608633e814927707cd011875ce0bff28aa3d3)
+
+### 🔍 Other Changes
+
+- Update toml-tasks.md by [@jdx](https://github.com/jdx) in [9d26963](https://github.com/jdx/mise/commit/9d2696366bd21be47c5a6e25586e7061c0a7838c)
+- change prune message to debug-level by [@jdx](https://github.com/jdx) in [f54dd0d](https://github.com/jdx/mise/commit/f54dd0de830e0249b07cc263707530c6795d512f)
+
+### New Contributors
+
+* @gauravkumar37 made their first contribution in [#2619](https://github.com/jdx/mise/pull/2619)
+
 ## [2024.9.6](https://github.com/jdx/mise/compare/v2024.9.5..v2024.9.6) - 2024-09-18
 
 ### 🚀 Features
@@ -522,10 +603,6 @@
 ### 🔍 Other Changes
 
 - Fixes nix flake by [@laozc](https://github.com/laozc) in [#2305](https://github.com/jdx/mise/pull/2305)
-
-### New Contributors
-
-* @laozc made their first contribution in [#2305](https://github.com/jdx/mise/pull/2305)
 
 ## [2024.6.4](https://github.com/jdx/mise/compare/v2024.6.3..v2024.6.4) - 2024-06-15
 

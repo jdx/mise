@@ -9,5 +9,10 @@
     "docs:dev": "vitepress dev",
     "docs:build": "vitepress build",
     "docs:preview": "vitepress preview"
+  },
+  "dependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "markdown-it": "^14.1.0",
+    "toml": "^3.0.0"
   }
 }

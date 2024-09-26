@@ -17,11 +17,12 @@ shfmt = "3"
 jq = "latest"
 "cargo:cargo-edit" = "latest"
 "cargo:cargo-show" = "latest"
-"cargo:git-cliff" = "latest"
+"cargo:git-cliff" = "2.4" # TODO: upgrade when https://github.com/orhun/git-cliff/issues/863 is fixed
 "npm:markdownlint-cli" = "0.38"
 "npm:prettier" = "3"
 direnv = "latest"
 actionlint = "latest"
+"pipx:toml-sort" = "latest"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 #ruby = "3.1"
 

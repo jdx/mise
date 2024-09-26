@@ -30,6 +30,7 @@ export default defineConfig({
       {text: 'IDE Integration', link: '/ide-integration'},
       {text: 'Paranoid', link: '/paranoid'},
       {text: 'Registry', link: '/registry'},
+      {text: 'Settings', link: '/settings'},
       {text: 'Plugins', link: '/plugins'},
       {text: 'Coming from rtx', link: '/rtx'},
       {text: 'Team', link: '/team'},

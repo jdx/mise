@@ -562,7 +562,7 @@ cmd "ls-remote" help="List runtime versions available for install" {
     alias "list-all" "list-remote" hide=true
     long_help r"List runtime versions available for install
 
-note that the results are cached for 24 hours
+note that the results are cached
 run `mise cache clean` to clear the cache and get fresh results"
     after_long_help r"Examples:
 
@@ -1110,6 +1110,28 @@ The name of the script will be the name of the tasks.
         flag "--timings" help="Shows elapsed time after each tasks"
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
+    }
+}
+cmd "toml" help="Edit mise.toml files" {
+    cmd "get" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise toml get tools.python
+    3.12
+"
+        arg "<KEY>" help="The path of the config to display"
+        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
+    }
+    cmd "set" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise toml set tools.python 3.12
+    $ mise toml set settings.always_keep_download true
+    $ mise toml set env.TEST_ENV_VAR ABC
+"
+        arg "<KEY>" help="The path of the config to display"
+        arg "<VALUE>" help="The value to set the key to"
+        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
     }
 }
 cmd "trust" help="Marks a config file as trusted" {
