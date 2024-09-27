@@ -25,6 +25,13 @@ mise run build --release
 
 If there are multiple commands, the args are only passed to the last command.
 
+:::tip
+You can define arguments/flags for tasks which will provide validation, parsing, autocomplete, and documentation.
+
+* [Arguments in File Tasks](/tasks/file-tasks.html#arguments)
+* [Arguments in TOML Tasks](/tasks/toml-tasks.html#arguments)
+:::
+
 Multiple tasks/arguments can be separated with this `:::` delimiter:
 
 ```bash
