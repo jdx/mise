@@ -22,6 +22,7 @@ jq = "latest"
 "npm:prettier" = "3"
 direnv = "latest"
 actionlint = "latest"
+ripgrep = "latest"
 "pipx:toml-sort" = "latest"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 #ruby = "3.1"

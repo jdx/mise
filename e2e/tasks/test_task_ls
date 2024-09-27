@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[task_config]
+includes = [
+	"tasks.toml",
+	"mytasks",
+]
+[tasks.lint]
+run = 'echo "linting!"'
+EOF
+
+cat <<EOF >tasks.toml
+[test]
+run = 'echo "testing!"'
+[test-with-args]
+run = 'echo "{{arg()}} {{flag(name="force")}} {{option(name="user")}}"'
+EOF
+
+mkdir -p .mise/tasks
+cat <<'EOF' >.mise/tasks/do-not-show
+#!/usr/bin/env bash
+EOF
+chmod +x .mise/tasks/do-not-show
+
+mkdir -p mytasks
+cat <<'EOF' >mytasks/filetask2
+#!/usr/bin/env bash
+EOF
+chmod +x mytasks/filetask2
+
+assert "mise task ls" "filetask2         ~/workdir/mytasks/filetask2
+lint              ~/workdir/mise.toml
+test              ~/workdir/tasks.toml
+test-with-args    ~/workdir/tasks.toml"

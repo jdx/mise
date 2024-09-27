@@ -244,18 +244,40 @@ impl Config {
         let includes = configs
             .iter()
             .find_map(|cf| cf.task_config().includes.clone())
-            .unwrap_or_else(default_task_includes);
+            .unwrap_or_else(default_task_includes)
+            .into_iter()
+            .map(|p| if p.is_absolute() { p } else { dir.join(p) })
+            .collect_vec();
+        let extra_tasks = includes
+            .iter()
+            .filter(|p| {
+                p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml"
+            })
+            .map(|p| self.load_task_file(p))
+            .flatten_ok()
+            .collect::<Result<Vec<Task>>>()?;
         let file_tasks = includes.into_iter().flat_map(|p| {
-            let p = match p.is_absolute() {
-                true => p,
-                false => dir.join(p),
-            };
             self.load_tasks_includes(&p).unwrap_or_else(|err| {
                 warn!("loading tasks in {}: {err}", display_path(&p));
                 vec![]
             })
         });
-        Ok(file_tasks.into_iter().chain(config_tasks).collect())
+        Ok(file_tasks
+            .into_iter()
+            .chain(config_tasks)
+            .chain(extra_tasks)
+            .collect())
+    }
+
+    fn load_task_file(&self, path: &Path) -> Result<Vec<Task>> {
+        let raw = file::read_to_string(path)?;
+        let mut tasks = toml::from_str::<HashMap<String, Task>>(&raw)
+            .map_err(|e| eyre!("Error parsing task file: {} {e}", display_path(path)))?;
+        for (name, task) in &mut tasks {
+            task.name = name.clone();
+            task.config_source = path.to_path_buf();
+        }
+        Ok(tasks.into_values().collect())
     }
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
@@ -313,14 +335,14 @@ impl Config {
         if !root.is_dir() {
             return Ok(vec![]);
         }
-        let files: Vec<PathBuf> = WalkDir::new(root)
+        WalkDir::new(root)
             .follow_links(true)
             .into_iter()
-            .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'))
+            // skip hidden directories (if the root is hidden that's ok)
+            .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
             .filter_ok(|e| e.file_type().is_file())
             .map_ok(|e| e.path().to_path_buf())
-            .try_collect()?;
-        files
+            .try_collect::<_, Vec<PathBuf>, _>()?
             .into_par_iter()
             .filter(|p| file::is_executable(p))
             .map(|path| Task::from_path(&path))
