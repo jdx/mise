@@ -15,7 +15,7 @@ use crate::config::Settings;
 ///
 /// Use `mise local` to set a tool version locally in the current directory.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true, alias = "g", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, hide = true, after_long_help = AFTER_LONG_HELP)]
 pub struct Global {
     /// Tool(s) to add to .tool-versions
     /// e.g.: node@20
