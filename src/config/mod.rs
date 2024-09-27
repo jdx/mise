@@ -255,7 +255,7 @@ impl Config {
             .collect::<Vec<_>>()
     }
 
-    fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
+    pub fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
         let configs = self.configs_at_root(dir);
         let config_tasks = configs
             .par_iter()

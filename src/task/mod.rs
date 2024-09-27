@@ -220,6 +220,11 @@ impl Task {
                 .collect())
         }
     }
+
+    pub fn render_markdown(&self) -> Result<String> {
+        let (spec, _) = self.parse_usage_spec(None)?;
+        Ok(spec.render_markdown()?)
+    }
 }
 
 fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
