@@ -1,6 +1,6 @@
 # TOML-based Tasks
 
-Tasks can also be defined in `.mise.toml` files in different ways. This is a more "traditional" method of defining tasks:
+Tasks can be defined in `mise.toml` files in different ways:
 
 ```toml
 [tasks.cleancache]
@@ -64,6 +64,11 @@ run = [
 ```
 
 Then running `mise run test foo bar` will pass `foo bar` to `cargo test`. `mise run test --e2e-args baz` will pass `baz` to `./scripts/test-e2e.sh`.
+If any arguments are defined with templates then mise will not pass the arguments to the last script in the `run` array.
+
+:::tip
+Using templates to define arguments will make them work with completion and help messages.
+:::
 
 ### Positional Arguments
 
