@@ -82,9 +82,13 @@ impl MiseToml {
     }
 
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
-        trace!("parsing: {}", display_path(path));
         let body = file::read_to_string(path)?;
-        let des = toml::Deserializer::new(&body);
+        Self::from_str(&body, path)
+    }
+
+    pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
+        trace!("parsing: {}", display_path(path));
+        let des = toml::Deserializer::new(body);
         let mut rf: MiseToml = serde_ignored::deserialize(des, |p| {
             warn!("unknown field in {}: {p}", display_path(path));
         })?;

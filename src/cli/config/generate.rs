@@ -7,7 +7,7 @@ use crate::config::Settings;
 use crate::file;
 use crate::file::display_path;
 
-/// [experimental] Generate an .mise.toml file
+/// [experimental] Generate a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "g", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigGenerate {

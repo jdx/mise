@@ -3,7 +3,7 @@
 **Aliases:** `g`
 
 ```text
-[experimental] Generate an .mise.toml file
+[experimental] Generate a mise.toml file
 
 Usage: config generate [OPTIONS]
 
