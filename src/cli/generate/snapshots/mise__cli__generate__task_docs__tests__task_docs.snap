@@ -1,0 +1,9 @@
+---
+source: src/cli/generate/task_docs.rs
+expression: output
+---
+# `filetask`
+
+## Flag `--user <user>`
+
+The user to run as

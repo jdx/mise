@@ -348,7 +348,7 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
 cmd "generate" subcommand_required=true help="[experimental] Generate files for various tools/services" {
-    alias "gen"
+    alias "g"
     cmd "git-pre-commit" help="[experimental] Generate a git pre-commit hook" {
         alias "pre-commit"
         long_help r"[experimental] Generate a git pre-commit hook
@@ -387,9 +387,22 @@ when you push changes to your repository."
         }
         flag "-w --write" help="write to .github/workflows/$name.yml"
     }
+    cmd "task-docs" help="[experimental] Generate documentation for tasks in a project" {
+        after_long_help r"Examples:
+
+    $ mise generate task-docs
+"
+        flag "-m --multi" help="render each task as a separate document, requires `--output` to be a directory"
+        flag "-i --inject" help="inserts the documentation into an existing file" {
+            long_help "inserts the documentation into an existing file\n\nThis will look for a special comment, <!-- mise-tasks -->, and replace it with the generated documentation.\nIt will replace everything between the comment and the next comment, <!-- /mise-tasks --> so it can be\nrun multiple times on the same file to update the documentation."
+        }
+        flag "-I --index" help="write only an index of tasks, intended for use with `--multi`"
+        flag "-o --output" help="writes the generated docs to a file/directory" {
+            arg "<OUTPUT>"
+        }
+    }
 }
 cmd "global" hide=true help="Sets/gets the global tool version(s)" {
-    alias "g" hide=true
     long_help r"Sets/gets the global tool version(s)
 
 Displays the contents of global config after writing.
