@@ -17,6 +17,7 @@ concurrency:
 
 env:
   MISE_EXPERIMENTAL: 1
+  NPM_CONFIG_FUND: false
 
 jobs:
   release-plz:

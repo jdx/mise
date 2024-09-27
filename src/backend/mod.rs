@@ -17,6 +17,7 @@ use versions::Versioning;
 use self::backend_meta::BackendMeta;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings, CONFIG};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
@@ -364,7 +365,6 @@ pub trait Backend: Debug + Send + Sync {
             plugin.is_installed_err()?;
         }
         let config = Config::get();
-        let settings = Settings::try_get()?;
         if self.is_version_installed(&ctx.tv, true) {
             if ctx.force {
                 self.uninstall_version(&ctx.tv, ctx.pr.as_ref(), false)?;
@@ -377,13 +377,13 @@ pub trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&ctx.tv)?;
 
         if let Err(e) = self.install_version_impl(&ctx) {
-            self.cleanup_install_dirs_on_error(&settings, &ctx.tv);
+            self.cleanup_install_dirs_on_error(&SETTINGS, &ctx.tv);
             return Err(e);
         }
 
         BackendMeta::write(&ctx.tv.backend)?;
 
-        self.cleanup_install_dirs(&settings, &ctx.tv);
+        self.cleanup_install_dirs(&SETTINGS, &ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
         touch_dirs.extend(config.config_files.keys().cloned());

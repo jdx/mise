@@ -3,4 +3,3 @@ source: src/shell/zsh.rs
 expression: "replace_path(&sh.prepend_env(\"PATH\", \"/some/dir:/2/dir\"))"
 ---
 export PATH="/some/dir:/2/dir:$PATH"
-

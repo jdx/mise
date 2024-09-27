@@ -3,4 +3,3 @@ source: src/shell/nushell.rs
 expression: "Nushell::default().set_env(\"FOO\", \"1\")"
 ---
 set,FOO,1
-
