@@ -240,28 +240,44 @@ impl Config {
 
     fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
         let configs = self.configs_at_root(dir);
-        let config_tasks = configs.iter().flat_map(|cf| cf.tasks()).cloned();
+        let config_tasks = configs
+            .par_iter()
+            .flat_map(|cf| cf.tasks())
+            .cloned()
+            .collect::<Vec<_>>();
         let includes = configs
             .iter()
             .find_map(|cf| cf.task_config().includes.clone())
             .unwrap_or_else(default_task_includes)
-            .into_iter()
+            .into_par_iter()
             .map(|p| if p.is_absolute() { p } else { dir.join(p) })
-            .collect_vec();
+            .filter(|p| p.exists())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .unique()
+            .collect::<Vec<_>>();
         let extra_tasks = includes
-            .iter()
+            .par_iter()
             .filter(|p| {
                 p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml"
             })
-            .map(|p| self.load_task_file(p))
-            .flatten_ok()
-            .collect::<Result<Vec<Task>>>()?;
-        let file_tasks = includes.into_iter().flat_map(|p| {
-            self.load_tasks_includes(&p).unwrap_or_else(|err| {
-                warn!("loading tasks in {}: {err}", display_path(&p));
-                vec![]
+            .map(|p| {
+                self.load_task_file(p).unwrap_or_else(|err| {
+                    warn!("loading tasks in {}: {err}", display_path(p));
+                    vec![]
+                })
             })
-        });
+            .flatten()
+            .collect::<Vec<_>>();
+        let file_tasks = includes
+            .into_par_iter()
+            .flat_map(|p| {
+                self.load_tasks_includes(&p).unwrap_or_else(|err| {
+                    warn!("loading tasks in {}: {err}", display_path(&p));
+                    vec![]
+                })
+            })
+            .collect::<Vec<_>>();
         Ok(file_tasks
             .into_iter()
             .chain(config_tasks)
