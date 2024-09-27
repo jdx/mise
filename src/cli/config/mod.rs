@@ -1,12 +1,17 @@
+use crate::config::{load_config_paths, DEFAULT_CONFIG_FILENAMES};
 use clap::Subcommand;
 use eyre::Result;
+use once_cell::sync::Lazy;
+use std::path::PathBuf;
 
 mod generate;
+mod get;
 mod ls;
+mod set;
 
-/// [experimental] Manage config files
+/// Manage config files
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "cfg")]
+#[clap(visible_alias = "cfg", alias = "toml")]
 pub struct Config {
     #[clap(subcommand)]
     command: Option<Commands>,
@@ -18,15 +23,19 @@ pub struct Config {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    Ls(ls::ConfigLs),
     Generate(generate::ConfigGenerate),
+    Get(get::ConfigGet),
+    Ls(ls::ConfigLs),
+    Set(set::ConfigSet),
 }
 
 impl Commands {
     pub fn run(self) -> Result<()> {
         match self {
-            Self::Ls(cmd) => cmd.run(),
             Self::Generate(cmd) => cmd.run(),
+            Self::Get(cmd) => cmd.run(),
+            Self::Ls(cmd) => cmd.run(),
+            Self::Set(cmd) => cmd.run(),
         }
     }
 }
@@ -39,4 +48,19 @@ impl Config {
 
         cmd.run()
     }
+}
+
+pub static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
+    DEFAULT_CONFIG_FILENAMES
+        .iter()
+        .filter(|s| s.ends_with(".toml"))
+        .map(|s| s.to_string())
+        .collect()
+});
+
+fn top_toml_config() -> Option<PathBuf> {
+    load_config_paths(&TOML_CONFIG_FILENAMES)
+        .iter()
+        .find(|p| p.to_string_lossy().ends_with(".toml"))
+        .map(|p| p.to_path_buf())
 }

@@ -237,10 +237,52 @@ Examples:
     $ mise completion fish > ~/.config/fish/completions/mise.fish
 ```
 
-## `mise config ls [OPTIONS]` <Badge type="warning" text="experimental" />
+## `mise config generate [OPTIONS]` <Badge type="warning" text="experimental" />
+
+**Aliases:** `g`
 
 ```text
-[experimental] List config files currently in use
+[experimental] Generate a mise.toml file
+
+Usage: config generate [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>
+          Output to file instead of stdout
+
+Examples:
+
+    $ mise cf generate > .mise.toml
+    $ mise cf generate --output=.mise.toml
+```
+
+## `mise config get [OPTIONS] [KEY]`
+
+```text
+Display the value of a setting in a mise.toml file
+
+Usage: config get [OPTIONS] [KEY]
+
+Arguments:
+  [KEY]
+          The path of the config to display
+
+Options:
+  -f, --file <FILE>
+          The path to the mise.toml file to edit
+
+          If not provided, the nearest mise.toml file will be used
+
+Examples:
+
+    $ mise toml get tools.python
+    3.12
+```
+
+## `mise config ls [OPTIONS]`
+
+```text
+List config files currently in use
 
 Usage: config ls [OPTIONS]
 
@@ -253,23 +295,35 @@ Examples:
     $ mise config ls
 ```
 
-## `mise config generate [OPTIONS]` <Badge type="warning" text="experimental" />
-
-**Aliases:** `g`
+## `mise config set [OPTIONS] <KEY> <VALUE>`
 
 ```text
-[experimental] Generate an .mise.toml file
+Display the value of a setting in a mise.toml file
 
-Usage: config generate [OPTIONS]
+Usage: config set [OPTIONS] <KEY> <VALUE>
+
+Arguments:
+  <KEY>
+          The path of the config to display
+
+  <VALUE>
+          The value to set the key to
 
 Options:
-  -o, --output <OUTPUT>
-          Output to file instead of stdout
+  -f, --file <FILE>
+          The path to the mise.toml file to edit
+
+          If not provided, the nearest mise.toml file will be used
+
+  -t, --type <TYPE>
+          [default: string]
+          [possible values: string, integer, float, bool]
 
 Examples:
 
-    $ mise cf generate > .mise.toml
-    $ mise cf generate --output=.mise.toml
+    $ mise config set tools.python 3.12
+    $ mise config set settings.always_keep_download true
+    $ mise config set env.TEST_ENV_VAR ABC
 ```
 
 ## `mise current [PLUGIN]`
@@ -1601,54 +1655,6 @@ Examples:
 
     # Execute multiple tasks each with their own arguments.
     $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
-```
-
-## `mise toml get <KEY> [FILE]`
-
-```text
-Display the value of a setting in a mise.toml file
-
-Usage: toml get <KEY> [FILE]
-
-Arguments:
-  <KEY>
-          The path of the config to display
-
-  [FILE]
-          The path to the mise.toml file to edit
-
-          If not provided, the nearest mise.toml file will be used
-
-Examples:
-
-    $ mise toml get tools.python
-    3.12
-```
-
-## `mise toml set <KEY> <VALUE> [FILE]`
-
-```text
-Display the value of a setting in a mise.toml file
-
-Usage: toml set <KEY> <VALUE> [FILE]
-
-Arguments:
-  <KEY>
-          The path of the config to display
-
-  <VALUE>
-          The value to set the key to
-
-  [FILE]
-          The path to the mise.toml file to edit
-
-          If not provided, the nearest mise.toml file will be used
-
-Examples:
-
-    $ mise toml set tools.python 3.12
-    $ mise toml set settings.always_keep_download true
-    $ mise toml set env.TEST_ENV_VAR ABC
 ```
 
 ## `mise trust [OPTIONS] [CONFIG_FILE]`
