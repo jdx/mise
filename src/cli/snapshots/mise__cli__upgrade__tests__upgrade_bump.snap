@@ -1,0 +1,8 @@
+---
+source: src/cli/upgrade.rs
+expression: output
+---
+mise Would uninstall tiny@3.0.0
+mise Would uninstall dummy@ref:master
+mise Would install tiny@3.1.0
+mise Would install dummy@2.0.0

@@ -3,4 +3,3 @@ source: src/shell/fish.rs
 expression: "Fish::default().unset_env(\"FOO\")"
 ---
 set -e FOO
-

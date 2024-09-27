@@ -20,11 +20,6 @@ jobs:
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 45
     env:
-      #RUSTC_WRAPPER: sccache
-      SCCACHE_ENDPOINT: minio.jdx.dev
-      SCCACHE_BUCKET: sccache
-      SCCACHE_REGION: auto
-      SCCACHE_S3_NO_CREDENTIALS: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID && '0' || '1' }}
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
       MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
     strategy:
@@ -74,11 +69,6 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@v4
-      - if: ${{ env.SCCACHE_S3_NO_CREDENTIALS == '0' }}
-        run: |
-          echo "AWS_ACCESS_KEY_ID=$MINIO_AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
-          echo "AWS_SECRET_ACCESS_KEY=$MINIO_AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
-      - uses: mozilla-actions/sccache-action@v0.0.4
       - name: cache crates
         id: cache-crates
         uses: actions/cache@v4
@@ -109,19 +99,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
-      - run: ${SCCACHE_PATH} --show-stats
   build-tarball-windows:
     name: build-tarball-windows-${{matrix.arch}}
     runs-on: windows-latest
     timeout-minutes: 45
-    env:
-      #RUSTC_WRAPPER: sccache
-      SCCACHE_ENDPOINT: minio.jdx.dev
-      SCCACHE_BUCKET: sccache
-      SCCACHE_REGION: auto
-      SCCACHE_S3_NO_CREDENTIALS: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID && '0' || '1' }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
     strategy:
       fail-fast: false
       matrix:
@@ -133,7 +114,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup target add ${{matrix.target}}
-      - uses: mozilla-actions/sccache-action@v0.0.4
       - name: cache crates
         id: cache-crates
         uses: actions/cache@v4
