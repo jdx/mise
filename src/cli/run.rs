@@ -19,14 +19,14 @@ use once_cell::sync::Lazy;
 
 use super::args::ToolArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, CONFIG};
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
-use crate::ui::{ctrlc, style};
-use crate::{env, file, ui};
+use crate::ui::{ctrlc, prompt, style};
+use crate::{dirs, env, file, ui};
 
 /// [experimental] Run a tasks
 ///
@@ -145,7 +145,9 @@ impl Run {
                     .cloned()
                     .collect_vec();
                 if tasks.is_empty() {
-                    ensure!(t == "default", "no tasks {} found", style::ered(t));
+                    if t != "default" {
+                        err_no_task(&t)?;
+                    }
 
                     Ok(vec![self.prompt_for_task(config)?])
                 } else {
@@ -485,6 +487,30 @@ impl Run {
         // TODO
         Ok(())
     }
+}
+
+fn err_no_task(name: &str) -> Result<()> {
+    if let Some(cwd) = &*dirs::CWD {
+        let includes = CONFIG.task_includes_for_dir(cwd);
+        let path = includes
+            .iter()
+            .map(|d| d.join(name))
+            .find(|d| d.is_file() && !file::is_executable(d));
+        if let Some(path) = path {
+            warn!(
+                "no task {} found, but a non-executable file exists at {}",
+                style::ered(name),
+                display_path(&path)
+            );
+            let yn =
+                prompt::confirm("Mark this file as executable to allow it to be run as a task?")?;
+            if yn {
+                file::make_executable(&path)?;
+                info!("marked as executable, try running this task again");
+            }
+        }
+    }
+    bail!("no task {} found", style::ered(name));
 }
 
 fn is_glob_pattern(path: &str) -> bool {

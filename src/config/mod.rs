@@ -238,14 +238,8 @@ impl Config {
             .collect())
     }
 
-    fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
-        let configs = self.configs_at_root(dir);
-        let config_tasks = configs
-            .par_iter()
-            .flat_map(|cf| cf.tasks())
-            .cloned()
-            .collect::<Vec<_>>();
-        let includes = configs
+    pub fn task_includes_for_dir(&self, dir: &Path) -> Vec<PathBuf> {
+        self.configs_at_root(dir)
             .iter()
             .find_map(|cf| cf.task_config().includes.clone())
             .unwrap_or_else(default_task_includes)
@@ -255,7 +249,17 @@ impl Config {
             .collect::<Vec<_>>()
             .into_iter()
             .unique()
+            .collect::<Vec<_>>()
+    }
+
+    fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
+        let configs = self.configs_at_root(dir);
+        let config_tasks = configs
+            .par_iter()
+            .flat_map(|cf| cf.tasks())
+            .cloned()
             .collect::<Vec<_>>();
+        let includes = self.task_includes_for_dir(dir);
         let extra_tasks = includes
             .par_iter()
             .filter(|p| {
