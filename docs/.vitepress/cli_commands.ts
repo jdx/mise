@@ -59,10 +59,16 @@ export const commands: { [key: string]: Command } = {
   "config": {
     hide: false,
     subcommands: {
+      "generate": {
+        hide: false,
+      },
+      "get": {
+        hide: false,
+      },
       "ls": {
         hide: false,
       },
-      "generate": {
+      "set": {
         hide: false,
       },
     },
@@ -234,17 +240,6 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
       "run": {
-        hide: false,
-      },
-    },
-  },
-  "toml": {
-    hide: false,
-    subcommands: {
-      "get": {
-        hide: false,
-      },
-      "set": {
         hide: false,
       },
     },

@@ -179,17 +179,11 @@ cmd "completion" help="Generate shell completions" {
     }
     arg "[SHELL]" help="Shell type to generate completions for"
 }
-cmd "config" help="[experimental] Manage config files" {
+cmd "config" help="Manage config files" {
     alias "cfg"
+    alias "toml" hide=true
     flag "--no-header" help="Do not print table header"
-    cmd "ls" help="[experimental] List config files currently in use" {
-        after_long_help r"Examples:
-
-    $ mise config ls
-"
-        flag "--no-header" help="Do not print table header"
-    }
-    cmd "generate" help="[experimental] Generate an .mise.toml file" {
+    cmd "generate" help="[experimental] Generate a mise.toml file" {
         alias "g"
         after_long_help r"Examples:
 
@@ -199,6 +193,42 @@ cmd "config" help="[experimental] Manage config files" {
         flag "-o --output" help="Output to file instead of stdout" {
             arg "<OUTPUT>"
         }
+    }
+    cmd "get" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise toml get tools.python
+    3.12
+"
+        flag "-f --file" help="The path to the mise.toml file to edit" {
+            long_help "The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
+            arg "<FILE>"
+        }
+        arg "[KEY]" help="The path of the config to display"
+    }
+    cmd "ls" help="List config files currently in use" {
+        after_long_help r"Examples:
+
+    $ mise config ls
+"
+        flag "--no-header" help="Do not print table header"
+    }
+    cmd "set" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise config set tools.python 3.12
+    $ mise config set settings.always_keep_download true
+    $ mise config set env.TEST_ENV_VAR ABC
+"
+        flag "-f --file" help="The path to the mise.toml file to edit" {
+            long_help "The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
+            arg "<FILE>"
+        }
+        flag "-t --type" {
+            arg "<TYPE>"
+        }
+        arg "<KEY>" help="The path of the config to display"
+        arg "<VALUE>" help="The value to set the key to"
     }
 }
 cmd "current" help="Shows current active and installed runtime versions" {
@@ -1143,28 +1173,6 @@ The name of the script will be the name of the tasks.
         flag "--timings" help="Shows elapsed time after each tasks"
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
-    }
-}
-cmd "toml" help="Edit mise.toml files" {
-    cmd "get" help="Display the value of a setting in a mise.toml file" {
-        after_long_help r"Examples:
-
-    $ mise toml get tools.python
-    3.12
-"
-        arg "<KEY>" help="The path of the config to display"
-        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
-    }
-    cmd "set" help="Display the value of a setting in a mise.toml file" {
-        after_long_help r"Examples:
-
-    $ mise toml set tools.python 3.12
-    $ mise toml set settings.always_keep_download true
-    $ mise toml set env.TEST_ENV_VAR ABC
-"
-        arg "<KEY>" help="The path of the config to display"
-        arg "<VALUE>" help="The value to set the key to"
-        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
     }
 }
 cmd "trust" help="Marks a config file as trusted" {
