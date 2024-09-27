@@ -6,24 +6,25 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::{panic, thread};
 
+pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use eyre::{eyre, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
-
-pub use builder::ToolsetBuilder;
+use serde_derive::Serialize;
+use tabled::Tabled;
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::ToolVersion;
 pub use tool_version_list::ToolVersionList;
-use versions::Version;
+use versions::{Version, Versioning};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::config::settings::SettingsStatusMissingTools;
-use crate::config::{Config, Settings};
+use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
+use crate::config::Config;
 use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::errors::Error;
 use crate::install_context::InstallContext;
@@ -50,10 +51,9 @@ pub struct InstallOptions {
 
 impl InstallOptions {
     pub fn new() -> Self {
-        let settings = Settings::get();
         InstallOptions {
-            jobs: Some(settings.jobs),
-            raw: settings.raw,
+            jobs: Some(SETTINGS.jobs),
+            raw: SETTINGS.raw,
             ..Default::default()
         }
     }
@@ -161,7 +161,6 @@ impl Toolset {
             self.install_versions(config, leaf_deps.into_iter().cloned().collect(), mpr, opts)?;
         }
         debug!("install_versions: {}", versions.iter().join(" "));
-        let settings = Settings::try_get()?;
         let queue: Vec<_> = versions
             .into_iter()
             .rev()
@@ -183,10 +182,10 @@ impl Toolset {
             }
         }
         let queue = Arc::new(Mutex::new(queue));
-        let raw = opts.raw || settings.raw;
+        let raw = opts.raw || SETTINGS.raw;
         let jobs = match raw {
             true => 1,
-            false => opts.jobs.unwrap_or(settings.jobs),
+            false => opts.jobs.unwrap_or(SETTINGS.jobs),
         };
         let installing: HashSet<String> = HashSet::new();
         let installing = Arc::new(Mutex::new(installing));
@@ -316,28 +315,77 @@ impl Toolset {
             .filter(|(p, v)| p.is_version_installed(v, true))
             .collect()
     }
-    pub fn list_outdated_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion, String)> {
+    pub fn list_outdated_versions(&self, bump: bool) -> Vec<OutdatedInfo> {
         self.list_current_versions()
             .into_iter()
             .filter_map(|(t, tv)| {
                 if t.symlink_path(&tv).is_some() {
+                    trace!("skipping symlinked version {tv}");
                     // do not consider symlinked versions to be outdated
                     return None;
                 }
-                let latest = match tv.latest_version(t.as_ref()) {
-                    Ok(latest) => latest,
+                // prefix is something like "temurin-" or "corretto-"
+                let prefix = regex!(r"^[a-zA-Z]+-")
+                    .find(&tv.request.version())
+                    .map(|m| m.as_str().to_string());
+                let latest_result = if bump {
+                    t.latest_version(prefix.clone())
+                } else {
+                    tv.latest_version(t.as_ref()).map(Option::from)
+                };
+                let mut out =
+                    OutdatedInfo::new(tv.clone(), self.find_source(&tv.request).unwrap().clone());
+                out.current = if t.is_version_installed(&tv, true) {
+                    Some(tv.version.clone())
+                } else {
+                    None
+                };
+                out.latest = match latest_result {
+                    Ok(Some(latest)) => latest,
+                    Ok(None) => {
+                        warn!("Error getting latest version for {t}: no latest version found");
+                        return None;
+                    }
                     Err(e) => {
                         warn!("Error getting latest version for {t}: {e:#}");
                         return None;
                     }
                 };
-                if !t.is_version_installed(&tv, true)
-                    || is_outdated_version(tv.version.as_str(), latest.as_str())
+                if t.is_version_installed(&tv, true)
+                    && !is_outdated_version(tv.version.as_str(), out.latest.as_str())
                 {
-                    Some((t, tv, latest))
-                } else {
-                    None
+                    trace!("skipping up-to-date version {tv}");
+                    return None;
                 }
+                if bump {
+                    let prefix = prefix.unwrap_or_default();
+                    let old = tv.request.version();
+                    let old = old.strip_prefix(&prefix).unwrap_or_default();
+                    let new = out.latest.strip_prefix(&prefix).unwrap_or_default();
+                    if let Some(bumped_version) = check_semver_bump(old, new) {
+                        if bumped_version != tv.request.version() {
+                            out.bump = Some(format!("{prefix}{bumped_version}"));
+                            match out.tool_request.clone() {
+                                ToolRequest::Version {
+                                    backend,
+                                    version: _version,
+                                    options,
+                                } => {
+                                    out.tool_request = ToolRequest::Version {
+                                        backend,
+                                        options,
+                                        version: out.bump.clone().unwrap(),
+                                    };
+                                }
+                                _ => {
+                                    warn!("upgrading non-version tool requests");
+                                    out.bump = None;
+                                }
+                            }
+                        }
+                    }
+                }
+                Some(out)
             })
             .collect()
     }
@@ -468,11 +516,10 @@ impl Toolset {
     // shows a warning if any versions are missing
     // only displays for tools which have at least one version already installed
     pub fn notify_if_versions_missing(&self) {
-        let settings = Settings::get();
         let missing = self
             .list_missing_versions()
             .into_iter()
-            .filter(|tv| match settings.status.missing_tools() {
+            .filter(|tv| match SETTINGS.status.missing_tools() {
                 SettingsStatusMissingTools::Never => false,
                 SettingsStatusMissingTools::Always => true,
                 SettingsStatusMissingTools::IfOtherVersionsInstalled => tv
@@ -496,9 +543,12 @@ impl Toolset {
     }
 
     fn is_disabled(&self, fa: &BackendArg) -> bool {
-        let settings = Settings::get();
         let fa = fa.to_string();
-        settings.disable_tools.iter().any(|s| s == &fa)
+        SETTINGS.disable_tools.iter().any(|s| s == &fa)
+    }
+
+    pub fn find_source(&self, tr: &ToolRequest) -> Option<&ToolSource> {
+        self.versions.get(tr.backend()).map(|tvl| &tvl.source)
     }
 }
 
@@ -574,13 +624,117 @@ fn is_outdated_version(current: &str, latest: &str) -> bool {
     current != latest
 }
 
+fn check_semver_bump(old: &str, new: &str) -> Option<String> {
+    let old = Versioning::new(old);
+    let new = Versioning::new(new);
+    let chunkify = |v: &Versioning| {
+        let mut chunks = vec![];
+        while let Some(chunk) = v.nth(chunks.len()) {
+            chunks.push(chunk);
+        }
+        chunks
+    };
+    if let (Some(old), Some(new)) = (old, new) {
+        let old = chunkify(&old);
+        let new = chunkify(&new);
+        if old.len() > new.len() {
+            warn!(
+                "something weird happened with versioning, old: {old}, new: {new}, skipping",
+                old = old
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join("."),
+                new = new
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join("."),
+            );
+            return None;
+        }
+        let bump = new.into_iter().take(old.len()).collect::<Vec<_>>();
+        if bump == old {
+            None
+        } else {
+            Some(
+                bump.iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join("."),
+            )
+        }
+    } else {
+        None
+    }
+}
+
+#[derive(Debug, Serialize, Clone, Tabled)]
+pub struct OutdatedInfo {
+    pub name: String,
+    #[serde(skip)]
+    #[tabled(skip)]
+    pub tool_request: ToolRequest,
+    #[serde(skip)]
+    #[tabled(skip)]
+    pub tool_version: ToolVersion,
+    pub requested: String,
+    #[tabled(display_with("Self::display_current", self))]
+    pub current: Option<String>,
+    #[tabled(skip)]
+    pub bump: Option<String>,
+    pub latest: String,
+    pub source: ToolSource,
+}
+
+impl OutdatedInfo {
+    fn new(tv: ToolVersion, source: ToolSource) -> Self {
+        Self {
+            name: tv.request.backend().name.clone(),
+            current: None,
+            requested: tv.request.version(),
+            tool_request: tv.request.clone(),
+            tool_version: tv,
+            bump: None,
+            latest: "".to_string(),
+            source,
+        }
+    }
+
+    fn display_current(&self) -> String {
+        if let Some(current) = &self.current {
+            current.clone()
+        } else {
+            "[MISSING]".to_string()
+        }
+    }
+}
+
+impl Display for OutdatedInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        if let Some(current) = &self.current {
+            write!(
+                f,
+                "{:<20} {:<10} -> {:<10} ({})",
+                self.name, current, self.latest, self.source
+            )
+        } else {
+            write!(
+                f,
+                "{:<20} {:<10} -> {:<10} ({})",
+                self.name, "MISSING", self.latest, self.source
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::backend::reset;
     use pretty_assertions::assert_eq;
     use test_log::test;
 
-    use super::is_outdated_version;
+    use super::{check_semver_bump, is_outdated_version};
 
     #[test]
     fn test_is_outdated_version() {
@@ -605,6 +759,23 @@ mod tests {
         assert_eq!(
             is_outdated_version("temurin-17.0.1", "temurin-17.0.0"),
             false
+        );
+    }
+
+    #[test]
+    fn test_check_semver_bump() {
+        crate::test::reset();
+        std::assert_eq!(check_semver_bump("20", "20.0.0"), None);
+        std::assert_eq!(check_semver_bump("20.0", "20.0.0"), None);
+        std::assert_eq!(check_semver_bump("20.0.0", "20.0.0"), None);
+        std::assert_eq!(check_semver_bump("20", "21.0.0"), Some("21".to_string()));
+        std::assert_eq!(
+            check_semver_bump("20.0", "20.1.0"),
+            Some("20.1".to_string())
+        );
+        std::assert_eq!(
+            check_semver_bump("20.0.0", "20.0.1"),
+            Some("20.0.1".to_string())
         );
     }
 }

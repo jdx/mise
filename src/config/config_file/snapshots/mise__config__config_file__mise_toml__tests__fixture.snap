@@ -1,6 +1,6 @@
 ---
 source: src/config/config_file/mise_toml.rs
-expression: cf.env_entries()
+expression: cf.env_entries().unwrap()
 ---
 [
     Val(

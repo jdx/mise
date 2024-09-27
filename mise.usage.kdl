@@ -627,7 +627,11 @@ cmd "outdated" help="Shows outdated tool versions" {
     $ mise outdated --json
     {"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
 "#
+    flag "-l --bump" help="Compares against the latest versions available, not what matches the current config" {
+        long_help "Compares against the latest versions available, not what matches the current config\n\nFor example, if you have `node = \"20\"` in your config by default `mise outdated` will only\nshow other 20.x versions, not 21.x or 22.x versions.\n\nUsing this flag, if there are 21.x or newer versions it will display those instead of 20.x."
+    }
     flag "-J --json" help="Output in JSON format"
+    flag "--no-header" help="Don't show table header"
     arg "[TOOL@VERSION]..." help="Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown" var=true
 }
 cmd "plugins" help="Manage plugins" {
@@ -1222,10 +1226,13 @@ By default this command modifies ".mise.toml" in the current directory."#
 cmd "upgrade" help="Upgrades outdated tool versions" {
     alias "up"
     flag "-n --dry-run" help="Just print what would be done, don't actually do it"
+    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
+    flag "-l --bump" help="Upgrades to the latest version available, bumping the version in mise.toml" {
+        long_help "Upgrades to the latest version available, bumping the version in mise.toml\n\nFor example, if you have `node = \"20.0.0\"` in your mise.toml but 22.1.0 is the latest available,\nthis will install 22.1.0 and set `node = \"22.1.0\"` in your config.\n\nIt keeps the same precision as what was there before, so if you instead had `node = \"20\"`, it\nwould change your config to `node = \"22\"`."
+    }
     flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOL@VERSION]..." help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" var=true
 }

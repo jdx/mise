@@ -3,4 +3,3 @@ source: src/shell/nushell.rs
 expression: replace_path(&deactivate)
 ---
 hide,MISE_SHELL,
-

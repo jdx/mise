@@ -792,8 +792,19 @@ Arguments:
           If not specified, all tools in global and local configs will be shown
 
 Options:
+  -l, --bump
+          Compares against the latest versions available, not what matches the current config
+
+          For example, if you have `node = "20"` in your config by default `mise outdated` will only
+          show other 20.x versions, not 21.x or 22.x versions.
+
+          Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
+
   -J, --json
           Output in JSON format
+
+      --no-header
+          Don't show table header
 
 Examples:
 
@@ -1763,14 +1774,23 @@ Options:
   -n, --dry-run
           Just print what would be done, don't actually do it
 
+  -i, --interactive
+          Display multiselect menu to choose which tools to upgrade
+
   -j, --jobs <JOBS>
           Number of jobs to run in parallel
           [default: 4]
 
           [env: MISE_JOBS=]
 
-  -i, --interactive
-          Display multiselect menu to choose which tools to upgrade
+  -l, --bump
+          Upgrades to the latest version available, bumping the version in mise.toml
+
+          For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
+          this will install 22.1.0 and set `node = "22.1.0"` in your config.
+
+          It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
+          would change your config to `node = "22"`.
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1

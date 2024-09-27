@@ -395,7 +395,7 @@ impl Backend for JavaPlugin {
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
-        let escaped_query = regex::escape(query);
+        let escaped_query = regex::escape(query.trim_end_matches('-'));
         let query = if query == "latest" {
             "[0-9].*"
         } else {
