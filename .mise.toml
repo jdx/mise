@@ -10,7 +10,6 @@ THIS_PROJECT = "{{config_root}}-{{cwd}}"
 
 [tools]
 #node = 'lts'
-tiny = { version = "1", foo = "bar" }
 python = { version = "latest" }
 shellcheck = "0.10"
 shfmt = "3"

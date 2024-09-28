@@ -160,7 +160,7 @@ impl Use {
         for targ in &self.tool {
             if let Some(tv) = ts.versions.get(&targ.backend) {
                 if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
-                    if p != global {
+                    if !file::same_file(p, global) {
                         warn(targ, p);
                     }
                 }
