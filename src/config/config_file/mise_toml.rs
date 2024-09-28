@@ -15,8 +15,10 @@ use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::toml::deserialize_arr;
+use crate::config::config_file::toml::deserialize_path_entry_arr;
 use crate::config::config_file::{trust_check, ConfigFile, TaskConfig};
 use crate::config::env_directive::EnvDirective;
+use crate::config::env_directive::PathEntry;
 use crate::config::settings::SettingsPartial;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
@@ -38,7 +40,7 @@ pub struct MiseToml {
     #[serde(default)]
     env: EnvList,
     #[serde(default, deserialize_with = "deserialize_arr")]
-    env_path: Vec<PathBuf>,
+    env_path: Vec<PathEntry>,
     #[serde(default, deserialize_with = "deserialize_alias")]
     alias: AliasMap,
     #[serde(skip)]
@@ -475,8 +477,8 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[derive(Deserialize)]
                             #[serde(deny_unknown_fields)]
                             struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                path: Vec<PathBuf>,
+                                #[serde(default, deserialize_with = "deserialize_path_entry_arr")]
+                                path: Vec<PathEntry>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
                                 file: Vec<PathBuf>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
