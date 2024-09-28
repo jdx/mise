@@ -509,6 +509,11 @@ pub fn split_file_name(path: &Path) -> (String, String) {
     (file_name_base.to_string(), ext.to_string())
 }
 
+pub fn same_file(a: &Path, b: &Path) -> bool {
+    let canonicalize = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    canonicalize(a) == canonicalize(b)
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Deref;
