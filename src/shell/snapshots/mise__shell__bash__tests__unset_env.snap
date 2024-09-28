@@ -3,4 +3,3 @@ source: src/shell/bash.rs
 expression: "Bash::default().unset_env(\"FOO\")"
 ---
 unset FOO
-

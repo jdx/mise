@@ -25,6 +25,17 @@ mise run build --release
 
 If there are multiple commands, the args are only passed to the last command.
 
+:::tip
+You can define arguments/flags for tasks which will provide validation, parsing, autocomplete, and documentation.
+
+* [Arguments in File Tasks](/tasks/file-tasks#arguments)
+* [Arguments in TOML Tasks](/tasks/toml-tasks#arguments)
+
+Autocomplete will work automatically for tasks if the `usage` CLI is installed and mise completions are working.
+
+Markdown documentation can be generated with [`mise generate task-docs`](/cli/generate/task-docs).
+:::
+
 Multiple tasks/arguments can be separated with this `:::` delimiter:
 
 ```bash

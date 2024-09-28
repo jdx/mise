@@ -179,17 +179,11 @@ cmd "completion" help="Generate shell completions" {
     }
     arg "[SHELL]" help="Shell type to generate completions for"
 }
-cmd "config" help="[experimental] Manage config files" {
+cmd "config" help="Manage config files" {
     alias "cfg"
+    alias "toml" hide=true
     flag "--no-header" help="Do not print table header"
-    cmd "ls" help="[experimental] List config files currently in use" {
-        after_long_help r"Examples:
-
-    $ mise config ls
-"
-        flag "--no-header" help="Do not print table header"
-    }
-    cmd "generate" help="[experimental] Generate an .mise.toml file" {
+    cmd "generate" help="[experimental] Generate a mise.toml file" {
         alias "g"
         after_long_help r"Examples:
 
@@ -199,6 +193,42 @@ cmd "config" help="[experimental] Manage config files" {
         flag "-o --output" help="Output to file instead of stdout" {
             arg "<OUTPUT>"
         }
+    }
+    cmd "get" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise toml get tools.python
+    3.12
+"
+        flag "-f --file" help="The path to the mise.toml file to edit" {
+            long_help "The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
+            arg "<FILE>"
+        }
+        arg "[KEY]" help="The path of the config to display"
+    }
+    cmd "ls" help="List config files currently in use" {
+        after_long_help r"Examples:
+
+    $ mise config ls
+"
+        flag "--no-header" help="Do not print table header"
+    }
+    cmd "set" help="Display the value of a setting in a mise.toml file" {
+        after_long_help r"Examples:
+
+    $ mise config set tools.python 3.12
+    $ mise config set settings.always_keep_download true
+    $ mise config set env.TEST_ENV_VAR ABC
+"
+        flag "-f --file" help="The path to the mise.toml file to edit" {
+            long_help "The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
+            arg "<FILE>"
+        }
+        flag "-t --type" {
+            arg "<TYPE>"
+        }
+        arg "<KEY>" help="The path of the config to display"
+        arg "<VALUE>" help="The value to set the key to"
     }
 }
 cmd "current" help="Shows current active and installed runtime versions" {
@@ -318,7 +348,7 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
 cmd "generate" subcommand_required=true help="[experimental] Generate files for various tools/services" {
-    alias "gen"
+    alias "g"
     cmd "git-pre-commit" help="[experimental] Generate a git pre-commit hook" {
         alias "pre-commit"
         long_help r"[experimental] Generate a git pre-commit hook
@@ -357,9 +387,22 @@ when you push changes to your repository."
         }
         flag "-w --write" help="write to .github/workflows/$name.yml"
     }
+    cmd "task-docs" help="[experimental] Generate documentation for tasks in a project" {
+        after_long_help r"Examples:
+
+    $ mise generate task-docs
+"
+        flag "-m --multi" help="render each task as a separate document, requires `--output` to be a directory"
+        flag "-i --inject" help="inserts the documentation into an existing file" {
+            long_help "inserts the documentation into an existing file\n\nThis will look for a special comment, <!-- mise-tasks -->, and replace it with the generated documentation.\nIt will replace everything between the comment and the next comment, <!-- /mise-tasks --> so it can be\nrun multiple times on the same file to update the documentation."
+        }
+        flag "-I --index" help="write only an index of tasks, intended for use with `--multi`"
+        flag "-o --output" help="writes the generated docs to a file/directory" {
+            arg "<OUTPUT>"
+        }
+    }
 }
 cmd "global" hide=true help="Sets/gets the global tool version(s)" {
-    alias "g" hide=true
     long_help r"Sets/gets the global tool version(s)
 
 Displays the contents of global config after writing.
@@ -597,7 +640,11 @@ cmd "outdated" help="Shows outdated tool versions" {
     $ mise outdated --json
     {"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
 "#
+    flag "-l --bump" help="Compares against the latest versions available, not what matches the current config" {
+        long_help "Compares against the latest versions available, not what matches the current config\n\nFor example, if you have `node = \"20\"` in your config by default `mise outdated` will only\nshow other 20.x versions, not 21.x or 22.x versions.\n\nUsing this flag, if there are 21.x or newer versions it will display those instead of 20.x."
+    }
     flag "-J --json" help="Output in JSON format"
+    flag "--no-header" help="Don't show table header"
     arg "[TOOL@VERSION]..." help="Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown" var=true
 }
 cmd "plugins" help="Manage plugins" {
@@ -1145,28 +1192,6 @@ The name of the script will be the name of the tasks.
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
     }
 }
-cmd "toml" help="Edit mise.toml files" {
-    cmd "get" help="Display the value of a setting in a mise.toml file" {
-        after_long_help r"Examples:
-
-    $ mise toml get tools.python
-    3.12
-"
-        arg "<KEY>" help="The path of the config to display"
-        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
-    }
-    cmd "set" help="Display the value of a setting in a mise.toml file" {
-        after_long_help r"Examples:
-
-    $ mise toml set tools.python 3.12
-    $ mise toml set settings.always_keep_download true
-    $ mise toml set env.TEST_ENV_VAR ABC
-"
-        arg "<KEY>" help="The path of the config to display"
-        arg "<VALUE>" help="The value to set the key to"
-        arg "[FILE]" help="The path to the mise.toml file to edit" long_help="The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
-    }
-}
 cmd "trust" help="Marks a config file as trusted" {
     long_help r"Marks a config file as trusted
 
@@ -1214,10 +1239,13 @@ By default this command modifies ".mise.toml" in the current directory."#
 cmd "upgrade" help="Upgrades outdated tool versions" {
     alias "up"
     flag "-n --dry-run" help="Just print what would be done, don't actually do it"
+    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
+    flag "-l --bump" help="Upgrades to the latest version available, bumping the version in mise.toml" {
+        long_help "Upgrades to the latest version available, bumping the version in mise.toml\n\nFor example, if you have `node = \"20.0.0\"` in your mise.toml but 22.1.0 is the latest available,\nthis will install 22.1.0 and set `node = \"22.1.0\"` in your config.\n\nIt keeps the same precision as what was there before, so if you instead had `node = \"20\"`, it\nwould change your config to `node = \"22\"`."
+    }
     flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOL@VERSION]..." help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" var=true
 }

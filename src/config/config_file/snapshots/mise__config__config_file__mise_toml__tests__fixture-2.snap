@@ -1,6 +1,6 @@
 ---
 source: src/config/config_file/mise_toml.rs
-expression: cf.plugins()
+expression: cf.plugins().unwrap()
 ---
 {
     "node": "https://github.com/jdx/rtx-node",

@@ -237,10 +237,52 @@ Examples:
     $ mise completion fish > ~/.config/fish/completions/mise.fish
 ```
 
-## `mise config ls [OPTIONS]` <Badge type="warning" text="experimental" />
+## `mise config generate [OPTIONS]` <Badge type="warning" text="experimental" />
+
+**Aliases:** `g`
 
 ```text
-[experimental] List config files currently in use
+[experimental] Generate a mise.toml file
+
+Usage: config generate [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>
+          Output to file instead of stdout
+
+Examples:
+
+    $ mise cf generate > .mise.toml
+    $ mise cf generate --output=.mise.toml
+```
+
+## `mise config get [OPTIONS] [KEY]`
+
+```text
+Display the value of a setting in a mise.toml file
+
+Usage: config get [OPTIONS] [KEY]
+
+Arguments:
+  [KEY]
+          The path of the config to display
+
+Options:
+  -f, --file <FILE>
+          The path to the mise.toml file to edit
+
+          If not provided, the nearest mise.toml file will be used
+
+Examples:
+
+    $ mise toml get tools.python
+    3.12
+```
+
+## `mise config ls [OPTIONS]`
+
+```text
+List config files currently in use
 
 Usage: config ls [OPTIONS]
 
@@ -253,23 +295,35 @@ Examples:
     $ mise config ls
 ```
 
-## `mise config generate [OPTIONS]` <Badge type="warning" text="experimental" />
-
-**Aliases:** `g`
+## `mise config set [OPTIONS] <KEY> <VALUE>`
 
 ```text
-[experimental] Generate an .mise.toml file
+Display the value of a setting in a mise.toml file
 
-Usage: config generate [OPTIONS]
+Usage: config set [OPTIONS] <KEY> <VALUE>
+
+Arguments:
+  <KEY>
+          The path of the config to display
+
+  <VALUE>
+          The value to set the key to
 
 Options:
-  -o, --output <OUTPUT>
-          Output to file instead of stdout
+  -f, --file <FILE>
+          The path to the mise.toml file to edit
+
+          If not provided, the nearest mise.toml file will be used
+
+  -t, --type <TYPE>
+          [default: string]
+          [possible values: string, integer, float, bool]
 
 Examples:
 
-    $ mise cf generate > .mise.toml
-    $ mise cf generate --output=.mise.toml
+    $ mise config set tools.python 3.12
+    $ mise config set settings.always_keep_download true
+    $ mise config set env.TEST_ENV_VAR ABC
 ```
 
 ## `mise current [PLUGIN]`
@@ -494,6 +548,35 @@ Examples:
     $ mise generate github-action --write --task=ci
     $ git commit -m "feat: add new feature"
     $ git push # runs `mise run ci` on GitHub
+```
+
+## `mise generate task-docs [OPTIONS]` <Badge type="warning" text="experimental" />
+
+```text
+[experimental] Generate documentation for tasks in a project
+
+Usage: generate task-docs [OPTIONS]
+
+Options:
+  -m, --multi
+          render each task as a separate document, requires `--output` to be a directory
+
+  -i, --inject
+          inserts the documentation into an existing file
+
+          This will look for a special comment, <!-- mise-tasks -->, and replace it with the generated documentation.
+          It will replace everything between the comment and the next comment, <!-- /mise-tasks --> so it can be
+          run multiple times on the same file to update the documentation.
+
+  -I, --index
+          write only an index of tasks, intended for use with `--multi`
+
+  -o, --output <OUTPUT>
+          writes the generated docs to a file/directory
+
+Examples:
+
+    $ mise generate task-docs
 ```
 
 ## `mise implode [OPTIONS]`
@@ -738,8 +821,19 @@ Arguments:
           If not specified, all tools in global and local configs will be shown
 
 Options:
+  -l, --bump
+          Compares against the latest versions available, not what matches the current config
+
+          For example, if you have `node = "20"` in your config by default `mise outdated` will only
+          show other 20.x versions, not 21.x or 22.x versions.
+
+          Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
+
   -J, --json
           Output in JSON format
+
+      --no-header
+          Don't show table header
 
 Examples:
 
@@ -1603,54 +1697,6 @@ Examples:
     $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 ```
 
-## `mise toml get <KEY> [FILE]`
-
-```text
-Display the value of a setting in a mise.toml file
-
-Usage: toml get <KEY> [FILE]
-
-Arguments:
-  <KEY>
-          The path of the config to display
-
-  [FILE]
-          The path to the mise.toml file to edit
-
-          If not provided, the nearest mise.toml file will be used
-
-Examples:
-
-    $ mise toml get tools.python
-    3.12
-```
-
-## `mise toml set <KEY> <VALUE> [FILE]`
-
-```text
-Display the value of a setting in a mise.toml file
-
-Usage: toml set <KEY> <VALUE> [FILE]
-
-Arguments:
-  <KEY>
-          The path of the config to display
-
-  <VALUE>
-          The value to set the key to
-
-  [FILE]
-          The path to the mise.toml file to edit
-
-          If not provided, the nearest mise.toml file will be used
-
-Examples:
-
-    $ mise toml set tools.python 3.12
-    $ mise toml set settings.always_keep_download true
-    $ mise toml set env.TEST_ENV_VAR ABC
-```
-
 ## `mise trust [OPTIONS] [CONFIG_FILE]`
 
 ```text
@@ -1757,14 +1803,23 @@ Options:
   -n, --dry-run
           Just print what would be done, don't actually do it
 
+  -i, --interactive
+          Display multiselect menu to choose which tools to upgrade
+
   -j, --jobs <JOBS>
           Number of jobs to run in parallel
           [default: 4]
 
           [env: MISE_JOBS=]
 
-  -i, --interactive
-          Display multiselect menu to choose which tools to upgrade
+  -l, --bump
+          Upgrades to the latest version available, bumping the version in mise.toml
+
+          For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
+          this will install 22.1.0 and set `node = "22.1.0"` in your config.
+
+          It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
+          would change your config to `node = "22"`.
 
       --raw
           Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1

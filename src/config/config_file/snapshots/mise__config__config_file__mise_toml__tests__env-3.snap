@@ -2,4 +2,4 @@
 source: src/config/config_file/mise_toml.rs
 expression: cf
 ---
-~/cwd/.test.mise.toml: 
+~/cwd/.test.mise.toml:

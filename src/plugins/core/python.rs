@@ -47,19 +47,20 @@ impl PythonPlugin {
     }
     fn install_or_update_python_build(&self) -> eyre::Result<()> {
         ensure_not_windows()?;
-        if self.python_build_path().exists() {
+        if self.python_build_bin().exists() {
             self.update_python_build()
         } else {
             self.install_python_build()
         }
     }
     fn install_python_build(&self) -> eyre::Result<()> {
-        if self.python_build_path().exists() {
+        if self.python_build_bin().exists() {
             return Ok(());
         }
         let settings = Settings::try_get()?;
         let python_build_path = self.python_build_path();
         debug!("Installing python-build to {}", python_build_path.display());
+        file::remove_all(&python_build_path)?;
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
         git.clone(&settings.python_pyenv_repo)?;

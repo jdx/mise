@@ -243,6 +243,7 @@ editLink: false
 | gcc-arm-none-eabi | [asdf:dlech/asdf-gcc-arm-none-eabi](https://github.com/dlech/asdf-gcc-arm-none-eabi) |
 | gcloud | [asdf:jthegedus/asdf-gcloud](https://github.com/jthegedus/asdf-gcloud) |
 | getenvoy | [asdf:asdf-community/asdf-getenvoy](https://github.com/asdf-community/asdf-getenvoy) |
+| gh | [asdf:bartlomiejdanek/asdf-github-cli](https://github.com/bartlomiejdanek/asdf-github-cli) |
 | ghc | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | ghidra | [asdf:Honeypot95/asdf-ghidra](https://github.com/Honeypot95/asdf-ghidra) |
 | ghorg | [asdf:gbloquel/asdf-ghorg](https://github.com/gbloquel/asdf-ghorg) |

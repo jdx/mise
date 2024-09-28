@@ -75,7 +75,10 @@ impl Config {
             .chain(DEFAULT_CONFIG_FILENAMES.iter())
             .cloned()
             .collect_vec();
-        let config_paths = load_config_paths(&config_filenames);
+        let config_paths = load_config_paths(&config_filenames)
+            .into_iter()
+            .unique_by(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
+            .collect_vec();
         trace!("load: config_paths: {:?}", config_paths);
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
 
@@ -242,24 +245,66 @@ impl Config {
             .collect())
     }
 
-    fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
-        let configs = self.configs_at_root(dir);
-        let config_tasks = configs.iter().flat_map(|cf| cf.tasks()).cloned();
-        let includes = configs
+    pub fn task_includes_for_dir(&self, dir: &Path) -> Vec<PathBuf> {
+        self.configs_at_root(dir)
             .iter()
             .find_map(|cf| cf.task_config().includes.clone())
-            .unwrap_or_else(default_task_includes);
-        let file_tasks = includes.into_iter().flat_map(|p| {
-            let p = match p.is_absolute() {
-                true => p,
-                false => dir.join(p),
-            };
-            self.load_tasks_includes(&p).unwrap_or_else(|err| {
-                warn!("loading tasks in {}: {err}", display_path(&p));
-                vec![]
+            .unwrap_or_else(default_task_includes)
+            .into_par_iter()
+            .map(|p| if p.is_absolute() { p } else { dir.join(p) })
+            .filter(|p| p.exists())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .unique()
+            .collect::<Vec<_>>()
+    }
+
+    pub fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
+        let configs = self.configs_at_root(dir);
+        let config_tasks = configs
+            .par_iter()
+            .flat_map(|cf| cf.tasks())
+            .cloned()
+            .collect::<Vec<_>>();
+        let includes = self.task_includes_for_dir(dir);
+        let extra_tasks = includes
+            .par_iter()
+            .filter(|p| {
+                p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml"
             })
-        });
-        Ok(file_tasks.into_iter().chain(config_tasks).collect())
+            .map(|p| {
+                self.load_task_file(p).unwrap_or_else(|err| {
+                    warn!("loading tasks in {}: {err}", display_path(p));
+                    vec![]
+                })
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        let file_tasks = includes
+            .into_par_iter()
+            .flat_map(|p| {
+                self.load_tasks_includes(&p).unwrap_or_else(|err| {
+                    warn!("loading tasks in {}: {err}", display_path(&p));
+                    vec![]
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(file_tasks
+            .into_iter()
+            .chain(config_tasks)
+            .chain(extra_tasks)
+            .collect())
+    }
+
+    fn load_task_file(&self, path: &Path) -> Result<Vec<Task>> {
+        let raw = file::read_to_string(path)?;
+        let mut tasks = toml::from_str::<HashMap<String, Task>>(&raw)
+            .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?;
+        for (name, task) in &mut tasks {
+            task.name = name.clone();
+            task.config_source = path.to_path_buf();
+        }
+        Ok(tasks.into_values().collect())
     }
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
@@ -317,14 +362,14 @@ impl Config {
         if !root.is_dir() {
             return Ok(vec![]);
         }
-        let files: Vec<PathBuf> = WalkDir::new(root)
+        WalkDir::new(root)
             .follow_links(true)
             .into_iter()
-            .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'))
+            // skip hidden directories (if the root is hidden that's ok)
+            .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
             .filter_ok(|e| e.file_type().is_file())
             .map_ok(|e| e.path().to_path_buf())
-            .try_collect()?;
-        files
+            .try_collect::<_, Vec<PathBuf>, _>()?
             .into_par_iter()
             .filter(|p| file::is_executable(p))
             .map(|path| Task::from_path(&path))

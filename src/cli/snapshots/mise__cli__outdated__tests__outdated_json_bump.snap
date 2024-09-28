@@ -1,0 +1,17 @@
+---
+source: src/cli/outdated.rs
+expression: output
+---
+{
+  "tiny": {
+    "name": "tiny",
+    "requested": "2",
+    "current": "2.1.0",
+    "bump": "3",
+    "latest": "3.1.0",
+    "source": {
+      "type": ".tool-versions",
+      "path": "~/cwd/.test-tool-versions"
+    }
+  }
+}

@@ -92,7 +92,7 @@ fi
 cd dist
 
 if [[ "$os" == "macos" ]]; then
-  codesign -f -s "Developer ID Application: Jeffrey Dickey (4993Y37DX6)" mise/bin/mise
+  codesign -f --prefix dev.jdx. -s "Developer ID Application: Jeffrey Dickey (4993Y37DX6)" mise/bin/mise
 fi
 
 if [[ "$os" == "windows" ]]; then

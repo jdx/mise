@@ -8,4 +8,3 @@ from xonsh.built_ins  import XSH
 envx = XSH.env
 envx[   'PATH'].add('/some/dir:/2/dir', front=True)
 environ['PATH'] = envx.get_detyped('PATH')
-

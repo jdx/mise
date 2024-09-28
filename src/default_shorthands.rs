@@ -260,6 +260,7 @@ pub static DEFAULT_SHORTHANDS: Lazy<HashMap<&'static str, &'static str>> =
     ("gcc-arm-none-eabi", "https://github.com/dlech/asdf-gcc-arm-none-eabi.git"),
     ("gcloud", "https://github.com/jthegedus/asdf-gcloud.git"),
     ("getenvoy", "https://github.com/asdf-community/asdf-getenvoy.git"),
+    ("gh", "https://github.com/bartlomiejdanek/asdf-github-cli.git"),
     ("ghc", "https://github.com/sestrella/asdf-ghcup.git"),
     ("ghidra", "https://github.com/Honeypot95/asdf-ghidra.git"),
     ("ghorg", "https://github.com/gbloquel/asdf-ghorg.git"),

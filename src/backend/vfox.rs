@@ -1,5 +1,5 @@
 use crate::env;
-use eyre::{eyre, Report};
+use eyre::{Report, WrapErr};
 use heck::ToKebabCase;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
@@ -99,7 +99,7 @@ fn vfox_to_url(name: &str) -> eyre::Result<Url> {
     } else {
         name.to_string().parse()
     };
-    res.map_err(|e| eyre!("Invalid version: {}: {}", name, e))
+    res.wrap_err_with(|| format!("Invalid version: {name}"))
 }
 
 impl VfoxBackend {

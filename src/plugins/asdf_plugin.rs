@@ -12,7 +12,6 @@ use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
 use crate::{dirs, lock_file};
 use clap::Command;
-use color_eyre::Help;
 use console::style;
 use contracts::requires;
 use eyre::{bail, eyre, Context};
@@ -241,7 +240,7 @@ impl Plugin for AsdfPlugin {
             return Ok(());
         }
         Err(eyre!("asdf plugin {} is not installed", self.name())
-            .suggestion("run with --yes to install plugin automatically"))
+            .wrap_err("run with --yes to install plugin automatically"))
     }
 
     fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {
@@ -342,8 +341,11 @@ impl Plugin for AsdfPlugin {
         }
 
         if regex!(r"^[/~]").is_match(&repo_url) {
-            Err(eyre!("Invalid repository URL: {}", repo_url).suggestion(r#"If you are trying to link to a local directory, use `mise plugins link` instead.
-Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#))?;
+            Err(eyre!(
+                r#"Invalid repository URL: {repo_url}
+If you are trying to link to a local directory, use `mise plugins link` instead.
+Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#
+            ))?;
         }
         let git = Git::new(&self.plugin_path);
         pr.set_message(format!("cloning {repo_url}"));

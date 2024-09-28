@@ -67,7 +67,7 @@ test:integration              .../.mise/tasks/test/integration
 test:units                    .../.mise/tasks/test/units
 ```
 
-### Argument parsing with usage
+## Arguments
 
 [usage](https://usage.jdx.dev) spec can be used within these files to provide argument parsing, autocompletion,
 documentation when running mise and can be exported to markdown. Essentially this turns tasks into
