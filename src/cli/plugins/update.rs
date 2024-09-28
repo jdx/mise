@@ -1,5 +1,5 @@
 use console::style;
-use eyre::{eyre, Report, Result};
+use eyre::{eyre, Report, Result, WrapErr};
 use rayon::prelude::*;
 
 use crate::config::Settings;
@@ -56,7 +56,7 @@ impl Update {
                         if let Some(plugin) = backend.plugin() {
                             plugin
                                 .update(pr.as_ref(), ref_)
-                                .map_err(|e| eyre!("[{backend}] plugin update: {e:?}"))?;
+                                .wrap_err_with(|| format!("[{backend}] plugin update"))?;
                         }
                         Ok(())
                     })

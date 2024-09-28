@@ -128,7 +128,7 @@ impl Git {
         if let Ok(repo) = self.repo() {
             let branch = repo
                 .head()
-                .map_err(|err| eyre!("failed to get current branch in {dir:?}: {err:#}"))?
+                .wrap_err_with(|| format!("failed to get current branch in {dir:?}"))?
                 .shorthand()
                 .unwrap()
                 .to_string();

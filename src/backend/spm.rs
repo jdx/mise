@@ -1,11 +1,11 @@
-use std::env::temp_dir;
-use std::fmt::{self, Debug};
-use std::path::PathBuf;
-
+use eyre::WrapErr;
 use git2::Repository;
 use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
 use serde_derive::Deserialize;
+use std::env::temp_dir;
+use std::fmt::{self, Debug};
+use std::path::PathBuf;
 use url::Url;
 use walkdir::WalkDir;
 
@@ -128,7 +128,7 @@ impl SPMBackend {
         )
         .read()?;
         let executables = serde_json::from_str::<PackageDescription>(&package_json)
-            .map_err(|err| eyre::eyre!("Failed to parse package description. Details: {}", err))?
+            .wrap_err("Failed to parse package description")?
             .products
             .iter()
             .filter(|p| p.r#type.is_executable())
