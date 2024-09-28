@@ -7,9 +7,9 @@ use std::path::PathBuf;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TaskDocs {
-    /// render each task as a separate document, requires `--output` to be a directory
-    #[clap(long, short, verbatim_doc_comment)]
-    multi: bool,
+    /// write only an index of tasks, intended for use with `--multi`
+    #[clap(long, short = 'I', verbatim_doc_comment)]
+    index: bool,
     /// inserts the documentation into an existing file
     ///
     /// This will look for a special comment, <!-- mise-tasks -->, and replace it with the generated documentation.
@@ -17,28 +17,43 @@ pub struct TaskDocs {
     /// run multiple times on the same file to update the documentation.
     #[clap(long, short, verbatim_doc_comment)]
     inject: bool,
-    /// write only an index of tasks, intended for use with `--multi`
-    #[clap(long, short = 'I', verbatim_doc_comment)]
-    index: bool,
+    /// render each task as a separate document, requires `--output` to be a directory
+    #[clap(long, short, verbatim_doc_comment)]
+    multi: bool,
     /// writes the generated docs to a file/directory
     #[clap(long, short, verbatim_doc_comment)]
     output: Option<PathBuf>,
+    /// root directory to search for tasks
+    #[clap(long, short, verbatim_doc_comment, value_hint = clap::ValueHint::DirPath)]
+    root: Option<PathBuf>,
+    #[clap(long, short, verbatim_doc_comment, value_enum, default_value_t)]
+    style: TaskDocsStyle,
+}
+
+#[derive(Debug, Default, Clone, clap::ValueEnum)]
+enum TaskDocsStyle {
+    #[default]
+    #[value()]
+    Simple,
+    #[value()]
+    Detailed,
 }
 
 impl TaskDocs {
     pub fn run(self) -> eyre::Result<()> {
         SETTINGS.ensure_experimental("generate task-docs")?;
-        let tasks = CONFIG.load_tasks_in_dir(dirs::CWD.as_ref().unwrap())?;
+        let dir = dirs::CWD.as_ref().unwrap();
+        let tasks = CONFIG.load_tasks_in_dir(dir)?;
         let mut out = vec![];
         for task in &tasks {
-            out.push(task.render_markdown()?);
+            out.push(task.render_markdown(dir)?);
         }
         if let Some(output) = &self.output {
             if self.multi {
                 if output.is_dir() {
                     for (i, task) in tasks.iter().enumerate() {
-                        let path = output.join(format!("task-{}.md", i));
-                        file::write(&path, &task.render_markdown()?)?;
+                        let path = output.join(format!("{}.md", i));
+                        file::write(&path, &task.render_markdown(dir)?)?;
                     }
                 } else {
                     return Err(eyre::eyre!(
@@ -51,6 +66,7 @@ impl TaskDocs {
                     doc.push_str(&task);
                     doc.push_str("\n\n");
                 }
+                doc = format!("{}\n", doc.trim());
                 if self.inject {
                     let mut contents = file::read_to_string(output)?;
                     let start = contents.find("<!-- mise-tasks -->").unwrap_or(0);
@@ -64,9 +80,7 @@ impl TaskDocs {
                 }
             }
         } else {
-            for task in out {
-                miseprintln!("{}", task);
-            }
+            miseprintln!("{}", out.join("\n\n").trim());
         }
         Ok(())
     }

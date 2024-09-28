@@ -48,7 +48,8 @@ impl TaskScriptParser {
                         .unwrap_or(i.to_string());
                     let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
                     let help = args.get("help").map(|r| r.to_string());
-                    let long_help = args.get("long_help").map(|r| r.to_string());
+                    let help_long = args.get("help_long").map(|r| r.to_string());
+                    let help_md = args.get("help_md").map(|r| r.to_string());
                     let var_min = args.get("var_min").map(|r| r.as_i64().unwrap() as usize);
                     let var_max = args.get("var_max").map(|r| r.as_i64().unwrap() as usize);
                     let hide = args
@@ -65,11 +66,15 @@ impl TaskScriptParser {
                             .collect();
                         usage::SpecChoices { choices }
                     });
-                    let arg = usage::SpecArg {
+                    let mut arg = usage::SpecArg {
                         name: name.clone(),
                         usage,
+                        help_first_line: help
+                            .clone()
+                            .map(|h| h.lines().next().unwrap().to_string()),
                         help,
-                        long_help,
+                        help_long,
+                        help_md,
                         required,
                         var,
                         var_min,
@@ -78,6 +83,7 @@ impl TaskScriptParser {
                         default,
                         choices,
                     };
+                    arg.usage = arg.usage();
                     input_args.lock().unwrap().push((i, arg));
                     Ok(tera::Value::String(template_key(name)))
                 }
@@ -113,7 +119,8 @@ impl TaskScriptParser {
                         .unwrap_or(false);
                     let deprecated = args.get("deprecated").map(|r| r.to_string());
                     let help = args.get("help").map(|r| r.to_string());
-                    let long_help = args.get("long_help").map(|r| r.to_string());
+                    let help_long = args.get("help_long").map(|r| r.to_string());
+                    let help_md = args.get("help_md").map(|r| r.to_string());
                     let hide = args
                         .get("hide")
                         .map(|r| r.as_bool().unwrap())
@@ -141,7 +148,7 @@ impl TaskScriptParser {
                             .collect();
                         usage::SpecChoices { choices }
                     });
-                    let flag = usage::SpecFlag {
+                    let mut flag = usage::SpecFlag {
                         name: name.clone(),
                         short,
                         long,
@@ -151,9 +158,13 @@ impl TaskScriptParser {
                         global,
                         count,
                         deprecated,
+                        help_first_line: help
+                            .clone()
+                            .map(|h| h.lines().next().unwrap().to_string()),
                         help,
                         usage,
-                        long_help,
+                        help_long,
+                        help_md,
                         required,
                         negate,
                         arg: Some(usage::SpecArg {
@@ -163,6 +174,7 @@ impl TaskScriptParser {
                             ..Default::default()
                         }),
                     };
+                    flag.usage = flag.usage();
                     input_flags.lock().unwrap().push(flag);
                     Ok(tera::Value::String(template_key(name)))
                 }
@@ -197,7 +209,8 @@ impl TaskScriptParser {
                         .unwrap_or(false);
                     let deprecated = args.get("deprecated").map(|r| r.to_string());
                     let help = args.get("help").map(|r| r.to_string());
-                    let long_help = args.get("long_help").map(|r| r.to_string());
+                    let help_long = args.get("help_long").map(|r| r.to_string());
+                    let help_md = args.get("help_md").map(|r| r.to_string());
                     let hide = args
                         .get("hide")
                         .map(|r| r.as_bool().unwrap())
@@ -216,7 +229,7 @@ impl TaskScriptParser {
                         .map(|r| r.as_bool().unwrap())
                         .unwrap_or(false);
                     let negate = args.get("negate").map(|r| r.to_string());
-                    let flag = usage::SpecFlag {
+                    let mut flag = usage::SpecFlag {
                         name: name.clone(),
                         short,
                         long,
@@ -226,13 +239,18 @@ impl TaskScriptParser {
                         global,
                         count,
                         deprecated,
+                        help_first_line: help
+                            .clone()
+                            .map(|h| h.lines().next().unwrap().to_string()),
                         help,
                         usage,
-                        long_help,
+                        help_long,
+                        help_md,
                         required,
                         negate,
                         arg: None,
                     };
+                    flag.usage = flag.usage();
                     input_flags.lock().unwrap().push(flag);
                     Ok(tera::Value::String(template_key(name)))
                 }
@@ -242,20 +260,19 @@ impl TaskScriptParser {
             .iter()
             .map(|s| tera.render_str(s, &self.ctx).unwrap())
             .collect();
+        let mut cmd = usage::SpecCommand::default();
+        // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
+        cmd.args = input_args
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .sorted_by_key(|(i, _)| *i)
+            .map(|(_, arg)| arg)
+            .collect();
+        cmd.flags = input_flags.lock().unwrap().clone();
         let spec = usage::Spec {
-            cmd: usage::SpecCommand {
-                // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
-                args: input_args
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .cloned()
-                    .sorted_by_key(|(i, _)| *i)
-                    .map(|(_, arg)| arg)
-                    .collect(),
-                flags: input_flags.lock().unwrap().clone(),
-                ..Default::default()
-            },
+            cmd,
             ..Default::default()
         };
 

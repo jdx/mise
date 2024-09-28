@@ -1,30 +1,29 @@
-## `mise config set [OPTIONS] <KEY> <VALUE>`
+# `mise config set [args] [flags]`
 
-```text
 Display the value of a setting in a mise.toml file
 
-Usage: config set [OPTIONS] <KEY> <VALUE>
+## Arguments
 
-Arguments:
-  <KEY>
-          The path of the config to display
+### `<KEY>`
 
-  <VALUE>
-          The value to set the key to
+The path of the config to display
 
-Options:
-  -f, --file <FILE>
-          The path to the mise.toml file to edit
-          
-          If not provided, the nearest mise.toml file will be used
+### `<VALUE>`
 
-  -t, --type <TYPE>
-          [default: string]
-          [possible values: string, integer, float, bool]
+The value to set the key to
+
+## Flags
+
+### `-f --file <FILE>`
+
+The path to the mise.toml file to edit
+
+If not provided, the nearest mise.toml file will be used
+
+### `-t --type <TYPE>`
 
 Examples:
 
-    $ mise config set tools.python 3.12
-    $ mise config set settings.always_keep_download true
-    $ mise config set env.TEST_ENV_VAR ABC
-```
+    mise config set tools.python 3.12
+    mise config set settings.always_keep_download true
+    mise config set env.TEST_ENV_VAR ABC

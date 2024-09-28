@@ -3,6 +3,7 @@
 #USAGE flag "-f --force" help="Overwrite existing <file>"
 #USAGE flag "-u --user <user>" help="User to run as"
 #USAGE arg "<file>" help="The file to write" default="file.txt"
+#USAGE arg "<arg_with_default>" help="An arg with a default" default="mydefault"
 
 # mise description="This is a test build script"
 # mise depends=["lint", "build"]

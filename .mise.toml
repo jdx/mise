@@ -23,6 +23,7 @@ direnv = "latest"
 actionlint = "latest"
 ripgrep = "latest"
 "pipx:toml-sort" = "latest"
+usage = "latest"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 #ruby = "3.1"
 
@@ -49,7 +50,12 @@ run = "cargo build --color always --all-features"
 [tasks."render:usage"]
 depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }
-run = "mise usage > mise.usage.kdl"
+run = [
+    "mise usage > mise.usage.kdl",
+    "mise g task-docs > tasks.md",
+    "usage g md -f mise.usage.kdl -m --out-dir docs/cli --url-prefix /cli --html-encode",
+    "markdownlint --fix docs/cli",
+]
 
 [tasks."render:completions"]
 depends = ["build", "render:usage"]

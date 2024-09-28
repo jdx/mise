@@ -1,4 +1,4 @@
-# `mise direnv activate`
+# `mise direnv [subcommand]`
 
 Output direnv function to use mise inside direnv
 
@@ -8,8 +8,6 @@ Because this generates the legacy files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
 direnv may not know to update environment variables when legacy file versions change.
 
-Examples:
+## Subcommands
 
-    mise direnv activate > ~/.config/direnv/lib/use_mise.sh
-    echo 'use mise' > .envrc
-    direnv allow
+* [`mise direnv activate`](/cli/direnv/activate.md)

@@ -25,15 +25,21 @@ expression: output
   ],
   "usage_spec": {
     "about": null,
+    "about_long": null,
+    "about_md": null,
     "author": null,
     "bin": "filetask",
     "cmd": {
       "after_help": null,
-      "after_long_help": null,
-      "aliases": [],
+      "after_help_long": null,
+      "after_help_md": null,
+      "aliases": [
+        "ft"
+      ],
       "args": [],
       "before_help": null,
-      "before_long_help": null,
+      "before_help_long": "* Depends: lint, test",
+      "before_help_md": null,
       "deprecated": null,
       "examples": [],
       "flags": [
@@ -42,8 +48,10 @@ expression: output
             "choices": null,
             "default": null,
             "help": null,
+            "help_first_line": null,
+            "help_long": null,
+            "help_md": null,
             "hide": false,
-            "long_help": null,
             "name": "user",
             "required": true,
             "usage": "",
@@ -56,11 +64,13 @@ expression: output
           "deprecated": null,
           "global": false,
           "help": "The user to run as",
+          "help_first_line": "The user to run as",
+          "help_long": null,
+          "help_md": null,
           "hide": false,
           "long": [
             "user"
           ],
-          "long_help": null,
           "name": "user",
           "negate": null,
           "required": false,
@@ -70,21 +80,21 @@ expression: output
         }
       ],
       "full_cmd": [],
-      "help": null,
+      "help": "This is a test build script",
+      "help_long": null,
+      "help_md": null,
       "hidden_aliases": [],
       "hide": false,
-      "long_help": null,
       "mounts": [],
       "name": "filetask",
       "subcommand_required": false,
       "subcommands": {},
-      "usage": " [flags]"
+      "usage": "[--user <user>]"
     },
     "complete": {},
     "config": {
       "props": {}
     },
-    "long_about": null,
     "name": "filetask",
     "usage": "",
     "version": null

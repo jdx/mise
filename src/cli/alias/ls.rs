@@ -11,8 +11,8 @@ use crate::ui::table;
 ///
 /// For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 ///
-///   [alias.node]
-///   lts = "20.0.0"
+///     [alias.node]
+///     lts = "20.0.0"
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasLs {

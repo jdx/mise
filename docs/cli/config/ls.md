@@ -1,15 +1,13 @@
-## `mise config ls [OPTIONS]`
+# `mise config ls [--no-header]`
 
-```text
 List config files currently in use
 
-Usage: config ls [OPTIONS]
+## Flags
 
-Options:
-      --no-header
-          Do not print table header
+### `--no-header`
+
+Do not print table header
 
 Examples:
 
-    $ mise config ls
-```
+    mise config ls

@@ -115,8 +115,8 @@ tokio = { version = "1.37.0", features = [
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
 url = "2.5.0"
-#usage-lib = { path = "../usage/lib" }
-usage-lib = { version = "0.8.0", features = ["clap", "docs"] }
+# usage-lib = { path = "../usage/lib", features = ["clap", "docs"] }
+usage-lib = { version = "0.8", features = ["clap", "docs"] }
 versions = { version = "6.2.0", features = ["serde"] }
 vfox = "0.1"
 walkdir = "2.5.0"

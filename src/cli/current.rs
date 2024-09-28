@@ -100,6 +100,7 @@ impl Current {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+    
     # outputs `.tool-versions` compatible format
     $ <bold>mise current</bold>
     python 3.11.0 3.10.0

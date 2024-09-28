@@ -2,8 +2,16 @@
 source: src/cli/generate/task_docs.rs
 expression: output
 ---
-# `filetask`
+## `filetask [--user <user>]`
 
-## Flag `--user <user>`
+* Depends: lint, test
+
+**Aliases**: ft
+
+This is a test build script
+
+### Flags
+
+#### `--user <user>`
 
 The user to run as

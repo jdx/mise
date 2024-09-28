@@ -86,8 +86,8 @@ These can come from user config or from plugins in `bin/list-aliases`.
 
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
-  [alias.node]
-  lts = "20.0.0""#
+    [alias.node]
+    lts = "20.0.0""#
         after_long_help r"Examples:
 
     $ mise aliases
@@ -132,13 +132,13 @@ cmd "backends" help="Manage backends" {
         alias "list"
         after_long_help r"Examples:
 
-  $ mise backends ls
-  cargo
-  go
-  npm
-  pipx
-  spm
-  ubi
+    $ mise backends ls
+    cargo
+    go
+    npm
+    pipx
+    spm
+    ubi
 "
     }
 }
@@ -237,6 +237,7 @@ cmd "current" help="Shows current active and installed runtime versions" {
 This is similar to `mise ls --current`, but this only shows the runtime
 and/or version. It's designed to fit into scripts more easily."
     after_long_help r"Examples:
+    
     # outputs `.tool-versions` compatible format
     $ mise current
     python 3.11.0 3.10.0
@@ -392,13 +393,19 @@ when you push changes to your repository."
 
     $ mise generate task-docs
 "
-        flag "-m --multi" help="render each task as a separate document, requires `--output` to be a directory"
+        flag "-I --index" help="write only an index of tasks, intended for use with `--multi`"
         flag "-i --inject" help="inserts the documentation into an existing file" {
             long_help "inserts the documentation into an existing file\n\nThis will look for a special comment, <!-- mise-tasks -->, and replace it with the generated documentation.\nIt will replace everything between the comment and the next comment, <!-- /mise-tasks --> so it can be\nrun multiple times on the same file to update the documentation."
         }
-        flag "-I --index" help="write only an index of tasks, intended for use with `--multi`"
+        flag "-m --multi" help="render each task as a separate document, requires `--output` to be a directory"
         flag "-o --output" help="writes the generated docs to a file/directory" {
             arg "<OUTPUT>"
+        }
+        flag "-r --root" help="root directory to search for tasks" {
+            arg "<ROOT>"
+        }
+        flag "-s --style" {
+            arg "<STYLE>"
         }
     }
 }
@@ -502,6 +509,7 @@ cmd "link" help="Symlinks a tool version into mise" {
 Use this for adding installs either custom compiled outside
 mise or built with a different tool."
     after_long_help r"Examples:
+    
     # build node-20.0.0 with node-build and link it into mise
     $ node-build 20.0.0 ~/.nodes/20.0.0
     $ mise link node@20.0.0 ~/.nodes/20.0.0
@@ -1029,7 +1037,7 @@ cmd "tasks" help="[experimental] Manage tasks" {
     alias "t"
     alias "task" hide=true
     after_long_help r"Examples:
-    
+
     $ mise tasks ls
 "
     flag "--no-header" help="Do not print table header"
@@ -1108,11 +1116,11 @@ The tasks will be created as a standalone script if it does not already exist."
 These may be included from the config file or from the project's .mise/tasks directory
 mise will merge all tasks from all parent directories into this list.
 
-So if you have global tasks in ~/.config/mise/tasks/* and project-specific tasks in
+So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in
 ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 tasks will override the global ones if they have the same name."
         after_long_help r"Examples:
-    
+
     $ mise tasks ls
 "
         flag "--no-header" help="Do not print table header"
@@ -1303,16 +1311,17 @@ cmd "version" help="Show mise version" {
 cmd "watch" help="[experimental] Run a tasks watching for changes" {
     alias "w"
     after_long_help r#"Examples:
-    $ mise watch -t build
-    Runs the "build" tasks. Will re-run the tasks when any of its sources change.
-    Uses "sources" from the tasks definition to determine which files to watch.
+    
+        $ mise watch -t build
+        Runs the "build" tasks. Will re-run the tasks when any of its sources change.
+        Uses "sources" from the tasks definition to determine which files to watch.
 
-    $ mise watch -t build --glob src/**/*.rs
-    Runs the "build" tasks but specify the files to watch with a glob pattern.
-    This overrides the "sources" from the tasks definition.
+        $ mise watch -t build --glob src/**/*.rs
+        Runs the "build" tasks but specify the files to watch with a glob pattern.
+        This overrides the "sources" from the tasks definition.
 
-    $ mise run -t build --clear
-    Extra arguments are passed to watchexec. See `watchexec --help` for details.
+        $ mise run -t build --clear
+        Extra arguments are passed to watchexec. See `watchexec --help` for details.
 "#
     flag "-t --task" help="Tasks to run" var=true {
         arg "<TASK>"

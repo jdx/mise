@@ -293,6 +293,7 @@ impl Config {
             .into_iter()
             .chain(config_tasks)
             .chain(extra_tasks)
+            .sorted_by_cached_key(|t| t.name.clone())
             .collect())
     }
 

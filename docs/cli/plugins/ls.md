@@ -1,28 +1,27 @@
-## `mise plugins ls [OPTIONS]`
+# `mise plugins ls [flags]`
 
-**Aliases:** `list`
-
-```text
 List installed plugins
 
 Can also show remotely available plugins to install.
 
-Usage: plugins ls [OPTIONS]
+## Flags
 
-Options:
-  -c, --core
-          The built-in plugins only
-          Normally these are not shown
+### `-c --core`
 
-      --user
-          List installed plugins
-          
-          This is the default behavior but can be used with --core
-          to show core and user plugins
+The built-in plugins only
+Normally these are not shown
 
-  -u, --urls
-          Show the git url for each plugin
-          e.g.: https://github.com/asdf-vm/asdf-nodejs.git
+### `--user`
+
+List installed plugins
+
+This is the default behavior but can be used with --core
+to show core and user plugins
+
+### `-u --urls`
+
+Show the git url for each plugin
+e.g.: <https://github.com/asdf-vm/asdf-nodejs.git>
 
 Examples:
 
@@ -33,4 +32,3 @@ Examples:
     $ mise plugins ls --urls
     node    https://github.com/asdf-vm/asdf-nodejs.git
     ruby    https://github.com/asdf-vm/asdf-ruby.git
-```

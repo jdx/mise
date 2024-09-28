@@ -13,7 +13,7 @@ use crate::ui::{style, table};
 /// These may be included from the config file or from the project's .mise/tasks directory
 /// mise will merge all tasks from all parent directories into this list.
 ///
-/// So if you have global tasks in ~/.config/mise/tasks/* and project-specific tasks in
+/// So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in
 /// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 /// tasks will override the global ones if they have the same name.
 #[derive(Debug, clap::Args)]
@@ -180,7 +180,7 @@ fn truncate(s: &str, len: usize) -> String {
 // TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-    
+
     $ <bold>mise tasks ls</bold>
 "#
 );

@@ -1,24 +1,27 @@
-## `mise which [OPTIONS] <BIN_NAME>`
+# `mise which [args] [flags]`
 
-```text
 Shows the path that a bin name points to
 
-Usage: which [OPTIONS] <BIN_NAME>
+## Arguments
 
-Arguments:
-  <BIN_NAME>
-          The bin name to look up
+### `<BIN_NAME>`
 
-Options:
-      --plugin
-          Show the plugin name instead of the path
+The bin name to look up
 
-      --version
-          Show the version instead of the path
+## Flags
 
-  -t, --tool <TOOL@VERSION>
-          Use a specific tool@version
-          e.g.: `mise which npm --tool=node@20`
+### `--plugin`
+
+Show the plugin name instead of the path
+
+### `--version`
+
+Show the version instead of the path
+
+### `-t --tool <TOOL@VERSION>`
+
+Use a specific tool@version
+e.g.: `mise which npm --tool=node@20`
 
 Examples:
 
@@ -28,4 +31,3 @@ Examples:
     node
     $ mise which node --version
     20.0.0
-```
