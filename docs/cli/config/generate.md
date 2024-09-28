@@ -1,5 +1,7 @@
 # `mise config generate [-o --output <OUTPUT>]`
 
+**Aliases**: g
+
 [experimental] Generate a mise.toml file
 
 ## Flags

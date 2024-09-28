@@ -1,4 +1,4 @@
-# `mise settings [flags] [subcommand]`
+# `mise settings [--keys] [subcommand]`
 
 Manage settings
 

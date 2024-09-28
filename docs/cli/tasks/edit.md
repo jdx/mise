@@ -1,4 +1,4 @@
-# `mise tasks edit <TASK> [-p --path]`
+# `mise tasks edit [-p --path] <TASK>`
 
 [experimental] Edit a tasks with $EDITOR
 

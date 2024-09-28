@@ -1,4 +1,6 @@
-# `mise watch [args] [flags]`
+# `mise watch [-t --task... <TASK>] [-g --glob... <GLOB>] [ARGS]...`
+
+**Aliases**: w
 
 [experimental] Run a tasks watching for changes
 

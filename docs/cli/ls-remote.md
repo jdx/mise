@@ -1,4 +1,4 @@
-# `mise ls-remote [args] [flags]`
+# `mise ls-remote [--all] [TOOL@VERSION] [PREFIX]`
 
 List runtime versions available for install
 

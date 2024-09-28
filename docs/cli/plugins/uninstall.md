@@ -1,4 +1,6 @@
-# `mise plugins uninstall [args] [flags]`
+# `mise plugins uninstall [-p --purge] [-a --all] [PLUGIN]...`
+
+**Aliases**: remove, rm
 
 Removes a plugin
 

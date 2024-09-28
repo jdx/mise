@@ -1,4 +1,6 @@
-# `mise plugins link [args] [flags]`
+# `mise plugins link [-f --force] <NAME> [PATH]`
+
+**Aliases**: ln
 
 Symlinks a plugin into mise
 

@@ -1,4 +1,6 @@
-# `mise config [flags] [subcommand]`
+# `mise config [--no-header] [subcommand]`
+
+**Aliases**: cfg
 
 Manage config files
 
@@ -11,6 +13,6 @@ Do not print table header
 ## Subcommands
 
 * [`mise config generate [-o --output <OUTPUT>]`](/cli/config/generate.md)
-* [`mise config get [KEY] [-f --file <FILE>]`](/cli/config/get.md)
+* [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
 * [`mise config ls [--no-header]`](/cli/config/ls.md)
-* [`mise config set [args] [flags]`](/cli/config/set.md)
+* [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)

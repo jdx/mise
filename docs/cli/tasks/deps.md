@@ -1,4 +1,4 @@
-# `mise tasks deps [args] [flags]`
+# `mise tasks deps [--hidden] [--dot] [TASKS]...`
 
 [experimental] Display a tree visualization of a dependency graph
 

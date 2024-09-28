@@ -1,4 +1,6 @@
-# `mise alias set [args]`
+# `mise alias set <args>…`
+
+**Aliases**: add, create
 
 Add/update an alias for a plugin
 

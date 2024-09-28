@@ -1,5 +1,7 @@
 # `mise backends ls`
 
+**Aliases**: list
+
 List built-in backends
 
 Examples:

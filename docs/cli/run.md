@@ -1,5 +1,7 @@
 # `mise run [flags]`
 
+**Aliases**: r
+
 [experimental] Run a tasks
 
 This command will run a tasks, or multiple tasks in parallel.

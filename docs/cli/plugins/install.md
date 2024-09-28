@@ -1,4 +1,6 @@
-# `mise plugins install [args] [flags]`
+# `mise plugins install [flags] [NEW_PLUGIN] [GIT_URL]`
+
+**Aliases**: i, a, add
 
 Install a plugin
 

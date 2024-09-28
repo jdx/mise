@@ -1,4 +1,6 @@
-# `mise plugins update [PLUGIN]... [-j --jobs <JOBS>]`
+# `mise plugins update [-j --jobs <JOBS>] [PLUGIN]...`
+
+**Aliases**: up, upgrade
 
 Updates a plugin to the latest version
 

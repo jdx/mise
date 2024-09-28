@@ -1,4 +1,6 @@
-# `mise alias ls [PLUGIN] [--no-header]`
+# `mise alias ls [--no-header] [PLUGIN]`
+
+**Aliases**: list
 
 List aliases
 Shows the aliases that can be specified.

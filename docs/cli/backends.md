@@ -1,5 +1,7 @@
 # `mise backends [subcommand]`
 
+**Aliases**: b
+
 Manage backends
 
 ## Subcommands

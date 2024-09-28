@@ -1,5 +1,7 @@
 # `mise plugins ls-remote [-u --urls] [--only-names]`
 
+**Aliases**: list-remote, list-all
+
 List all available remote plugins
 
 The full list is here: <https://github.com/jdx/mise/blob/main/src/default_shorthands.rs>

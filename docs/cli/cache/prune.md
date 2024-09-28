@@ -1,4 +1,6 @@
-# `mise cache prune [args] [flags]`
+# `mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`
+
+**Aliases**: p
 
 Removes stale mise cache files
 

@@ -1,5 +1,7 @@
 # `mise settings ls [--keys]`
 
+**Aliases**: list
+
 Show current settings
 
 This is the contents of ~/.config/mise/config.toml

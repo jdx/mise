@@ -1,5 +1,7 @@
 # `mise settings set <SETTING> <VALUE>`
 
+**Aliases**: add, create
+
 Add/update a setting
 
 This modifies the contents of ~/.config/mise/config.toml

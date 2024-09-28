@@ -1,4 +1,6 @@
-# `mise exec [args] [flags]`
+# `mise exec [flags] [TOOL@VERSION]... [COMMAND]...`
+
+**Aliases**: x
 
 Execute a command with tool(s) set
 

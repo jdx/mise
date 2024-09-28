@@ -1,4 +1,4 @@
-# `mise activate [args] [flags]`
+# `mise activate [--shims] [-q --quiet] [SHELL_TYPE]`
 
 Initializes mise in the current shell session
 

@@ -1,4 +1,6 @@
-# `mise uninstall [args] [flags]`
+# `mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`
+
+**Aliases**: remove, rm
 
 Removes runtime versions
 

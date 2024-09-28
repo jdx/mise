@@ -1,4 +1,4 @@
-# `mise which [args] [flags]`
+# `mise which [flags] <BIN_NAME>`
 
 Shows the path that a bin name points to
 

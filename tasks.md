@@ -1,46 +1,48 @@
-## `a1 `
+## `a1`
 
-## `a2 `
+## `a2`
 
-## `b1 `
+## `b1`
 
 * Depends: a1, a2
 
-## `build `
+## `build`
 
-## `c1 `
+**Aliases**: b
+
+## `c1`
 
 * Depends: b1
 
-## `ci `
+## `ci`
 
 * Depends: format, build, test
 
-## `clean `
+## `clean`
 
-## `docker:cargo `
+## `docker:cargo`
 
 run cargo inside of development docker container
 
-## `docker:e2e `
+## `docker:e2e`
 
 run e2e tests inside of development docker container
 
-## `docker:image `
+## `docker:image`
 
 build docker image from Dockerfile
 
-## `docker:mise `
+## `docker:mise`
 
 run mise inside of development docker container
 
-## `docker:run `
+## `docker:run`
 
 * Depends: docker:image
 
 run a command inside of development docker container
 
-## `filetask [args] [flags]`
+## `filetask [-f --force] [-u --user <user>] <file> <arg_with_default>`
 
 * Depends: lint, build
 
@@ -66,96 +68,102 @@ Overwrite existing &lt;file>
 
 User to run as
 
-## `l `
+## `l`
 
-## `l `
+## `l`
 
-## `lint `
+## `lint`
 
 * Depends: lint:*
 
-## `lint-fix `
+## `lint-fix`
 
-## `lint:actionlint `
+**Aliases**: format
 
-## `lint:cargo-fmt `
+## `lint:actionlint`
 
-## `lint:clippy `
+## `lint:cargo-fmt`
 
-## `lint:markdownlint `
+## `lint:clippy`
 
-## `lint:prettier `
+## `lint:markdownlint`
 
-## `lint:ripgrep `
+## `lint:prettier`
 
-## `lint:settings `
+## `lint:ripgrep`
 
-## `lint:shellcheck `
+## `lint:settings`
 
-## `lint:shfmt `
+## `lint:shellcheck`
 
-## `pre-commit `
+## `lint:shfmt`
+
+## `pre-commit`
 
 * Depends: render, lint
 
-## `release `
+## `release`
 
-## `release-docs `
+## `release-docs`
 
-## `release-plz `
+## `release-plz`
 
-## `render `
+## `render`
 
 * Depends: render:*
 
-## `render:completions `
+**Aliases**: render
+
+## `render:completions`
 
 * Depends: build, render:usage
 
-## `render:help `
+## `render:help`
 
 * Depends: build
 
-## `render:mangen `
+## `render:mangen`
 
 * Depends: build
 
-## `render:registry `
+## `render:registry`
 
 * Depends: build
 
-## `render:settings `
+## `render:settings`
 
-## `render:usage `
+## `render:usage`
 
 * Depends: build
 
-## `show-output-on-failure `
+## `show-output-on-failure`
 
-## `signal-test `
+## `signal-test`
 
-## `snapshots `
+## `snapshots`
 
 update test snapshots
 
-## `test `
+## `test`
+
+**Aliases**: t
 
 run all tests
 
-## `test:coverage `
+## `test:coverage`
 
 run all tests with coverage report
 
-## `test:e2e `
+## `test:e2e`
 
 * Depends: build
 
 run end-to-end tests
 
-## `test:shuffle `
+## `test:shuffle`
 
-## `test:unit `
+## `test:unit`
 
 run unit tests
 
-## `update-shorthand-repo `
+## `update-shorthand-repo`

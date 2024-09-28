@@ -1,4 +1,4 @@
-# `mise outdated [args] [flags]`
+# `mise outdated [flags] [TOOL@VERSION]...`
 
 Shows outdated tool versions
 

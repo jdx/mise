@@ -1,4 +1,4 @@
-# `mise completion [args] [flags]`
+# `mise completion [SHELL]`
 
 Generate shell completions
 

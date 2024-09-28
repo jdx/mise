@@ -1,4 +1,6 @@
-# `mise shell [args] [flags]`
+# `mise shell [flags] [TOOL@VERSION]...`
+
+**Aliases**: sh
 
 Sets a tool version for the current session
 

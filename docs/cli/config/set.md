@@ -1,4 +1,4 @@
-# `mise config set [args] [flags]`
+# `mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`
 
 Display the value of a setting in a mise.toml file
 

@@ -1,4 +1,4 @@
-# `mise set [args] [flags]`
+# `mise set [--file <FILE>] [-g --global] [ENV_VARS]...`
 
 Manage environment variables
 

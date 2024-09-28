@@ -1,5 +1,7 @@
 # `mise generate [subcommand]`
 
+**Aliases**: g
+
 [experimental] Generate files for various tools/services
 
 ## Subcommands

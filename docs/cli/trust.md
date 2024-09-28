@@ -1,4 +1,4 @@
-# `mise trust [args] [flags]`
+# `mise trust [flags] [CONFIG_FILE]`
 
 Marks a config file as trusted
 

@@ -1,5 +1,7 @@
 # `mise generate git-pre-commit [flags]`
 
+**Aliases**: pre-commit
+
 [experimental] Generate a git pre-commit hook
 
 This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`

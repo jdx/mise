@@ -1,4 +1,6 @@
-# `mise use [args] [flags]`
+# `mise use [flags] [TOOL@VERSION]...`
+
+**Aliases**: u
 
 Install tool version and add it to config
 

@@ -1,4 +1,6 @@
-# `mise ls [args] [flags]`
+# `mise ls [flags] [PLUGIN]...`
+
+**Aliases**: list
 
 List installed and active tool versions
 

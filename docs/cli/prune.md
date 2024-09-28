@@ -1,4 +1,4 @@
-# `mise prune [args] [flags]`
+# `mise prune [flags] [PLUGIN]...`
 
 Delete unused versions of tools
 

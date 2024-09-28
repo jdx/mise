@@ -1,5 +1,7 @@
 # `mise settings unset <SETTING>`
 
+**Aliases**: rm, remove, delete, del
+
 Clears a setting
 
 This modifies the contents of ~/.config/mise/config.toml

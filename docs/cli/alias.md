@@ -1,4 +1,6 @@
-# `mise alias [flags] [subcommand]`
+# `mise alias [-p --plugin <PLUGIN>] [--no-header] [subcommand]`
+
+**Aliases**: a
 
 Manage aliases
 
@@ -15,6 +17,6 @@ Don't show table header
 ## Subcommands
 
 * [`mise alias get <PLUGIN> <ALIAS>`](/cli/alias/get.md)
-* [`mise alias ls [PLUGIN] [--no-header]`](/cli/alias/ls.md)
-* [`mise alias set [args]`](/cli/alias/set.md)
+* [`mise alias ls [--no-header] [PLUGIN]`](/cli/alias/ls.md)
+* [`mise alias set <args>…`](/cli/alias/set.md)
 * [`mise alias unset <PLUGIN> <ALIAS>`](/cli/alias/unset.md)

@@ -1,4 +1,6 @@
-# `mise link [args] [flags]`
+# `mise link [-f --force] <TOOL@VERSION> <PATH>`
+
+**Aliases**: ln
 
 Symlinks a tool version into mise
 

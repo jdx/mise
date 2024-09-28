@@ -1,4 +1,4 @@
-# `mise config get [KEY] [-f --file <FILE>]`
+# `mise config get [-f --file <FILE>] [KEY]`
 
 Display the value of a setting in a mise.toml file
 

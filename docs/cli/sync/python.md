@@ -1,4 +1,4 @@
-# `mise sync python [--pyenv]`
+# `mise sync python <--pyenv>`
 
 Symlinks all tool versions from an external tool into mise
 

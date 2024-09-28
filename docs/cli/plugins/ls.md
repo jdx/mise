@@ -1,5 +1,7 @@
 # `mise plugins ls [flags]`
 
+**Aliases**: list
+
 List installed plugins
 
 Can also show remotely available plugins to install.

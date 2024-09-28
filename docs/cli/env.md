@@ -1,4 +1,6 @@
-# `mise env [args] [flags]`
+# `mise env [-J --json] [-s --shell <SHELL>] [TOOL@VERSION]...`
+
+**Aliases**: e
 
 Exports env vars to activate mise a single time
 

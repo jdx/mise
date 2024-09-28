@@ -1,4 +1,4 @@
-# `mise tasks info <TASK> [-J --json]`
+# `mise tasks info [-J --json] <TASK>`
 
 [experimental] Get information about a task
 

@@ -1,4 +1,6 @@
-# `mise upgrade [args] [flags]`
+# `mise upgrade [flags] [TOOL@VERSION]...`
+
+**Aliases**: up
 
 Upgrades outdated tool versions
 
