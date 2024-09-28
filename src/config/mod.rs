@@ -79,6 +79,7 @@ impl Config {
             .into_iter()
             .unique_by(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
             .collect_vec();
+        trace!("load: config_paths: {:?}", config_paths);
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
 
         let config = Self {
@@ -131,7 +132,10 @@ impl Config {
         })
     }
     pub fn env_results(&self) -> eyre::Result<&EnvResults> {
-        self.env.get_or_try_init(|| self.load_env())
+        trace!("env_results: start");
+        let res = self.env.get_or_try_init(|| self.load_env());
+        trace!("env_results: {:#?}", &res);
+        res
     }
     pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results()?.env_paths)
@@ -444,6 +448,7 @@ impl Config {
             .into_iter()
             .flatten()
             .collect();
+        trace!("load_env: entries: {:#?}", entries);
         EnvResults::resolve(&env::PRISTINE_ENV, entries)
     }
 
