@@ -41,6 +41,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 ```
 
 ### Using Git
+
 You can install a any package from a Git repository using the `mise` command. This allows you to install a particular tag, branch, or commit revision:
 
 ```sh
