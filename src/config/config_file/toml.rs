@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
-use std::fmt::Debug;
-use std::fmt::Formatter;
+use std::fmt::{Debug, Formatter};
 use std::str::FromStr;
 
 use either::Either;

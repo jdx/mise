@@ -1,28 +1,35 @@
-## `mise generate task-docs [OPTIONS]` <Badge type="warning" text="experimental" />
+# `mise generate task-docs [flags]`
 
-```text
 [experimental] Generate documentation for tasks in a project
 
-Usage: generate task-docs [OPTIONS]
+## Flags
 
-Options:
-  -m, --multi
-          render each task as a separate document, requires `--output` to be a directory
+### `-I --index`
 
-  -i, --inject
-          inserts the documentation into an existing file
-          
-          This will look for a special comment, <!-- mise-tasks -->, and replace it with the generated documentation.
-          It will replace everything between the comment and the next comment, <!-- /mise-tasks --> so it can be
-          run multiple times on the same file to update the documentation.
+write only an index of tasks, intended for use with `--multi`
 
-  -I, --index
-          write only an index of tasks, intended for use with `--multi`
+### `-i --inject`
 
-  -o, --output <OUTPUT>
-          writes the generated docs to a file/directory
+inserts the documentation into an existing file
+
+This will look for a special comment, &lt;!-- mise-tasks -->, and replace it with the generated documentation.
+It will replace everything between the comment and the next comment, &lt;!-- /mise-tasks --> so it can be
+run multiple times on the same file to update the documentation.
+
+### `-m --multi`
+
+render each task as a separate document, requires `--output` to be a directory
+
+### `-o --output <OUTPUT>`
+
+writes the generated docs to a file/directory
+
+### `-r --root <ROOT>`
+
+root directory to search for tasks
+
+### `-s --style <STYLE>`
 
 Examples:
 
-    $ mise generate task-docs
-```
+    mise generate task-docs

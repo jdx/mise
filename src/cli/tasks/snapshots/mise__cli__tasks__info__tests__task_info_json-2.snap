@@ -20,23 +20,28 @@ expression: output
   "sources": [],
   "usage_spec": {
     "about": null,
+    "about_long": null,
+    "about_md": null,
     "author": null,
-    "bin": "",
+    "bin": "test",
     "cmd": {
       "after_help": null,
-      "after_long_help": null,
+      "after_help_long": null,
+      "after_help_md": null,
       "aliases": [],
       "args": [],
       "before_help": null,
-      "before_long_help": null,
+      "before_help_long": null,
+      "before_help_md": null,
       "deprecated": null,
       "examples": [],
       "flags": [],
       "full_cmd": [],
-      "help": null,
+      "help": "",
+      "help_long": null,
+      "help_md": null,
       "hidden_aliases": [],
       "hide": false,
-      "long_help": null,
       "mounts": [],
       "name": "test",
       "subcommand_required": false,
@@ -47,8 +52,7 @@ expression: output
     "config": {
       "props": {}
     },
-    "long_about": null,
-    "name": "",
+    "name": "test",
     "usage": "",
     "version": null
   }

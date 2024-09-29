@@ -1,6 +1,5 @@
-## `mise activate [OPTIONS] [SHELL_TYPE]`
+# `mise activate [--shims] [-q --quiet] [SHELL_TYPE]`
 
-```text
 Initializes mise in the current shell session
 
 This should go into your shell's rc file.
@@ -22,27 +21,27 @@ specify the full path like this:
 
 Customize status output with `status` settings.
 
-Usage: activate [OPTIONS] [SHELL_TYPE]
+## Arguments
 
-Arguments:
-  [SHELL_TYPE]
-          Shell type to generate the script for
-          
-          [possible values: bash, fish, nu, xonsh, zsh]
+### `[SHELL_TYPE]`
 
-Options:
-      --shims
-          Use shims instead of modifying PATH
-          Effectively the same as:
-              PATH="$HOME/.local/share/mise/shims:$PATH"
+Shell type to generate the script for
 
-  -q, --quiet
-          Suppress non-error messages
+## Flags
+
+### `--shims`
+
+Use shims instead of modifying PATH
+Effectively the same as:
+    PATH="$HOME/.local/share/mise/shims:$PATH"
+
+### `-q --quiet`
+
+Suppress non-error messages
 
 Examples:
 
-    $ eval "$(mise activate bash)"
-    $ eval "$(mise activate zsh)"
-    $ mise activate fish | source
-    $ execx($(mise activate xonsh))
-```
+    eval "$(mise activate bash)"
+    eval "$(mise activate zsh)"
+    mise activate fish | source
+    execx($(mise activate xonsh))

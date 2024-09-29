@@ -1,29 +1,29 @@
-## `mise alias ls [OPTIONS] [PLUGIN]`
+# `mise alias ls [--no-header] [PLUGIN]`
 
-**Aliases:** `list`
+**Aliases**: list
 
-```text
 List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.
 
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
-  [alias.node]
-  lts = "20.0.0"
+    [alias.node]
+    lts = "20.0.0"
 
-Usage: alias ls [OPTIONS] [PLUGIN]
+## Arguments
 
-Arguments:
-  [PLUGIN]
-          Show aliases for <PLUGIN>
+### `[PLUGIN]`
 
-Options:
-      --no-header
-          Don't show table header
+Show aliases for &lt;PLUGIN>
+
+## Flags
+
+### `--no-header`
+
+Don't show table header
 
 Examples:
 
     $ mise aliases
     node    lts-hydrogen   20.0.0
-```

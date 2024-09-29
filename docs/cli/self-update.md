@@ -1,25 +1,27 @@
-## `mise self-update [OPTIONS] [VERSION]`
+# `mise self-update [flags] [VERSION]`
 
-```text
 Updates mise itself
 
 Uses the GitHub Releases API to find the latest release and binary.
 By default, this will also update any installed plugins.
 Uses the `GITHUB_API_TOKEN` environment variable if set for higher rate limits.
 
-Usage: self-update [OPTIONS] [VERSION]
+## Arguments
 
-Arguments:
-  [VERSION]
-          Update to a specific version
+### `[VERSION]`
 
-Options:
-  -f, --force
-          Update even if already up to date
+Update to a specific version
 
-      --no-plugins
-          Disable auto-updating plugins
+## Flags
 
-  -y, --yes
-          Skip confirmation prompt
-```
+### `-f --force`
+
+Update even if already up to date
+
+### `--no-plugins`
+
+Disable auto-updating plugins
+
+### `-y --yes`
+
+Skip confirmation prompt

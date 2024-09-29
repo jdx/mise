@@ -1,22 +1,21 @@
-## `mise alias unset <PLUGIN> <ALIAS>`
+# `mise alias unset <PLUGIN> <ALIAS>`
 
-**Aliases:** `del, delete, remove, rm`
+**Aliases**: rm, remove, delete, del
 
-```text
 Clears an alias for a plugin
 
 This modifies the contents of ~/.config/mise/config.toml
 
-Usage: alias unset <PLUGIN> <ALIAS>
+## Arguments
 
-Arguments:
-  <PLUGIN>
-          The plugin to remove the alias from
+### `<PLUGIN>`
 
-  <ALIAS>
-          The alias to remove
+The plugin to remove the alias from
+
+### `<ALIAS>`
+
+The alias to remove
 
 Examples:
 
-    $ mise alias unset node lts-hydrogen
-```
+    mise alias unset node lts-hydrogen

@@ -22,13 +22,13 @@ impl BackendsLs {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-  $ <bold>mise backends ls</bold>
-  cargo
-  go
-  npm
-  pipx
-  spm
-  ubi
+    $ <bold>mise backends ls</bold>
+    cargo
+    go
+    npm
+    pipx
+    spm
+    ubi
 "#
 );
 

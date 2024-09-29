@@ -175,6 +175,10 @@ mod tests {
 
         Run:
           echo "testing!"
+
+        Usage Spec:
+          name "test"
+          bin "test"
         "#);
     }
 
