@@ -8,9 +8,13 @@ use crate::{runtime_symlinks, shims, ui};
 use demand::DemandOption;
 use eyre::{Context, Result};
 
-/// Upgrades outdated tool versions
+/// Upgrades outdated tools
+///
+/// By default, this keeps the range specified in mise.toml. So if you have node@20 set, it will
+/// upgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version
+/// and bump the version in mise.toml.
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "up", verbatim_doc_comment)]
+#[clap(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
@@ -169,6 +173,32 @@ impl Upgrade {
         Ok(ms.run()?.into_iter().collect())
     }
 }
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    # Upgrades node to the latest version matching the range in mise.toml
+    $ <bold>mise upgrade node</bold>
+
+    # Upgrades node to the latest version and bumps the version in mise.toml
+    $ <bold>mise upgrade node --bump</bold>
+
+    # Upgrades all tools to the latest versions
+    $ <bold>mise upgrade</bold>
+
+    # Upgrades all tools to the latest versions and bumps the version in mise.toml
+    $ <bold>mise upgrade --bump</bold>
+
+    # Just print what would be done, don't actually do it
+    $ <bold>mise upgrade --dry-run</bold>
+
+    # Upgrades node and python to the latest versions
+    $ <bold>mise upgrade node python</bold>
+
+    # Show a multiselect menu to choose which tools to upgrade
+    $ <bold>mise upgrade --interactive</bold>
+"#
+);
 
 #[cfg(test)]
 pub mod tests {

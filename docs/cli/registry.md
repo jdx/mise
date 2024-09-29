@@ -1,6 +1,10 @@
 # `mise registry`
 
-[experimental] List available tools
+[experimental] List available tools to install
+
+This command lists the tools available in the registry as shorthand names.
+
+For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 
 Examples:
 

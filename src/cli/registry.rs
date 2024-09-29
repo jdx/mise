@@ -7,7 +7,11 @@ use crate::config::{settings, Config};
 use crate::registry::REGISTRY;
 use crate::ui::table;
 
-/// [experimental] List available tools
+/// [experimental] List available tools to install
+///
+/// This command lists the tools available in the registry as shorthand names.
+///
+/// For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct Registry {}

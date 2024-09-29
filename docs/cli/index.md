@@ -92,7 +92,6 @@ Answer yes to all confirmation prompts
 * [`mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`](/cli/uninstall.md)
 * [`mise unset [-f --file <FILE>] [-g --global] [KEYS]...`](/cli/unset.md)
 * [`mise upgrade [flags] [TOOL@VERSION]...`](/cli/upgrade.md)
-* [`mise usage`](/cli/usage.md)
 * [`mise use [flags] [TOOL@VERSION]...`](/cli/use.md)
 * [`mise version`](/cli/version.md)
 * [`mise watch [-t --task... <TASK>] [-g --glob... <GLOB>] [ARGS]...`](/cli/watch.md)

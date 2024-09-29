@@ -5,9 +5,9 @@ use crate::cli;
 
 /// Generate a usage CLI spec
 ///
-/// See https://usage.jdx.dev for more information
+/// See https://usage.jdx.dev for more information on this specification.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[clap(verbatim_doc_comment, hide = true)]
 pub struct Usage {}
 
 impl Usage {

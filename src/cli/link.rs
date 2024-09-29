@@ -13,8 +13,7 @@ use crate::file::{make_symlink, remove_all};
 
 /// Symlinks a tool version into mise
 ///
-/// Use this for adding installs either custom compiled outside
-/// mise or built with a different tool.
+/// Use this for adding installs either custom compiled outside mise or built with a different tool.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Link {

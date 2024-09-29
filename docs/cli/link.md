@@ -4,8 +4,7 @@
 
 Symlinks a tool version into mise
 
-Use this for adding installs either custom compiled outside
-mise or built with a different tool.
+Use this for adding installs either custom compiled outside mise or built with a different tool.
 
 ## Arguments
 

@@ -260,7 +260,7 @@ export const commands: { [key: string]: Command } = {
     hide: false,
   },
   "usage": {
-    hide: false,
+    hide: true,
   },
   "use": {
     hide: false,

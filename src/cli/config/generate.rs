@@ -25,8 +25,8 @@ impl ConfigGenerate {
 # # in all parent directories and merge them together.
 # # You might have a structure like:
 #
-# * ~/work/project/.mise.toml  # a config file for a specific work project
-# * ~/work/.mise.toml          # a config file for projects related to work
+# * ~/work/project/mise.toml   # a config file for a specific work project
+# * ~/work/mise.toml           # a config file for projects related to work
 # * ~/.config/mise/config.toml # the global config file
 # * /etc/mise/config.toml      # the system config file
 #
@@ -87,8 +87,8 @@ impl ConfigGenerate {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise cf generate > .mise.toml</bold>
-    $ <bold>mise cf generate --output=.mise.toml</bold>
+    $ <bold>mise cf generate > mise.toml</bold>
+    $ <bold>mise cf generate --output=mise.toml</bold>
 "#
 );
 

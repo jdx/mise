@@ -2,6 +2,8 @@
 
 Shows outdated tool versions
 
+See `mise upgrade` to upgrade these versions.
+
 ## Arguments
 
 ### `[TOOL@VERSION]...`

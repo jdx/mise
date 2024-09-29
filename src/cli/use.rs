@@ -15,12 +15,12 @@ use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, Tools
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{env, file};
 
-/// Install tool version and add it to config
+/// Installs a tool and adds the version it to mise.toml.
 ///
-/// This will install the tool if it is not already installed.
-/// By default, this will use an `.mise.toml` file in the current directory.
-/// Use the --global flag to use the global config file instead.
-/// This replaces asdf's `local` and `global` commands, however those are still available in mise.
+/// This will install the tool version if it is not already installed.
+/// By default, this will use a `mise.toml` file in the current directory.
+///
+/// Use the `--global` flag to use the global config file instead.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "u", after_long_help = AFTER_LONG_HELP)]
 pub struct Use {
@@ -67,7 +67,7 @@ pub struct Use {
     remove: Vec<BackendArg>,
 
     /// Specify a path to a config file or directory
-    /// If a directory is specified, it will look for .mise.toml (default) or .tool-versions
+    /// If a directory is specified, it will look for mise.toml (default) or .tool-versions
     #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath
     )]
     path: Option<PathBuf>,
@@ -213,7 +213,7 @@ fn is_asdf_compat() -> bool {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    # set the current version of node to 20.x in .mise.toml of current directory
+    # set the current version of node to 20.x in mise.toml of current directory
     # will write the fuzzy version (e.g.: 20)
     $ <bold>mise use node@20</bold>
 

@@ -20,15 +20,15 @@ Only show tool versions from [PLUGIN]
 
 ### `-c --current`
 
-Only show tool versions currently specified in a .tool-versions/.mise.toml
+Only show tool versions currently specified in a mise.toml
 
 ### `-g --global`
 
-Only show tool versions currently specified in a the global .tool-versions/.mise.toml
+Only show tool versions currently specified in the global mise.toml
 
 ### `-i --installed`
 
-Only show tool versions that are installed (Hides tools defined in .tool-versions/.mise.toml but not installed)
+Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
 
 ### `-J --json`
 
@@ -64,8 +64,8 @@ Examples:
           "version": "20.0.0",
           "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
           "source": {
-            "type": ".mise.toml",
-            "path": "/Users/jdx/.mise.toml"
+            "type": "mise.toml",
+            "path": "/Users/jdx/mise.toml"
           }
         }
       ],

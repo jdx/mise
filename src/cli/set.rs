@@ -12,15 +12,15 @@ use crate::ui::table;
 
 use super::args::EnvVarArg;
 
-/// Manage environment variables
+/// Set environment variables in mise.toml
 ///
-/// By default this command modifies ".mise.toml" in the current directory.
+/// By default, this command modifies `mise.toml` in the current directory.
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Set {
     /// The TOML file to update
     ///
-    /// Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or ".mise.toml".
+    /// Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
     #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::FilePath)]
     file: Option<PathBuf>,
 

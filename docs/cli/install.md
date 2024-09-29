@@ -6,7 +6,7 @@ Install a tool version
 
 Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
 Installing alone will not activate the tools so they won't be in PATH.
-To install and/or activate in one command, use `mise use` which will create a `.mise.toml` file
+To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
 in the current directory to activate this tool when inside the directory.
 Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
 
@@ -43,5 +43,5 @@ Examples:
 
     mise install node@20.0.0  # install specific node version
     mise install node@20      # install fuzzy node version
-    mise install node         # install version specified in .tool-versions or .mise.toml
-    mise install              # installs everything specified in .tool-versions or .mise.toml
+    mise install node         # install version specified in mise.toml
+    mise install              # installs everything specified in mise.toml
