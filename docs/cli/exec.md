@@ -1,4 +1,6 @@
-# `mise exec [flags] [TOOL@VERSION]... [COMMAND]...`
+# `mise exec`
+
+**Usage**: `mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`
 
 **Aliases**: x
 

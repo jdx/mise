@@ -1,4 +1,6 @@
-# `mise settings get <SETTING>`
+# `mise settings get`
+
+**Usage**: `mise settings get <SETTING>`
 
 Show a current setting
 

@@ -1,4 +1,6 @@
-# `mise settings unset <SETTING>`
+# `mise settings unset`
+
+**Usage**: `mise settings unset <SETTING>`
 
 **Aliases**: rm, remove, delete, del
 

@@ -1,4 +1,6 @@
-# `mise direnv [subcommand]`
+# `mise direnv`
+
+**Usage**: `mise direnv <SUBCOMMAND>`
 
 Output direnv function to use mise inside direnv
 

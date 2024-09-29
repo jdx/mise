@@ -1,4 +1,6 @@
-# `mise shell [flags] [TOOL@VERSION]...`
+# `mise shell`
+
+**Usage**: `mise shell [FLAGS] [TOOL@VERSION]...`
 
 **Aliases**: sh
 

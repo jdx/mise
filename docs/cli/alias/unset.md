@@ -1,4 +1,6 @@
-# `mise alias unset <PLUGIN> <ALIAS>`
+# `mise alias unset`
+
+**Usage**: `mise alias unset <PLUGIN> <ALIAS>`
 
 **Aliases**: rm, remove, delete, del
 

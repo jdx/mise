@@ -1,4 +1,6 @@
-# `mise alias set <args>…`
+# `mise alias set`
+
+**Usage**: `mise alias set <ARGS>…`
 
 **Aliases**: add, create
 

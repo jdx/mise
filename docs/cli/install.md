@@ -1,4 +1,6 @@
-# `mise install [flags] [TOOL@VERSION]...`
+# `mise install`
+
+**Usage**: `mise install [FLAGS] [TOOL@VERSION]...`
 
 **Aliases**: i
 

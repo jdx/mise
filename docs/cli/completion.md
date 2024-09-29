@@ -1,4 +1,6 @@
-# `mise completion [SHELL]`
+# `mise completion`
+
+**Usage**: `mise completion [SHELL]`
 
 Generate shell completions
 

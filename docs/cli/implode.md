@@ -1,4 +1,6 @@
-# `mise implode [--config] [-n --dry-run]`
+# `mise implode`
+
+**Usage**: `mise implode [--config] [-n --dry-run]`
 
 Removes mise CLI and all related data
 

@@ -1,4 +1,6 @@
-# `mise generate github-action [flags]`
+# `mise generate github-action`
+
+**Usage**: `mise generate github-action [FLAGS]`
 
 [experimental] Generate a GitHub Action workflow file
 

@@ -1,4 +1,6 @@
-# `mise set [--file <FILE>] [-g --global] [ENV_VARS]...`
+# `mise set`
+
+**Usage**: `mise set [--file <FILE>] [-g --global] [ENV_VARS]...`
 
 Set environment variables in mise.toml
 

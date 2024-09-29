@@ -1,4 +1,6 @@
-# `mise sync node [flags]`
+# `mise sync node`
+
+**Usage**: `mise sync node [FLAGS]`
 
 Symlinks all tool versions from an external tool into mise
 

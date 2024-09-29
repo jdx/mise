@@ -1,4 +1,6 @@
-# `mise settings [--keys] [subcommand]`
+# `mise settings`
+
+**Usage**: `mise settings [--keys] <SUBCOMMAND>`
 
 Manage settings
 

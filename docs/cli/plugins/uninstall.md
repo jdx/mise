@@ -1,4 +1,6 @@
-# `mise plugins uninstall [-p --purge] [-a --all] [PLUGIN]...`
+# `mise plugins uninstall`
+
+**Usage**: `mise plugins uninstall [-p --purge] [-a --all] [PLUGIN]...`
 
 **Aliases**: remove, rm
 

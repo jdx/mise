@@ -1,4 +1,6 @@
-# `mise backends [subcommand]`
+# `mise backends`
+
+**Usage**: `mise backends <SUBCOMMAND>`
 
 **Aliases**: b
 
