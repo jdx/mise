@@ -110,6 +110,9 @@ editLink: false
 | cilium-cli | [asdf:carnei-ro/asdf-cilium-cli](https://github.com/carnei-ro/asdf-cilium-cli) |
 | cilium-hubble | [asdf:NitriKx/asdf-cilium-hubble](https://github.com/NitriKx/asdf-cilium-hubble) |
 | circleci-cli | [asdf:ucpr/asdf-circleci-cli](https://github.com/ucpr/asdf-circleci-cli) |
+| clang | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
+| clang-format | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
+| clangd | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | clarinet | [asdf:alexgo-io/asdf-clarinet](https://github.com/alexgo-io/asdf-clarinet) |
 | clickhouse | [asdf:tinybirdco/asdf-clickhouse](https://github.com/tinybirdco/asdf-clickhouse) |
 | clj-kondo | [asdf:rynkowsg/asdf-clj-kondo](https://github.com/rynkowsg/asdf-clj-kondo) |
@@ -434,6 +437,8 @@ editLink: false
 | liqoctl | [asdf:pdemagny/asdf-liqoctl](https://github.com/pdemagny/asdf-liqoctl) |
 | liquibase | [asdf:saliougaye/asdf-liquibase](https://github.com/saliougaye/asdf-liquibase) |
 | litestream | [asdf:threkk/asdf-litestream](https://github.com/threkk/asdf-litestream) |
+| llvm-objcopy | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
+| llvm-objdump | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | logtalk | [asdf:LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk) |
 | loki-logcli | [asdf:comdotlinux/asdf-loki-logcli](https://github.com/comdotlinux/asdf-loki-logcli) |
 | ls-lint | [asdf:Ameausoone/asdf-ls-lint](https://github.com/Ameausoone/asdf-ls-lint) |
