@@ -111,7 +111,14 @@ impl ToolVersion {
     }
     pub fn latest_version(&self, tool: &dyn Backend) -> Result<String> {
         let tv = self.request.resolve(tool, true)?;
-        Ok(tv.version)
+        // map cargo backend specific prefixes to ref
+        let version = match tv.request.version().split_once(':') {
+            Some((_ref_type @ ("tag" | "branch" | "rev"), r)) => {
+                format!("ref:{r}")
+            }
+            _ => tv.version,
+        };
+        Ok(version)
     }
     pub fn style(&self) -> String {
         format!(
