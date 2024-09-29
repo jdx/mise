@@ -1,6 +1,7 @@
 # mise plugins repository
 
-The purpose of the [mise](https://mise.jdx.dev) plugins repository is to enable shorthand installation of plugins with:
+The purpose of the [mise](https://mise.jdx.dev) plugins repository is to enable
+shorthand installation of plugins with:
 
 ```shell
 mise plugin install <name>
@@ -121,6 +122,9 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Chromedriver                  | [schinckel/asdf-chromedriver](https://github.com/schinckel/asdf-chromedriver)                                     |
 | cilium-cli                    | [carnei-ro/asdf-cilium-cli](https://github.com/carnei-ro/asdf-cilium-cli)                                         |
 | cilium-hubble                 | [NitriKx/asdf-cilium-hubble](https://github.com/NitriKx/asdf-cilium-hubble)                                       |
+| Clang                         | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
+| Clang-format                  | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
+| Clangd                        | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
 | Clarinet                      | [alexgo-io/asdf-clarinet](https://github.com/alexgo-io/asdf-clarinet)                                             |
 | Clickhouse                    | [tinybirdco/asdf-clickhouse](https://github.com/tinybirdco/asdf-clickhouse)                                       |
 | clj-kondo                     | [rynkowsg/asdf-clj-kondo](https://github.com/rynkowsg/asdf-clj-kondo)                                             |
@@ -441,6 +445,8 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | liqoctl                       | [pdemagny/asdf-liqoctl](https://github.com/pdemagny/asdf-liqoctl)                                                 |
 | liquibase                     | [saliougaye/asdf-liquibase](https://github.com/saliougaye/asdf-liquibase)                                         |
 | Litestream                    | [threkk/asdf-litestream](https://github.com/threkk/asdf-litestream)                                               |
+| llvm-objcopy                  | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
+| llvm-objdump                  | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
 | Logtalk                       | [LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk)                                       |
 | Loki-Logcli                   | [comdotlinux/asdf-loki-logcli](https://github.com/comdotlinux/asdf-loki-logcli)                                   |
 | ls-lint                       | [ameausoone/asdf-ls-lint](https://github.com/ameausoone/asdf-ls-lint)                                             |

@@ -1,5 +1,35 @@
 # Changelog
 
+## [2024.9.13](https://github.com/jdx/mise/compare/v2024.9.12..v2024.9.13) - 2024-09-29
+
+### 🚀 Features
+
+- enable Java core plugin on Windows by [@TobiX](https://github.com/TobiX) in [#2684](https://github.com/jdx/mise/pull/2684)
+
+### 🐛 Bug Fixes
+
+- logic with displaying hints by [@jdx](https://github.com/jdx) in [#2686](https://github.com/jdx/mise/pull/2686)
+- tools installed via cargo:a/b@rev:012 immediately pruned by [@roele](https://github.com/roele) in [#2685](https://github.com/jdx/mise/pull/2685)
+
+### 📚 Documentation
+
+- added links for topic commands by [@jdx](https://github.com/jdx) in [15e4da5](https://github.com/jdx/mise/commit/15e4da578275a4aca26b5bdca20e066c4428f07e)
+- improve CLI documentation by [@jdx](https://github.com/jdx) in [dacb5a3](https://github.com/jdx/mise/commit/dacb5a3a0a1f461bbc1f387d888da5f0b816a9ea)
+- updated task list by [@jdx](https://github.com/jdx) in [031a7d0](https://github.com/jdx/mise/commit/031a7d0788971f1e2a1af22511c92483aad91743)
+
+### 🧪 Testing
+
+- fix snapshots by [@jdx](https://github.com/jdx) in [d5a90c0](https://github.com/jdx/mise/commit/d5a90c037332606a212c9ed36d497c3452e0e4a7)
+
+### 🔍 Other Changes
+
+- updated usage by [@jdx](https://github.com/jdx) in [1764c8b](https://github.com/jdx/mise/commit/1764c8bba912b59d61f87bd0f10e488a918e12ca)
+- updated usage by [@jdx](https://github.com/jdx) in [9c18637](https://github.com/jdx/mise/commit/9c18637c52cbdabd81ab84167f94d4578662a995)
+
+### New Contributors
+
+* @TobiX made their first contribution in [#2684](https://github.com/jdx/mise/pull/2684)
+
 ## [2024.9.12](https://github.com/jdx/mise/compare/v2024.9.11..v2024.9.12) - 2024-09-29
 
 ### 🚀 Features
