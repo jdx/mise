@@ -22,7 +22,6 @@ use crate::plugins::core::deno::DenoPlugin;
 use crate::plugins::core::erlang::ErlangPlugin;
 #[cfg(unix)]
 use crate::plugins::core::go::GoPlugin;
-#[cfg(unix)]
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 #[cfg(unix)]
@@ -43,7 +42,6 @@ mod deno;
 mod erlang;
 #[cfg(unix)]
 mod go;
-#[cfg(unix)]
 mod java;
 mod node;
 mod python;
@@ -72,7 +70,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         // Arc::new(DenoPlugin::new()),
         // Arc::new(ErlangPlugin::new()),
         // Arc::new(GoPlugin::new()),
-        // Arc::new(JavaPlugin::new()),
+        Arc::new(JavaPlugin::new()),
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
