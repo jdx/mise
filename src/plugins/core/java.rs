@@ -156,7 +156,14 @@ impl JavaPlugin {
     ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("installing {filename}"));
-        file::untar(tarball_path, &tv.download_path())?;
+        if m.file_type
+            .as_ref()
+            .is_some_and(|file_type| file_type == "zip")
+        {
+            file::unzip(tarball_path, &tv.download_path())?;
+        } else {
+            file::untar(tarball_path, &tv.download_path())?;
+        }
         self.move_to_install_path(tv, m)
     }
 
@@ -491,5 +498,9 @@ impl Display for JavaMetadata {
 // only care about these features
 static JAVA_FEATURES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["musl", "javafx", "lite", "large_heap"].map(|s| s.to_string())));
+#[cfg(unix)]
 static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["tar.gz"].map(|s| s.to_string())));
+#[cfg(windows)]
+static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
+    Lazy::new(|| HashSet::from(["zip"].map(|s| s.to_string())));
