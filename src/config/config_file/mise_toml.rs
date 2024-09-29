@@ -14,11 +14,9 @@ use toml_edit::{table, value, Array, DocumentMut, Item, Value};
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::config_file::toml::deserialize_arr;
-use crate::config::config_file::toml::deserialize_path_entry_arr;
+use crate::config::config_file::toml::{deserialize_arr, deserialize_path_entry_arr};
 use crate::config::config_file::{trust_check, ConfigFile, TaskConfig};
-use crate::config::env_directive::EnvDirective;
-use crate::config::env_directive::PathEntry;
+use crate::config::env_directive::{EnvDirective, PathEntry};
 use crate::config::settings::SettingsPartial;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};

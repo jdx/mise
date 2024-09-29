@@ -1,22 +1,24 @@
-## `mise tasks deps [OPTIONS] [TASKS]...` <Badge type="warning" text="experimental" />
+# `mise tasks deps [--hidden] [--dot] [TASKS]...`
 
-```text
 [experimental] Display a tree visualization of a dependency graph
 
-Usage: tasks deps [OPTIONS] [TASKS]...
+## Arguments
 
-Arguments:
-  [TASKS]...
-          Tasks to show dependencies for
-          Can specify multiple tasks by separating with spaces
-          e.g.: mise tasks deps lint test check
+### `[TASKS]...`
 
-Options:
-      --hidden
-          Show hidden tasks
+Tasks to show dependencies for
+Can specify multiple tasks by separating with spaces
+e.g.: mise tasks deps lint test check
 
-      --dot
-          Display dependencies in DOT format
+## Flags
+
+### `--hidden`
+
+Show hidden tasks
+
+### `--dot`
+
+Display dependencies in DOT format
 
 Examples:
 
@@ -28,4 +30,3 @@ Examples:
 
     # Show dependencies in DOT format
     $ mise tasks deps --dot
-```

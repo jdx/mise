@@ -119,9 +119,7 @@ impl Task {
 
         let task = Task {
             hide: !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default(),
-            aliases: p
-                .parse_array("alias")?
-                .unwrap_or(vec![p.parse_str("alias")?.unwrap_or_default()]),
+            aliases: p.parse_array("alias")?.unwrap_or_default(),
             description: p.parse_str("description")?.unwrap_or_default(),
             sources: p.parse_array("sources")?.unwrap_or_default(),
             outputs: p.parse_array("outputs")?.unwrap_or_default(),
@@ -179,17 +177,31 @@ impl Task {
     }
 
     pub fn parse_usage_spec(&self, cwd: Option<PathBuf>) -> Result<(usage::Spec, Vec<String>)> {
-        if let Some(file) = &self.file {
+        let (mut spec, scripts) = if let Some(file) = &self.file {
             let mut spec = usage::Spec::parse_script(file)
                 .inspect_err(|e| debug!("failed to parse task file with usage: {e}"))
                 .unwrap_or_default();
             spec.cmd.name = self.name.clone();
-            Ok((spec, vec![]))
+            (spec, vec![])
         } else {
-            let (scripts, mut spec) = TaskScriptParser::new(cwd).parse_run_scripts(&self.run)?;
-            spec.cmd.name = self.name.clone();
-            Ok((spec, scripts))
+            let (scripts, spec) = TaskScriptParser::new(cwd).parse_run_scripts(&self.run)?;
+            (spec, scripts)
+        };
+        spec.name = self.name.clone();
+        spec.bin = self.name.clone();
+        if spec.cmd.help.is_none() {
+            spec.cmd.help = Some(self.description.clone());
         }
+        spec.cmd.name = self.name.clone();
+        spec.cmd.aliases = self.aliases.clone();
+        if spec.cmd.before_help.is_none()
+            && spec.cmd.before_help_long.is_none()
+            && !self.depends.is_empty()
+        {
+            spec.cmd.before_help_long = Some(format!("* Depends: {}", self.depends.join(", ")));
+        }
+        spec.cmd.usage = spec.cmd.usage();
+        Ok((spec, scripts))
     }
 
     pub fn render_run_scripts_with_args(
@@ -221,9 +233,10 @@ impl Task {
         }
     }
 
-    pub fn render_markdown(&self) -> Result<String> {
-        let (spec, _) = self.parse_usage_spec(None)?;
-        Ok(spec.render_markdown()?)
+    pub fn render_markdown(&self, dir: &Path) -> Result<String> {
+        let (spec, _) = self.parse_usage_spec(Some(dir.to_path_buf()))?;
+        let ctx = usage::docs::markdown::MarkdownRenderer::new(&spec).with_header_level(2);
+        Ok(ctx.render_spec()?)
     }
 }
 

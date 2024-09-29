@@ -1,6 +1,5 @@
-## `mise reshim`
+# `mise reshim`
 
-```text
 rebuilds the shim farm
 
 This creates new shims in ~/.local/share/mise/shims for CLIs that have been added.
@@ -17,11 +16,8 @@ npm() {
   mise reshim
 }
 
-Usage: reshim
-
 Examples:
 
     $ mise reshim
     $ ~/.local/share/mise/shims/node -v
     v20.0.0
-```

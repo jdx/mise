@@ -1,39 +1,41 @@
-## `mise exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]`
+# `mise exec [flags] [TOOL@VERSION]... [COMMAND]...`
 
-**Aliases:** `x`
+**Aliases**: x
 
-```text
 Execute a command with tool(s) set
 
 use this to avoid modifying the shell session or running ad-hoc commands with mise tools set.
 
-Tools will be loaded from .mise.toml/.tool-versions, though they can be overridden with <RUNTIME> args
+Tools will be loaded from .mise.toml/.tool-versions, though they can be overridden with &lt;RUNTIME> args
 Note that only the plugin specified will be overridden, so if a `.tool-versions` file
 includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
 
 The "--" separates runtimes from the commands to pass along to the subprocess.
 
-Usage: exec [OPTIONS] [TOOL@VERSION]... [-- <COMMAND>...]
+## Arguments
 
-Arguments:
-  [TOOL@VERSION]...
-          Tool(s) to start e.g.: node@20 python@3.10
+### `[TOOL@VERSION]...`
 
-  [COMMAND]...
-          Command string to execute (same as --command)
+Tool(s) to start e.g.: node@20 python@3.10
 
-Options:
-  -c, --command <C>
-          Command string to execute
+### `[COMMAND]...`
 
-  -j, --jobs <JOBS>
-          Number of jobs to run in parallel
-          [default: 4]
-          
-          [env: MISE_JOBS=]
+Command string to execute (same as --command)
 
-      --raw
-          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+## Flags
+
+### `-c --command <C>`
+
+Command string to execute
+
+### `-j --jobs <JOBS>`
+
+Number of jobs to run in parallel
+[default: 4]
+
+### `--raw`
+
+Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
 Examples:
 
@@ -45,4 +47,3 @@ Examples:
 
     # Run a command in a different directory:
     $ mise x -C /path/to/project node@20 -- node ./app.js
-```

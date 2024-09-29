@@ -1,17 +1,18 @@
-## `mise tasks info [OPTIONS] <TASK>` <Badge type="warning" text="experimental" />
+# `mise tasks info [-J --json] <TASK>`
 
-```text
 [experimental] Get information about a task
 
-Usage: tasks info [OPTIONS] <TASK>
+## Arguments
 
-Arguments:
-  <TASK>
-          Name of the task to get information about
+### `<TASK>`
 
-Options:
-  -J, --json
-          Output in JSON format
+Name of the task to get information about
+
+## Flags
+
+### `-J --json`
+
+Output in JSON format
 
 Examples:
 
@@ -40,4 +41,3 @@ Examples:
       "file": null,
       "usage_spec": {}
     }
-```

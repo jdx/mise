@@ -1,32 +1,36 @@
-## `mise trust [OPTIONS] [CONFIG_FILE]`
+# `mise trust [flags] [CONFIG_FILE]`
 
-```text
 Marks a config file as trusted
 
 This means mise will parse the file with potentially dangerous
 features enabled.
 
 This includes:
+
 - environment variables
 - templates
 - `path:` plugin versions
 
-Usage: trust [OPTIONS] [CONFIG_FILE]
+## Arguments
 
-Arguments:
-  [CONFIG_FILE]
-          The config file to trust
+### `[CONFIG_FILE]`
 
-Options:
-  -a, --all
-          Trust all config files in the current directory and its parents
+The config file to trust
 
-      --untrust
-          No longer trust this config
+## Flags
 
-      --show
-          Show the trusted status of config files from the current directory and its parents.
-          Does not trust or untrust any files.
+### `-a --all`
+
+Trust all config files in the current directory and its parents
+
+### `--untrust`
+
+No longer trust this config
+
+### `--show`
+
+Show the trusted status of config files from the current directory and its parents.
+Does not trust or untrust any files.
 
 Examples:
     # trusts ~/some_dir/.mise.toml
@@ -34,4 +38,3 @@ Examples:
 
     # trusts .mise.toml in the current or parent directory
     $ mise trust
-```
