@@ -306,7 +306,25 @@ impl Toolset {
     pub fn list_current_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_versions_by_plugin()
             .iter()
-            .flat_map(|(p, v)| v.iter().map(|v| (p.clone(), v.clone())))
+            .flat_map(|(p, v)| {
+                v.iter().map(|v| {
+                    // map cargo backend specific prefixes to ref
+                    let tv = match v.version.split_once(':') {
+                        Some((ref_type @ ("tag" | "branch" | "rev"), r)) => {
+                            let request = ToolRequest::Ref {
+                                backend: p.fa().clone(),
+                                ref_: r.to_string(),
+                                ref_type: ref_type.to_string(),
+                                options: v.request.options().clone(),
+                            };
+                            let version = format!("ref:{r}");
+                            ToolVersion::new(p.as_ref(), request, version)
+                        }
+                        _ => v.clone(),
+                    };
+                    (p.clone(), tv.clone())
+                })
+            })
             .collect()
     }
     pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
