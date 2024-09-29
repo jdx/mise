@@ -1,4 +1,6 @@
-# `mise link [-f --force] <TOOL@VERSION> <PATH>`
+# `mise link`
+
+**Usage**: `mise link [-f --force] <TOOL@VERSION> <PATH>`
 
 **Aliases**: ln
 

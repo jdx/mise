@@ -1,4 +1,6 @@
-# `mise use [flags] [TOOL@VERSION]...`
+# `mise use`
+
+**Usage**: `mise use [FLAGS] [TOOL@VERSION]...`
 
 **Aliases**: u
 

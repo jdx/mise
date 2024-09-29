@@ -1,4 +1,6 @@
-# `mise which [flags] <BIN_NAME>`
+# `mise which`
+
+**Usage**: `mise which [FLAGS] <BIN_NAME>`
 
 Shows the path that a tool's bin points to.
 

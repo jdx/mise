@@ -1,4 +1,6 @@
-# `mise where <TOOL@VERSION>`
+# `mise where`
+
+**Usage**: `mise where <TOOL@VERSION>`
 
 Display the installation path for a tool
 

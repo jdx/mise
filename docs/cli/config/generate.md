@@ -1,4 +1,6 @@
-# `mise config generate [-o --output <OUTPUT>]`
+# `mise config generate`
+
+**Usage**: `mise config generate [-o --output <OUTPUT>]`
 
 **Aliases**: g
 

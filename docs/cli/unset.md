@@ -1,4 +1,6 @@
-# `mise unset [-f --file <FILE>] [-g --global] [KEYS]...`
+# `mise unset`
+
+**Usage**: `mise unset [-f --file <FILE>] [-g --global] [KEYS]...`
 
 Remove environment variable(s) from the config file.
 

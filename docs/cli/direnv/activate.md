@@ -1,5 +1,7 @@
 # `mise direnv activate`
 
+**Usage**: `mise direnv activate`
+
 Output direnv function to use mise inside direnv
 
 See <https://mise.jdx.dev/direnv.html> for more information

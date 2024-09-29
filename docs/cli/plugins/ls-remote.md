@@ -1,4 +1,6 @@
-# `mise plugins ls-remote [-u --urls] [--only-names]`
+# `mise plugins ls-remote`
+
+**Usage**: `mise plugins ls-remote [-u --urls] [--only-names]`
 
 **Aliases**: list-remote, list-all
 

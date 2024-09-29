@@ -1,4 +1,6 @@
-# `mise plugins link [-f --force] <NAME> [PATH]`
+# `mise plugins link`
+
+**Usage**: `mise plugins link [-f --force] <NAME> [PATH]`
 
 **Aliases**: ln
 

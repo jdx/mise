@@ -1,4 +1,6 @@
-# `mise upgrade [flags] [TOOL@VERSION]...`
+# `mise upgrade`
+
+**Usage**: `mise upgrade [FLAGS] [TOOL@VERSION]...`
 
 **Aliases**: up
 

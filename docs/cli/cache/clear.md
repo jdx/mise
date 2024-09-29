@@ -1,4 +1,6 @@
-# `mise cache clear [PLUGIN]...`
+# `mise cache clear`
+
+**Usage**: `mise cache clear [PLUGIN]...`
 
 **Aliases**: c
 

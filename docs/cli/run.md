@@ -1,4 +1,6 @@
-# `mise run [flags]`
+# `mise run`
+
+**Usage**: `mise run [FLAGS]`
 
 **Aliases**: r
 

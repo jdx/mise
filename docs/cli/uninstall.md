@@ -1,4 +1,6 @@
-# `mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`
+# `mise uninstall`
+
+**Usage**: `mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`
 
 **Aliases**: remove, rm
 

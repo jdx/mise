@@ -1,4 +1,6 @@
-# `mise self-update [flags] [VERSION]`
+# `mise self-update`
+
+**Usage**: `mise self-update [FLAGS] [VERSION]`
 
 Updates mise itself.
 

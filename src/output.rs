@@ -102,7 +102,7 @@ pub fn should_display_hint(id: &str) -> bool {
         .iter()
         .any(|hint| hint == id || hint == "*")
     {
-        return true;
+        return false;
     }
     if !console::user_attended() {
         return false;
@@ -110,17 +110,16 @@ pub fn should_display_hint(id: &str) -> bool {
     static DISPLAYED_HINTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(Default::default);
     let displayed_hints = &mut DISPLAYED_HINTS.lock().unwrap();
     if displayed_hints.contains(id) {
-        true
-    } else {
-        displayed_hints.insert(id.to_string());
-        false
+        return false;
     }
+    displayed_hints.insert(id.to_string());
+    true
 }
 
 #[macro_export]
 macro_rules! hint {
     ($id:expr, $message:expr, $example_cmd:expr) => {{
-        if !$crate::output::should_display_hint($id) {
+        if $crate::output::should_display_hint($id) {
             let prefix = console::style("mise ").dim().for_stderr().to_string();
             let prefix = prefix
                 + console::style("hint")

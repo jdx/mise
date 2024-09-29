@@ -1,4 +1,6 @@
-# `mise tasks deps [--hidden] [--dot] [TASKS]...`
+# `mise tasks deps`
+
+**Usage**: `mise tasks deps [--hidden] [--dot] [TASKS]...`
 
 [experimental] Display a tree visualization of a dependency graph
 
