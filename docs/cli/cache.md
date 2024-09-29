@@ -1,4 +1,6 @@
-# `mise cache [subcommand]`
+# `mise cache`
+
+**Usage**: `mise cache <SUBCOMMAND>`
 
 Manage the mise cache
 

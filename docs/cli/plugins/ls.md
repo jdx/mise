@@ -1,4 +1,6 @@
-# `mise plugins ls [flags]`
+# `mise plugins ls`
+
+**Usage**: `mise plugins ls [FLAGS]`
 
 **Aliases**: list
 

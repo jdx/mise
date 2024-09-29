@@ -1,4 +1,6 @@
-# `mise config ls [--no-header]`
+# `mise config ls`
+
+**Usage**: `mise config ls [--no-header]`
 
 List config files currently in use
 

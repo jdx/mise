@@ -1,4 +1,6 @@
-# `mise alias get <PLUGIN> <ALIAS>`
+# `mise alias get`
+
+**Usage**: `mise alias get <PLUGIN> <ALIAS>`
 
 Show an alias for a plugin
 

@@ -1,4 +1,6 @@
-# `mise generate git-pre-commit [flags]`
+# `mise generate git-pre-commit`
+
+**Usage**: `mise generate git-pre-commit [FLAGS]`
 
 **Aliases**: pre-commit
 

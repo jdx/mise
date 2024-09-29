@@ -1,5 +1,7 @@
 # `mise version`
 
+**Usage**: `mise version`
+
 **Aliases**: v
 
 Display the version of mise

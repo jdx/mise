@@ -1,4 +1,6 @@
-# `mise watch [-t --task... <TASK>] [-g --glob... <GLOB>] [ARGS]...`
+# `mise watch`
+
+**Usage**: `mise watch [-t --task... <TASK>] [-g --glob... <GLOB>] [ARGS]...`
 
 **Aliases**: w
 

@@ -1,4 +1,6 @@
-# `mise prune [flags] [PLUGIN]...`
+# `mise prune`
+
+**Usage**: `mise prune [FLAGS] [PLUGIN]...`
 
 Delete unused versions of tools
 

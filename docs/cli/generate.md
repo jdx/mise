@@ -1,4 +1,6 @@
-# `mise generate [subcommand]`
+# `mise generate`
+
+**Usage**: `mise generate <SUBCOMMAND>`
 
 **Aliases**: g
 
@@ -6,6 +8,6 @@
 
 ## Subcommands
 
-* [`mise generate git-pre-commit [flags]`](/cli/generate/git-pre-commit.md)
-* [`mise generate github-action [flags]`](/cli/generate/github-action.md)
-* [`mise generate task-docs [flags]`](/cli/generate/task-docs.md)
+* [`mise generate git-pre-commit [FLAGS]`](/cli/generate/git-pre-commit.md)
+* [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
+* [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)

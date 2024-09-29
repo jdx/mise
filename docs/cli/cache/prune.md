@@ -1,4 +1,6 @@
-# `mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`
+# `mise cache prune`
+
+**Usage**: `mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`
 
 **Aliases**: p
 

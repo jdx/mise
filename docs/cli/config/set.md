@@ -1,4 +1,6 @@
-# `mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`
+# `mise config set`
+
+**Usage**: `mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`
 
 Display the value of a setting in a mise.toml file
 
