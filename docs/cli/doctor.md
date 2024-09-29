@@ -1,5 +1,7 @@
 # `mise doctor`
 
+**Usage**: `mise doctor`
+
 **Aliases**: dr
 
 Check mise installation for possible problems

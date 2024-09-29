@@ -1,4 +1,6 @@
-# `mise generate task-docs [flags]`
+# `mise generate task-docs`
+
+**Usage**: `mise generate task-docs [FLAGS]`
 
 [experimental] Generate documentation for tasks in a project
 

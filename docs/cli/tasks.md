@@ -1,4 +1,6 @@
-# `mise tasks [flags] [subcommand]`
+# `mise tasks`
+
+**Usage**: `mise tasks [FLAGS] <SUBCOMMAND>`
 
 **Aliases**: t
 
@@ -35,8 +37,8 @@ Output in JSON format
 * [`mise tasks deps [--hidden] [--dot] [TASKS]...`](/cli/tasks/deps.md)
 * [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
 * [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
-* [`mise tasks ls [flags]`](/cli/tasks/ls.md)
-* [`mise tasks run [flags] [TASK] [ARGS]...`](/cli/tasks/run.md)
+* [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
+* [`mise tasks run [FLAGS] [TASK] [ARGS]...`](/cli/tasks/run.md)
 
 Examples:
 

@@ -1,4 +1,6 @@
-# `mise tasks run [flags] [TASK] [ARGS]...`
+# `mise tasks run`
+
+**Usage**: `mise tasks run [FLAGS] [TASK] [ARGS]...`
 
 **Aliases**: r
 

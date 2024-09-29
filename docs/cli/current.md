@@ -1,4 +1,6 @@
-# `mise current [PLUGIN]`
+# `mise current`
+
+**Usage**: `mise current [PLUGIN]`
 
 Shows current active and installed runtime versions
 

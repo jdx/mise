@@ -1,4 +1,6 @@
-# `mise ls [flags] [PLUGIN]...`
+# `mise ls`
+
+**Usage**: `mise ls [FLAGS] [PLUGIN]...`
 
 **Aliases**: list
 

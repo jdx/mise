@@ -1,4 +1,6 @@
-# `mise settings set <SETTING> <VALUE>`
+# `mise settings set`
+
+**Usage**: `mise settings set <SETTING> <VALUE>`
 
 **Aliases**: add, create
 

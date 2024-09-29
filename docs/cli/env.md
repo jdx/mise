@@ -1,4 +1,6 @@
-# `mise env [-J --json] [-s --shell <SHELL>] [TOOL@VERSION]...`
+# `mise env`
+
+**Usage**: `mise env [-J --json] [-s --shell <SHELL>] [TOOL@VERSION]...`
 
 **Aliases**: e
 

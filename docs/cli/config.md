@@ -1,4 +1,6 @@
-# `mise config [--no-header] [subcommand]`
+# `mise config`
+
+**Usage**: `mise config [--no-header] <SUBCOMMAND>`
 
 **Aliases**: cfg
 

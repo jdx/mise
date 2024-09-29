@@ -1,4 +1,6 @@
-# `mise tasks ls [flags]`
+# `mise tasks ls`
+
+**Usage**: `mise tasks ls [FLAGS]`
 
 [experimental] List available tasks to execute
 These may be included from the config file or from the project's .mise/tasks directory

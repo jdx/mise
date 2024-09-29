@@ -1,5 +1,7 @@
 # `mise reshim`
 
+**Usage**: `mise reshim`
+
 Creates new shims based on bin paths from currently installed tools.
 
 This creates new shims in ~/.local/share/mise/shims for CLIs that have been added.

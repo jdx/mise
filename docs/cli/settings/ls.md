@@ -1,4 +1,6 @@
-# `mise settings ls [--keys]`
+# `mise settings ls`
+
+**Usage**: `mise settings ls [--keys]`
 
 **Aliases**: list
 

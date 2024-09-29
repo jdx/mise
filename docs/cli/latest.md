@@ -1,4 +1,6 @@
-# `mise latest [-i --installed] <TOOL@VERSION>`
+# `mise latest`
+
+**Usage**: `mise latest [-i --installed] <TOOL@VERSION>`
 
 Gets the latest available version for a plugin
 
