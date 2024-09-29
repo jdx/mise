@@ -2,9 +2,11 @@
 source: src/cli/generate/task_docs.rs
 expression: output
 ---
-## `filetask [--user <user>]`
+## `filetask`
 
 * Depends: lint, test
+
+**Usage**: `filetask [--user <user>]`
 
 **Aliases**: ft
 
