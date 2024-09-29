@@ -157,10 +157,11 @@ export default defineConfig({
 function cliReference(commands: { [key: string]: Command }) {
   return Object.keys(commands)
     .map((name) => [name, commands[name]] as [string, Command])
-    .filter(([name, command]) => command.hide !== true)
+    .filter(([_name, command]) => command.hide !== true)
     .map(([name, command]) => {
       const x: any = {
         text: `mise ${name}`,
+        link: `/cli/${name}`,
       };
       if (command.subcommands) {
         x.collapsed = true;
@@ -172,8 +173,6 @@ function cliReference(commands: { [key: string]: Command }) {
             text: `mise ${name} ${subcommand}`,
             link: `/cli/${name}/${subcommand}`,
           }));
-      } else {
-        x.link = `/cli/${name}`;
       }
       return x;
     });
