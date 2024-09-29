@@ -28,15 +28,15 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, prompt, style};
 use crate::{dirs, env, file, ui};
 
-/// [experimental] Run a tasks
+/// [experimental] Run task(s)
 ///
 /// This command will run a tasks, or multiple tasks in parallel.
 /// Tasks may have dependencies on other tasks or on source files.
 /// If source is configured on a tasks, it will only run if the source
 /// files have changed.
 ///
-/// Tasks can be defined in .mise.toml or as standalone scripts.
-/// In .mise.toml, tasks take this form:
+/// Tasks can be defined in mise.toml or as standalone scripts.
+/// In mise.toml, tasks take this form:
 ///
 ///     [tasks.build]
 ///     run = "npm run build"
@@ -586,7 +586,7 @@ fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    # Runs the "lint" tasks. This needs to either be defined in .mise.toml
+    # Runs the "lint" tasks. This needs to either be defined in mise.toml
     # or as a standalone script. See the project README for more information.
     $ <bold>mise run lint</bold>
 

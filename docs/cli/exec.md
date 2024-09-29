@@ -6,8 +6,8 @@ Execute a command with tool(s) set
 
 use this to avoid modifying the shell session or running ad-hoc commands with mise tools set.
 
-Tools will be loaded from .mise.toml/.tool-versions, though they can be overridden with &lt;RUNTIME> args
-Note that only the plugin specified will be overridden, so if a `.tool-versions` file
+Tools will be loaded from mise.toml, though they can be overridden with &lt;RUNTIME> args
+Note that only the plugin specified will be overridden, so if a `mise.toml` file
 includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
 
 The "--" separates runtimes from the commands to pass along to the subprocess.

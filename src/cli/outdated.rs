@@ -8,6 +8,8 @@ use eyre::Result;
 use indexmap::IndexMap;
 
 /// Shows outdated tool versions
+///
+/// See `mise upgrade` to upgrade these versions.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Outdated {

@@ -2,7 +2,9 @@
 
 **Aliases**: remove, rm
 
-Removes runtime versions
+Removes installed tool versions
+
+This only removes the installed version, it does not modify mise.toml.
 
 ## Arguments
 
@@ -22,6 +24,11 @@ Do not actually delete anything
 
 Examples:
 
-    mise uninstall node@18.0.0 # will uninstall specific version
-    mise uninstall node        # will uninstall current node version
-    mise uninstall --all node@18.0.0 # will uninstall all node versions
+    # will uninstall specific version
+    $ mise uninstall node@18.0.0 
+
+    # will uninstall the current node version (if only one version is installed)
+    $ mise uninstall node
+
+    # will uninstall all installed versions of node
+    $ mise uninstall --all node@18.0.0 # will uninstall all node versions

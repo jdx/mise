@@ -12,8 +12,13 @@ use crate::config::Settings;
 use crate::file::modified_duration;
 use crate::{dirs, duration, env, file};
 
+/// Display the version of mise
+///
+/// Displays the version, os, architecture, and the date of the build.
+///
+/// If the version is out of date, it will display a warning.
 #[derive(Debug, clap::Args)]
-#[clap(about = "Show mise version", alias = "v")]
+#[clap(verbatim_doc_comment, visible_alias = "v", after_long_help = AFTER_LONG_HELP)]
 pub struct Version {}
 
 pub static OS: Lazy<String> = Lazy::new(|| env::consts::OS.into());
@@ -38,6 +43,16 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
     };
     format!("{v} {os}-{arch} {extra}", os = *OS, arch = *ARCH)
 });
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise version</bold>
+    $ <bold>mise --version</bold>
+    $ <bold>mise -v</bold>
+    $ <bold>mise -V</bold>
+"#
+);
 
 pub static V: Lazy<Versioning> = Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());
 

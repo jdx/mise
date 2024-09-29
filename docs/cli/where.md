@@ -1,8 +1,8 @@
 # `mise where <TOOL@VERSION>`
 
-Display the installation path for a runtime
+Display the installation path for a tool
 
-Must be installed.
+The tool must be installed for this to work.
 
 ## Arguments
 
@@ -15,6 +15,7 @@ that matches the prefix
 otherwise, it will show the current, active installed version
 
 Examples:
+
     # Show the latest installed version of node
     # If it is is not installed, errors
     $ mise where node@20

@@ -7,6 +7,8 @@ use crate::toolset::ToolRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Gets the latest available version for a plugin
+///
+/// Supports prefixes such as `node@20` to get the latest version of node 20.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Latest {

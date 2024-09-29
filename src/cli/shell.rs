@@ -8,13 +8,12 @@ use crate::env;
 use crate::shell::get_shell;
 use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
 
-/// Sets a tool version for the current session
+/// Sets a tool version for the current session.
 ///
 /// Only works in a session where mise is already activated.
 ///
 /// This works by setting environment variables for the current shell session
-/// such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created
-/// by `mise activate`.
+/// such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "sh", after_long_help = AFTER_LONG_HELP)]
 pub struct Shell {

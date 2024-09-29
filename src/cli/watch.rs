@@ -8,7 +8,10 @@ use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::toolset::ToolsetBuilder;
 
-/// [experimental] Run a tasks watching for changes
+/// [experimental] Run task(s) and watch for changes to rerun it
+///
+/// This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
+/// It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "w", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Watch {
@@ -125,15 +128,15 @@ impl Watch {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
     
-        $ <bold>mise watch -t build</bold>
-        Runs the "build" tasks. Will re-run the tasks when any of its sources change.
-        Uses "sources" from the tasks definition to determine which files to watch.
+    $ <bold>mise watch -t build</bold>
+    Runs the "build" tasks. Will re-run the tasks when any of its sources change.
+    Uses "sources" from the tasks definition to determine which files to watch.
 
-        $ <bold>mise watch -t build --glob src/**/*.rs</bold>
-        Runs the "build" tasks but specify the files to watch with a glob pattern.
-        This overrides the "sources" from the tasks definition.
+    $ <bold>mise watch -t build --glob src/**/*.rs</bold>
+    Runs the "build" tasks but specify the files to watch with a glob pattern.
+    This overrides the "sources" from the tasks definition.
 
-        $ <bold>mise run -t build --clear</bold>
-        Extra arguments are passed to watchexec. See `watchexec --help` for details.
+    $ <bold>mise run -t build --clear</bold>
+    Extra arguments are passed to watchexec. See `watchexec --help` for details.
 "#
 );

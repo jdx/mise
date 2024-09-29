@@ -33,8 +33,9 @@ Show the trusted status of config files from the current directory and its paren
 Does not trust or untrust any files.
 
 Examples:
-    # trusts ~/some_dir/.mise.toml
-    $ mise trust ~/some_dir/.mise.toml
 
-    # trusts .mise.toml in the current or parent directory
+    # trusts ~/some_dir/mise.toml
+    $ mise trust ~/some_dir/mise.toml
+
+    # trusts mise.toml in the current or parent directory
     $ mise trust

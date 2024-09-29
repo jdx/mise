@@ -2,13 +2,12 @@
 
 **Aliases**: sh
 
-Sets a tool version for the current session
+Sets a tool version for the current session.
 
 Only works in a session where mise is already activated.
 
 This works by setting environment variables for the current shell session
-such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created
-by `mise activate`.
+such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
 
 ## Arguments
 

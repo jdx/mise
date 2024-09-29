@@ -10,10 +10,9 @@ use crate::cli::args::ToolArg;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-/// List runtime versions available for install
+/// List runtime versions available for install.
 ///
-/// note that the results are cached
-/// run `mise cache clean` to clear the cache and get fresh results
+/// Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
 )]

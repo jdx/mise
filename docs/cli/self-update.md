@@ -1,10 +1,12 @@
 # `mise self-update [flags] [VERSION]`
 
-Updates mise itself
+Updates mise itself.
 
 Uses the GitHub Releases API to find the latest release and binary.
 By default, this will also update any installed plugins.
 Uses the `GITHUB_API_TOKEN` environment variable if set for higher rate limits.
+
+This command is not available if mise is installed via a package manager.
 
 ## Arguments
 

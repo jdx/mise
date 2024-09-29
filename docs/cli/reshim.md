@@ -1,6 +1,6 @@
 # `mise reshim`
 
-rebuilds the shim farm
+Creates new shims based on bin paths from currently installed tools.
 
 This creates new shims in ~/.local/share/mise/shims for CLIs that have been added.
 mise will try to do this automatically for commands like `npm i -g` but there are
@@ -15,6 +15,9 @@ npm() {
   command npm "$@"
   mise reshim
 }
+
+Note that this creates shims for _all_ installed tools, not just the ones that are
+currently active in mise.toml.
 
 Examples:
 

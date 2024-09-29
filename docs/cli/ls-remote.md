@@ -1,9 +1,8 @@
 # `mise ls-remote [--all] [TOOL@VERSION] [PREFIX]`
 
-List runtime versions available for install
+List runtime versions available for install.
 
-note that the results are cached
-run `mise cache clean` to clear the cache and get fresh results
+Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.
 
 ## Arguments
 

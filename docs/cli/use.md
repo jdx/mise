@@ -2,12 +2,12 @@
 
 **Aliases**: u
 
-Install tool version and add it to config
+Installs a tool and adds the version it to mise.toml.
 
-This will install the tool if it is not already installed.
-By default, this will use an `.mise.toml` file in the current directory.
-Use the --global flag to use the global config file instead.
-This replaces asdf's `local` and `global` commands, however those are still available in mise.
+This will install the tool version if it is not already installed.
+By default, this will use a `mise.toml` file in the current directory.
+
+Use the `--global` flag to use the global config file instead.
 
 ## Arguments
 
@@ -52,7 +52,7 @@ Remove the plugin(s) from config file
 
 ### `-p --path <PATH>`
 
-Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions
+Specify a path to a config file or directory If a directory is specified, it will look for mise.toml (default) or .tool-versions
 
 ### `--pin`
 
@@ -62,7 +62,7 @@ Set MISE_ASDF_COMPAT=1 to make this the default behavior
 
 Examples:
 
-    # set the current version of node to 20.x in .mise.toml of current directory
+    # set the current version of node to 20.x in mise.toml of current directory
     # will write the fuzzy version (e.g.: 20)
     $ mise use node@20
 

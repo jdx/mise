@@ -2,6 +2,8 @@
 
 Gets the latest available version for a plugin
 
+Supports prefixes such as `node@20` to get the latest version of node 20.
+
 ## Arguments
 
 ### `<TOOL@VERSION>`

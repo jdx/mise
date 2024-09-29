@@ -142,10 +142,11 @@ impl Trust {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-    # trusts ~/some_dir/.mise.toml
-    $ <bold>mise trust ~/some_dir/.mise.toml</bold>
 
-    # trusts .mise.toml in the current or parent directory
+    # trusts ~/some_dir/mise.toml
+    $ <bold>mise trust ~/some_dir/mise.toml</bold>
+
+    # trusts mise.toml in the current or parent directory
     $ <bold>mise trust</bold>
 "#
 );

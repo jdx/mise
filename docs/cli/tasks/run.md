@@ -2,15 +2,15 @@
 
 **Aliases**: r
 
-[experimental] Run a tasks
+[experimental] Run task(s)
 
 This command will run a tasks, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
 If source is configured on a tasks, it will only run if the source
 files have changed.
 
-Tasks can be defined in .mise.toml or as standalone scripts.
-In .mise.toml, tasks take this form:
+Tasks can be defined in mise.toml or as standalone scripts.
+In mise.toml, tasks take this form:
 
     [tasks.build]
     run = "npm run build"
@@ -87,7 +87,7 @@ Shows elapsed time after each tasks
 
 Examples:
 
-    # Runs the "lint" tasks. This needs to either be defined in .mise.toml
+    # Runs the "lint" tasks. This needs to either be defined in mise.toml
     # or as a standalone script. See the project README for more information.
     $ mise run lint
 
