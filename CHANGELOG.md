@@ -1,5 +1,37 @@
 # Changelog
 
+## [2024.9.12](https://github.com/jdx/mise/compare/v2024.9.11..v2024.9.12) - 2024-09-29
+
+### 🚀 Features
+
+- offer to chmod non-executable tasks by [@jdx](https://github.com/jdx) in [#2675](https://github.com/jdx/mise/pull/2675)
+- added basic task markdown generation by [@jdx](https://github.com/jdx) in [#2677](https://github.com/jdx/mise/pull/2677)
+- Lazily evaluated env template variables in path entries by [@josb](https://github.com/josb) in [#2310](https://github.com/jdx/mise/pull/2310)
+- improving task docs and cli reference docs by [@jdx](https://github.com/jdx) in [#2678](https://github.com/jdx/mise/pull/2678)
+
+### 🐛 Bug Fixes
+
+- do not load symlinked config files more than once by [@jdx](https://github.com/jdx) in [eb53099](https://github.com/jdx/mise/commit/eb530995e5126787187ef221f814ebbe3cb64824)
+- minor bugs with incomplete python-build by [@jdx](https://github.com/jdx) in [b56ff50](https://github.com/jdx/mise/commit/b56ff50728bea6a82ec700f89b4f348f52e3a67e)
+- don't show use override warning if symlink file by [@jdx](https://github.com/jdx) in [face79b](https://github.com/jdx/mise/commit/face79bbb30aba064caf123e1da6993cd203490a)
+
+### 🚜 Refactor
+
+- use wrap_err instead of map_err by [@jdx](https://github.com/jdx) in [3ef8e78](https://github.com/jdx/mise/commit/3ef8e78fbd12ee4de398c36e4093f6c9b9e8d49f)
+
+### 📚 Documentation
+
+- link to task argument docs by [@jdx](https://github.com/jdx) in [04776a9](https://github.com/jdx/mise/commit/04776a95db65319ee9fd38ffa9c4bf88ecb78033)
+- Update cargo.md by [@Shobhit0109](https://github.com/Shobhit0109) in [#2680](https://github.com/jdx/mise/pull/2680)
+
+### 🔍 Other Changes
+
+- use wrap_err instead of suggestions to display in non-debug by [@jdx](https://github.com/jdx) in [71937c8](https://github.com/jdx/mise/commit/71937c854272367775d63faf60d19994ad6841e7)
+
+### New Contributors
+
+* @josb made their first contribution in [#2310](https://github.com/jdx/mise/pull/2310)
+
 ## [2024.9.11](https://github.com/jdx/mise/compare/v2024.9.10..v2024.9.11) - 2024-09-27
 
 ### 🚀 Features
@@ -264,7 +296,6 @@
 
 ### New Contributors
 
-* @Shobhit0109 made their first contribution in [#2542](https://github.com/jdx/mise/pull/2542)
 * @xavdid made their first contribution in [#2532](https://github.com/jdx/mise/pull/2532)
 * @stanhu made their first contribution in [#2524](https://github.com/jdx/mise/pull/2524)
 
