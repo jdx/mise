@@ -12,7 +12,7 @@ Here is an example of a file task that builds a Rust CLI:
 
 ```bash
 #!/usr/bin/env bash
-# mise description="Build the CLI"
+#MISE description="Build the CLI"
 cargo build
 ```
 
@@ -24,11 +24,11 @@ The other configuration for "script" tasks is supported in this format so you ca
 following-note that this is parsed a TOML table:
 
 ```bash
-# mise alias="b"
-# mise sources=["Cargo.toml", "src/**/*.rs"]
-# mise outputs=["target/debug/mycli"]
-# mise env={RUST_BACKTRACE = "1"}
-# mise depends=["lint", "test"]
+#MISE alias="b"
+#MISE sources=["Cargo.toml", "src/**/*.rs"]
+#MISE outputs=["target/debug/mycli"]
+#MISE env={RUST_BACKTRACE = "1"}
+#MISE depends=["lint", "test"]
 ```
 
 Assuming that file was located in `.mise/tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).

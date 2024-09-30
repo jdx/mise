@@ -97,9 +97,13 @@ impl Task {
     pub fn from_path(path: &Path) -> Result<Task> {
         let info = file::read_to_string(path)?
             .lines()
-            .filter_map(|line| regex!(r"^# mise ([a-z]+=.+)$").captures(line))
+            .filter_map(|line| {
+                regex!(r"^(#|//) mise ([a-z]+=.+)$")
+                    .captures(line)
+                    .or(regex!(r"^(#|//)MISE ([a-z]+=.+)$").captures(line))
+            })
             .map(|captures| captures.extract())
-            .flat_map(|(_, [toml])| {
+            .flat_map(|(_, [_, toml])| {
                 toml.parse::<toml::Value>()
                     .map_err(|e| debug!("failed to parse toml: {e}"))
             })
@@ -119,7 +123,12 @@ impl Task {
 
         let task = Task {
             hide: !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default(),
-            aliases: p.parse_array("alias")?.unwrap_or_default(),
+            aliases: p
+                .parse_array("alias")?
+                .or(p.parse_array("aliases")?)
+                .or(p.parse_str("alias")?.map(|s| vec![s]))
+                .or(p.parse_str("aliases")?.map(|s| vec![s]))
+                .unwrap_or_default(),
             description: p.parse_str("description")?.unwrap_or_default(),
             sources: p.parse_array("sources")?.unwrap_or_default(),
             outputs: p.parse_array("outputs")?.unwrap_or_default(),
