@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mise description="run all tests with coverage report"
+#MISE description="run all tests with coverage report"
 
 echo "::group::Setup"
 set -euxo pipefail

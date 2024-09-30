@@ -72,6 +72,8 @@ run a command inside of development docker container
 
 **Usage**: `filetask [-f --force] [-u --user <user>] <file> <arg_with_default>`
 
+**Aliases**: ft
+
 This is a test build script
 
 ### Arguments
@@ -243,6 +245,8 @@ run all tests with coverage report
 * Depends: build
 
 **Usage**: `test:e2e`
+
+**Aliases**: e
 
 run end-to-end tests
 

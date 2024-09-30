@@ -5,12 +5,13 @@
 #USAGE arg "<file>" help="The file to write" default="file.txt"
 #USAGE arg "<arg_with_default>" help="An arg with a default" default="mydefault"
 
-# mise description="This is a test build script"
-# mise depends=["lint", "build"]
-# mise sources=[".test-tool-versions"]
-# mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
-# mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
-# mise dir="{{config_root}}"
+#MISE description="This is a test build script"
+#MISE depends=["lint", "build"]
+#MISE sources=[".test-tool-versions"]
+#MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+#MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+#MISE dir="{{config_root}}"
+#MISE alias="ft"
 
 set -exo pipefail
 cd "$MISE_PROJECT_ROOT" || exit 1

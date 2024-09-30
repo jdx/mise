@@ -14,11 +14,11 @@ EOF
 mkdir -p .mise/tasks
 cat <<'EOF' >.mise/tasks/filetask
 #!/usr/bin/env bash
-# mise description="This is a test build script"
-# mise depends=["lint", "test"]
-# mise sources=[".test-tool-versions"]
-# mise outputs=["$MISE_PROJECT_ROOT/test-e2e/test-build-output.txt"]
-# mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+#MISE description="This is a test build script"
+#MISE depends=["lint", "test"]
+#MISE sources=[".test-tool-versions"]
+#MISE outputs=["$MISE_PROJECT_ROOT/test-e2e/test-build-output.txt"]
+#MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
 
 set -euxo pipefail
 cd "$MISE_PROJECT_ROOT" || exit 1

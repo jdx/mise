@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mise alias=["format"]
+#MISE alias=["format"]
 set -euxo pipefail
 
 # Used for shellcheck which needs explicit args
