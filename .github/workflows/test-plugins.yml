@@ -23,7 +23,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch'
       || github.repository == 'jdx/mise'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Rust Cache
@@ -40,7 +40,7 @@ jobs:
             dist/*.tar.gz
           if-no-files-found: error
   test-install-and-run:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: [build-linux]
     env:
       GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -118,7 +118,7 @@ jobs:
     # Tests installing the top 50 plugins not already tested in `test-install-and-run`.
     # installing is a better-than-nothing smoke test that the plugin is correctly implemented
     # and behaves as expected with mise.
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: [build-linux]
     env:
       GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}

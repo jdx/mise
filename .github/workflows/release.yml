@@ -172,7 +172,7 @@ jobs:
           max_attempts: 3
           command: ./e2e/run_all_tests
   rpm:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: [build-tarball]
     timeout-minutes: 10
     container: ghcr.io/jdx/mise:rpm
@@ -196,7 +196,7 @@ jobs:
           path: dist/rpmrepo
           if-no-files-found: error
   deb:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: [build-tarball]
     container: ghcr.io/jdx/mise:deb
     timeout-minutes: 10
@@ -302,7 +302,7 @@ jobs:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           formula: mise
   bump-aur:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     needs: [release]
     if: startsWith(github.event.ref, 'refs/tags/v')
@@ -316,7 +316,7 @@ jobs:
       - name: Bump aur
         run: ./scripts/release-aur.sh
   bump-aur-bin:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     needs: [release]
     if: startsWith(github.event.ref, 'refs/tags/v')
@@ -330,7 +330,7 @@ jobs:
       - name: Bump aur-bin
         run: ./scripts/release-aur-bin.sh
   bump-alpine:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     container: ghcr.io/jdx/mise:alpine
     timeout-minutes: 30
     needs: [release]
