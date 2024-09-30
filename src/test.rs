@@ -103,12 +103,12 @@ pub fn reset() {
     file::write(
         ".mise/tasks/filetask",
         indoc! {r#"#!/usr/bin/env bash
-        # mise alias=["ft"]
-        # mise description="This is a test build script"
-        # mise depends=["lint", "test"]
-        # mise sources=[".test-tool-versions"]
-        # mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
-        # mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID", BOOLEAN_VAR = true}
+        #MISE alias="ft"
+        #MISE description="This is a test build script"
+        #MISE depends=["lint", "test"]
+        #MISE sources=[".test-tool-versions"]
+        #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+        #MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID", BOOLEAN_VAR = true}
         
         #USAGE flag "--user <user>" help="The user to run as"
 
