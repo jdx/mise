@@ -7,10 +7,10 @@ The code for this is inside of the mise repository at [`./src/backend/ubi.rs`](h
 ## Dependencies
 
 This relies on having `ubi` installed. You can install it with or without mise.
-Here is how to install `ubi` with mise:
+Here is how to install `ubi-cli` with mise:
 
 ```sh
-mise use -g cargo:ubi
+mise use -g cargo:ubi-cli
 ```
 
 ## Usage
