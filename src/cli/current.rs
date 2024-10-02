@@ -82,6 +82,11 @@ impl Current {
                         "{}@{} is specified in {}, but not installed",
                         &tv.backend, &tv.version, &source
                     );
+                    hint!(
+                        "tools_missing",
+                        "install missing tools with",
+                        "mise install"
+                    );
                 }
             }
             miseprintln!(
