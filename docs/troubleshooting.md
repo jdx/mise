@@ -112,7 +112,7 @@ eval "$(mise hook-env)"
 python --version # will work only after calling hook-env explicitly
 ```
 
-For more information, see [What does `mise activate` do?](/faqs#what-does-mise-activate-do)
+For more information, see [What does `mise activate` do?](/faq#what-does-mise-activate-do)
 
 ## Is mise secure?
 
