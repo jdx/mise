@@ -1,5 +1,32 @@
 # Changelog
 
+## [2024.10.0](https://github.com/jdx/mise/compare/v2024.9.13..v2024.10.0) - 2024-10-03
+
+### 🐛 Bug Fixes
+
+- **(task)** more flexible parsing around `#MISE alias(es)=`, changed prefix from `# mise` to `#MISE` by [@jdx](https://github.com/jdx) in [#2694](https://github.com/jdx/mise/pull/2694)
+
+### 📚 Documentation
+
+- ubi cargo install instruction incorrect by [@roele](https://github.com/roele) in [#2696](https://github.com/jdx/mise/pull/2696)
+- troubleshooting by [@jdx](https://github.com/jdx) in [820aac4](https://github.com/jdx/mise/commit/820aac408cf47e1ace420b0c1018b5816d2b30a0)
+- fix broken link by [@jdx](https://github.com/jdx) in [ec43be3](https://github.com/jdx/mise/commit/ec43be3575bf29b8d79e51e3f029fe63012d5f2b)
+- add Rust creates by [@yanskun](https://github.com/yanskun) in [#2701](https://github.com/jdx/mise/pull/2701)
+
+### 🧪 Testing
+
+- reset test by [@jdx](https://github.com/jdx) in [538863c](https://github.com/jdx/mise/commit/538863c898f44832e0374c9901954ebc29624bdf)
+
+### 🔍 Other Changes
+
+- Fix shim PATH for windows by [@TobiX](https://github.com/TobiX) in [#2697](https://github.com/jdx/mise/pull/2697)
+- Fix `mise shell` setting env in nushell by [@samuelallan72](https://github.com/samuelallan72) in [#2393](https://github.com/jdx/mise/pull/2393)
+
+### New Contributors
+
+* @yanskun made their first contribution in [#2701](https://github.com/jdx/mise/pull/2701)
+* @samuelallan72 made their first contribution in [#2393](https://github.com/jdx/mise/pull/2393)
+
 ## [2024.9.13](https://github.com/jdx/mise/compare/v2024.9.12..v2024.9.13) - 2024-09-29
 
 ### 🚀 Features
@@ -25,10 +52,6 @@
 
 - updated usage by [@jdx](https://github.com/jdx) in [1764c8b](https://github.com/jdx/mise/commit/1764c8bba912b59d61f87bd0f10e488a918e12ca)
 - updated usage by [@jdx](https://github.com/jdx) in [9c18637](https://github.com/jdx/mise/commit/9c18637c52cbdabd81ab84167f94d4578662a995)
-
-### New Contributors
-
-* @TobiX made their first contribution in [#2684](https://github.com/jdx/mise/pull/2684)
 
 ## [2024.9.12](https://github.com/jdx/mise/compare/v2024.9.11..v2024.9.12) - 2024-09-29
 
