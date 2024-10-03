@@ -86,11 +86,11 @@ mod tests {
     fn test_plugin_link() {
         reset();
         assert_cli_snapshot!("plugin", "link", "-f", "tiny-link", "../data/plugins/tiny", @"");
-        assert_cli_snapshot!("plugins", "ls", @r###"
+        assert_cli_snapshot!("plugins", "ls", @r#"
         dummy
         tiny
         tiny-link
-        "###);
+        "#);
         assert_cli_snapshot!("plugin", "uninstall", "tiny-link", @"");
     }
 }

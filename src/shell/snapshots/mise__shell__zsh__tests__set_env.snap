@@ -3,4 +3,3 @@ source: src/shell/zsh.rs
 expression: "Zsh::default().set_env(\"FOO\", \"1\")"
 ---
 export FOO=1
-

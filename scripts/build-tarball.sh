@@ -14,7 +14,7 @@ get_os() {
       echo "macos"
       ;;
     *-windows-*)
-      echo "win"
+      echo "windows"
       ;;
     *-linux-*)
       echo "linux"
@@ -71,11 +71,11 @@ case "$os-$arch" in
 esac
 
 if command -v cross >/dev/null; then
-  cross build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2
+  cross build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2,git2/vendored-openssl
 elif command -v zig >/dev/null; then
-  cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2
+  cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2,git2/vendored-openssl
 else
-  cargo build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2
+  cargo build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2,git2/vendored-openssl
 fi
 mkdir -p dist/mise/bin
 mkdir -p dist/mise/man/man1
@@ -84,7 +84,7 @@ cp "target/$RUST_TRIPLE/serious/mise"* dist/mise/bin
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
 
-if [[ "$os" != "win" ]]; then
+if [[ "$os" != "windows" ]]; then
   cp {,dist/mise/}man/man1/mise.1
   cp {,dist/mise/}share/fish/vendor_conf.d/mise-activate.fish
 fi
@@ -92,10 +92,10 @@ fi
 cd dist
 
 if [[ "$os" == "macos" ]]; then
-  codesign -f -s "Developer ID Application: Jeffrey Dickey (4993Y37DX6)" mise/bin/mise
+  codesign -f --prefix dev.jdx. -s "Developer ID Application: Jeffrey Dickey (4993Y37DX6)" mise/bin/mise
 fi
 
-if [[ "$os" == "win" ]]; then
+if [[ "$os" == "windows" ]]; then
   zip -r "$basename.zip" mise
   ls -oh "$basename.zip"
 else

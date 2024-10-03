@@ -51,13 +51,6 @@ impl ToolRequestSet {
         self.tools.keys().collect()
     }
 
-    pub fn list_current_versions(&self) -> Vec<(&BackendArg, &ToolRequest)> {
-        self.tools
-            .iter()
-            .map(|(fa, tvr)| (fa, tvr.last().unwrap()))
-            .collect()
-    }
-
     pub fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
         let fa = tr.backend();
         if !self.tools.contains_key(fa) {

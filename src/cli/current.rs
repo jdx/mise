@@ -26,20 +26,24 @@ impl Current {
         let ts = ToolsetBuilder::new().build(&config)?;
         match &self.plugin {
             Some(fa) => {
-                let plugin = backend::get(fa);
-                if !plugin.is_installed() {
-                    bail!("Plugin {fa} is not installed");
+                let backend = backend::get(fa);
+                if let Some(plugin) = backend.plugin() {
+                    if !plugin.is_installed() {
+                        bail!("Plugin {fa} is not installed");
+                    }
                 }
-                self.one(ts, plugin.as_ref())
+                self.one(ts, backend.as_ref())
             }
             None => self.all(ts),
         }
     }
 
     fn one(&self, ts: Toolset, tool: &dyn Backend) -> Result<()> {
-        if !tool.is_installed() {
-            warn!("Plugin {} is not installed", tool.id());
-            return Ok(());
+        if let Some(plugin) = tool.plugin() {
+            if !plugin.is_installed() {
+                warn!("Plugin {} is not installed", tool.id());
+                return Ok(());
+            }
         }
         match ts
             .list_versions_by_plugin()
@@ -72,7 +76,7 @@ impl Current {
                 continue;
             }
             for tv in versions {
-                if !plugin.is_version_installed(tv) {
+                if !plugin.is_version_installed(tv, true) {
                     let source = ts.versions.get(&tv.backend).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",
@@ -96,6 +100,7 @@ impl Current {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+    
     # outputs `.tool-versions` compatible format
     $ <bold>mise current</bold>
     python 3.11.0 3.10.0

@@ -9,8 +9,8 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use rayon::prelude::*;
-
 pub use settings::Settings;
+use walkdir::WalkDir;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -50,18 +50,19 @@ pub struct Config {
     tool_request_set: OnceCell<ToolRequestSet>,
 }
 
-static CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
+pub static CONFIG: Lazy<Arc<Config>> = Lazy::new(Config::get);
+static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 
 impl Config {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
     }
     pub fn try_get() -> Result<Arc<Self>> {
-        if let Some(config) = &*CONFIG.read().unwrap() {
+        if let Some(config) = &*_CONFIG.read().unwrap() {
             return Ok(config.clone());
         }
         let config = Arc::new(Self::load()?);
-        *CONFIG.write().unwrap() = Some(config.clone());
+        *_CONFIG.write().unwrap() = Some(config.clone());
         Ok(config)
     }
     pub fn load() -> Result<Self> {
@@ -74,7 +75,11 @@ impl Config {
             .chain(DEFAULT_CONFIG_FILENAMES.iter())
             .cloned()
             .collect_vec();
-        let config_paths = load_config_paths(&config_filenames);
+        let config_paths = load_config_paths(&config_filenames)
+            .into_iter()
+            .unique_by(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
+            .collect_vec();
+        trace!("load: config_paths: {:?}", config_paths);
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
 
         let config = Self {
@@ -127,7 +132,10 @@ impl Config {
         })
     }
     pub fn env_results(&self) -> eyre::Result<&EnvResults> {
-        self.env.get_or_try_init(|| self.load_env())
+        trace!("env_results: start");
+        let res = self.env.get_or_try_init(|| self.load_env());
+        trace!("env_results: {:#?}", &res);
+        res
     }
     pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results()?.env_paths)
@@ -237,24 +245,67 @@ impl Config {
             .collect())
     }
 
-    fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
-        let configs = self.configs_at_root(dir);
-        let config_tasks = configs.iter().flat_map(|cf| cf.tasks()).cloned();
-        let includes = configs
+    pub fn task_includes_for_dir(&self, dir: &Path) -> Vec<PathBuf> {
+        self.configs_at_root(dir)
             .iter()
             .find_map(|cf| cf.task_config().includes.clone())
-            .unwrap_or_else(default_task_includes);
-        let file_tasks = includes.into_iter().flat_map(|p| {
-            let p = match p.is_absolute() {
-                true => p,
-                false => dir.join(p),
-            };
-            self.load_tasks_includes(&p).unwrap_or_else(|err| {
-                warn!("loading tasks in {}: {err}", display_path(&p));
-                vec![]
+            .unwrap_or_else(default_task_includes)
+            .into_par_iter()
+            .map(|p| if p.is_absolute() { p } else { dir.join(p) })
+            .filter(|p| p.exists())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .unique()
+            .collect::<Vec<_>>()
+    }
+
+    pub fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
+        let configs = self.configs_at_root(dir);
+        let config_tasks = configs
+            .par_iter()
+            .flat_map(|cf| cf.tasks())
+            .cloned()
+            .collect::<Vec<_>>();
+        let includes = self.task_includes_for_dir(dir);
+        let extra_tasks = includes
+            .par_iter()
+            .filter(|p| {
+                p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml"
             })
-        });
-        Ok(file_tasks.into_iter().chain(config_tasks).collect())
+            .map(|p| {
+                self.load_task_file(p).unwrap_or_else(|err| {
+                    warn!("loading tasks in {}: {err}", display_path(p));
+                    vec![]
+                })
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        let file_tasks = includes
+            .into_par_iter()
+            .flat_map(|p| {
+                self.load_tasks_includes(&p).unwrap_or_else(|err| {
+                    warn!("loading tasks in {}: {err}", display_path(&p));
+                    vec![]
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(file_tasks
+            .into_iter()
+            .chain(config_tasks)
+            .chain(extra_tasks)
+            .sorted_by_cached_key(|t| t.name.clone())
+            .collect())
+    }
+
+    fn load_task_file(&self, path: &Path) -> Result<Vec<Task>> {
+        let raw = file::read_to_string(path)?;
+        let mut tasks = toml::from_str::<HashMap<String, Task>>(&raw)
+            .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?;
+        for (name, task) in &mut tasks {
+            task.name = name.clone();
+            task.config_source = path.to_path_buf();
+        }
+        Ok(tasks.into_values().collect())
     }
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
@@ -309,7 +360,17 @@ impl Config {
     }
 
     fn load_tasks_includes(&self, root: &Path) -> Result<Vec<Task>> {
-        file::recursive_ls(root)?
+        if !root.is_dir() {
+            return Ok(vec![]);
+        }
+        WalkDir::new(root)
+            .follow_links(true)
+            .into_iter()
+            // skip hidden directories (if the root is hidden that's ok)
+            .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
+            .filter_ok(|e| e.file_type().is_file())
+            .map_ok(|e| e.path().to_path_buf())
+            .try_collect::<_, Vec<PathBuf>, _>()?
             .into_par_iter()
             .filter(|p| file::is_executable(p))
             .map(|path| Task::from_path(&path))
@@ -388,6 +449,7 @@ impl Config {
             .into_iter()
             .flatten()
             .collect();
+        trace!("load_env: entries: {:#?}", entries);
         EnvResults::resolve(&env::PRISTINE_ENV, entries)
     }
 
@@ -406,7 +468,7 @@ impl Config {
     #[cfg(test)]
     pub fn reset() {
         Settings::reset(None);
-        CONFIG.write().unwrap().take();
+        _CONFIG.write().unwrap().take();
     }
 }
 
@@ -508,11 +570,8 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
 
     // The current directory is not always available, e.g.
     // when a directory was deleted or inside FUSE mounts.
-    match &*dirs::CWD {
-        Some(current_dir) => {
-            config_files.extend(file::FindUp::new(current_dir, config_filenames));
-        }
-        None => {}
+    if let Some(current_dir) = &*dirs::CWD {
+        config_files.extend(file::FindUp::new(current_dir, config_filenames));
     };
 
     config_files.extend(global_config_files());
@@ -544,6 +603,17 @@ pub fn global_config_files() -> Vec<PathBuf> {
     let global_config = env::MISE_GLOBAL_CONFIG_FILE.clone();
     if global_config.is_file() {
         config_files.push(global_config);
+    }
+    if let Some(env) = &*env::MISE_ENV {
+        let global_profile_files = vec![
+            dirs::CONFIG.join(format!("config.{env}.toml")),
+            dirs::CONFIG.join(format!("mise.{env}.toml")),
+        ];
+        for f in global_profile_files {
+            if f.is_file() {
+                config_files.push(f);
+            }
+        }
     }
     config_files
 }
@@ -660,6 +730,8 @@ impl Debug for Config {
 
 fn default_task_includes() -> Vec<PathBuf> {
     vec![
+        "mise-tasks".into(),
+        ".mise-tasks".into(),
         ".mise/tasks".into(),
         ".config/mise/tasks".into(),
         "mise/tasks".into(),

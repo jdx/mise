@@ -12,7 +12,9 @@ use crate::toolset::{ToolRequest, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, runtime_symlinks, shims};
 
-/// Removes runtime versions
+/// Removes installed tool versions
+///
+/// This only removes the installed version, it does not modify mise.toml.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
 pub struct Uninstall {
@@ -48,7 +50,7 @@ impl Uninstall {
 
         let mpr = MultiProgressReport::get();
         for (plugin, tv) in tool_versions {
-            if !plugin.is_version_installed(&tv) {
+            if !plugin.is_version_installed(&tv, true) {
                 warn!("{} is not installed", tv.style());
                 continue;
             }
@@ -126,8 +128,13 @@ impl Uninstall {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise uninstall node@18.0.0</bold> # will uninstall specific version
-    $ <bold>mise uninstall node</bold>        # will uninstall current node version
+    # will uninstall specific version
+    $ <bold>mise uninstall node@18.0.0</bold> 
+
+    # will uninstall the current node version (if only one version is installed)
+    $ <bold>mise uninstall node</bold>
+
+    # will uninstall all installed versions of node
     $ <bold>mise uninstall --all node@18.0.0</bold> # will uninstall all node versions
 "#
 );

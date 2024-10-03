@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use duct::Expression;
 use eyre::{eyre, Result, WrapErr};
@@ -36,9 +36,9 @@ macro_rules! git_cmd_read {
 }
 
 impl Git {
-    pub fn new(dir: PathBuf) -> Self {
+    pub fn new<P: AsRef<Path>>(dir: P) -> Self {
         Self {
-            dir,
+            dir: dir.as_ref().to_path_buf(),
             repo: OnceCell::new(),
         }
     }
@@ -126,7 +126,12 @@ impl Git {
     pub fn current_branch(&self) -> Result<String> {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
-            let branch = repo.head()?.shorthand().unwrap().to_string();
+            let branch = repo
+                .head()
+                .wrap_err_with(|| format!("failed to get current branch in {dir:?}"))?
+                .shorthand()
+                .unwrap()
+                .to_string();
             debug!("current branch for {dir:?}: {branch}");
             return Ok(branch);
         }

@@ -1,12 +1,14 @@
 use color_eyre::eyre::{bail, eyre, Result};
+use contracts::ensures;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use url::Url;
 
-use crate::backend::asdf::Asdf;
-use crate::backend::{unalias_backend, Backend};
+use crate::backend::unalias_backend;
 use crate::config::{Config, Settings};
+use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::core::CORE_PLUGINS;
+use crate::plugins::Plugin;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -18,7 +20,8 @@ use crate::ui::style;
 ///
 /// This behavior can be modified in ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP
+)]
 pub struct PluginsInstall {
     /// The name of the plugin to install
     /// e.g.: node, ruby
@@ -28,7 +31,8 @@ pub struct PluginsInstall {
 
     /// The git url of the plugin
     /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
-    #[clap(help = "The git url of the plugin", value_hint = clap::ValueHint::Url, verbatim_doc_comment)]
+    #[clap(help = "The git url of the plugin", value_hint = clap::ValueHint::Url, verbatim_doc_comment
+    )]
     git_url: Option<String>,
 
     /// Reinstall even if plugin exists
@@ -59,7 +63,7 @@ impl PluginsInstall {
         if git_url.is_some() {
             self.install_one(name, git_url, &mpr)?;
         } else {
-            let is_core = CORE_PLUGINS.iter().any(|p| p.id() == name);
+            let is_core = CORE_PLUGINS.contains_key(&name);
             if is_core {
                 let name = style::eblue(name);
                 bail!("{name} is a core plugin and does not need to be installed");
@@ -108,7 +112,7 @@ impl PluginsInstall {
         git_url: Option<String>,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        let mut plugin = Asdf::new(name.clone());
+        let mut plugin = AsdfPlugin::new(name.clone());
         plugin.repo_url = git_url;
         if !self.force && plugin.is_installed() {
             warn!("Plugin {name} already installed");
@@ -120,6 +124,7 @@ impl PluginsInstall {
     }
 }
 
+#[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
     let name = unalias_backend(name);
     Ok(match git_url {
@@ -135,7 +140,7 @@ fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Opt
 }
 
 fn get_name_from_url(url: &str) -> Result<String> {
-    if let Ok(url) = Url::parse(url) {
+    if let Ok(url) = Url::parse(url.trim_end_matches('/')) {
         if let Some(segments) = url.path_segments() {
             let last = segments.last().unwrap_or_default();
             let name = last.strip_prefix("asdf-").unwrap_or(last);

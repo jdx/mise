@@ -2,7 +2,7 @@
 
 cat >.mise.toml <<EOF
 [tools]
-tiny = "latest"
+tiny = {version = "latest", postinstall = "echo 'postinstall'"}
 [plugins]
 tiny-ref = "https://github.com/mise-plugins/rtx-tiny#c532b140abd4ca00d3e76651b9bd32a980bd483c"
 EOF
@@ -29,8 +29,7 @@ rm -rf "$MISE_DATA_DIR/installs/tiny"
 mise use tiny@3
 mv "$MISE_DATA_DIR/installs/tiny/"{3.1.0,3.0.0}
 assert "mise current tiny" "3.0.0"
-assert "mise outdated tiny" "Tool    Requested  Current  Latest
-tiny    3          3.0.0    3.1.0"
+assert "mise outdated tiny" "tiny  3  3.0.0  3.1.0 ~/workdir/.mise.toml"
 mise upgrade tiny
 assert "mise current tiny" "3.1.0"
 assert "mise outdated tiny" ""

@@ -1,0 +1,102 @@
+---
+source: src/cli/tasks/info.rs
+expression: output
+---
+{
+  "aliases": "ft",
+  "depends": "lint, test",
+  "description": "This is a test build script",
+  "dir": null,
+  "env": {
+    "BOOLEAN_VAR": true,
+    "TEST_BUILDSCRIPT_ENV_VAR": "VALID"
+  },
+  "file": "~/cwd/.mise/tasks/filetask",
+  "hide": false,
+  "name": "filetask",
+  "outputs": [
+    "$MISE_PROJECT_ROOT/test/test-build-output.txt"
+  ],
+  "raw": false,
+  "run": [],
+  "source": "~/cwd/.mise/tasks/filetask",
+  "sources": [
+    ".test-tool-versions"
+  ],
+  "usage_spec": {
+    "about": null,
+    "about_long": null,
+    "about_md": null,
+    "author": null,
+    "bin": "filetask",
+    "cmd": {
+      "after_help": null,
+      "after_help_long": null,
+      "after_help_md": null,
+      "aliases": [
+        "ft"
+      ],
+      "args": [],
+      "before_help": null,
+      "before_help_long": "* Depends: lint, test",
+      "before_help_md": null,
+      "deprecated": null,
+      "examples": [],
+      "flags": [
+        {
+          "arg": {
+            "choices": null,
+            "default": null,
+            "help": null,
+            "help_first_line": null,
+            "help_long": null,
+            "help_md": null,
+            "hide": false,
+            "name": "user",
+            "required": true,
+            "usage": "",
+            "var": false,
+            "var_max": null,
+            "var_min": null
+          },
+          "count": false,
+          "default": null,
+          "deprecated": null,
+          "global": false,
+          "help": "The user to run as",
+          "help_first_line": "The user to run as",
+          "help_long": null,
+          "help_md": null,
+          "hide": false,
+          "long": [
+            "user"
+          ],
+          "name": "user",
+          "negate": null,
+          "required": false,
+          "short": [],
+          "usage": "--user <user>",
+          "var": false
+        }
+      ],
+      "full_cmd": [],
+      "help": "This is a test build script",
+      "help_long": null,
+      "help_md": null,
+      "hidden_aliases": [],
+      "hide": false,
+      "mounts": [],
+      "name": "filetask",
+      "subcommand_required": false,
+      "subcommands": {},
+      "usage": "[--user <user>]"
+    },
+    "complete": {},
+    "config": {
+      "props": {}
+    },
+    "name": "filetask",
+    "usage": "",
+    "version": null
+  }
+}

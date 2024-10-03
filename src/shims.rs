@@ -23,7 +23,7 @@ use crate::{backend, dirs, env, fake_asdf, file, logger};
 pub fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
-    if regex!(r"^(mise|rtx)(\-.*)?$").is_match(bin_name) || cfg!(test) {
+    if regex!(r"^(mise|rtx)(\-.*)?(\.exe)?$").is_match(bin_name) || cfg!(test) {
         return Ok(());
     }
     logger::init();
@@ -99,14 +99,8 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
     let (shims_to_add, shims_to_remove) = get_shim_diffs(&mise_bin, ts)?;
 
     for shim in shims_to_add {
-        let symlink_path = dirs::SHIMS.join(shim);
-        file::make_symlink(&mise_bin, &symlink_path).wrap_err_with(|| {
-            eyre!(
-                "Failed to create symlink from {} to {}",
-                display_path(&mise_bin),
-                display_path(&symlink_path)
-            )
-        })?;
+        let symlink_path = dirs::SHIMS.join(&shim);
+        add_shim(&mise_bin, &symlink_path, &shim)?;
     }
     for shim in shims_to_remove {
         let symlink_path = dirs::SHIMS.join(shim);
@@ -128,6 +122,38 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+#[cfg(windows)]
+fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
+    let shim = shim.trim_end_matches(".cmd");
+    file::write(
+        symlink_path.with_extension("cmd"),
+        formatdoc! {r#"
+        @echo off
+        setlocal
+        mise x -- {shim} %*
+        "#},
+    )
+    .wrap_err_with(|| {
+        eyre!(
+            "Failed to create symlink from {} to {}",
+            display_path(mise_bin),
+            display_path(symlink_path)
+        )
+    })
+}
+
+#[cfg(unix)]
+fn add_shim(mise_bin: &Path, symlink_path: &Path, _shim: &str) -> Result<()> {
+    file::make_symlink(mise_bin, symlink_path).wrap_err_with(|| {
+        eyre!(
+            "Failed to create symlink from {} to {}",
+            display_path(mise_bin),
+            display_path(symlink_path)
+        )
+    })?;
     Ok(())
 }
 
@@ -195,10 +221,20 @@ fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
         .list_installed_versions()?
         .into_par_iter()
         .flat_map(|(t, tv)| {
-            list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
+            let bins = list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
-            })
+            });
+            if cfg!(windows) {
+                bins.into_iter()
+                    .map(|b| {
+                        let p = PathBuf::from(&b);
+                        p.with_extension("cmd").to_string_lossy().to_string()
+                    })
+                    .collect()
+            } else {
+                bins
+            }
         })
         .collect())
 }

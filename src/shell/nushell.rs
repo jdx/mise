@@ -90,7 +90,6 @@ impl Shell for Nushell {
     fn set_env(&self, k: &str, v: &str) -> String {
         let k = shell_escape::unix::escape(k.into());
         let v = shell_escape::unix::escape(v.into());
-        let v = v.replace("\\n", "\n");
         let v = v.replace('\'', "");
 
         EnvOp::Set { key: &k, val: &v }.to_string()

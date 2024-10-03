@@ -14,9 +14,9 @@ use toml_edit::{table, value, Array, DocumentMut, Item, Value};
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::config_file::toml::deserialize_arr;
+use crate::config::config_file::toml::{deserialize_arr, deserialize_path_entry_arr};
 use crate::config::config_file::{trust_check, ConfigFile, TaskConfig};
-use crate::config::env_directive::EnvDirective;
+use crate::config::env_directive::{EnvDirective, PathEntry};
 use crate::config::settings::SettingsPartial;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
@@ -26,7 +26,6 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::{dirs, file};
 
 #[derive(Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct MiseToml {
     #[serde(default, deserialize_with = "deserialize_version")]
     min_version: Option<Versioning>,
@@ -39,7 +38,7 @@ pub struct MiseToml {
     #[serde(default)]
     env: EnvList,
     #[serde(default, deserialize_with = "deserialize_arr")]
-    env_path: Vec<PathBuf>,
+    env_path: Vec<PathEntry>,
     #[serde(default, deserialize_with = "deserialize_alias")]
     alias: AliasMap,
     #[serde(skip)]
@@ -83,9 +82,16 @@ impl MiseToml {
     }
 
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
-        trace!("parsing: {}", display_path(path));
         let body = file::read_to_string(path)?;
-        let mut rf: MiseToml = toml::from_str(&body)?;
+        Self::from_str(&body, path)
+    }
+
+    pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
+        trace!("parsing: {}", display_path(path));
+        let des = toml::Deserializer::new(body);
+        let mut rf: MiseToml = serde_ignored::deserialize(des, |p| {
+            warn!("unknown field in {}: {p}", display_path(path));
+        })?;
         rf.context = BASE_CONTEXT.clone();
         rf.context
             .insert("config_root", path.parent().unwrap().to_str().unwrap());
@@ -286,14 +292,17 @@ impl ConfigFile for MiseToml {
             .as_table_mut()
             .unwrap();
 
+        // if a short name is used like "node", make sure we remove any long names like "core:node"
+        tools.remove(&fa.full.to_string());
+
         if versions.len() == 1 {
-            tools.insert(&fa.to_string(), value(versions[0].clone()));
+            tools.insert(&fa.short, value(versions[0].clone()));
         } else {
             let mut arr = Array::new();
             for v in versions {
                 arr.push(v);
             }
-            tools.insert(&fa.to_string(), Item::Value(Value::Array(arr)));
+            tools.insert(&fa.short, Item::Value(Value::Array(arr)));
         }
 
         Ok(())
@@ -466,8 +475,8 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[derive(Deserialize)]
                             #[serde(deny_unknown_fields)]
                             struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                path: Vec<PathBuf>,
+                                #[serde(default, deserialize_with = "deserialize_path_entry_arr")]
+                                path: Vec<PathEntry>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
                                 file: Vec<PathBuf>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
@@ -920,6 +929,8 @@ mod tests {
         min_version = "2024.1.1"
         [env]
         foo="bar"
+        foo2='qux\nquux'
+        foo3="qux\nquux"
         "#},
         )
         .unwrap();
@@ -927,7 +938,7 @@ mod tests {
         let dump = cf.dump().unwrap();
         let env = parse_env(file::read_to_string(&p).unwrap());
 
-        assert_debug_snapshot!(env, @r###""foo=bar""###);
+        assert_debug_snapshot!(env, @r###""foo=bar\nfoo2=qux\\nquux\nfoo3=qux\nquux""###);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         with_settings!({
             assert_snapshot!(dump);
@@ -945,11 +956,18 @@ mod tests {
 
         [[env]]
         bar="baz"
+
+        [[env]]
+        foo2='qux\nquux'
+        bar2="qux\nquux"
         "#});
 
         assert_snapshot!(env, @r###"
         foo=bar
         bar=baz
+        foo2=qux\nquux
+        bar2=qux
+        quux
         "###);
     }
 
@@ -1122,6 +1140,7 @@ mod tests {
         assert_snapshot!(cf.dump().unwrap());
         assert_snapshot!(cf);
         assert_debug_snapshot!(cf);
+        file::remove_all(&p).unwrap();
     }
 
     #[test]
@@ -1144,15 +1163,6 @@ mod tests {
         assert_snapshot!(cf.dump().unwrap());
         assert_snapshot!(cf);
         assert_debug_snapshot!(cf);
-    }
-
-    #[test]
-    fn test_fail_with_unknown_key() {
-        reset();
-        let _ = toml::from_str::<MiseToml>(&formatdoc! {r#"
-        invalid_key = true
-        "#})
-        .unwrap_err();
     }
 
     #[test]

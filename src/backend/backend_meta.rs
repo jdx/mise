@@ -7,6 +7,7 @@ use super::BackendType;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct BackendMeta {
+    pub short: String,
     pub id: String,
     pub name: String,
     pub backend_type: String,
@@ -26,7 +27,8 @@ impl BackendMeta {
             return Ok(());
         }
         let meta = BackendMeta {
-            id: fa.id.clone(),
+            short: fa.short.clone(),
+            id: fa.full.clone(),
             name: fa.name.clone(),
             backend_type: fa.backend_type.as_ref().to_string(),
         };
@@ -45,12 +47,14 @@ impl BackendMeta {
                 let name = Self::name_for_type(name.to_string(), backend_type);
                 let id = format!("{}:{}", backend_type, name);
                 BackendMeta {
+                    short: id.clone(),
                     id,
                     name,
                     backend_type: backend_type.to_string(),
                 }
             }
             None => BackendMeta {
+                short: id.clone(),
                 id: id.to_string(),
                 name: id.to_string(),
                 backend_type: BackendType::Asdf.as_ref().to_string(),

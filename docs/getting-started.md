@@ -151,18 +151,22 @@ or if you're allergic to `| sh`:
 
 ```sh [macos-arm64]
 curl https://mise.jdx.dev/mise-latest-macos-arm64 > ~/.local/bin/mise
+chmod +x ~/.local/bin/mise
 ```
 
 ```sh [macos-x64]
 curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise
+chmod +x ~/.local/bin/mise
 ```
 
 ```sh [linux-x64]
 curl https://mise.jdx.dev/mise-latest-linux-x64 > ~/.local/bin/mise
+chmod +x ~/.local/bin/mise
 ```
 
 ```sh [linux-arm64]
 curl https://mise.jdx.dev/mise-latest-linux-arm64 > ~/.local/bin/mise
+chmod +x ~/.local/bin/mise
 ```
 
 :::
@@ -183,7 +187,6 @@ Supported os/arch:
 - `linux-armv7-musl`
 
 If you need something else, compile it with `cargo install mise` (see below).
-[Windows isn't currently supported.](https://github.com/jdx/mise/discussions/66)
 
 ### apk
 
@@ -295,7 +298,7 @@ npx @jdxcode/mise exec python@3.11 -- python some_script.py
 Download the latest release from [GitHub](https://github.com/jdx/mise/releases).
 
 ```sh
-curl https://github.com/jdx/mise/releases/download/v2024.1.0/mise-v2024.1.0-linux-x64 > /usr/local/bin/mise
+curl -L https://github.com/jdx/mise/releases/download/v2024.1.0/mise-v2024.1.0-linux-x64 > /usr/local/bin/mise
 chmod +x /usr/local/bin/mise
 ```
 
@@ -324,6 +327,14 @@ yum install -y yum-utils
 yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
 ```
+
+### Windows
+
+Download the latest release from [GitHub](https://github.com/jdx/mise/releases). Add the binary
+to your PATH and edit PATH to include the shims directory (by default:
+`%LOCALAPPDATA%\mise\shims`).
+
+Note that Windows support is very minimal for now.
 
 ## Shells
 

@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
-#[cfg(unix)]
-use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -19,27 +17,26 @@ use glob::glob;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
+use super::args::ToolArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, CONFIG};
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
 use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
-use crate::ui::{ctrlc, style};
-use crate::{env, file, ui};
+use crate::ui::{ctrlc, prompt, style};
+use crate::{dirs, env, file, ui};
 
-use super::args::ToolArg;
-
-/// [experimental] Run a tasks
+/// [experimental] Run task(s)
 ///
 /// This command will run a tasks, or multiple tasks in parallel.
 /// Tasks may have dependencies on other tasks or on source files.
 /// If source is configured on a tasks, it will only run if the source
 /// files have changed.
 ///
-/// Tasks can be defined in .mise.toml or as standalone scripts.
-/// In .mise.toml, tasks take this form:
+/// Tasks can be defined in mise.toml or as standalone scripts.
+/// In mise.toml, tasks take this form:
 ///
 ///     [tasks.build]
 ///     run = "npm run build"
@@ -47,7 +44,8 @@ use super::args::ToolArg;
 ///     outputs = ["dist/**/*.js"]
 ///
 /// Alternatively, tasks can be defined as standalone scripts.
-/// These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+/// These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+/// `.config/mise/tasks`.
 /// The name of the script will be the name of the tasks.
 ///
 ///     $ cat .mise/tasks/build<<EOF
@@ -147,7 +145,9 @@ impl Run {
                     .cloned()
                     .collect_vec();
                 if tasks.is_empty() {
-                    ensure!(t == "default", "no tasks {} found", style::ered(t));
+                    if t != "default" {
+                        err_no_task(&t)?;
+                    }
 
                     Ok(vec![self.prompt_for_task(config)?])
                 } else {
@@ -186,6 +186,7 @@ impl Run {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs() + 1)
             .build()?;
+        let exit_status = Mutex::new(None);
         pool.scope(|s| {
             let run = |task: &Task| {
                 let t = task.clone();
@@ -194,7 +195,11 @@ impl Run {
                     trace!("running tasks: {task}");
                     if let Err(err) = self.run_task(config, &env, &task) {
                         error!("{err}");
-                        exit(1);
+                        if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
+                            *exit_status.lock().unwrap() = status.code();
+                        } else {
+                            *exit_status.lock().unwrap() = Some(1);
+                        }
                     }
                     let mut tasks = tasks.lock().unwrap();
                     tasks.remove(&task);
@@ -202,6 +207,9 @@ impl Run {
             };
             let rx = tasks.lock().unwrap().subscribe();
             while let Some(task) = rx.recv().unwrap() {
+                if exit_status.lock().unwrap().is_some() {
+                    break;
+                }
                 run(&task);
             }
         });
@@ -210,6 +218,11 @@ impl Run {
             let msg = format!("finished in {}", format_duration(timer.elapsed()));
             info!("{}", style::edim(msg));
         };
+
+        if let Some(status) = *exit_status.lock().unwrap() {
+            debug!("exiting with status: {status}");
+            exit(status);
+        }
 
         Ok(())
     }
@@ -243,12 +256,8 @@ impl Run {
         if let Some(file) = &task.file {
             self.exec_file(file, task, &env, &prefix)?;
         } else {
-            for (i, cmd) in task.run.iter().enumerate() {
-                let args = match i == task.run.len() - 1 {
-                    true => task.args.iter().cloned().collect_vec(),
-                    false => vec![],
-                };
-                self.exec_script(cmd, &args, task, &env, &prefix)?;
+            for (script, args) in task.render_run_scripts_with_args(self.cd.clone(), &task.args)? {
+                self.exec_script(&script, &args, task, &env, &prefix)?;
             }
         }
 
@@ -288,9 +297,18 @@ impl Run {
             let filename = file.display().to_string();
             self.exec(&filename, args, task, env, prefix)
         } else {
-            let script = format!("{} {}", script, shell_words::join(args));
-            let args = vec!["-c".to_string(), script];
-            self.exec("sh", &args, task, env, prefix)
+            #[cfg(windows)]
+            {
+                let script = format!("{} {}", script, args.join(" "));
+                let args = vec!["/c".to_string(), script];
+                self.exec("cmd", &args, task, env, prefix)
+            }
+            #[cfg(unix)]
+            {
+                let script = format!("{} {}", script, shell_words::join(args));
+                let args = vec!["-c".to_string(), script];
+                self.exec("sh", &args, task, env, prefix)
+            }
         }
     }
 
@@ -301,14 +319,23 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
+        let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
+        let (spec, _) = task.parse_usage_spec(self.cd.clone())?;
+        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
+            let args = once(command.clone()).chain(args.clone()).collect_vec();
+            let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
+            for (k, v) in po.as_env() {
+                env.insert(k, v);
+            }
+        }
 
         let cmd = format!("{} {}", display_path(file), args.join(" "));
         let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
         info_unprefix_trunc!("{prefix} {cmd}");
 
-        self.exec(&command, &args, task, env, prefix)
+        self.exec(&command, &args, task, &env, prefix)
     }
 
     fn exec(
@@ -340,22 +367,7 @@ impl Run {
         if self.dry_run {
             return Ok(());
         }
-        if let Err(err) = cmd.execute() {
-            if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
-                if let Some(code) = status.code() {
-                    error!("{prefix} exited with code {code}");
-                    exit(code);
-                } else {
-                    #[cfg(unix)]
-                    if let Some(signal) = status.signal() {
-                        error!("{prefix} killed by signal {signal}");
-                        exit(1);
-                    }
-                }
-            }
-            error!("{err}");
-            exit(1);
-        }
+        cmd.execute()?;
         trace!("{prefix} exited successfully");
         Ok(())
     }
@@ -477,6 +489,30 @@ impl Run {
     }
 }
 
+fn err_no_task(name: &str) -> Result<()> {
+    if let Some(cwd) = &*dirs::CWD {
+        let includes = CONFIG.task_includes_for_dir(cwd);
+        let path = includes
+            .iter()
+            .map(|d| d.join(name))
+            .find(|d| d.is_file() && !file::is_executable(d));
+        if let Some(path) = path {
+            warn!(
+                "no task {} found, but a non-executable file exists at {}",
+                style::ered(name),
+                display_path(&path)
+            );
+            let yn =
+                prompt::confirm("Mark this file as executable to allow it to be run as a task?")?;
+            if yn {
+                file::make_executable(&path)?;
+                info!("marked as executable, try running this task again");
+            }
+        }
+    }
+    bail!("no task {} found", style::ered(name));
+}
+
 fn is_glob_pattern(path: &str) -> bool {
     // This is the character set used for glob
     // detection by glob
@@ -550,7 +586,7 @@ fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    # Runs the "lint" tasks. This needs to either be defined in .mise.toml
+    # Runs the "lint" tasks. This needs to either be defined in mise.toml
     # or as a standalone script. See the project README for more information.
     $ <bold>mise run lint</bold>
 
@@ -613,8 +649,7 @@ mod tests {
         assert_cli_snapshot!(
             "r",
             "filetask",
-            "arg1",
-            "arg2",
+            "--user=jdx",
             ":::",
             "configtask",
             "arg3",

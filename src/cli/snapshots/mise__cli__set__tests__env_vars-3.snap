@@ -4,4 +4,3 @@ expression: "file::read_to_string(cf_path).unwrap()"
 ---
 [env]
 FOO = "bar"
-

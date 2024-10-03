@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+found=0
+rg "dbg!" src && found=1
+
+if [[ $found == 1 ]]; then
+	echo "dbg! macro found"
+	exit 1
+fi

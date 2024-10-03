@@ -3,7 +3,7 @@ name: release
 on:
   push:
     tags: ["v*"]
-    branches: ["release", "win", "docs"]
+    branches: ["release", "windows", "docs"]
   workflow_dispatch:
 
 concurrency:
@@ -20,11 +20,6 @@ jobs:
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 45
     env:
-      #RUSTC_WRAPPER: sccache
-      SCCACHE_ENDPOINT: minio.jdx.dev
-      SCCACHE_BUCKET: sccache
-      SCCACHE_REGION: auto
-      SCCACHE_S3_NO_CREDENTIALS: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID && '0' || '1' }}
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
       MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
     strategy:
@@ -64,7 +59,7 @@ jobs:
             target: aarch64-apple-darwin
             runs-on: macos-14
     #          - os: windows
-    #            name: win-x64
+    #            name: windows-x64
     #            target: x86_64-pc-windows-gnu
     #            runs-on: ubuntu-latest
     steps:
@@ -74,11 +69,6 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@v4
-      - if: ${{ env.SCCACHE_S3_NO_CREDENTIALS == '0' }}
-        run: |
-          echo "AWS_ACCESS_KEY_ID=$MINIO_AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
-          echo "AWS_SECRET_ACCESS_KEY=$MINIO_AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
-      - uses: mozilla-actions/sccache-action@v0.0.4
       - name: cache crates
         id: cache-crates
         uses: actions/cache@v4
@@ -105,21 +95,14 @@ jobs:
           if-no-files-found: error
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-cache }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
-      - run: ${SCCACHE_PATH} --show-stats
-  build-tarball-win:
-    name: build-tarball-win-${{matrix.arch}}
+  build-tarball-windows:
+    name: build-tarball-windows-${{matrix.arch}}
     runs-on: windows-latest
     timeout-minutes: 45
-    env:
-      #RUSTC_WRAPPER: sccache
-      SCCACHE_ENDPOINT: minio.jdx.dev
-      SCCACHE_BUCKET: sccache
-      SCCACHE_REGION: auto
-      SCCACHE_S3_NO_CREDENTIALS: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID && '0' || '1' }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
     strategy:
       fail-fast: false
       matrix:
@@ -131,7 +114,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup target add ${{matrix.target}}
-      - uses: mozilla-actions/sccache-action@v0.0.4
       - name: cache crates
         id: cache-crates
         uses: actions/cache@v4
@@ -141,7 +123,7 @@ jobs:
           restore-keys: cargo-registry
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
-          OS: win
+          OS: windows
           ARCH: ${{matrix.arch}}
       - uses: actions/upload-artifact@v4
         with:
@@ -247,7 +229,7 @@ jobs:
       - rpm
       - deb
       - e2e-linux
-      - build-tarball-win
+      - build-tarball-windows
     steps:
       - uses: actions/checkout@v4
       - uses: crazy-max/ghaction-import-gpg@v6
@@ -293,10 +275,11 @@ jobs:
       - run: ls -R artifacts
       - run: scripts/release.sh
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+          GITHUB_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: GitHub Release Assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.event.ref, 'refs/tags/v')
@@ -350,14 +333,15 @@ jobs:
     runs-on: ubuntu-22.04
     container: ghcr.io/jdx/mise:alpine
     timeout-minutes: 30
-    needs: [e2e-linux]
-    if: startsWith(github.event.ref, 'refs/tags/v')
+    needs: [release]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Bump APKBUILD
         run: sudo -Eu packager ./scripts/release-alpine.sh
         env:
-          ALPINE_PUB_KEY: ${{ secrets.ALPINE_PUB_KEY }}
+          ALPINE_GITLAB_TOKEN: ${{ secrets.ALPINE_GITLAB_TOKEN }}
+          ALPINE_KEY_ID: ${{ secrets.ALPINE_KEY_ID }}
           ALPINE_PRIV_KEY: ${{ secrets.ALPINE_PRIV_KEY }}
-          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          ALPINE_PUB_KEY: ${{ secrets.ALPINE_PUB_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

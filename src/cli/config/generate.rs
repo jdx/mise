@@ -7,7 +7,7 @@ use crate::config::Settings;
 use crate::file;
 use crate::file::display_path;
 
-/// [experimental] Generate an .mise.toml file
+/// [experimental] Generate a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "g", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigGenerate {
@@ -25,8 +25,8 @@ impl ConfigGenerate {
 # # in all parent directories and merge them together.
 # # You might have a structure like:
 #
-# * ~/work/project/.mise.toml  # a config file for a specific work project
-# * ~/work/.mise.toml          # a config file for projects related to work
+# * ~/work/project/mise.toml   # a config file for a specific work project
+# * ~/work/mise.toml           # a config file for projects related to work
 # * ~/.config/mise/config.toml # the global config file
 # * /etc/mise/config.toml      # the system config file
 #
@@ -87,15 +87,18 @@ impl ConfigGenerate {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise cf generate > .mise.toml</bold>
-    $ <bold>mise cf generate --output=.mise.toml</bold>
+    $ <bold>mise cf generate > mise.toml</bold>
+    $ <bold>mise cf generate --output=mise.toml</bold>
 "#
 );
 
 #[cfg(test)]
 mod tests {
+    use crate::test::reset;
+
     #[test]
     fn test_generate() {
+        reset();
         with_settings!({
             let out = assert_cli!("config", "generate");
             for line in out.lines() {

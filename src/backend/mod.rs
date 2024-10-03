@@ -5,7 +5,6 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use clap::Command;
 use console::style;
 use contracts::requires;
 use eyre::{bail, eyre, WrapErr};
@@ -15,34 +14,33 @@ use regex::Regex;
 use strum::IntoEnumIterator;
 use versions::Versioning;
 
-use crate::backend::asdf::Asdf;
-use crate::backend::cargo::CargoBackend;
-use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings};
+use self::backend_meta::BackendMeta;
+use crate::cli::args::{BackendArg, ToolVersionType};
+use crate::cmd::CmdLineRunner;
+use crate::config::settings::SETTINGS;
+use crate::config::{Config, Settings, CONFIG};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
-use crate::lock_file::LockFile;
-use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{PluginType, VERSION_REGEX};
+use crate::plugins::core::{CorePlugin, CORE_PLUGINS};
+use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
-use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, file};
-
-use self::backend_meta::BackendMeta;
+use crate::{dirs, env, file, lock_file};
 
 pub mod asdf;
 pub mod backend_meta;
 pub mod cargo;
+mod external_plugin_cache;
 pub mod go;
 pub mod npm;
 pub mod pipx;
 pub mod spm;
 pub mod ubi;
+pub mod vfox;
 
 pub type ABackend = Arc<dyn Backend>;
-pub type BackendMap = BTreeMap<BackendArg, ABackend>;
+pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 
 #[derive(
@@ -68,6 +66,7 @@ pub enum BackendType {
     Pipx,
     Spm,
     Ubi,
+    Vfox,
 }
 
 impl Display for BackendType {
@@ -76,49 +75,43 @@ impl Display for BackendType {
     }
 }
 
-static FORGES: Mutex<Option<BackendMap>> = Mutex::new(None);
+static TOOLS: Mutex<Option<BackendMap>> = Mutex::new(None);
 
-fn load_backends() -> BackendMap {
-    let mut backends = FORGES.lock().unwrap();
-    if let Some(backends) = &*backends {
+fn load_tools() -> BackendMap {
+    if let Some(backends) = TOOLS.lock().unwrap().as_ref() {
         return backends.clone();
     }
-    let mut plugins = CORE_PLUGINS.clone();
-    plugins.extend(Asdf::list().expect("failed to list plugins"));
-    plugins.extend(list_installed_backends().expect("failed to list backends"));
+    let mut tools = CORE_PLUGINS
+        .iter()
+        .map(|(_, p)| p.clone())
+        .collect::<Vec<ABackend>>();
     let settings = Settings::get();
-    plugins.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
-    let plugins: BackendMap = plugins
+    if !cfg!(windows) || settings.asdf {
+        tools.extend(asdf::AsdfBackend::list().expect("failed to list asdf plugins"));
+    }
+    if cfg!(windows) || settings.vfox {
+        tools.extend(vfox::VfoxBackend::list().expect("failed to list vfox plugins"));
+    }
+    tools.extend(list_installed_backends().expect("failed to list backends"));
+    tools.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
+    let tools: BackendMap = tools
         .into_iter()
-        .map(|plugin| (plugin.fa().clone(), plugin))
+        .map(|plugin| (plugin.id().to_string(), plugin))
         .collect();
-    *backends = Some(plugins.clone());
-    plugins
+    *TOOLS.lock().unwrap() = Some(tools.clone());
+    tools
 }
 
 fn list_installed_backends() -> eyre::Result<BackendList> {
     Ok(file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
-        .map(|dir| {
-            let id = BackendMeta::read(&dir).id;
-            let fa: BackendArg = id.as_str().into();
-            match fa.backend_type {
-                BackendType::Asdf => Arc::new(Asdf::new(fa.name)) as ABackend,
-                BackendType::Cargo => Arc::new(CargoBackend::new(fa.name)) as ABackend,
-                BackendType::Core => Arc::new(Asdf::new(fa.name)) as ABackend,
-                BackendType::Npm => Arc::new(npm::NPMBackend::new(fa.name)) as ABackend,
-                BackendType::Go => Arc::new(go::GoBackend::new(fa.name)) as ABackend,
-                BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(fa.name)) as ABackend,
-                BackendType::Spm => Arc::new(spm::SPMBackend::new(fa.name)) as ABackend,
-                BackendType::Ubi => Arc::new(ubi::UbiBackend::new(fa.name)) as ABackend,
-            }
-        })
+        .map(|dir| arg_to_backend(BackendMeta::read(&dir).into()))
         .filter(|f| f.fa().backend_type != BackendType::Asdf)
         .collect())
 }
 
 pub fn list() -> BackendList {
-    load_backends().values().cloned().collect()
+    load_tools().values().cloned().collect()
 }
 
 pub fn list_backend_types() -> Vec<BackendType> {
@@ -126,25 +119,30 @@ pub fn list_backend_types() -> Vec<BackendType> {
 }
 
 pub fn get(fa: &BackendArg) -> ABackend {
-    if let Some(backend) = load_backends().get(fa) {
+    if let Some(backend) = load_tools().get(&fa.short) {
         backend.clone()
     } else {
-        let mut m = FORGES.lock().unwrap();
+        let mut m = TOOLS.lock().unwrap();
         let backends = m.as_mut().unwrap();
-        let name = fa.name.to_string();
+        let fa = fa.clone();
         backends
-            .entry(fa.clone())
-            .or_insert_with(|| match fa.backend_type {
-                BackendType::Asdf => Arc::new(Asdf::new(name)),
-                BackendType::Cargo => Arc::new(CargoBackend::new(name)),
-                BackendType::Core => Arc::new(Asdf::new(name)),
-                BackendType::Npm => Arc::new(npm::NPMBackend::new(name)),
-                BackendType::Go => Arc::new(go::GoBackend::new(name)),
-                BackendType::Pipx => Arc::new(pipx::PIPXBackend::new(name)),
-                BackendType::Spm => Arc::new(spm::SPMBackend::new(name)),
-                BackendType::Ubi => Arc::new(ubi::UbiBackend::new(name)),
-            })
+            .entry(fa.short.clone())
+            .or_insert_with(|| arg_to_backend(fa))
             .clone()
+    }
+}
+
+pub fn arg_to_backend(ba: BackendArg) -> ABackend {
+    match ba.backend_type {
+        BackendType::Asdf => Arc::new(asdf::AsdfBackend::from_arg(ba)),
+        BackendType::Cargo => Arc::new(cargo::CargoBackend::from_arg(ba)),
+        BackendType::Core => Arc::new(asdf::AsdfBackend::from_arg(ba)),
+        BackendType::Npm => Arc::new(npm::NPMBackend::from_arg(ba)),
+        BackendType::Go => Arc::new(go::GoBackend::from_arg(ba)),
+        BackendType::Pipx => Arc::new(pipx::PIPXBackend::from_arg(ba)),
+        BackendType::Spm => Arc::new(spm::SPMBackend::from_arg(ba)),
+        BackendType::Ubi => Arc::new(ubi::UbiBackend::from_arg(ba)),
+        BackendType::Vfox => Arc::new(vfox::VfoxBackend::from_arg(ba)),
     }
 }
 
@@ -162,7 +160,7 @@ impl From<&BackendArg> for ABackend {
 
 pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
-        &self.fa().id
+        &self.fa().short
     }
     fn name(&self) -> &str {
         &self.fa().name
@@ -191,7 +189,22 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.ensure_dependencies_installed()?;
-        self._list_remote_versions()
+        trace!("Listing remote versions for {}", self.fa().to_string());
+        let versions = self
+            ._list_remote_versions()?
+            .into_iter()
+            .filter(|v| match v.parse::<ToolVersionType>() {
+                Ok(ToolVersionType::Version(_)) => true,
+                _ => {
+                    warn!("Invalid version: {}@{v}", self.id());
+                    false
+                }
+            })
+            .collect_vec();
+        if versions.is_empty() {
+            warn!("No versions found for {}", self.id());
+        }
+        Ok(versions)
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
@@ -210,13 +223,23 @@ pub trait Backend: Debug + Send + Sync {
             false => vec![],
         })
     }
-    fn is_version_installed(&self, tv: &ToolVersion) -> bool {
+    fn is_version_installed(&self, tv: &ToolVersion, check_symlink: bool) -> bool {
         match tv.request {
             ToolRequest::System(_) => true,
             _ => {
-                tv.install_path().exists()
-                    && !self.incomplete_file_path(tv).exists()
-                    && !is_runtime_symlink(&tv.install_path())
+                let check_path = |install_path: &Path| {
+                    let is_installed = install_path.exists();
+                    let is_not_incomplete = !self.incomplete_file_path(tv).exists();
+                    let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
+
+                    is_installed && is_not_incomplete && is_valid_symlink
+                };
+                if let Some(install_path) = tv.request.install_path() {
+                    if check_path(&install_path) {
+                        return true;
+                    }
+                }
+                check_path(&tv.install_path())
             }
         }
     }
@@ -232,7 +255,7 @@ pub trait Backend: Debug + Send + Sync {
                 return false;
             }
         };
-        !self.is_version_installed(tv) || tv.version != latest
+        !self.is_version_installed(tv, true) || tv.version != latest
     }
     fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
         match tv.install_path() {
@@ -240,18 +263,26 @@ pub trait Backend: Debug + Send + Sync {
             _ => None,
         }
     }
-    fn create_symlink(&self, version: &str, target: &Path) -> eyre::Result<()> {
+    fn create_symlink(
+        &self,
+        version: &str,
+        target: &Path,
+    ) -> eyre::Result<Option<(PathBuf, PathBuf)>> {
         let link = self.fa().installs_path.join(version);
+        if link.exists() {
+            return Ok(None);
+        }
         file::create_dir_all(link.parent().unwrap())?;
-        file::make_symlink(target, &link)
+        let link = file::make_symlink(target, &link)?;
+        Ok(Some(link))
     }
     fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_installed_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
     fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
     fn latest_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {
@@ -262,7 +293,6 @@ pub trait Backend: Debug + Send + Sync {
             None => self.latest_stable_version(),
         }
     }
-    #[requires(self.is_installed())]
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {
             Some(query) => {
@@ -272,10 +302,10 @@ pub trait Backend: Debug + Send + Sync {
             None => {
                 let installed_symlink = self.fa().installs_path.join("latest");
                 if installed_symlink.exists() {
-                    if !installed_symlink.is_symlink() {
+                    if installed_symlink.is_dir() && !installed_symlink.is_symlink() {
                         return Ok(Some("latest".to_string()));
                     }
-                    let target = installed_symlink.read_link()?;
+                    let target = file::resolve_symlink(&installed_symlink)?;
                     let version = target
                         .file_name()
                         .ok_or_else(|| eyre!("Invalid symlink target"))?
@@ -292,19 +322,8 @@ pub trait Backend: Debug + Send + Sync {
     fn get_remote_url(&self) -> Option<String> {
         None
     }
-    fn is_installed(&self) -> bool {
-        true
-    }
-    fn is_installed_err(&self) -> eyre::Result<()> {
-        if self.is_installed() {
-            return Ok(());
-        }
-        bail!("{} is not installed", self.id())
-    }
-    fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> eyre::Result<()> {
-        Ok(())
-    }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+        trace!("Ensuring dependencies installed for {}", self.id());
         let deps = self
             .get_all_dependencies(&ToolRequest::System(self.id().into()))?
             .into_iter()
@@ -318,12 +337,6 @@ pub trait Backend: Debug + Send + Sync {
                 self.id()
             );
         }
-        Ok(())
-    }
-    fn update(&self, _pr: &dyn SingleReport, _git_ref: Option<String>) -> eyre::Result<()> {
-        Ok(())
-    }
-    fn uninstall(&self, _pr: &dyn SingleReport) -> eyre::Result<()> {
         Ok(())
     }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
@@ -342,19 +355,17 @@ pub trait Backend: Debug + Send + Sync {
         let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }
-    fn external_commands(&self) -> eyre::Result<Vec<Command>> {
-        Ok(vec![])
-    }
-    fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> eyre::Result<()> {
-        unimplemented!()
+    fn plugin(&self) -> Option<&dyn Plugin> {
+        None
     }
 
     #[requires(ctx.tv.backend.backend_type == self.get_type())]
     fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
-        self.is_installed_err()?;
+        if let Some(plugin) = self.plugin() {
+            plugin.is_installed_err()?;
+        }
         let config = Config::get();
-        let settings = Settings::try_get()?;
-        if self.is_version_installed(&ctx.tv) {
+        if self.is_version_installed(&ctx.tv, true) {
             if ctx.force {
                 self.uninstall_version(&ctx.tv, ctx.pr.as_ref(), false)?;
                 ctx.pr.set_message("installing".into());
@@ -362,17 +373,17 @@ pub trait Backend: Debug + Send + Sync {
                 return Ok(());
             }
         }
-        let _lock = self.get_lock(&ctx.tv.install_path(), ctx.force)?;
+        let _lock = lock_file::get(&ctx.tv.install_path(), ctx.force)?;
         self.create_install_dirs(&ctx.tv)?;
 
         if let Err(e) = self.install_version_impl(&ctx) {
-            self.cleanup_install_dirs_on_error(&settings, &ctx.tv);
+            self.cleanup_install_dirs_on_error(&SETTINGS, &ctx.tv);
             return Err(e);
         }
 
         BackendMeta::write(&ctx.tv.backend)?;
 
-        self.cleanup_install_dirs(&settings, &ctx.tv);
+        self.cleanup_install_dirs(&SETTINGS, &ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
         touch_dirs.extend(config.config_files.keys().cloned());
@@ -385,8 +396,24 @@ pub trait Backend: Debug + Send + Sync {
         if let Err(err) = file::remove_file(self.incomplete_file_path(&ctx.tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
+        if let Some(script) = ctx.tv.request.options().get("postinstall") {
+            ctx.pr
+                .finish_with_message("running custom postinstall hook".to_string());
+            self.run_postinstall_hook(&ctx, script)?;
+        }
         ctx.pr.finish_with_message("installed".to_string());
 
+        Ok(())
+    }
+
+    fn run_postinstall_hook(&self, ctx: &InstallContext, script: &str) -> eyre::Result<()> {
+        CmdLineRunner::new(&*env::SHELL)
+            .env(&*env::PATH_KEY, CorePlugin::path_env_with_tv_path(&ctx.tv)?)
+            .with_pr(ctx.pr.as_ref())
+            .arg("-c")
+            .arg(script)
+            .envs(self.exec_env(&CONFIG, ctx.ts, &ctx.tv)?)
+            .execute()?;
         Ok(())
     }
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()>;
@@ -450,19 +477,6 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
-    fn get_lock(&self, path: &Path, force: bool) -> eyre::Result<Option<fslock::LockFile>> {
-        let lock = if force {
-            None
-        } else {
-            let lock = LockFile::new(path)
-                .with_callback(|l| {
-                    debug!("waiting for lock on {}", display_path(l));
-                })
-                .lock()?;
-            Some(lock)
-        };
-        Ok(lock)
-    }
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
         let _ = remove_all_with_warning(tv.install_path());
         let _ = remove_all_with_warning(tv.download_path());
@@ -489,7 +503,7 @@ pub trait Backend: Debug + Send + Sync {
         tv.cache_path().join("incomplete")
     }
 
-    fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
+    fn depedency_toolset(&self) -> eyre::Result<Toolset> {
         let config = Config::get();
         let dependencies = self
             .get_all_dependencies(&ToolRequest::System(self.name().into()))?
@@ -500,29 +514,35 @@ pub trait Backend: Debug + Send + Sync {
             .filter_by_tool(&dependencies)
             .into();
         ts.resolve()?;
-        ts.full_env()
+        Ok(ts)
     }
-}
 
-fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
-    let mut query = query;
-    if query == "latest" {
-        query = "v?[0-9].*";
+    fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
+        self.depedency_toolset()?.full_env()
     }
-    let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
-    let versions = versions
-        .into_iter()
-        .filter(|v| {
-            if query == v {
-                return true;
-            }
-            if VERSION_REGEX.is_match(v) {
-                return false;
-            }
-            query_regex.is_match(v)
-        })
-        .collect();
-    Ok(versions)
+
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+        let escaped_query = regex::escape(query);
+        let query = if query == "latest" {
+            "v?[0-9].*"
+        } else {
+            &escaped_query
+        };
+        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
+        let versions = versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if VERSION_REGEX.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect();
+        Ok(versions)
+    }
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
@@ -587,5 +607,5 @@ impl Ord for dyn Backend {
 
 #[cfg(test)]
 pub fn reset() {
-    *FORGES.lock().unwrap() = None;
+    *TOOLS.lock().unwrap() = None;
 }

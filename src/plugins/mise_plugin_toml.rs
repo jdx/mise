@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use color_eyre::eyre::eyre;
-use color_eyre::{Result, Section};
+use color_eyre::Result;
+use eyre::WrapErr;
 use toml_edit::{DocumentMut, Item, Value};
 
 use crate::{file, parse_error};
@@ -27,7 +28,7 @@ impl MisePluginToml {
         }
         trace!("parsing: {}", path.display());
         let mut rf = Self::init();
-        let body = file::read_to_string(path).suggestion("ensure file exists and can be read")?;
+        let body = file::read_to_string(path).wrap_err("ensure file exists and can be read")?;
         rf.parse(&body)?;
         Ok(rf)
     }
@@ -39,7 +40,7 @@ impl MisePluginToml {
     }
 
     fn parse(&mut self, s: &str) -> Result<()> {
-        let doc: DocumentMut = s.parse().suggestion("ensure file is valid TOML")?;
+        let doc: DocumentMut = s.parse().wrap_err("ensure file is valid TOML")?;
         for (k, v) in doc.iter() {
             match k {
                 "exec-env" => self.exec_env = self.parse_script_config(k, v)?,

@@ -8,14 +8,14 @@ use crate::config::Settings;
 ///
 /// Displays the contents of global config after writing.
 /// The file is `$HOME/.config/mise/config.toml` by default. It can be changed with `$MISE_GLOBAL_CONFIG_FILE`.
-/// If `$MISE_GLOBAL_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `.mise.toml`.
+/// If `$MISE_GLOBAL_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `mise.toml`.
 /// Otherwise, it will be parsed as a `.tool-versions` file.
 ///
 /// Use MISE_ASDF_COMPAT=1 to default the global config to ~/.tool-versions
 ///
 /// Use `mise local` to set a tool version locally in the current directory.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true, alias = "g", after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, hide = true, after_long_help = AFTER_LONG_HELP)]
 pub struct Global {
     /// Tool(s) to add to .tool-versions
     /// e.g.: node@20

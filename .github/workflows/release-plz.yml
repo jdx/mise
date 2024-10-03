@@ -17,9 +17,11 @@ concurrency:
 
 env:
   MISE_EXPERIMENTAL: 1
+  NPM_CONFIG_FUND: false
 
 jobs:
   release-plz:
+    if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,14 +38,15 @@ jobs:
         with: { toolchain: nightly, components: rustfmt }
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: npm i
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: actions/cache/restore@v4
         with:
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
-          key: mise-tools-${{ hashFiles('.mise.toml') }}
-          restore-keys: mise-tools
+          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.toml') }}
+          restore-keys: mise-tools-ubuntu-latest
       - run: mise install
       - run: |
           set -euxo pipefail

@@ -14,7 +14,7 @@ type SettingMinWidth = Settings<SettingPriority, MinWidth>;
 
 pub fn term_size_settings() -> SettingMinWidth {
     Settings::default()
-        .with(Width::wrap(*TERM_WIDTH).priority::<PriorityMax>())
+        .with(Width::wrap(*TERM_WIDTH).priority(PriorityMax))
         .with(Width::increase(*TERM_WIDTH))
     // .with(Height::limit(*TERM_HEIGHT))
     // .with(Height::increase(*TERM_HEIGHT))

@@ -7,15 +7,15 @@ use rayon::prelude::*;
 use crate::backend;
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
-use crate::toolset::ToolRequest;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-/// List runtime versions available for install
+/// List runtime versions available for install.
 ///
-/// note that the results are cached for 24 hours
-/// run `mise cache clean` to clear the cache and get fresh results
+/// Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"])]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
+)]
 pub struct LsRemote {
     /// Plugin to get versions for
     #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
@@ -44,6 +44,10 @@ impl LsRemote {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
+                Some(ToolRequest::Sub { .. }) => match tool_arg.clone().tvr {
+                    Some(tvr) => Some(ToolVersion::resolve(plugin.as_ref(), tvr, false)?.version),
+                    None => None,
+                },
                 _ => self.prefix.clone(),
             },
             _ => self.prefix.clone(),
@@ -87,10 +91,12 @@ impl LsRemote {
     fn get_plugin(&self) -> Result<Option<Arc<dyn Backend>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                let plugin = backend::get(&tool_arg.backend);
+                let backend = backend::get(&tool_arg.backend);
                 let mpr = MultiProgressReport::get();
-                plugin.ensure_installed(&mpr, false)?;
-                Ok(Some(plugin))
+                if let Some(plugin) = backend.plugin() {
+                    plugin.ensure_installed(&mpr, false)?;
+                }
+                Ok(Some(backend))
             }
             None => Ok(None),
         }
@@ -125,5 +131,6 @@ mod tests {
     fn test_ls_remote_prefix() {
         assert_cli_snapshot!("list-remote", "dummy", "1");
         assert_cli_snapshot!("list-remote", "dummy@2");
+        assert_cli_snapshot!("list-remote", "dummy@sub-1:2");
     }
 }

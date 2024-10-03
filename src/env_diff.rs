@@ -11,6 +11,7 @@ use flate2::Compression;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
+use crate::env::PATH_KEY;
 use crate::{cmd, file};
 
 #[derive(Default, Serialize, Deserialize)]
@@ -139,9 +140,8 @@ impl EnvDiff {
             };
         }
         for (k, v) in self.new.iter() {
-            match self.old.contains_key(k) {
-                false => patches.push(EnvDiffOperation::Add(k.into(), v.into())),
-                true => {}
+            if !self.old.contains_key(k) {
+                patches.push(EnvDiffOperation::Add(k.into(), v.into()))
             };
         }
 
@@ -161,7 +161,7 @@ fn valid_key(k: &str) -> bool {
     k.is_empty()
         || k == "_"
         || k == "SHLVL"
-        || k == "PATH"
+        || k == *PATH_KEY
         || k == "PWD"
         || k == "OLDPWD"
         || k == "HOME"
@@ -170,6 +170,7 @@ fn valid_key(k: &str) -> bool {
         || k == "SHELLOPTS"
         || k == "COMP_WORDBREAKS"
         || k == "PS1"
+        || k == "PROMPT_DIRTRIM"
         // following two ignores are for exported bash functions and exported bash
         // functions which are multiline, they appear in the environment as e.g.:
         // BASH_FUNC_exported-bash-function%%=() { echo "this is an"

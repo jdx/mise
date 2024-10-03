@@ -7,6 +7,8 @@ use crate::toolset::ToolRequest;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Gets the latest available version for a plugin
+///
+/// Supports prefixes such as `node@20` to get the latest version of node 20.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Latest {
@@ -34,17 +36,19 @@ impl Latest {
             _ => bail!("invalid version: {}", self.tool.style()),
         };
 
-        let plugin: ABackend = self.tool.backend.into();
+        let backend: ABackend = self.tool.backend.into();
         let mpr = MultiProgressReport::get();
-        plugin.ensure_installed(&mpr, false)?;
+        if let Some(plugin) = backend.plugin() {
+            plugin.ensure_installed(&mpr, false)?;
+        }
         if let Some(v) = prefix {
-            prefix = Some(config.resolve_alias(plugin.as_ref(), &v)?);
+            prefix = Some(config.resolve_alias(backend.as_ref(), &v)?);
         }
 
         let latest_version = if self.installed {
-            plugin.latest_installed_version(prefix)?
+            backend.latest_installed_version(prefix)?
         } else {
-            plugin.latest_version(prefix)?
+            backend.latest_version(prefix)?
         };
         if let Some(version) = latest_version {
             miseprintln!("{}", version);

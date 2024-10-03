@@ -1,4 +1,4 @@
-name: mise-docs
+name: docs
 
 on:
   push:
@@ -13,14 +13,15 @@ on:
       - main
 
 concurrency:
-  group: mise-docs-release-${{ github.head_ref }}
+  group: docs-${{ github.head_ref }}
   cancel-in-progress: true
 
 env:
   MISE_EXPERIMENTAL: 1
 
 jobs:
-  release:
+  docs:
+    if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

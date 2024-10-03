@@ -79,7 +79,7 @@ impl ToolVersions {
         self.plugins
             .entry(fa.clone())
             .or_insert_with(|| ToolVersionPlugin {
-                orig_name: fa.to_string(),
+                orig_name: fa.short.to_string(),
                 versions: vec![],
                 post: "".into(),
             })

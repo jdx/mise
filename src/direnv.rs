@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::env::PATH_KEY;
 use base64::prelude::*;
 use eyre::Result;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
@@ -33,7 +34,7 @@ impl DirenvDiff {
     }
 
     pub fn new_path(&self) -> Vec<PathBuf> {
-        let path = self.new.get("PATH");
+        let path = self.new.get(&*PATH_KEY);
         match path {
             Some(path) => split_paths(path).collect(),
             None => vec![],
@@ -41,7 +42,7 @@ impl DirenvDiff {
     }
 
     pub fn old_path(&self) -> Vec<PathBuf> {
-        let path = self.old.get("PATH");
+        let path = self.old.get(&*PATH_KEY);
         match path {
             Some(path) => split_paths(path).collect(),
             None => vec![],
@@ -59,10 +60,14 @@ impl DirenvDiff {
         old.insert(0, path.into());
         new.insert(0, path.into());
 
-        self.old
-            .insert("PATH".into(), join_paths(&old)?.into_string().unwrap());
-        self.new
-            .insert("PATH".into(), join_paths(&new)?.into_string().unwrap());
+        self.old.insert(
+            PATH_KEY.to_string(),
+            join_paths(&old)?.into_string().unwrap(),
+        );
+        self.new.insert(
+            PATH_KEY.to_string(),
+            join_paths(&new)?.into_string().unwrap(),
+        );
 
         Ok((old, new))
     }
@@ -78,10 +83,14 @@ impl DirenvDiff {
         old.iter().position(|p| p == path).map(|i| old.remove(i));
         new.iter().position(|p| p == path).map(|i| new.remove(i));
 
-        self.old
-            .insert("PATH".into(), join_paths(&old)?.into_string().unwrap());
-        self.new
-            .insert("PATH".into(), join_paths(&new)?.into_string().unwrap());
+        self.old.insert(
+            PATH_KEY.to_string(),
+            join_paths(&old)?.into_string().unwrap(),
+        );
+        self.new.insert(
+            PATH_KEY.to_string(),
+            join_paths(&new)?.into_string().unwrap(),
+        );
 
         Ok((old, new))
     }

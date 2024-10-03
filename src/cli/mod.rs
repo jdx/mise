@@ -190,6 +190,7 @@ impl Cli {
                 .subcommand_required(true)
                 .after_long_help(AFTER_LONG_HELP)
                 .arg(args::CdArg::arg())
+                .arg(args::ProfileArg::arg())
                 .arg(args::DebugArg::arg())
                 .arg(args::LogLevelArg::arg())
                 .arg(args::QuietArg::arg())
@@ -214,6 +215,10 @@ impl Cli {
         Settings::add_cli_matches(&matches);
         logger::init();
         migrate::run();
+        if let Err(err) = crate::cache::auto_prune() {
+            warn!("auto_prune failed: {err:?}");
+        }
+
         debug!("ARGS: {}", &args.join(" "));
         match Commands::from_arg_matches(&matches) {
             Ok(cmd) => cmd.run(),

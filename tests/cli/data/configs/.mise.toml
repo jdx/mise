@@ -2,6 +2,8 @@
 [env]
 FOO = "bar"
 
+[settings]
+
 [tools]
 tiny = "latest"
 #golang = {version="1.19.5", foo="bar"}

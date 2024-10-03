@@ -7,7 +7,7 @@ use eyre::Result;
 use crate::config;
 use crate::config::{config_file, Settings, DEFAULT_CONFIG_FILENAMES};
 use crate::dirs::TRUSTED_CONFIGS;
-use crate::file::remove_file;
+use crate::file::{display_path, remove_file};
 
 /// Marks a config file as trusted
 ///
@@ -32,10 +32,18 @@ pub struct Trust {
     /// No longer trust this config
     #[clap(long)]
     untrust: bool,
+
+    /// Show the trusted status of config files from the current directory and its parents.
+    /// Does not trust or untrust any files.
+    #[clap(long, verbatim_doc_comment)]
+    show: bool,
 }
 
 impl Trust {
     pub fn run(self) -> Result<()> {
+        if self.show {
+            return self.show();
+        }
         if self.untrust {
             self.untrust()
         } else if self.all {
@@ -111,14 +119,34 @@ impl Trust {
             .into_iter()
             .find(|p| !config_file::is_trusted(p))
     }
+
+    fn show(&self) -> Result<()> {
+        let trusted = config::load_config_paths(&DEFAULT_CONFIG_FILENAMES)
+            .into_iter()
+            .map(|p| (display_path(&p), config_file::is_trusted(&p)))
+            .rev()
+            .collect::<Vec<_>>();
+        if trusted.is_empty() {
+            info!("No trusted config files found.");
+        }
+        for (dp, trusted) in trusted {
+            if trusted {
+                miseprintln!("{dp}: trusted");
+            } else {
+                miseprintln!("{dp}: untrusted");
+            }
+        }
+        Ok(())
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-    # trusts ~/some_dir/.mise.toml
-    $ <bold>mise trust ~/some_dir/.mise.toml</bold>
 
-    # trusts .mise.toml in the current or parent directory
+    # trusts ~/some_dir/mise.toml
+    $ <bold>mise trust ~/some_dir/mise.toml</bold>
+
+    # trusts mise.toml in the current or parent directory
     $ <bold>mise trust</bold>
 "#
 );
@@ -131,7 +159,8 @@ mod tests {
     #[test]
     fn test_trust() {
         reset();
-        assert_cli!("trust", "--untrust");
+        assert_cli!("trust", "--untrust", "--all");
+        assert_cli_snapshot!("trust", "--show");
         assert_cli_snapshot!("trust");
         assert_cli_snapshot!("trust", "--untrust");
         assert_cli_snapshot!("trust", ".test-tool-versions");

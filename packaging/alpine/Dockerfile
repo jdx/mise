@@ -1,6 +1,6 @@
 FROM alpine:edge
 
-RUN apk add --no-cache sudo build-base alpine-sdk bash direnv glab atools \
+RUN apk add --no-cache sudo build-base alpine-sdk bash direnv glab atools github-cli jq nodejs \
       && apk fix \
       && adduser -D packager \
       && addgroup packager abuild \

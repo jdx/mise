@@ -9,11 +9,13 @@ use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
 use crate::{cmd, env};
 
-/// Updates mise itself
+/// Updates mise itself.
 ///
 /// Uses the GitHub Releases API to find the latest release and binary.
 /// By default, this will also update any installed plugins.
 /// Uses the `GITHUB_API_TOKEN` environment variable if set for higher rate limits.
+///
+/// This command is not available if mise is installed via a package manager.
 #[derive(Debug, Default, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct SelfUpdate {
@@ -86,6 +88,14 @@ impl SelfUpdate {
         if self.force || self.version.is_some() {
             update.target_version_tag(&v);
         }
+        #[cfg(windows)]
+        let target = format!("mise-{v}-{target}.zip");
+        #[cfg(not(windows))]
+        let target = format!("mise-{v}-{target}.tar.gz");
+        #[cfg(windows)]
+        let bin_path_in_archive = "mise/bin/mise.exe";
+        #[cfg(not(windows))]
+        let bin_path_in_archive = "mise/bin/mise";
         let status = update
             .repo_owner("jdx")
             .repo_name("mise")
@@ -94,8 +104,8 @@ impl SelfUpdate {
             .show_download_progress(true)
             .current_version(cargo_crate_version!())
             .target(&target)
-            .bin_path_in_archive("mise/bin/mise")
-            .target(&format!("mise-{v}-{target}.tar.gz"))
+            .bin_path_in_archive(bin_path_in_archive)
+            .target(&target)
             .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
             .build()?
             .update()?;

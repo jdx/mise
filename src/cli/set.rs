@@ -5,22 +5,22 @@ use tabled::Tabled;
 
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
-use crate::config::Config;
-use crate::env;
-use crate::file::display_path;
+use crate::config::{is_global_config, Config, LOCAL_CONFIG_FILENAMES};
+use crate::env::{self, MISE_DEFAULT_CONFIG_FILENAME};
+use crate::file::{self, display_path};
 use crate::ui::table;
 
 use super::args::EnvVarArg;
 
-/// Manage environment variables
+/// Set environment variables in mise.toml
 ///
-/// By default this command modifies ".mise.toml" in the current directory.
+/// By default, this command modifies `mise.toml` in the current directory.
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Set {
     /// The TOML file to update
     ///
-    /// Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or ".mise.toml".
+    /// Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
     #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::FilePath)]
     file: Option<PathBuf>,
 
@@ -59,10 +59,15 @@ impl Set {
             return Ok(());
         }
 
-        let filename = self.file.unwrap_or_else(|| match self.global {
-            true => env::MISE_GLOBAL_CONFIG_FILE.clone(),
-            false => env::MISE_DEFAULT_CONFIG_FILENAME.clone().into(),
-        });
+        let filename = if let Some(env) = &*env::MISE_ENV {
+            config_file_from_dir(&env::current_dir()?.join(format!(".mise.{}.toml", env)))
+        } else if self.global {
+            env::MISE_GLOBAL_CONFIG_FILE.clone()
+        } else if let Some(p) = &self.file {
+            config_file_from_dir(p)
+        } else {
+            env::MISE_DEFAULT_CONFIG_FILENAME.clone().into()
+        };
 
         let mut mise_toml = get_mise_toml(&filename)?;
 
@@ -101,6 +106,26 @@ fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
     };
 
     Ok(mise_toml)
+}
+
+fn config_file_from_dir(p: &Path) -> PathBuf {
+    if !p.is_dir() {
+        return p.to_path_buf();
+    }
+    let mise_toml = p.join(&*MISE_DEFAULT_CONFIG_FILENAME);
+    if mise_toml.exists() {
+        return mise_toml;
+    }
+    let filenames = LOCAL_CONFIG_FILENAMES
+        .iter()
+        .rev()
+        .filter(|f| is_global_config(Path::new(f)))
+        .map(|f| f.to_string())
+        .collect::<Vec<_>>();
+    if let Some(p) = file::find_up(p, &filenames) {
+        return p;
+    }
+    mise_toml
 }
 
 #[derive(Tabled)]

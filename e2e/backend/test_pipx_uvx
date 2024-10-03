@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+# Create a system pipx that always fail and push it to the front of PATH
+cat >"$HOME/bin/pipx" <<'EOF'
+#!/usr/bin/env bash
+echo "CALL TO SYSTEM pipx! args: $*" >&2
+exit 1
+EOF
+chmod +x "$HOME"/bin/pipx
+export PATH="$HOME/bin:$PATH"
+
+# Just to be sure...
+assert_fail "pipx"
+
+# Use precompiled python
+export MISE_PYTHON_COMPILE=0
+export MISE_PIPX_UVX=1
+
+# Set up a 2-step installation: pipx@1.5.0 > pipx:mkdocs@1.6.0
+cat >.mise.toml <<EOF
+[tools]
+pipx = "1.5.0"
+uv = "0.3.4"
+"pipx:mkdocs" = "1.6.0"
+EOF
+
+# Install the tools
+mise install
+
+# Assert that mkdocs 1.6.0 has been installed with pipx
+# (mkdocs conveniently returns its installation path in with --version)
+assert_contains "mise x -- mkdocs --version" "/mise/installs/pipx-mkdocs/1.6.0/"

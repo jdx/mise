@@ -11,7 +11,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 ///
 /// Installs a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`
 /// Installing alone will not activate the tools so they won't be in PATH.
-/// To install and/or activate in one command, use `mise use` which will create a `.mise.toml` file
+/// To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
 /// in the current directory to activate this tool when inside the directory.
 /// Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
 ///
@@ -52,9 +52,9 @@ impl Install {
             Some(runtime) => self.install_runtimes(&config, runtime)?,
             None => self.install_missing_runtimes(&config)?,
         };
-
         Ok(())
     }
+
     fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
         let tools: HashSet<BackendArg> = runtimes.iter().map(|ta| ta.backend.clone()).collect();
@@ -135,8 +135,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise install node@20.0.0</bold>  # install specific node version
     $ <bold>mise install node@20</bold>      # install fuzzy node version
-    $ <bold>mise install node</bold>         # install version specified in .tool-versions or .mise.toml
-    $ <bold>mise install</bold>              # installs everything specified in .tool-versions or .mise.toml
+    $ <bold>mise install node</bold>         # install version specified in mise.toml
+    $ <bold>mise install</bold>              # installs everything specified in mise.toml
 "#
 );
 

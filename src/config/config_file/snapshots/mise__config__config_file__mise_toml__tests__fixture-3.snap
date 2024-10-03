@@ -25,6 +25,7 @@ ToolRequestSet {
             Ref {
                 backend: BackendArg("node"),
                 ref_: "master",
+                ref_type: "ref",
                 options: {},
             },
             Path(

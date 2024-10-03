@@ -35,16 +35,16 @@ pub struct Ls {
     #[clap(long = "plugin", short, hide = true)]
     plugin_flag: Option<BackendArg>,
 
-    /// Only show tool versions currently specified in a .tool-versions/.mise.toml
+    /// Only show tool versions currently specified in a mise.toml
     #[clap(long, short)]
     current: bool,
 
-    /// Only show tool versions currently specified in a the global .tool-versions/.mise.toml
+    /// Only show tool versions currently specified in the global mise.toml
     #[clap(long, short)]
     global: bool,
 
     /// Only show tool versions that are installed
-    /// (Hides tools defined in .tool-versions/.mise.toml but not installed)
+    /// (Hides tools defined in mise.toml but not installed)
     #[clap(long, short)]
     installed: bool,
 
@@ -84,10 +84,10 @@ impl Ls {
             runtimes.retain(|(_, _, source)| source.is_some());
         }
         if self.installed {
-            runtimes.retain(|(p, tv, _)| p.is_version_installed(tv));
+            runtimes.retain(|(p, tv, _)| p.is_version_installed(tv, true));
         }
         if self.missing {
-            runtimes.retain(|(p, tv, _)| !p.is_version_installed(tv));
+            runtimes.retain(|(p, tv, _)| !p.is_version_installed(tv, true));
         }
         if let Some(prefix) = &self.prefix {
             runtimes.retain(|(_, tv, _)| tv.version.starts_with(prefix));
@@ -102,14 +102,13 @@ impl Ls {
     }
 
     fn verify_plugin(&self) -> Result<()> {
-        match &self.plugin {
-            Some(plugins) => {
-                for fa in plugins {
-                    let plugin = backend::get(fa);
+        if let Some(plugins) = &self.plugin {
+            for fa in plugins {
+                let backend = backend::get(fa);
+                if let Some(plugin) = backend.plugin() {
                     ensure!(plugin.is_installed(), "{fa} is not installed");
                 }
             }
-            None => {}
         }
         Ok(())
     }
@@ -144,7 +143,7 @@ impl Ls {
         let tvs = runtimes
             .into_iter()
             .map(|(p, tv, _)| (p, tv))
-            .filter(|(p, tv)| p.is_version_installed(tv))
+            .filter(|(p, tv)| p.is_version_installed(tv, true))
             .map(|(_, tv)| tv);
         for tv in tvs {
             if self.plugin.is_some() {
@@ -163,7 +162,7 @@ impl Ls {
         //     .map(|(plugin, tv, source)| (plugin.to_string(), tv.to_string()))
         //     .collect_vec();
         let rows = runtimes.into_iter().map(|(p, tv, source)| Row {
-            plugin: p.clone(),
+            tool: p.clone(),
             version: (p.as_ref(), &tv, &source).into(),
             requested: match source.is_some() {
                 true => Some(tv.request.version()),
@@ -227,7 +226,7 @@ impl Ls {
                 (p, tv, source)
             })
             // if it isn't installed and it's not specified, don't show it
-            .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv))
+            .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv, true))
             .filter(|(p, _, _)| match &self.plugin {
                 Some(backend) => backend.contains(p.fa()),
                 None => true,
@@ -259,8 +258,8 @@ type RuntimeRow = (Arc<dyn Backend>, ToolVersion, Option<ToolSource>);
 #[derive(Tabled)]
 #[tabled(rename_all = "PascalCase")]
 struct Row {
-    #[tabled(display_with = "Self::display_plugin")]
-    plugin: Arc<dyn Backend>,
+    #[tabled(display_with = "Self::display_tool")]
+    tool: Arc<dyn Backend>,
     version: VersionStatus,
     #[tabled(rename = "Config Source", display_with = "Self::display_source")]
     source: Option<ToolSource>,
@@ -275,8 +274,8 @@ impl Row {
             None => String::new(),
         }
     }
-    fn display_plugin(plugin: &Arc<dyn Backend>) -> String {
-        style(plugin).blue().to_string()
+    fn display_tool(tool: &Arc<dyn Backend>) -> String {
+        style(tool).blue().to_string()
     }
     fn display_source(source: &Option<ToolSource>) -> String {
         match source {
@@ -313,7 +312,7 @@ impl From<(&dyn Backend, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
     fn from((p, tv, source): (&dyn Backend, &ToolVersion, &Option<ToolSource>)) -> Self {
         if p.symlink_path(tv).is_some() {
             VersionStatus::Symlink(tv.version.clone(), source.is_some())
-        } else if !p.is_version_installed(tv) {
+        } else if !p.is_version_installed(tv, true) {
             VersionStatus::Missing(tv.version.clone())
         } else if source.is_some() {
             VersionStatus::Active(tv.version.clone(), p.is_version_outdated(tv, p))
@@ -380,8 +379,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
           "version": "20.0.0",
           "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
           "source": {
-            "type": ".mise.toml",
-            "path": "/Users/jdx/.mise.toml"
+            "type": "mise.toml",
+            "path": "/Users/jdx/mise.toml"
           }
         }
       ],

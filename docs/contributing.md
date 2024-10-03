@@ -133,6 +133,10 @@ Run `mise run release -x [minor|patch]`. (minor if it is the first release in a 
 mise run render
 ```
 
+## Adding a new setting
+
+To add a new setting, add it to [`settings.toml`](https://github.com/jdx/mise/blob/main/settings.toml) in the root of the project and run `mise run render` to update the codebase.
+
 ## Testing packaging
 
 This is only necessary to test if actually changing the packaging setup.

@@ -6,13 +6,14 @@ use tabled::Tabled;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::task::Task;
+use crate::ui::info::trim_line_end_whitespace;
 use crate::ui::{style, table};
 
 /// [experimental] List available tasks to execute
 /// These may be included from the config file or from the project's .mise/tasks directory
 /// mise will merge all tasks from all parent directories into this list.
 ///
-/// So if you have global tasks in ~/.config/mise/tasks/* and project-specific tasks in
+/// So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in
 /// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 /// tasks will override the global ones if they have the same name.
 #[derive(Debug, clap::Args)]
@@ -41,6 +42,9 @@ pub struct TasksLs {
     /// Output in JSON format
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
+
+    #[clap(long, hide = true)]
+    pub usage: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -70,7 +74,9 @@ impl TasksLs {
             .sorted_by(|a, b| self.sort(a, b))
             .collect::<Vec<Task>>();
 
-        if self.json {
+        if self.usage {
+            self.display_usage(tasks)?;
+        } else if self.json {
             self.display_json(tasks)?;
         } else {
             self.display(tasks)?;
@@ -86,7 +92,21 @@ impl TasksLs {
         if !self.extended {
             table::disable_columns(&mut table, vec![1]);
         }
-        miseprintln!("{table}");
+        let table = format!("{table}");
+        miseprintln!("{}", trim_line_end_whitespace(&table));
+        Ok(())
+    }
+
+    fn display_usage(&self, tasks: Vec<Task>) -> Result<()> {
+        let mut usage = usage::Spec::default();
+        for task in tasks {
+            let (task_spec, _) = task.parse_usage_spec(None)?;
+            usage
+                .cmd
+                .subcommands
+                .insert(task.name.clone(), task_spec.cmd);
+        }
+        miseprintln!("{}", usage.to_string());
         Ok(())
     }
 
@@ -160,7 +180,7 @@ fn truncate(s: &str, len: usize) -> String {
 // TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-    
+
     $ <bold>mise tasks ls</bold>
 "#
 );
@@ -173,12 +193,12 @@ mod tests {
     #[test]
     fn test_task_ls() {
         reset();
-        assert_cli_snapshot!("t", "--no-headers", @r###"
-        configtask                               ~/config/config.toml       
-        filetask    This is a test build script  ~/cwd/.mise/tasks/filetask 
-        lint                                     ~/config/config.toml       
+        assert_cli_snapshot!("t", "--no-headers", @r#"
+        configtask                               ~/config/config.toml
+        filetask    This is a test build script  ~/cwd/.mise/tasks/filetask
+        lint                                     ~/config/config.toml
         test                                     ~/config/config.toml
-        "###);
+        "#);
     }
 
     #[test]

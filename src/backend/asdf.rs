@@ -1,52 +1,43 @@
-use std::collections::{BTreeMap, HashMap};
-use std::ffi::OsString;
+use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::exit;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
-use clap::Command;
-use color_eyre::eyre::{bail, eyre, Result, WrapErr};
-use color_eyre::Section;
+use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
 use itertools::Itertools;
 use rayon::prelude::*;
 use url::Url;
 
-use crate::backend::{ABackend, Backend, BackendList, BackendType};
-use crate::cache::CacheManager;
+use crate::backend::external_plugin_cache::ExternalPluginCache;
+use crate::backend::{ABackend, Backend, BackendList};
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
-use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
-use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
+use crate::default_shorthands::DEFAULT_SHORTHANDS;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::errors::Error::PluginNotInstalled;
-use crate::file::{display_path, remove_all};
 use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
+use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
-use crate::plugins::{PluginType, Script, ScriptManager};
-use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::timeout::run_with_timeout;
+use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
-use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::ui::prompt;
 use crate::{dirs, env, file, http};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
-pub struct Asdf {
-    pub fa: BackendArg,
+pub struct AsdfBackend {
+    pub ba: BackendArg,
     pub name: String,
     pub plugin_path: PathBuf,
     pub repo_url: Option<String>,
     pub toml: MisePluginToml,
-    script_man: ScriptManager,
+    plugin: Box<AsdfPlugin>,
     cache: ExternalPluginCache,
     remote_version_cache: CacheManager<Vec<String>>,
     latest_stable_cache: CacheManager<Option<String>>,
@@ -54,93 +45,68 @@ pub struct Asdf {
     legacy_filename_cache: CacheManager<Vec<String>>,
 }
 
-impl Asdf {
-    pub fn new(name: String) -> Self {
+impl AsdfBackend {
+    pub fn from_arg(ba: BackendArg) -> Self {
+        let name = ba.short.to_string();
         let plugin_path = dirs::PLUGINS.join(&name);
         let mut toml_path = plugin_path.join("mise.plugin.toml");
         if plugin_path.join("rtx.plugin.toml").exists() {
             toml_path = plugin_path.join("rtx.plugin.toml");
         }
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
-        let fa = BackendArg::new(BackendType::Asdf, &name);
         Self {
-            script_man: build_script_man(&name, &plugin_path),
             cache: ExternalPluginCache::default(),
-            remote_version_cache: CacheManager::new(
-                fa.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            remote_version_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("remote_versions.msgpack.z"),
             )
             .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
             .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/list-all")),
-            latest_stable_cache: CacheManager::new(
-                fa.cache_path.join("latest_stable-$KEY.msgpack.z"),
+            .with_fresh_file(plugin_path.join("bin/list-all"))
+            .build(),
+            latest_stable_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("latest_stable.msgpack.z"),
             )
             .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
             .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/latest-stable")),
-            alias_cache: CacheManager::new(fa.cache_path.join("aliases-$KEY.msgpack.z"))
+            .with_fresh_file(plugin_path.join("bin/latest-stable"))
+            .build(),
+            alias_cache: CacheManagerBuilder::new(ba.cache_path.join("aliases.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
-                .with_fresh_file(plugin_path.join("bin/list-aliases")),
-            legacy_filename_cache: CacheManager::new(
-                fa.cache_path.join("legacy_filenames-$KEY.msgpack.z"),
+                .with_fresh_file(plugin_path.join("bin/list-aliases"))
+                .build(),
+            legacy_filename_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("legacy_filenames.msgpack.z"),
             )
             .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
+            .with_fresh_file(plugin_path.join("bin/list-legacy-filenames"))
+            .build(),
             plugin_path,
+            plugin: Box::new(AsdfPlugin::new(name.clone())),
             repo_url: None,
             toml,
             name,
-            fa,
+            ba,
         }
+    }
+    pub fn plugin(&self) -> &dyn Plugin {
+        &*self.plugin
     }
 
     pub fn list() -> Result<BackendList> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()
-            .map(|name| Arc::new(Self::new(name)) as ABackend)
+            .filter(|name| !dirs::PLUGINS.join(name).join("metadata.lua").exists())
+            .map(|name| Arc::new(Self::from_arg(name.into())) as ABackend)
             .collect())
     }
 
-    fn get_repo_url(&self, config: &Config) -> Result<String> {
-        self.repo_url
-            .clone()
-            .or_else(|| config.get_repo_url(&self.name))
-            .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))
-    }
-
-    fn install(&self, pr: &dyn SingleReport) -> Result<()> {
-        let config = Config::get();
-        let repository = self.get_repo_url(&config)?;
-        let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
-        debug!("install {} {:?}", self.name, repository);
-
-        if self.is_installed() {
-            self.uninstall(pr)?;
-        }
-
-        let git = Git::new(self.plugin_path.to_path_buf());
-        pr.set_message(format!("cloning {repo_url}"));
-        git.clone(&repo_url)?;
-        if let Some(ref_) = &repo_ref {
-            pr.set_message(format!("checking out {ref_}"));
-            git.update(Some(ref_.to_string()))?;
-        }
-        self.exec_hook(pr, "post-plugin-add")?;
-
-        let sha = git.current_sha_short()?;
-        pr.finish_with_message(format!(
-            "{repo_url}#{}",
-            style(&sha).bright().yellow().for_stderr(),
-        ));
-        Ok(())
-    }
-
     fn fetch_versions(&self) -> Result<Option<Vec<String>>> {
-        if !*env::MISE_USE_VERSIONS_HOST {
+        let settings = Settings::get();
+        if !settings.use_versions_host {
             return Ok(None);
         }
         // ensure that we're using a default shorthand plugin
-        let git = Git::new(self.plugin_path.to_path_buf());
+        let git = Git::new(&self.plugin_path);
         let normalized_remote = normalize_remote(&git.get_remote_url().unwrap_or_default())
             .unwrap_or("INVALID_URL".into());
         let shorthand_remote = DEFAULT_SHORTHANDS
@@ -150,9 +116,14 @@ impl Asdf {
         if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
             return Ok(None);
         }
+        let settings = Settings::get();
+        let raw_versions = match settings.paranoid {
+            true => HTTP_FETCH.get_text(format!("https://mise-versions.jdx.dev/{}", self.name)),
+            false => HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", self.name)),
+        };
         let versions =
             // using http is not a security concern and enabling tls makes mise significantly slower
-            match HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", self.name)) {
+            match raw_versions {
                 Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
                 res => res?,
             };
@@ -168,7 +139,6 @@ impl Asdf {
     }
 
     fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        let settings = Settings::try_get()?;
         match self.fetch_versions() {
             Ok(Some(versions)) => return Ok(versions),
             Err(err) => warn!(
@@ -178,90 +148,8 @@ impl Asdf {
             ),
             _ => {}
         };
-        let cmd = self.script_man.cmd(&Script::ListAll);
-        let result = run_with_timeout(
-            move || {
-                let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
-                Ok(result)
-            },
-            *MISE_FETCH_REMOTE_VERSIONS_TIMEOUT,
-        )
-        .wrap_err_with(|| {
-            let script = self.script_man.get_script_path(&Script::ListAll);
-            eyre!("Failed to run {}", display_path(script))
-        })?;
-        let stdout = String::from_utf8(result.stdout).unwrap();
-        let stderr = String::from_utf8(result.stderr).unwrap().trim().to_string();
-
-        let display_stderr = || {
-            if !stderr.is_empty() {
-                eprintln!("{stderr}");
-            }
-        };
-        if !result.status.success() {
-            let s = Script::ListAll;
-            match result.status.code() {
-                Some(code) => bail!("error running {}: exited with code {}\n{}", s, code, stderr),
-                None => bail!("error running {}: terminated by signal\n{}", s, stderr),
-            };
-        } else if settings.verbose {
-            display_stderr();
-        }
-
-        Ok(stdout
-            .split_whitespace()
-            .map(|v| regex!(r"^v(\d+)").replace(v, "$1").to_string())
-            .collect())
+        self.plugin.fetch_remote_versions()
     }
-
-    fn fetch_legacy_filenames(&self) -> Result<Vec<String>> {
-        let stdout = self.script_man.read(&Script::ListLegacyFilenames)?;
-        Ok(self.parse_legacy_filenames(&stdout))
-    }
-    fn parse_legacy_filenames(&self, data: &str) -> Vec<String> {
-        data.split_whitespace().map(|v| v.into()).collect()
-    }
-    fn fetch_latest_stable(&self) -> Result<Option<String>> {
-        let latest_stable = self
-            .script_man
-            .read(&Script::LatestStable)?
-            .trim()
-            .to_string();
-        Ok(if latest_stable.is_empty() {
-            None
-        } else {
-            Some(latest_stable)
-        })
-    }
-
-    fn has_list_alias_script(&self) -> bool {
-        self.script_man.script_exists(&Script::ListAliases)
-    }
-    fn has_list_legacy_filenames_script(&self) -> bool {
-        self.script_man.script_exists(&Script::ListLegacyFilenames)
-    }
-    fn has_latest_stable_script(&self) -> bool {
-        self.script_man.script_exists(&Script::LatestStable)
-    }
-    fn fetch_aliases(&self) -> Result<Vec<(String, String)>> {
-        let stdout = self.script_man.read(&Script::ListAliases)?;
-        Ok(self.parse_aliases(&stdout))
-    }
-    fn parse_aliases(&self, data: &str) -> Vec<(String, String)> {
-        data.lines()
-            .filter_map(|line| {
-                let mut parts = line.split_whitespace().collect_vec();
-                if parts.len() != 2 {
-                    if !parts.is_empty() {
-                        trace!("invalid alias line: {}", line);
-                    }
-                    return None;
-                }
-                Some((parts.remove(0).into(), parts.remove(0).into()))
-            })
-            .collect()
-    }
-
     fn fetch_cached_legacy_file(&self, legacy_file: &Path) -> Result<Option<String>> {
         let fp = self.legacy_cache_file_path(legacy_file);
         if !fp.exists() || fp.metadata()?.modified()? < legacy_file.metadata()?.modified()? {
@@ -272,7 +160,7 @@ impl Asdf {
     }
 
     fn legacy_cache_file_path(&self, legacy_file: &Path) -> PathBuf {
-        self.fa
+        self.ba
             .cache_path
             .join("legacy")
             .join(&self.name)
@@ -339,7 +227,7 @@ impl Asdf {
 
     fn script_man_for_tv(&self, tv: &ToolVersion) -> Result<ScriptManager> {
         let config = Config::get();
-        let mut sm = self.script_man.clone();
+        let mut sm = self.plugin.script_man.clone();
         for (key, value) in &tv.request.options() {
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value.clone());
@@ -385,77 +273,25 @@ impl Asdf {
             .with_env("MISE_INSTALL_VERSION", install_version);
         Ok(sm)
     }
-
-    fn exec_hook(&self, pr: &dyn SingleReport, hook: &str) -> Result<()> {
-        self.exec_hook_env(pr, hook, Default::default())
-    }
-    fn exec_hook_env(
-        &self,
-        pr: &dyn SingleReport,
-        hook: &str,
-        env: HashMap<OsString, OsString>,
-    ) -> Result<()> {
-        let script = Script::Hook(hook.to_string());
-        let mut sm = self.script_man.clone();
-        sm.env.extend(env);
-        if sm.script_exists(&script) {
-            pr.set_message(format!("executing {hook} hook"));
-            sm.run_by_line(&script, pr)?;
-        }
-        Ok(())
-    }
-
-    fn exec_hook_post_plugin_update(
-        &self,
-        pr: &dyn SingleReport,
-        pre: String,
-        post: String,
-    ) -> Result<()> {
-        if pre != post {
-            let env = [
-                ("ASDF_PLUGIN_PREV_REF", pre.clone()),
-                ("ASDF_PLUGIN_POST_REF", post.clone()),
-                ("MISE_PLUGIN_PREV_REF", pre),
-                ("MISE_PLUGIN_POST_REF", post),
-            ]
-            .into_iter()
-            .map(|(k, v)| (k.into(), v.into()))
-            .collect();
-            self.exec_hook_env(pr, "post-plugin-update", env)?;
-        }
-        Ok(())
-    }
 }
 
-fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
-    let plugin_path_s = plugin_path.to_string_lossy().to_string();
-    ScriptManager::new(plugin_path.to_path_buf())
-        .with_env("ASDF_PLUGIN_PATH", plugin_path_s.clone())
-        .with_env("RTX_PLUGIN_PATH", plugin_path_s.clone())
-        .with_env("RTX_PLUGIN_NAME", name.to_string())
-        .with_env("RTX_SHIMS_DIR", *dirs::SHIMS)
-        .with_env("MISE_PLUGIN_NAME", name.to_string())
-        .with_env("MISE_PLUGIN_PATH", plugin_path)
-        .with_env("MISE_SHIMS_DIR", *dirs::SHIMS)
-}
+impl Eq for AsdfBackend {}
 
-impl Eq for Asdf {}
-
-impl PartialEq for Asdf {
+impl PartialEq for AsdfBackend {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl Hash for Asdf {
+impl Hash for AsdfBackend {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
 }
 
-impl Backend for Asdf {
+impl Backend for AsdfBackend {
     fn fa(&self) -> &BackendArg {
-        &self.fa
+        &self.ba
     }
 
     fn get_plugin_type(&self) -> PluginType {
@@ -484,11 +320,11 @@ impl Backend for Asdf {
     }
 
     fn latest_stable_version(&self) -> Result<Option<String>> {
-        if !self.has_latest_stable_script() {
+        if !self.plugin.has_latest_stable_script() {
             return self.latest_version(Some("latest".into()));
         }
         self.latest_stable_cache
-            .get_or_try_init(|| self.fetch_latest_stable())
+            .get_or_try_init(|| self.plugin.fetch_latest_stable())
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching latest stable version for plugin {}",
@@ -499,119 +335,20 @@ impl Backend for Asdf {
     }
 
     fn get_remote_url(&self) -> Option<String> {
-        let git = Git::new(self.plugin_path.to_path_buf());
+        let git = Git::new(&self.plugin_path);
         git.get_remote_url().or_else(|| self.repo_url.clone())
-    }
-
-    fn is_installed(&self) -> bool {
-        self.plugin_path.exists()
-    }
-
-    fn is_installed_err(&self) -> eyre::Result<()> {
-        if self.is_installed() {
-            return Ok(());
-        }
-        Err(eyre!("asdf plugin {} is not installed", self.id())
-            .suggestion("run with --yes to install plugin automatically"))
-    }
-
-    fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {
-        let config = Config::get();
-        let settings = Settings::try_get()?;
-        if !force {
-            if self.is_installed() {
-                return Ok(());
-            }
-            if !settings.yes && self.repo_url.is_none() {
-                let url = self.get_repo_url(&config).unwrap_or_default();
-                if !is_trusted_plugin(self.name(), &url) {
-                    warn!(
-                        "⚠️ {} is a community-developed plugin – {}",
-                        style(&self.name).blue(),
-                        style(url.trim_end_matches(".git")).yellow()
-                    );
-                    if settings.paranoid {
-                        bail!("Paranoid mode is enabled, refusing to install community-developed plugin");
-                    }
-                    if !prompt::confirm_with_all(format!(
-                        "Would you like to install {}?",
-                        self.name
-                    ))? {
-                        Err(PluginNotInstalled(self.name.clone()))?
-                    }
-                }
-            }
-        }
-        let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
-        let pr = mpr.add(&prefix);
-        let _lock = self.get_lock(&self.plugin_path, force)?;
-        self.install(pr.as_ref())
-    }
-
-    fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
-        let plugin_path = self.plugin_path.to_path_buf();
-        if plugin_path.is_symlink() {
-            warn!(
-                "plugin:{} is a symlink, not updating",
-                style(&self.name).blue().for_stderr()
-            );
-            return Ok(());
-        }
-        let git = Git::new(plugin_path);
-        if !git.is_repo() {
-            warn!(
-                "plugin:{} is not a git repository, not updating",
-                style(&self.name).blue().for_stderr()
-            );
-            return Ok(());
-        }
-        pr.set_message("updating git repo".into());
-        let (pre, post) = git.update(gitref)?;
-        let sha = git.current_sha_short()?;
-        let repo_url = self.get_remote_url().unwrap_or_default();
-        self.exec_hook_post_plugin_update(pr, pre, post)?;
-        pr.finish_with_message(format!(
-            "{repo_url}#{}",
-            style(&sha).bright().yellow().for_stderr(),
-        ));
-        Ok(())
-    }
-
-    fn uninstall(&self, pr: &dyn SingleReport) -> Result<()> {
-        if !self.is_installed() {
-            return Ok(());
-        }
-        self.exec_hook(pr, "pre-plugin-remove")?;
-        pr.set_message("uninstalling".into());
-
-        let rmdir = |dir: &Path| {
-            if !dir.exists() {
-                return Ok(());
-            }
-            pr.set_message(format!("removing {}", display_path(dir)));
-            remove_all(dir).wrap_err_with(|| {
-                format!(
-                    "Failed to remove directory {}",
-                    style(display_path(dir)).cyan().for_stderr()
-                )
-            })
-        };
-
-        rmdir(&self.plugin_path)?;
-
-        Ok(())
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         if let Some(data) = &self.toml.list_aliases.data {
-            return Ok(self.parse_aliases(data).into_iter().collect());
+            return Ok(self.plugin.parse_aliases(data).into_iter().collect());
         }
-        if !self.has_list_alias_script() {
+        if !self.plugin.has_list_alias_script() {
             return Ok(BTreeMap::new());
         }
         let aliases = self
             .alias_cache
-            .get_or_try_init(|| self.fetch_aliases())
+            .get_or_try_init(|| self.plugin.fetch_aliases())
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching aliases for plugin {}",
@@ -626,13 +363,13 @@ impl Backend for Asdf {
 
     fn legacy_filenames(&self) -> Result<Vec<String>> {
         if let Some(data) = &self.toml.list_legacy_filenames.data {
-            return Ok(self.parse_legacy_filenames(data));
+            return Ok(self.plugin.parse_legacy_filenames(data));
         }
-        if !self.has_list_legacy_filenames_script() {
+        if !self.plugin.has_list_legacy_filenames_script() {
             return Ok(vec![]);
         }
         self.legacy_filename_cache
-            .get_or_try_init(|| self.fetch_legacy_filenames())
+            .get_or_try_init(|| self.plugin.fetch_legacy_filenames())
             .wrap_err_with(|| {
                 eyre!(
                     "Failed fetching legacy filenames for plugin {}",
@@ -648,8 +385,8 @@ impl Backend for Asdf {
         }
         trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
         let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
-        let legacy_version = match self.script_man.script_exists(&script) {
-            true => self.script_man.read(&script)?,
+        let legacy_version = match self.plugin.script_man.script_exists(&script) {
+            true => self.plugin.script_man.read(&script)?,
             false => fs::read_to_string(legacy_file)?,
         }
         .trim()
@@ -659,59 +396,8 @@ impl Backend for Asdf {
         Ok(legacy_version)
     }
 
-    fn external_commands(&self) -> Result<Vec<Command>> {
-        let command_path = self.plugin_path.join("lib/commands");
-        if !self.is_installed() || !command_path.exists() || self.name == "direnv" {
-            // asdf-direnv is disabled since it conflicts with mise's built-in direnv functionality
-            return Ok(vec![]);
-        }
-        let mut commands = vec![];
-        for p in file::ls(&command_path)? {
-            let command = p.file_name().unwrap().to_string_lossy().to_string();
-            if !command.starts_with("command-") || !command.ends_with(".bash") {
-                continue;
-            }
-            let command = command
-                .strip_prefix("command-")
-                .unwrap()
-                .strip_suffix(".bash")
-                .unwrap()
-                .split('-')
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>();
-            commands.push(command);
-        }
-        if commands.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let topic = Command::new(self.name.clone())
-            .about(format!("Commands provided by {} plugin", &self.name))
-            .subcommands(commands.into_iter().map(|cmd| {
-                Command::new(cmd.join("-"))
-                    .about(format!("{} command", cmd.join("-")))
-                    .arg(
-                        clap::Arg::new("args")
-                            .num_args(1..)
-                            .allow_hyphen_values(true)
-                            .trailing_var_arg(true),
-                    )
-            }));
-        Ok(vec![topic])
-    }
-
-    fn execute_external_command(&self, command: &str, args: Vec<String>) -> Result<()> {
-        if !self.is_installed() {
-            return Err(PluginNotInstalled(self.name.clone()).into());
-        }
-        let script = Script::RunExternalCommand(
-            self.plugin_path
-                .join("lib/commands")
-                .join(format!("command-{command}.bash")),
-            args,
-        );
-        let result = self.script_man.cmd(&script).unchecked().run()?;
-        exit(result.status.code().unwrap_or(-1));
+    fn plugin(&self) -> Option<&dyn Plugin> {
+        Some(self.plugin())
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
@@ -729,7 +415,7 @@ impl Backend for Asdf {
         }
         ctx.pr.set_message("installing".into());
         run_script(&Install)?;
-        file::remove_dir(&self.fa.downloads_path)?;
+        file::remove_dir(&self.ba.downloads_path)?;
 
         Ok(())
     }
@@ -760,7 +446,7 @@ impl Backend for Asdf {
         if matches!(tv.request, ToolRequest::System(_)) {
             return Ok(BTreeMap::new());
         }
-        if !self.script_man.script_exists(&ExecEnv) || *env::__MISE_SCRIPT {
+        if !self.plugin.script_man.script_exists(&ExecEnv) || *env::__MISE_SCRIPT {
             // if the script does not exist, or we're already running from within a script,
             // the second is to prevent infinite loops
             return Ok(BTreeMap::new());
@@ -770,111 +456,17 @@ impl Backend for Asdf {
     }
 }
 
-impl Debug for Asdf {
+impl Debug for AsdfBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExternalPlugin")
             .field("name", &self.name)
             .field("plugin_path", &self.plugin_path)
-            .field("cache_path", &self.fa.cache_path)
-            .field("downloads_path", &self.fa.downloads_path)
-            .field("installs_path", &self.fa.installs_path)
+            .field("cache_path", &self.ba.cache_path)
+            .field("downloads_path", &self.ba.downloads_path)
+            .field("installs_path", &self.ba.installs_path)
             .field("repo_url", &self.repo_url)
             .finish()
     }
-}
-
-#[derive(Debug, Default)]
-pub struct ExternalPluginCache {
-    list_bin_paths: RwLock<HashMap<ToolRequest, CacheManager<Vec<String>>>>,
-    exec_env: RwLock<HashMap<ToolRequest, CacheManager<BTreeMap<String, String>>>>,
-}
-
-impl ExternalPluginCache {
-    pub fn list_bin_paths<F>(
-        &self,
-        plugin: &Asdf,
-        tv: &ToolVersion,
-        fetch: F,
-    ) -> eyre::Result<Vec<String>>
-    where
-        F: FnOnce() -> eyre::Result<Vec<String>>,
-    {
-        let mut w = self.list_bin_paths.write().unwrap();
-        let cm = w.entry(tv.request.clone()).or_insert_with(|| {
-            let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
-                Some(key) => {
-                    let config = Config::get();
-                    let key = render_cache_key(&config, tv, key);
-                    let filename = format!("{}-$KEY.msgpack.z", key);
-                    tv.cache_path().join("list_bin_paths").join(filename)
-                }
-                None => tv.cache_path().join("list_bin_paths-$KEY.msgpack.z"),
-            };
-            CacheManager::new(list_bin_paths_filename)
-                .with_fresh_file(dirs::DATA.to_path_buf())
-                .with_fresh_file(plugin.plugin_path.clone())
-                .with_fresh_file(tv.install_path())
-        });
-        cm.get_or_try_init(fetch).cloned()
-    }
-
-    pub fn exec_env<F>(
-        &self,
-        config: &Config,
-        plugin: &Asdf,
-        tv: &ToolVersion,
-        fetch: F,
-    ) -> eyre::Result<BTreeMap<String, String>>
-    where
-        F: FnOnce() -> eyre::Result<BTreeMap<String, String>>,
-    {
-        let mut w = self.exec_env.write().unwrap();
-        let cm = w.entry(tv.request.clone()).or_insert_with(|| {
-            let exec_env_filename = match &plugin.toml.exec_env.cache_key {
-                Some(key) => {
-                    let key = render_cache_key(config, tv, key);
-                    let filename = format!("{}-$KEY.msgpack.z", key);
-                    tv.cache_path().join("exec_env").join(filename)
-                }
-                None => tv.cache_path().join("exec_env-$KEY.msgpack.z"),
-            };
-            CacheManager::new(exec_env_filename)
-                .with_fresh_file(dirs::DATA.to_path_buf())
-                .with_fresh_file(plugin.plugin_path.clone())
-                .with_fresh_file(tv.install_path())
-        });
-        cm.get_or_try_init(fetch).cloned()
-    }
-}
-
-fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> String {
-    let elements = cache_key
-        .iter()
-        .map(|tmpl| {
-            let s = parse_template(config, tv, tmpl).unwrap();
-            let s = s.trim().to_string();
-            trace!("cache key element: {} -> {}", tmpl.trim(), s);
-            let mut s = hash_to_str(&s);
-            s.truncate(10);
-            s
-        })
-        .collect::<Vec<String>>();
-    elements.join("-")
-}
-
-fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result<String> {
-    let mut ctx = BASE_CONTEXT.clone();
-    ctx.insert("project_root", &config.project_root);
-    ctx.insert("opts", &tv.request.options());
-    get_tera(
-        config
-            .project_root
-            .as_ref()
-            .or(env::current_dir().as_ref().ok())
-            .map(|p| p.as_path()),
-    )
-    .render_str(tmpl, &ctx)
-    .wrap_err_with(|| eyre!("failed to parse template: {tmpl}"))
 }
 
 fn normalize_remote(remote: &str) -> eyre::Result<String> {
@@ -882,16 +474,6 @@ fn normalize_remote(remote: &str) -> eyre::Result<String> {
     let host = url.host_str().unwrap();
     let path = url.path().trim_end_matches(".git");
     Ok(format!("{host}{path}"))
-}
-
-fn is_trusted_plugin(name: &str, remote: &str) -> bool {
-    let normalized_url = normalize_remote(remote).unwrap_or("INVALID_URL".into());
-    let is_shorthand = DEFAULT_SHORTHANDS
-        .get(name)
-        .is_some_and(|s| normalize_remote(s).unwrap_or_default() == normalized_url);
-    let is_mise_url = normalized_url.starts_with("github.com/mise-plugins/");
-
-    !is_shorthand || is_mise_url || TRUSTED_SHORTHANDS.contains(name)
 }
 
 #[cfg(test)]
@@ -905,7 +487,7 @@ mod tests {
     #[test]
     fn test_debug() {
         reset();
-        let plugin = Asdf::new(String::from("dummy"));
+        let plugin = AsdfBackend::from_arg("dummy".into());
         assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
     }
 }

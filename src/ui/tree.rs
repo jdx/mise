@@ -43,7 +43,7 @@ impl TreeItemIndent {
         characters: &TreeItemIndentChars,
     ) -> TreeItemIndent {
         let m = 1 + padding;
-        let n = if indent_size > m { indent_size - m } else { 0 };
+        let n = indent_size.saturating_sub(m);
 
         let right_pad = characters.right.repeat(n);
         let empty_pad = characters.empty.repeat(n);

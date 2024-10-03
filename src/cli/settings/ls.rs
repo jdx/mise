@@ -58,15 +58,18 @@ mod tests {
     #[test]
     fn test_settings_ls() {
         reset();
-        assert_cli_snapshot!("settings", @r###"
+        assert_cli_snapshot!("settings", @r#"
         activate_aggressive = false
         all_compile = false
         always_keep_download = true
         always_keep_install = true
+        asdf = true
         asdf_compat = false
+        cache_prune_age = "0"
         cargo_binstall = true
         color = true
         disable_default_shorthands = false
+        disable_hints = []
         disable_tools = []
         experimental = true
         go_default_packages_file = "~/.default-go-packages"
@@ -80,37 +83,50 @@ mod tests {
         legacy_version_file = true
         legacy_version_file_disable_tools = []
         libgit2 = true
-        node_compile = false
         not_found_auto_install = true
         paranoid = false
+        pipx_uvx = false
         plugin_autoupdate_last_check_duration = "20m"
         python_default_packages_file = "~/.default-python-packages"
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
         quiet = false
         raw = false
         trusted_config_paths = []
+        use_versions_host = true
         verbose = true
+        vfox = false
         yes = true
+
+        [node]
+
+        [ruby]
+        default_packages_file = "~/.default-gems"
+        ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
+        ruby_install = false
+        ruby_install_repo = "https://github.com/postmodern/ruby-install.git"
 
         [status]
         missing_tools = "if_other_versions_installed"
         show_env = false
         show_tools = false
-        "###);
+        "#);
     }
 
     #[test]
     fn test_settings_ls_keys() {
         reset();
-        assert_cli_snapshot!("settings", "--keys", @r###"
+        assert_cli_snapshot!("settings", "--keys", @r#"
         activate_aggressive
         all_compile
         always_keep_download
         always_keep_install
+        asdf
         asdf_compat
+        cache_prune_age
         cargo_binstall
         color
         disable_default_shorthands
+        disable_hints
         disable_tools
         experimental
         go_default_packages_file
@@ -124,21 +140,29 @@ mod tests {
         legacy_version_file
         legacy_version_file_disable_tools
         libgit2
-        node_compile
+        node
         not_found_auto_install
         paranoid
+        pipx_uvx
         plugin_autoupdate_last_check_duration
         python_default_packages_file
         python_pyenv_repo
         quiet
         raw
+        ruby
+        ruby.default_packages_file
+        ruby.ruby_build_repo
+        ruby.ruby_install
+        ruby.ruby_install_repo
         status
         status.missing_tools
         status.show_env
         status.show_tools
         trusted_config_paths
+        use_versions_host
         verbose
+        vfox
         yes
-        "###);
+        "#);
     }
 }

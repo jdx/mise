@@ -1,13 +1,13 @@
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use indexmap::{indexmap, IndexMap};
-use serde_derive::Serialize;
 
 use crate::file::display_path;
 
 /// where a tool version came from (e.g.: .tool-versions)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub enum ToolSource {
     ToolVersions(PathBuf),
     MiseToml(PathBuf),
@@ -29,6 +29,15 @@ impl Display for ToolSource {
 }
 
 impl ToolSource {
+    pub fn path(&self) -> Option<&Path> {
+        match self {
+            ToolSource::ToolVersions(path) => Some(path),
+            ToolSource::MiseToml(path) => Some(path),
+            ToolSource::LegacyVersionFile(path) => Some(path),
+            _ => None,
+        }
+    }
+
     pub fn as_json(&self) -> IndexMap<String, String> {
         match self {
             ToolSource::ToolVersions(path) => indexmap! {
@@ -36,7 +45,7 @@ impl ToolSource {
                 "path".to_string() => path.to_string_lossy().to_string(),
             },
             ToolSource::MiseToml(path) => indexmap! {
-                "type".to_string() => ".mise.toml".to_string(),
+                "type".to_string() => "mise.toml".to_string(),
                 "path".to_string() => path.to_string_lossy().to_string(),
             },
             ToolSource::LegacyVersionFile(path) => indexmap! {
@@ -52,6 +61,39 @@ impl ToolSource {
                 "value".to_string() => value.to_string(),
             },
         }
+    }
+}
+
+impl Serialize for ToolSource {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct("ToolSource", 3)?;
+        match self {
+            ToolSource::ToolVersions(path) => {
+                s.serialize_field("type", ".tool-versions")?;
+                s.serialize_field("path", path)?;
+            }
+            ToolSource::MiseToml(path) => {
+                s.serialize_field("type", "mise.toml")?;
+                s.serialize_field("path", path)?;
+            }
+            ToolSource::LegacyVersionFile(path) => {
+                s.serialize_field("type", "legacy-version-file")?;
+                s.serialize_field("path", path)?;
+            }
+            ToolSource::Argument => {
+                s.serialize_field("type", "argument")?;
+            }
+            ToolSource::Environment(key, value) => {
+                s.serialize_field("type", "environment")?;
+                s.serialize_field("key", key)?;
+                s.serialize_field("value", value)?;
+            }
+        }
+
+        s.end()
     }
 }
 
@@ -96,7 +138,7 @@ mod tests {
         assert_eq!(
             ts.as_json(),
             indexmap! {
-                "type".to_string() => ".mise.toml".to_string(),
+                "type".to_string() => "mise.toml".to_string(),
                 "path".to_string() => "/home/user/.mise.toml".to_string(),
             }
         );

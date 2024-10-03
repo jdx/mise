@@ -1,4 +1,4 @@
-# Cargo Backend <Badge type="warning" text="experimental" />
+# Cargo Backend
 
 You may install packages directly from [Cargo Crates](https://crates.io/) even if there
 isn't an asdf plugin for it.
@@ -39,6 +39,23 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 [tools]
 "cargo:eza" = "latest"
 ```
+
+### Using Git
+
+You can install a any package from a Git repository using the `mise` command. This allows you to install a particular tag, branch, or commit revision:
+
+```sh
+# Install a specific tag
+mise use cargo:github.com/username/demo@tag:<release_tag>
+
+# Install the latest from a branch
+mise use cargo:github.com/username/demo@branch:<branch_name>
+
+# Install a specific commit revision
+mise use cargo:github.com/username/demo@rev:<commit_hash>
+```
+
+This will execute a `cargo install` command with the corresponding Git options.
 
 ## Configuration
 

@@ -13,7 +13,7 @@ if ! echo "$released_versions" | grep -q "^$cur_version$"; then
   changelog="$(echo "$changelog" | tail -n +3)"
   git tag "v$cur_version" -s -m "$changelog"
   git push --tags
-  gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog"
+  gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
   exit 0
 fi
 
@@ -31,7 +31,7 @@ version="$(cargo pkgid mise | cut -d# -f2)"
 git cliff --tag "v$version" -o CHANGELOG.md
 changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
 changelog="$(echo "$changelog" | tail -n +3)"
-sed -i.bak "s/^mise [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/mise $version/" README.md
+sed -i.bak "s/^[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\? macos-arm64 (a1b2d3e [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\})$/$version macos-arm64 (a1b2d3e $(date +%Y-%m-%d))/" README.md
 sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: $version/" packaging/rpm/mise.spec
 sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"$version\";/" default.nix
 

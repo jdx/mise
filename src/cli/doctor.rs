@@ -1,8 +1,6 @@
-use std::fmt::{Display, Write};
 use std::process::exit;
 
 use console::{pad_str, style, Alignment};
-use indenter::indented;
 use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -18,7 +16,7 @@ use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
 use crate::toolset::{Toolset, ToolsetBuilder};
-use crate::ui::style;
+use crate::ui::{info, style};
 use crate::{backend, cmd, dirs, duration, env, file, shims};
 
 /// Check mise installation for possible problems
@@ -33,13 +31,14 @@ pub struct Doctor {
 
 impl Doctor {
     pub fn run(mut self) -> eyre::Result<()> {
-        inline_section("version", &*VERSION)?;
-        inline_section("activated", yn(env::is_activated()))?;
-        inline_section("shims_on_path", yn(shims_on_path()))?;
+        info::inline_section("version", &*VERSION)?;
+        #[cfg(unix)]
+        info::inline_section("activated", yn(env::is_activated()))?;
+        info::inline_section("shims_on_path", yn(shims_on_path()))?;
 
-        section("build_info", build_info())?;
-        section("shell", shell())?;
-        section("dirs", mise_dirs())?;
+        info::section("build_info", build_info())?;
+        info::section("shell", shell())?;
+        info::section("dirs", mise_dirs())?;
 
         match Config::try_get() {
             Ok(config) => self.analyze_config(config)?,
@@ -48,7 +47,7 @@ impl Doctor {
 
         self.analyze_plugins();
 
-        section("env_vars", mise_env_vars())?;
+        info::section("env_vars", mise_env_vars())?;
         self.analyze_settings()?;
 
         if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
@@ -67,7 +66,7 @@ impl Doctor {
             miseprintln!("{}\n", style(warning_summary).yellow().bold());
             for (i, check) in self.warnings.iter().enumerate() {
                 let num = style::nyellow(format!("{}.", i + 1));
-                miseprintln!("{num} {}\n", indent_by(check, "   ").trim_start());
+                miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
         }
 
@@ -79,7 +78,7 @@ impl Doctor {
             miseprintln!("{}\n", style(error_summary).red().bold());
             for (i, check) in self.errors.iter().enumerate() {
                 let num = style::nred(format!("{}.", i + 1));
-                miseprintln!("{num} {}\n", indent_by(check, "   ").trim_start());
+                miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
             exit(1);
         }
@@ -90,7 +89,7 @@ impl Doctor {
     fn analyze_settings(&mut self) -> eyre::Result<()> {
         match Settings::try_get() {
             Ok(settings) => {
-                section("settings", settings)?;
+                info::section("settings", settings)?;
             }
             Err(err) => self.errors.push(format!("failed to load settings: {err}")),
         }
@@ -99,28 +98,37 @@ impl Doctor {
     fn analyze_config(&mut self, config: impl AsRef<Config>) -> eyre::Result<()> {
         let config = config.as_ref();
 
-        section("config_files", render_config_files(config))?;
-        section("backends", render_backends())?;
-        section("plugins", render_plugins())?;
+        info::section("config_files", render_config_files(config))?;
+        info::section("backends", render_backends())?;
+        info::section("plugins", render_plugins())?;
 
-        for plugin in backend::list() {
-            if !plugin.is_installed() {
-                self.errors
-                    .push(format!("plugin {} is not installed", &plugin.id()));
-                continue;
+        for backend in backend::list() {
+            if let Some(plugin) = backend.plugin() {
+                if !plugin.is_installed() {
+                    self.errors
+                        .push(format!("plugin {} is not installed", &plugin.name()));
+                    continue;
+                }
             }
         }
 
         if !env::is_activated() && !shims_on_path() {
-            let cmd = style::nyellow("mise help activate");
-            let url = style::nunderline("https://mise.jdx.dev");
             let shims = style::ncyan(display_path(*dirs::SHIMS));
-            self.errors.push(formatdoc!(
-                r#"mise is not activated, run {cmd} or
-                    read documentation at {url} for activation instructions.
-                    Alternatively, add the shims directory {shims} to PATH.
-                    Using the shims directory is preferred for non-interactive setups."#
-            ));
+            if cfg!(windows) {
+                self.errors.push(formatdoc!(
+                    r#"mise shims are not on PATH
+                    Add this directory to PATH: {shims}"#
+                ));
+            } else {
+                let cmd = style::nyellow("mise help activate");
+                let url = style::nunderline("https://mise.jdx.dev");
+                self.errors.push(formatdoc!(
+                    r#"mise is not activated, run {cmd} or
+                        read documentation at {url} for activation instructions.
+                        Alternatively, add the shims directory {shims} to PATH.
+                        Using the shims directory is preferred for non-interactive setups."#
+                ));
+            }
         }
 
         match ToolsetBuilder::new().build(config) {
@@ -138,7 +146,7 @@ impl Doctor {
         let tools = ts
             .list_current_versions()
             .into_iter()
-            .map(|(f, tv)| match f.is_version_installed(&tv) {
+            .map(|(f, tv)| match f.is_version_installed(&tv, true) {
                 true => (tv.to_string(), style::nstyle("")),
                 false => (tv.to_string(), style::ndim("(missing)")),
             })
@@ -155,7 +163,7 @@ impl Doctor {
             .collect::<Vec<_>>()
             .join("\n");
 
-        section("toolset", tools)?;
+        info::section("toolset", tools)?;
         Ok(())
     }
 
@@ -187,7 +195,7 @@ impl Doctor {
 
     fn analyze_plugins(&mut self) {
         for plugin in backend::list() {
-            let is_core = CORE_PLUGINS.iter().any(|fg| fg.id() == plugin.id());
+            let is_core = CORE_PLUGINS.contains_key(plugin.id());
             let plugin_type = plugin.get_plugin_type();
 
             if is_core && plugin_type == PluginType::Asdf {
@@ -256,7 +264,10 @@ fn render_backends() -> String {
 fn render_plugins() -> String {
     let plugins = backend::list()
         .into_iter()
-        .filter(|p| p.is_installed() && p.get_type() == BackendType::Asdf)
+        .filter(|b| {
+            b.plugin()
+                .is_some_and(|p| p.is_installed() && b.get_type() == BackendType::Asdf)
+        })
         .collect::<Vec<_>>();
     let max_plugin_name_len = plugins
         .iter()
@@ -316,12 +327,6 @@ fn shell() -> String {
     }
 }
 
-fn indent_by<S: Display>(s: S, ind: &'static str) -> String {
-    let mut out = String::new();
-    write!(indented(&mut out).with_str(ind), "{s}").unwrap();
-    out
-}
-
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
@@ -329,13 +334,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     [WARN] plugin node is not installed
 "#
 );
-
-fn section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
-    miseprintln!("\n{}: \n{}", style(header).bold(), indent_by(body, "  "));
-    Ok(())
-}
-
-fn inline_section<S: Display>(header: &str, body: S) -> eyre::Result<()> {
-    miseprintln!("{}: {body}", style(header).bold());
-    Ok(())
-}
