@@ -38,3 +38,14 @@ rustup override set nightly
 Frankly though, this isn't high on my priority list. Use rustup. It's great.
 
 Kudos for writing rust too btw, I've really enjoyed it so far—this is my first rust project.
+
+## Default crates
+
+mise can automatically install a default set of creates right after installing a new rust version.
+To enable this feature, provide a `$HOME/.default-cargo-crates` file that lists one crate per line, for
+example:
+
+```text
+cargo-edit
+stylua
+```
