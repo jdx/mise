@@ -369,8 +369,10 @@ impl Toolset {
                         return None;
                     }
                 };
-                if t.is_version_installed(&tv, true)
-                    && !is_outdated_version(tv.version.as_str(), out.latest.as_str())
+                if out
+                    .current
+                    .as_ref()
+                    .is_some_and(|c| !is_outdated_version(c, &out.latest))
                 {
                     trace!("skipping up-to-date version {tv}");
                     return None;

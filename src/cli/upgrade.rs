@@ -108,6 +108,7 @@ impl Upgrade {
 
         let to_remove = outdated
             .iter()
+            .filter(|o| o.bump.is_some())
             .filter_map(|o| o.current.as_ref().map(|current| (o, current)))
             .collect::<Vec<_>>();
 
