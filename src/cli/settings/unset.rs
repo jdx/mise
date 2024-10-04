@@ -76,6 +76,7 @@ mod tests {
         libgit2 = true
         not_found_auto_install = true
         paranoid = false
+        pin = false
         pipx_uvx = false
         plugin_autoupdate_last_check_duration = "20m"
         python_default_packages_file = "~/.default-python-packages"
