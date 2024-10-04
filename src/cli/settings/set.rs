@@ -51,6 +51,7 @@ impl SettingsSet {
             "node.mirror_url" => self.value.into(),
             "not_found_auto_install" => parse_bool(&self.value)?,
             "paranoid" => parse_bool(&self.value)?,
+            "pin" => parse_bool(&self.value)?,
             "pipx_uvx" => parse_bool(&self.value)?,
             "plugin_autoupdate_last_check_duration" => self.value.into(),
             "python_compile" => parse_bool(&self.value)?,
@@ -172,6 +173,7 @@ pub mod tests {
         libgit2 = true
         not_found_auto_install = true
         paranoid = false
+        pin = false
         pipx_uvx = false
         plugin_autoupdate_last_check_duration = "1"
         python_default_packages_file = "~/.default-python-packages"
