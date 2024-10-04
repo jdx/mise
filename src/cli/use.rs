@@ -6,7 +6,8 @@ use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, is_global_config, Config, Settings, LOCAL_CONFIG_FILENAMES};
+use crate::config::settings::SETTINGS;
+use crate::config::{config_file, is_global_config, Config, LOCAL_CONFIG_FILENAMES};
 use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
@@ -25,6 +26,7 @@ use crate::{env, file};
 #[clap(verbatim_doc_comment, visible_alias = "u", after_long_help = AFTER_LONG_HELP)]
 pub struct Use {
     /// Tool(s) to add to config file
+    ///
     /// e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
     /// If no version is specified, it will default to @latest
     #[clap(
@@ -39,12 +41,13 @@ pub struct Use {
     force: bool,
 
     /// Save fuzzy version to config file
+    ///
     /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
-    /// this is the default behavior unless MISE_ASDF_COMPAT=1
+    /// this is the default behavior unless `MISE_PIN=1` or `MISE_ASDF_COMPAT=1`
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
 
-    /// Use the global config file (~/.config/mise/config.toml) instead of the local one
+    /// Use the global config file (`~/.config/mise/config.toml`) instead of the local one
     #[clap(short, long, overrides_with_all = & ["path", "env"])]
     global: bool,
 
@@ -58,7 +61,7 @@ pub struct Use {
     jobs: Option<usize>,
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
+    /// Sets `--jobs=1`
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
 
@@ -67,14 +70,16 @@ pub struct Use {
     remove: Vec<BackendArg>,
 
     /// Specify a path to a config file or directory
-    /// If a directory is specified, it will look for mise.toml (default) or .tool-versions
+    ///
+    /// If a directory is specified, it will look for `mise.toml` (default) or `.tool-versions` if
+    /// `MISE_ASDF_COMPAT=1`
     #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath
     )]
     path: Option<PathBuf>,
 
     /// Save exact version to config file
     /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
-    /// Set MISE_ASDF_COMPAT=1 to make this the default behavior
+    /// Set `MISE_PIN=1` or `MISE_ASDF_COMPAT=1` to make this the default behavior
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 }
@@ -106,8 +111,7 @@ impl Use {
         )?;
 
         let mut cf = self.get_config_file()?;
-        let settings = Settings::try_get()?;
-        let pin = self.pin || (settings.asdf_compat && !self.fuzzy);
+        let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
 
         for (fa, tvl) in &versions.iter().chunk_by(|tv| &tv.backend) {
             let versions: Vec<String> = tvl
@@ -200,14 +204,10 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
     if let Some(p) = file::find_up(p, &filenames) {
         return p;
     }
-    match is_asdf_compat() {
+    match SETTINGS.asdf_compat {
         true => tool_versions,
         false => mise_toml,
     }
-}
-
-fn is_asdf_compat() -> bool {
-    Settings::try_get().map_or(false, |s| s.asdf_compat)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

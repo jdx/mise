@@ -16,6 +16,7 @@ Use the `--global` flag to use the global config file instead.
 ### `[TOOL@VERSION]...`
 
 Tool(s) to add to config file
+
 e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
 If no version is specified, it will default to @latest
 
@@ -28,12 +29,13 @@ Force reinstall even if already installed
 ### `--fuzzy`
 
 Save fuzzy version to config file
+
 e.g.: `mise use --fuzzy node@20` will save 20 as the version
-this is the default behavior unless MISE_ASDF_COMPAT=1
+this is the default behavior unless `MISE_PIN=1` or `MISE_ASDF_COMPAT=1`
 
 ### `-g --global`
 
-Use the global config file (~/.config/mise/config.toml) instead of the local one
+Use the global config file (`~/.config/mise/config.toml`) instead of the local one
 
 ### `-e --env <ENV>`
 
@@ -46,7 +48,7 @@ Number of jobs to run in parallel
 
 ### `--raw`
 
-Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`
 
 ### `--remove... <PLUGIN>`
 
@@ -54,13 +56,15 @@ Remove the plugin(s) from config file
 
 ### `-p --path <PATH>`
 
-Specify a path to a config file or directory If a directory is specified, it will look for mise.toml (default) or .tool-versions
+Specify a path to a config file or directory
+
+If a directory is specified, it will look for `mise.toml` (default) or `.tool-versions` if `MISE_ASDF_COMPAT=1`
 
 ### `--pin`
 
 Save exact version to config file
 e.g.: `mise use --pin node@20` will save 20.0.0 as the version
-Set MISE_ASDF_COMPAT=1 to make this the default behavior
+Set `MISE_PIN=1` or `MISE_ASDF_COMPAT=1` to make this the default behavior
 
 Examples:
 

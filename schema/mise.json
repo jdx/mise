@@ -293,6 +293,10 @@
           "description": "Enables extra-secure behavior.",
           "type": "boolean"
         },
+        "pin": {
+          "description": "Default to pinning versions when running `mise use` in mise.toml files.",
+          "type": "boolean"
+        },
         "pipx_uvx": {
           "description": "Use uvx instead of pipx if uv is installed and on PATH.",
           "type": "boolean"

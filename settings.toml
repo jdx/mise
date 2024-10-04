@@ -309,6 +309,15 @@ docs = """
 Enables extra-secure behavior. See [Paranoid](/paranoid).
 """
 
+[pin]
+env = "MISE_PIN"
+type = "bool"
+description = "Default to pinning versions when running `mise use` in mise.toml files."
+docs = """
+This sets `--pin` by default when running `mise use` in mise.toml files. This can be overridden by
+passing `--fuzzy` on the command line.
+"""
+
 [pipx_uvx]
 env = "MISE_PIPX_UVX"
 type = "bool"

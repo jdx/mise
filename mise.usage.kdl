@@ -1345,23 +1345,26 @@ Use the `--global` flag to use the global config file instead."
     $ mise use --env staging node@20
 "
     flag "-f --force" help="Force reinstall even if already installed"
-    flag "--fuzzy" help="Save fuzzy version to config file\ne.g.: `mise use --fuzzy node@20` will save 20 as the version\nthis is the default behavior unless MISE_ASDF_COMPAT=1"
-    flag "-g --global" help="Use the global config file (~/.config/mise/config.toml) instead of the local one"
+    flag "--fuzzy" help="Save fuzzy version to config file" {
+        long_help "Save fuzzy version to config file\n\ne.g.: `mise use --fuzzy node@20` will save 20 as the version\nthis is the default behavior unless `MISE_PIN=1` or `MISE_ASDF_COMPAT=1`"
+    }
+    flag "-g --global" help="Use the global config file (`~/.config/mise/config.toml`) instead of the local one"
     flag "-e --env" help="Modify an environment-specific config file like .mise.<env>.toml" {
         arg "<ENV>"
     }
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg "<JOBS>"
     }
-    flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
+    flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`"
     flag "--remove" help="Remove the plugin(s) from config file" var=true {
         arg "<PLUGIN>"
     }
-    flag "-p --path" help="Specify a path to a config file or directory If a directory is specified, it will look for mise.toml (default) or .tool-versions" {
+    flag "-p --path" help="Specify a path to a config file or directory" {
+        long_help "Specify a path to a config file or directory\n\nIf a directory is specified, it will look for `mise.toml` (default) or `.tool-versions` if `MISE_ASDF_COMPAT=1`"
         arg "<PATH>"
     }
-    flag "--pin" help="Save exact version to config file\ne.g.: `mise use --pin node@20` will save 20.0.0 as the version\nSet MISE_ASDF_COMPAT=1 to make this the default behavior"
-    arg "[TOOL@VERSION]..." help="Tool(s) to add to config file\ne.g.: node@20, cargo:ripgrep@latest npm:prettier@3\nIf no version is specified, it will default to @latest" var=true
+    flag "--pin" help="Save exact version to config file\ne.g.: `mise use --pin node@20` will save 20.0.0 as the version\nSet `MISE_PIN=1` or `MISE_ASDF_COMPAT=1` to make this the default behavior"
+    arg "[TOOL@VERSION]..." help="Tool(s) to add to config file" help_long="Tool(s) to add to config file\n\ne.g.: node@20, cargo:ripgrep@latest npm:prettier@3\nIf no version is specified, it will default to @latest" var=true
 }
 cmd "version" help="Display the version of mise" {
     alias "v"
