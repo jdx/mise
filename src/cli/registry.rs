@@ -62,7 +62,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise registry</bold>
     node    core:node
     poetry  asdf:mise-plugins/mise-poetry
-    ubi     cargo:ubi
+    ubi     cargo:ubi-cli
 "#
 );
 

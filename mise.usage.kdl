@@ -808,7 +808,7 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`."
     $ mise registry
     node    core:node
     poetry  asdf:mise-plugins/mise-poetry
-    ubi     cargo:ubi
+    ubi     cargo:ubi-cli
 "
 }
 cmd "reshim" help="Creates new shims based on bin paths from currently installed tools." {
