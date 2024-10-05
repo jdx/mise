@@ -297,19 +297,42 @@ impl Run {
             let filename = file.display().to_string();
             self.exec(&filename, args, task, env, prefix)
         } else {
+            let shell = self.get_shell(task);
+            trace!("using shell: {} {}", shell.0, shell.1);
             #[cfg(windows)]
             {
                 let script = format!("{} {}", script, args.join(" "));
-                let args = vec!["/c".to_string(), script];
-                self.exec("cmd", &args, task, env, prefix)
+                let args = vec![shell.1, script];
+                self.exec(shell.0.as_str(), &args, task, env, prefix)
             }
             #[cfg(unix)]
             {
                 let script = format!("{} {}", script, shell_words::join(args));
-                let args = vec!["-c".to_string(), script];
-                self.exec("sh", &args, task, env, prefix)
+                let args = vec![shell.1, script];
+                self.exec(shell.0.as_str(), &args, task, env, prefix)
             }
         }
+    }
+
+    fn get_shell(&self, task: &Task) -> (String, String) {
+        let default_shell = if cfg!(windows) {
+            ("cmd".to_string(), "/c".to_string())
+        } else {
+            ("sh".to_string(), "-c".to_string())
+        };
+
+        if let Some(shell) = task.shell.clone() {
+            let shell_cmd = shell
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect_tuple()
+                .unwrap_or_else(|| {
+                    warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c)");
+                    default_shell
+                });
+            return shell_cmd;
+        }
+        default_shell
     }
 
     fn exec_file(
@@ -659,5 +682,28 @@ mod tests {
         assert_snapshot!(body, @r###"
         TEST_BUILDSCRIPT_ENV_VAR: VALID
         "###);
+    }
+
+    #[test]
+    fn test_task_custom_shell() {
+        reset();
+        file::remove_all("test-build-output.txt").unwrap();
+        assert_cli_snapshot!(
+          "r",
+          "shell",
+      @"");
+        let body = file::read_to_string("test-build-output.txt").unwrap();
+        assert_snapshot!(body, @r###"
+        using shell bash
+        "###);
+    }
+
+    #[test]
+    fn test_task_custom_shell_invalid() {
+        reset();
+        assert_cli_snapshot!(
+            "r",
+            "shell invalid",
+        @"mise invalid shell 'bash', expected '<program> <argument>' (e.g. sh -c)");
     }
 }

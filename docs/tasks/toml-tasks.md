@@ -27,6 +27,8 @@ dir = "{{cwd}}" # run in user's cwd, default is the project's base directory
 [tasks.lint]
 description = 'Lint with clippy'
 env = {RUST_BACKTRACE = '1'} # env vars for the script
+# specify a shell command to run the script with (default is 'sh -c')
+shell = 'bash -c'
 # you can specify a multiline script instead of individual commands
 run = """
 #!/usr/bin/env bash

@@ -347,7 +347,7 @@ mod tests {
         mise ~/config/config.toml tools: tiny@2.1.0
         mise tiny is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
         "###);
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
+        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r##"
         [env]
         TEST_ENV_VAR = 'test-123'
 
@@ -360,6 +360,16 @@ mod tests {
         run = 'echo "linting!"'
         [tasks.test]
         run = 'echo "testing!"'
+        [tasks."shell invalid"]
+        shell = 'bash'
+        run = 'echo "invalid shell"'
+        [tasks.shell]
+        shell = 'bash -c'
+        run = '''
+        #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+        cd "$MISE_PROJECT_ROOT" || exit 1
+        echo "using shell $0" > test-build-output.txt
+        '''
         [settings]
         always_keep_download= true
         always_keep_install= true
@@ -369,7 +379,7 @@ mod tests {
 
         [tools]
         tiny = "2"
-        "###);
+        "##);
 
         file::write(&cf_path, orig).unwrap();
     }

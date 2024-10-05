@@ -166,14 +166,16 @@ mod tests {
     #[test]
     fn test_tasks_deps_tree() {
         reset();
-        assert_cli_snapshot!("tasks", "deps", @r###"
+        assert_cli_snapshot!("tasks", "deps", @r#"
         configtask
         filetask
         ├── test
         └── lint
         lint
+        shell
+        shell invalid
         test
-        "###
+        "#
         );
     }
 
@@ -193,16 +195,18 @@ mod tests {
     #[test]
     fn test_tasks_deps_dot() {
         reset();
-        assert_cli_snapshot!("tasks", "deps", "--dot", @r###"
+        assert_cli_snapshot!("tasks", "deps", "--dot", @r#"
         digraph {
             0 [ label = "configtask"]
             1 [ label = "filetask"]
             2 [ label = "lint"]
-            3 [ label = "test"]
+            3 [ label = "shell"]
+            4 [ label = "shell invalid"]
+            5 [ label = "test"]
             1 -> 2 [ ]
-            1 -> 3 [ ]
+            1 -> 5 [ ]
         }
-        "###
+        "#
         );
     }
 }
