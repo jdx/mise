@@ -93,7 +93,7 @@ A local directory containing patch files to pass to python-build.
 
 Packages list to install with pip after installing a Python version.
 
-### `python_venv_auto_create`
+### `python_venv_auto_create` <Badge type="warning" text="deprecated" />
 
 * Type: `bool`
 * Env: `MISE_PYTHON_VENV_AUTO_CREATE`

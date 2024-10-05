@@ -341,7 +341,7 @@
           "type": "boolean"
         },
         "python_venv_stdlib": {
-          "description": "Prefer to use venv from Python's standard library.",
+          "description": "Use venv from Python's standard library.",
           "type": "boolean"
         },
         "quiet": {
