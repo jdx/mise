@@ -330,9 +330,10 @@ yum install -y mise
 
 ### Windows
 
-Download the latest release from [GitHub](https://github.com/jdx/mise/releases). Add the binary
-to your PATH and edit PATH to include the shims directory (by default:
-`%LOCALAPPDATA%\mise\shims`).
+Download the latest release from [GitHub](https://github.com/jdx/mise/releases) and add the binary
+to your PATH.
+
+If your shell does not support `mise activate`, you would want to edit PATH to include the shims directory (by default: `%LOCALAPPDATA%\mise\shims`).
 
 Note that Windows support is very minimal for now.
 
