@@ -340,6 +340,10 @@
           "deprecated": "Use env._python.venv instead.",
           "type": "boolean"
         },
+        "python_venv_stdlib": {
+          "description": "Prefer to use venv from Python's standard library.",
+          "type": "boolean"
+        },
         "quiet": {
           "description": "Suppress all output except errors.",
           "type": "boolean"
