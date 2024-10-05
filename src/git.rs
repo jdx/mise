@@ -107,6 +107,14 @@ impl Git {
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
+        if cfg!(not(target_os = "windows")) {
+            warn_about_autocrlf(
+                git2::Config::open_default()?
+                    .get_string("core.autocrlf")
+                    .map_err(eyre::Report::new)
+                    .ok(),
+            );
+        }
         if let Err(err) = git2::Repository::clone(url, &self.dir) {
             warn!("git clone failed: {err:#}");
         } else {
@@ -118,6 +126,15 @@ impl Git {
                 "failed to get git version: {:#}\n Git is required to use mise.",
                 err
             ),
+        }
+
+        if cfg!(not(target_os = "windows")) {
+            warn_about_autocrlf(
+                cmd!("git", "config", "--get", "core.autocrlf")
+                    .read()
+                    .map_err(eyre::Report::new)
+                    .ok(),
+            );
         }
         cmd!("git", "clone", "-q", "--depth", "1", url, &self.dir).run()?;
         Ok(())
@@ -226,6 +243,16 @@ impl Git {
 fn get_git_version() -> Result<String> {
     let version = cmd!("git", "--version").read()?;
     Ok(version.trim().into())
+}
+
+fn warn_about_autocrlf(config_value: Option<String>) {
+    if let Some(value) = config_value {
+        if value.as_str() == "true" {
+            warn!(
+                "git configuration core.autocrlf is set to true. This may cause issues with mise."
+            )
+        }
+    }
 }
 
 impl Debug for Git {
