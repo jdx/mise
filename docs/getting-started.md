@@ -374,7 +374,7 @@ Install Mise by appending `env.nu` and `config.nu`:
 let mise_path = $nu.default-config-dir | path join mise.nu
 ^mise activate nu | save $mise_path --force
 ' | save $nu.env-path --append
-"\nuse mise.nu" | save $nu.config-path --append
+"\nuse ($nu.default-config-dir | path join mise.nu)" | save $nu.config-path --append
 ```
 
 If you prefer to keep your dotfiles clean you can save it to a different directory then
