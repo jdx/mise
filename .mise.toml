@@ -52,8 +52,8 @@ depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }
 run = [
     "mise usage > mise.usage.kdl",
-    "mise g task-docs > tasks.md",
-    "usage g md -f mise.usage.kdl -m --out-dir docs/cli --url-prefix /cli --html-encode",
+    "mise generate task-docs > tasks.md",
+    "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --html-encode --file mise.usage.kdl",
     "markdownlint --fix docs/cli",
 ]
 
