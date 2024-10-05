@@ -81,6 +81,7 @@ mod tests {
         plugin_autoupdate_last_check_duration = "20m"
         python_default_packages_file = "~/.default-python-packages"
         python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
+        python_venv_stdlib = false
         quiet = false
         raw = false
         trusted_config_paths = []
