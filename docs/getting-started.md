@@ -330,9 +330,10 @@ yum install -y mise
 
 ### Windows
 
-Download the latest release from [GitHub](https://github.com/jdx/mise/releases). Add the binary
-to your PATH and edit PATH to include the shims directory (by default:
-`%LOCALAPPDATA%\mise\shims`).
+Download the latest release from [GitHub](https://github.com/jdx/mise/releases) and add the binary
+to your PATH.
+
+If your shell does not support `mise activate`, you would want to edit PATH to include the shims directory (by default: `%LOCALAPPDATA%\mise\shims`).
 
 Note that Windows support is very minimal for now.
 
@@ -374,7 +375,7 @@ Install Mise by appending `env.nu` and `config.nu`:
 let mise_path = $nu.default-config-dir | path join mise.nu
 ^mise activate nu | save $mise_path --force
 ' | save $nu.env-path --append
-"\nuse mise.nu" | save $nu.config-path --append
+"\nuse ($nu.default-config-dir | path join mise.nu)" | save $nu.config-path --append
 ```
 
 If you prefer to keep your dotfiles clean you can save it to a different directory then
