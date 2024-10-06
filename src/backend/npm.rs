@@ -17,6 +17,8 @@ pub struct NPMBackend {
     latest_version_cache: CacheManager<Option<String>>,
 }
 
+const PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
+
 impl Backend for NPMBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Npm
@@ -33,7 +35,7 @@ impl Backend for NPMBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!("npm", "view", self.name(), "versions", "--json").read()?;
+                let raw = cmd!(PROGRAM, "view", self.name(), "versions", "--json").read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
             })
@@ -43,7 +45,7 @@ impl Backend for NPMBackend {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!("npm", "view", self.name(), "dist-tags", "--json")
+                let raw = cmd!(PROGRAM, "view", self.name(), "dist-tags", "--json")
                     .full_env(self.dependency_env()?)
                     .read()?;
                 let dist_tags: Value = serde_json::from_str(&raw)?;
@@ -59,7 +61,7 @@ impl Backend for NPMBackend {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
 
-        CmdLineRunner::new("npm")
+        CmdLineRunner::new(PROGRAM)
             .arg("install")
             .arg("-g")
             .arg(format!("{}@{}", self.name(), ctx.tv.version))
