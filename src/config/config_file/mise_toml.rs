@@ -586,7 +586,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 {
                                     struct ValVisitor;
 
-                                    impl<'de> Visitor<'de> for ValVisitor {
+                                    impl Visitor<'_> for ValVisitor {
                                         type Value = Val;
                                         fn expecting(
                                             &self,
@@ -843,7 +843,7 @@ impl<'de> de::Deserialize<'de> for BackendArg {
     {
         struct BackendArgVisitor;
 
-        impl<'de> Visitor<'de> for BackendArgVisitor {
+        impl Visitor<'_> for BackendArgVisitor {
             type Value = BackendArg;
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter.write_str("backend argument")
