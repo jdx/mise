@@ -50,6 +50,8 @@ pub struct Task {
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: Vec<String>,
+    #[serde(default)]
+    pub shell: Option<String>,
 
     // normal type
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -136,6 +138,7 @@ impl Task {
             dir: p.parse_str("dir")?,
             env: p.parse_env("env")?.unwrap_or_default(),
             file: Some(path.to_path_buf()),
+            shell: p.parse_str("shell")?,
             ..Task::new(name_from_path(config_root, path)?, path.to_path_buf())
         };
         Ok(task)
