@@ -1,5 +1,29 @@
 # Changelog
 
+## [2024.10.1](https://github.com/jdx/mise/compare/v2024.10.0..v2024.10.1) - 2024-10-07
+
+### 🚀 Features
+
+- added MISE_PIN=1 setting by [@jdx](https://github.com/jdx) in [9f73952](https://github.com/jdx/mise/commit/9f73952ac2a782da6c10ec6a4b36093a74b8e251)
+- add hint about how install missing plugins by [@roele](https://github.com/roele) in [#2706](https://github.com/jdx/mise/pull/2706)
+- task shell by [@roele](https://github.com/roele) in [#2709](https://github.com/jdx/mise/pull/2709)
+
+### 🐛 Bug Fixes
+
+- **(windows)** escape backslash in nu script & use proper csv by [@finalchild](https://github.com/finalchild) in [#2710](https://github.com/jdx/mise/pull/2710)
+- update name of cargo:ubi-cli package by [@jdx](https://github.com/jdx) in [d83fe3f](https://github.com/jdx/mise/commit/d83fe3f0b1eaeb0fc464d8eef589541ddc182673)
+- only upgrade versions if there is a version to upgrade to by [@jdx](https://github.com/jdx) in [8dfc6be](https://github.com/jdx/mise/commit/8dfc6bededf68f747baddd734566074e0fec7773)
+- use npm.cmd on windows by [@finalchild](https://github.com/finalchild) in [#2711](https://github.com/jdx/mise/pull/2711)
+
+### 🧪 Testing
+
+- fix snapshots by [@jdx](https://github.com/jdx) in [e1bc269](https://github.com/jdx/mise/commit/e1bc269b2d40bac21208969f8fb2c744586d8ed1)
+- reset test by [@jdx](https://github.com/jdx) in [b06878d](https://github.com/jdx/mise/commit/b06878dcadfd8a0edc80ea39381f534435f24736)
+
+### New Contributors
+
+* @finalchild made their first contribution in [#2711](https://github.com/jdx/mise/pull/2711)
+
 ## [2024.10.0](https://github.com/jdx/mise/compare/v2024.9.13..v2024.10.0) - 2024-10-03
 
 ### 🐛 Bug Fixes
