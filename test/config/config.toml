@@ -10,6 +10,16 @@ run = 'echo "configtask:"'
 run = 'echo "linting!"'
 [tasks.test]
 run = 'echo "testing!"'
+[tasks."shell invalid"]
+shell = 'bash'
+run = 'echo "invalid shell"'
+[tasks.shell]
+shell = 'bash -c'
+run = '''
+#MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+cd "$MISE_PROJECT_ROOT" || exit 1
+echo "using shell $0" > test-build-output.txt
+'''
 [settings]
 always_keep_download= true
 always_keep_install= true

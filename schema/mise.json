@@ -554,6 +554,10 @@
                 }
               ]
             },
+            "shell": {
+              "description": "shell command to run script with (e.g. sh -c)",
+              "type": "string"
+            },
             "sources": {
               "description": "files that this task depends on",
               "items": {
