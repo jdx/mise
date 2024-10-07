@@ -13,7 +13,7 @@ enum EnvOp<'a> {
     Hide { key: &'a str },
 }
 
-impl<'a> Display for EnvOp<'a> {
+impl Display for EnvOp<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[allow(clippy::write_with_newline)]
         match self {
