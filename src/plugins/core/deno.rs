@@ -178,6 +178,6 @@ fn arch() -> &'static str {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct DenoVersions {
-    pub cli: Vec<String>,
+struct DenoVersions {
+    cli: Vec<String>,
 }
