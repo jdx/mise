@@ -50,7 +50,7 @@ impl DenoPlugin {
     }
 
     fn deno_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/deno")
+        tv.install_path().join(if cfg!(target_os = "windows") { "bin/deno.exe" } else { "bin/deno" })
     }
 
     fn test_deno(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
@@ -63,7 +63,7 @@ impl DenoPlugin {
 
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let url = format!(
-            "https://github.com/denoland/deno/releases/download/v{}/deno-{}-{}.zip",
+            "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
             tv.version,
             arch(),
             os()
@@ -85,7 +85,7 @@ impl DenoPlugin {
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path())?;
-        file::rename(tv.download_path().join("deno"), self.deno_bin(tv))?;
+        file::rename(tv.download_path().join(if cfg!(target_os = "windows") { "deno.exe" } else { "deno" }), self.deno_bin(tv))?;
         file::make_executable(self.deno_bin(tv))?;
         Ok(())
     }
@@ -150,6 +150,8 @@ fn os() -> &'static str {
         "apple-darwin"
     } else if cfg!(target_os = "linux") {
         "unknown-linux-gnu"
+    } else if cfg!(target_os = "windows") {
+        "pc-windows-msvc"
     } else {
         &OS
     }
