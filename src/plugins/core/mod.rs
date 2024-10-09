@@ -16,7 +16,6 @@ use crate::env::PATH_KEY;
 use crate::http::HTTP_FETCH;
 #[cfg(unix)]
 use crate::plugins::core::bun::BunPlugin;
-#[cfg(unix)]
 use crate::plugins::core::deno::DenoPlugin;
 #[cfg(unix)]
 use crate::plugins::core::erlang::ErlangPlugin;
@@ -36,7 +35,6 @@ use crate::toolset::ToolVersion;
 
 #[cfg(unix)]
 mod bun;
-#[cfg(unix)]
 mod deno;
 #[cfg(unix)]
 mod erlang;
@@ -67,7 +65,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     #[cfg(windows)]
     let plugins: Vec<Arc<dyn Backend>> = vec![
         // Arc::new(BunPlugin::new()),
-        // Arc::new(DenoPlugin::new()),
+        Arc::new(DenoPlugin::new()),
         // Arc::new(ErlangPlugin::new()),
         // Arc::new(GoPlugin::new()),
         Arc::new(JavaPlugin::new()),

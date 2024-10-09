@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
+use serde::Deserialize;
 use versions::Versioning;
 
 use crate::backend::Backend;
@@ -12,7 +13,6 @@ use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::file;
-use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -36,11 +36,10 @@ impl DenoPlugin {
             Ok(None) => {}
             Err(e) => warn!("failed to fetch remote versions: {}", e),
         }
-        let releases: Vec<GithubRelease> =
-            HTTP_FETCH.json("https://api.github.com/repos/denoland/deno/releases?per_page=100")?;
-        let versions = releases
+        let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json")?;
+        let versions = versions
+            .cli
             .into_iter()
-            .map(|r| r.tag_name)
             .filter(|v| v.starts_with('v'))
             .map(|v| v.trim_start_matches('v').to_string())
             .unique()
@@ -50,7 +49,11 @@ impl DenoPlugin {
     }
 
     fn deno_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/deno")
+        tv.install_path().join(if cfg!(target_os = "windows") {
+            "bin/deno.exe"
+        } else {
+            "bin/deno"
+        })
     }
 
     fn test_deno(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
@@ -63,7 +66,7 @@ impl DenoPlugin {
 
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let url = format!(
-            "https://github.com/denoland/deno/releases/download/v{}/deno-{}-{}.zip",
+            "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
             tv.version,
             arch(),
             os()
@@ -85,7 +88,14 @@ impl DenoPlugin {
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path())?;
-        file::rename(tv.download_path().join("deno"), self.deno_bin(tv))?;
+        file::rename(
+            tv.download_path().join(if cfg!(target_os = "windows") {
+                "deno.exe"
+            } else {
+                "deno"
+            }),
+            self.deno_bin(tv),
+        )?;
         file::make_executable(self.deno_bin(tv))?;
         Ok(())
     }
@@ -150,6 +160,8 @@ fn os() -> &'static str {
         "apple-darwin"
     } else if cfg!(target_os = "linux") {
         "unknown-linux-gnu"
+    } else if cfg!(target_os = "windows") {
+        "pc-windows-msvc"
     } else {
         &OS
     }
@@ -163,4 +175,9 @@ fn arch() -> &'static str {
     } else {
         &ARCH
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct DenoVersions {
+    cli: Vec<String>,
 }
