@@ -9,10 +9,11 @@ use serde::{Deserialize, Deserializer};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
-use crate::config::{Config, Settings};
+use crate::config::settings::SETTINGS;
+use crate::config::Config;
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::file::display_path;
+use crate::file::{display_path, which_non_pristine};
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env};
@@ -133,7 +134,6 @@ impl EnvResults {
         initial: &HashMap<String, String>,
         input: Vec<(EnvDirective, PathBuf)>,
     ) -> eyre::Result<Self> {
-        let settings = Settings::get();
         let mut ctx = BASE_CONTEXT.clone();
         trace!("resolve: input: {:#?}", &input);
         let mut env = initial
@@ -224,7 +224,7 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Source(input) => {
-                    settings.ensure_experimental("env._.source")?;
+                    SETTINGS.ensure_experimental("env._.source")?;
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
                     for p in xx::file::glob(normalize_path(&config_root, s.into()))? {
@@ -258,13 +258,6 @@ impl EnvResults {
                             .into_iter()
                             .chain(env::split_paths(&env_vars[&*PATH_KEY]))
                             .collect::<Vec<_>>();
-                        let cmd = CmdLineRunner::new("python3")
-                            .args(["-m", "venv", &venv.to_string_lossy()])
-                            .envs(&env_vars)
-                            .env(
-                                PATH_KEY.to_string(),
-                                env::join_paths(&path)?.to_string_lossy().to_string(),
-                            );
                         if ts
                             .list_missing_versions()
                             .iter()
@@ -272,6 +265,22 @@ impl EnvResults {
                         {
                             debug!("python not installed, skipping venv creation");
                         } else {
+                            let cmd = if let (false, Some(_uv_in_path)) =
+                                (SETTINGS.python_venv_stdlib, which_non_pristine("uv"))
+                            {
+                                CmdLineRunner::new("uv").args(["venv", &venv.to_string_lossy()])
+                            } else {
+                                CmdLineRunner::new("python3").args([
+                                    "-m",
+                                    "venv",
+                                    &venv.to_string_lossy(),
+                                ])
+                            }
+                            .envs(&env_vars)
+                            .env(
+                                PATH_KEY.to_string(),
+                                env::join_paths(&path)?.to_string_lossy().to_string(),
+                            );
                             info!("creating venv at: {}", display_path(&venv));
                             cmd.execute()?;
                         }
