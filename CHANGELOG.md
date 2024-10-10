@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.10.2](https://github.com/jdx/mise/compare/v2024.10.1..v2024.10.2) - 2024-10-10
+
+### 🚀 Features
+
+- enable deno core plugin on windows & download deno files from deno server by [@finalchild](https://github.com/finalchild) in [#2719](https://github.com/jdx/mise/pull/2719)
+
+### 🐛 Bug Fixes
+
+- use join_paths to create new_path by [@finalchild](https://github.com/finalchild) in [#2708](https://github.com/jdx/mise/pull/2708)
+
+### 🧪 Testing
+
+- reset test by [@jdx](https://github.com/jdx) in [e34788b](https://github.com/jdx/mise/commit/e34788b803b0f4817e2b8481c4ed7d94ed308d66)
+
 ## [2024.10.1](https://github.com/jdx/mise/compare/v2024.10.0..v2024.10.1) - 2024-10-07
 
 ### 🚀 Features
@@ -19,10 +33,6 @@
 
 - fix snapshots by [@jdx](https://github.com/jdx) in [e1bc269](https://github.com/jdx/mise/commit/e1bc269b2d40bac21208969f8fb2c744586d8ed1)
 - reset test by [@jdx](https://github.com/jdx) in [b06878d](https://github.com/jdx/mise/commit/b06878dcadfd8a0edc80ea39381f534435f24736)
-
-### New Contributors
-
-* @finalchild made their first contribution in [#2711](https://github.com/jdx/mise/pull/2711)
 
 ## [2024.10.0](https://github.com/jdx/mise/compare/v2024.9.13..v2024.10.0) - 2024-10-03
 
