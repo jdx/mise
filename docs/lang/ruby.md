@@ -23,6 +23,8 @@ from source. You can check its
 [README](https://github.com/rbenv/ruby-build/blob/master/README.md)
 for additional settings and some troubleshooting.
 
+See available versions with `mise ls-remote ruby`.
+
 ## Configuration
 
 `ruby-build` already has a
