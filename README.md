@@ -36,7 +36,7 @@ Install mise (other methods [here](https://mise.jdx.dev/getting-started.html)):
 ```sh-session
 $ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
-mise 2024.8.15
+2024.10.2 macos-arm64 (a1b2d3e 2024-10-12)
 ```
 
 or install a specific a version:
@@ -44,7 +44,7 @@ or install a specific a version:
 ```sh-session
 $ curl https://mise.run | MISE_VERSION=v2024.5.16 sh
 $ ~/.local/bin/mise --version
-mise 2024.8.15
+2024.5.16 macos-arm64 (8838098 2024-05-14)
 ```
 
 Hook mise into your shell (pick the right one for your shell):
@@ -68,3 +68,7 @@ v20.0.0
 ## Full Documentation
 
 See [mise.jdx.dev](https://mise.jdx.dev)
+
+## Contributors
+
+[![Contributors](https://contrib.rocks/image?repo=jdx/mise)](https://github.com/jdx/mise/graphs/contributors)

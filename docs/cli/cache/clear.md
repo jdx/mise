@@ -1,13 +1,13 @@
-## `mise cache clear [PLUGIN]...`
+# `mise cache clear`
 
-**Aliases:** `c`
+**Usage**: `mise cache clear [PLUGIN]...`
 
-```text
+**Aliases**: c
+
 Deletes all cache files in mise
 
-Usage: cache clear [PLUGIN]...
+## Arguments
 
-Arguments:
-  [PLUGIN]...
-          Plugin(s) to clear cache for e.g.: node, python
-```
+### `[PLUGIN]...`
+
+Plugin(s) to clear cache for e.g.: node, python

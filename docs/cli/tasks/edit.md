@@ -1,22 +1,24 @@
-## `mise tasks edit [OPTIONS] <TASK>` <Badge type="warning" text="experimental" />
+# `mise tasks edit`
 
-```text
+**Usage**: `mise tasks edit [-p --path] <TASK>`
+
 [experimental] Edit a tasks with $EDITOR
 
 The tasks will be created as a standalone script if it does not already exist.
 
-Usage: tasks edit [OPTIONS] <TASK>
+## Arguments
 
-Arguments:
-  <TASK>
-          Tasks to edit
+### `<TASK>`
 
-Options:
-  -p, --path
-          Display the path to the tasks instead of editing it
+Tasks to edit
+
+## Flags
+
+### `-p --path`
+
+Display the path to the tasks instead of editing it
 
 Examples:
 
-    $ mise tasks edit build
-    $ mise tasks edit test
-```
+    mise tasks edit build
+    mise tasks edit test

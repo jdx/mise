@@ -1,25 +1,27 @@
-## `mise alias set <PLUGIN> <ALIAS> <VALUE>`
+# `mise alias set`
 
-**Aliases:** `add, create`
+**Usage**: `mise alias set <ARGS>…`
 
-```text
+**Aliases**: add, create
+
 Add/update an alias for a plugin
 
 This modifies the contents of ~/.config/mise/config.toml
 
-Usage: alias set <PLUGIN> <ALIAS> <VALUE>
+## Arguments
 
-Arguments:
-  <PLUGIN>
-          The plugin to set the alias for
+### `<PLUGIN>`
 
-  <ALIAS>
-          The alias to set
+The plugin to set the alias for
 
-  <VALUE>
-          The value to set the alias to
+### `<ALIAS>`
+
+The alias to set
+
+### `<VALUE>`
+
+The value to set the alias to
 
 Examples:
 
-    $ mise alias set node lts-hydrogen 18.0.0
-```
+    mise alias set node lts-hydrogen 18.0.0

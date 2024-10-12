@@ -1,15 +1,15 @@
-## `mise config ls [OPTIONS]` <Badge type="warning" text="experimental" />
+# `mise config ls`
 
-```text
-[experimental] List config files currently in use
+**Usage**: `mise config ls [--no-header]`
 
-Usage: config ls [OPTIONS]
+List config files currently in use
 
-Options:
-      --no-header
-          Do not print table header
+## Flags
+
+### `--no-header`
+
+Do not print table header
 
 Examples:
 
-    $ mise config ls
-```
+    mise config ls

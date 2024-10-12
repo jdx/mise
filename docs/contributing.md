@@ -66,24 +66,24 @@ Mise uses mise itself to run tasks. See available tasks with `mise tasks`:
 
 ```sh
 ~/src/mise ❯ mise tasks
-build                                                        ~/src/mise/.mise.toml          
-clean                                                        ~/src/mise/.mise.toml          
-docker:cargo        run cargo inside of development docker … ~/src/mise/.mise.toml          
-docker:e2e          run e2e tests inside of development doc… ~/src/mise/.mise.toml          
-docker:image        build docker image from Dockerfile       ~/src/mise/.mise.toml          
-docker:mise         run mise inside of development docker c… ~/src/mise/.mise.toml          
-format                                                       ~/src/mise/.mise.toml          
-lint                                                         ~/src/mise/.mise/config.toml   
-lint:fix                                                     ~/src/mise/.mise.toml          
-release                                                      ~/src/mise/.mise.toml          
-render                                                       ~/src/mise/.mise.toml          
-render:completions                                           ~/src/mise/.mise.toml          
-render:help                                                  ~/src/mise/.mise.toml          
-render:mangen                                                ~/src/mise/.mise.toml          
-signal-test                                                  ~/src/mise/.mise.toml          
-snapshots           Update test snapshots                    ~/src/mise/.mise.toml          
-test                                                         ~/src/mise/.mise.toml          
-test:e2e                                                     ~/src/mise/.mise.toml          
+build                                                        ~/src/mise/.mise.toml
+clean                                                        ~/src/mise/.mise.toml
+docker:cargo        run cargo inside of development docker … ~/src/mise/.mise.toml
+docker:e2e          run e2e tests inside of development doc… ~/src/mise/.mise.toml
+docker:image        build docker image from Dockerfile       ~/src/mise/.mise.toml
+docker:mise         run mise inside of development docker c… ~/src/mise/.mise.toml
+format                                                       ~/src/mise/.mise.toml
+lint                                                         ~/src/mise/.mise/config.toml
+lint:fix                                                     ~/src/mise/.mise.toml
+release                                                      ~/src/mise/.mise.toml
+render                                                       ~/src/mise/.mise.toml
+render:completions                                           ~/src/mise/.mise.toml
+render:help                                                  ~/src/mise/.mise.toml
+render:mangen                                                ~/src/mise/.mise.toml
+signal-test                                                  ~/src/mise/.mise.toml
+snapshots           Update test snapshots                    ~/src/mise/.mise.toml
+test                                                         ~/src/mise/.mise.toml
+test:e2e                                                     ~/src/mise/.mise.toml
 ```
 
 ## Setup
@@ -135,16 +135,7 @@ mise run render
 
 ## Adding a new setting
 
-Settings require some boilerplate. The easiest way to find everything needed to add a new
-setting is to look at the git history for [`src/config/settings.rs`](https://github.com/jdx/mise/commits/main/src/config/settings.rs).
-Find a recent commit adding a new setting to find everything required. Some of the requirements are:
-
-* Setting added to [`src/config/settings.rs`](https://github.com/jdx/mise/commits/main/src/config/settings.rs).
-* Documentation added to [`docs/configruation.md`](https://github.com/jdx/mise/commits/main/src/docs/configuration.md).
-* JSON Schema added to [`schema/mise.json`](https://github.com/jdx/mise/commits/main/schema/mise.json).
-* Test snapshots updated `mise run snapshots` (this updates the test snapshots so you don't need to do it manually).
-
-Note that code changes may alter this list so the best way to find the current requirements is to look at a recent commit.
+To add a new setting, add it to [`settings.toml`](https://github.com/jdx/mise/blob/main/settings.toml) in the root of the project and run `mise run render` to update the codebase.
 
 ## Testing packaging
 

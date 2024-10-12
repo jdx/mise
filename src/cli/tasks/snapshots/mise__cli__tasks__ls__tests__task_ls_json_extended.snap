@@ -24,6 +24,18 @@ expression: output
   {
     "alias": "",
     "description": "",
+    "name": "shell",
+    "source": "~/config/config.toml"
+  },
+  {
+    "alias": "",
+    "description": "",
+    "name": "shell invalid",
+    "source": "~/config/config.toml"
+  },
+  {
+    "alias": "",
+    "description": "",
     "name": "test",
     "source": "~/config/config.toml"
   }

@@ -1,2 +1,10 @@
+CHANGELOG.md
 .venv
 registry/
+docs/cli
+docs/environments.md
+docs/registry.md
+docs/.vitepress/dist
+docs/public/site.webmanifest
+schema/mise.json.hbs
+tasks.md

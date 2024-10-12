@@ -1,27 +1,18 @@
 # Configuration
 
-## `.mise.toml`
+## `mise.toml`
 
-`.mise.toml` is a new config file that replaces asdf-style `.tool-versions` files with a file
-that has lot more flexibility. It supports functionality that is not possible with `.tool-versions`,
-such as:
+`mise.toml` is the config file for mise. It can use any of the following file paths (in order of precedence, top is highest):
 
-- setting arbitrary env vars while inside the directory
-- passing options to plugins like `virtualenv=".venv"`
-  for [python](https://github.com/jdx/mise/blob/main/docs/lang/python.md#automatic-virtualenv-activation).
-- specifying custom plugin URLs
-
-They can use any of the following file locations (in order of precedence, top is highest):
-
-- `.mise.local.toml`
+- `.mise.local.toml` - used for local config, this should not be committed to source control
 - `mise.local.toml`
 - `.mise.$MISE_ENV.toml`
-- `mise.$MISE_ENV.toml`
+- `mise.$MISE_ENV.toml` - used for environment-specific config such as `mise.staging.toml`
 - `.mise.toml`
 - `.mise/config.toml`
 - `mise.toml`
 - `mise/config.toml`
-- `.config/mise.toml`
+- `.config/mise.toml` - use this in order to group config files into a common directory
 - `.config/mise/config.toml`
 
 See [Profiles](/profiles) for more information about `.mise.$MISE_ENV.toml` files.
@@ -228,7 +219,7 @@ They support aliases, which means you can have an `.nvmrc` file with `lts/hydrog
 in mise and nvm. Here are some of the supported legacy version files:
 
 | Plugin    | "Legacy" (Idiomatic) Files                         |
-|-----------|----------------------------------------------------|
+| --------- | -------------------------------------------------- |
 | crystal   | `.crystal-version`                                 |
 | elixir    | `.exenv-version`                                   |
 | go        | `.go-version`, `go.mod`                            |
@@ -254,146 +245,11 @@ version files since they're version files not specific to asdf/mise and can be u
 
 ## Settings
 
-The following is a list of all of mise's settings. These can be set via `mise settings set`,
-by directly modifying `~/.config/mise/config.toml` or local config, or via environment variables.
+See [Settings](/configuration/settings) for the full list of settings.
 
-Some of them also can be set via global CLI flags.
+## Tasks
 
-### `activate_aggressive`
-
-* Type: `bool`
-* Env: `MISE_ACTIVATE_AGGRESSIVE`
-* Default: `false`
-
-Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after
-activation to take precedence.
-
-For example, if you have the following in your `.mise.toml`:
-
-```toml
-[tools]
-node = '20'
-python = '3.12'
-```
-
-But you also have this in your `~/.zshrc`:
-
-```sh
-eval "$(mise activate zsh)"
-PATH="/some/other/python:$PATH"
-```
-
-What will happen is `/some/other/python` will be used instead of the python installed by mise. This
-means
-you typically want to put `mise activate` at the end of your shell config so nothing overrides it.
-
-If you want to always use the mise versions of tools despite what is in your shell config, set this
-to `true`.
-In that case, using this example again, `/some/other/python` will be after mise's python in PATH.
-
-### `asdf`
-
-* Type: `bool`
-* Env: `MISE_ASDF`
-* Default: `true`
-
-Use asdf as a default plugin backend. This means running something like `mise use cmake` will
-default to using an asdf plugin for cmake.
-
-### `asdf_compat`
-
-* Type: `bool`
-* Env: `MISE_ASDF_COMPAT`
-* Default: `false`
-
-Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
-This disables mise functionality that would otherwise make these files incompatible with asdf such
-as non-pinned versions.
-
-This will also change the default global tool config to be `~/.tool-versions` instead
-of `~/.config/mise/config.toml`.
-
-### `disable_tools`
-
-* Type: `string[]` (comma-delimited)
-* Env: `MISE_DISABLE_TOOLS`
-* Default: `[]`
-
-Disables the specified tools. Separate with `,`. Generally used for core plugins but works with any
-tool.
-
-### `libgit2`
-
-* Type: `bool`
-* Env: `MISE_LIBGIT2`
-* Default: `true`
-
-Use libgit2 for git operations. This is generally faster but may not be as compatible if the
-system's libgit2 is not the same version as the one used by mise.
-
-### `paranoid`
-
-* Type: `bool`
-* Env: `MISE_PARANOID`
-* Default: `false`
-
-Enables extra-secure behavior. See [Paranoid](/paranoid).
-
-### `status.missing_tools`
-
-* Type: `enum`
-* Env: `MISE_STATUS_MISSING_TOOLS`
-* Default: `if_other_versions_installed`
-
-| Choice                                  | Description                                                                |
-|-----------------------------------------|----------------------------------------------------------------------------|
-| `if_other_versions_installed` [default] | Show the warning only when the tool has at least 1 other version installed |
-| `always`                                | Always show the warning                                                    |
-| `never`                                 | Never show the warning                                                     |
-
-Show a warning if tools are not installed when entering a directory with a `.mise.toml` file.
-
-::: tip
-Disable tools with [`disable_tools`](#disable_tools).
-:::
-
-### `status.show_env`
-
-* Type: `bool`
-* Env: `MISE_STATUS_SHOW_ENV`
-* Default: `false`
-
-Show configured env vars when entering a directory with a `.mise.toml` file.
-
-### `status.show_tools`
-
-* Type: `bool`
-* Env: `MISE_STATUS_SHOW_TOOLS`
-* Default: `false`
-
-Show active tools when entering a directory with a `.mise.toml` file.
-
-### `use_versions_host`
-
-* Type: `bool`
-* Env: `MISE_USE_VERSIONS_HOST`
-* Default: `true`
-
-Set to "false" to disable using [mise-versions](https://mise-versions.jdx.dev) as
-a quick way for mise to query for new versions. This host regularly grabs all the
-latest versions of core and community plugins. It's faster than running a plugin's
-`list-all` command and gets around GitHub rate limiting problems when using it.
-
-See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
-
-### `vfox`
-
-* Type: `bool`
-* Env: `MISE_VFOX`
-* Default: `false`
-
-Use vfox as a default plugin backend. This means running something like `mise use cmake` will
-default to using an vfox plugin for cmake.
+See [Tasks](/tasks/) for the full list of configuration options.
 
 ## Environment variables
 
@@ -462,19 +318,6 @@ Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 Set the version for a runtime. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
 of what is set in `.tool-versions`/`.mise.toml`.
 
-### `MISE_LEGACY_VERSION_FILE=1`
-
-Plugins can read the versions files used by other version managers (if enabled by the plugin)
-for example, `.nvmrc` in the case of node's nvm. See [legacy version files](#legacy-version-files)
-for more
-information.
-
-Set to "0" to disable legacy version file parsing.
-
-### `MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS=node,python`
-
-Disable legacy version file parsing for specific tools. Separate with `,`.
-
 ### `MISE_USE_TOML=0`
 
 Set to `1` to default to using `.mise.toml` in `mise local` instead of `.tool-versions` for
@@ -504,22 +347,6 @@ Output logs to a file.
 Same as `MISE_LOG_LEVEL` but for the log _file_ output level. This is useful if you want
 to store the logs but not have them litter your display.
 
-### `MISE_ALWAYS_KEEP_DOWNLOAD=1`
-
-Set to "1" to always keep the downloaded archive. By default it is deleted after install.
-
-### `MISE_ALWAYS_KEEP_INSTALL=1`
-
-Set to "1" to always keep the install directory. By default it is deleted on failure.
-
-### `MISE_VERBOSE=1`
-
-This shows the installation output during `mise install` and `mise plugin install`.
-This should likely be merged so it behaves the same as `MISE_DEBUG=1` and we don't have
-2 configuration for the same thing, but for now it is its own config.
-
-Equivalent to `MISE_LOG_LEVEL=debug`.
-
 ### `MISE_QUIET=1`
 
 Equivalent to `MISE_LOG_LEVEL=warn`.
@@ -528,10 +355,6 @@ Equivalent to `MISE_LOG_LEVEL=warn`.
 
 Set the timeout for http requests in seconds. The default is `30`.
 
-### `MISE_JOBS=1`
-
-Set the number plugins or runtimes to install in parallel. The default is `4`.
-
 ### `MISE_RAW=1`
 
 Set to "1" to directly pipe plugin scripts to stdin/stdout/stderr. By default stdin is disabled
@@ -539,77 +362,6 @@ because when installing a bunch of plugins in parallel you won't see the prompt.
 plugin accepts input or otherwise does not seem to be installing correctly.
 
 Sets `MISE_JOBS=1` because only 1 plugin script can be executed at a time.
-
-### `MISE_SHORTHANDS_FILE=~/.config/mise/shorthands.toml`
-
-Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
-an organization.
-
-Shorthands make it so when a user runs something like `mise install elixir` mise will
-automatically install the [asdf-elixir](https://github.com/asdf-vm/asdf-elixir) plugin. By
-default, it uses the shorthands in
-[`src/default_shorthands.rs`](https://github.com/jdx/mise/blob/main/src/default_shorthands.rs).
-
-The file should be in this toml format:
-
-```toml
-elixir = "https://github.com/my-org/mise-elixir.git"
-node = "https://github.com/my-org/mise-node.git"
-```
-
-### `MISE_DISABLE_DEFAULT_SHORTHANDS=1`
-
-Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
-installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/asdf-node.git`
-
-### `MISE_YES=1`
-
-This will automatically answer yes or no to prompts. This is useful for scripting.
-
-### `MISE_NOT_FOUND_AUTO_INSTALL=true`
-
-Set to false to disable the "command not found" handler to autoinstall missing tool versions.
-Disable this
-if experiencing strange behavior in your shell when a command is not found—but please submit a
-ticket to
-help diagnose problems.
-
-### `MISE_TASK_OUTPUT=prefix`
-
-This controls the output of `mise run`. It can be one of:
-
-- `prefix` - (default if jobs > 1) print by line with the prefix of the task name
-- `interleave` - (default if jobs == 1) display stdout/stderr as it comes in
-
-### `MISE_EXPERIMENTAL=1`
-
-Enables experimental features. I generally will publish new features under
-this config which needs to be enabled to use them. While a feature is marked
-as "experimental" its behavior may change or even disappear in any release.
-
-The idea is experimental features can be iterated on this way so we can get
-the behavior right, but once that label goes away you shouldn't expect things
-to change without a proper deprecation—and even then it's unlikely.
-
-Also, I very often will use experimental as a beta flag as well. New
-functionality that I want to test with a smaller subset of users I will often
-push out under experimental mode even if it's not related to an experimental
-feature.
-
-If you'd like to help me out, consider enabling it even if you don't have
-a particular feature you'd like to try. Also, if something isn't working
-right, try disabling it if you can.
-
-### `MISE_ALL_COMPILE=1`
-
-Default: false unless running NixOS or Alpine (let me know if others should be added)
-
-Do not use precompiled binaries for all languages. Useful if running on a Linux distribution
-like Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.
-
-Note that this needs to be setup for each language. File a ticket if you notice a language that is
-not
-working with this config.
 
 ### `MISE_FISH_AUTO_ACTIVATE=1`
 

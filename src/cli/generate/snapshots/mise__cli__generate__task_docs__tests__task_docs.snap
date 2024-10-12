@@ -1,0 +1,19 @@
+---
+source: src/cli/generate/task_docs.rs
+expression: output
+---
+## `filetask`
+
+- Depends: lint, test
+
+**Usage**: `filetask [--user <user>]`
+
+**Aliases**: ft
+
+This is a test build script
+
+### Flags
+
+#### `--user <user>`
+
+The user to run as

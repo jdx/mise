@@ -61,14 +61,15 @@ fn init() {
     env::remove_var("MISE_TRUSTED_CONFIG_PATHS");
     env::remove_var("MISE_DISABLE_TOOLS");
     env::set_var("NO_COLOR", "1");
-    env::set_var("MISE_YES", "1");
-    env::set_var("MISE_USE_TOML", "0");
-    env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
-    env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
-    env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
+    env::set_var("MISE_CACHE_PRUNE_AGE", "0");
     env::set_var("MISE_CACHE_DIR", env::HOME.join("data").join("cache"));
-    env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
+    env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
+    env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
     env::set_var("MISE_DEFAULT_CONFIG_FILENAME", ".test.mise.toml");
+    env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
+    env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
+    env::set_var("MISE_USE_TOML", "0");
+    env::set_var("MISE_YES", "1");
     //env::set_var("TERM", "dumb");
 }
 
@@ -102,17 +103,20 @@ pub fn reset() {
     file::write(
         ".mise/tasks/filetask",
         indoc! {r#"#!/usr/bin/env bash
-        # mise alias=["ft"]
-        # mise description="This is a test build script"
-        # mise depends=["lint", "test"]
-        # mise sources=[".test-tool-versions"]
-        # mise outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
-        # mise env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+        #MISE alias="ft"
+        #MISE description="This is a test build script"
+        #MISE depends=["lint", "test"]
+        #MISE sources=[".test-tool-versions"]
+        #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+        #MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID", BOOLEAN_VAR = true}
+        
+        #USAGE flag "--user <user>" help="The user to run as"
 
-        set -euxo pipefail
+        set -exo pipefail
         cd "$MISE_PROJECT_ROOT" || exit 1
         echo "running test-build script"
         echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.txt
+        echo "user=$usage_user"
         "#},
     )
     .unwrap();
@@ -155,6 +159,16 @@ pub fn reset() {
             run = 'echo "linting!"'
             [tasks.test]
             run = 'echo "testing!"'
+            [tasks."shell invalid"]
+            shell = 'bash'
+            run = 'echo "invalid shell"'
+            [tasks.shell]
+            shell = 'bash -c'
+            run = '''
+            #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+            cd "$MISE_PROJECT_ROOT" || exit 1
+            echo "using shell $0" > test-build-output.txt
+            '''
             [settings]
             always_keep_download= true
             always_keep_install= true

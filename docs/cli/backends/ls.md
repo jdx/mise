@@ -1,19 +1,17 @@
-## `mise backends ls`
+# `mise backends ls`
 
-**Aliases:** `list`
+**Usage**: `mise backends ls`
 
-```text
+**Aliases**: list
+
 List built-in backends
-
-Usage: backends ls
 
 Examples:
 
-  $ mise backends ls
-  cargo
-  go
-  npm
-  pipx
-  spm
-  ubi
-```
+    $ mise backends ls
+    cargo
+    go
+    npm
+    pipx
+    spm
+    ubi

@@ -13,10 +13,11 @@ use serde_derive::{Deserialize, Serialize};
 use versions::Versioning;
 
 use crate::backend::Backend;
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::SETTINGS;
 use crate::config::Config;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -24,7 +25,7 @@ use crate::plugins::core::CorePlugin;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file, hash};
+use crate::{file, hash};
 
 #[derive(Debug)]
 pub struct JavaPlugin {
@@ -37,18 +38,20 @@ impl JavaPlugin {
     pub fn new() -> Self {
         let core = CorePlugin::new(BackendArg::new("java", "java"));
         let java_metadata_ga_cache_filename =
-            format!("java_metadata_ga_{}_{}-$KEY.msgpack.z", os(), arch());
+            format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch());
         let java_metadata_ea_cache_filename =
-            format!("java_metadata_ea_{}_{}-$KEY.msgpack.z", os(), arch());
+            format!("java_metadata_ea_{}_{}.msgpack.z", os(), arch());
         Self {
-            java_metadata_ea_cache: CacheManager::new(
+            java_metadata_ea_cache: CacheManagerBuilder::new(
                 core.fa.cache_path.join(java_metadata_ea_cache_filename),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
-            java_metadata_ga_cache: CacheManager::new(
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .build(),
+            java_metadata_ga_cache: CacheManagerBuilder::new(
                 core.fa.cache_path.join(java_metadata_ga_cache_filename),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .build(),
             core,
         }
     }
@@ -66,12 +69,7 @@ impl JavaPlugin {
             for m in self.download_java_metadata(&release_type)?.into_iter() {
                 // add openjdk short versions like "java@17.0.0" which default to openjdk
                 if m.vendor == "openjdk" {
-                    if m.version.contains('.') {
-                        metadata.insert(m.version.to_string(), m.clone());
-                    } else {
-                        // mise expects full versions like ".0.0"
-                        metadata.insert(format!("{}.0.0", m.version), m.clone());
-                    }
+                    metadata.insert(m.version.to_string(), m.clone());
                 }
                 metadata.insert(m.to_string(), m);
             }
@@ -154,7 +152,14 @@ impl JavaPlugin {
     ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("installing {filename}"));
-        file::untar(tarball_path, &tv.download_path())?;
+        if m.file_type
+            .as_ref()
+            .is_some_and(|file_type| file_type == "zip")
+        {
+            file::unzip(tarball_path, &tv.download_path())?;
+        } else {
+            file::untar(tarball_path, &tv.download_path())?;
+        }
         self.move_to_install_path(tv, m)
     }
 
@@ -259,12 +264,7 @@ impl JavaPlugin {
     fn tv_to_java_version(&self, tv: &ToolVersion) -> String {
         if regex!(r"^\d").is_match(&tv.version) {
             // undo openjdk shorthand
-            if tv.version.ends_with(".0.0") {
-                // undo mise's full "*.0.0" version
-                format!("openjdk-{}", &tv.version[..tv.version.len() - 4])
-            } else {
-                format!("openjdk-{}", tv.version)
-            }
+            format!("openjdk-{}", tv.version)
         } else {
             tv.version.clone()
         }
@@ -315,12 +315,12 @@ impl Backend for JavaPlugin {
 
     fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_installed_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
 
     fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions()?;
-        fuzzy_match_filter(versions, query)
+        self.fuzzy_match_filter(versions, query)
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
@@ -391,6 +391,29 @@ impl Backend for JavaPlugin {
         )]);
         Ok(map)
     }
+
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+        let escaped_query = regex::escape(query.trim_end_matches('-'));
+        let query = if query == "latest" {
+            "[0-9].*"
+        } else {
+            &escaped_query
+        };
+        let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
+        let versions = versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if VERSION_REGEX.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect();
+        Ok(versions)
+    }
 }
 
 fn os() -> &'static str {
@@ -411,27 +434,6 @@ fn arch() -> &'static str {
     } else {
         &ARCH
     }
-}
-
-fn fuzzy_match_filter(versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
-    let mut query = query;
-    if query == "latest" {
-        query = "[0-9].*";
-    }
-    let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
-    let versions = versions
-        .into_iter()
-        .filter(|v| {
-            if query == v {
-                return true;
-            }
-            if VERSION_REGEX.is_match(v) {
-                return false;
-            }
-            query_regex.is_match(v)
-        })
-        .collect();
-    Ok(versions)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -487,5 +489,9 @@ impl Display for JavaMetadata {
 // only care about these features
 static JAVA_FEATURES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["musl", "javafx", "lite", "large_heap"].map(|s| s.to_string())));
+#[cfg(unix)]
 static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["tar.gz"].map(|s| s.to_string())));
+#[cfg(windows)]
+static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
+    Lazy::new(|| HashSet::from(["zip"].map(|s| s.to_string())));

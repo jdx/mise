@@ -126,7 +126,12 @@ impl Git {
     pub fn current_branch(&self) -> Result<String> {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
-            let branch = repo.head()?.shorthand().unwrap().to_string();
+            let branch = repo
+                .head()
+                .wrap_err_with(|| format!("failed to get current branch in {dir:?}"))?
+                .shorthand()
+                .unwrap()
+                .to_string();
             debug!("current branch for {dir:?}: {branch}");
             return Ok(branch);
         }

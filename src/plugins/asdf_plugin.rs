@@ -1,6 +1,6 @@
+use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
-use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
 use crate::git::Git;
@@ -12,8 +12,8 @@ use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
 use crate::{dirs, lock_file};
 use clap::Command;
-use color_eyre::Help;
 use console::style;
+use contracts::requires;
 use eyre::{bail, eyre, Context};
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -35,6 +35,7 @@ pub struct AsdfPlugin {
 }
 
 impl AsdfPlugin {
+    #[requires(!name.is_empty())]
     pub fn new(name: String) -> Self {
         let plugin_path = dirs::PLUGINS.join(&name);
         let repo = Git::new(&plugin_path);
@@ -53,6 +54,7 @@ impl AsdfPlugin {
             Ok(dirs) => {
                 let plugins = dirs
                     .into_par_iter()
+                    .filter(|dir| dir.is_dir())
                     .map(|dir| {
                         let name = dir.file_name().unwrap().to_string_lossy().to_string();
                         Box::new(AsdfPlugin::new(name)) as Box<dyn Plugin>
@@ -123,7 +125,7 @@ impl AsdfPlugin {
                 let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
                 Ok(result)
             },
-            *MISE_FETCH_REMOTE_VERSIONS_TIMEOUT,
+            SETTINGS.fetch_remote_versions_timeout(),
         )
         .wrap_err_with(|| {
             let script = self.script_man.get_script_path(&Script::ListAll);
@@ -238,7 +240,7 @@ impl Plugin for AsdfPlugin {
             return Ok(());
         }
         Err(eyre!("asdf plugin {} is not installed", self.name())
-            .suggestion("run with --yes to install plugin automatically"))
+            .wrap_err("run with --yes to install plugin automatically"))
     }
 
     fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {
@@ -332,15 +334,18 @@ impl Plugin for AsdfPlugin {
         let config = Config::get();
         let repository = self.get_repo_url(&config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
-        debug!("install {} {:?}", self.name, repository);
+        debug!("asdf_plugin[{}]:install {:?}", self.name, repository);
 
         if self.is_installed() {
             self.uninstall(pr)?;
         }
 
         if regex!(r"^[/~]").is_match(&repo_url) {
-            Err(eyre!("Invalid repository URL: {}", repo_url).suggestion(r#"If you are trying to link to a local directory, use `mise plugins link` instead.
-Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#))?;
+            Err(eyre!(
+                r#"Invalid repository URL: {repo_url}
+If you are trying to link to a local directory, use `mise plugins link` instead.
+Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#
+            ))?;
         }
         let git = Git::new(&self.plugin_path);
         pr.set_message(format!("cloning {repo_url}"));

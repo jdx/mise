@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 
 use clap::ValueHint;
 use duct::IntoExecutablePath;
@@ -19,8 +19,8 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 ///
 /// use this to avoid modifying the shell session or running ad-hoc commands with mise tools set.
 ///
-/// Tools will be loaded from .mise.toml/.tool-versions, though they can be overridden with <RUNTIME> args
-/// Note that only the plugin specified will be overridden, so if a `.tool-versions` file
+/// Tools will be loaded from mise.toml, though they can be overridden with <RUNTIME> args
+/// Note that only the plugin specified will be overridden, so if a `mise.toml` file
 /// includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
 ///
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
@@ -73,13 +73,12 @@ impl Exec {
         self.exec(program, args, env)
     }
 
-    #[cfg(not(any(test, windows)))]
-    fn exec<T, U, E>(&self, program: T, args: U, env: BTreeMap<E, E>) -> Result<()>
+    #[cfg(all(not(test), unix))]
+    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
     where
         T: IntoExecutablePath,
         U: IntoIterator,
         U::Item: Into<OsString>,
-        E: AsRef<OsStr>,
     {
         for (k, v) in env.iter() {
             env::set_var(k, v);
@@ -90,13 +89,35 @@ impl Exec {
         bail!("{:?} {err}", program.to_string_lossy())
     }
 
-    #[cfg(any(test, windows))]
-    fn exec<T, U, E>(&self, program: T, args: U, env: BTreeMap<E, E>) -> Result<()>
+    #[cfg(all(windows, not(test)))]
+    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
     where
         T: IntoExecutablePath,
         U: IntoIterator,
         U::Item: Into<OsString>,
-        E: AsRef<OsStr>,
+    {
+        let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+        let program = program.to_executable();
+        let path = env.get(&*env::PATH_KEY).map(OsString::from);
+        let program = which::which_in(program, path, cwd)?;
+        let mut cmd = cmd::cmd(program, args);
+        for (k, v) in env.iter() {
+            cmd = cmd.env(k, v);
+        }
+        let res = cmd.unchecked().run()?;
+        match res.status.code() {
+            Some(0) => Ok(()),
+            Some(code) => Err(eyre!("command failed: exit code {}", code)),
+            None => Err(eyre!("command failed: terminated by signal")),
+        }
+    }
+
+    #[cfg(test)]
+    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+    where
+        T: IntoExecutablePath,
+        U: IntoIterator,
+        U::Item: Into<OsString>,
     {
         let mut cmd = cmd::cmd(program, args);
         for (k, v) in env.iter() {
@@ -119,7 +140,6 @@ fn parse_command(
     match (&command, &c) {
         (Some(command), _) => {
             let (program, args) = command.split_first().unwrap();
-
             (program.clone(), args.into())
         }
         _ => (shell.into(), vec!["-c".into(), c.clone().unwrap()]),

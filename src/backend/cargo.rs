@@ -6,11 +6,12 @@ use serde_json::Deserializer;
 use url::Url;
 
 use crate::backend::{Backend, BackendType};
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
-use crate::env::{self, GITHUB_TOKEN};
+use crate::env::GITHUB_TOKEN;
 use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -58,8 +59,6 @@ impl Backend for CargoBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::get();
-        settings.ensure_experimental("cargo backend")?;
         let install_arg = format!("{}@{}", self.name(), ctx.tv.version);
 
         let cmd = CmdLineRunner::new("cargo").arg("install");
@@ -115,10 +114,11 @@ impl Backend for CargoBackend {
 impl CargoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
-            remote_version_cache: CacheManager::new(
-                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            remote_version_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .build(),
             ba,
         }
     }

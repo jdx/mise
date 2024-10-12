@@ -1,17 +1,18 @@
-## `mise run [OPTIONS] [TASK] [ARGS]...` <Badge type="warning" text="experimental" />
+# `mise run`
 
-**Aliases:** `r`
+**Usage**: `mise run [FLAGS]`
 
-```text
-[experimental] Run a tasks
+**Aliases**: r
+
+[experimental] Run task(s)
 
 This command will run a tasks, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
 If source is configured on a tasks, it will only run if the source
 files have changed.
 
-Tasks can be defined in .mise.toml or as standalone scripts.
-In .mise.toml, tasks take this form:
+Tasks can be defined in mise.toml or as standalone scripts.
+In mise.toml, tasks take this form:
 
     [tasks.build]
     run = "npm run build"
@@ -19,7 +20,8 @@ In .mise.toml, tasks take this form:
     outputs = ["dist/**/*.js"]
 
 Alternatively, tasks can be defined as standalone scripts.
-These must be located in the `.mise/tasks`, `mise/tasks` or `.config/mise/tasks` directory.
+These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
+`.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
     $ cat .mise/tasks/build<<EOF
@@ -28,59 +30,54 @@ The name of the script will be the name of the tasks.
     EOF
     $ mise run build
 
-Usage: run [OPTIONS] [TASK] [ARGS]...
+## Flags
 
-Arguments:
-  [TASK]
-          Tasks to run
-          Can specify multiple tasks by separating with `:::`
-          e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-          
-          [default: default]
+### `-C --cd <CD>`
 
-  [ARGS]...
-          Arguments to pass to the tasks. Use ":::" to separate tasks
+Change to this directory before executing the command
 
-Options:
-  -C, --cd <CD>
-          Change to this directory before executing the command
+### `-n --dry-run`
 
-  -n, --dry-run
-          Don't actually run the tasks(s), just print them in order of execution
+Don't actually run the tasks(s), just print them in order of execution
 
-  -f, --force
-          Force the tasks to run even if outputs are up to date
+### `-f --force`
 
-  -p, --prefix
-          Print stdout/stderr by line, prefixed with the tasks's label
-          Defaults to true if --jobs > 1
-          Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+Force the tasks to run even if outputs are up to date
 
-  -i, --interleave
-          Print directly to stdout/stderr instead of by line
-          Defaults to true if --jobs == 1
-          Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+### `-p --prefix`
 
-  -t, --tool <TOOL@VERSION>
-          Tool(s) to also add e.g.: node@20 python@3.10
+Print stdout/stderr by line, prefixed with the tasks's label
+Defaults to true if --jobs > 1
+Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 
-  -j, --jobs <JOBS>
-          Number of tasks to run in parallel
-          [default: 4]
-          Configure with `jobs` config or `MISE_JOBS` env var
-          
-          [env: MISE_JOBS=]
+### `-i --interleave`
 
-  -r, --raw
-          Read/write directly to stdin/stdout/stderr instead of by line
-          Configure with `raw` config or `MISE_RAW` env var
+Print directly to stdout/stderr instead of by line
+Defaults to true if --jobs == 1
+Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 
-      --timings
-          Shows elapsed time after each tasks
+### `-t --tool... <TOOL@VERSION>`
+
+Tool(s) to also add e.g.: node@20 python@3.10
+
+### `-j --jobs <JOBS>`
+
+Number of tasks to run in parallel
+[default: 4]
+Configure with `jobs` config or `MISE_JOBS` env var
+
+### `-r --raw`
+
+Read/write directly to stdin/stdout/stderr instead of by line
+Configure with `raw` config or `MISE_RAW` env var
+
+### `--timings`
+
+Shows elapsed time after each tasks
 
 Examples:
 
-    # Runs the "lint" tasks. This needs to either be defined in .mise.toml
+    # Runs the "lint" tasks. This needs to either be defined in mise.toml
     # or as a standalone script. See the project README for more information.
     $ mise run lint
 
@@ -96,4 +93,3 @@ Examples:
 
     # Execute multiple tasks each with their own arguments.
     $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
-```

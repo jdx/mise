@@ -11,26 +11,31 @@ The code for this is inside the mise repository at
 
 ## Usage
 
-The following installs the latest version of java-openjdk-17.x (if some version of openjdk-17.x is
+The following installs the latest version of openjdk-21.x (if some version of openjdk-21.x is
 not already installed) and makes it the global default:
 
 ```sh
-mise use -g java@openjdk-17
-mise use -g java@17         # alternate shorthands for openjdk-only
+mise use -g java@openjdk-21
+mise use -g java@21         # alternate shorthands for openjdk-only
 ```
 
 See available versions with `mise ls-remote java`.
+
+::: warning
+Note that shorthand versions (like `21` in the example) use `OpenJDK` as the vendor.
+The OpenJDK versions will only be updated for a 6-month period. Updates and security patches will not be available after this short period. This also applies for LTS versions. Also see <https://whichjdk.com> for more information.
+:::
 
 ## macOS JAVA_HOME Integration
 
 Some applications in macOS rely on `/usr/libexec/java_home` to find installed Java runtimes.
 
 To integrate an installed Java runtime with macOS run the following commands for the proper
-version (e.g. openjdk-20).
+version (e.g. openjdk-21).
 
 ```sh
-sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-20.jdk
-sudo ln -s ~/.local/share/mise/installs/java/openjdk-20/Contents /Library/Java/JavaVirtualMachines/openjdk-20.jdk/Contents
+sudo mkdir /Library/Java/JavaVirtualMachines/openjdk-21.jdk
+sudo ln -s ~/.local/share/mise/installs/java/openjdk-21/Contents /Library/Java/JavaVirtualMachines/openjdk-21.jdk/Contents
 ```
 
 > Note: Not all distributions of the Java SDK support this integration (e.g liberica).
@@ -64,8 +69,7 @@ ln -s ~/.sdkman/candidates/java/21.0.1-open ~/.local/share/mise/installs/java/21
 cp ~/.local/share/mise/installs/java/21.0.1-open/lib/libjli.dylib ~/.local/share/mise/installs/java/21.0.1-open/Contents/MacOS/libjli.dylib
 ```
 
-4. Don't forget to make sure the cache is blocked and valid, by making sure an **empty** directory *
-   *exists** for your version in the [mise cache](https://mise.jdx.dev/directories.html#cache-mise):
+4. Don't forget to make sure the cache is blocked and valid, by making sure an **empty** directory **exists** for your version in the [mise cache](https://mise.jdx.dev/directories.html#cache-mise):
    e.g.
 
 ```sh

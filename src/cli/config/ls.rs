@@ -6,11 +6,11 @@ use tabled::settings::{Modify, Width};
 use tabled::Tabled;
 
 use crate::config::config_file::ConfigFile;
-use crate::config::{Config, Settings};
+use crate::config::CONFIG;
 use crate::file::display_path;
 use crate::ui::table;
 
-/// [experimental] List config files currently in use
+/// List config files currently in use
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigLs {
@@ -21,10 +21,7 @@ pub struct ConfigLs {
 
 impl ConfigLs {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let settings = Settings::try_get()?;
-        settings.ensure_experimental("`mise config ls`")?;
-        let rows = config
+        let rows = CONFIG
             .config_files
             .values()
             .map(|cf| cf.as_ref().into())

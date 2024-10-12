@@ -1,22 +1,23 @@
-## `mise settings set <SETTING> <VALUE>`
+# `mise settings set`
 
-**Aliases:** `add, create`
+**Usage**: `mise settings set <SETTING> <VALUE>`
 
-```text
+**Aliases**: add, create
+
 Add/update a setting
 
 This modifies the contents of ~/.config/mise/config.toml
 
-Usage: settings set <SETTING> <VALUE>
+## Arguments
 
-Arguments:
-  <SETTING>
-          The setting to set
+### `<SETTING>`
 
-  <VALUE>
-          The value to set
+The setting to set
+
+### `<VALUE>`
+
+The value to set
 
 Examples:
 
-    $ mise settings set legacy_version_file true
-```
+    mise settings set legacy_version_file true

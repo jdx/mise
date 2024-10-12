@@ -1,18 +1,18 @@
-## `mise config generate [OPTIONS]` <Badge type="warning" text="experimental" />
+# `mise config generate`
 
-**Aliases:** `g`
+**Usage**: `mise config generate [-o --output <OUTPUT>]`
 
-```text
-[experimental] Generate an .mise.toml file
+**Aliases**: g
 
-Usage: config generate [OPTIONS]
+[experimental] Generate a mise.toml file
 
-Options:
-  -o, --output <OUTPUT>
-          Output to file instead of stdout
+## Flags
+
+### `-o --output <OUTPUT>`
+
+Output to file instead of stdout
 
 Examples:
 
-    $ mise cf generate > .mise.toml
-    $ mise cf generate --output=.mise.toml
-```
+    mise cf generate > mise.toml
+    mise cf generate --output=mise.toml

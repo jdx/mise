@@ -1,15 +1,15 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
-use console::{pad_str, style, Alignment};
-use eyre::Result;
-
-use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::toolset::{ToolVersion, ToolsetBuilder};
+use crate::toolset::{OutdatedInfo, ToolsetBuilder};
+use crate::ui::table;
+use eyre::Result;
+use indexmap::IndexMap;
 
 /// Shows outdated tool versions
+///
+/// See `mise upgrade` to upgrade these versions.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Outdated {
@@ -19,9 +19,22 @@ pub struct Outdated {
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
+    /// Compares against the latest versions available, not what matches the current config
+    ///
+    /// For example, if you have `node = "20"` in your config by default `mise outdated` will only
+    /// show other 20.x versions, not 21.x or 22.x versions.
+    ///
+    /// Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
+    #[clap(long, short = 'l', verbatim_doc_comment)]
+    pub bump: bool,
+
     /// Output in JSON format
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
+
+    /// Don't show table header
+    #[clap(long)]
+    pub no_header: bool,
 }
 
 impl Outdated {
@@ -35,7 +48,7 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
-        let outdated = ts.list_outdated_versions();
+        let outdated = ts.list_outdated_versions(self.bump);
         if outdated.is_empty() {
             info!("All tools are up to date");
         } else if self.json {
@@ -47,86 +60,22 @@ impl Outdated {
         Ok(())
     }
 
-    fn display(&self, outdated: OutputVec) -> Result<()> {
-        // TODO: make a generic table printer in src/ui/table
-        let plugins = outdated.iter().map(|(t, _, _)| t.id()).collect::<Vec<_>>();
-        let requests = outdated
-            .iter()
-            .map(|(_, tv, _)| tv.request.version())
-            .collect::<Vec<_>>();
-        let currents = outdated
-            .iter()
-            .map(|(t, tv, _)| {
-                if t.is_version_installed(tv, true) {
-                    tv.version.clone()
-                } else {
-                    "MISSING".to_string()
-                }
-            })
-            .collect::<Vec<_>>();
-        let latests = outdated
-            .iter()
-            .map(|(_, _, c)| c.clone())
-            .collect::<Vec<_>>();
-        let plugin_width = plugins
-            .iter()
-            .map(|s| s.len())
-            .max()
-            .unwrap_or_default()
-            .max(6)
-            + 1;
-        let requested_width = requests
-            .iter()
-            .map(|s| s.len())
-            .max()
-            .unwrap_or_default()
-            .max(9)
-            + 1;
-        let current_width = currents
-            .iter()
-            .map(|s| s.len())
-            .max()
-            .unwrap_or_default()
-            .max(7)
-            + 1;
-        let pad_plugin = |s| pad_str(s, plugin_width, Alignment::Left, None);
-        let pad_requested = |s| pad_str(s, requested_width, Alignment::Left, None);
-        let pad_current = |s| pad_str(s, current_width, Alignment::Left, None);
-        miseprintln!(
-            "{} {} {} {}",
-            style(pad_plugin("Tool")).dim(),
-            style(pad_requested("Requested")).dim(),
-            style(pad_current("Current")).dim(),
-            style("Latest").dim(),
-        );
-        for i in 0..outdated.len() {
-            miseprintln!(
-                "{} {} {} {}",
-                pad_plugin(plugins[i]),
-                pad_requested(&requests[i]),
-                pad_current(&currents[i]),
-                latests[i]
-            );
-        }
+    fn display(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
+        let mut table = tabled::Table::new(outdated);
+        table::default_style(&mut table, self.no_header);
+        miseprintln!("{table}");
         Ok(())
     }
 
-    fn display_json(&self, outdated: OutputVec) -> Result<()> {
-        let mut map = serde_json::Map::new();
-        for (t, tv, c) in outdated {
-            let mut inner = serde_json::Map::new();
-            inner.insert("requested".to_string(), tv.request.version().into());
-            inner.insert("current".to_string(), tv.version.clone().into());
-            inner.insert("latest".to_string(), c.into());
-            map.insert(t.id().to_string(), serde_json::Value::Object(inner));
+    fn display_json(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
+        let mut map = IndexMap::new();
+        for o in outdated {
+            map.insert(o.name.to_string(), o);
         }
-        let json = serde_json::Value::Object(map);
-        miseprintln!("{}", serde_json::to_string_pretty(&json)?);
+        miseprintln!("{}", serde_json::to_string_pretty(&map)?);
         Ok(())
     }
 }
-
-type OutputVec = Vec<(Arc<dyn Backend>, ToolVersion, String)>;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
@@ -169,5 +118,12 @@ mod tests {
         change_installed_version("tiny", "3.1.0", "3.0.0");
         assert_cli_snapshot!("outdated", "tiny", "--json");
         change_installed_version("tiny", "3.0.0", "3.1.0");
+    }
+
+    #[test]
+    fn test_outdated_json_bump() {
+        reset();
+        assert_cli!("use", "tiny@2");
+        assert_cli_snapshot!("outdated", "tiny", "--json", "--bump");
     }
 }

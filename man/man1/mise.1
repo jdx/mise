@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH mise 1  "mise 2024.8.15" 
+.TH mise 1  "mise 2024.10.2" 
 .SH NAME
 mise \- The front\-end to your dev env
 .SH SYNOPSIS
-\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-P\fR|\fB\-\-profile\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 mise is a tool for managing runtime versions. https://github.com/jdx/mise
 .PP
@@ -18,6 +18,9 @@ https://asdf\-vm.com/
 .TP
 \fB\-C\fR, \fB\-\-cd\fR=\fIDIR\fR
 Change directory before running command
+.TP
+\fB\-P\fR, \fB\-\-profile\fR=\fIPROFILE\fR
+Set the profile (environment)
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress non\-error messages
@@ -54,7 +57,7 @@ mise\-completion(1)
 Generate shell completions
 .TP
 mise\-config(1)
-[experimental] Manage config files
+Manage config files
 .TP
 mise\-current(1)
 Shows current active and installed runtime versions
@@ -93,7 +96,7 @@ mise\-ls(1)
 List installed and active tool versions
 .TP
 mise\-ls\-remote(1)
-List runtime versions available for install
+List runtime versions available for install.
 .TP
 mise\-outdated(1)
 Shows outdated tool versions
@@ -105,25 +108,25 @@ mise\-prune(1)
 Delete unused versions of tools
 .TP
 mise\-registry(1)
-[experimental] List available tools
+[experimental] List available tools to install
 .TP
 mise\-reshim(1)
-rebuilds the shim farm
+Creates new shims based on bin paths from currently installed tools.
 .TP
 mise\-run(1)
-[experimental] Run a tasks
+[experimental] Run task(s)
 .TP
 mise\-self\-update(1)
-Updates mise itself
+Updates mise itself.
 .TP
 mise\-set(1)
-Manage environment variables
+Set environment variables in mise.toml
 .TP
 mise\-settings(1)
 Manage settings
 .TP
 mise\-shell(1)
-Sets a tool version for the current session
+Sets a tool version for the current session.
 .TP
 mise\-sync(1)
 Add tool versions from external tools to mise
@@ -135,31 +138,28 @@ mise\-trust(1)
 Marks a config file as trusted
 .TP
 mise\-uninstall(1)
-Removes runtime versions
+Removes installed tool versions
 .TP
 mise\-unset(1)
-Remove environment variable(s) from the config file
+Remove environment variable(s) from the config file.
 .TP
 mise\-upgrade(1)
-Upgrades outdated tool versions
-.TP
-mise\-usage(1)
-Generate a usage CLI spec
+Upgrades outdated tools
 .TP
 mise\-use(1)
-Install tool version and add it to config
+Installs a tool and adds the version it to mise.toml.
 .TP
 mise\-version(1)
-Show mise version
+Display the version of mise
 .TP
 mise\-watch(1)
-[experimental] Run a tasks watching for changes
+[experimental] Run task(s) and watch for changes to rerun it
 .TP
 mise\-where(1)
-Display the installation path for a runtime
+Display the installation path for a tool
 .TP
 mise\-which(1)
-Shows the path that a bin name points to
+Shows the path that a tool\*(Aqs bin points to.
 .TP
 mise\-help(1)
 Print this message or the help of the given subcommand(s)
@@ -192,6 +192,6 @@ Examples:
     $ mise settings                  Show settings in use
     $ mise settings set color 0      Disable color by modifying global config file
 .SH VERSION
-v2024.8.15
+v2024.10.2
 .SH AUTHORS
 Jeff Dickey <@jdx>

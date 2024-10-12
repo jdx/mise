@@ -36,6 +36,7 @@ editLink: false
 | asdf-plugin-manager | [asdf:asdf-community/asdf-plugin-manager](https://github.com/asdf-community/asdf-plugin-manager) |
 | assh | [asdf:zekker6/asdf-assh](https://github.com/zekker6/asdf-assh) |
 | atlas | [asdf:komi1230/asdf-atlas](https://github.com/komi1230/asdf-atlas) |
+| atmos | [asdf:cloudposse/asdf-atmos](https://github.com/cloudposse/asdf-atmos) |
 | auto-doc | [asdf:looztra/asdf-auto-doc](https://github.com/looztra/asdf-auto-doc) |
 | aws-amplify-cli | [asdf:LozanoMatheus/asdf-aws-amplify-cli](https://github.com/LozanoMatheus/asdf-aws-amplify-cli) |
 | aws-copilot | [asdf:NeoHsu/asdf-copilot](https://github.com/NeoHsu/asdf-copilot) |
@@ -109,6 +110,9 @@ editLink: false
 | cilium-cli | [asdf:carnei-ro/asdf-cilium-cli](https://github.com/carnei-ro/asdf-cilium-cli) |
 | cilium-hubble | [asdf:NitriKx/asdf-cilium-hubble](https://github.com/NitriKx/asdf-cilium-hubble) |
 | circleci-cli | [asdf:ucpr/asdf-circleci-cli](https://github.com/ucpr/asdf-circleci-cli) |
+| clang | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
+| clang-format | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
+| clangd | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | clarinet | [asdf:alexgo-io/asdf-clarinet](https://github.com/alexgo-io/asdf-clarinet) |
 | clickhouse | [asdf:tinybirdco/asdf-clickhouse](https://github.com/tinybirdco/asdf-clickhouse) |
 | clj-kondo | [asdf:rynkowsg/asdf-clj-kondo](https://github.com/rynkowsg/asdf-clj-kondo) |
@@ -209,6 +213,7 @@ editLink: false
 | envsubst | [asdf:dex4er/asdf-envsubst](https://github.com/dex4er/asdf-envsubst) |
 | ephemeral-postgres | [asdf:smashedtoatoms/asdf-ephemeral-postgres](https://github.com/smashedtoatoms/asdf-ephemeral-postgres) |
 | erlang | [asdf:asdf-vm/asdf-erlang](https://github.com/asdf-vm/asdf-erlang) |
+| esc | [asdf:fxsalazar/asdf-esc](https://github.com/fxsalazar/asdf-esc) |
 | esy | [asdf:asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy) |
 | etcd | [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) |
 | evans | [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
@@ -241,6 +246,7 @@ editLink: false
 | gcc-arm-none-eabi | [asdf:dlech/asdf-gcc-arm-none-eabi](https://github.com/dlech/asdf-gcc-arm-none-eabi) |
 | gcloud | [asdf:jthegedus/asdf-gcloud](https://github.com/jthegedus/asdf-gcloud) |
 | getenvoy | [asdf:asdf-community/asdf-getenvoy](https://github.com/asdf-community/asdf-getenvoy) |
+| gh | [asdf:bartlomiejdanek/asdf-github-cli](https://github.com/bartlomiejdanek/asdf-github-cli) |
 | ghc | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | ghidra | [asdf:Honeypot95/asdf-ghidra](https://github.com/Honeypot95/asdf-ghidra) |
 | ghorg | [asdf:gbloquel/asdf-ghorg](https://github.com/gbloquel/asdf-ghorg) |
@@ -424,12 +430,15 @@ editLink: false
 | levant | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | lfe | [asdf:asdf-community/asdf-lfe](https://github.com/asdf-community/asdf-lfe) |
 | libsql-server | [asdf:jonasb/asdf-libsql-server](https://github.com/jonasb/asdf-libsql-server) |
+| license-plist | [asdf:MacPaw/asdf-license-plist](https://github.com/MacPaw/asdf-license-plist) |
 | lima | [asdf:CrouchingMuppet/asdf-lima](https://github.com/CrouchingMuppet/asdf-lima) |
 | link | [asdf:asdf-community/asdf-link](https://github.com/asdf-community/asdf-link) |
 | linkerd | [asdf:kforsthoevel/asdf-linkerd](https://github.com/kforsthoevel/asdf-linkerd) |
 | liqoctl | [asdf:pdemagny/asdf-liqoctl](https://github.com/pdemagny/asdf-liqoctl) |
 | liquibase | [asdf:saliougaye/asdf-liquibase](https://github.com/saliougaye/asdf-liquibase) |
 | litestream | [asdf:threkk/asdf-litestream](https://github.com/threkk/asdf-litestream) |
+| llvm-objcopy | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
+| llvm-objdump | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | logtalk | [asdf:LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk) |
 | loki-logcli | [asdf:comdotlinux/asdf-loki-logcli](https://github.com/comdotlinux/asdf-loki-logcli) |
 | ls-lint | [asdf:Ameausoone/asdf-ls-lint](https://github.com/Ameausoone/asdf-ls-lint) |
@@ -655,6 +664,7 @@ editLink: false
 | svu | [asdf:asdf-community/asdf-svu](https://github.com/asdf-community/asdf-svu) |
 | swag | [asdf:behoof4mind/asdf-swag](https://github.com/behoof4mind/asdf-swag) |
 | swift | [asdf:fcrespo82/asdf-swift](https://github.com/fcrespo82/asdf-swift) |
+| swift-package-list | [asdf:MacPaw/asdf-swift-package-list](https://github.com/MacPaw/asdf-swift-package-list) |
 | swiftformat | [asdf:younke/asdf-swiftformat](https://github.com/younke/asdf-swiftformat) |
 | swiftgen | [asdf:younke/asdf-swiftgen](https://github.com/younke/asdf-swiftgen) |
 | swiftlint | [asdf:klundberg/asdf-swiftlint](https://github.com/klundberg/asdf-swiftlint) |

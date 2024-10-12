@@ -13,8 +13,7 @@ use crate::file::{make_symlink, remove_all};
 
 /// Symlinks a tool version into mise
 ///
-/// Use this for adding installs either custom compiled outside
-/// mise or built with a different tool.
+/// Use this for adding installs either custom compiled outside mise or built with a different tool.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Link {
@@ -67,6 +66,7 @@ impl Link {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+    
     # build node-20.0.0 with node-build and link it into mise
     $ <bold>node-build 20.0.0 ~/.nodes/20.0.0</bold>
     $ <bold>mise link node@20.0.0 ~/.nodes/20.0.0</bold>

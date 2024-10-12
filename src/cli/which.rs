@@ -5,11 +5,13 @@ use crate::config::Config;
 use crate::dirs::SHIMS;
 use crate::toolset::{Toolset, ToolsetBuilder};
 
-/// Shows the path that a bin name points to
+/// Shows the path that a tool's bin points to.
+///
+/// Use this to figure out what version of a tool is currently active.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Which {
-    /// The bin name to look up
+    /// The bin to look up
     #[clap()]
     pub bin_name: String,
 
@@ -74,8 +76,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise which node</bold>
     /home/username/.local/share/mise/installs/node/20.0.0/bin/node
+
     $ <bold>mise which node --plugin</bold>
     node
+
     $ <bold>mise which node --version</bold>
     20.0.0
 "#

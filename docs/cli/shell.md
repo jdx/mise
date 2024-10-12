@@ -1,38 +1,39 @@
-## `mise shell [OPTIONS] [TOOL@VERSION]...`
+# `mise shell`
 
-**Aliases:** `sh`
+**Usage**: `mise shell [FLAGS] [TOOL@VERSION]...`
 
-```text
-Sets a tool version for the current session
+**Aliases**: sh
+
+Sets a tool version for the current session.
 
 Only works in a session where mise is already activated.
 
 This works by setting environment variables for the current shell session
-such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created
-by `mise activate`.
+such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
 
-Usage: shell [OPTIONS] [TOOL@VERSION]...
+## Arguments
 
-Arguments:
-  [TOOL@VERSION]...
-          Tool(s) to use
+### `[TOOL@VERSION]...`
 
-Options:
-  -j, --jobs <JOBS>
-          Number of jobs to run in parallel
-          [default: 4]
-          
-          [env: MISE_JOBS=]
+Tool(s) to use
 
-      --raw
-          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+## Flags
 
-  -u, --unset
-          Removes a previously set version
+### `-j --jobs <JOBS>`
+
+Number of jobs to run in parallel
+[default: 4]
+
+### `--raw`
+
+Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+
+### `-u --unset`
+
+Removes a previously set version
 
 Examples:
 
     $ mise shell node@20
     $ node -v
     v20.0.0
-```

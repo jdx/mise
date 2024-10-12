@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 
 use crate::backend::{Backend, BackendType};
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::SETTINGS;
 use crate::config::Settings;
-use crate::env;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
@@ -63,21 +63,27 @@ impl Backend for GoBackend {
         let settings = Settings::get();
         settings.ensure_experimental("go backend")?;
 
-        // if the (semantic) version has no v prefix, add it
-        // we allow max. 6 digits for the major version to prevent clashes with Git commit hashes
-        let version = if regex!(r"^\d{1,6}(\.\d+)*([+-.].+)?$").is_match(&ctx.tv.version) {
-            format!("v{}", ctx.tv.version)
+        let version = if ctx.tv.version.starts_with("v") {
+            warn!("usage of a 'v' prefix in the version is discouraged");
+            ctx.tv.version.to_string().replacen("v", "", 1)
         } else {
-            ctx.tv.version.clone()
+            ctx.tv.version.to_string()
         };
 
-        CmdLineRunner::new("go")
-            .arg("install")
-            .arg(format!("{}@{}", self.name(), version))
-            .with_pr(ctx.pr.as_ref())
-            .envs(self.dependency_env()?)
-            .env("GOBIN", ctx.tv.install_path().join("bin"))
-            .execute()?;
+        let install = |v| {
+            CmdLineRunner::new("go")
+                .arg("install")
+                .arg(format!("{}@{v}", self.name()))
+                .with_pr(ctx.pr.as_ref())
+                .envs(self.dependency_env()?)
+                .env("GOBIN", ctx.tv.install_path().join("bin"))
+                .execute()
+        };
+
+        if install(format!("v{}", version)).is_err() {
+            warn!("Failed to install, trying again without added 'v' prefix");
+            install(version)?;
+        }
 
         Ok(())
     }
@@ -86,10 +92,11 @@ impl Backend for GoBackend {
 impl GoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
-            remote_version_cache: CacheManager::new(
-                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            remote_version_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .build(),
             ba,
         }
     }

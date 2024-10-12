@@ -22,6 +22,12 @@ use zip::ZipArchive;
 
 use crate::{dirs, env};
 
+pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
+    let path = path.as_ref();
+    trace!("open {}", display_path(path));
+    File::open(path).wrap_err_with(|| format!("failed open: {}", display_path(path)))
+}
+
 pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     match path.metadata().map(|m| m.file_type()) {
@@ -34,6 +40,19 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
                 .wrap_err_with(|| format!("failed rm -rf: {}", display_path(path)))?;
         }
         _ => {}
+    };
+    Ok(())
+}
+
+pub fn remove_file_or_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    match path.metadata().map(|m| m.file_type()) {
+        Ok(x) if x.is_dir() => {
+            remove_dir(path)?;
+        }
+        _ => {
+            remove_file(path)?;
+        }
     };
     Ok(())
 }
@@ -157,7 +176,7 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
 pub fn display_path<P: AsRef<Path>>(path: P) -> String {
     let home = dirs::HOME.to_string_lossy();
     let path = path.as_ref();
-    match path.starts_with(home.as_ref()) && home != "/" {
+    match cfg!(unix) && path.starts_with(home.as_ref()) && home != "/" {
         true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
         false => path.to_string_lossy().to_string(),
     }
@@ -218,7 +237,7 @@ pub fn dir_subdirs(dir: &Path) -> Result<Vec<String>> {
     for entry in dir.read_dir()? {
         let entry = entry?;
         let ft = entry.file_type()?;
-        if ft.is_dir() || ft.is_symlink() {
+        if ft.is_dir() || (ft.is_symlink() && entry.path().read_link()?.is_dir()) {
             output.push(entry.file_name().into_string().unwrap());
         }
     }
@@ -235,9 +254,7 @@ pub fn ls(dir: &Path) -> Result<Vec<PathBuf>> {
 
     for entry in dir.read_dir()? {
         let entry = entry?;
-        if entry.file_type()?.is_file() {
-            output.push(entry.path());
-        }
+        output.push(entry.path());
     }
 
     Ok(output)
@@ -282,6 +299,14 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     }
     xx::file::write(link, target.to_string_lossy().to_string())?;
     Ok(())
+}
+
+pub fn resolve_symlink(link: &Path) -> Result<PathBuf> {
+    if cfg!(windows) {
+        Ok(fs::read_to_string(link)?.into())
+    } else {
+        Ok(fs::read_link(link)?)
+    }
 }
 
 #[cfg(unix)]
@@ -468,6 +493,25 @@ pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
         .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
         .extract(dest)
         .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))
+}
+
+#[cfg(windows)]
+pub fn un7z(archive: &Path, dest: &Path) -> Result<()> {
+    sevenz_rust::decompress_file(archive, dest)
+        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))
+}
+
+pub fn split_file_name(path: &Path) -> (String, String) {
+    let file_name = path.file_name().unwrap().to_string_lossy();
+    let (file_name_base, ext) = file_name
+        .split_once('.')
+        .unwrap_or((file_name.as_ref(), ""));
+    (file_name_base.to_string(), ext.to_string())
+}
+
+pub fn same_file(a: &Path, b: &Path) -> bool {
+    let canonicalize = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    canonicalize(a) == canonicalize(b)
 }
 
 #[cfg(test)]

@@ -11,7 +11,6 @@ const _REGISTRY: &[(&str, &str)] = &[
 
 const _REGISTRY_VFOX: &[(&str, &str)] = &[
     ("bun", "vfox:ahai-code/vfox-bun"),
-    ("cargo-binstall", "cargo:cargo-binstall"),
     ("clang", "vfox:version-fox/vfox-clang"),
     ("cmake", "vfox:version-fox/vfox-cmake"),
     ("crystal", "vfox:yanecc/vfox-crystal"),
@@ -33,10 +32,9 @@ const _REGISTRY_VFOX: &[(&str, &str)] = &[
     ("mongo", "vfox:yeshan333/vfox-mongo"),
     ("php", "vfox:version-fox/vfox-php"),
     ("protobuf", "vfox:ahai-code/vfox-protobuf"),
-    ("ruby", "vfox:yanecc/vfox-ruby"),
+    // ("ruby", "vfox:yanecc/vfox-ruby"),
     ("scala", "vfox:version-fox/vfox-scala"),
     ("terraform", "vfox:enochchau/vfox-terraform"),
-    ("ubi", "cargo:ubi"),
     ("vlang", "vfox:ahai-code/vfox-vlang"),
     ("zig", "vfox:version-fox/vfox-zig"),
 ];
@@ -44,7 +42,7 @@ const _REGISTRY_VFOX: &[(&str, &str)] = &[
 pub static REGISTRY: Lazy<BTreeMap<&str, String>> = Lazy::new(|| {
     let settings = Settings::get();
 
-    let registry = if settings.vfox {
+    let registry = if cfg!(windows) || settings.vfox {
         _REGISTRY.iter().chain(_REGISTRY_VFOX.iter()).collect_vec()
     } else {
         _REGISTRY.iter().collect_vec()

@@ -35,16 +35,16 @@ pub struct Ls {
     #[clap(long = "plugin", short, hide = true)]
     plugin_flag: Option<BackendArg>,
 
-    /// Only show tool versions currently specified in a .tool-versions/.mise.toml
+    /// Only show tool versions currently specified in a mise.toml
     #[clap(long, short)]
     current: bool,
 
-    /// Only show tool versions currently specified in a the global .tool-versions/.mise.toml
+    /// Only show tool versions currently specified in the global mise.toml
     #[clap(long, short)]
     global: bool,
 
     /// Only show tool versions that are installed
-    /// (Hides tools defined in .tool-versions/.mise.toml but not installed)
+    /// (Hides tools defined in mise.toml but not installed)
     #[clap(long, short)]
     installed: bool,
 
@@ -379,8 +379,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
           "version": "20.0.0",
           "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
           "source": {
-            "type": ".mise.toml",
-            "path": "/Users/jdx/.mise.toml"
+            "type": "mise.toml",
+            "path": "/Users/jdx/mise.toml"
           }
         }
       ],

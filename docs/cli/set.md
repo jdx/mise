@@ -1,25 +1,29 @@
-## `mise set [OPTIONS] [ENV_VARS]...`
+# `mise set`
 
-```text
-Manage environment variables
+**Usage**: `mise set [--file <FILE>] [-g --global] [ENV_VARS]...`
 
-By default this command modifies ".mise.toml" in the current directory.
+Set environment variables in mise.toml
 
-Usage: set [OPTIONS] [ENV_VARS]...
+By default, this command modifies `mise.toml` in the current directory.
 
-Arguments:
-  [ENV_VARS]...
-          Environment variable(s) to set
-          e.g.: NODE_ENV=production
+## Arguments
 
-Options:
-      --file <FILE>
-          The TOML file to update
-          
-          Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or ".mise.toml".
+### `[ENV_VARS]...`
 
-  -g, --global
-          Set the environment variable in the global config file
+Environment variable(s) to set
+e.g.: NODE_ENV=production
+
+## Flags
+
+### `--file <FILE>`
+
+The TOML file to update
+
+Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
+
+### `-g --global`
+
+Set the environment variable in the global config file
 
 Examples:
 
@@ -31,4 +35,3 @@ Examples:
     $ mise set
     key       value       source
     NODE_ENV  production  ~/.config/mise/config.toml
-```

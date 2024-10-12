@@ -1,25 +1,27 @@
-## `mise sync node <--brew|--nvm|--nodenv>`
+# `mise sync node`
 
-```text
+**Usage**: `mise sync node [FLAGS]`
+
 Symlinks all tool versions from an external tool into mise
 
 For example, use this to import all Homebrew node installs into mise
 
-Usage: sync node <--brew|--nvm|--nodenv>
+## Flags
 
-Options:
-      --brew
-          Get tool versions from Homebrew
+### `--brew`
 
-      --nvm
-          Get tool versions from nvm
+Get tool versions from Homebrew
 
-      --nodenv
-          Get tool versions from nodenv
+### `--nvm`
+
+Get tool versions from nvm
+
+### `--nodenv`
+
+Get tool versions from nodenv
 
 Examples:
 
-    $ brew install node@18 node@20
-    $ mise sync node --brew
-    $ mise use -g node@18 - uses Homebrew-provided node
-```
+    brew install node@18 node@20
+    mise sync node --brew
+    mise use -g node@18 - uses Homebrew-provided node

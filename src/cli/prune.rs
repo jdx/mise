@@ -18,8 +18,8 @@ use super::trust::Trust;
 ///
 /// mise tracks which config files have been used in ~/.local/share/mise/tracked_config_files
 /// Versions which are no longer the latest specified in any of those configs are deleted.
-/// Versions installed only with environment variables (`MISE_<PLUGIN>_VERSION`) will be deleted,
-/// as will versions only referenced on the command line (`mise exec <PLUGIN>@<VERSION>`).
+/// Versions installed only with environment variables `MISE_<PLUGIN>_VERSION` will be deleted,
+/// as will versions only referenced on the command line `mise exec <PLUGIN>@<VERSION>`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Prune {

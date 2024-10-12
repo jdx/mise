@@ -11,8 +11,8 @@ use crate::ui::table;
 ///
 /// For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 ///
-///   [alias.node]
-///   lts = "20.0.0"
+///     [alias.node]
+///     lts = "20.0.0"
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct AliasLs {
@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn test_alias_ls() {
         reset();
-        assert_cli_snapshot!("aliases", @r###"
+        assert_cli_snapshot!("aliases", @r#"
         java  lts          21   
         node  lts          20   
         node  lts-argon    4    
@@ -91,7 +91,7 @@ mod tests {
         tiny  lts          3.1.0
         tiny  lts-prev     2.0.0
         tiny  my/alias     3.0
-        "###);
+        "#);
     }
 
     #[test]

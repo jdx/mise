@@ -13,7 +13,7 @@ enum EnvOp<'a> {
     Hide { key: &'a str },
 }
 
-impl<'a> Display for EnvOp<'a> {
+impl Display for EnvOp<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[allow(clippy::write_with_newline)]
         match self {
@@ -23,9 +23,19 @@ impl<'a> Display for EnvOp<'a> {
     }
 }
 
+impl Nushell {
+    fn escape_csv_value(s: &str) -> String {
+        if s.contains(['\r', '\n', '"', ',']) {
+            format!("\"{}\"", s.replace('"', "\"\""))
+        } else {
+            s.to_owned()
+        }
+    }
+}
+
 impl Shell for Nushell {
     fn activate(&self, exe: &Path, flags: String) -> String {
-        let exe = exe.display();
+        let exe = exe.to_string_lossy().replace('\\', r#"\\"#);
 
         formatdoc! {r#"
           export-env {{
@@ -45,10 +55,10 @@ impl Shell for Nushell {
           }}
 
           def "parse vars" [] {{
-            $in | lines | parse "{{op}},{{name}},{{value}}"
+            $in | from csv --noheaders --no-infer | rename 'op' 'name' 'value'
           }}
 
-          export def --wrapped main [command?: string, --help, ...rest: string] {{
+          export def --env --wrapped main [command?: string, --help, ...rest: string] {{
             let commands = ["shell", "deactivate"]
 
             if ($command == null) {{
@@ -88,9 +98,8 @@ impl Shell for Nushell {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
-        let k = shell_escape::unix::escape(k.into());
-        let v = shell_escape::unix::escape(v.into());
-        let v = v.replace('\'', "");
+        let k = Nushell::escape_csv_value(k);
+        let v = Nushell::escape_csv_value(v);
 
         EnvOp::Set { key: &k, val: &v }.to_string()
     }
@@ -100,7 +109,7 @@ impl Shell for Nushell {
     }
 
     fn unset_env(&self, k: &str) -> String {
-        let k = shell_escape::unix::escape(k.into());
+        let k = Nushell::escape_csv_value(k);
         EnvOp::Hide { key: k.as_ref() }.to_string()
     }
 }

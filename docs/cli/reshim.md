@@ -1,7 +1,8 @@
-## `mise reshim`
+# `mise reshim`
 
-```text
-rebuilds the shim farm
+**Usage**: `mise reshim [-f --force]`
+
+Creates new shims based on bin paths from currently installed tools.
 
 This creates new shims in ~/.local/share/mise/shims for CLIs that have been added.
 mise will try to do this automatically for commands like `npm i -g` but there are
@@ -17,11 +18,17 @@ npm() {
   mise reshim
 }
 
-Usage: reshim
+Note that this creates shims for _all_ installed tools, not just the ones that are
+currently active in mise.toml.
+
+## Flags
+
+### `-f --force`
+
+Removes all shims before reshimming
 
 Examples:
 
     $ mise reshim
     $ ~/.local/share/mise/shims/node -v
     v20.0.0
-```

@@ -6,9 +6,9 @@ use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
 use crate::toolset::ToolsetBuilder;
 
-/// Display the installation path for a runtime
+/// Display the installation path for a tool
 ///
-/// Must be installed.
+/// The tool must be installed for this to work.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Where {
@@ -69,6 +69,7 @@ impl Where {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+
     # Show the latest installed version of node
     # If it is is not installed, errors
     $ <bold>mise where node@20</bold>

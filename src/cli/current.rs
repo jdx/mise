@@ -82,6 +82,11 @@ impl Current {
                         "{}@{} is specified in {}, but not installed",
                         &tv.backend, &tv.version, &source
                     );
+                    hint!(
+                        "tools_missing",
+                        "install missing tools with",
+                        "mise install"
+                    );
                 }
             }
             miseprintln!(
@@ -100,6 +105,7 @@ impl Current {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+    
     # outputs `.tool-versions` compatible format
     $ <bold>mise current</bold>
     python 3.11.0 3.10.0

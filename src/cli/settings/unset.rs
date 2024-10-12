@@ -49,36 +49,39 @@ mod tests {
 
         assert_cli!("settings", "unset", "jobs");
 
-        assert_cli_snapshot!("settings", @r###"
+        assert_cli_snapshot!("settings", @r#"
         activate_aggressive = false
         all_compile = false
         always_keep_download = true
         always_keep_install = true
         asdf = true
         asdf_compat = false
+        cache_prune_age = "0"
         cargo_binstall = true
         color = true
         disable_default_shorthands = false
+        disable_hints = []
         disable_tools = []
         experimental = true
+        fetch_remote_versions_cache = "1h"
+        fetch_remote_versions_timeout = "10s"
         go_default_packages_file = "~/.default-go-packages"
         go_download_mirror = "https://dl.google.com/go"
         go_repo = "https://github.com/golang/go"
         go_set_gopath = false
         go_set_goroot = true
         go_skip_checksum = false
-        http_timeout = 30
+        http_timeout = "30s"
         jobs = 4
         legacy_version_file = true
         legacy_version_file_disable_tools = []
         libgit2 = true
-        node_compile = false
         not_found_auto_install = true
         paranoid = false
+        pin = false
         pipx_uvx = false
         plugin_autoupdate_last_check_duration = "20m"
         python_default_packages_file = "~/.default-python-packages"
-        python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
         quiet = false
         raw = false
         trusted_config_paths = []
@@ -87,11 +90,25 @@ mod tests {
         vfox = false
         yes = true
 
+        [node]
+
+        [python]
+        default_packages_file = "~/.default-python-packages"
+        pyenv_repo = "https://github.com/pyenv/pyenv.git"
+        venv_auto_create = false
+        venv_stdlib = false
+
+        [ruby]
+        default_packages_file = "~/.default-gems"
+        ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
+        ruby_install = false
+        ruby_install_repo = "https://github.com/postmodern/ruby-install.git"
+
         [status]
         missing_tools = "if_other_versions_installed"
         show_env = false
         show_tools = false
-        "###);
+        "#);
 
         reset();
     }

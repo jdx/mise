@@ -3,8 +3,7 @@
 [Vfox](https://github.com/version-fox/vfox) plugins may be used in mise as an alternative for asdf
 plugins. On Windows, only vfox plugins are supported since asdf plugins require POSIX compatibility.
 
-The code for this is inside of the mise repository at [
-`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
+The code for this is inside of the mise repository at [`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
 
 ## Dependencies
 

@@ -1,24 +1,27 @@
-## `mise ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]`
+# `mise ls-remote`
 
-```text
-List runtime versions available for install
+**Usage**: `mise ls-remote [--all] [TOOL@VERSION] [PREFIX]`
 
-note that the results are cached for 24 hours
-run `mise cache clean` to clear the cache and get fresh results
+List runtime versions available for install.
 
-Usage: ls-remote [OPTIONS] [TOOL@VERSION] [PREFIX]
+Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.
 
-Arguments:
-  [TOOL@VERSION]
-          Plugin to get versions for
+## Arguments
 
-  [PREFIX]
-          The version prefix to use when querying the latest version
-          same as the first argument after the "@"
+### `[TOOL@VERSION]`
 
-Options:
-      --all
-          Show all installed plugins and versions
+Plugin to get versions for
+
+### `[PREFIX]`
+
+The version prefix to use when querying the latest version
+same as the first argument after the "@"
+
+## Flags
+
+### `--all`
+
+Show all installed plugins and versions
 
 Examples:
 
@@ -33,4 +36,3 @@ Examples:
     $ mise ls-remote node 20
     20.0.0
     20.1.0
-```

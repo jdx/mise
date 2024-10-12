@@ -1,21 +1,22 @@
-use std::env::temp_dir;
-use std::fmt::{self, Debug};
-use std::path::PathBuf;
-
+use eyre::WrapErr;
 use git2::Repository;
 use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
 use serde_derive::Deserialize;
+use std::env::temp_dir;
+use std::fmt::{self, Debug};
+use std::path::PathBuf;
 use url::Url;
 use walkdir::WalkDir;
 
 use crate::backend::{Backend, BackendType};
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::SETTINGS;
 use crate::config::Settings;
 use crate::install_context::InstallContext;
-use crate::{env, file, github};
+use crate::{file, github};
 
 #[derive(Debug)]
 pub struct SPMBackend {
@@ -87,10 +88,11 @@ impl Backend for SPMBackend {
 impl SPMBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
-            remote_version_cache: CacheManager::new(
-                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            remote_version_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .build(),
             ba,
         }
     }
@@ -127,7 +129,7 @@ impl SPMBackend {
         )
         .read()?;
         let executables = serde_json::from_str::<PackageDescription>(&package_json)
-            .map_err(|err| eyre::eyre!("Failed to parse package description. Details: {}", err))?
+            .wrap_err("Failed to parse package description")?
             .products
             .iter()
             .filter(|p| p.r#type.is_executable())

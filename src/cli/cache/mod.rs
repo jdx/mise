@@ -4,6 +4,7 @@ use eyre::Result;
 use crate::env;
 
 mod clear;
+mod prune;
 
 /// Manage the mise cache
 ///
@@ -18,12 +19,14 @@ pub struct Cache {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Clear(clear::CacheClear),
+    Prune(prune::CachePrune),
 }
 
 impl Commands {
     pub fn run(self) -> Result<()> {
         match self {
             Self::Clear(cmd) => cmd.run(),
+            Self::Prune(cmd) => cmd.run(),
         }
     }
 }

@@ -8,4 +8,3 @@ from xonsh.built_ins  import XSH
 envx = XSH.env
 envx[   'FOO'] = '1'
 environ['FOO'] = envx.get_detyped('FOO')
-

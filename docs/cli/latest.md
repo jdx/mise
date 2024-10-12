@@ -1,17 +1,22 @@
-## `mise latest [OPTIONS] <TOOL@VERSION>`
+# `mise latest`
 
-```text
+**Usage**: `mise latest [-i --installed] <TOOL@VERSION>`
+
 Gets the latest available version for a plugin
 
-Usage: latest [OPTIONS] <TOOL@VERSION>
+Supports prefixes such as `node@20` to get the latest version of node 20.
 
-Arguments:
-  <TOOL@VERSION>
-          Tool to get the latest version of
+## Arguments
 
-Options:
-  -i, --installed
-          Show latest installed instead of available version
+### `<TOOL@VERSION>`
+
+Tool to get the latest version of
+
+## Flags
+
+### `-i --installed`
+
+Show latest installed instead of available version
 
 Examples:
 
@@ -20,4 +25,3 @@ Examples:
 
     $ mise latest node     # get the latest stable version of node
     20.0.0
-```

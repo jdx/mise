@@ -4,9 +4,6 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use console::style;
-use eyre::Result;
-
 use crate::backend;
 use crate::backend::{ABackend, Backend};
 use crate::cli::args::BackendArg;
@@ -15,6 +12,10 @@ use crate::config::Config;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::toolset::{tool_request, ToolRequest, ToolVersionOptions};
+use console::style;
+use eyre::Result;
+#[cfg(windows)]
+use path_absolutize::Absolutize;
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
@@ -78,7 +79,10 @@ impl ToolVersion {
             if let Ok(p) = file::read_to_string(&path).map(PathBuf::from) {
                 let path = self.backend.installs_path.join(p);
                 if path.exists() {
-                    return path;
+                    return path
+                        .absolutize()
+                        .expect("failed to absolutize path")
+                        .to_path_buf();
                 }
             }
         }
@@ -107,7 +111,14 @@ impl ToolVersion {
     }
     pub fn latest_version(&self, tool: &dyn Backend) -> Result<String> {
         let tv = self.request.resolve(tool, true)?;
-        Ok(tv.version)
+        // map cargo backend specific prefixes to ref
+        let version = match tv.request.version().split_once(':') {
+            Some((_ref_type @ ("tag" | "branch" | "rev"), r)) => {
+                format!("ref:{r}")
+            }
+            _ => tv.version,
+        };
+        Ok(version)
     }
     pub fn style(&self) -> String {
         format!(
@@ -171,12 +182,6 @@ impl ToolVersion {
             if !plugin.is_installed() {
                 return build(v);
             }
-        }
-
-        let existing = build(v.clone())?;
-        if backend.is_version_installed(&existing, true) {
-            // if the version is already installed, no need to fetch all the remote versions
-            return Ok(existing);
         }
 
         if v == "latest" {

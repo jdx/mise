@@ -14,9 +14,9 @@ use toml_edit::{table, value, Array, DocumentMut, Item, Value};
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::config_file::toml::deserialize_arr;
+use crate::config::config_file::toml::{deserialize_arr, deserialize_path_entry_arr};
 use crate::config::config_file::{trust_check, ConfigFile, TaskConfig};
-use crate::config::env_directive::EnvDirective;
+use crate::config::env_directive::{EnvDirective, PathEntry};
 use crate::config::settings::SettingsPartial;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
@@ -38,7 +38,7 @@ pub struct MiseToml {
     #[serde(default)]
     env: EnvList,
     #[serde(default, deserialize_with = "deserialize_arr")]
-    env_path: Vec<PathBuf>,
+    env_path: Vec<PathEntry>,
     #[serde(default, deserialize_with = "deserialize_alias")]
     alias: AliasMap,
     #[serde(skip)]
@@ -82,9 +82,13 @@ impl MiseToml {
     }
 
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
-        trace!("parsing: {}", display_path(path));
         let body = file::read_to_string(path)?;
-        let des = toml::Deserializer::new(&body);
+        Self::from_str(&body, path)
+    }
+
+    pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
+        trace!("parsing: {}", display_path(path));
+        let des = toml::Deserializer::new(body);
         let mut rf: MiseToml = serde_ignored::deserialize(des, |p| {
             warn!("unknown field in {}: {p}", display_path(path));
         })?;
@@ -471,8 +475,8 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[derive(Deserialize)]
                             #[serde(deny_unknown_fields)]
                             struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                path: Vec<PathBuf>,
+                                #[serde(default, deserialize_with = "deserialize_path_entry_arr")]
+                                path: Vec<PathEntry>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
                                 file: Vec<PathBuf>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
@@ -582,7 +586,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 {
                                     struct ValVisitor;
 
-                                    impl<'de> Visitor<'de> for ValVisitor {
+                                    impl Visitor<'_> for ValVisitor {
                                         type Value = Val;
                                         fn expecting(
                                             &self,
@@ -839,7 +843,7 @@ impl<'de> de::Deserialize<'de> for BackendArg {
     {
         struct BackendArgVisitor;
 
-        impl<'de> Visitor<'de> for BackendArgVisitor {
+        impl Visitor<'_> for BackendArgVisitor {
             type Value = BackendArg;
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                 formatter.write_str("backend argument")

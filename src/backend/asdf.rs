@@ -13,8 +13,9 @@ use url::Url;
 
 use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::{ABackend, Backend, BackendList};
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
+use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::DEFAULT_SHORTHANDS;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
@@ -56,26 +57,30 @@ impl AsdfBackend {
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
         Self {
             cache: ExternalPluginCache::default(),
-            remote_version_cache: CacheManager::new(
-                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            remote_version_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/list-all")),
-            latest_stable_cache: CacheManager::new(
-                ba.cache_path.join("latest_stable-$KEY.msgpack.z"),
+            .with_fresh_file(plugin_path.join("bin/list-all"))
+            .build(),
+            latest_stable_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("latest_stable.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/latest-stable")),
-            alias_cache: CacheManager::new(ba.cache_path.join("aliases-$KEY.msgpack.z"))
+            .with_fresh_file(plugin_path.join("bin/latest-stable"))
+            .build(),
+            alias_cache: CacheManagerBuilder::new(ba.cache_path.join("aliases.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
-                .with_fresh_file(plugin_path.join("bin/list-aliases")),
-            legacy_filename_cache: CacheManager::new(
-                ba.cache_path.join("legacy_filenames-$KEY.msgpack.z"),
+                .with_fresh_file(plugin_path.join("bin/list-aliases"))
+                .build(),
+            legacy_filename_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("legacy_filenames.msgpack.z"),
             )
             .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/list-legacy-filenames")),
+            .with_fresh_file(plugin_path.join("bin/list-legacy-filenames"))
+            .build(),
             plugin_path,
             plugin: Box::new(AsdfPlugin::new(name.clone())),
             repo_url: None,

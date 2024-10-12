@@ -3,14 +3,13 @@
 min_version = "2024.1.1"
 [env]
 _.file = [".env"]
-_.path = ["./target/debug"]
+_.path = ["./target/debug", "./node_modules/.bin"]
 FOO = "bar"
 FOO_NUM = 1
 THIS_PROJECT = "{{config_root}}-{{cwd}}"
 
 [tools]
 #node = 'lts'
-tiny = { version = "1", foo = "bar" }
 python = { version = "latest" }
 shellcheck = "0.10"
 shfmt = "3"
@@ -22,6 +21,9 @@ jq = "latest"
 "npm:prettier" = "3"
 direnv = "latest"
 actionlint = "latest"
+ripgrep = "latest"
+"pipx:toml-sort" = "latest"
+usage = "latest"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 #ruby = "3.1"
 
@@ -31,12 +33,16 @@ nnnn = 'https://github.com/mise-plugins/rtx-nodejs#main'
 [alias.tiny]
 abc = '1'
 
+[task_config]
+includes = ["tasks"]
+
 [tasks]
 clean = "cargo clean"
 release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"
 ci = { depends = ["format", "build", "test"] }
 pre-commit = { depends = ["render", "lint"] }
+lint = { depends = ["lint:*"] }
 
 [tasks.build]
 alias = "b"
@@ -47,7 +53,12 @@ run = "cargo build --color always --all-features"
 [tasks."render:usage"]
 depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }
-run = "mise usage > mise.usage.kdl"
+run = [
+    "mise usage > mise.usage.kdl",
+    "mise generate task-docs > tasks.md",
+    "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --html-encode --file mise.usage.kdl",
+    "markdownlint --fix docs/cli",
+]
 
 [tasks."render:completions"]
 depends = ["build", "render:usage"]
@@ -64,6 +75,9 @@ mise completion fish > completions/mise.fish
 depends = ["build"]
 run = "./scripts/render-registry.js"
 
+[tasks."render:settings"]
+run = "tsx tasks/render/settings.ts"
+
 [tasks."render:mangen"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
@@ -72,7 +86,7 @@ run = "mise render-mangen"
 [tasks."render:help"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
-run = ["mise render-help", "mise x node@latest -- npx markdown-magic"]
+run = ["mise render-help", "mise run show-output-on-failure -- mise x node@latest -- npx markdown-magic"]
 sources = ["mise"]
 outputs = ["README.md"]
 

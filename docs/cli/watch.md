@@ -1,27 +1,33 @@
-## `mise watch [OPTIONS] [ARGS]...` <Badge type="warning" text="experimental" />
+# `mise watch`
 
-**Aliases:** `w`
+**Usage**: `mise watch [-t --task... <TASK>] [-g --glob... <GLOB>] [ARGS]...`
 
-```text
-[experimental] Run a tasks watching for changes
+**Aliases**: w
 
-Usage: watch [OPTIONS] [ARGS]...
+[experimental] Run task(s) and watch for changes to rerun it
 
-Arguments:
-  [ARGS]...
-          Extra arguments
+This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
+It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
 
-Options:
-  -t, --task <TASK>
-          Tasks to run
-          
-          [default: default]
+## Arguments
 
-  -g, --glob <GLOB>
-          Files to watch
-          Defaults to sources from the tasks(s)
+### `[ARGS]...`
+
+Extra arguments
+
+## Flags
+
+### `-t --task... <TASK>`
+
+Tasks to run
+
+### `-g --glob... <GLOB>`
+
+Files to watch
+Defaults to sources from the tasks(s)
 
 Examples:
+
     $ mise watch -t build
     Runs the "build" tasks. Will re-run the tasks when any of its sources change.
     Uses "sources" from the tasks definition to determine which files to watch.
@@ -32,4 +38,3 @@ Examples:
 
     $ mise run -t build --clear
     Extra arguments are passed to watchexec. See `watchexec --help` for details.
-```

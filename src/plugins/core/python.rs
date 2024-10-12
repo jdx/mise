@@ -1,15 +1,10 @@
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-
-use eyre::{bail, eyre};
-use itertools::Itertools;
-
 use crate::backend::Backend;
 use crate::build_time::built_info;
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::settings::SETTINGS;
+use crate::config::Config;
 use crate::file::display_path;
 use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -17,7 +12,12 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file};
+use crate::{cmd, file};
+use eyre::{bail, eyre};
+use itertools::Itertools;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use versions::Versioning;
 
 #[derive(Debug)]
 pub struct PythonPlugin {
@@ -29,10 +29,11 @@ impl PythonPlugin {
     pub fn new() -> Self {
         let core = CorePlugin::new(BackendArg::new("python", "python"));
         Self {
-            precompiled_cache: CacheManager::new(
-                core.fa.cache_path.join("precompiled-$KEY.msgpack.z"),
+            precompiled_cache: CacheManagerBuilder::new(
+                core.fa.cache_path.join("precompiled.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .build(),
             core,
         }
     }
@@ -45,22 +46,23 @@ impl PythonPlugin {
             .join("plugins/python-build/bin/python-build")
     }
     fn install_or_update_python_build(&self) -> eyre::Result<()> {
-        if self.python_build_path().exists() {
+        ensure_not_windows()?;
+        if self.python_build_bin().exists() {
             self.update_python_build()
         } else {
             self.install_python_build()
         }
     }
     fn install_python_build(&self) -> eyre::Result<()> {
-        if self.python_build_path().exists() {
+        if self.python_build_bin().exists() {
             return Ok(());
         }
-        let settings = Settings::try_get()?;
         let python_build_path = self.python_build_path();
         debug!("Installing python-build to {}", python_build_path.display());
+        file::remove_all(&python_build_path)?;
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
-        git.clone(&settings.python_pyenv_repo)?;
+        git.clone(&SETTINGS.python.pyenv_repo)?;
         Ok(())
     }
     fn update_python_build(&self) -> eyre::Result<()> {
@@ -86,6 +88,8 @@ impl PythonPlugin {
             let output = cmd!(python_build_bin, "--definitions").read()?;
             let versions = output
                 .split('\n')
+                // remove free-threaded pythons like 3.13t and 3.14t-dev
+                .filter(|s| !regex!(r"\dt(-dev)?$").is_match(s))
                 .map(|s| s.to_string())
                 .sorted_by_cached_key(|v| regex!(r"^\d+").is_match(v))
                 .collect();
@@ -103,18 +107,34 @@ impl PythonPlugin {
 
     fn fetch_precompiled_remote_versions(&self) -> eyre::Result<&Vec<(String, String, String)>> {
         self.precompiled_cache.get_or_try_init(|| {
-            let settings = Settings::get();
-            let raw = match settings.paranoid {
+            let raw = match SETTINGS.paranoid {
                 true => HTTP_FETCH.get_text("https://mise-versions.jdx.dev/python-precompiled"),
                 // using http is not a security concern and enabling tls makes mise significantly slower
                 false => HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled"),
             }?;
-            let platform = format!("{}-{}", python_arch(&settings), python_os(&settings));
+            let arch = python_arch();
+            let os = python_os();
+            let platform = format!("{arch}-{os}");
+            // order by version, whether it is a release candidate, date, and in the preferred order of install types
+            let rank = |v: &str, date: &str, name: &str| {
+                let rc = if regex!(r"rc\d+$").is_match(v) { 0 } else { 1 };
+                let v = Versioning::new(v);
+                let date = date.parse::<i64>().unwrap_or_default();
+                let install_type = if name.contains("install_only_stripped") {
+                    0
+                } else if name.contains("install_only") {
+                    1
+                } else {
+                    2
+                };
+                (v, rc, -date, install_type)
+            };
             let versions = raw
                 .lines()
                 .filter(|v| v.contains(&platform))
                 .flat_map(|v| {
-                    regex!(r"^cpython-(\d+\.\d+\.\d+)\+(\d+).*")
+                    // cpython-3.9.5+20210525 or cpython-3.9.5rc3+20210525
+                    regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
                         .captures(v)
                         .map(|caps| {
                             (
@@ -124,6 +144,9 @@ impl PythonPlugin {
                             )
                         })
                 })
+                // multiple dates can have the same version, so sort by date and remove duplicates by unique
+                .sorted_by_cached_key(|(v, date, name)| rank(v, date, name))
+                .unique_by(|(v, _, _)| v.to_string())
                 .collect_vec();
             Ok(versions)
         })
@@ -138,13 +161,19 @@ impl PythonPlugin {
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
             None => {
-                if cfg!(windows) || Settings::get().python_compile == Some(false) {
+                if cfg!(windows) || SETTINGS.python.compile == Some(false) {
+                    if !cfg!(windows) {
+                        hint!(
+                            "python_compile",
+                            "To compile python from source, run",
+                            "mise settings set python.compile 1"
+                        );
+                    }
+                    let arch = python_arch();
+                    let os = python_os();
                     bail!(
-                        "no precompiled python found for {} on {}-{}.\n\
-                        To compile python from source, run: mise settings set python_compile 1",
-                        ctx.tv.version,
-                        python_arch(&Settings::get()),
-                        python_os(&Settings::get()),
+                        "no precompiled python found for {} on {arch}-{os}",
+                        ctx.tv.version
                     );
                 }
                 debug!("no precompiled python found for {}", ctx.tv.version);
@@ -154,9 +183,14 @@ impl PythonPlugin {
             }
         };
 
-        warn!("installing precompiled python from indygreg/python-build-standalone");
-        warn!("if you experience issues with this python (e.g.: running poetry), switch to python-build");
-        warn!("by running: mise settings set python_compile 1");
+        if cfg!(unix) {
+            hint!(
+                "python_precompiled",
+                "installing precompiled python from indygreg/python-build-standalone\n\
+                if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
+                "mise settings set python.compile 1"
+            );
+        }
 
         let url = format!(
             "https://github.com/indygreg/python-build-standalone/releases/download/{tag}/{filename}"
@@ -180,7 +214,6 @@ impl PythonPlugin {
 
     fn install_compiled(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::get();
-        let settings = Settings::get();
         self.install_or_update_python_build()?;
         if matches!(&ctx.tv.request, ToolRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
@@ -192,16 +225,16 @@ impl PythonPlugin {
             .arg(ctx.tv.install_path())
             .env("PIP_REQUIRE_VIRTUALENV", "false")
             .envs(config.env()?);
-        if settings.verbose {
+        if SETTINGS.verbose {
             cmd = cmd.arg("--verbose");
         }
-        if let Some(patch_url) = &settings.python_patch_url {
+        if let Some(patch_url) = &SETTINGS.python.patch_url {
             ctx.pr
                 .set_message(format!("with patch file from: {patch_url}"));
             let patch = HTTP.get_text(patch_url)?;
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
-        if let Some(patches_dir) = &settings.python_patches_directory {
+        if let Some(patches_dir) = &SETTINGS.python.patches_directory {
             let patch_file = patches_dir.join(format!("{}.patch", &ctx.tv.version));
             if patch_file.exists() {
                 ctx.pr
@@ -247,8 +280,7 @@ impl PythonPlugin {
         pr: Option<&dyn SingleReport>,
     ) -> eyre::Result<Option<PathBuf>> {
         if let Some(virtualenv) = tv.request.options().get("virtualenv") {
-            let settings = Settings::try_get()?;
-            if !settings.experimental {
+            if !SETTINGS.experimental {
                 warn!(
                     "please enable experimental mode with `mise settings set experimental true` \
                     to use python virtualenv activation"
@@ -262,7 +294,7 @@ impl PythonPlugin {
                 }
             }
             if !virtualenv.exists() {
-                if settings.python_venv_auto_create {
+                if SETTINGS.python.venv_auto_create {
                     info!("setting up virtualenv at: {}", virtualenv.display());
                     let mut cmd = CmdLineRunner::new(self.python_path(tv))
                         .arg("-m")
@@ -326,7 +358,7 @@ impl Backend for PythonPlugin {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        if Settings::get().python_compile == Some(false) {
+        if SETTINGS.python.compile == Some(false) {
             Ok(self
                 .fetch_precompiled_remote_versions()?
                 .iter()
@@ -351,8 +383,7 @@ impl Backend for PythonPlugin {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::get();
-        let settings = Settings::try_get()?;
-        if cfg!(windows) || settings.python_compile == Some(true) {
+        if cfg!(windows) || SETTINGS.python.compile == Some(true) {
             self.install_compiled(ctx)?;
         } else {
             self.install_precompiled(ctx)?;
@@ -361,7 +392,7 @@ impl Backend for PythonPlugin {
         if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
             warn!("failed to get virtualenv: {e:#}");
         }
-        if let Some(default_file) = &settings.python_default_packages_file {
+        if let Some(default_file) = &SETTINGS.python.default_packages_file {
             if let Err(err) =
                 self.install_default_packages(&config, default_file, &ctx.tv, ctx.pr.as_ref())
             {
@@ -391,12 +422,12 @@ impl Backend for PythonPlugin {
     }
 }
 
-fn python_os(settings: &Settings) -> String {
-    if let Some(os) = &settings.python_precompiled_os {
+fn python_os() -> String {
+    if let Some(os) = &SETTINGS.python.precompiled_os {
         return os.clone();
     }
     if cfg!(windows) {
-        "pc-windows-msvc-shared-install_only_stripped".into()
+        "pc-windows-msvc-shared".into()
     } else if cfg!(target_os = "macos") {
         "apple-darwin".into()
     } else {
@@ -406,8 +437,8 @@ fn python_os(settings: &Settings) -> String {
     }
 }
 
-fn python_arch(settings: &Settings) -> &str {
-    if let Some(arch) = &settings.python_precompiled_arch {
+fn python_arch() -> &'static str {
+    if let Some(arch) = &SETTINGS.python.precompiled_arch {
         return arch.as_str();
     }
     if cfg!(windows) {
@@ -425,4 +456,11 @@ fn python_arch(settings: &Settings) -> &str {
     } else {
         built_info::CFG_TARGET_ARCH
     }
+}
+
+fn ensure_not_windows() -> eyre::Result<()> {
+    if cfg!(windows) {
+        bail!("python can not currently be compiled on windows");
+    }
+    Ok(())
 }

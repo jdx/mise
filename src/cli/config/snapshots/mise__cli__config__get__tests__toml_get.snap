@@ -1,0 +1,37 @@
+---
+source: src/cli/config/get.rs
+expression: output
+---
+[alias.tiny]
+"my/alias" = "3.0"
+
+[env]
+TEST_ENV_VAR = "test-123"
+
+[settings]
+always_keep_download = true
+always_keep_install = true
+jobs = 2
+legacy_version_file = true
+plugin_autoupdate_last_check_duration = "20m"
+
+[tasks.configtask]
+run = 'echo "configtask:"'
+
+[tasks.lint]
+run = 'echo "linting!"'
+
+[tasks.shell]
+run = '''
+#MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+cd "$MISE_PROJECT_ROOT" || exit 1
+echo "using shell $0" > test-build-output.txt
+'''
+shell = "bash -c"
+
+[tasks."shell invalid"]
+run = 'echo "invalid shell"'
+shell = "bash"
+
+[tasks.test]
+run = 'echo "testing!"'

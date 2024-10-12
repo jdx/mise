@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+export MISE_PYTHON_DEFAULT_PACKAGES_FILE="$HOME/.default-python-packages"
+
+cat >.mise.toml <<EOF
+[env._.python]
+venv = {path = "my_venv", create=true}
+[tools]
+python = "3.12.3"
+uv = "0.3.4"
+EOF
+
+mise i
+assert "mise x -- python --version" "Python 3.12.3"
+assert "mise x -- uv --version" "uv 0.3.4"
+assert "mise env -s bash | grep VIRTUAL_ENV" "export VIRTUAL_ENV=$PWD/my_venv"
+assert "mise x -- which python" "$PWD/my_venv/bin/python"
+assert "mise x -- uv pip list" "Package Version
+------- -------
+pip     24.0"
+
+# Allows opt-out uv's venv
+mkdir -p subdir
+cat >subdir/.mise.toml <<EOF
+[env._.python]
+venv = {path = "my_subvenv", create=true}
+[tools]
+python = "3.12.3"
+uv = "0.3.4"
+[settings]
+python_venv_stdlib = true
+EOF
+
+cd subdir || exit
+mise i
+assert "mise x -- python --version" "Python 3.12.3"
+assert "mise env -s bash | grep VIRTUAL_ENV" "export VIRTUAL_ENV=$PWD/my_subvenv"
+assert "mise x -- which python" "$PWD/my_subvenv/bin/python"
+assert_contains "ls $PWD/my_subvenv/" "include" # stdlib virtual venv has an "include" folder while uv doesn't

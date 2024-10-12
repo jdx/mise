@@ -10,19 +10,19 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::{env, file};
 
-/// Sets/gets tool version in local .tool-versions or .mise.toml
+/// Sets/gets tool version in local .tool-versions or mise.toml
 ///
 /// Use this to set a tool's version when within a directory
 /// Use `mise global` to set a tool version globally
-/// This uses `.tool-version` by default unless there is a `.mise.toml` file or if `MISE_USE_TOML`
-/// is set. A future v2 release of mise will default to using `.mise.toml`.
+/// This uses `.tool-version` by default unless there is a `mise.toml` file or if `MISE_USE_TOML`
+/// is set. A future v2 release of mise will default to using `mise.toml`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
 pub struct Local {
-    /// Tool(s) to add to .tool-versions/.mise.toml
+    /// Tool(s) to add to .tool-versions/mise.toml
     /// e.g.: node@20
     /// if this is a single tool with no version,
-    /// the current value of .tool-versions/.mise.toml will be displayed
+    /// the current value of .tool-versions/mise.toml will be displayed
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 

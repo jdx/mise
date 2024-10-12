@@ -23,3 +23,6 @@ package-lock.json
 
 megalinter-reports/
 .dev/
+
+.vscode/
+testResults.xml

@@ -3,4 +3,3 @@ source: src/shell/nushell.rs
 expression: "Nushell::default().unset_env(\"FOO\")"
 ---
 hide,FOO,
-

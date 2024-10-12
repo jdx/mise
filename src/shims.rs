@@ -13,8 +13,9 @@ use rayon::prelude::*;
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
-use crate::config::{Config, Settings};
-use crate::file::{create_dir_all, display_path, remove_all};
+use crate::config::settings::SETTINGS;
+use crate::config::CONFIG;
+use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{backend, dirs, env, fake_asdf, file, logger};
@@ -30,6 +31,7 @@ pub fn handle_shim() -> Result<()> {
     let args = env::ARGS.read().unwrap();
     trace!("shim[{bin_name}] args: {}", args.join(" "));
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
+    remove_shim_dir_from_path();
     args[0] = which_shim(&env::MISE_BIN_NAME)?.into();
     env::set_var("__MISE_SHIM", "1");
     let exec = Exec {
@@ -44,8 +46,7 @@ pub fn handle_shim() -> Result<()> {
 }
 
 fn which_shim(bin_name: &str) -> Result<PathBuf> {
-    let config = Config::try_get()?;
-    let mut ts = ToolsetBuilder::new().build(&config)?;
+    let mut ts = ToolsetBuilder::new().build(&CONFIG)?;
     if let Some((p, tv)) = ts.which(bin_name) {
         if let Some(bin) = p.which(&tv, bin_name)? {
             trace!(
@@ -55,8 +56,7 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
             return Ok(bin);
         }
     }
-    let settings = Settings::try_get()?;
-    if settings.not_found_auto_install {
+    if SETTINGS.not_found_auto_install {
         for tv in ts.install_missing_bin(bin_name)?.unwrap_or_default() {
             let p = tv.get_backend();
             if let Some(bin) = p.which(&tv, bin_name)? {
@@ -85,7 +85,7 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
     err_no_version_set(ts, bin_name, tvs)
 }
 
-pub fn reshim(ts: &Toolset) -> Result<()> {
+pub fn reshim(ts: &Toolset, force: bool) -> Result<()> {
     let _lock = LockFile::new(&dirs::SHIMS)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
@@ -94,17 +94,20 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 
     let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
 
-    create_dir_all(*dirs::SHIMS)?;
+    if force {
+        file::remove_all(*dirs::SHIMS)?;
+    }
+    file::create_dir_all(*dirs::SHIMS)?;
 
     let (shims_to_add, shims_to_remove) = get_shim_diffs(&mise_bin, ts)?;
 
     for shim in shims_to_add {
-        let symlink_path = dirs::SHIMS.join(shim);
-        add_shim(&mise_bin, &symlink_path)?;
+        let symlink_path = dirs::SHIMS.join(&shim);
+        add_shim(&mise_bin, &symlink_path, &shim)?;
     }
     for shim in shims_to_remove {
         let symlink_path = dirs::SHIMS.join(shim);
-        remove_all(&symlink_path)?;
+        file::remove_all(&symlink_path)?;
     }
     for plugin in backend::list() {
         match dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
@@ -126,13 +129,14 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
+fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
+    let shim = shim.trim_end_matches(".cmd");
     file::write(
         symlink_path.with_extension("cmd"),
         formatdoc! {r#"
         @echo off
         setlocal
-        mise x -- %*
+        mise x -- {shim} %*
         "#},
     )
     .wrap_err_with(|| {
@@ -145,7 +149,7 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn add_shim(mise_bin: &Path, symlink_path: &Path) -> Result<()> {
+fn add_shim(mise_bin: &Path, symlink_path: &Path, _shim: &str) -> Result<()> {
     file::make_symlink(mise_bin, symlink_path).wrap_err_with(|| {
         eyre!(
             "Failed to create symlink from {} to {}",
@@ -220,10 +224,20 @@ fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
         .list_installed_versions()?
         .into_par_iter()
         .flat_map(|(t, tv)| {
-            list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
+            let bins = list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
-            })
+            });
+            if cfg!(windows) {
+                bins.into_iter()
+                    .map(|b| {
+                        let p = PathBuf::from(&b);
+                        p.with_extension("cmd").to_string_lossy().to_string()
+                    })
+                    .collect()
+            } else {
+                bins
+            }
         })
         .collect())
 }
@@ -264,6 +278,22 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
         shim.display()
     );
     Ok(())
+}
+
+/// prevent shims from being called in a loop
+fn remove_shim_dir_from_path() {
+    let path = env::var_os(&*env::PATH_KEY).unwrap_or_default();
+    let paths = env::split_paths(&path).filter(|p| {
+        p != *dirs::SHIMS
+            && !p
+                .canonicalize()
+                .is_ok_and(|p| p == dirs::SHIMS.canonicalize().unwrap_or_default())
+    });
+    let path = env::join_paths(paths)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    env::set_var(&*env::PATH_KEY, &path);
 }
 
 fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<PathBuf> {

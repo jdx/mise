@@ -1,4 +1,5 @@
 use color_eyre::eyre::{bail, eyre, Result};
+use contracts::ensures;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use url::Url;
@@ -123,6 +124,7 @@ impl PluginsInstall {
     }
 }
 
+#[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
     let name = unalias_backend(name);
     Ok(match git_url {
@@ -138,7 +140,7 @@ fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Opt
 }
 
 fn get_name_from_url(url: &str) -> Result<String> {
-    if let Ok(url) = Url::parse(url) {
+    if let Ok(url) = Url::parse(url.trim_end_matches('/')) {
         if let Some(segments) = url.path_segments() {
             let last = segments.last().unwrap_or_default();
             let name = last.strip_prefix("asdf-").unwrap_or(last);
@@ -153,6 +155,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+
     # install the node via shorthand
     $ <bold>mise plugins install node</bold>
 

@@ -99,19 +99,24 @@ impl HookEnv {
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
         let (pre, post) = match &*env::__MISE_ORIG_PATH {
-            Some(orig_path) => match full.split_once(&format!(":{orig_path}")) {
-                Some((pre, post)) if !settings.activate_aggressive => {
-                    (pre.to_string(), (orig_path.to_string() + post))
+            Some(orig_path) => {
+                match full.split_once(&format!(
+                    "{}{orig_path}",
+                    if cfg!(windows) { ';' } else { ':' }
+                )) {
+                    Some((pre, post)) if !settings.activate_aggressive => (
+                        split_paths(pre).collect_vec(),
+                        split_paths(&format!("{orig_path}{post}")).collect_vec(),
+                    ),
+                    _ => (vec![], split_paths(&full).collect_vec()),
                 }
-                _ => (String::new(), full),
-            },
-            None => (String::new(), full),
+            }
+            None => (vec![], split_paths(&full).collect_vec()),
         };
-        let install_path = join_paths(installs)?.to_string_lossy().to_string();
-        let new_path = vec![pre, install_path, post]
-            .into_iter()
-            .filter(|p| !p.is_empty())
-            .join(":");
+
+        let new_path = join_paths(pre.iter().chain(installs.iter()).chain(post.iter()))?
+            .to_string_lossy()
+            .into_owned();
         let mut ops = vec![EnvDiffOperation::Add(PATH_KEY.to_string(), new_path)];
 
         if let Some(input) = env::DIRENV_DIFF.deref() {

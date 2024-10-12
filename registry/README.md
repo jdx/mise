@@ -1,6 +1,7 @@
 # mise plugins repository
 
-The purpose of the [mise](https://mise.jdx.dev) plugins repository is to enable shorthand installation of plugins with:
+The purpose of the [mise](https://mise.jdx.dev) plugins repository is to enable
+shorthand installation of plugins with:
 
 ```shell
 mise plugin install <name>
@@ -48,6 +49,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | asdf-plugin-manager           | [asdf-community/asdf-plugin-manager](https://github.com/asdf-community/asdf-plugin-manager)                       |
 | assh                          | [zekker6/asdf-assh](https://github.com/zekker6/asdf-assh)                                                         |
 | atlas                         | [komi1230/asdf-atlas](https://github.com/komi1230/asdf-atlas)                                                     |
+| atmos                         | [cloudposse/asdf-atmos](https://github.com/cloudposse/asdf-atmos)                                                 |
 | auto-doc                      | [looztra/asdf-auto-doc](https://github.com/looztra/asdf-auto-doc)                                                 |
 | aws-copilot                   | [NeoHsu/asdf-copilot](https://github.com/NeoHsu/asdf-copilot)                                                     |
 | aws-amplify-cli               | [LozanoMatheus/asdf-aws-amplify-cli](https://github.com/LozanoMatheus/asdf-aws-amplify-cli)                       |
@@ -120,6 +122,9 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Chromedriver                  | [schinckel/asdf-chromedriver](https://github.com/schinckel/asdf-chromedriver)                                     |
 | cilium-cli                    | [carnei-ro/asdf-cilium-cli](https://github.com/carnei-ro/asdf-cilium-cli)                                         |
 | cilium-hubble                 | [NitriKx/asdf-cilium-hubble](https://github.com/NitriKx/asdf-cilium-hubble)                                       |
+| Clang                         | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
+| Clang-format                  | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
+| Clangd                        | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
 | Clarinet                      | [alexgo-io/asdf-clarinet](https://github.com/alexgo-io/asdf-clarinet)                                             |
 | Clickhouse                    | [tinybirdco/asdf-clickhouse](https://github.com/tinybirdco/asdf-clickhouse)                                       |
 | clj-kondo                     | [rynkowsg/asdf-clj-kondo](https://github.com/rynkowsg/asdf-clj-kondo)                                             |
@@ -217,6 +222,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | EnvCLI                        | [zekker6/asdf-envcli](https://github.com/zekker6/asdf-envcli)                                                     |
 | envsubst                      | [dex4er/asdf-envsubst](https://github.com/dex4er/asdf-envsubst)                                                   |
 | Ephemeral Postgres            | [smashedtoatoms/asdf-ephemeral-postgres](https://github.com/smashedtoatoms/asdf-ephemeral-postgres)               |
+| esc                           | [fxsalazar/asdf-esc](https://github.com/fxsalazar/asdf-esc)                                                       |
 | esy                           | [asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy)                                             |
 | etcd                          | [particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd)                                             |
 | Evans                         | [goki90210/asdf-evans](https://github.com/goki90210/asdf-evans)                                                   |
@@ -432,12 +438,15 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | Levant                        | [asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp)                                 |
 | LFE                           | [asdf-community/asdf-lfe](https://github.com/asdf-community/asdf-lfe)                                             |
 | libsql-server                 | [jonasb/asdf-libsql-server](https://github.com/jonasb/asdf-libsql-server)                                         |
+| license-plist                 | [MacPaw/asdf-license-plist](https://github.com/MacPaw/asdf-license-plist)                                         |
 | Lima                          | [CrouchingMuppet/asdf-lima](https://github.com/CrouchingMuppet/asdf-lima)                                         |
 | Link (system tools)           | [asdf-community/asdf-link](https://github.com/asdf-community/asdf-link)                                           |
 | Linkerd                       | [kforsthoevel/asdf-linkerd](https://github.com/kforsthoevel/asdf-linkerd)                                         |
 | liqoctl                       | [pdemagny/asdf-liqoctl](https://github.com/pdemagny/asdf-liqoctl)                                                 |
 | liquibase                     | [saliougaye/asdf-liquibase](https://github.com/saliougaye/asdf-liquibase)                                         |
 | Litestream                    | [threkk/asdf-litestream](https://github.com/threkk/asdf-litestream)                                               |
+| llvm-objcopy                  | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
+| llvm-objdump                  | [higebu/asdf-llvm](https://github.com/higebu/asdf-llvm)                                                           |
 | Logtalk                       | [LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk)                                       |
 | Loki-Logcli                   | [comdotlinux/asdf-loki-logcli](https://github.com/comdotlinux/asdf-loki-logcli)                                   |
 | ls-lint                       | [ameausoone/asdf-ls-lint](https://github.com/ameausoone/asdf-ls-lint)                                             |
@@ -662,6 +671,7 @@ See the [org's readme](https://github.com/mise-plugins) for more information.
 | svu                           | [asdf-community/asdf-svu](https://github.com/asdf-community/asdf-svu)                                             |
 | swag                          | [behoof4mind/asdf-swag](https://github.com/behoof4mind/asdf-swag)                                                 |
 | Swift                         | [fcrespo82/asdf-swift](https://github.com/fcrespo82/asdf-swift)                                                   |
+| swift-package-list            | [MacPaw/asdf-swift-package-list](https://github.com/MacPaw/asdf-swift-package-list)                               |
 | SwiftFormat                   | [younke/asdf-swiftformat](https://github.com/younke/asdf-swiftformat)                                             |
 | SwiftGen                      | [younke/asdf-swiftgen](https://github.com/younke/asdf-swiftgen)                                                   |
 | Swiftlint                     | [klundberg/asdf-swiftlint](https://github.com/klundberg/asdf-swiftlint)                                           |

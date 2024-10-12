@@ -1,16 +1,11 @@
-## `mise deactivate`
+# `mise deactivate`
 
-```text
+**Usage**: `mise deactivate`
+
 Disable mise for current shell session
 
 This can be used to temporarily disable mise in a shell session.
 
-Usage: deactivate
-
 Examples:
 
-    $ mise deactivate bash
-    $ mise deactivate zsh
-    $ mise deactivate fish
-    $ execx($(mise deactivate xonsh))
-```
+    mise deactivate

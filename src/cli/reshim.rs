@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::shims;
 use crate::toolset::ToolsetBuilder;
 
-/// rebuilds the shim farm
+/// Creates new shims based on bin paths from currently installed tools.
 ///
 /// This creates new shims in ~/.local/share/mise/shims for CLIs that have been added.
 /// mise will try to do this automatically for commands like `npm i -g` but there are
@@ -19,6 +19,9 @@ use crate::toolset::ToolsetBuilder;
 ///   command npm "$@"
 ///   mise reshim
 /// }
+///
+/// Note that this creates shims for _all_ installed tools, not just the ones that are
+/// currently active in mise.toml.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Reshim {
@@ -26,6 +29,10 @@ pub struct Reshim {
     pub plugin: Option<String>,
     #[clap(hide = true)]
     pub version: Option<String>,
+
+    /// Removes all shims before reshimming
+    #[clap(long, short)]
+    pub force: bool,
 }
 
 impl Reshim {
@@ -33,7 +40,7 @@ impl Reshim {
         let config = Config::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
 
-        shims::reshim(&ts)
+        shims::reshim(&ts, self.force)
     }
 }
 

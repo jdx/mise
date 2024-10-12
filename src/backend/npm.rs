@@ -1,13 +1,12 @@
+use serde_json::Value;
 use std::fmt::Debug;
 
-use serde_json::Value;
-
 use crate::backend::{Backend, BackendType};
-use crate::cache::CacheManager;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
-use crate::env;
+use crate::config::settings::SETTINGS;
+use crate::config::Config;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
@@ -17,6 +16,8 @@ pub struct NPMBackend {
     remote_version_cache: CacheManager<Vec<String>>,
     latest_version_cache: CacheManager<Option<String>>,
 }
+
+const PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
 
 impl Backend for NPMBackend {
     fn get_type(&self) -> BackendType {
@@ -34,7 +35,7 @@ impl Backend for NPMBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!("npm", "view", self.name(), "versions", "--json").read()?;
+                let raw = cmd!(PROGRAM, "view", self.name(), "versions", "--json").read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
             })
@@ -44,7 +45,7 @@ impl Backend for NPMBackend {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!("npm", "view", self.name(), "dist-tags", "--json")
+                let raw = cmd!(PROGRAM, "view", self.name(), "dist-tags", "--json")
                     .full_env(self.dependency_env()?)
                     .read()?;
                 let dist_tags: Value = serde_json::from_str(&raw)?;
@@ -59,10 +60,8 @@ impl Backend for NPMBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::get();
-        settings.ensure_experimental("npm backend")?;
 
-        CmdLineRunner::new("npm")
+        CmdLineRunner::new(PROGRAM)
             .arg("install")
             .arg("-g")
             .arg(format!("{}@{}", self.name(), ctx.tv.version))
@@ -76,19 +75,29 @@ impl Backend for NPMBackend {
 
         Ok(())
     }
+
+    #[cfg(windows)]
+    fn list_bin_paths(
+        &self,
+        tv: &crate::toolset::ToolVersion,
+    ) -> eyre::Result<Vec<std::path::PathBuf>> {
+        Ok(vec![tv.install_path()])
+    }
 }
 
 impl NPMBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
-            remote_version_cache: CacheManager::new(
-                ba.cache_path.join("remote_versions-$KEY.msgpack.z"),
+            remote_version_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
-            latest_version_cache: CacheManager::new(
-                ba.cache_path.join("latest_version-$KEY.msgpack.z"),
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .build(),
+            latest_version_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("latest_version.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE),
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .build(),
             ba,
         }
     }

@@ -6,8 +6,8 @@ expression: output
 # # in all parent directories and merge them together.
 # # You might have a structure like:
 #
-# * ~/work/project/.mise.toml  # a config file for a specific work project
-# * ~/work/.mise.toml          # a config file for projects related to work
+# * ~/work/project/mise.toml   # a config file for a specific work project
+# * ~/work/mise.toml           # a config file for projects related to work
 # * ~/.config/mise/config.toml # the global config file
 # * /etc/mise/config.toml      # the system config file
 #

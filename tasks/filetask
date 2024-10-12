@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2154
+#USAGE flag "-f --force" help="Overwrite existing <file>"
+#USAGE flag "-u --user <user>" help="User to run as"
+#USAGE arg "<file>" help="The file to write" default="file.txt"
+#USAGE arg "<arg_with_default>" help="An arg with a default" default="mydefault"
+
+#MISE description="This is a test build script"
+#MISE depends=["lint", "build"]
+#MISE sources=[".test-tool-versions"]
+#MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+#MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+#MISE dir="{{config_root}}"
+#MISE alias="ft"
+
+set -exo pipefail
+cd "$MISE_PROJECT_ROOT" || exit 1
+echo "running test-build script"
+echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" >test/test-build-output.txt
+echo "ARGS:" "$@"
+
+echo "usage_force: $usage_force"
+echo "usage_user: $usage_user"
+echo "usage_file: $usage_file"

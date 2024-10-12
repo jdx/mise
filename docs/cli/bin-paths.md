@@ -1,7 +1,5 @@
-## `mise bin-paths`
+# `mise bin-paths`
 
-```text
+**Usage**: `mise bin-paths`
+
 List all the active runtime bin paths
-
-Usage: bin-paths
-```

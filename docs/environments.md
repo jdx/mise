@@ -31,7 +31,7 @@ $ mise unset NODE_ENV
 
 `env._.*` define special behavior for setting environment variables. (e.g.: reading env vars
 from a file). Since nested environment variables do not make sense,
-we make use of this fact by creating a key named "_" which is a
+we make use of this fact by creating a key named "\_" which is a
 TOML table for the configuration of these directives.
 
 ### `env._.file`

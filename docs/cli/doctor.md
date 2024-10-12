@@ -1,14 +1,12 @@
-## `mise doctor`
+# `mise doctor`
 
-**Aliases:** `dr`
+**Usage**: `mise doctor`
 
-```text
+**Aliases**: dr
+
 Check mise installation for possible problems
-
-Usage: doctor
 
 Examples:
 
     $ mise doctor
     [WARN] plugin node is not installed
-```

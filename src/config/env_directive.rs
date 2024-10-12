@@ -1,19 +1,75 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
+use serde::{Deserialize, Deserializer};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
-use crate::config::{Config, Settings};
+use crate::config::settings::SETTINGS;
+use crate::config::Config;
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::file::display_path;
+use crate::file::{display_path, which_non_pristine};
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env};
+
+#[derive(Debug, Clone)]
+pub enum PathEntry {
+    Normal(PathBuf),
+    Lazy(PathBuf),
+}
+
+impl From<&str> for PathEntry {
+    fn from(s: &str) -> Self {
+        let pb = PathBuf::from(s);
+        Self::Normal(pb)
+    }
+}
+
+impl FromStr for PathEntry {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> eyre::Result<Self> {
+        let pb = PathBuf::from_str(s)?;
+        Ok(Self::Normal(pb))
+    }
+}
+
+impl AsRef<Path> for PathEntry {
+    #[inline]
+    fn as_ref(&self) -> &Path {
+        match self {
+            PathEntry::Normal(pb) => pb.as_ref(),
+            PathEntry::Lazy(pb) => pb.as_ref(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PathEntry {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Debug, Deserialize)]
+        struct MapPathEntry {
+            value: PathBuf,
+        }
+
+        #[derive(Debug, Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Normal(PathBuf),
+            Lazy(MapPathEntry),
+        }
+
+        Ok(match Helper::deserialize(deserializer)? {
+            Helper::Normal(value) => Self::Normal(value),
+            Helper::Lazy(this) => Self::Lazy(this.value),
+        })
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum EnvDirective {
@@ -24,7 +80,7 @@ pub enum EnvDirective {
     /// dotenv file
     File(PathBuf),
     /// add a path to the PATH
-    Path(PathBuf),
+    Path(PathEntry),
     /// run a bash script and apply the resulting env diff
     Source(PathBuf),
     PythonVenv {
@@ -78,8 +134,8 @@ impl EnvResults {
         initial: &HashMap<String, String>,
         input: Vec<(EnvDirective, PathBuf)>,
     ) -> eyre::Result<Self> {
-        let settings = Settings::get();
         let mut ctx = BASE_CONTEXT.clone();
+        trace!("resolve: input: {:#?}", &input);
         let mut env = initial
             .iter()
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
@@ -91,46 +147,73 @@ impl EnvResults {
             env_paths: Vec::new(),
             env_scripts: Vec::new(),
         };
-        for (directive, source) in input {
+        let normalize_path = |config_root: &PathBuf, p: PathBuf| {
+            let p = p.strip_prefix("./").unwrap_or(&p);
+            match p.strip_prefix("~/") {
+                Ok(p) => dirs::HOME.join(p),
+                _ if p.is_relative() => config_root.join(p),
+                _ => p.to_path_buf(),
+            }
+        };
+        let mut paths: Vec<(PathEntry, PathBuf)> = Vec::new();
+        for (directive, source) in input.clone() {
+            trace!(
+                "resolve: directive: {:?}, source: {:?}",
+                &directive,
+                &source
+            );
             let config_root = source
                 .parent()
                 .map(Path::to_path_buf)
                 .or_else(|| dirs::CWD.clone())
                 .unwrap_or_default();
+            ctx.insert("cwd", &*dirs::CWD);
             ctx.insert("config_root", &config_root);
             let env_vars = env
                 .iter()
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect::<HashMap<_, _>>();
             ctx.insert("env", &env_vars);
-            let normalize_path = |p: PathBuf| {
-                let p = p.strip_prefix("./").unwrap_or(&p);
-                match p.strip_prefix("~/") {
-                    Ok(p) => dirs::HOME.join(p),
-                    _ if p.is_relative() => config_root.join(p),
-                    _ => p.to_path_buf(),
-                }
-            };
+            trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v) => {
                     let v = r.parse_template(&ctx, &source, &v)?;
                     r.env_remove.remove(&k);
+                    trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
                     env.insert(k, (v, Some(source.clone())));
                 }
                 EnvDirective::Rm(k) => {
                     env.shift_remove(&k);
                     r.env_remove.insert(k);
                 }
-                EnvDirective::Path(input) => {
-                    let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    env::split_paths(&s)
-                        .map(normalize_path)
-                        .for_each(|p| r.env_paths.push(p.clone()));
+                EnvDirective::Path(input_str) => {
+                    trace!("resolve: input_str: {:#?}", input_str);
+                    match input_str {
+                        PathEntry::Normal(input) => {
+                            trace!(
+                                "resolve: normal: input: {:?}, input.to_string(): {:?}",
+                                &input,
+                                input.to_string_lossy().as_ref()
+                            );
+                            let s =
+                                r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
+                            trace!("resolve: s: {:?}", &s);
+                            paths.push((PathEntry::Normal(s.into()), source));
+                        }
+                        PathEntry::Lazy(input) => {
+                            trace!(
+                                "resolve: lazy: input: {:?}, input.to_string(): {:?}",
+                                &input,
+                                input.to_string_lossy().as_ref()
+                            );
+                            paths.push((PathEntry::Lazy(input), source));
+                        }
+                    }
                 }
                 EnvDirective::File(input) => {
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    for p in xx::file::glob(normalize_path(s.into()))? {
+                    for p in xx::file::glob(normalize_path(&config_root, s.into()))? {
                         r.env_files.push(p.clone());
                         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(&p));
                         for item in dotenvy::from_path_iter(&p).wrap_err_with(errfn)? {
@@ -141,10 +224,10 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Source(input) => {
-                    settings.ensure_experimental("env._.source")?;
+                    SETTINGS.ensure_experimental("env._.source")?;
                     trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    for p in xx::file::glob(normalize_path(s.into()))? {
+                    for p in xx::file::glob(normalize_path(&config_root, s.into()))? {
                         r.env_scripts.push(p.clone());
                         let env_diff = EnvDiff::from_bash_script(&p, env_vars.clone())?;
                         for p in env_diff.to_patches() {
@@ -165,7 +248,7 @@ impl EnvResults {
                     trace!("python venv: {} create={create}", display_path(&path));
                     trust_check(&source)?;
                     let venv = r.parse_template(&ctx, &source, path.to_string_lossy().as_ref())?;
-                    let venv = normalize_path(venv.into());
+                    let venv = normalize_path(&config_root, venv.into());
                     if !venv.exists() && create {
                         // TODO: the toolset stuff doesn't feel like it's in the right place here
                         let config = Config::get();
@@ -175,13 +258,6 @@ impl EnvResults {
                             .into_iter()
                             .chain(env::split_paths(&env_vars[&*PATH_KEY]))
                             .collect::<Vec<_>>();
-                        let cmd = CmdLineRunner::new("python3")
-                            .args(["-m", "venv", &venv.to_string_lossy()])
-                            .envs(&env_vars)
-                            .env(
-                                PATH_KEY.to_string(),
-                                env::join_paths(&path)?.to_string_lossy().to_string(),
-                            );
                         if ts
                             .list_missing_versions()
                             .iter()
@@ -189,6 +265,22 @@ impl EnvResults {
                         {
                             debug!("python not installed, skipping venv creation");
                         } else {
+                            let cmd = if let (false, Some(_uv_in_path)) =
+                                (SETTINGS.python.venv_stdlib, which_non_pristine("uv"))
+                            {
+                                CmdLineRunner::new("uv").args(["venv", &venv.to_string_lossy()])
+                            } else {
+                                CmdLineRunner::new("python3").args([
+                                    "-m",
+                                    "venv",
+                                    &venv.to_string_lossy(),
+                                ])
+                            }
+                            .envs(&env_vars)
+                            .env(
+                                PATH_KEY.to_string(),
+                                env::join_paths(&path)?.to_string_lossy().to_string(),
+                            );
                             info!("creating venv at: {}", display_path(&venv));
                             cmd.execute()?;
                         }
@@ -210,10 +302,36 @@ impl EnvResults {
                 }
             };
         }
+        let env_vars = env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect::<HashMap<_, _>>();
+        ctx.insert("env", &env_vars);
         for (k, (v, source)) in env {
             if let Some(source) = source {
                 r.env.insert(k, (v, source));
             }
+        }
+        trace!("resolve: paths: {:#?}", &paths);
+        trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
+        for (entry, source) in paths {
+            trace!("resolve: entry: {:?}, source: {:?}", &entry, &source);
+            let config_root = source
+                .parent()
+                .map(Path::to_path_buf)
+                .or_else(|| dirs::CWD.clone())
+                .unwrap_or_default();
+            let s = match entry {
+                PathEntry::Normal(pb) => pb.to_string_lossy().to_string(),
+                PathEntry::Lazy(pb) => {
+                    let s = r.parse_template(&ctx, &source, pb.to_string_lossy().as_ref())?;
+                    trace!("resolve: s: {:?}", &s);
+                    s
+                }
+            };
+            env::split_paths(&s)
+                .map(|s| normalize_path(&config_root, s))
+                .for_each(|p| r.env_paths.push(p.clone()));
         }
         Ok(r)
     }

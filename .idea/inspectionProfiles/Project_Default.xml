@@ -1,6 +1,7 @@
 <component name="InspectionProjectProfileManager">
   <profile version="1.0">
     <option name="myName" value="Project Default" />
+    <inspection_tool class="CheckEmptyScriptTag" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="DuplicatedCode" enabled="false" level="WEAK WARNING" enabled_by_default="false">
       <Languages>
         <language minSize="55" name="Rust" />
@@ -21,6 +22,7 @@
           <option value="http://maven.apache.org/POM/" />
           <option value="http://maven.apache.org/xsd/" />
           <option value="http://mise-versions.jdx.dev" />
+          <option value="http://mise.jdx.dev" />
           <option value="http://primefaces.org/ui" />
           <option value="http://rtx-versions.jdx.dev" />
           <option value="http://schema.cloudfoundry.org/spring/" />
@@ -38,6 +40,7 @@
         </list>
       </option>
     </inspection_tool>
+    <inspection_tool class="RsSortImplTraitMembers" enabled="false" level="WEAK WARNING" enabled_by_default="false" />
     <inspection_tool class="SpellCheckingInspection" enabled="false" level="TYPO" enabled_by_default="false">
       <option name="processCode" value="true" />
       <option name="processLiterals" value="true" />

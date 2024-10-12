@@ -1,19 +1,19 @@
-## `mise settings unset <SETTING>`
+# `mise settings unset`
 
-**Aliases:** `del, delete, remove, rm`
+**Usage**: `mise settings unset <SETTING>`
 
-```text
+**Aliases**: rm, remove, delete, del
+
 Clears a setting
 
 This modifies the contents of ~/.config/mise/config.toml
 
-Usage: settings unset <SETTING>
+## Arguments
 
-Arguments:
-  <SETTING>
-          The setting to remove
+### `<SETTING>`
+
+The setting to remove
 
 Examples:
 
-    $ mise settings unset legacy_version_file
-```
+    mise settings unset legacy_version_file

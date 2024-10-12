@@ -37,9 +37,11 @@ fn project_root() -> PathBuf {
 mod tests {
     use crate::env::HOME;
     use crate::file;
+    use crate::test::reset;
 
     #[test]
     fn test_render_mangen() {
+        reset();
         let out_dir = HOME.parent().unwrap().join("man").join("man1");
         let orig = file::read_to_string(out_dir.join("mise.1")).unwrap();
         assert_cli!("render-mangen");

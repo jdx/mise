@@ -1,31 +1,35 @@
-## `mise plugins link [OPTIONS] <NAME> [PATH]`
+# `mise plugins link`
 
-**Aliases:** `ln`
+**Usage**: `mise plugins link [-f --force] <NAME> [PATH]`
 
-```text
+**Aliases**: ln
+
 Symlinks a plugin into mise
 
 This is used for developing a plugin.
 
-Usage: plugins link [OPTIONS] <NAME> [PATH]
+## Arguments
 
-Arguments:
-  <NAME>
-          The name of the plugin
-          e.g.: node, ruby
+### `<NAME>`
 
-  [PATH]
-          The local path to the plugin
-          e.g.: ./mise-node
+The name of the plugin
+e.g.: node, ruby
 
-Options:
-  -f, --force
-          Overwrite existing plugin
+### `[PATH]`
+
+The local path to the plugin
+e.g.: ./mise-node
+
+## Flags
+
+### `-f --force`
+
+Overwrite existing plugin
 
 Examples:
+
     # essentially just `ln -s ./mise-node ~/.local/share/mise/plugins/node`
     $ mise plugins link node ./mise-node
 
     # infer plugin name as "node"
     $ mise plugins link ./mise-node
-```

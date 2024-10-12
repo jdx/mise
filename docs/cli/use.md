@@ -1,61 +1,74 @@
-## `mise use [OPTIONS] [TOOL@VERSION]...`
+# `mise use`
 
-**Aliases:** `u`
+**Usage**: `mise use [FLAGS] [TOOL@VERSION]...`
 
-```text
-Install tool version and add it to config
+**Aliases**: u
 
-This will install the tool if it is not already installed.
-By default, this will use an `.mise.toml` file in the current directory.
-Use the --global flag to use the global config file instead.
-This replaces asdf's `local` and `global` commands, however those are still available in mise.
+Installs a tool and adds the version it to mise.toml.
 
-Usage: use [OPTIONS] [TOOL@VERSION]...
+This will install the tool version if it is not already installed.
+By default, this will use a `mise.toml` file in the current directory.
 
-Arguments:
-  [TOOL@VERSION]...
-          Tool(s) to add to config file
-          e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
-          If no version is specified, it will default to @latest
+Use the `--global` flag to use the global config file instead.
 
-Options:
-  -f, --force
-          Force reinstall even if already installed
+## Arguments
 
-      --fuzzy
-          Save fuzzy version to config file
-          e.g.: `mise use --fuzzy node@20` will save 20 as the version
-          this is the default behavior unless MISE_ASDF_COMPAT=1
+### `[TOOL@VERSION]...`
 
-  -g, --global
-          Use the global config file (~/.config/mise/config.toml) instead of the local one
+Tool(s) to add to config file
 
-  -e, --env <ENV>
-          Modify an environment-specific config file like .mise.<env>.toml
+e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
+If no version is specified, it will default to @latest
 
-  -j, --jobs <JOBS>
-          Number of jobs to run in parallel
-          [default: 4]
-          
-          [env: MISE_JOBS=]
+## Flags
 
-      --raw
-          Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+### `-f --force`
 
-      --remove <PLUGIN>
-          Remove the plugin(s) from config file
+Force reinstall even if already installed
 
-  -p, --path <PATH>
-          Specify a path to a config file or directory If a directory is specified, it will look for .mise.toml (default) or .tool-versions
+### `--fuzzy`
 
-      --pin
-          Save exact version to config file
-          e.g.: `mise use --pin node@20` will save 20.0.0 as the version
-          Set MISE_ASDF_COMPAT=1 to make this the default behavior
+Save fuzzy version to config file
+
+e.g.: `mise use --fuzzy node@20` will save 20 as the version
+this is the default behavior unless `MISE_PIN=1` or `MISE_ASDF_COMPAT=1`
+
+### `-g --global`
+
+Use the global config file (`~/.config/mise/config.toml`) instead of the local one
+
+### `-e --env <ENV>`
+
+Modify an environment-specific config file like .mise.&lt;env>.toml
+
+### `-j --jobs <JOBS>`
+
+Number of jobs to run in parallel
+[default: 4]
+
+### `--raw`
+
+Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`
+
+### `--remove... <PLUGIN>`
+
+Remove the plugin(s) from config file
+
+### `-p --path <PATH>`
+
+Specify a path to a config file or directory
+
+If a directory is specified, it will look for `mise.toml` (default) or `.tool-versions` if `MISE_ASDF_COMPAT=1`
+
+### `--pin`
+
+Save exact version to config file
+e.g.: `mise use --pin node@20` will save 20.0.0 as the version
+Set `MISE_PIN=1` or `MISE_ASDF_COMPAT=1` to make this the default behavior
 
 Examples:
 
-    # set the current version of node to 20.x in .mise.toml of current directory
+    # set the current version of node to 20.x in mise.toml of current directory
     # will write the fuzzy version (e.g.: 20)
     $ mise use node@20
 
@@ -68,4 +81,3 @@ Examples:
 
     # sets .mise.staging.toml (which is used if MISE_ENV=staging)
     $ mise use --env staging node@20
-```

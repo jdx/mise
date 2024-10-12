@@ -12,16 +12,21 @@ use crate::config::Settings;
 use crate::file::modified_duration;
 use crate::{dirs, duration, env, file};
 
+/// Display the version of mise
+///
+/// Displays the version, os, architecture, and the date of the build.
+///
+/// If the version is out of date, it will display a warning.
 #[derive(Debug, clap::Args)]
-#[clap(about = "Show mise version", alias = "v")]
+#[clap(verbatim_doc_comment, visible_alias = "v", after_long_help = AFTER_LONG_HELP)]
 pub struct Version {}
 
-pub static OS: Lazy<String> = Lazy::new(|| std::env::consts::OS.into());
+pub static OS: Lazy<String> = Lazy::new(|| env::consts::OS.into());
 pub static ARCH: Lazy<String> = Lazy::new(|| {
-    match std::env::consts::ARCH {
+    match env::consts::ARCH {
         "x86_64" => "x64",
         "aarch64" => "arm64",
-        _ => std::env::consts::ARCH,
+        _ => env::consts::ARCH,
     }
     .to_string()
 });
@@ -39,6 +44,16 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
     format!("{v} {os}-{arch} {extra}", os = *OS, arch = *ARCH)
 });
 
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    $ <bold>mise version</bold>
+    $ <bold>mise --version</bold>
+    $ <bold>mise -v</bold>
+    $ <bold>mise -V</bold>
+"#
+);
+
 pub static V: Lazy<Versioning> = Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());
 
 impl Version {
@@ -49,7 +64,11 @@ impl Version {
 }
 
 pub fn print_version_if_requested(args: &[String]) -> std::io::Result<()> {
-    if args.len() == 2 && *env::MISE_BIN_NAME == "mise" {
+    #[cfg(unix)]
+    let mise_bin = "mise";
+    #[cfg(windows)]
+    let mise_bin = "mise.exe";
+    if args.len() == 2 && *env::MISE_BIN_NAME == mise_bin {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
             show_version()?;

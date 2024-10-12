@@ -3,4 +3,3 @@ source: src/shell/zsh.rs
 expression: "Zsh::default().unset_env(\"FOO\")"
 ---
 unset FOO
-

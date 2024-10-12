@@ -92,6 +92,7 @@ impl PluginsLs {
             table::default_style(&mut table, false);
             miseprintln!("{table}");
         } else {
+            hint!("registry", "see available plugins with", "mise registry");
             for tool in tools.values() {
                 miseprintln!("{tool}");
             }
