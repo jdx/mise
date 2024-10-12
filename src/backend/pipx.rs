@@ -97,7 +97,7 @@ impl Backend for PIPXBackend {
                 .prepend_path(ctx.ts.list_paths())?
                 // Prepend install path so pipx doesn't issue a warning about missing path
                 .prepend_path(vec![ctx.tv.install_path().join("bin")])?
-                .prepend_path(self.depedency_toolset()?.list_paths())?
+                .prepend_path(self.dependency_toolset()?.list_paths())?
                 .execute()?;
         } else {
             CmdLineRunner::new("pipx")
@@ -110,7 +110,7 @@ impl Backend for PIPXBackend {
                 .prepend_path(ctx.ts.list_paths())?
                 // Prepend install path so pipx doesn't issue a warning about missing path
                 .prepend_path(vec![ctx.tv.install_path().join("bin")])?
-                .prepend_path(self.depedency_toolset()?.list_paths())?
+                .prepend_path(self.dependency_toolset()?.list_paths())?
                 .execute()?;
         }
         Ok(())
