@@ -33,14 +33,33 @@ pub struct Settings {"#
         if let Some(description) = props.get("description") {
             lines.push(format!("    /// {}", description.as_str().unwrap()));
         }
-        if let Some(type_) = props.get("type") {
+        let type_ = props
+            .get("rust_type")
+            .map(|rt| rt.as_str().unwrap())
+            .or(props.get("type").map(|t| match t.as_str().unwrap() {
+                "Bool" => "bool",
+                "String" => "String",
+                "Integer" => "i64",
+                "Url" => "String",
+                "Path" => "PathBuf",
+                "Duration" => "String",
+                "ListString" => "Vec<String>",
+                "ListPath" => "Vec<PathBuf>",
+                t => panic!("Unknown type: {}", t),
+            }));
+        if let Some(type_) = type_ {
+            let type_ = if props.get("optional").is_some_and(|v| v.as_bool().unwrap()) {
+                format!("Option<{}>", type_)
+            } else {
+                type_.to_string()
+            };
             let mut opts = IndexMap::new();
             if let Some(env) = props.get("env") {
                 opts.insert("env".to_string(), env.to_string());
             }
             if let Some(default) = props.get("default") {
                 opts.insert("default".to_string(), default.to_string());
-            } else if type_.as_str().unwrap() == "bool" {
+            } else if type_ == "bool" {
                 opts.insert("default".to_string(), "false".to_string());
             }
             if let Some(parse_env) = props.get("parse_env") {
@@ -56,7 +75,7 @@ pub struct Settings {"#
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
-            lines.push(format!("    pub {}: {},", key, type_.as_str().unwrap()));
+            lines.push(format!("    pub {}: {},", key, type_));
         } else {
             lines.push("    #[config(nested)]".to_string());
             lines.push(format!(
@@ -76,7 +95,7 @@ pub struct Settings {"#
         .iter()
         .filter(|(_, v)| !v.as_table().unwrap().contains_key("type"))
         .collect::<Vec<_>>();
-    for (child, props) in nested_settings {
+    for (child, props) in &nested_settings {
         lines.push(format!(
             r#"#[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
@@ -91,6 +110,42 @@ pub struct Settings{name} {{
         }
         lines.push("}".to_string());
     }
+
+    lines.push(
+        r#"
+pub static SETTINGS_META: Lazy<IndexMap<String, SettingsMeta>> = Lazy::new(|| {
+    indexmap!{
+    "#
+        .to_string(),
+    );
+    for (name, props) in &settings {
+        let props = props.as_table().unwrap();
+        if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
+            lines.push(format!(
+                r#"    "{name}".to_string() => SettingsMeta {{
+        type_: SettingsType::{type_},
+    }},"#,
+            ));
+        }
+    }
+    for (name, props) in &nested_settings {
+        for (key, props) in props.as_table().unwrap() {
+            let props = props.as_table().unwrap();
+            if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
+                lines.push(format!(
+                    r#"    "{name}.{key}".to_string() => SettingsMeta {{
+        type_: SettingsType::{type_},
+    }},"#,
+                ));
+            }
+        }
+    }
+    lines.push(
+        r#"    }
+});
+    "#
+        .to_string(),
+    );
 
     fs::write(&dest_path, lines.join("\n")).unwrap();
 }
