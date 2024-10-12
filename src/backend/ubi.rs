@@ -7,7 +7,7 @@ use crate::backend::{Backend, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::settings::SETTINGS;
-use crate::config::{Config, Settings};
+use crate::config::Settings;
 use crate::env::GITHUB_TOKEN;
 use crate::github;
 use crate::install_context::InstallContext;
