@@ -13,7 +13,8 @@ use rayon::prelude::*;
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
-use crate::config::{Config, Settings};
+use crate::config::settings::SETTINGS;
+use crate::config::CONFIG;
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
@@ -30,6 +31,7 @@ pub fn handle_shim() -> Result<()> {
     let args = env::ARGS.read().unwrap();
     trace!("shim[{bin_name}] args: {}", args.join(" "));
     let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
+    remove_shim_dir_from_path();
     args[0] = which_shim(&env::MISE_BIN_NAME)?.into();
     env::set_var("__MISE_SHIM", "1");
     let exec = Exec {
@@ -44,8 +46,7 @@ pub fn handle_shim() -> Result<()> {
 }
 
 fn which_shim(bin_name: &str) -> Result<PathBuf> {
-    let config = Config::try_get()?;
-    let mut ts = ToolsetBuilder::new().build(&config)?;
+    let mut ts = ToolsetBuilder::new().build(&CONFIG)?;
     if let Some((p, tv)) = ts.which(bin_name) {
         if let Some(bin) = p.which(&tv, bin_name)? {
             trace!(
@@ -55,8 +56,7 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
             return Ok(bin);
         }
     }
-    let settings = Settings::try_get()?;
-    if settings.not_found_auto_install {
+    if SETTINGS.not_found_auto_install {
         for tv in ts.install_missing_bin(bin_name)?.unwrap_or_default() {
             let p = tv.get_backend();
             if let Some(bin) = p.which(&tv, bin_name)? {
@@ -278,6 +278,22 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
         shim.display()
     );
     Ok(())
+}
+
+/// prevent shims from being called in a loop
+fn remove_shim_dir_from_path() {
+    let path = env::var_os(&*env::PATH_KEY).unwrap_or_default();
+    let paths = env::split_paths(&path).filter(|p| {
+        p != *dirs::SHIMS
+            && !p
+                .canonicalize()
+                .is_ok_and(|p| p == dirs::SHIMS.canonicalize().unwrap_or_default())
+    });
+    let path = env::join_paths(paths)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    env::set_var(&*env::PATH_KEY, &path);
 }
 
 fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<PathBuf> {
