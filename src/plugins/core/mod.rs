@@ -107,7 +107,7 @@ impl CorePlugin {
             remote_version_cache: CacheManagerBuilder::new(
                 fa.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
             .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())
             .build(),
@@ -126,7 +126,7 @@ impl CorePlugin {
         F: FnOnce() -> Result<T> + Send,
         T: Send,
     {
-        run_with_timeout(f, *env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT)
+        run_with_timeout(f, SETTINGS.fetch_remote_versions_timeout())
     }
 
     pub fn fetch_remote_versions_from_mise(&self) -> Result<Option<Vec<String>>> {

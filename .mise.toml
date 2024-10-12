@@ -3,7 +3,7 @@
 min_version = "2024.1.1"
 [env]
 _.file = [".env"]
-_.path = ["./target/debug"]
+_.path = ["./target/debug", "./node_modules/.bin"]
 FOO = "bar"
 FOO_NUM = 1
 THIS_PROJECT = "{{config_root}}-{{cwd}}"
@@ -74,6 +74,9 @@ mise completion fish > completions/mise.fish
 [tasks."render:registry"]
 depends = ["build"]
 run = "./scripts/render-registry.js"
+
+[tasks."render:settings"]
+run = "tsx tasks/render/settings.ts"
 
 [tasks."render:mangen"]
 depends = ["build"]

@@ -15,6 +15,7 @@ use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::{ABackend, Backend, BackendList};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
+use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::DEFAULT_SHORTHANDS;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
@@ -59,14 +60,14 @@ impl AsdfBackend {
             remote_version_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/list-all"))
             .build(),
             latest_stable_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("latest_stable.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/latest-stable"))
             .build(),

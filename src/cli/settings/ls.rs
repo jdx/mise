@@ -72,13 +72,15 @@ mod tests {
         disable_hints = []
         disable_tools = []
         experimental = true
+        fetch_remote_versions_cache = "1h"
+        fetch_remote_versions_timeout = "10s"
         go_default_packages_file = "~/.default-go-packages"
         go_download_mirror = "https://dl.google.com/go"
         go_repo = "https://github.com/golang/go"
         go_set_gopath = false
         go_set_goroot = true
         go_skip_checksum = false
-        http_timeout = 30
+        http_timeout = "30s"
         jobs = 2
         legacy_version_file = true
         legacy_version_file_disable_tools = []
@@ -135,6 +137,8 @@ mod tests {
         disable_hints
         disable_tools
         experimental
+        fetch_remote_versions_cache
+        fetch_remote_versions_timeout
         go_default_packages_file
         go_download_mirror
         go_repo

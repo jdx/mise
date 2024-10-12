@@ -3,7 +3,6 @@ pub use std::env::*;
 use std::path::PathBuf;
 use std::string::ToString;
 use std::sync::RwLock;
-use std::time::Duration;
 use std::{path, process};
 
 use itertools::Itertools;
@@ -11,7 +10,6 @@ use log::LevelFilter;
 use once_cell::sync::Lazy;
 
 use crate::cli::args::ProfileArg;
-use crate::duration::HOURLY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
 use crate::hook_env::{deserialize_watches, HookEnvWatches};
@@ -101,9 +99,6 @@ pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string(
 pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
 pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
 pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
-pub static MISE_FETCH_REMOTE_VERSIONS_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
-    var_duration("MISE_FETCH_REMOTE_VERSIONS_TIMEOUT").unwrap_or(Duration::from_secs(10))
-});
 
 pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 
@@ -119,19 +114,6 @@ pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
         .map(|(w, _)| w.0 as usize)
         .unwrap_or(80)
         .max(80)
-});
-
-/// duration that remote version cache is kept for
-/// for "fast" commands (represented by PREFER_STALE), these are always
-/// cached. For "slow" commands like `mise ls-remote` or `mise install`:
-/// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
-/// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
-pub static MISE_FETCH_REMOTE_VERSIONS_CACHE: Lazy<Option<Duration>> = Lazy::new(|| {
-    if *PREFER_STALE {
-        None
-    } else {
-        Some(var_duration("MISE_FETCH_REMOTE_VERSIONS_CACHE").unwrap_or(HOURLY))
-    }
 });
 
 /// true if inside a script like bin/exec-env or bin/install
@@ -284,12 +266,6 @@ fn var_option_bool(key: &str) -> Option<bool> {
 
 pub fn var_path(key: &str) -> Option<PathBuf> {
     var_os(key).map(PathBuf::from).map(replace_path)
-}
-
-fn var_duration(key: &str) -> Option<Duration> {
-    var(key)
-        .ok()
-        .map(|v| v.parse::<humantime::Duration>().unwrap().into())
 }
 
 /// this returns the environment as if __MISE_DIFF was reversed.

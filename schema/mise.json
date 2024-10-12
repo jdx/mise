@@ -190,6 +190,16 @@
           "description": "Enable experimental mise features which are incomplete or unstable—breakings changes may occur",
           "type": "boolean"
         },
+        "fetch_remote_versions_cache": {
+          "default": "1h",
+          "description": "How long to cache remote versions for tools.",
+          "type": "string"
+        },
+        "fetch_remote_versions_timeout": {
+          "default": "10s",
+          "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
+          "type": "string"
+        },
         "go_default_packages_file": {
           "default": "~/.default-go-packages",
           "description": "Path to a file containing default go packages to install when installing go",
@@ -224,9 +234,9 @@
           "type": "boolean"
         },
         "http_timeout": {
-          "default": 30,
+          "default": "30s",
           "description": "Timeout in seconds for all HTTP requests in mise.",
-          "type": "number"
+          "type": "string"
         },
         "jobs": {
           "default": 4,

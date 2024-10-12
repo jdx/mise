@@ -4,8 +4,9 @@ use crate::backend::{Backend, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
-use crate::env::{self, GITHUB_TOKEN};
+use crate::env::GITHUB_TOKEN;
 use crate::github;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
@@ -84,7 +85,7 @@ impl UbiBackend {
             remote_version_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .build(),
             ba,
         }

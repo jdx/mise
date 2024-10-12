@@ -1,39 +1,46 @@
-#!/usr/bin/env node
-
-const fs = require("fs");
-const toml = require("toml");
-const child_process = require("child_process");
-const Handlebars = require("handlebars");
+import * as fs from "node:fs";
+import * as child_process from "node:child_process";
+import * as toml from "toml";
+import * as Handlebars from "handlebars";
+import { match, P } from "ts-pattern";
 
 const doc = toml.parse(fs.readFileSync("settings.toml", "utf-8"));
 const settings = {};
 
-function buildElement(key, props) {
+type Element = {
+  default: string;
+  description: string;
+  deprecated: boolean;
+  type: string;
+  enum?: string[];
+  items?: {
+    type: string;
+  };
+};
+
+function buildElement(key, props): Element {
   let type = props.type;
   if (type.startsWith("Option<")) {
     type = type.slice(7, -1);
   }
   type = type.replaceAll("PathBuf", "String");
-  if (type === "bool") {
-    type = "boolean";
-  } else if (type === "String" || type === "PathBuf") {
-    type = "string";
-  } else if (type === "usize" || type === "u64") {
-    type = "number";
-  } else if (
-    type === "BTreeSet<String>" ||
-    type === "HashSet<String>" ||
-    type === "Vec<String>"
-  ) {
-    type = "string[]";
-  } else {
-    throw new Error(`Unknown type: ${type}`);
-  }
+  type = match(type)
+    .with("String", () => "string")
+    .with("Path", () => "string")
+    .with("Url", () => "string")
+    .with("Duration", () => "string")
+    .with("Bool", () => "boolean")
+    .with("Integer", () => "number")
+    .with("ListString", () => "string[]")
+    .with("ListPath", () => "string[]")
+    .otherwise(() => {
+      throw new Error(`Unknown type: ${type}`);
+    });
   if (!props.description) {
     console.error(`Missing description for ${key}`);
     process.exit(1);
   }
-  const ele = {
+  const ele: Element = {
     default: props.default,
     description: props.description,
     deprecated: props.deprecated,

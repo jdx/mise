@@ -3,7 +3,7 @@
 
 [activate_aggressive]
 env = "MISE_ACTIVATE_AGGRESSIVE"
-type = "bool"
+type = "Bool"
 description = "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence."
 docs = """
 Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence. For example, if you have the following in your `mise.toml`:
@@ -32,7 +32,7 @@ In that case, using this example again, `/some/other/python` will be after mise'
 
 [all_compile]
 env = "MISE_ALL_COMPILE"
-type = "bool"
+type = "Bool"
 description = "do not use precompiled binaries for any tool"
 docs = """
 Default: false unless running NixOS or Alpine (let me know if others should be added)
@@ -47,17 +47,17 @@ working with this config.
 
 [always_keep_download]
 env = "MISE_ALWAYS_KEEP_DOWNLOAD"
-type = "bool"
+type = "Bool"
 description = "should mise keep downloaded files after installation"
 
 [always_keep_install]
 env = "MISE_ALWAYS_KEEP_INSTALL"
-type = "bool"
+type = "Bool"
 description = "should mise keep install files after installation even if the installation fails"
 
 [asdf]
 env = "MISE_ASDF"
-type = "bool"
+type = "Bool"
 default = true
 description = "use asdf as a default plugin backend"
 docs = """
@@ -67,7 +67,7 @@ default to using an asdf plugin for cmake.
 
 [asdf_compat]
 env = "MISE_ASDF_COMPAT"
-type = "bool"
+type = "Bool"
 description = "set to true to ensure .tool-versions will be compatible with asdf"
 docs = """
 Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
@@ -80,7 +80,7 @@ of `~/.config/mise/config.toml`.
 
 [cache_prune_age]
 env = "MISE_CACHE_PRUNE_AGE"
-type = "String"
+type = "Duration"
 default = "30d"
 description = "Delete files in cache that have not been accessed in this duration"
 docs = """
@@ -92,37 +92,38 @@ Set to `0` to keep cache files indefinitely.
 
 [cargo_binstall]
 env = "MISE_CARGO_BINSTALL"
-type = "bool"
+type = "Bool"
 default = true
 description = "Use cargo-binstall instead of cargo install if available"
 
 [cd]
 env = "MISE_CD"
-type = "Option<PathBuf>"
+type = "Path"
+optional = true
 description = "Path to change to after launching mise"
 hide = true
 
 [ci]
 env = "CI"
-type = "bool"
+type = "Bool"
 description = "Set to true if running in a CI environment"
 hide = true
 
 [color]
 env = "MISE_COLOR"
-type = "bool"
+type = "Bool"
 default = true
 description = "Use color in mise terminal output"
 
 [debug]
 env = "MISE_DEBUG"
-type = "bool"
+type = "Bool"
 hide = true
 description = "Sets log level to debug"
 
 [disable_default_shorthands]
 env = "MISE_DISABLE_DEFAULT_SHORTHANDS"
-type = "bool"
+type = "Bool"
 description = "Disables built-in shorthands to asdf/vfox plugins"
 docs = """
 Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
@@ -131,27 +132,30 @@ installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/a
 
 [disable_hints]
 env = "MISE_DISABLE_HINTS"
-type = "BTreeSet<String>"
+type = "ListString"
+rust_type = "BTreeSet<String>"
 default = []
 parse_env = "list_by_comma"
 description = "Turns off helpful hints when using different mise features"
 
 [disable_tools]
 env = "MISE_DISABLE_TOOLS"
-type = "BTreeSet<String>"
+type = "ListString"
+rust_type = "BTreeSet<String>"
 default = []
 parse_env = "list_by_comma"
 description = "Tools defined in mise.toml that should be ignored"
 
 [env_file]
 env = "MISE_ENV_FILE"
-type = "Option<PathBuf>"
+type = "Path"
+optional = true
 description = "Path to a file containing environment variables."
 hide = true
 
 [experimental]
 env = "MISE_EXPERIMENTAL"
-type = "bool"
+type = "Bool"
 description = "Enable experimental mise features which are incomplete or unstable—breakings changes may occur"
 docs = """
 Enables experimental features. I generally will publish new features under
@@ -172,9 +176,29 @@ a particular feature you'd like to try. Also, if something isn't working
 right, try disabling it if you can.
 """
 
+[fetch_remote_versions_cache]
+env = "MISE_FETCH_REMOTE_VERSIONS_CACHE"
+type = "Duration"
+default = "1h"
+description = "How long to cache remote versions for tools."
+docs = """
+duration that remote version cache is kept for
+for "fast" commands (represented by PREFER_STALE), these are always
+cached. For "slow" commands like `mise ls-remote` or `mise install`:
+- if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
+- if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
+"""
+
+[fetch_remote_versions_timeout]
+env = "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT"
+type = "Duration"
+default = "10s"
+description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
+aliases = ["fetch_remote_version_timeout"]
+
 [go_default_packages_file]
 env = "MISE_GO_DEFAULT_PACKAGES_FILE"
-type = "PathBuf"
+type = "Path"
 default = "~/.default-go-packages"
 description = "Path to a file containing default go packages to install when installing go"
 
@@ -186,13 +210,14 @@ description = "Mirror to download go sdk tarballs from."
 
 [go_repo]
 env = "MISE_GO_REPO"
-type = "String"
+type = "Url"
 default = "https://github.com/golang/go"
 description = "URL to fetch go from."
 
 [go_set_gobin]
 env = "MISE_GO_SET_GOBIN"
-type = "Option<bool>"
+type = "Bool"
+optional = true
 description = "Changes where `go install` installs binaries to."
 docs = """
 Defaults to `~/.local/share/mise/installs/go/.../bin`.
@@ -202,37 +227,38 @@ Set to `false` to not set GOBIN (default is `${GOPATH:-$HOME/go}/bin`).
 
 [go_set_gopath]
 env = "MISE_GO_SET_GOPATH"
-type = "bool"
+type = "Bool"
 description = "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages."
 deprecated = "Use env._go.set_goroot instead."
 
 [go_set_goroot]
 env = "MISE_GO_SET_GOROOT"
-type = "bool"
+type = "Bool"
 default = true
 description = "Sets GOROOT=~/.local/share/mise/installs/go/.../."
 
 [go_skip_checksum]
 env = "MISE_GO_SKIP_CHECKSUM"
-type = "bool"
+type = "Bool"
 description = "Set to true to skip checksum verification when downloading go sdk tarballs."
 
 [http_timeout]
 env = "MISE_HTTP_TIMEOUT"
-type = "u64"
-default = 30
+type = "Duration"
+default = "30s"
 description = "Timeout in seconds for all HTTP requests in mise."
 
 [jobs]
 env = "MISE_JOBS"
-type = "usize"
+type = "Integer"
+rust_type = "usize"
 default = 4
 description = "How many jobs to run concurrently such as tool installs."
 
 # TODO: rename to "idiomatic_version_file"
 [legacy_version_file]
 env = "MISE_LEGACY_VERSION_FILE"
-type = "bool"
+type = "Bool"
 default = true
 description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
 docs = """
@@ -246,14 +272,15 @@ Set to "0" to disable legacy version file parsing.
 
 [legacy_version_file_disable_tools]
 env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS"
-type = "BTreeSet<String>"
+type = "ListString"
+rust_type = "BTreeSet<String>"
 default = []
 parse_env = "list_by_comma"
 description = "Specific tools to disable idiomatic version files for."
 
 [libgit2]
 env = "MISE_LIBGIT2"
-type = "bool"
+type = "Bool"
 default = true
 description = "Use libgit2 for git operations, set to false to shell out to git."
 docs = """
@@ -277,22 +304,25 @@ enum = [
 
 [node.compile]
 env = "MISE_NODE_COMPILE"
-type = "Option<bool>"
+type = "Bool"
+optional = true
 description = "Compile node from source."
 
 [node.flavor]
 env = "MISE_NODE_FLAVOR"
-type = "Option<String>"
+type = "String"
+optional = true
 description = "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo."
 
 [node.mirror_url]
 env = "MISE_NODE_MIRROR_URL"
-type = "Option<String>"
+type = "Url"
+optional = true
 description = "Mirror to download node tarballs from."
 
 [not_found_auto_install]
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
-type = "bool"
+type = "Bool"
 default = true
 description = "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions."
 docs = """
@@ -303,7 +333,7 @@ ticket to help diagnose problems.
 
 [paranoid]
 env = "MISE_PARANOID"
-type = "bool"
+type = "Bool"
 description = "Enables extra-secure behavior."
 docs = """
 Enables extra-secure behavior. See [Paranoid](/paranoid).
@@ -311,7 +341,7 @@ Enables extra-secure behavior. See [Paranoid](/paranoid).
 
 [pin]
 env = "MISE_PIN"
-type = "bool"
+type = "Bool"
 description = "Default to pinning versions when running `mise use` in mise.toml files."
 docs = """
 This sets `--pin` by default when running `mise use` in mise.toml files. This can be overridden by
@@ -320,7 +350,7 @@ passing `--fuzzy` on the command line.
 
 [pipx_uvx]
 env = "MISE_PIPX_UVX"
-type = "bool"
+type = "Bool"
 description = "Use uvx instead of pipx if uv is installed and on PATH."
 
 [plugin_autoupdate_last_check_duration]
@@ -331,7 +361,8 @@ description = "How long to wait before updating plugins automatically (note this
 
 [python.compile]
 env = "MISE_PYTHON_COMPILE"
-type = "Option<bool>"
+type = "Bool"
+optional = true
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
 docs = """
 * Values:
@@ -342,28 +373,33 @@ docs = """
 
 [python.default_packages_file]
 env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE"
-type = "Option<PathBuf>"
+type = "Path"
+optional = true
 description = "Path to a file containing default python packages to install when installing a python version."
 
 [python.patch_url]
 env = "MISE_PYTHON_PATCH_URL"
-type = "Option<String>"
+type = "Url"
+optional = true
 description = "URL to fetch python patches from to pass to python-build."
 
 [python.patches_directory]
 env = "MISE_PYTHON_PATCHES_DIRECTORY"
-type = "Option<PathBuf>"
+type = "Path"
+optional = true
 description = "Directory to fetch python patches from."
 
 [python.precompiled_arch]
 env = "MISE_PYTHON_PRECOMPILED_ARCH"
-type = "Option<String>"
+type = "String"
+optional = true
 description = "Specify the architecture to use for precompiled binaries."
 default_docs = '"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"'
 
 [python.precompiled_os]
 env = "MISE_PYTHON_PRECOMPILED_OS"
-type = "Option<String>"
+type = "String"
+optional = true
 default_docs = '"x86_64_v3" | "aarch64"'
 description = "Specify the OS to use for precompiled binaries."
 docs = """
@@ -378,82 +414,92 @@ description = "URL to fetch pyenv from for compiling python with python-build."
 
 [python.venv_auto_create]
 env = "MISE_PYTHON_VENV_AUTO_CREATE"
-type = "bool"
+type = "Bool"
 hide = true
 deprecated = "Use env._python.venv instead."
 description = "Automatically create virtualenvs for python tools."
 
 [python.venv_stdlib]
 env = "MISE_VENV_STDLIB"
-type = "bool"
+type = "Bool"
 description = "Prefer to use venv from Python's standard library."
 
 [python_compile]
-type = "Option<bool>"
+type = "Bool"
+optional = true
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
 deprecated = "Use python.compile instead."
 hide = true
 
 [python_default_packages_file]
-type = "Option<PathBuf>"
+type = "Path"
+optional = true
 description = "Path to a file containing default python packages to install when installing python."
 deprecated = "Use python.default_packages_file instead."
 hide = true
 
 [python_patch_url]
-type = "Option<String>"
+type = "String"
+optional = true
 description = "URL to fetch python patches from."
 deprecated = "Use python.patch_url instead."
 hide = true
 
 [python_patches_directory]
-type = "Option<PathBuf>"
+type = "Path"
+optional = true
 description = "Directory to fetch python patches from."
 deprecated = "Use python.patch_url instead."
 hide = true
 
 [python_precompiled_arch]
-type = "Option<String>"
+type = "String"
+optional = true
 description = "Specify the architecture to use for precompiled binaries."
 deprecated = "Use python.precompiled_arch instead."
 hide = true
 
 [python_precompiled_os]
-type = "Option<String>"
+type = "String"
+optional = true
 description = "Specify the OS to use for precompiled binaries."
 deprecated = "Use python.precompiled_os instead."
 hide = true
 
 [python_pyenv_repo]
-type = "Option<String>"
+type = "String"
+optional = true
 description = "URL to fetch pyenv from for compiling python."
 deprecated = "Use python.pyenv_repo instead."
 hide = true
 
 [python_venv_auto_create]
-type = "Option<bool>"
+type = "Bool"
+optional = true
 hide = true
 deprecated = "Use env._python.venv instead."
 description = "Automatically create virtualenvs for python tools."
 
 [python_venv_stdlib]
-type = "Option<bool>"
+type = "Bool"
+optional = true
 description = "Prefer to use venv from Python's standard library."
 hide = true
 
 [quiet]
 env = "MISE_QUIET"
-type = "bool"
+type = "Bool"
 description = "Suppress all output except errors."
 
 [raw]
 env = "MISE_RAW"
-type = "bool"
+type = "Bool"
 description = "Connect stdin/stdout/stderr to child processes."
 
 [ruby.apply_patches]
 env = "MISE_RUBY_APPLY_PATCHES"
-type = "Option<String>"
+type = "String"
+optional = true
 description = "A list of patch files or URLs to apply to ruby source."
 
 [ruby.default_packages_file]
@@ -464,7 +510,8 @@ description = "Path to a file containing default ruby gems to install when insta
 
 [ruby.ruby_build_opts]
 env = "MISE_RUBY_BUILD_OPTS"
-type = "Option<String>"
+type = "String"
+optional = true
 description = "Options to pass to ruby-build."
 
 [ruby.ruby_build_repo]
@@ -475,12 +522,13 @@ description = "URL to fetch ruby-build from."
 
 [ruby.ruby_install]
 env = "MISE_RUBY_INSTALL"
-type = "bool"
+type = "Bool"
 description = "Use ruby-install instead of ruby-build."
 
 [ruby.ruby_install_opts]
 env = "MISE_RUBY_INSTALL_OPTS"
-type = "Option<String>"
+type = "String"
+optional = true
 description = "Options to pass to ruby-install."
 
 [ruby.ruby_install_repo]
@@ -491,12 +539,14 @@ description = "URL to fetch ruby-install from."
 
 [ruby.verbose_install]
 env = "MISE_RUBY_VERBOSE_INSTALL"
-type = "Option<bool>"
+type = "Bool"
+optional = true
 description = "Set to true to enable verbose output during ruby installation."
 
 [shorthands_file]
 env = "MISE_SHORTHANDS_FILE"
-type = "Option<PathBuf>"
+type = "Path"
+optional = true
 description = "Path to a file containing custom tool shorthands."
 docs = """
 Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
@@ -537,17 +587,18 @@ Disable tools with [`disable_tools`](#disable_tools).
 
 [status.show_env]
 env = "MISE_STATUS_MESSAGE_SHOW_ENV"
-type = "bool"
+type = "Bool"
 description = "Show configured env vars when entering a directory with a mise.toml file."
 
 [status.show_tools]
 env = "MISE_STATUS_MESSAGE_SHOW_TOOLS"
-type = "bool"
+type = "Bool"
 description = "Show configured env vars when entering a directory with a mise.toml file."
 
 [task_output]
 env = "MISE_TASK_OUTPUT"
-type = "Option<String>"
+type = "String"
+optional = true
 description = "Change output style when executing tasks."
 enum = [
     ["prefix", "(default if jobs > 1) print by line with the prefix of the task name"],
@@ -559,20 +610,21 @@ Change output style when executing tasks. This controls the output of `mise run`
 
 [trace]
 env = "MISE_TRACE"
-type = "bool"
+type = "Bool"
 hide = true
 description = "Sets log level to trace"
 
 [trusted_config_paths]
 env = "MISE_TRUSTED_CONFIG_PATHS"
-type = "BTreeSet<PathBuf>"
+type = "ListPath"
+rust_type = "BTreeSet<PathBuf>"
 default = []
 parse_env = "list_by_colon"
 description = "This is a list of config paths that mise will automatically mark as trusted."
 
 [use_versions_host]
 env = "MISE_USE_VERSIONS_HOST"
-type = "bool"
+type = "Bool"
 default = true
 description = "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions."
 docs = """
@@ -586,12 +638,12 @@ See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
 
 [verbose]
 env = "MISE_VERBOSE"
-type = "bool"
+type = "Bool"
 description = "Shows more verbose output such as installation logs when installing tools."
 
 [vfox]
 env = "MISE_VFOX"
-type = "bool"
+type = "Bool"
 description = "Use vfox as a default plugin backend instead of asdf."
 docs = """
 Use vfox as a default plugin backend. This means running something like `mise use cmake` will
@@ -600,5 +652,5 @@ default to using an vfox plugin for cmake.
 
 [yes]
 env = "MISE_YES"
-type = "bool"
+type = "Bool"
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."

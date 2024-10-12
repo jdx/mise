@@ -13,28 +13,19 @@ export default {
 
     function buildElement(key, props) {
       let type = props.type;
-      let optional = false;
-      if (type.startsWith("Option<")) {
-        type = type.slice(7, -1);
-        optional = true;
-      }
       type = type.replaceAll("PathBuf", "String");
       let default_ = props.default;
-      if (default_ === undefined && type === "bool" && !optional) {
+      if (default_ === undefined && type === "Bool" && !props.optional) {
         default_ = false;
       }
-      if (default_ === undefined && optional) {
+      if (default_ === undefined && props.optional) {
         default_ = "None";
       }
-      if (type === "u64" || type === "usize") {
+      if (type === "Integer") {
         type = "integer";
       } else if (type === "String") {
         type = "string";
-      } else if (
-        type === "BTreeSet<String>" ||
-        type === "HashSet<String>" ||
-        type === "Vec<String>"
-      ) {
+      } else if (type === "ListString" || type === "ListPath") {
         type = "string[]";
       }
       // } else if (type === "String" || type === "PathBuf") {
@@ -51,7 +42,7 @@ export default {
         deprecated: props.deprecated,
         enum: props.enum,
         env: props.env,
-        optional,
+        optional: props.optional,
         type,
       };
       return ele;
