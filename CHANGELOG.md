@@ -1,5 +1,36 @@
 # Changelog
 
+## [2024.10.2](https://github.com/jdx/mise/compare/v2024.10.1..v2024.10.2) - 2024-10-12
+
+### 🚀 Features
+
+- enable deno core plugin on windows & download deno files from deno server by [@finalchild](https://github.com/finalchild) in [#2719](https://github.com/jdx/mise/pull/2719)
+- use uv to create venv by default by [@erickguan](https://github.com/erickguan) in [#2705](https://github.com/jdx/mise/pull/2705)
+
+### 🐛 Bug Fixes
+
+- **(ubi)** update ubi identifiers by [@risu729](https://github.com/risu729) in [#2724](https://github.com/jdx/mise/pull/2724)
+- use join_paths to create new_path by [@finalchild](https://github.com/finalchild) in [#2708](https://github.com/jdx/mise/pull/2708)
+- issue with java@latest and metadatas (currently 23.0.0) by [@roele](https://github.com/roele) in [#2727](https://github.com/jdx/mise/pull/2727)
+- several fixes/improvements for python version selection by [@jdx](https://github.com/jdx) in [#2730](https://github.com/jdx/mise/pull/2730)
+- don't skip latest version fetch by [@finalchild](https://github.com/finalchild) in [#2720](https://github.com/jdx/mise/pull/2720)
+
+### 🚜 Refactor
+
+- remove duplicates in vfox registry by [@risu729](https://github.com/risu729) in [#2729](https://github.com/jdx/mise/pull/2729)
+
+### 🧪 Testing
+
+- reset test by [@jdx](https://github.com/jdx) in [e34788b](https://github.com/jdx/mise/commit/e34788b803b0f4817e2b8481c4ed7d94ed308d66)
+
+### 🔍 Other Changes
+
+- move /.mise/tasks to /tasks by [@jdx](https://github.com/jdx) in [#2728](https://github.com/jdx/mise/pull/2728)
+
+### New Contributors
+
+* @risu729 made their first contribution in [#2729](https://github.com/jdx/mise/pull/2729)
+
 ## [2024.10.1](https://github.com/jdx/mise/compare/v2024.10.0..v2024.10.1) - 2024-10-07
 
 ### 🚀 Features
@@ -19,10 +50,6 @@
 
 - fix snapshots by [@jdx](https://github.com/jdx) in [e1bc269](https://github.com/jdx/mise/commit/e1bc269b2d40bac21208969f8fb2c744586d8ed1)
 - reset test by [@jdx](https://github.com/jdx) in [b06878d](https://github.com/jdx/mise/commit/b06878dcadfd8a0edc80ea39381f534435f24736)
-
-### New Contributors
-
-* @finalchild made their first contribution in [#2711](https://github.com/jdx/mise/pull/2711)
 
 ## [2024.10.0](https://github.com/jdx/mise/compare/v2024.9.13..v2024.10.0) - 2024-10-03
 
