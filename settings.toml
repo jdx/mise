@@ -374,6 +374,11 @@ hide = true
 deprecated = "Use env._python.venv instead."
 description = "Automatically create virtualenvs for python tools."
 
+[python_venv_stdlib]
+env = "MISE_VENV_STDLIB"
+type = "bool"
+description = "Prefer to use venv from Python's standard library."
+
 [quiet]
 env = "MISE_QUIET"
 type = "bool"

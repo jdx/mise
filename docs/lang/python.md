@@ -93,13 +93,24 @@ A local directory containing patch files to pass to python-build.
 
 Packages list to install with pip after installing a Python version.
 
-### `python_venv_auto_create`
+### `python_venv_auto_create` <Badge type="warning" text="deprecated" />
 
 * Type: `bool`
 * Env: `MISE_PYTHON_VENV_AUTO_CREATE`
 * Default: `false`
 
 Automatically create a virtualenv in the directory specified by `_.python.venv` if it doesn't exist.
+
+Deprecated note: Use `env._python.venv` instead.
+
+### `python_venv_stdlib`
+
+* Type: `bool`
+* Env: `MISE_PYTHON_VENV_STDLIB`
+* Default: `false`
+
+Prefer to use venv from Python's standard library.
+By default, mise will prioritize `uv` for the virtual environment if `uv` is in the `PATH`.
 
 ## Default Python packages
 
