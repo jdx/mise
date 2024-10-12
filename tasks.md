@@ -96,14 +96,6 @@ Overwrite existing &lt;file>
 
 User to run as
 
-## `l`
-
-**Usage**: `l`
-
-## `l`
-
-**Usage**: `l`
-
 ## `lint`
 
 * Depends: lint:*

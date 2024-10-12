@@ -33,6 +33,9 @@ nnnn = 'https://github.com/mise-plugins/rtx-nodejs#main'
 [alias.tiny]
 abc = '1'
 
+[task_config]
+includes = ["tasks"]
+
 [tasks]
 clean = "cargo clean"
 release = "cargo release"
