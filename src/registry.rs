@@ -12,7 +12,6 @@ const _REGISTRY: &[(&str, &str)] = &[
 
 const _REGISTRY_VFOX: &[(&str, &str)] = &[
     ("bun", "vfox:ahai-code/vfox-bun"),
-    ("cargo-binstall", "cargo:cargo-binstall"),
     ("clang", "vfox:version-fox/vfox-clang"),
     ("cmake", "vfox:version-fox/vfox-cmake"),
     ("crystal", "vfox:yanecc/vfox-crystal"),
@@ -37,7 +36,6 @@ const _REGISTRY_VFOX: &[(&str, &str)] = &[
     // ("ruby", "vfox:yanecc/vfox-ruby"),
     ("scala", "vfox:version-fox/vfox-scala"),
     ("terraform", "vfox:enochchau/vfox-terraform"),
-    ("ubi", "cargo:ubi-cli"),
     ("vlang", "vfox:ahai-code/vfox-vlang"),
     ("zig", "vfox:version-fox/vfox-zig"),
 ];
