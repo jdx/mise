@@ -14,7 +14,7 @@ use rayon::prelude::*;
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
 use crate::config::{Config, Settings};
-use crate::file::{create_dir_all, display_path, remove_all};
+use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{backend, dirs, env, fake_asdf, file, logger};
@@ -85,7 +85,7 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
     err_no_version_set(ts, bin_name, tvs)
 }
 
-pub fn reshim(ts: &Toolset) -> Result<()> {
+pub fn reshim(ts: &Toolset, force: bool) -> Result<()> {
     let _lock = LockFile::new(&dirs::SHIMS)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
@@ -94,7 +94,10 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
 
     let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
 
-    create_dir_all(*dirs::SHIMS)?;
+    if force {
+        file::remove_all(*dirs::SHIMS)?;
+    }
+    file::create_dir_all(*dirs::SHIMS)?;
 
     let (shims_to_add, shims_to_remove) = get_shim_diffs(&mise_bin, ts)?;
 
@@ -104,7 +107,7 @@ pub fn reshim(ts: &Toolset) -> Result<()> {
     }
     for shim in shims_to_remove {
         let symlink_path = dirs::SHIMS.join(shim);
-        remove_all(&symlink_path)?;
+        file::remove_all(&symlink_path)?;
     }
     for plugin in backend::list() {
         match dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {

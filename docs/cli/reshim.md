@@ -1,6 +1,6 @@
 # `mise reshim`
 
-**Usage**: `mise reshim`
+**Usage**: `mise reshim [-f --force]`
 
 Creates new shims based on bin paths from currently installed tools.
 
@@ -20,6 +20,12 @@ npm() {
 
 Note that this creates shims for _all_ installed tools, not just the ones that are
 currently active in mise.toml.
+
+## Flags
+
+### `-f --force`
+
+Removes all shims before reshimming
 
 Examples:
 

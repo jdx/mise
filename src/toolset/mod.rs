@@ -240,7 +240,7 @@ impl Toolset {
             debug!("error resolving versions after install: {err:#}");
         }
         trace!("install: reshimming");
-        shims::reshim(self)?;
+        shims::reshim(self, false)?;
         runtime_symlinks::rebuild(config)?;
         trace!("install: done");
         Ok(installed)

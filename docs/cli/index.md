@@ -73,7 +73,7 @@ Answer yes to all confirmation prompts
 * [`mise plugins update [-j --jobs <JOBS>] [PLUGIN]...`](/cli/plugins/update.md)
 * [`mise prune [FLAGS] [PLUGIN]...`](/cli/prune.md)
 * [`mise registry`](/cli/registry.md)
-* [`mise reshim`](/cli/reshim.md)
+* [`mise reshim [-f --force]`](/cli/reshim.md)
 * [`mise run [FLAGS]`](/cli/run.md)
 * [`mise self-update [FLAGS] [VERSION]`](/cli/self-update.md)
 * [`mise set [--file <FILE>] [-g --global] [ENV_VARS]...`](/cli/set.md)

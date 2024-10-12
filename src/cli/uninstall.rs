@@ -68,7 +68,7 @@ impl Uninstall {
         }
 
         let ts = ToolsetBuilder::new().build(&config)?;
-        shims::reshim(&ts).wrap_err("failed to reshim")?;
+        shims::reshim(&ts, false).wrap_err("failed to reshim")?;
         runtime_symlinks::rebuild(&config)?;
 
         Ok(())
