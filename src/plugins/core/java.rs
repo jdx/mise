@@ -68,12 +68,7 @@ impl JavaPlugin {
             for m in self.download_java_metadata(&release_type)?.into_iter() {
                 // add openjdk short versions like "java@17.0.0" which default to openjdk
                 if m.vendor == "openjdk" {
-                    if m.version.contains('.') {
-                        metadata.insert(m.version.to_string(), m.clone());
-                    } else {
-                        // mise expects full versions like ".0.0"
-                        metadata.insert(format!("{}.0.0", m.version), m.clone());
-                    }
+                    metadata.insert(m.version.to_string(), m.clone());
                 }
                 metadata.insert(m.to_string(), m);
             }
@@ -268,12 +263,7 @@ impl JavaPlugin {
     fn tv_to_java_version(&self, tv: &ToolVersion) -> String {
         if regex!(r"^\d").is_match(&tv.version) {
             // undo openjdk shorthand
-            if tv.version.ends_with(".0.0") {
-                // undo mise's full "*.0.0" version
-                format!("openjdk-{}", &tv.version[..tv.version.len() - 4])
-            } else {
-                format!("openjdk-{}", tv.version)
-            }
+            format!("openjdk-{}", tv.version)
         } else {
             tv.version.clone()
         }
