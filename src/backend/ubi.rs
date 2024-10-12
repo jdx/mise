@@ -28,7 +28,7 @@ impl Backend for UbiBackend {
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        Ok(vec!["cargo:ubi".into()])
+        Ok(vec!["ubi".into()])
     }
 
     // TODO: v0.0.3 is stripped of 'v' such that it reports incorrectly in tool :-/

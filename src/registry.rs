@@ -37,7 +37,7 @@ const _REGISTRY_VFOX: &[(&str, &str)] = &[
     // ("ruby", "vfox:yanecc/vfox-ruby"),
     ("scala", "vfox:version-fox/vfox-scala"),
     ("terraform", "vfox:enochchau/vfox-terraform"),
-    ("ubi", "cargo:ubi"),
+    ("ubi", "cargo:ubi-cli"),
     ("vlang", "vfox:ahai-code/vfox-vlang"),
     ("zig", "vfox:version-fox/vfox-zig"),
 ];
