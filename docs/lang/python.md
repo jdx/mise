@@ -34,83 +34,14 @@ additional to that python in mise has a few extra configuration variables.
 
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
 
-### `python_pyenv_repo`
+<script setup>
+import { data } from '/settings.data.ts';
+import Setting from '/components/setting.vue';
 
-* Type: `string`
-* Env: `MISE_PYENV_REPO`
-* Default: `https://github.com/pyenv/pyenv.git`
+const settings = data.find(s => s.key === 'python').settings;
+</script>
 
-The pyenv repo to get python-build from.
-
-### `python_compile`
-
-* Type: `bool`
-* Env: `MISE_PYTHON_COMPILE`
-* Default: [undefined]
-* Values:
-  * `true` - always compile with python-build instead of downloading [precompiled binaries](#precompiled-python-binaries).
-  * `false` - always download precompiled binaries.
-  * [undefined] - use precompiled binary if one is available for the current platform, compile otherwise.
-
-### `python_precompiled_os`
-
-* Type: `string`
-* Env: `MISE_PYTHON_PRECOMPILED_OS`
-* Default: `"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"`
-
-Specify the OS to use for precompiled binaries.
-
-### `python_precompiled_arch`
-
-* Type: `string`
-* Env: `MISE_PYTHON_PRECOMPILED_ARCH`
-* Default: `"x86_64_v3" | "aarch64"`
-
-Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this
-to
-`"x86_64"` for the most compatible binaries.
-See <https://gregoryszorc.com/docs/python-build-standalone/main/running.html> for more information.
-
-### `python_patch_url`
-
-* Type: `string`
-* Env: `MISE_PYTHON_PATCH_URL`
-
-A url to a patch file to pass to python-build.
-
-### `python_patches_directory`
-
-* Type: `string`
-* Env: `MISE_PYTHON_PATCHES_DIRECTORY`
-
-A local directory containing patch files to pass to python-build.
-
-### `python_default_packages_file`
-
-* Type: `string`
-* Env: `MISE_PYTHON_DEFAULT_PACKAGES_FILE`
-* Default: `$HOME/.default-python-packages`
-
-Packages list to install with pip after installing a Python version.
-
-### `python_venv_auto_create` <Badge type="warning" text="deprecated" />
-
-* Type: `bool`
-* Env: `MISE_PYTHON_VENV_AUTO_CREATE`
-* Default: `false`
-
-Automatically create a virtualenv in the directory specified by `_.python.venv` if it doesn't exist.
-
-Deprecated note: Use `env._python.venv` instead.
-
-### `python_venv_stdlib`
-
-* Type: `bool`
-* Env: `MISE_PYTHON_VENV_STDLIB`
-* Default: `false`
-
-Prefer to use venv from Python's standard library.
-By default, mise will prioritize `uv` for the virtual environment if `uv` is in the `PATH`.
+<Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
 
 ## Default Python packages
 
@@ -139,7 +70,7 @@ That said, there are
 some [quirks](https://github.com/indygreg/python-build-standalone/blob/main/docs/quirks.rst)
 with the precompiled binaries to be aware of.
 
-If you'd like to disable these binaries, set [`python_compile`](#python_compile) to `true`.
+If you'd like to disable these binaries, set `mise settings set python.compile 1`.
 
 These binaries may not work on older CPUs however you may opt into binaries which
 are more compatible with older CPUs by setting `MISE_PYTHON_PRECOMPILED_ARCH` with
@@ -212,3 +143,13 @@ _.python.venv = { path = ".venv", create = true } # create the venv if it doesn'
 ```
 
 The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
+
+## Installing free-threaded python
+
+Free-threaded python can be installed via python-build by running the following:
+
+```bash
+MISE_PYTHON_COMPILE=1 PYTHON_BUILD_FREE_THREADING=1 mise install
+```
+
+Currently, they are not supported with precompiled binaries.

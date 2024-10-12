@@ -210,7 +210,7 @@ impl Task {
             && spec.cmd.before_help_long.is_none()
             && !self.depends.is_empty()
         {
-            spec.cmd.before_help_long = Some(format!("* Depends: {}", self.depends.join(", ")));
+            spec.cmd.before_help_long = Some(format!("- Depends: {}", self.depends.join(", ")));
         }
         spec.cmd.usage = spec.cmd.usage();
         Ok((spec, scripts))

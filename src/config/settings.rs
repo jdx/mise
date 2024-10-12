@@ -126,14 +126,44 @@ impl Settings {
         }
         if settings.all_compile {
             settings.node.compile = Some(true);
-            if settings.python_compile.is_none() {
-                settings.python_compile = Some(true);
+            if settings.python.compile.is_none() {
+                settings.python.compile = Some(true);
             }
         }
+        settings.set_python_config();
         let settings = Arc::new(settings);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
         Ok(settings)
     }
+
+    /// Sets deprecated python_* settings to the new python.* settings
+    fn set_python_config(&mut self) {
+        if let Some(python_compile) = self.python_compile {
+            self.python.compile = Some(python_compile);
+        }
+        if let Some(python_default_packages_file) = &self.python_default_packages_file {
+            self.python.default_packages_file = Some(python_default_packages_file.clone());
+        }
+        if let Some(python_patch_url) = &self.python_patch_url {
+            self.python.patch_url = Some(python_patch_url.clone());
+        }
+        if let Some(python_patches_directory) = &self.python_patches_directory {
+            self.python.patches_directory = Some(python_patches_directory.clone());
+        }
+        if let Some(python_precompiled_arch) = &self.python_precompiled_arch {
+            self.python.precompiled_arch = Some(python_precompiled_arch.clone());
+        }
+        if let Some(python_precompiled_os) = &self.python_precompiled_os {
+            self.python.precompiled_os = Some(python_precompiled_os.clone());
+        }
+        if let Some(python_pyenv_repo) = &self.python_pyenv_repo {
+            self.python.pyenv_repo = python_pyenv_repo.clone();
+        }
+        if let Some(python_venv_auto_create) = self.python_venv_auto_create {
+            self.python.venv_auto_create = python_venv_auto_create;
+        }
+    }
+
     pub fn add_cli_matches(m: &clap::ArgMatches) {
         let mut s = SettingsPartial::empty();
         for arg in &*env::ARGS.read().unwrap() {

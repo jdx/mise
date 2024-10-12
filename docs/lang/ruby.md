@@ -29,69 +29,14 @@ for additional settings and some troubleshooting.
 [handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration),
 in additional to that mise has a few extra settings:
 
-### `ruby.apply_patches`
+<script setup>
+import { data } from '/settings.data.ts';
+import Setting from '/components/setting.vue';
 
-* Type: `Option<String>`
-* Env: `MISE_RUBY_APPLY_PATCHES`
-* Default: `None`
+const settings = data.find(s => s.key === 'ruby').settings;
+</script>
 
-A list of patches (files or URLs) to apply to the ruby source code.
-
-### `ruby.verbose_install`
-
-* Type: `Option<bool>`
-* Env: `MISE_RUBY_VERBOSE_INSTALL`
-* Default: `None` (behaves like `false` unless --verbose is passed to mise)
-
-Show verbose output during installation (passes --verbose to ruby-build)
-
-### `ruby.ruby_build_repo`
-
-* Type: `String`
-* Env: `MISE_RUBY_BUILD_REPO`
-* Default: `https://github.com/rbenv/ruby-build.git`
-
-The git repository to use for getting ruby-build.
-
-### `ruby.ruby_build_opts`
-
-* Type: `Option<String>`
-* Env: `MISE_RUBY_BUILD_OPTS`
-* Default: `None`
-
-Command line options to pass to ruby-build when installing
-
-### `ruby.ruby_install`
-
-* Type: `bool`
-* Env: `MISE_RUBY_INSTALL`
-* Default: `false`
-
-Build with [ruby-install](https://github.com/postmodern/ruby-install) instead of [ruby-build](https://github.com/rbenv/ruby-build).
-
-### `ruby.ruby_install_repo`
-
-* Type: `String`
-* Env: `MISE_RUBY_INSTALL_REPO`
-* Default: `https://github.com/postmodern/ruby-install.git`
-
-The git repository to use for getting ruby-install.
-
-### `ruby.ruby_install_opts`
-
-* Type: `Option<String>`
-* Env: `MISE_RUBY_INSTALL_OPTS`
-* Default: `None`
-
-Command line options to pass to ruby-install when installing (if MISE_RUBY_INSTALL=1)
-
-### `ruby.default_packages_file`
-
-* Type: `String`
-* Env: `MISE_RUBY_DEFAULT_PACKAGES_FILE`
-* Default: `$HOME/.default-gems`
-
-Location of file containing a list of gems to install after installing a new ruby version.
+<Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
 
 ## Default gems
 
