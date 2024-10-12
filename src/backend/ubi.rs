@@ -20,7 +20,6 @@ pub struct UbiBackend {
 }
 
 // Uses ubi for installations https://github.com/houseabsolute/ubi
-// it can be installed via mise install cargo:ubi
 impl Backend for UbiBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Ubi
