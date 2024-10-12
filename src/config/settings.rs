@@ -5,6 +5,7 @@ use crate::{config, dirs, env, file};
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
 use eyre::{bail, Result};
+use indexmap::{indexmap, IndexMap};
 use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
@@ -22,6 +23,23 @@ pub static SETTINGS: Lazy<Arc<Settings>> = Lazy::new(Settings::get);
 // settings are generated from settings.toml in the project root
 // make sure you run `mise run render` after updating settings.toml
 include!(concat!(env!("OUT_DIR"), "/settings.rs"));
+
+pub enum SettingsType {
+    Bool,
+    String,
+    Integer,
+    Duration,
+    Path,
+    Url,
+    ListString,
+    ListPath,
+}
+
+pub struct SettingsMeta {
+    // pub key: String,
+    pub type_: SettingsType,
+    // pub description: String,
+}
 
 #[derive(
     Debug, Clone, Copy, Serialize, Deserialize, Default, strum::EnumString, strum::Display,
@@ -328,6 +346,23 @@ impl Settings {
             return None;
         }
         Some(humantime::parse_duration(&self.cache_prune_age).unwrap())
+    }
+
+    pub fn fetch_remote_versions_timeout(&self) -> Duration {
+        humantime::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
+    }
+
+    /// duration that remote version cache is kept for
+    /// for "fast" commands (represented by PREFER_STALE), these are always
+    /// cached. For "slow" commands like `mise ls-remote` or `mise install`:
+    /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
+    /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
+    pub fn fetch_remote_versions_cache(&self) -> Option<Duration> {
+        if *env::PREFER_STALE {
+            None
+        } else {
+            Some(humantime::parse_duration(&self.fetch_remote_versions_cache).unwrap())
+        }
     }
 }
 

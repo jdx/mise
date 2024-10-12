@@ -1,6 +1,6 @@
+use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
-use crate::env::MISE_FETCH_REMOTE_VERSIONS_TIMEOUT;
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
 use crate::git::Git;
@@ -125,7 +125,7 @@ impl AsdfPlugin {
                 let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
                 Ok(result)
             },
-            *MISE_FETCH_REMOTE_VERSIONS_TIMEOUT,
+            SETTINGS.fetch_remote_versions_timeout(),
         )
         .wrap_err_with(|| {
             let script = self.script_man.get_script_path(&Script::ListAll);

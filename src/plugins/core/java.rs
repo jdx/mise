@@ -17,6 +17,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::SETTINGS;
 use crate::config::Config;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -24,7 +25,7 @@ use crate::plugins::core::CorePlugin;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file, hash};
+use crate::{file, hash};
 
 #[derive(Debug)]
 pub struct JavaPlugin {
@@ -44,12 +45,12 @@ impl JavaPlugin {
             java_metadata_ea_cache: CacheManagerBuilder::new(
                 core.fa.cache_path.join(java_metadata_ea_cache_filename),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .build(),
             java_metadata_ga_cache: CacheManagerBuilder::new(
                 core.fa.cache_path.join(java_metadata_ga_cache_filename),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .build(),
             core,
         }

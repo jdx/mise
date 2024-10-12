@@ -245,7 +245,7 @@ version files since they're version files not specific to asdf/mise and can be u
 
 ## Settings
 
-See [Settings](/settings) for the full list of settings.
+See [Settings](/configuration/settings) for the full list of settings.
 
 ## Tasks
 

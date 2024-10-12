@@ -12,7 +12,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file};
+use crate::{cmd, file};
 use eyre::{bail, eyre};
 use itertools::Itertools;
 use std::collections::BTreeMap;
@@ -32,7 +32,7 @@ impl PythonPlugin {
             precompiled_cache: CacheManagerBuilder::new(
                 core.fa.cache_path.join("precompiled.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .build(),
             core,
         }

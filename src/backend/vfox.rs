@@ -12,6 +12,7 @@ use url::Url;
 use crate::backend::{ABackend, Backend, BackendList, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
+use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::git::Git;
 use crate::install_context::InstallContext;
@@ -124,7 +125,7 @@ impl VfoxBackend {
             remote_version_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("remote_versions.msgpack.z"),
             )
-            .with_fresh_duration(*env::MISE_FETCH_REMOTE_VERSIONS_CACHE)
+            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .with_fresh_file(dirs::DATA.to_path_buf())
             .with_fresh_file(plugin_path.to_path_buf())
             .with_fresh_file(ba.installs_path.to_path_buf())
