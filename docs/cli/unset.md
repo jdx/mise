@@ -27,6 +27,6 @@ Examples:
 
     # Remove NODE_ENV from the current directory's config
     $ mise unset NODE_ENV
-    
+
     # Remove NODE_ENV from the global config
     $ mise unset NODE_ENV -g

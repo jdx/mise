@@ -40,6 +40,7 @@ i.e.: they don't need the full git repo url
 Show installation output
 
 Examples:
+
     # install the node via shorthand
     $ mise plugins install node
 

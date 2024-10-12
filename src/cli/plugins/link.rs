@@ -69,6 +69,7 @@ fn get_name_from_path(path: &Path) -> String {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+
     # essentially just `ln -s ./mise-node ~/.local/share/mise/plugins/node`
     $ <bold>mise plugins link node ./mise-node</bold>
 

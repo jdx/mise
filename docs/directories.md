@@ -8,16 +8,16 @@ If you often find yourself using these directories (as I do), I suggest setting 
 
 ## `~/.config/mise`
 
-* Override: `$MISE_CONFIG_DIR`
-* Default: `${XDG_CONFIG_HOME:-$HOME/.config}/mise`
+- Override: `$MISE_CONFIG_DIR`
+- Default: `${XDG_CONFIG_HOME:-$HOME/.config}/mise`
 
 This directory stores the global configuration file `~/.config/mise/config.toml`. This is intended to go into your
 dotfiles repo to share across machines.
 
 ## `~/.cache/mise`
 
-* Override: `$MISE_CACHE_DIR`
-* Default: `${XDG_CACHE_HOME:-$HOME/.cache}/mise`, _macOS: `~/Library/Caches/mise`._
+- Override: `$MISE_CACHE_DIR`
+- Default: `${XDG_CACHE_HOME:-$HOME/.cache}/mise`, _macOS: `~/Library/Caches/mise`._
 
 Stores internal cache that mise uses for things like the list of all available versions of a
 plugin. Do not share this across machines. You may delete this directory any time mise isn't actively installing something.
@@ -26,16 +26,16 @@ See [Cache Behavior](/cache-behavior) for more information.
 
 ## `~/.local/state/mise`
 
-* Override: `$MISE_STATE_DIR`
-* Default: `${XDG_STATE_HOME:-$HOME/.local/state}/mise`
+- Override: `$MISE_STATE_DIR`
+- Default: `${XDG_STATE_HOME:-$HOME/.local/state}/mise`
 
 Used for storing state local to the machine such as which config files are trusted. These should not be shared across
 machines.
 
 ## `~/.local/share/mise`
 
-* Override: `$MISE_DATA_DIR`
-* Default: `${XDG_DATA_HOME:-$HOME/.local/share}/mise`
+- Override: `$MISE_DATA_DIR`
+- Default: `${XDG_DATA_HOME:-$HOME/.local/share}/mise`
 
 This is the main directory that mise uses and is where plugins and tools are installed into.
 It is nearly identical to `~/.asdf` in asdf, so much so that you may be able to get by

@@ -59,9 +59,9 @@ Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environm
 
 ### `pipx_uvx`
 
-* Type: `bool`
-* Env: `MISE_PIPX_UVX`
-* Default: `false`
+- Type: `bool`
+- Env: `MISE_PIPX_UVX`
+- Default: `false`
 
 If true, mise will use `uvx` instead of `pipx` if
 [`uv`](https://docs.astral.sh/uv/) is installed and on PATH.

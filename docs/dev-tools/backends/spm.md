@@ -34,11 +34,11 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ### Supported Syntax
 
-| Description                                   | Usage                                                     |
-| --------------------------------------------- | --------------------------------------------------------- |
-| GitHub shorthand for latest release version   | `spm:tuist/tuist`                                         |
-| GitHub shorthand for specific release version | `spm:tuist/tuist@4.15.0`                                  |
-| GitHub url for latest release version         | `spm:https://github.com/tuist/tuist.git`                  |
-| GitHub url for specific release version       | `spm:https://github.com/tuist/tuist.git@4.15.0`           |
+| Description                                   | Usage                                           |
+| --------------------------------------------- | ----------------------------------------------- |
+| GitHub shorthand for latest release version   | `spm:tuist/tuist`                               |
+| GitHub shorthand for specific release version | `spm:tuist/tuist@4.15.0`                        |
+| GitHub url for latest release version         | `spm:https://github.com/tuist/tuist.git`        |
+| GitHub url for specific release version       | `spm:https://github.com/tuist/tuist.git@4.15.0` |
 
 Other syntax may work but is unsupported and untested.

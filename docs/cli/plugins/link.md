@@ -27,6 +27,7 @@ e.g.: ./mise-node
 Overwrite existing plugin
 
 Examples:
+
     # essentially just `ln -s ./mise-node ~/.local/share/mise/plugins/node`
     $ mise plugins link node ./mise-node
 

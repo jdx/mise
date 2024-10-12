@@ -9,7 +9,8 @@ List all available remote plugins
 The full list is here: <https://github.com/jdx/mise/blob/main/src/default_shorthands.rs>
 
 Examples:
-  $ mise plugins ls-remote
+
+    mise plugins ls-remote
 
 ## Flags
 
