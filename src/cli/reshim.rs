@@ -29,6 +29,10 @@ pub struct Reshim {
     pub plugin: Option<String>,
     #[clap(hide = true)]
     pub version: Option<String>,
+
+    /// Removes all shims before reshimming
+    #[clap(long, short)]
+    pub force: bool,
 }
 
 impl Reshim {
@@ -36,7 +40,7 @@ impl Reshim {
         let config = Config::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
 
-        shims::reshim(&ts)
+        shims::reshim(&ts, self.force)
     }
 }
 
