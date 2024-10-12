@@ -8,7 +8,7 @@
 
 ## `b1`
 
-* Depends: a1, a2
+- Depends: a1, a2
 
 **Usage**: `b1`
 
@@ -20,13 +20,13 @@
 
 ## `c1`
 
-* Depends: b1
+- Depends: b1
 
 **Usage**: `c1`
 
 ## `ci`
 
-* Depends: format, build, test
+- Depends: format, build, test
 
 **Usage**: `ci`
 
@@ -60,7 +60,7 @@ run mise inside of development docker container
 
 ## `docker:run`
 
-* Depends: docker:image
+- Depends: docker:image
 
 **Usage**: `docker:run`
 
@@ -68,7 +68,7 @@ run a command inside of development docker container
 
 ## `filetask`
 
-* Depends: lint, build
+- Depends: lint, build
 
 **Usage**: `filetask [-f --force] [-u --user <user>] <file> <arg_with_default>`
 
@@ -98,7 +98,7 @@ User to run as
 
 ## `lint`
 
-* Depends: lint:*
+- Depends: lint:*
 
 **Usage**: `lint`
 
@@ -146,7 +146,7 @@ User to run as
 
 ## `pre-commit`
 
-* Depends: render, lint
+- Depends: render, lint
 
 **Usage**: `pre-commit`
 
@@ -164,7 +164,7 @@ User to run as
 
 ## `render`
 
-* Depends: render:*
+- Depends: render:*
 
 **Usage**: `render`
 
@@ -172,25 +172,25 @@ User to run as
 
 ## `render:completions`
 
-* Depends: build, render:usage
+- Depends: build, render:usage
 
 **Usage**: `render:completions`
 
 ## `render:help`
 
-* Depends: build
+- Depends: build
 
 **Usage**: `render:help`
 
 ## `render:mangen`
 
-* Depends: build
+- Depends: build
 
 **Usage**: `render:mangen`
 
 ## `render:registry`
 
-* Depends: build
+- Depends: build
 
 **Usage**: `render:registry`
 
@@ -200,7 +200,7 @@ User to run as
 
 ## `render:usage`
 
-* Depends: build
+- Depends: build
 
 **Usage**: `render:usage`
 
@@ -234,7 +234,7 @@ run all tests with coverage report
 
 ## `test:e2e`
 
-* Depends: build
+- Depends: build
 
 **Usage**: `test:e2e`
 

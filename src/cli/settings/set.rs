@@ -54,6 +54,10 @@ impl SettingsSet {
             "pin" => parse_bool(&self.value)?,
             "pipx_uvx" => parse_bool(&self.value)?,
             "plugin_autoupdate_last_check_duration" => self.value.into(),
+            "python.compile" => parse_bool(&self.value)?,
+            "python.default_packages_file" => self.value.into(),
+            "python.pyenv_repo" => self.value.into(),
+            "python.venv_auto_create" => parse_bool(&self.value)?,
             "python_compile" => parse_bool(&self.value)?,
             "python_default_packages_file" => self.value.into(),
             "python_pyenv_repo" => self.value.into(),
@@ -177,8 +181,6 @@ pub mod tests {
         pipx_uvx = false
         plugin_autoupdate_last_check_duration = "1"
         python_default_packages_file = "~/.default-python-packages"
-        python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
-        python_venv_stdlib = false
         quiet = false
         raw = false
         trusted_config_paths = []
@@ -188,6 +190,12 @@ pub mod tests {
         yes = true
 
         [node]
+
+        [python]
+        default_packages_file = "~/.default-python-packages"
+        pyenv_repo = "https://github.com/pyenv/pyenv.git"
+        venv_auto_create = false
+        venv_stdlib = false
 
         [ruby]
         default_packages_file = "~/.default-gems"

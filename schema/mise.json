@@ -14,9 +14,7 @@
             "type": "number"
           },
           {
-            "enum": [
-              false
-            ],
+            "enum": [false],
             "type": "boolean"
           }
         ]
@@ -80,9 +78,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "path"
-                      ],
+                      "required": ["path"],
                       "type": "object"
                     }
                   ]
@@ -259,13 +255,7 @@
           "default": "info",
           "description": "Show more/less output.",
           "type": "string",
-          "enum": [
-            "trace",
-            "debug",
-            "info",
-            "warn",
-            "error"
-          ]
+          "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "node": {
           "additionalProperties": false,
@@ -306,33 +296,82 @@
           "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
           "type": "string"
         },
+        "python": {
+          "additionalProperties": false,
+          "properties": {
+            "compile": {
+              "description": "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
+              "type": "boolean"
+            },
+            "default_packages_file": {
+              "description": "Path to a file containing default python packages to install when installing a python version.",
+              "type": "string"
+            },
+            "patch_url": {
+              "description": "URL to fetch python patches from to pass to python-build.",
+              "type": "string"
+            },
+            "patches_directory": {
+              "description": "Directory to fetch python patches from.",
+              "type": "string"
+            },
+            "precompiled_arch": {
+              "description": "Specify the architecture to use for precompiled binaries.",
+              "type": "string"
+            },
+            "precompiled_os": {
+              "description": "Specify the OS to use for precompiled binaries.",
+              "type": "string"
+            },
+            "pyenv_repo": {
+              "default": "https://github.com/pyenv/pyenv.git",
+              "description": "URL to fetch pyenv from for compiling python with python-build.",
+              "type": "string"
+            },
+            "venv_auto_create": {
+              "description": "Automatically create virtualenvs for python tools.",
+              "deprecated": "Use env._python.venv instead.",
+              "type": "boolean"
+            },
+            "venv_stdlib": {
+              "description": "Prefer to use venv from Python's standard library.",
+              "type": "boolean"
+            }
+          }
+        },
         "python_compile": {
           "description": "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
+          "deprecated": "Use python.compile instead.",
           "type": "boolean"
         },
         "python_default_packages_file": {
           "description": "Path to a file containing default python packages to install when installing python.",
+          "deprecated": "Use python.default_packages_file instead.",
           "type": "string"
         },
         "python_patch_url": {
           "description": "URL to fetch python patches from.",
+          "deprecated": "Use python.patch_url instead.",
           "type": "string"
         },
         "python_patches_directory": {
           "description": "Directory to fetch python patches from.",
+          "deprecated": "Use python.patch_url instead.",
           "type": "string"
         },
         "python_precompiled_arch": {
           "description": "Specify the architecture to use for precompiled binaries.",
+          "deprecated": "Use python.precompiled_arch instead.",
           "type": "string"
         },
         "python_precompiled_os": {
           "description": "Specify the OS to use for precompiled binaries.",
+          "deprecated": "Use python.precompiled_os instead.",
           "type": "string"
         },
         "python_pyenv_repo": {
-          "default": "https://github.com/pyenv/pyenv.git",
           "description": "URL to fetch pyenv from for compiling python.",
+          "deprecated": "Use python.pyenv_repo instead.",
           "type": "string"
         },
         "python_venv_auto_create": {
@@ -417,10 +456,7 @@
         "task_output": {
           "description": "Change output style when executing tasks.",
           "type": "string",
-          "enum": [
-            "prefix",
-            "interleave"
-          ]
+          "enum": ["prefix", "interleave"]
         },
         "trace": {
           "description": "Sets log level to trace",
@@ -512,9 +548,7 @@
                     "type": "number"
                   },
                   {
-                    "enum": [
-                      false
-                    ],
+                    "enum": [false],
                     "type": "boolean"
                   }
                 ]
@@ -599,9 +633,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "version"
-          ],
+          "required": ["version"],
           "type": "object"
         }
       ]
