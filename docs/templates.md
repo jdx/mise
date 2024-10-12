@@ -77,7 +77,7 @@ You can modify variables using [filters](https://keats.github.io/tera/docs/#filt
 You can filter a variable by a pipe symbol (`|`) and may have named arguments
 in parentheses. You can also chain multiple filters.
 e.g. <span v-pre>`{{ "Doctor Who" | lower | replace(from="doctor", to="Dr.") }}`</span>
-will output  `Dr. who`.
+will output `Dr. who`.
 
 ### Tera Functions
 

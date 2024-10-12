@@ -69,8 +69,7 @@ ln -s ~/.sdkman/candidates/java/21.0.1-open ~/.local/share/mise/installs/java/21
 cp ~/.local/share/mise/installs/java/21.0.1-open/lib/libjli.dylib ~/.local/share/mise/installs/java/21.0.1-open/Contents/MacOS/libjli.dylib
 ```
 
-4. Don't forget to make sure the cache is blocked and valid, by making sure an **empty** directory *
-   *exists** for your version in the [mise cache](https://mise.jdx.dev/directories.html#cache-mise):
+4. Don't forget to make sure the cache is blocked and valid, by making sure an **empty** directory **exists** for your version in the [mise cache](https://mise.jdx.dev/directories.html#cache-mise):
    e.g.
 
 ```sh

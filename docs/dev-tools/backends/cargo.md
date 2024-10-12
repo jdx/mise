@@ -63,9 +63,9 @@ Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environm
 
 ### `cargo_binstall`
 
-* Type: `bool`
-* Env: `MISE_CARGO_BINSTALL`
-* Default: `true`
+- Type: `bool`
+- Env: `MISE_CARGO_BINSTALL`
+- Default: `true`
 
 If true, mise will use `cargo binstall` instead of `cargo install` if
 [`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.

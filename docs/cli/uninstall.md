@@ -27,7 +27,7 @@ Do not actually delete anything
 Examples:
 
     # will uninstall specific version
-    $ mise uninstall node@18.0.0 
+    $ mise uninstall node@18.0.0
 
     # will uninstall the current node version (if only one version is installed)
     $ mise uninstall node

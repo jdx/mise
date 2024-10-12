@@ -56,10 +56,10 @@ mise is pretty easy to use without an action:
 jobs:
   build:
     steps:
-    - run: |
-        curl https://mise.run | sh
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-        echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
+      - run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
 ```
 
 Or you can use the custom action [`jdx/mise-action`](https://github.com/jdx/mise-action):

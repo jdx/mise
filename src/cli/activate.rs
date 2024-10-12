@@ -44,6 +44,7 @@ pub struct Activate {
 
     /// Use shims instead of modifying PATH
     /// Effectively the same as:
+    ///
     ///     PATH="$HOME/.local/share/mise/shims:$PATH"
     #[clap(long, verbatim_doc_comment)]
     shims: bool,

@@ -2,11 +2,11 @@
 
 In addition to defining tasks through the configuration, they can also be defined as standalone script files in one of the following directories:
 
-* `mise-tasks/:task_name`
-* `.mise-tasks/:task_name`
-* `mise/tasks/:task_name`
-* `.mise/tasks/:task_name`
-* `.config/mise/tasks/:task_name`
+- `mise-tasks/:task_name`
+- `.mise-tasks/:task_name`
+- `mise/tasks/:task_name`
+- `.mise/tasks/:task_name`
+- `.config/mise/tasks/:task_name`
 
 Here is an example of a file task that builds a Rust CLI:
 
@@ -90,7 +90,7 @@ set -e
 #USAGE }
 #USAGE flag "-u --user <user>" help="The user to build for"
 #USAGE complete "user" run="mycli users"
-#USAGE arg "<target>" help="The target to build" 
+#USAGE arg "<target>" help="The target to build"
 
 if [ "$usage_clean" = "true" ]; then
   cargo clean

@@ -6,8 +6,8 @@ title: Home
 hero:
   name: mise-en-place
   tagline: |
-      The front-end to your dev env
-      <span class="formerly">Pronounced "MEEZ ahn plahs"</span>
+    The front-end to your dev env
+    <span class="formerly">Pronounced "MEEZ ahn plahs"</span>
   actions:
     - theme: brand
       text: Getting Started

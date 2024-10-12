@@ -56,7 +56,9 @@ Customize status output with `status` settings."#
         arg "<SHELL>"
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
-    flag "--shims" help="Use shims instead of modifying PATH\nEffectively the same as:\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\""
+    flag "--shims" help="Use shims instead of modifying PATH\nEffectively the same as:" {
+        long_help "Use shims instead of modifying PATH\nEffectively the same as:\n\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\""
+    }
     flag "-q --quiet" help="Suppress non-error messages"
     arg "[SHELL_TYPE]" help="Shell type to generate the script for"
 }
@@ -72,6 +74,7 @@ cmd "alias" help="Manage aliases" {
 
 This is the contents of an alias.<PLUGIN> entry in ~/.config/mise/config.toml"
         after_long_help r"Examples:
+
    $ mise alias get node lts-hydrogen
    20.0.0
 "
@@ -680,6 +683,7 @@ e.g.: `mise install node@20` will autoinstall the node plugin
 
 This behavior can be modified in ~/.config/mise/config.toml"
         after_long_help r"Examples:
+
     # install the node via shorthand
     $ mise plugins install node
 
@@ -706,6 +710,7 @@ This behavior can be modified in ~/.config/mise/config.toml"
 
 This is used for developing a plugin."
         after_long_help r#"Examples:
+
     # essentially just `ln -s ./mise-node ~/.local/share/mise/plugins/node`
     $ mise plugins link node ./mise-node
 
@@ -747,7 +752,8 @@ List all available remote plugins
 The full list is here: https://github.com/jdx/mise/blob/main/src/default_shorthands.rs
 
 Examples:
-  $ mise plugins ls-remote
+
+    $ mise plugins ls-remote
 "
         flag "-u --urls" help="Show the git url for each plugin e.g.: https://github.com/mise-plugins/mise-poetry.git"
         flag "--only-names" help="Only show the name of each plugin by default it will show a \"*\" next to installed plugins"
@@ -1244,7 +1250,7 @@ This only removes the installed version, it does not modify mise.toml."
     after_long_help r"Examples:
 
     # will uninstall specific version
-    $ mise uninstall node@18.0.0 
+    $ mise uninstall node@18.0.0
 
     # will uninstall the current node version (if only one version is installed)
     $ mise uninstall node
@@ -1264,7 +1270,7 @@ By default, this command modifies `mise.toml` in the current directory."
 
     # Remove NODE_ENV from the current directory's config
     $ mise unset NODE_ENV
-    
+
     # Remove NODE_ENV from the global config
     $ mise unset NODE_ENV -g
 "
