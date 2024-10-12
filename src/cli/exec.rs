@@ -12,8 +12,8 @@ use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
 use crate::config::Config;
-use crate::env;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::{dirs, env};
 
 /// Execute a command with tool(s) set
 ///
@@ -68,7 +68,11 @@ impl Exec {
         ts.notify_if_versions_missing();
 
         let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = ts.env_with_path(&config)?;
+        let mut env = ts.env_with_path(&config)?;
+
+        if let Some(path) = self.remove_shims_from_path(env.get(&*env::PATH_KEY)) {
+            env.insert(env::PATH_KEY.to_string(), path);
+        }
 
         self.exec(program, args, env)
     }
@@ -128,6 +132,27 @@ impl Exec {
             Some(0) => Ok(()),
             Some(code) => Err(eyre!("command failed: exit code {}", code)),
             None => Err(eyre!("command failed: terminated by signal")),
+        }
+    }
+
+    // remove the shims dir when using `mise x` since the tools will already be on PATH and shims won't
+    // be needed. This is to avoid shims from being called in a loop.
+    fn remove_shims_from_path(&self, path: Option<&String>) -> Option<String> {
+        if let Some(path) = path {
+            let paths = env::split_paths(path).filter(|p| {
+                p != *dirs::SHIMS
+                    && !p
+                        .canonicalize()
+                        .is_ok_and(|p| p == dirs::SHIMS.canonicalize().unwrap_or_default())
+            });
+            Some(
+                env::join_paths(paths)
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        } else {
+            None
         }
     }
 }
