@@ -635,15 +635,18 @@ fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequ
     Ok(leaves)
 }
 
-fn is_outdated_version(current: &str, latest: &str) -> bool {
-    let c = Version::new(current);
-    let l = Version::new(latest);
-    if c.is_some() && l.is_some() {
-        return c.lt(&l);
+pub fn is_outdated_version(current: &str, latest: &str) -> bool {
+    if let (Some(c), Some(l)) = (Version::new(current), Version::new(latest)) {
+        c.lt(&l)
+    } else {
+        current != latest
     }
-    current != latest
 }
 
+/// check if the new version is a bump from the old version and return the new version
+/// at the same specifity level as the old version
+/// used with `mise outdated --bump` to determine what new semver range to use
+/// given old: "20" and new: "21.2.3", return Some("21")
 fn check_semver_bump(old: &str, new: &str) -> Option<String> {
     let old = Versioning::new(old);
     let new = Versioning::new(new);
