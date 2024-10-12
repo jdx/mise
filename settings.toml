@@ -329,55 +329,117 @@ type = "String"
 default = "7d"
 description = "How long to wait before updating plugins automatically (note this isn't currently implemented)."
 
-[python_compile]
+[python.compile]
 env = "MISE_PYTHON_COMPILE"
 type = "Option<bool>"
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
+docs = """
+* Values:
+  * `true` - always compile with python-build instead of downloading [precompiled binaries](#precompiled-python-binaries).
+  * `false` - always download precompiled binaries.
+  * [undefined] - use precompiled binary if one is available for the current platform, compile otherwise.
+"""
 
-[python_default_packages_file]
+[python.default_packages_file]
 env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE"
 type = "Option<PathBuf>"
-description = "Path to a file containing default python packages to install when installing python."
+description = "Path to a file containing default python packages to install when installing a python version."
 
-[python_patch_url]
+[python.patch_url]
 env = "MISE_PYTHON_PATCH_URL"
 type = "Option<String>"
-description = "URL to fetch python patches from."
+description = "URL to fetch python patches from to pass to python-build."
 
-[python_patches_directory]
+[python.patches_directory]
 env = "MISE_PYTHON_PATCHES_DIRECTORY"
 type = "Option<PathBuf>"
 description = "Directory to fetch python patches from."
 
-[python_precompiled_arch]
+[python.precompiled_arch]
 env = "MISE_PYTHON_PRECOMPILED_ARCH"
 type = "Option<String>"
 description = "Specify the architecture to use for precompiled binaries."
 default_docs = '"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"'
 
-[python_precompiled_os]
+[python.precompiled_os]
 env = "MISE_PYTHON_PRECOMPILED_OS"
 type = "Option<String>"
 default_docs = '"x86_64_v3" | "aarch64"'
 description = "Specify the OS to use for precompiled binaries."
+docs = """
+Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this to "x86_64" for the most compatible binaries. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
+"""
 
-[python_pyenv_repo]
+[python.pyenv_repo]
 env = "MISE_PYENV_REPO"
 type = "String"
 default = "https://github.com/pyenv/pyenv.git"
-description = "URL to fetch pyenv from for compiling python."
+description = "URL to fetch pyenv from for compiling python with python-build."
 
-[python_venv_auto_create]
+[python.venv_auto_create]
 env = "MISE_PYTHON_VENV_AUTO_CREATE"
 type = "bool"
 hide = true
 deprecated = "Use env._python.venv instead."
 description = "Automatically create virtualenvs for python tools."
 
-[python_venv_stdlib]
+[python.venv_stdlib]
 env = "MISE_VENV_STDLIB"
 type = "bool"
 description = "Prefer to use venv from Python's standard library."
+
+[python_compile]
+type = "Option<bool>"
+description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
+deprecated = "Use python.compile instead."
+hide = true
+
+[python_default_packages_file]
+type = "Option<PathBuf>"
+description = "Path to a file containing default python packages to install when installing python."
+deprecated = "Use python.default_packages_file instead."
+hide = true
+
+[python_patch_url]
+type = "Option<String>"
+description = "URL to fetch python patches from."
+deprecated = "Use python.patch_url instead."
+hide = true
+
+[python_patches_directory]
+type = "Option<PathBuf>"
+description = "Directory to fetch python patches from."
+deprecated = "Use python.patch_url instead."
+hide = true
+
+[python_precompiled_arch]
+type = "Option<String>"
+description = "Specify the architecture to use for precompiled binaries."
+deprecated = "Use python.precompiled_arch instead."
+hide = true
+
+[python_precompiled_os]
+type = "Option<String>"
+description = "Specify the OS to use for precompiled binaries."
+deprecated = "Use python.precompiled_os instead."
+hide = true
+
+[python_pyenv_repo]
+type = "Option<String>"
+description = "URL to fetch pyenv from for compiling python."
+deprecated = "Use python.pyenv_repo instead."
+hide = true
+
+[python_venv_auto_create]
+type = "Option<bool>"
+hide = true
+deprecated = "Use env._python.venv instead."
+description = "Automatically create virtualenvs for python tools."
+
+[python_venv_stdlib]
+type = "Option<bool>"
+description = "Prefer to use venv from Python's standard library."
+hide = true
 
 [quiet]
 env = "MISE_QUIET"

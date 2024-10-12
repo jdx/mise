@@ -89,8 +89,6 @@ mod tests {
         pipx_uvx = false
         plugin_autoupdate_last_check_duration = "20m"
         python_default_packages_file = "~/.default-python-packages"
-        python_pyenv_repo = "https://github.com/pyenv/pyenv.git"
-        python_venv_stdlib = false
         quiet = false
         raw = false
         trusted_config_paths = []
@@ -100,6 +98,12 @@ mod tests {
         yes = true
 
         [node]
+
+        [python]
+        default_packages_file = "~/.default-python-packages"
+        pyenv_repo = "https://github.com/pyenv/pyenv.git"
+        venv_auto_create = false
+        venv_stdlib = false
 
         [ruby]
         default_packages_file = "~/.default-gems"
@@ -148,9 +152,12 @@ mod tests {
         pin
         pipx_uvx
         plugin_autoupdate_last_check_duration
+        python
+        python.default_packages_file
+        python.pyenv_repo
+        python.venv_auto_create
+        python.venv_stdlib
         python_default_packages_file
-        python_pyenv_repo
-        python_venv_stdlib
         quiet
         raw
         ruby

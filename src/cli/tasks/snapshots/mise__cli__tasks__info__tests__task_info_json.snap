@@ -38,7 +38,7 @@ expression: output
       ],
       "args": [],
       "before_help": null,
-      "before_help_long": "* Depends: lint, test",
+      "before_help_long": "- Depends: lint, test",
       "before_help_md": null,
       "deprecated": null,
       "examples": [],

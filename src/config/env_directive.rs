@@ -266,7 +266,7 @@ impl EnvResults {
                             debug!("python not installed, skipping venv creation");
                         } else {
                             let cmd = if let (false, Some(_uv_in_path)) =
-                                (SETTINGS.python_venv_stdlib, which_non_pristine("uv"))
+                                (SETTINGS.python.venv_stdlib, which_non_pristine("uv"))
                             {
                                 CmdLineRunner::new("uv").args(["venv", &venv.to_string_lossy()])
                             } else {

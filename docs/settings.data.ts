@@ -1,37 +1,41 @@
-import * as fs from 'node:fs';
-import * as toml from 'toml';
-import markdownit from 'markdown-it'
+import * as fs from "node:fs";
+import * as toml from "toml";
+import markdownit from "markdown-it";
 
 const md = markdownit();
 
 export default {
-  watch: ['./settings.toml'],
+  watch: ["./settings.toml"],
   load() {
     const settings = {};
-    const raw = fs.readFileSync('./settings.toml', 'utf-8');
+    const raw = fs.readFileSync("./settings.toml", "utf-8");
     const doc = toml.parse(raw);
 
     function buildElement(key, props) {
       let type = props.type;
       let optional = false;
-      if (type.startsWith('Option<')) {
+      if (type.startsWith("Option<")) {
         type = type.slice(7, -1);
         optional = true;
       }
-      type = type.replaceAll('PathBuf', 'String');
+      type = type.replaceAll("PathBuf", "String");
       let default_ = props.default;
-      if (default_ === undefined && type === 'bool' && !optional) {
+      if (default_ === undefined && type === "bool" && !optional) {
         default_ = false;
       }
       if (default_ === undefined && optional) {
         default_ = "None";
       }
-      if (type === 'u64' || type === 'usize') {
-        type = 'integer';
-      } else if (type === 'String') {
-        type = 'string';
-      } else if (type === "BTreeSet<String>" || type === "HashSet<String>" || type === "Vec<String>") {
-        type = 'string[]';
+      if (type === "u64" || type === "usize") {
+        type = "integer";
+      } else if (type === "String") {
+        type = "string";
+      } else if (
+        type === "BTreeSet<String>" ||
+        type === "HashSet<String>" ||
+        type === "Vec<String>"
+      ) {
+        type = "string[]";
       }
       // } else if (type === "String" || type === "PathBuf") {
       //   type = 'string';
@@ -67,10 +71,12 @@ export default {
             description: props.description,
             settings: [],
           };
-          settings[key].settings.push(buildElement(`${key}.${subkey}`, props[subkey]));
+          settings[key].settings.push(
+            buildElement(`${key}.${subkey}`, props[subkey]),
+          );
         }
       }
     }
-    return Object.values(settings);
-  }
-}
+    return Object.values(settings).sort((a, b) => a.key.localeCompare(b.key));
+  },
+};
