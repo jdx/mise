@@ -33,7 +33,7 @@ const AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Remove NODE_ENV from the current directory's config
     $ <bold>mise unset NODE_ENV</bold>
-    
+
     # Remove NODE_ENV from the global config
     $ <bold>mise unset NODE_ENV -g</bold>
 "#

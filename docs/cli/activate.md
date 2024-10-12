@@ -35,6 +35,7 @@ Shell type to generate the script for
 
 Use shims instead of modifying PATH
 Effectively the same as:
+
     PATH="$HOME/.local/share/mise/shims:$PATH"
 
 ### `-q --quiet`

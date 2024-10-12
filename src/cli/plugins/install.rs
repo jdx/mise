@@ -155,6 +155,7 @@ fn get_name_from_url(url: &str) -> Result<String> {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+
     # install the node via shorthand
     $ <bold>mise plugins install node</bold>
 

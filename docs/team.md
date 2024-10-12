@@ -49,9 +49,9 @@ of development for the project.
 
 The advisory board helps make important decisions about the project such as:
 
-* What features should be on the roadmap
-* When should functionality move from experimental to stable
-* If/when/how features should be deprecated
+- What features should be on the roadmap
+- When should functionality move from experimental to stable
+- If/when/how features should be deprecated
 
 <VPTeamMembers :members="board" />
 

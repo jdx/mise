@@ -17,5 +17,6 @@ The plugin to show the alias for
 The alias to show
 
 Examples:
+
    $ mise alias get node lts-hydrogen
    20.0.0

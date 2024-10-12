@@ -10,6 +10,7 @@ cargo clippy --fix --allow-staged --allow-dirty -- -Dwarnings
 shellcheck -x "${scripts[@]}"
 shfmt -w  -i 2 -ci -bn "${scripts_dirs[@]}"
 prettier -w $(git ls-files '*.yml' '*.yaml')
+prettier -w .
 markdownlint --fix .
 actionlint
 toml-sort -i settings.toml --spaces-indent-inline-array 4

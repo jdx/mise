@@ -31,33 +31,33 @@ Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environm
 
 ### `go_default_packages_file`
 
-* Type: `string`
-* Env: `MISE_GO_DEFAULT_PACKAGES_FILE`
-* Default: `~/.default-go-packages`
+- Type: `string`
+- Env: `MISE_GO_DEFAULT_PACKAGES_FILE`
+- Default: `~/.default-go-packages`
 
 Packages list to install with `go install` after installing a Go version.
 
 ### `go_download_mirror`
 
-* Type: `string`
-* Env: `MISE_GO_DOWNLOAD_MIRROR`
-* Default: `https://dl.google.com/go`
+- Type: `string`
+- Env: `MISE_GO_DOWNLOAD_MIRROR`
+- Default: `https://dl.google.com/go`
 
 URL to download go sdk tarballs from.
 
 ### `go_repo`
 
-* Type: `string`
-* Env: `MISE_GO_REPO`
-* Default: `https://github.com/golang/go`
+- Type: `string`
+- Env: `MISE_GO_REPO`
+- Default: `https://github.com/golang/go`
 
 Used to get latest go version from GitHub releases.
 
 ### `go_set_gobin`
 
-* Type: `bool | null`
-* Env: `MISE_GO_SET_GOBIN`
-* Default: `null`
+- Type: `bool | null`
+- Env: `MISE_GO_SET_GOBIN`
+- Default: `null`
 
 Sets `GOBIN` to `~/.local/share/mise/go/installs/[VERSION]/bin`. This causes CLIs installed via
 `go install` to have shims created for it which will have env vars from mise such as GOROOT set.
@@ -68,9 +68,9 @@ method to install Go CLIs.
 
 ### `go_set_gopath` <Badge type="warning" text="deprecated" />
 
-* Type: `bool`
-* Env: `MISE_GO_SET_GOPATH`
-* Default: `false`
+- Type: `bool`
+- Env: `MISE_GO_SET_GOPATH`
+- Default: `false`
 
 Sets `GOPATH` to `~/.local/share/mise/go/installs/[VERSION]/packages`. This retains behavior from
 asdf and older mise versions. There is no known reason for this to be enabled but it is available
@@ -78,9 +78,9 @@ asdf and older mise versions. There is no known reason for this to be enabled bu
 
 ### `go_skip_checksum`
 
-* Type: `bool`
-* Env: `MISE_GO_SKIP_CHECKSUM`
-* Default: `false`
+- Type: `bool`
+- Env: `MISE_GO_SKIP_CHECKSUM`
+- Default: `false`
 
 Skips checksum verification of downloaded go tarballs.
 

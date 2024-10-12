@@ -25,10 +25,10 @@ mise can be configured in many ways. The most typical is by `.mise.toml`, but it
 with asdf `.tool-versions` files. It can also use idiomatic version files like `.node-version` and
 `.ruby-version`. See [Configuration](/configuration) for more.
 
-* Like [direnv](https://github.com/direnv/direnv) it
+- Like [direnv](https://github.com/direnv/direnv) it
   manages [environment variables](/configuration#env---arbitrary-environment-variables) for
   different project directories.
-* Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](/tasks/) used
+- Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](/tasks/) used
   to build and test projects.
 
 ## How it works
@@ -97,11 +97,11 @@ if you wish or you want to use a plugin not in the default registry.
 
 There are many ways it can be used:
 
-* `mise install node@20.0.0` - install a specific version
-* `mise install node@20` - install the latest version matching this prefix
-* `mise install node` - install whatever version of node currently specified in
+- `mise install node@20.0.0` - install a specific version
+- `mise install node@20` - install the latest version matching this prefix
+- `mise install node` - install whatever version of node currently specified in
   .tool-versions/.mise.toml
-* `mise install` - install all plugins and tools
+- `mise install` - install all plugins and tools
 
 ### `mise local|global` <Badge type="danger" text="not recommended" />
 
