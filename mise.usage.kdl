@@ -842,6 +842,7 @@ currently active in mise.toml."#
     $ ~/.local/share/mise/shims/node -v
     v20.0.0
 "
+    flag "-f --force" help="Removes all shims before reshimming"
     arg "[PLUGIN]" hide=true
     arg "[VERSION]" hide=true
 }
