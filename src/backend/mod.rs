@@ -24,7 +24,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::{CorePlugin, CORE_PLUGINS};
 use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{is_outdated_version, ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, lock_file};
 
@@ -255,7 +255,7 @@ pub trait Backend: Debug + Send + Sync {
                 return false;
             }
         };
-        !self.is_version_installed(tv, true) || tv.version != latest
+        !self.is_version_installed(tv, true) || is_outdated_version(&tv.version, &latest)
     }
     fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
         match tv.install_path() {
