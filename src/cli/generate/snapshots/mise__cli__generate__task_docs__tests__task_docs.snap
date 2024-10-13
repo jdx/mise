@@ -8,7 +8,7 @@ expression: output
 
 **Usage**: `filetask [--user <user>]`
 
-**Aliases**: ft
+**Aliases**: `ft`
 
 This is a test build script
 
