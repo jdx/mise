@@ -57,7 +57,6 @@ mod tests {
         asdf = true
         asdf_compat = false
         cache_prune_age = "0"
-        cargo_binstall = true
         color = true
         disable_default_shorthands = false
         disable_hints = []
@@ -79,7 +78,6 @@ mod tests {
         not_found_auto_install = true
         paranoid = false
         pin = false
-        pipx_uvx = false
         plugin_autoupdate_last_check_duration = "20m"
         python_default_packages_file = "~/.default-python-packages"
         quiet = false
@@ -90,7 +88,13 @@ mod tests {
         vfox = false
         yes = true
 
+        [cargo]
+        binstall = true
+
         [node]
+
+        [pipx]
+        uvx = false
 
         [python]
         default_packages_file = "~/.default-python-packages"

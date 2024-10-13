@@ -26,6 +26,24 @@ Note that shorthand versions (like `21` in the example) use `OpenJDK` as the ven
 The OpenJDK versions will only be updated for a 6-month period. Updates and security patches will not be available after this short period. This also applies for LTS versions. Also see <https://whichjdk.com> for more information.
 :::
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `java` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `release_type`
+
+The `release_type` option allows you to specify the type of release to install. The following values
+are supported:
+
+- `ga` (default): General Availability release
+- `ea`: Early Access release
+
+```toml
+[tools]
+"java" = { version = "openjdk-21", release_type = "ea" }
+```
+
 ## macOS JAVA_HOME Integration
 
 Some applications in macOS rely on `/usr/libexec/java_home` to find installed Java runtimes.

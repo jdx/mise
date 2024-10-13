@@ -42,7 +42,8 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ### Using Git
 
-You can install a any package from a Git repository using the `mise` command. This allows you to install a particular tag, branch, or commit revision:
+You can install a any package from a Git repository using the `mise` command. This allows you to
+install a particular tag, branch, or commit revision:
 
 ```sh
 # Install a specific tag
@@ -57,22 +58,36 @@ mise use cargo:github.com/username/demo@rev:<commit_hash>
 
 This will execute a `cargo install` command with the corresponding Git options.
 
-## Configuration
+## Settings
 
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
 
-### `cargo_binstall`
+<script setup>
+import { data } from '/settings.data.ts';
+import Setting from '/components/setting.vue';
+const settings = data.find(s => s.key === 'cargo').settings;
+</script>
+<Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
 
-- Type: `bool`
-- Env: `MISE_CARGO_BINSTALL`
-- Default: `true`
+## Tool Options
 
-If true, mise will use `cargo binstall` instead of `cargo install` if
-[`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.
-This makes installing CLIs with cargo _much_ faster by downloading precompiled binaries.
+The following [tool-options](/dev-tools/#tool-options) are available for the `cargo` backend—these
+go in `[tools]` in `mise.toml`.
 
-You can install it with mise:
+### `features`
 
-```sh
-mise use -g cargo-binstall
+Install additional components:
+
+```toml
+[tools]
+"cargo:cargo-edit" = { features = "add" }
+```
+
+### `default-features`
+
+Disable default features:
+
+```toml
+[tools]
+"cargo:cargo-edit" = { default-features = false }
 ```

@@ -148,15 +148,21 @@ impl Settings {
                 settings.python.compile = Some(true);
             }
         }
-        settings.set_python_config();
+        settings.set_hidden_configs();
         let settings = Arc::new(settings);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
         trace!("Settings: {:#?}", settings);
         Ok(settings)
     }
 
-    /// Sets deprecated python_* settings to the new python.* settings
-    fn set_python_config(&mut self) {
+    /// Sets deprecated settings to new names
+    fn set_hidden_configs(&mut self) {
+        if let Some(cargo_binstall) = self.cargo_binstall {
+            self.cargo.binstall = cargo_binstall;
+        }
+        if let Some(pipx_uvx) = self.pipx_uvx {
+            self.pipx.uvx = pipx_uvx;
+        }
         if let Some(python_compile) = self.python_compile {
             self.python.compile = Some(python_compile);
         }

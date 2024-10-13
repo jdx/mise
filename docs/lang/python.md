@@ -26,7 +26,7 @@ $ python3.11 -V
 3.11.0
 ```
 
-## Configuration
+## Settings
 
 `python-build` already has
 a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
