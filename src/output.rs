@@ -1,4 +1,4 @@
-use crate::config::settings::SETTINGS;
+use crate::config::SETTINGS;
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::sync::Mutex;

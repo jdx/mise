@@ -10,7 +10,7 @@ use tokio::runtime::Runtime;
 use url::Url;
 
 use crate::cli::version;
-use crate::config::settings::SETTINGS;
+use crate::config::SETTINGS;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file};

@@ -17,7 +17,7 @@ use versions::Versioning;
 use self::backend_meta::BackendMeta;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
-use crate::config::settings::SETTINGS;
+use crate::config::SETTINGS;
 use crate::config::{Config, Settings, CONFIG};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;

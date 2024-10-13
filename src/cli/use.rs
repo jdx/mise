@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::settings::SETTINGS;
+use crate::config::SETTINGS;
 use crate::config::{config_file, is_global_config, Config, LOCAL_CONFIG_FILENAMES};
 use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,

@@ -13,8 +13,8 @@ use rayon::prelude::*;
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
-use crate::config::settings::SETTINGS;
 use crate::config::CONFIG;
+use crate::config::SETTINGS;
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
