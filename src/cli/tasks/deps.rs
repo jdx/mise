@@ -4,8 +4,7 @@ use itertools::Itertools;
 use petgraph::dot::Dot;
 
 use crate::config::{Config, Settings};
-use crate::task::Deps;
-use crate::task::Task;
+use crate::task::{Deps, Task};
 use crate::ui::style::{self};
 use crate::ui::tree::print_tree;
 
