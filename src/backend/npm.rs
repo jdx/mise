@@ -5,8 +5,7 @@ use crate::backend::{Backend, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::Config;
-use crate::config::SETTINGS;
+use crate::config::{Config, SETTINGS};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 

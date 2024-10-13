@@ -2,7 +2,7 @@
 
 **Usage**: `mise ls [FLAGS] [PLUGIN]...`
 
-**Aliases**: list
+**Aliases**: `list`
 
 List installed and active tool versions
 

@@ -2,7 +2,7 @@
 
 **Usage**: `mise link [-f --force] <TOOL@VERSION> <PATH>`
 
-**Aliases**: ln
+**Aliases**: `ln`
 
 Symlinks a tool version into mise
 

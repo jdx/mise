@@ -1,19 +1,18 @@
+use crate::backend::{Backend, BackendType};
+use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::cli::args::BackendArg;
+use crate::cmd::CmdLineRunner;
+use crate::config::{Config, Settings, SETTINGS};
+use crate::github;
+use crate::http::HTTP_FETCH;
+use crate::install_context::InstallContext;
+use crate::toolset::{ToolRequest, ToolVersionOptions};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use std::fmt::Debug;
 use std::str::FromStr;
 use versions::Versioning;
-
-use crate::backend::{Backend, BackendType};
-use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
-use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
-use crate::config::{Config, Settings};
-use crate::github;
-use crate::http::HTTP_FETCH;
-use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersionOptions};
+use xx::regex;
 
 #[derive(Debug)]
 pub struct PIPXBackend {

@@ -17,6 +17,7 @@ use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct RubyPlugin {

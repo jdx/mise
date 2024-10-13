@@ -2,7 +2,7 @@
 
 **Usage**: `mise config generate [-o --output <OUTPUT>]`
 
-**Aliases**: g
+**Aliases**: `g`
 
 [experimental] Generate a mise.toml file
 

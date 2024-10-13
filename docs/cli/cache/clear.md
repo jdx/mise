@@ -2,7 +2,7 @@
 
 **Usage**: `mise cache clear [PLUGIN]...`
 
-**Aliases**: c
+**Aliases**: `c`
 
 Deletes all cache files in mise
 

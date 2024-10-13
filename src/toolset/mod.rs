@@ -6,6 +6,16 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::{panic, thread};
 
+use crate::backend::Backend;
+use crate::cli::args::BackendArg;
+use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
+use crate::config::Config;
+use crate::env::{PATH_KEY, TERM_WIDTH};
+use crate::errors::Error;
+use crate::install_context::InstallContext;
+use crate::path_env::PathEnv;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{backend, env, runtime_symlinks, shims};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use eyre::{eyre, Result};
@@ -20,17 +30,7 @@ pub use tool_source::ToolSource;
 pub use tool_version::ToolVersion;
 pub use tool_version_list::ToolVersionList;
 use versions::{Version, Versioning};
-
-use crate::backend::Backend;
-use crate::cli::args::BackendArg;
-use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
-use crate::config::Config;
-use crate::env::{PATH_KEY, TERM_WIDTH};
-use crate::errors::Error;
-use crate::install_context::InstallContext;
-use crate::path_env::PathEnv;
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{backend, env, runtime_symlinks, shims};
+use xx::regex;
 
 mod builder;
 mod tool_request;
@@ -433,6 +433,7 @@ impl Toolset {
         Ok(env)
     }
     pub fn env(&self, config: &Config) -> Result<BTreeMap<String, String>> {
+        time!("env start");
         let entries = self
             .list_current_installed_versions()
             .into_par_iter()
@@ -463,6 +464,7 @@ impl Toolset {
             entries.insert(PATH_KEY.to_string(), add_paths);
         }
         entries.extend(config.env()?.clone());
+        time!("env end");
         Ok(entries)
     }
     pub fn list_paths(&self) -> Vec<PathBuf> {

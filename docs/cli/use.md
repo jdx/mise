@@ -2,7 +2,7 @@
 
 **Usage**: `mise use [FLAGS] [TOOL@VERSION]...`
 
-**Aliases**: u
+**Aliases**: `u`
 
 Installs a tool and adds the version it to mise.toml.
 

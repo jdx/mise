@@ -2,7 +2,7 @@
 
 **Usage**: `mise config [--no-header] <SUBCOMMAND>`
 
-**Aliases**: cfg
+**Aliases**: `cfg`
 
 Manage config files
 

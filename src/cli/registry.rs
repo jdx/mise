@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use eyre::Result;
-use tabled::{Table, Tabled};
-
 use crate::config::{settings, Config};
 use crate::registry::REGISTRY;
 use crate::ui::table;
+use eyre::Result;
+use tabled::{Table, Tabled};
+use xx::regex;
 
 /// [experimental] List available tools to install
 ///

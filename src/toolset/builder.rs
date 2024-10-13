@@ -37,7 +37,6 @@ impl ToolsetBuilder {
         self.load_config_files(config, &mut toolset)?;
         self.load_runtime_env(&mut toolset, env::vars().collect())?;
         self.load_runtime_args(&mut toolset)?;
-        let start_ms = std::time::Instant::now();
         if let Err(err) = toolset.resolve() {
             if Error::is_argument_err(&err) {
                 return Err(err);
@@ -45,7 +44,7 @@ impl ToolsetBuilder {
             warn!("failed to resolve toolset: {err:#}");
         }
 
-        debug!("Toolset ({:?}): {toolset}", start_ms.elapsed());
+        time!("toolset::builder::build", "{toolset}");
         Ok(toolset)
     }
 

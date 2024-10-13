@@ -2,7 +2,7 @@
 
 **Usage**: `mise tasks run [FLAGS] [TASK] [ARGS]...`
 
-**Aliases**: r
+**Aliases**: `r`
 
 [experimental] Run task(s)
 

@@ -1,5 +1,4 @@
-use crate::config::SETTINGS;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SETTINGS};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
@@ -10,7 +9,7 @@ use crate::timeout::run_with_timeout;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, lock_file};
+use crate::{dirs, exit, lock_file};
 use clap::Command;
 use console::style;
 use contracts::requires;
@@ -20,10 +19,9 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::exit;
 use std::sync::{Mutex, MutexGuard};
 use url::Url;
-use xx::file;
+use xx::{file, regex};
 
 #[derive(Debug)]
 pub struct AsdfPlugin {

@@ -11,7 +11,7 @@ static SKIP_PROMPT: Mutex<bool> = Mutex::new(false);
 
 pub fn confirm<S: Into<String>>(message: S) -> eyre::Result<bool> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
-    let _ctrlc = ctrlc::handle_ctrlc()?;
+    ctrlc::show_cursor_after_ctrl_c();
 
     if !console::user_attended_stderr() || env::__USAGE.is_some() {
         return Ok(false);
@@ -22,7 +22,7 @@ pub fn confirm<S: Into<String>>(message: S) -> eyre::Result<bool> {
 
 pub fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<bool> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
-    let _ctrlc = ctrlc::handle_ctrlc()?;
+    ctrlc::show_cursor_after_ctrl_c();
 
     if !console::user_attended_stderr() || env::__USAGE.is_some() {
         return Ok(false);

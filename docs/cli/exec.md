@@ -2,7 +2,7 @@
 
 **Usage**: `mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`
 
-**Aliases**: x
+**Aliases**: `x`
 
 Execute a command with tool(s) set
 

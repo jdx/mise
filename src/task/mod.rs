@@ -1,19 +1,3 @@
-use std::borrow::Cow;
-use std::cmp::Ordering;
-use std::collections::BTreeMap;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
-use std::{ffi, fmt, path};
-
-use console::truncate_str;
-use either::Either;
-use eyre::{eyre, Result};
-use globset::Glob;
-use itertools::Itertools;
-use petgraph::prelude::*;
-use serde_derive::{Deserialize, Serialize};
-
 use crate::config::config_file::toml::{deserialize_arr, TomlParser};
 use crate::config::Config;
 use crate::file;
@@ -22,13 +6,31 @@ use crate::task::task_script_parser::{
 };
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::ui::tree::TreeItem;
+use console::{truncate_str, Color};
+use either::Either;
+use eyre::{eyre, Result};
+use globset::Glob;
+use itertools::Itertools;
+use once_cell::sync::Lazy;
+use petgraph::prelude::*;
+use serde_derive::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
+use std::fmt::{Debug, Display, Formatter};
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
+use std::{ffi, fmt, path};
+use xx::regex;
 
 mod deps;
 mod task_script_parser;
 
+use crate::file::display_path;
+use crate::ui::style;
 pub use deps::Deps;
 
-#[derive(Debug, Default, Clone, Eq, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
 pub struct Task {
     #[serde(skip)]
     pub name: String,
@@ -91,13 +93,6 @@ impl Debug for EitherStringOrBool {
 }
 
 impl Task {
-    pub fn new(name: String, config_source: PathBuf) -> Task {
-        Task {
-            name: name.clone(),
-            config_source,
-            ..Default::default()
-        }
-    }
     pub fn from_path(path: &Path) -> Result<Task> {
         let info = file::read_to_string(path)?
             .lines()
@@ -126,6 +121,8 @@ impl Task {
         // trace!("task info: {:#?}", info);
 
         let task = Task {
+            name: name_from_path(config_root, path)?,
+            config_source: path.to_path_buf(),
             hide: !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default(),
             aliases: p
                 .parse_array("alias")?
@@ -141,21 +138,9 @@ impl Task {
             env: p.parse_env("env")?.unwrap_or_default(),
             file: Some(path.to_path_buf()),
             shell: p.parse_str("shell")?,
-            ..Task::new(name_from_path(config_root, path)?, path.to_path_buf())
+            ..Default::default()
         };
         Ok(task)
-    }
-
-    pub fn command_string(&self) -> Option<String> {
-        if let Some(command) = self.run.first() {
-            Some(command.to_string())
-            // } else if let Some(script) = &self.script {
-            //     Some(script.to_string())
-        } else {
-            self.file
-                .as_ref()
-                .map(|file| file.to_str().unwrap().to_string())
-        }
     }
 
     // pub fn args(&self) -> impl Iterator<Item = String> {
@@ -252,6 +237,21 @@ impl Task {
         let ctx = usage::docs::markdown::MarkdownRenderer::new(&spec).with_header_level(2);
         Ok(ctx.render_spec()?)
     }
+
+    pub fn estyled_prefix(&self) -> String {
+        static COLORS: Lazy<Vec<Color>> = Lazy::new(|| {
+            vec![
+                Color::Blue,
+                Color::Magenta,
+                Color::Cyan,
+                Color::Green,
+                // Color::Yellow,
+                // Color::Red,
+            ]
+        });
+        let idx = self.name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
+        style::estyle(self.prefix()).fg(COLORS[idx]).to_string()
+    }
 }
 
 fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
@@ -282,10 +282,39 @@ fn match_tasks<'a>(tasks: BTreeMap<String, &'a Task>, pat: &str) -> Result<Vec<&
     Ok(matches)
 }
 
+impl Default for Task {
+    fn default() -> Self {
+        Task {
+            name: "".to_string(),
+            description: "".to_string(),
+            aliases: vec![],
+            config_source: PathBuf::new(),
+            depends: vec![],
+            env: BTreeMap::new(),
+            dir: None,
+            hide: false,
+            raw: false,
+            sources: vec![],
+            outputs: vec![],
+            shell: None,
+            run: vec![],
+            args: vec![],
+            file: None,
+        }
+    }
+}
+
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if let Some(cmd) = self.command_string() {
-            write!(f, "{} {}", self.prefix(), truncate_str(&cmd, 60, "…"))
+        let cmd = if let Some(command) = self.run.first() {
+            Some(command.to_string())
+        } else {
+            self.file.as_ref().map(display_path)
+        };
+
+        if let Some(cmd) = cmd {
+            let cmd = cmd.lines().next().unwrap_or_default();
+            write!(f, "{} {}", self.prefix(), truncate_str(cmd, 60, "…"))
         } else {
             write!(f, "{}", self.prefix())
         }

@@ -2,7 +2,7 @@
 
 **Usage**: `mise generate <SUBCOMMAND>`
 
-**Aliases**: g
+**Aliases**: `g`
 
 [experimental] Generate files for various tools/services
 

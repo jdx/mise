@@ -56,7 +56,7 @@ impl PluginsLs {
         } else if self.core {
             tools.retain(|_, p| matches!(p.get_plugin_type(), PluginType::Core));
         } else {
-            tools.retain(|_, p| matches!(p.get_plugin_type(), PluginType::Asdf));
+            tools.retain(|_, p| matches!(p.get_plugin_type(), PluginType::Asdf | PluginType::Vfox));
         }
 
         if self.urls || self.refs {

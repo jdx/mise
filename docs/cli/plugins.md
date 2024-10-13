@@ -2,7 +2,7 @@
 
 **Usage**: `mise plugins [FLAGS] <SUBCOMMAND>`
 
-**Aliases**: p
+**Aliases**: `p`
 
 Manage plugins
 

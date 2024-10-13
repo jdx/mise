@@ -1,8 +1,7 @@
 use eyre::{bail, Result};
 use serde_json::json;
 
-use crate::config::CONFIG;
-use crate::config::SETTINGS;
+use crate::config::{CONFIG, SETTINGS};
 use crate::file::display_path;
 use crate::task::Task;
 use crate::ui::info;
