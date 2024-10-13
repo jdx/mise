@@ -45,7 +45,6 @@ git add \
   README.md \
   default.nix \
   packaging/rpm/mise.spec \
-  src/default_shorthands.rs \
   mise.usage.kdl \
   completions \
   man/
