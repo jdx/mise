@@ -23,7 +23,7 @@ impl SettingsSet {
     }
 }
 
-pub fn set(key: &str, value: &str, add: bool) -> Result<()> {
+pub fn set(mut key: &str, value: &str, add: bool) -> Result<()> {
     let value = if let Some(meta) = SETTINGS_META.get(key) {
         match meta.type_ {
             SettingsType::Bool => parse_bool(value)?,
@@ -44,35 +44,27 @@ pub fn set(key: &str, value: &str, add: bool) -> Result<()> {
     if !config.contains_key("settings") {
         config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
-    let settings = config["settings"].as_table_mut().unwrap();
+    let mut settings = config["settings"].as_table_mut().unwrap();
     if key.contains(".") {
-        let (parent, child) = key.split_once('.').unwrap();
+        let (parent_key, child_key) = key.split_once('.').unwrap();
 
-        let parent_table = settings
-            .entry(parent)
+        key = child_key;
+        settings = settings
+            .entry(parent_key)
             .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
             .as_table_mut()
             .unwrap();
-        let value = match parent_table.get(child).map(|c| c.as_array()) {
-            Some(Some(array)) if add => {
-                let mut array = array.clone();
-                array.extend(value.as_array().unwrap().iter().cloned());
-                array.into()
-            }
-            _ => value,
-        };
-        parent_table.insert(child, value.into());
-    } else {
-        let value = match settings.get(key).map(|c| c.as_array()) {
-            Some(Some(array)) if add => {
-                let mut array = array.clone();
-                array.extend(value.as_array().unwrap().iter().cloned());
-                array.into()
-            }
-            _ => value,
-        };
-        settings.insert(key, value.into());
     }
+
+    let value = match settings.get(key).map(|c| c.as_array()) {
+        Some(Some(array)) if add => {
+            let mut array = array.clone();
+            array.extend(value.as_array().unwrap().iter().cloned());
+            array.into()
+        }
+        _ => value,
+    };
+    settings.insert(key, value.into());
 
     // validate
     let _: SettingsFile = toml::from_str(&config.to_string())?;
