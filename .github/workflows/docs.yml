@@ -34,6 +34,9 @@ jobs:
       - run: bun install
         working-directory: docs
       - run: bun run docs:build
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
         working-directory: docs
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: mise run release-docs
