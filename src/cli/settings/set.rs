@@ -8,7 +8,7 @@ use crate::{env, file};
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[clap(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsSet {
     /// The setting to set
     #[clap()]
@@ -19,44 +19,65 @@ pub struct SettingsSet {
 
 impl SettingsSet {
     pub fn run(self) -> Result<()> {
-        let value = if let Some(meta) = SETTINGS_META.get(&self.setting) {
-            match meta.type_ {
-                SettingsType::Bool => parse_bool(&self.value)?,
-                SettingsType::Integer => parse_i64(&self.value)?,
-                SettingsType::Duration => parse_duration(&self.value)?,
-                SettingsType::Url | SettingsType::Path | SettingsType::String => self.value.into(),
-                SettingsType::ListString => parse_list_by_comma(&self.value)?,
-                SettingsType::ListPath => parse_list_by_colon(&self.value)?,
-            }
-        } else {
-            bail!("Unknown setting: {}", self.setting);
-        };
-
-        let path = &*env::MISE_GLOBAL_CONFIG_FILE;
-        file::create_dir_all(path.parent().unwrap())?;
-        let raw = file::read_to_string(path).unwrap_or_default();
-        let mut config: DocumentMut = raw.parse()?;
-        if !config.contains_key("settings") {
-            config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
-        }
-        let settings = config["settings"].as_table_mut().unwrap();
-        if self.setting.as_str().contains(".") {
-            let mut parts = self.setting.splitn(2, '.');
-            let status = settings
-                .entry(parts.next().unwrap())
-                .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-                .as_table_mut()
-                .unwrap();
-            status.insert(parts.next().unwrap(), toml_edit::Item::Value(value));
-        } else {
-            settings.insert(&self.setting, toml_edit::Item::Value(value));
-        }
-
-        // validate
-        let _: SettingsFile = toml::from_str(&config.to_string())?;
-
-        file::write(path, config.to_string())
+        set(&self.setting, &self.value, false)
     }
+}
+
+pub fn set(key: &str, value: &str, add: bool) -> Result<()> {
+    let value = if let Some(meta) = SETTINGS_META.get(key) {
+        match meta.type_ {
+            SettingsType::Bool => parse_bool(value)?,
+            SettingsType::Integer => parse_i64(value)?,
+            SettingsType::Duration => parse_duration(value)?,
+            SettingsType::Url | SettingsType::Path | SettingsType::String => value.into(),
+            SettingsType::ListString => parse_list_by_comma(value)?,
+            SettingsType::ListPath => parse_list_by_colon(value)?,
+        }
+    } else {
+        bail!("Unknown setting: {}", key);
+    };
+
+    let path = &*env::MISE_GLOBAL_CONFIG_FILE;
+    file::create_dir_all(path.parent().unwrap())?;
+    let raw = file::read_to_string(path).unwrap_or_default();
+    let mut config: DocumentMut = raw.parse()?;
+    if !config.contains_key("settings") {
+        config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    let settings = config["settings"].as_table_mut().unwrap();
+    if key.contains(".") {
+        let (parent, child) = key.split_once('.').unwrap();
+
+        let parent_table = settings
+            .entry(parent)
+            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+            .as_table_mut()
+            .unwrap();
+        let value = match parent_table.get(child).map(|c| c.as_array()) {
+            Some(Some(array)) if add => {
+                let mut array = array.clone();
+                array.extend(value.as_array().unwrap().iter().cloned());
+                array.into()
+            }
+            _ => value,
+        };
+        parent_table.insert(child, value.into());
+    } else {
+        let value = match settings.get(key).map(|c| c.as_array()) {
+            Some(Some(array)) if add => {
+                let mut array = array.clone();
+                array.extend(value.as_array().unwrap().iter().cloned());
+                array.into()
+            }
+            _ => value,
+        };
+        settings.insert(key, value.into());
+    }
+
+    // validate
+    let _: SettingsFile = toml::from_str(&config.to_string())?;
+
+    file::write(path, config.to_string())
 }
 
 fn parse_list_by_comma(value: &str) -> Result<toml_edit::Value> {

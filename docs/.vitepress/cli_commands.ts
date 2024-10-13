@@ -199,6 +199,9 @@ export const commands: { [key: string]: Command } = {
   settings: {
     hide: false,
     subcommands: {
+      add: {
+        hide: false,
+      },
       get: {
         hide: false,
       },

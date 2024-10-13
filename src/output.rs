@@ -129,7 +129,7 @@ macro_rules! hint {
                     .to_string()
                     .as_str();
             let cmd = console::style($example_cmd).bold().for_stderr();
-            let disable_single = console::style(format!("mise settings set disable_hints {}", $id))
+            let disable_single = console::style(format!("mise settings add disable_hints {}", $id))
                 .bold()
                 .for_stderr();
             let disable_all = console::style("mise settings set disable_hints \"*\"")
