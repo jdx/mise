@@ -8,9 +8,9 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::env::GITHUB_TOKEN;
-use crate::github;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
+use crate::{github, http};
 
 #[derive(Debug)]
 pub struct UbiBackend {
@@ -50,6 +50,15 @@ impl Backend for UbiBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         SETTINGS.ensure_experimental("ubi backend")?;
+        let mut v = ctx.tv.version.to_string();
+
+        if let Err(err) = github::get_release(self.name(), &ctx.tv.version) {
+            if http::error_code(&err) == Some(404) {
+                // no tag found, try prefixing with 'v'
+                v = format!("v{v}");
+            }
+        }
+
         // Workaround because of not knowing how to pull out the value correctly without quoting
         let path_with_bin = ctx.tv.install_path().join("bin");
 
@@ -61,9 +70,8 @@ impl Backend for UbiBackend {
             builder = builder.github_token(token);
         }
 
-        let version = &ctx.tv.version;
-        if version != "latest" {
-            builder = builder.tag(version);
+        if v != "latest" {
+            builder = builder.tag(&v);
         }
 
         let exe = std::env::var("MISE_TOOL_OPTS__EXE").unwrap_or_default();
