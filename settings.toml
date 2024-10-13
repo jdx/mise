@@ -90,10 +90,27 @@ have not been accessed in this amount of time.
 Set to `0` to keep cache files indefinitely.
 """
 
-[cargo_binstall]
+[cargo.binstall]
 env = "MISE_CARGO_BINSTALL"
 type = "Bool"
 default = true
+description = "Use cargo-binstall instead of cargo install if available"
+docs = """
+If true, mise will use `cargo binstall` instead of `cargo install` if
+[`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.
+This makes installing CLIs with cargo _much_ faster by downloading precompiled binaries.
+
+You can install it with mise:
+
+```sh
+mise use -g cargo-binstall
+```
+"""
+
+[cargo_binstall]
+type = "Bool"
+hide = true
+optional = true
 description = "Use cargo-binstall instead of cargo install if available"
 
 [cd]
@@ -348,10 +365,26 @@ This sets `--pin` by default when running `mise use` in mise.toml files. This ca
 passing `--fuzzy` on the command line.
 """
 
-[pipx_uvx]
-env = "MISE_PIPX_UVX"
+[pipx.uvx]
 type = "Bool"
 description = "Use uvx instead of pipx if uv is installed and on PATH."
+docs = """
+If true, mise will use `uvx` instead of `pipx` if
+[`uv`](https://docs.astral.sh/uv/) is installed and on PATH.
+This makes installing CLIs _much_ faster by using `uv` as the package manager.
+
+You can install it with mise:
+
+```sh
+mise use -g uv
+```
+"""
+
+[pipx_uvx]
+type = "Bool"
+description = "Use uvx instead of pipx if uv is installed and on PATH."
+hide = true
+optional = true
 
 [plugin_autoupdate_last_check_duration]
 env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION"

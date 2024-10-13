@@ -53,22 +53,45 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 Other syntax may work but is unsupported and untested.
 
-## Configuration
+## Settings
 
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
 
-### `pipx_uvx`
+<script setup>
+import { data } from '/settings.data.ts';
+import Setting from '/components/setting.vue';
+const settings = data.find(s => s.key === 'pipx').settings;
+</script>
+<Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
 
-- Type: `bool`
-- Env: `MISE_PIPX_UVX`
-- Default: `false`
+## Tool Options
 
-If true, mise will use `uvx` instead of `pipx` if
-[`uv`](https://docs.astral.sh/uv/) is installed and on PATH.
-This makes installing CLIs _much_ faster by using `uv` as the package manager.
+The following [tool-options](/dev-tools/#tool-options) are available for the `pipx` backend—these
+go in `[tools]` in `mise.toml`.
 
-You can install it with mise:
+### `extras`
 
-```sh
-mise use -g uv
+Install additional components.
+
+```toml
+[tools]
+"pipx:harlequin" = { extras = "postgres,s3" }
+```
+
+### `pipx_args`
+
+Additional arguments to pass to `pipx` when installing the package.
+
+```toml
+[tools]
+"pipx:black" = { pipx_args = "--preinstall" }
+```
+
+### `uvx_args`
+
+Additional arguments to pass to `uvx` when installing the package.
+
+```toml
+[tools]
+"pipx:ansible-core" = { uvx_args = "--with ansible" }
 ```

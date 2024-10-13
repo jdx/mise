@@ -2,7 +2,7 @@ use crate::backend::{Backend, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -77,15 +77,14 @@ impl Backend for PIPXBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::get();
-        settings.ensure_experimental("pipx backend")?;
+        SETTINGS.ensure_experimental("pipx backend")?;
         let pipx_request = self
             .name()
             .parse::<PipxRequest>()?
             .pipx_request(&ctx.tv.version, &ctx.tv.request.options());
 
-        if settings.pipx_uvx {
-            CmdLineRunner::new("uv")
+        if SETTINGS.pipx.uvx {
+            let mut cmd = CmdLineRunner::new("uv")
                 .arg("tool")
                 .arg("install")
                 .arg(pipx_request)
@@ -96,10 +95,13 @@ impl Backend for PIPXBackend {
                 .prepend_path(ctx.ts.list_paths())?
                 // Prepend install path so pipx doesn't issue a warning about missing path
                 .prepend_path(vec![ctx.tv.install_path().join("bin")])?
-                .prepend_path(self.dependency_toolset()?.list_paths())?
-                .execute()?;
+                .prepend_path(self.dependency_toolset()?.list_paths())?;
+            if let Some(args) = ctx.tv.request.options().get("uvx_args") {
+                cmd = cmd.args(shell_words::split(args)?);
+            }
+            cmd.execute()?;
         } else {
-            CmdLineRunner::new("pipx")
+            let mut cmd = CmdLineRunner::new("pipx")
                 .arg("install")
                 .arg(pipx_request)
                 .with_pr(ctx.pr.as_ref())
@@ -109,8 +111,11 @@ impl Backend for PIPXBackend {
                 .prepend_path(ctx.ts.list_paths())?
                 // Prepend install path so pipx doesn't issue a warning about missing path
                 .prepend_path(vec![ctx.tv.install_path().join("bin")])?
-                .prepend_path(self.dependency_toolset()?.list_paths())?
-                .execute()?;
+                .prepend_path(self.dependency_toolset()?.list_paths())?;
+            if let Some(args) = ctx.tv.request.options().get("pipx_args") {
+                cmd = cmd.args(shell_words::split(args)?);
+            }
+            cmd.execute()?;
         }
         Ok(())
     }

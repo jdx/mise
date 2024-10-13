@@ -25,7 +25,7 @@ first version of each series was released without a `.0` suffix, making 1.20 an 
 mise use -g go@prefix:1.20
 ```
 
-## Configuration
+## Settings
 
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
 

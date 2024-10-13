@@ -140,8 +140,17 @@
           "description": "Delete files in cache that have not been accessed in this duration",
           "type": "string"
         },
+        "cargo": {
+          "additionalProperties": false,
+          "properties": {
+            "binstall": {
+              "default": true,
+              "description": "Use cargo-binstall instead of cargo install if available",
+              "type": "boolean"
+            }
+          }
+        },
         "cargo_binstall": {
-          "default": true,
           "description": "Use cargo-binstall instead of cargo install if available",
           "type": "boolean"
         },
@@ -296,6 +305,15 @@
         "pin": {
           "description": "Default to pinning versions when running `mise use` in mise.toml files.",
           "type": "boolean"
+        },
+        "pipx": {
+          "additionalProperties": false,
+          "properties": {
+            "uvx": {
+              "description": "Use uvx instead of pipx if uv is installed and on PATH.",
+              "type": "boolean"
+            }
+          }
         },
         "pipx_uvx": {
           "description": "Use uvx instead of pipx if uv is installed and on PATH.",
