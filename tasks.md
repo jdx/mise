@@ -16,7 +16,7 @@
 
 **Usage**: `build`
 
-**Aliases**: b
+**Aliases**: `b`
 
 ## `c1`
 
@@ -72,7 +72,7 @@ run a command inside of development docker container
 
 **Usage**: `filetask [-f --force] [-u --user <user>] <file> <arg_with_default>`
 
-**Aliases**: ft
+**Aliases**: `ft`
 
 This is a test build script
 
@@ -106,7 +106,7 @@ User to run as
 
 **Usage**: `lint-fix`
 
-**Aliases**: format
+**Aliases**: `format`
 
 ## `lint:actionlint`
 
@@ -168,7 +168,7 @@ User to run as
 
 **Usage**: `render`
 
-**Aliases**: render
+**Aliases**: `render`
 
 ## `render:completions`
 
@@ -222,7 +222,7 @@ update test snapshots
 
 **Usage**: `test`
 
-**Aliases**: t
+**Aliases**: `t`
 
 run all tests
 
@@ -238,7 +238,7 @@ run all tests with coverage report
 
 **Usage**: `test:e2e`
 
-**Aliases**: e
+**Aliases**: `e`
 
 run end-to-end tests
 
