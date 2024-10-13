@@ -1,5 +1,4 @@
-use crate::config::CONFIG;
-use crate::config::SETTINGS;
+use crate::config::{CONFIG, SETTINGS};
 use crate::{dirs, file};
 use std::path::PathBuf;
 

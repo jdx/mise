@@ -1,8 +1,6 @@
-use crate::config::SETTINGS;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SETTINGS};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
 use crate::errors::Error::PluginNotInstalled;
-use crate::exit;
 use crate::file::{display_path, remove_all};
 use crate::git::Git;
 use crate::plugins::{Plugin, PluginList, PluginType, Script, ScriptManager};
@@ -11,7 +9,7 @@ use crate::timeout::run_with_timeout;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, lock_file};
+use crate::{dirs, exit, lock_file};
 use clap::Command;
 use console::style;
 use contracts::requires;

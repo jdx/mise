@@ -17,8 +17,7 @@ use versions::Versioning;
 use self::backend_meta::BackendMeta;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
-use crate::config::{Config, CONFIG};
+use crate::config::{Config, CONFIG, SETTINGS};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::plugins::core::{CorePlugin, CORE_PLUGINS};
@@ -86,40 +85,30 @@ fn load_tools() -> BackendMap {
         .iter()
         .map(|(_, p)| p.clone())
         .collect::<Vec<ABackend>>();
-    let (tx, rx) = crossbeam_channel::unbounded();
+    let mut asdf_tools = Ok(vec![]);
+    let mut vfox_tools = Ok(vec![]);
+    let mut backend_tools = Ok(vec![]);
     rayon::scope(|s| {
         if !cfg!(windows) || SETTINGS.asdf {
-            let tx = tx.clone();
-            s.spawn(move |_| tx.send(asdf::AsdfBackend::list()).unwrap());
+            s.spawn(|_| asdf_tools = asdf::AsdfBackend::list());
         }
         if cfg!(windows) || SETTINGS.vfox {
-            let tx = tx.clone();
-            s.spawn(move |_| tx.send(vfox::VfoxBackend::list()).unwrap());
+            s.spawn(|_| vfox_tools = vfox::VfoxBackend::list());
         }
-        s.spawn(move |_| tx.send(list_installed_backends()).unwrap());
+        backend_tools = list_installed_backends();
     });
-    for backend in rx {
-        tools.extend(backend.expect("Error loading backends"));
-    }
-
+    tools.extend(asdf_tools.expect("asdf tools failed to load"));
+    tools.extend(vfox_tools.expect("vfox tools failed to load"));
+    tools.extend(backend_tools.expect("backend tools failed to load"));
     tools.retain(|backend| !SETTINGS.disable_tools.contains(backend.id()));
+
     let tools: BackendMap = tools
         .into_iter()
-        .sorted_by_cached_key(rank_backend)
         .map(|plugin| (plugin.id().to_string(), plugin))
         .collect();
     *TOOLS.lock().unwrap() = Some(tools.clone());
     time!("load_tools", "done");
     tools
-}
-
-fn rank_backend(backend: &ABackend) -> (usize, String) {
-    let rank = match backend.get_plugin_type() {
-        PluginType::Core => 0,
-        PluginType::Vfox => 1,
-        PluginType::Asdf => 2,
-    };
-    (rank, backend.id().to_string())
 }
 
 fn list_installed_backends() -> eyre::Result<BackendList> {

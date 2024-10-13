@@ -1,12 +1,8 @@
-#[must_use]
-#[derive(Debug)]
-pub struct HandleGuard();
-
 pub fn init() -> eyre::Result<()> {
     Ok(())
 }
 
-pub fn add_handler(_func: impl Fn() + Send + Sync + 'static) {}
+// pub fn add_handler(_func: impl Fn() + Send + Sync + 'static) {}
 
 pub fn exit_on_ctrl_c(_do_exit: bool) {}
 

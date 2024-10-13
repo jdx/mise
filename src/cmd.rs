@@ -131,9 +131,9 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
+    #[cfg(unix)]
     pub fn kill_all(signal: nix::sys::signal::Signal) {
         let pids = RUNNING_PIDS.lock().unwrap();
-        #[cfg(unix)]
         for pid in pids.iter() {
             let pid = *pid as i32;
             trace!("{signal}: {pid}");
@@ -141,7 +141,11 @@ impl<'a> CmdLineRunner<'a> {
                 debug!("Failed to kill cmd {pid}: {e}");
             }
         }
-        #[cfg(windows)]
+    }
+
+    #[cfg(windows)]
+    pub fn kill_all() {
+        let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
             if let Err(e) = Command::new("taskkill")
                 .arg("/F")

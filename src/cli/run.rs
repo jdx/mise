@@ -23,6 +23,7 @@ use either::Either;
 use eyre::{bail, ensure, eyre, Result};
 use glob::glob;
 use itertools::Itertools;
+#[cfg(unix)]
 use nix::sys::signal::SIGTERM;
 
 /// [experimental] Run task(s)
@@ -222,7 +223,10 @@ impl Run {
                     recv(rx_err) -> task => { // a task errored
                         let (task, status) = task.unwrap();
                         self.add_failed_task(task, status);
+                        #[cfg(unix)]
                         CmdLineRunner::kill_all(SIGTERM); // start killing other running tasks
+                        #[cfg(windows)]
+                        CmdLineRunner::kill_all();
                     }
                 }
             }

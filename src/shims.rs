@@ -7,8 +7,7 @@ use std::sync::Arc;
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
-use crate::config::CONFIG;
-use crate::config::SETTINGS;
+use crate::config::{CONFIG, SETTINGS};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
