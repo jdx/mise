@@ -4,8 +4,6 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use itertools::Itertools;
-
 use crate::config::Settings;
 use crate::dirs;
 
@@ -33,18 +31,11 @@ impl PathEnv {
     }
 
     pub fn to_vec(&self) -> Vec<PathBuf> {
-        let mut paths = self
-            .pre
+        self.pre
             .iter()
             .chain(self.mise.iter())
+            .chain(self.post.iter())
             .map(|p| p.to_path_buf())
-            .collect_vec();
-        if self.seen_shims {
-            paths.push(dirs::SHIMS.to_path_buf())
-        }
-        paths
-            .into_iter()
-            .chain(self.post.iter().map(|p| p.to_path_buf()))
             .collect()
     }
 
@@ -112,10 +103,7 @@ mod tests {
         path_env.add("/3".into());
         assert_eq!(
             path_env.to_string(),
-            format!(
-                "/before-1:/before-2:/before-3:/1:/2:/3:{}:/after-1:/after-2:/after-3",
-                dirs::SHIMS.to_str().unwrap()
-            )
+            "/before-1:/before-2:/before-3:/1:/2:/3:/after-1:/after-2:/after-3".to_string()
         );
     }
 
