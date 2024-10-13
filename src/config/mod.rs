@@ -68,20 +68,23 @@ impl Config {
         Ok(config)
     }
     pub fn load() -> Result<Self> {
-        trace!("Settings: {:#?}", SETTINGS);
-
-        let legacy_files = load_legacy_files(&SETTINGS);
+        time!("load start");
+        let legacy_files = load_legacy_files();
+        time!("load legacy_files");
         let config_filenames = legacy_files
             .keys()
             .chain(DEFAULT_CONFIG_FILENAMES.iter())
             .cloned()
             .collect_vec();
+        time!("load config_filenames");
         let config_paths = load_config_paths(&config_filenames)
             .into_iter()
             .unique_by(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
             .collect_vec();
-        trace!("load: config_paths: {:?}", config_paths);
+        time!("load config_paths");
+        trace!("config_paths: {config_paths:?}");
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
+        time!("load config_files");
 
         let config = Self {
             aliases: load_aliases(&config_files)?,
@@ -90,10 +93,19 @@ impl Config {
             config_files,
             ..Default::default()
         };
+        time!("load build");
 
         config.validate()?;
+        time!("load validate");
 
-        debug!("{config:#?}");
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("config: {config:#?}");
+        } else if log::log_enabled!(log::Level::Debug) {
+            for p in config.config_files.keys() {
+                debug!("config: {}", display_path(p));
+            }
+        }
+        time!("load done");
 
         Ok(config)
     }
@@ -132,10 +144,7 @@ impl Config {
         })
     }
     pub fn env_results(&self) -> eyre::Result<&EnvResults> {
-        trace!("env_results: start");
-        let res = self.env.get_or_try_init(|| self.load_env());
-        trace!("env_results: {:#?}", &res);
-        res
+        self.env.get_or_try_init(|| self.load_env())
     }
     pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results()?.env_paths)
@@ -220,28 +229,44 @@ impl Config {
         aliases
     }
 
-    pub fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
-        Ok(file::all_dirs()?
+    fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
+        time!("load_all_tasks");
+        let mut file_tasks = None;
+        let mut global_tasks = None;
+        let mut system_tasks = None;
+        rayon::scope(|s| {
+            s.spawn(|_| {
+                file_tasks = Some(self.load_file_tasks_recursively());
+            });
+            s.spawn(|_| {
+                global_tasks = Some(self.load_global_tasks());
+            });
+            s.spawn(|_| {
+                system_tasks = Some(self.load_system_tasks());
+            });
+        });
+        let tasks: BTreeMap<String, Task> = file_tasks
+            .unwrap()?
             .into_iter()
-            .filter(|d| {
-                if cfg!(test) {
-                    d.starts_with(*dirs::HOME)
-                } else {
-                    true
-                }
-            })
-            .collect_vec()
-            .into_par_iter()
-            .map(|d| self.load_tasks_in_dir(&d))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .chain(self.load_global_tasks()?)
-            .chain(self.load_system_tasks()?)
+            .chain(global_tasks.unwrap()?)
+            .chain(system_tasks.unwrap()?)
             .rev()
-            .inspect(|t| trace!("loading task {t} from {}", display_path(&t.config_source)))
+            .inspect(|t| {
+                trace!(
+                    "loaded task {} – {}",
+                    &t.name,
+                    display_path(&t.config_source)
+                )
+            })
             .map(|t| (t.name.clone(), t))
-            .collect())
+            .collect();
+        time!(
+            "load_all_tasks",
+            "{count} {tasks}",
+            count = tasks.len(),
+            tasks = if tasks.len() == 1 { "task" } else { "tasks" },
+        );
+        Ok(tasks)
     }
 
     pub fn task_includes_for_dir(&self, dir: &Path) -> Vec<PathBuf> {
@@ -305,6 +330,26 @@ impl Config {
             task.config_source = path.to_path_buf();
         }
         Ok(tasks.into_values().collect())
+    }
+
+    fn load_file_tasks_recursively(&self) -> Result<Vec<Task>> {
+        let file_tasks = file::all_dirs()?
+            .into_iter()
+            .filter(|d| {
+                if cfg!(test) {
+                    d.starts_with(*dirs::HOME)
+                } else {
+                    true
+                }
+            })
+            .collect_vec()
+            .into_par_iter()
+            .map(|d| self.load_tasks_in_dir(&d))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect_vec();
+        Ok(file_tasks)
     }
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
@@ -436,6 +481,7 @@ impl Config {
     }
 
     fn load_env(&self) -> eyre::Result<EnvResults> {
+        time!("load_env start");
         let entries = self
             .config_files
             .iter()
@@ -448,8 +494,15 @@ impl Config {
             .into_iter()
             .flatten()
             .collect();
-        trace!("load_env: entries: {:#?}", entries);
-        EnvResults::resolve(&env::PRISTINE_ENV, entries)
+        // trace!("load_env: entries: {:#?}", entries);
+        let env_results = EnvResults::resolve(&env::PRISTINE_ENV, entries)?;
+        time!("load_env done");
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("{env_results:#?}");
+        } else {
+            debug!("{env_results:?}");
+        }
+        Ok(env_results)
     }
 
     pub fn watch_files(&self) -> eyre::Result<BTreeSet<PathBuf>> {
@@ -478,14 +531,14 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
         .map(|pr| pr.to_path_buf())
 }
 
-fn load_legacy_files(settings: &Settings) -> BTreeMap<String, Vec<String>> {
-    if !settings.legacy_version_file {
+fn load_legacy_files() -> BTreeMap<String, Vec<String>> {
+    if !SETTINGS.legacy_version_file {
         return BTreeMap::new();
     }
     let legacy = backend::list()
         .into_par_iter()
         .filter(|tool| {
-            !settings
+            !SETTINGS
                 .legacy_version_file_disable_tools
                 .contains(tool.id())
         })

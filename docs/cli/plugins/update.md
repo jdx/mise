@@ -2,7 +2,7 @@
 
 **Usage**: `mise plugins update [-j --jobs <JOBS>] [PLUGIN]...`
 
-**Aliases**: up, upgrade
+**Aliases**: `up`, `upgrade`
 
 Updates a plugin to the latest version
 

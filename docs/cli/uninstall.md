@@ -2,7 +2,7 @@
 
 **Usage**: `mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`
 
-**Aliases**: remove, rm
+**Aliases**: `remove`, `rm`
 
 Removes installed tool versions
 

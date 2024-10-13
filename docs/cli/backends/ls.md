@@ -2,7 +2,7 @@
 
 **Usage**: `mise backends ls`
 
-**Aliases**: list
+**Aliases**: `list`
 
 List built-in backends
 

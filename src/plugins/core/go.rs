@@ -2,10 +2,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::thread;
 
-use itertools::Itertools;
-use tempfile::tempdir_in;
-use versions::Versioning;
-
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
@@ -17,6 +13,10 @@ use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, hash};
+use itertools::Itertools;
+use tempfile::tempdir_in;
+use versions::Versioning;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct GoPlugin {

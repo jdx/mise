@@ -18,6 +18,7 @@ use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use versions::Versioning;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct PythonPlugin {

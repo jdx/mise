@@ -3,7 +3,7 @@ use eyre::{eyre, Result};
 use itertools::Itertools;
 use petgraph::dot::Dot;
 
-use crate::config::{Config, SETTINGS};
+use crate::config::{CONFIG, SETTINGS};
 use crate::task::Deps;
 use crate::task::Task;
 use crate::ui::style::{self};
@@ -30,26 +30,25 @@ pub struct TasksDeps {
 
 impl TasksDeps {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
         SETTINGS.ensure_experimental("`mise tasks deps`")?;
 
         let tasks = if self.tasks.is_none() {
-            self.get_all_tasks(&config)?
+            self.get_all_tasks()?
         } else {
-            self.get_task_lists(&config)?
+            self.get_task_lists()?
         };
 
         if self.dot {
-            self.print_deps_dot(&config, tasks)?;
+            self.print_deps_dot(tasks)?;
         } else {
-            self.print_deps_tree(&config, tasks)?;
+            self.print_deps_tree(tasks)?;
         }
 
         Ok(())
     }
 
-    fn get_all_tasks(&self, config: &Config) -> Result<Vec<Task>> {
-        Ok(config
+    fn get_all_tasks(&self) -> Result<Vec<Task>> {
+        Ok(CONFIG
             .tasks()?
             .values()
             .filter(|t| self.hidden || !t.hide)
@@ -57,13 +56,13 @@ impl TasksDeps {
             .collect())
     }
 
-    fn get_task_lists(&self, config: &Config) -> Result<Vec<Task>> {
-        let tasks = config.tasks()?;
+    fn get_task_lists(&self) -> Result<Vec<Task>> {
+        let tasks = CONFIG.tasks()?;
         let tasks = self.tasks.as_ref().map(|t| {
             t.iter()
                 .map(|tn| match tasks.get(tn).cloned() {
                     Some(task) => Ok(task.clone()),
-                    None => Err(self.err_no_task(config, tn.as_str())),
+                    None => Err(self.err_no_task(tn.as_str())),
                 })
                 .collect::<Result<Vec<Task>>>()
         });
@@ -86,8 +85,8 @@ impl TasksDeps {
     /// task5
     /// ```
     ///
-    fn print_deps_tree(&self, config: &Config, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(config, tasks.clone())?;
+    fn print_deps_tree(&self, tasks: Vec<Task>) -> Result<()> {
+        let deps = Deps::new(tasks.clone())?;
         // filter out nodes that are not selected
         let start_indexes = deps.graph.node_indices().filter(|&idx| {
             let task = &deps.graph[idx];
@@ -117,8 +116,8 @@ impl TasksDeps {
     /// }
     /// ```
     //
-    fn print_deps_dot(&self, config: &Config, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(config, tasks)?;
+    fn print_deps_dot(&self, tasks: Vec<Task>) -> Result<()> {
+        let deps = Deps::new(tasks)?;
         miseprintln!(
             "{:?}",
             Dot::with_attr_getters(
@@ -134,8 +133,8 @@ impl TasksDeps {
         Ok(())
     }
 
-    fn err_no_task(&self, config: &Config, t: &str) -> eyre::Report {
-        let tasks = config
+    fn err_no_task(&self, t: &str) -> eyre::Report {
+        let tasks = CONFIG
             .tasks()
             .map(|t| t.keys().collect::<Vec<_>>())
             .unwrap_or_default();

@@ -2,31 +2,28 @@ use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
 use std::path::{Path, PathBuf};
-use std::process::{exit, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
+use super::args::ToolArg;
+use crate::cmd::CmdLineRunner;
+use crate::config::{CONFIG, SETTINGS};
+use crate::errors::Error;
+use crate::file::display_path;
+use crate::task::{Deps, GetMatchingExt, Task};
+use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::ui::{ctrlc, prompt, style, time};
+use crate::{dirs, env, exit, file, ui};
 use clap::ValueHint;
-use console::Color;
+use crossbeam_channel::{select, unbounded};
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
 use either::Either;
 use eyre::{bail, ensure, eyre, Result};
 use glob::glob;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
-
-use super::args::ToolArg;
-use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, CONFIG};
-use crate::errors::Error;
-use crate::errors::Error::ScriptFailed;
-use crate::file::display_path;
-use crate::task::{Deps, GetMatchingExt, Task};
-use crate::toolset::{InstallOptions, ToolsetBuilder};
-use crate::ui::{ctrlc, prompt, style};
-use crate::{dirs, env, file, ui};
+use nix::sys::signal::SIGTERM;
 
 /// [experimental] Run task(s)
 ///
@@ -112,18 +109,23 @@ pub struct Run {
 
     #[clap(skip)]
     pub is_linear: bool,
+
+    #[clap(skip)]
+    pub failed_tasks: Mutex<Vec<(Task, i32)>>,
 }
 
 impl Run {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let settings = Settings::try_get()?;
-        settings.ensure_experimental("`mise run`")?;
-        let task_list = self.get_task_lists(&config)?;
-        self.parallelize_tasks(&config, task_list)
+        SETTINGS.ensure_experimental("`mise run`")?;
+        time!("run init");
+        let task_list = self.get_task_lists()?;
+        time!("run get_task_lists");
+        self.parallelize_tasks(task_list)?;
+        time!("run done");
+        Ok(())
     }
 
-    fn get_task_lists(&self, config: &Config) -> Result<Vec<Task>> {
+    fn get_task_lists(&self) -> Result<Vec<Task>> {
         once(&self.task)
             .chain(self.args.iter())
             .map(|s| vec![s.to_string()])
@@ -138,7 +140,7 @@ impl Run {
             })
             .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
             .map(|(t, args)| {
-                let tasks = config
+                let tasks = CONFIG
                     .tasks_with_aliases()?
                     .get_matching(&t)?
                     .into_iter()
@@ -149,7 +151,7 @@ impl Run {
                         err_no_task(&t)?;
                     }
 
-                    Ok(vec![self.prompt_for_task(config)?])
+                    Ok(vec![self.prompt_for_task()?])
                 } else {
                     Ok(tasks
                         .into_iter()
@@ -161,18 +163,22 @@ impl Run {
             .collect()
     }
 
-    fn parallelize_tasks(mut self, config: &Config, tasks: Vec<Task>) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
+    fn parallelize_tasks(mut self, tasks: Vec<Task>) -> Result<()> {
+        time!("paralellize_tasks start");
 
-        ts.install_arg_versions(config, &InstallOptions::new())?;
+        ctrlc::exit_on_ctrl_c(false);
+
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&CONFIG)?;
+
+        ts.install_arg_versions(&CONFIG, &InstallOptions::new())?;
         ts.notify_if_versions_missing();
-        let mut env = ts.env_with_path(config)?;
-        if let Some(root) = &config.project_root {
+        let mut env = ts.env_with_path(&CONFIG)?;
+        if let Some(root) = &CONFIG.project_root {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
             env.insert("root".into(), root.display().to_string());
         }
 
-        let tasks = Deps::new(config, tasks)?;
+        let tasks = Deps::new(tasks)?;
         for task in tasks.all() {
             self.validate_task(task)?;
         }
@@ -186,50 +192,61 @@ impl Run {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(self.jobs() + 1)
             .build()?;
-        let exit_status = Mutex::new(None);
         pool.scope(|s| {
+            let (tx_err, rx_err) = unbounded();
             let run = |task: &Task| {
                 let t = task.clone();
+                let tx_err = tx_err.clone();
                 s.spawn(|_| {
                     let task = t;
-                    trace!("running tasks: {task}");
-                    if let Err(err) = self.run_task(config, &env, &task) {
-                        error!("{err}");
-                        if let Some(ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
-                            *exit_status.lock().unwrap() = status.code();
-                        } else {
-                            *exit_status.lock().unwrap() = Some(1);
+                    let tx_err = tx_err;
+                    if !self.is_stopping() {
+                        trace!("running task: {task}");
+                        if let Err(err) = self.run_task(&env, &task) {
+                            let prefix = task.estyled_prefix();
+                            info_unprefix!("{prefix} {} {err}", style::ered("ERROR"),);
+                            let _ = tx_err.send((task.clone(), Error::get_exit_status(&err)));
                         }
                     }
-                    let mut tasks = tasks.lock().unwrap();
-                    tasks.remove(&task);
+                    tasks.lock().unwrap().remove(&task);
                 });
             };
             let rx = tasks.lock().unwrap().subscribe();
-            while let Some(task) = rx.recv().unwrap() {
-                if exit_status.lock().unwrap().is_some() {
-                    break;
+            while !self.is_stopping() && !tasks.lock().unwrap().is_empty() {
+                select! {
+                    recv(rx) -> task => { // receive a task from Deps
+                        if let Some(task) = task.unwrap() {
+                            run(&task);
+                        }
+                    }
+                    recv(rx_err) -> task => { // a task errored
+                        let (task, status) = task.unwrap();
+                        self.add_failed_task(task, status);
+                        CmdLineRunner::kill_all(SIGTERM); // start killing other running tasks
+                    }
                 }
-                run(&task);
             }
         });
 
+        if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
+            let prefix = task.estyled_prefix();
+            info_unprefix!("{prefix} {} task failed", style::ered("ERROR"));
+            exit(*status);
+        }
+
         if self.timings && num_tasks > 1 {
-            let msg = format!("finished in {}", format_duration(timer.elapsed()));
+            let msg = format!("finished in {}", time::format_duration(timer.elapsed()));
             info!("{}", style::edim(msg));
         };
 
-        if let Some(status) = *exit_status.lock().unwrap() {
-            debug!("exiting with status: {status}");
-            exit(status);
-        }
+        time!("paralellize_tasks done");
 
         Ok(())
     }
 
-    fn run_task(&self, config: &Config, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
-        let prefix = style::estyle(task.prefix()).fg(get_color()).to_string();
-        if !self.force && self.sources_are_fresh(config, task) {
+    fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
+        let prefix = task.estyled_prefix();
+        if !self.force && self.sources_are_fresh(task) {
             info_unprefix_trunc!("{prefix} sources up-to-date, skipping");
             return Ok(());
         }
@@ -265,7 +282,7 @@ impl Run {
             miseprintln!(
                 "{} finished in {}",
                 prefix,
-                format_duration(timer.elapsed())
+                time::format_duration(timer.elapsed())
             );
         }
 
@@ -396,12 +413,11 @@ impl Run {
     }
 
     fn output(&self, task: &Task) -> Result<TaskOutput> {
-        let settings = Settings::get();
         if self.prefix {
             Ok(TaskOutput::Prefix)
         } else if self.interleave {
             Ok(TaskOutput::Interleave)
-        } else if let Some(output) = &settings.task_output {
+        } else if let Some(output) = &SETTINGS.task_output {
             Ok(output.parse()?)
         } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
             Ok(TaskOutput::Interleave)
@@ -411,19 +427,19 @@ impl Run {
     }
 
     fn raw(&self, task: &Task) -> bool {
-        self.raw || task.raw || Settings::get().raw
+        self.raw || task.raw || SETTINGS.raw
     }
 
     fn jobs(&self) -> usize {
         if self.raw {
             1
         } else {
-            self.jobs.unwrap_or(Settings::get().jobs)
+            self.jobs.unwrap_or(SETTINGS.jobs)
         }
     }
 
-    fn prompt_for_task(&self, config: &Config) -> Result<Task> {
-        let tasks = config.tasks()?;
+    fn prompt_for_task(&self) -> Result<Task> {
+        let tasks = CONFIG.tasks()?;
         ensure!(
             !tasks.is_empty(),
             "no tasks defined. see {url}",
@@ -435,7 +451,7 @@ impl Run {
         for name in tasks.keys() {
             s = s.option(DemandOption::new(name));
         }
-        let _ctrlc = ctrlc::handle_ctrlc()?;
+        ctrlc::show_cursor_after_ctrl_c();
         let name = s.run()?;
         match tasks.get(name) {
             Some(task) => Ok((*task).clone()),
@@ -458,11 +474,14 @@ impl Run {
         Ok(())
     }
 
-    fn sources_are_fresh(&self, config: &Config, task: &Task) -> bool {
+    fn sources_are_fresh(&self, task: &Task) -> bool {
+        if task.sources.is_empty() && task.outputs.is_empty() {
+            return false;
+        }
         let run = || -> Result<bool> {
-            let sources = self.get_last_modified(&self.cwd(config, task), &task.sources)?;
-            let outputs = self.get_last_modified(&self.cwd(config, task), &task.outputs)?;
-            trace!("sources: {sources:?}, outputs: {outputs:?}",);
+            let sources = self.get_last_modified(&self.cwd(task), &task.sources)?;
+            let outputs = self.get_last_modified(&self.cwd(task), &task.outputs)?;
+            trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {
                 (Some(sources), Some(outputs)) => Ok(sources < outputs),
                 _ => Ok(false),
@@ -474,11 +493,25 @@ impl Run {
         })
     }
 
+    fn add_failed_task(&self, task: Task, status: Option<i32>) {
+        self.failed_tasks
+            .lock()
+            .unwrap()
+            .push((task, status.unwrap_or(1)));
+    }
+
+    fn is_stopping(&self) -> bool {
+        !self.failed_tasks.lock().unwrap().is_empty()
+    }
+
     fn get_last_modified(
         &self,
         root: &Path,
         patterns_or_paths: &[String],
     ) -> Result<Option<SystemTime>> {
+        if patterns_or_paths.is_empty() {
+            return Ok(None);
+        }
         let (patterns, paths): (Vec<&String>, Vec<&String>) =
             patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
 
@@ -494,12 +527,12 @@ impl Run {
         Ok(last_mod)
     }
 
-    fn cwd(&self, config: &Config, task: &Task) -> PathBuf {
+    fn cwd(&self, task: &Task) -> PathBuf {
         self.cd
             .as_ref()
             .or(task.dir.as_ref())
             .cloned()
-            .or_else(|| config.project_root.clone())
+            .or_else(|| CONFIG.project_root.clone())
             .unwrap_or_else(|| env::current_dir().unwrap().clone())
     }
 
@@ -633,29 +666,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 enum TaskOutput {
     Prefix,
     Interleave,
-}
-
-fn get_color() -> Color {
-    static COLORS: Lazy<Vec<Color>> = Lazy::new(|| {
-        vec![
-            Color::Blue,
-            Color::Magenta,
-            Color::Cyan,
-            Color::Green,
-            Color::Yellow,
-            Color::Red,
-        ]
-    });
-    static COLOR_IDX: AtomicUsize = AtomicUsize::new(0);
-    COLORS[COLOR_IDX.fetch_add(1, Ordering::Relaxed) % COLORS.len()]
-}
-
-fn format_duration(dur: std::time::Duration) -> String {
-    if dur < std::time::Duration::from_secs(1) {
-        format!("{:.0?}", dur)
-    } else {
-        format!("{:.2?}", dur)
-    }
 }
 
 #[cfg(test)]

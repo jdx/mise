@@ -18,7 +18,7 @@ use self::backend_meta::BackendMeta;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
-use crate::config::{Config, Settings, CONFIG};
+use crate::config::{Config, CONFIG};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::plugins::core::{CorePlugin, CORE_PLUGINS};
@@ -81,32 +81,52 @@ fn load_tools() -> BackendMap {
     if let Some(backends) = TOOLS.lock().unwrap().as_ref() {
         return backends.clone();
     }
+    time!("load_tools: start");
     let mut tools = CORE_PLUGINS
         .iter()
         .map(|(_, p)| p.clone())
         .collect::<Vec<ABackend>>();
-    let settings = Settings::get();
-    if !cfg!(windows) || settings.asdf {
-        tools.extend(asdf::AsdfBackend::list().expect("failed to list asdf plugins"));
+    let (tx, rx) = crossbeam_channel::unbounded();
+    rayon::scope(|s| {
+        if !cfg!(windows) || SETTINGS.asdf {
+            let tx = tx.clone();
+            s.spawn(move |_| tx.send(asdf::AsdfBackend::list()).unwrap());
+        }
+        if cfg!(windows) || SETTINGS.vfox {
+            let tx = tx.clone();
+            s.spawn(move |_| tx.send(vfox::VfoxBackend::list()).unwrap());
+        }
+        s.spawn(move |_| tx.send(list_installed_backends()).unwrap());
+    });
+    for backend in rx {
+        tools.extend(backend.expect("Error loading backends"));
     }
-    if cfg!(windows) || settings.vfox {
-        tools.extend(vfox::VfoxBackend::list().expect("failed to list vfox plugins"));
-    }
-    tools.extend(list_installed_backends().expect("failed to list backends"));
-    tools.retain(|plugin| !settings.disable_tools.contains(plugin.id()));
+
+    tools.retain(|backend| !SETTINGS.disable_tools.contains(backend.id()));
     let tools: BackendMap = tools
         .into_iter()
+        .sorted_by_cached_key(rank_backend)
         .map(|plugin| (plugin.id().to_string(), plugin))
         .collect();
     *TOOLS.lock().unwrap() = Some(tools.clone());
+    time!("load_tools", "done");
     tools
+}
+
+fn rank_backend(backend: &ABackend) -> (usize, String) {
+    let rank = match backend.get_plugin_type() {
+        PluginType::Core => 0,
+        PluginType::Vfox => 1,
+        PluginType::Asdf => 2,
+    };
+    (rank, backend.id().to_string())
 }
 
 fn list_installed_backends() -> eyre::Result<BackendList> {
     Ok(file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
         .map(|dir| arg_to_backend(BackendMeta::read(&dir).into()))
-        .filter(|f| f.fa().backend_type != BackendType::Asdf)
+        .filter(|f| !matches!(f.fa().backend_type, BackendType::Asdf | BackendType::Vfox))
         .collect())
 }
 
@@ -377,13 +397,13 @@ pub trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&ctx.tv)?;
 
         if let Err(e) = self.install_version_impl(&ctx) {
-            self.cleanup_install_dirs_on_error(&SETTINGS, &ctx.tv);
+            self.cleanup_install_dirs_on_error(&ctx.tv);
             return Err(e);
         }
 
         BackendMeta::write(&ctx.tv.backend)?;
 
-        self.cleanup_install_dirs(&SETTINGS, &ctx.tv);
+        self.cleanup_install_dirs(&ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
         touch_dirs.extend(config.config_files.keys().cloned());
@@ -488,14 +508,14 @@ pub trait Backend: Debug + Send + Sync {
         File::create(self.incomplete_file_path(tv))?;
         Ok(())
     }
-    fn cleanup_install_dirs_on_error(&self, settings: &Settings, tv: &ToolVersion) {
-        if !settings.always_keep_install {
+    fn cleanup_install_dirs_on_error(&self, tv: &ToolVersion) {
+        if !SETTINGS.always_keep_install {
             let _ = remove_all_with_warning(tv.install_path());
-            self.cleanup_install_dirs(settings, tv);
+            self.cleanup_install_dirs(tv);
         }
     }
-    fn cleanup_install_dirs(&self, settings: &Settings, tv: &ToolVersion) {
-        if !settings.always_keep_download && !settings.always_keep_install {
+    fn cleanup_install_dirs(&self, tv: &ToolVersion) {
+        if !SETTINGS.always_keep_download && !SETTINGS.always_keep_install {
             let _ = remove_all_with_warning(tv.download_path());
         }
     }

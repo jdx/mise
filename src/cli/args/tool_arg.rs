@@ -2,13 +2,13 @@ use std::fmt::Display;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use console::style;
-use eyre::bail;
-use regex::Regex;
-
 use crate::cli::args::BackendArg;
 use crate::toolset::ToolRequest;
 use crate::ui::style;
+use console::style;
+use eyre::bail;
+use regex::Regex;
+use xx::regex;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {

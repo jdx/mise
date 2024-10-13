@@ -2,7 +2,7 @@
 
 **Usage**: `mise shell [FLAGS] [TOOL@VERSION]...`
 
-**Aliases**: sh
+**Aliases**: `sh`
 
 Sets a tool version for the current session.
 

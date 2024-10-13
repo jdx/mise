@@ -1,11 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use eyre::{bail, ensure, Result};
-use serde_derive::Deserialize;
-use tempfile::tempdir_in;
-use url::Url;
-
 use crate::backend::Backend;
 use crate::build_time::built_info;
 use crate::cli::args::BackendArg;
@@ -18,6 +13,11 @@ use crate::plugins::core::CorePlugin;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, hash, http};
+use eyre::{bail, ensure, Result};
+use serde_derive::Deserialize;
+use tempfile::tempdir_in;
+use url::Url;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct NodePlugin {

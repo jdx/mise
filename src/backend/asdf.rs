@@ -96,6 +96,7 @@ impl AsdfBackend {
     pub fn list() -> Result<BackendList> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()
+            // if metadata.lua exists it's a vfox plugin (hopefully)
             .filter(|name| !dirs::PLUGINS.join(name).join("metadata.lua").exists())
             .map(|name| Arc::new(Self::from_arg(name.into())) as ABackend)
             .collect())

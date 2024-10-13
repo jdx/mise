@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use eyre::Result;
-
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::file::display_path;
@@ -11,6 +9,8 @@ use crate::lock_file::LockFile;
 use crate::plugins::core::CorePlugin;
 use crate::toolset::ToolRequest;
 use crate::{cmd, file};
+use eyre::Result;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct ErlangPlugin {

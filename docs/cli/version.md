@@ -2,7 +2,7 @@
 
 **Usage**: `mise version`
 
-**Aliases**: v
+**Aliases**: `v`
 
 Display the version of mise
 

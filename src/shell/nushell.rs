@@ -15,10 +15,9 @@ enum EnvOp<'a> {
 
 impl Display for EnvOp<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        #[allow(clippy::write_with_newline)]
         match self {
-            EnvOp::Set { key, val } => write!(f, "set,{key},{val}\n"),
-            EnvOp::Hide { key } => write!(f, "hide,{key},\n"),
+            EnvOp::Set { key, val } => writeln!(f, "set,{key},{val}"),
+            EnvOp::Hide { key } => writeln!(f, "hide,{key},"),
         }
     }
 }

@@ -3,15 +3,6 @@ use std::fmt::Display;
 use std::fs::{self};
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::{eyre, Result};
-use contracts::requires;
-use indoc::formatdoc;
-use itertools::Itertools;
-use once_cell::sync::Lazy;
-use regex::Regex;
-use serde_derive::{Deserialize, Serialize};
-use versions::Versioning;
-
 use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -26,6 +17,15 @@ use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, hash};
+use color_eyre::eyre::{eyre, Result};
+use contracts::requires;
+use indoc::formatdoc;
+use itertools::Itertools;
+use once_cell::sync::Lazy;
+use regex::Regex;
+use serde_derive::{Deserialize, Serialize};
+use versions::Versioning;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct JavaPlugin {

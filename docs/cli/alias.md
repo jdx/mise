@@ -2,7 +2,7 @@
 
 **Usage**: `mise alias [-p --plugin <PLUGIN>] [--no-header] <SUBCOMMAND>`
 
-**Aliases**: a
+**Aliases**: `a`
 
 Manage aliases
 

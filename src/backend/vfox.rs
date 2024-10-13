@@ -16,9 +16,11 @@ use crate::config::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::git::Git;
 use crate::install_context::InstallContext;
+use crate::plugins::PluginType;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, file, registry};
 use vfox::Vfox;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct VfoxBackend {
@@ -34,6 +36,10 @@ pub struct VfoxBackend {
 impl Backend for VfoxBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Vfox
+    }
+
+    fn get_plugin_type(&self) -> PluginType {
+        PluginType::Vfox
     }
 
     fn fa(&self) -> &BackendArg {

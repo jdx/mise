@@ -2,6 +2,7 @@ use crate::config::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
 use crate::errors::Error::PluginNotInstalled;
+use crate::exit;
 use crate::file::{display_path, remove_all};
 use crate::git::Git;
 use crate::plugins::{Plugin, PluginList, PluginType, Script, ScriptManager};
@@ -20,10 +21,9 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::exit;
 use std::sync::{Mutex, MutexGuard};
 use url::Url;
-use xx::file;
+use xx::{file, regex};
 
 #[derive(Debug)]
 pub struct AsdfPlugin {

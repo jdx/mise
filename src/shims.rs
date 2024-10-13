@@ -1,15 +1,9 @@
+use crate::exit;
 use std::collections::{BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::exit;
 use std::sync::Arc;
-
-use color_eyre::eyre::{bail, eyre, Result};
-use eyre::WrapErr;
-use indoc::formatdoc;
-use itertools::Itertools;
-use rayon::prelude::*;
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
@@ -19,6 +13,12 @@ use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{backend, dirs, env, fake_asdf, file, logger};
+use color_eyre::eyre::{bail, eyre, Result};
+use eyre::WrapErr;
+use indoc::formatdoc;
+use itertools::Itertools;
+use rayon::prelude::*;
+use xx::regex;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub fn handle_shim() -> Result<()> {
@@ -167,7 +167,6 @@ pub fn get_shim_diffs(
     mise_bin: impl AsRef<Path>,
     toolset: &Toolset,
 ) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
-    let start_ms = std::time::Instant::now();
     let mise_bin = mise_bin.as_ref();
     let (actual_shims, desired_shims) =
         rayon::join(|| get_actual_shims(mise_bin), || get_desired_shims(toolset));
@@ -176,12 +175,7 @@ pub fn get_shim_diffs(
         desired_shims.difference(&actual_shims).cloned().collect(),
         actual_shims.difference(&desired_shims).cloned().collect(),
     );
-    trace!(
-        "get_shim_diffs({:?}): sizes: ({},{})",
-        start_ms.elapsed(),
-        out.0.len(),
-        out.1.len()
-    );
+    time!("get_shim_diffs", "sizes: ({},{})", out.0.len(), out.1.len());
     Ok(out)
 }
 

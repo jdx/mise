@@ -3,7 +3,8 @@ use color_eyre::Result;
 use indoc::indoc;
 
 use crate::config::Settings;
-use crate::{logger, migrate, shims};
+use crate::ui::ctrlc;
+use crate::{eager, logger, migrate, shims};
 
 mod activate;
 mod alias;
@@ -202,7 +203,10 @@ impl Cli {
 
     pub fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
+        time!("run init");
         shims::handle_shim()?;
+        time!("run handle_shim");
+        ctrlc::init()?;
         version::print_version_if_requested(args)?;
 
         let matches = Self::command()
@@ -212,14 +216,19 @@ impl Cli {
                     .subcommands(external::commands())
                     .get_matches_from(args)
             });
+        time!("run get_matches_from");
         Settings::add_cli_matches(&matches);
+        time!("run add_cli_matches");
         logger::init();
+        time!("run logger init");
         migrate::run();
+        eager::post_settings();
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
         }
 
         debug!("ARGS: {}", &args.join(" "));
+        time!("run");
         match Commands::from_arg_matches(&matches) {
             Ok(cmd) => cmd.run(),
             Err(err) => matches

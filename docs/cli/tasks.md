@@ -2,7 +2,7 @@
 
 **Usage**: `mise tasks [FLAGS] <SUBCOMMAND>`
 
-**Aliases**: t
+**Aliases**: `t`
 
 [experimental] Manage tasks
 
