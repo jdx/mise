@@ -503,7 +503,7 @@ pub trait Backend: Debug + Send + Sync {
         tv.cache_path().join("incomplete")
     }
 
-    fn depedency_toolset(&self) -> eyre::Result<Toolset> {
+    fn dependency_toolset(&self) -> eyre::Result<Toolset> {
         let config = Config::get();
         let dependencies = self
             .get_all_dependencies(&ToolRequest::System(self.name().into()))?
@@ -518,7 +518,7 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
-        self.depedency_toolset()?.full_env()
+        self.dependency_toolset()?.full_env()
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
