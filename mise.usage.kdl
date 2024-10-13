@@ -951,6 +951,18 @@ By default, this command modifies `mise.toml` in the current directory."
 }
 cmd "settings" help="Manage settings" {
     flag "--keys" help="Only display key names for each setting"
+    cmd "add" help="Adds a setting to the configuration file" {
+        long_help r"Adds a setting to the configuration file
+
+Used with an array setting, this will append the value to the array.
+This modifies the contents of ~/.config/mise/config.toml"
+        after_long_help r"Examples:
+
+    $ mise settings add disable_hints python_multi
+"
+        arg "<SETTING>" help="The setting to set"
+        arg "<VALUE>" help="The value to set"
+    }
     cmd "get" help="Show a current setting" {
         long_help r"Show a current setting
 
@@ -981,7 +993,7 @@ but managed separately with `mise aliases`"
         flag "--keys" help="Only display key names for each setting"
     }
     cmd "set" help="Add/update a setting" {
-        alias "add" "create"
+        alias "create"
         long_help r"Add/update a setting
 
 This modifies the contents of ~/.config/mise/config.toml"

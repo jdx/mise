@@ -1,6 +1,7 @@
 use clap::Subcommand;
 use eyre::Result;
 
+mod add;
 mod get;
 mod ls;
 mod set;
@@ -19,6 +20,7 @@ pub struct Settings {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Add(add::SettingsAdd),
     Get(get::SettingsGet),
     Ls(ls::SettingsLs),
     Set(set::SettingsSet),
@@ -28,6 +30,7 @@ enum Commands {
 impl Commands {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::Add(cmd) => cmd.run(),
             Self::Get(cmd) => cmd.run(),
             Self::Ls(cmd) => cmd.run(),
             Self::Set(cmd) => cmd.run(),
