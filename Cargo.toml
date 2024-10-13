@@ -112,9 +112,9 @@ tokio = { version = "1.37.0", features = [
     "rt",
     "time",
 ] }
-toml = { version = "0.8.12", features = ["parse"] }
-toml_edit = { version = "0.22.12", features = ["parse"] }
-ubi = {version = "0.2", default-features = false}
+toml = { version = "0.8", features = ["parse"] }
+toml_edit = { version = "0.22", features = ["parse"] }
+ubi = { version = "0.2", default-features = false }
 url = "2.5.0"
 # usage-lib = { path = "../usage/lib", features = ["clap", "docs"] }
 usage-lib = { version = "0.8", features = ["clap", "docs"] }
