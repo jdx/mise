@@ -1,8 +1,10 @@
-#[must_use]
-#[derive(Debug)]
-pub struct HandleGuard();
+pub fn init() -> eyre::Result<()> {
+    Ok(())
+}
+
+// pub fn add_handler(_func: impl Fn() + Send + Sync + 'static) {}
+
+pub fn exit_on_ctrl_c(_do_exit: bool) {}
 
 /// ensures cursor is displayed on ctrl-c
-pub fn handle_ctrlc() -> eyre::Result<Option<HandleGuard>> {
-    Ok(Some(HandleGuard()))
-}
+pub fn show_cursor_after_ctrl_c() {}

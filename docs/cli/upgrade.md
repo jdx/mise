@@ -2,7 +2,7 @@
 
 **Usage**: `mise upgrade [FLAGS] [TOOL@VERSION]...`
 
-**Aliases**: up
+**Aliases**: `up`
 
 Upgrades outdated tools
 

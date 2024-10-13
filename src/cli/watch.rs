@@ -1,4 +1,4 @@
-use std::process::exit;
+use crate::exit;
 
 use console::style;
 use eyre::{eyre, Result};

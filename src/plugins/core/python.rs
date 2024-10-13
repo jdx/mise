@@ -3,8 +3,7 @@ use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::Config;
-use crate::config::SETTINGS;
+use crate::config::{Config, SETTINGS};
 use crate::file::display_path;
 use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -18,6 +17,7 @@ use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use versions::Versioning;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct PythonPlugin {

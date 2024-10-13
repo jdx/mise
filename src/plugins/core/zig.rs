@@ -1,10 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use contracts::requires;
-use eyre::Result;
-use itertools::Itertools;
-use versions::Versioning;
-
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
@@ -16,6 +11,11 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
+use contracts::requires;
+use eyre::Result;
+use itertools::Itertools;
+use versions::Versioning;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct ZigPlugin {

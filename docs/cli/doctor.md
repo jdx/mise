@@ -2,7 +2,7 @@
 
 **Usage**: `mise doctor`
 
-**Aliases**: dr
+**Aliases**: `dr`
 
 Check mise installation for possible problems
 

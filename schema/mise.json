@@ -686,6 +686,9 @@
       "description": "mise settings",
       "type": "object"
     },
+    "task_config": {
+      "$ref": "#/$defs/task_config"
+    },
     "tasks": {
       "additionalProperties": {
         "$ref": "#/$defs/task"

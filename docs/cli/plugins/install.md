@@ -2,7 +2,7 @@
 
 **Usage**: `mise plugins install [FLAGS] [NEW_PLUGIN] [GIT_URL]`
 
-**Aliases**: i, a, add
+**Aliases**: `i`, `a`, `add`
 
 Install a plugin
 

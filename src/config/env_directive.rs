@@ -1,5 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
-use std::fmt::Display;
+use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -9,8 +9,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
-use crate::config::Config;
-use crate::config::SETTINGS;
+use crate::config::{Config, SETTINGS};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::file::{display_path, which_non_pristine};
@@ -120,7 +119,6 @@ impl Display for EnvDirective {
     }
 }
 
-#[derive(Debug)]
 pub struct EnvResults {
     pub env: IndexMap<String, (String, PathBuf)>,
     pub env_remove: BTreeSet<String>,
@@ -135,7 +133,7 @@ impl EnvResults {
         input: Vec<(EnvDirective, PathBuf)>,
     ) -> eyre::Result<Self> {
         let mut ctx = BASE_CONTEXT.clone();
-        trace!("resolve: input: {:#?}", &input);
+        // trace!("resolve: input: {:#?}", &input);
         let mut env = initial
             .iter()
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
@@ -157,11 +155,11 @@ impl EnvResults {
         };
         let mut paths: Vec<(PathEntry, PathBuf)> = Vec::new();
         for (directive, source) in input.clone() {
-            trace!(
-                "resolve: directive: {:?}, source: {:?}",
-                &directive,
-                &source
-            );
+            // trace!(
+            //     "resolve: directive: {:?}, source: {:?}",
+            //     &directive,
+            //     &source
+            // );
             let config_root = source
                 .parent()
                 .map(Path::to_path_buf)
@@ -174,12 +172,12 @@ impl EnvResults {
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect::<HashMap<_, _>>();
             ctx.insert("env", &env_vars);
-            trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
+            // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v) => {
                     let v = r.parse_template(&ctx, &source, &v)?;
                     r.env_remove.remove(&k);
-                    trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
+                    // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
                     env.insert(k, (v, Some(source.clone())));
                 }
                 EnvDirective::Rm(k) => {
@@ -187,25 +185,25 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Path(input_str) => {
-                    trace!("resolve: input_str: {:#?}", input_str);
+                    // trace!("resolve: input_str: {:#?}", input_str);
                     match input_str {
                         PathEntry::Normal(input) => {
-                            trace!(
-                                "resolve: normal: input: {:?}, input.to_string(): {:?}",
-                                &input,
-                                input.to_string_lossy().as_ref()
-                            );
+                            // trace!(
+                            //     "resolve: normal: input: {:?}, input.to_string(): {:?}",
+                            //     &input,
+                            //     input.to_string_lossy().as_ref()
+                            // );
                             let s =
                                 r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                            trace!("resolve: s: {:?}", &s);
+                            // trace!("resolve: s: {:?}", &s);
                             paths.push((PathEntry::Normal(s.into()), source));
                         }
                         PathEntry::Lazy(input) => {
-                            trace!(
-                                "resolve: lazy: input: {:?}, input.to_string(): {:?}",
-                                &input,
-                                input.to_string_lossy().as_ref()
-                            );
+                            // trace!(
+                            //     "resolve: lazy: input: {:?}, input.to_string(): {:?}",
+                            //     &input,
+                            //     input.to_string_lossy().as_ref()
+                            // );
                             paths.push((PathEntry::Lazy(input), source));
                         }
                     }
@@ -312,10 +310,10 @@ impl EnvResults {
                 r.env.insert(k, (v, source));
             }
         }
-        trace!("resolve: paths: {:#?}", &paths);
-        trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
+        // trace!("resolve: paths: {:#?}", &paths);
+        // trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
         for (entry, source) in paths {
-            trace!("resolve: entry: {:?}, source: {:?}", &entry, &source);
+            // trace!("resolve: entry: {:?}, source: {}", &entry, display_path(source));
             let config_root = source
                 .parent()
                 .map(Path::to_path_buf)
@@ -324,9 +322,8 @@ impl EnvResults {
             let s = match entry {
                 PathEntry::Normal(pb) => pb.to_string_lossy().to_string(),
                 PathEntry::Lazy(pb) => {
-                    let s = r.parse_template(&ctx, &source, pb.to_string_lossy().as_ref())?;
-                    trace!("resolve: s: {:?}", &s);
-                    s
+                    // trace!("resolve: s: {:?}", &s);
+                    r.parse_template(&ctx, &source, pb.to_string_lossy().as_ref())?
                 }
             };
             env::split_paths(&s)
@@ -351,6 +348,28 @@ impl EnvResults {
             .render_str(input, ctx)
             .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         Ok(output)
+    }
+}
+
+impl Debug for EnvResults {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut ds = f.debug_struct("EnvResults");
+        if !self.env.is_empty() {
+            ds.field("env", &self.env);
+        }
+        if !self.env_remove.is_empty() {
+            ds.field("env_remove", &self.env_remove);
+        }
+        if !self.env_files.is_empty() {
+            ds.field("env_files", &self.env_files);
+        }
+        if !self.env_paths.is_empty() {
+            ds.field("env_paths", &self.env_paths);
+        }
+        if !self.env_scripts.is_empty() {
+            ds.field("env_scripts", &self.env_scripts);
+        }
+        ds.finish()
     }
 }
 

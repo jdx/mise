@@ -3,6 +3,19 @@ use std::fmt::Display;
 use std::fs::{self};
 use std::path::{Path, PathBuf};
 
+use crate::backend::Backend;
+use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::cli::args::BackendArg;
+use crate::cli::version::{ARCH, OS};
+use crate::cmd::CmdLineRunner;
+use crate::config::{Config, SETTINGS};
+use crate::http::{HTTP, HTTP_FETCH};
+use crate::install_context::InstallContext;
+use crate::plugins::core::CorePlugin;
+use crate::plugins::VERSION_REGEX;
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::ui::progress_report::SingleReport;
+use crate::{file, hash};
 use color_eyre::eyre::{eyre, Result};
 use contracts::requires;
 use indoc::formatdoc;
@@ -11,21 +24,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 use versions::Versioning;
-
-use crate::backend::Backend;
-use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
-use crate::cli::version::{ARCH, OS};
-use crate::cmd::CmdLineRunner;
-use crate::config::Config;
-use crate::config::SETTINGS;
-use crate::http::{HTTP, HTTP_FETCH};
-use crate::install_context::InstallContext;
-use crate::plugins::core::CorePlugin;
-use crate::plugins::VERSION_REGEX;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
-use crate::ui::progress_report::SingleReport;
-use crate::{file, hash};
+use xx::regex;
 
 #[derive(Debug)]
 pub struct JavaPlugin {

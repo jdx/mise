@@ -2,7 +2,7 @@
 
 **Usage**: `mise settings set <SETTING> <VALUE>`
 
-**Aliases**: create
+**Aliases**: `create`
 
 Add/update a setting
 

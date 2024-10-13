@@ -2,16 +2,16 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use eyre::Result;
-use indexmap::IndexMap;
-use itertools::Itertools;
-use versions::Versioning;
-
 use crate::backend::{backend_meta, Backend};
 use crate::config::Config;
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::{backend, file};
+use eyre::Result;
+use indexmap::IndexMap;
+use itertools::Itertools;
+use versions::Versioning;
+use xx::regex;
 
 pub fn rebuild(config: &Config) -> Result<()> {
     for backend in backend::list() {

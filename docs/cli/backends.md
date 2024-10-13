@@ -2,7 +2,7 @@
 
 **Usage**: `mise backends <SUBCOMMAND>`
 
-**Aliases**: b
+**Aliases**: `b`
 
 Manage backends
 

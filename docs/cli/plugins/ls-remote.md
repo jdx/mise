@@ -2,7 +2,7 @@
 
 **Usage**: `mise plugins ls-remote [-u --urls] [--only-names]`
 
-**Aliases**: list-remote, list-all
+**Aliases**: `list-remote`, `list-all`
 
 List all available remote plugins
 

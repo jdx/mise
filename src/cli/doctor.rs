@@ -1,4 +1,4 @@
-use std::process::exit;
+use crate::exit;
 
 use console::{pad_str, style, Alignment};
 use indoc::formatdoc;
@@ -168,7 +168,6 @@ impl Doctor {
     }
 
     fn analyze_shims(&mut self, toolset: &Toolset) {
-        let start_ms = std::time::Instant::now();
         let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
 
         if let Ok((missing, extra)) = shims::get_shim_diffs(mise_bin, toolset) {
@@ -190,7 +189,7 @@ impl Doctor {
                 ));
             }
         }
-        trace!("Shim analysis took {:?}", start_ms.elapsed());
+        time!("doctor::analyze_shims: {:?}");
     }
 
     fn analyze_plugins(&mut self) {
@@ -198,7 +197,7 @@ impl Doctor {
             let is_core = CORE_PLUGINS.contains_key(plugin.id());
             let plugin_type = plugin.get_plugin_type();
 
-            if is_core && plugin_type == PluginType::Asdf {
+            if is_core && matches!(plugin_type, PluginType::Asdf | PluginType::Vfox) {
                 self.warnings
                     .push(format!("plugin {} overrides a core plugin", &plugin.id()));
             }
@@ -280,7 +279,7 @@ fn render_plugins() -> String {
         .map(|p| {
             let padded_name = pad_str(p.id(), max_plugin_name_len, Alignment::Left, None);
             let extra = match p.get_plugin_type() {
-                PluginType::Asdf => {
+                PluginType::Asdf | PluginType::Vfox => {
                     let git = Git::new(dirs::PLUGINS.join(p.id()));
                     match git.get_remote_url() {
                         Some(url) => {

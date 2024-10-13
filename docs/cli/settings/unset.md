@@ -2,7 +2,7 @@
 
 **Usage**: `mise settings unset <SETTING>`
 
-**Aliases**: rm, remove, delete, del
+**Aliases**: `rm`, `remove`, `delete`, `del`
 
 Clears a setting
 

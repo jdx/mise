@@ -151,6 +151,7 @@ impl Settings {
         settings.set_python_config();
         let settings = Arc::new(settings);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
+        trace!("Settings: {:#?}", settings);
         Ok(settings)
     }
 

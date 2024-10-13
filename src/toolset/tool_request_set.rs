@@ -135,7 +135,6 @@ impl ToolRequestSetBuilder {
     //
 
     pub fn build(&self) -> eyre::Result<ToolRequestSet> {
-        let start_ms = std::time::Instant::now();
         let mut trs = ToolRequestSet::default();
         self.load_config_files(&mut trs)?;
         self.load_runtime_env(&mut trs)?;
@@ -149,7 +148,7 @@ impl ToolRequestSetBuilder {
             }
         }
 
-        debug!("ToolRequestSet.build({:?}): {trs}", start_ms.elapsed());
+        time!("tool_request_set::build", "{trs}");
         Ok(trs)
     }
 

@@ -2,7 +2,7 @@
 
 **Usage**: `mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`
 
-**Aliases**: p
+**Aliases**: `p`
 
 Removes stale mise cache files
 
