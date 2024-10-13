@@ -23,7 +23,7 @@ from source. You can check its
 [README](https://github.com/rbenv/ruby-build/blob/master/README.md)
 for additional settings and some troubleshooting.
 
-## Configuration
+## Settings
 
 `ruby-build` already has a
 [handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration),

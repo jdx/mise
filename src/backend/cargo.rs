@@ -124,7 +124,7 @@ impl CargoBackend {
 
     fn is_binstall_enabled(&self, tv: &ToolVersion) -> bool {
         let settings = Settings::get();
-        if !settings.cargo_binstall || file::which_non_pristine("cargo-binstall").is_none() {
+        if !settings.cargo.binstall || file::which_non_pristine("cargo-binstall").is_none() {
             return false;
         }
         let opts = tv.request.options();

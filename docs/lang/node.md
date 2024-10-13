@@ -22,16 +22,13 @@ mise use -g node@20
 See [BUILDING.md](https://github.com/nodejs/node/blob/main/BUILDING.md#building-nodejs-on-supported-platforms) in node's documentation for
 required system dependencies.
 
-## Configuration
+## Settings
 
 <script setup>
 import { data } from '/settings.data.ts';
 import Setting from '/components/setting.vue';
-
 const settings = data.find(s => s.key === 'node').settings;
-
 </script>
-
 <Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
 
 ### Environment Variables
