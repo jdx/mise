@@ -78,6 +78,7 @@ Answer yes to all confirmation prompts
 * [`mise self-update [FLAGS] [VERSION]`](/cli/self-update.md)
 * [`mise set [--file <FILE>] [-g --global] [ENV_VARS]...`](/cli/set.md)
 * [`mise settings [--keys] <SUBCOMMAND>`](/cli/settings.md)
+* [`mise settings add <SETTING> <VALUE>`](/cli/settings/add.md)
 * [`mise settings get <SETTING>`](/cli/settings/get.md)
 * [`mise settings ls [--keys]`](/cli/settings/ls.md)
 * [`mise settings set <SETTING> <VALUE>`](/cli/settings/set.md)
