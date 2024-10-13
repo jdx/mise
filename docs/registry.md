@@ -730,7 +730,6 @@ editLink: false
 | typos | [asdf:aschiavon91/asdf-typos](https://github.com/aschiavon91/asdf-typos) |
 | typst | [asdf:stephane-klein/asdf-typst](https://github.com/stephane-klein/asdf-typst) |
 | uaa-cli | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
-| ubi | [cargo:ubi-cli](https://crates.io/crates/ubi-cli) |
 | unison | [asdf:susurri/asdf-unison](https://github.com/susurri/asdf-unison) |
 | updatecli | [asdf:updatecli/asdf-updatecli](https://github.com/updatecli/asdf-updatecli) |
 | upt | [asdf:ORCID/asdf-upt](https://github.com/ORCID/asdf-upt) |

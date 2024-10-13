@@ -4,15 +4,6 @@ You may install GitHub Releases and URL packages directly using [ubi](https://gi
 
 The code for this is inside of the mise repository at [`./src/backend/ubi.rs`](https://github.com/jdx/mise/blob/main/src/backend/ubi.rs).
 
-## Dependencies
-
-This relies on having `ubi` installed. You can install it with or without mise.
-Here is how to install `ubi-cli` with mise:
-
-```sh
-mise use -g cargo:ubi-cli
-```
-
 ## Usage
 
 The following installs the latest version of goreleaser
