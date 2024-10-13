@@ -3,7 +3,7 @@ use eyre::{eyre, Result};
 use itertools::Itertools;
 use petgraph::dot::Dot;
 
-use crate::config::{Config, Settings};
+use crate::config::{Config, SETTINGS};
 use crate::task::Deps;
 use crate::task::Task;
 use crate::ui::style::{self};
@@ -31,8 +31,7 @@ pub struct TasksDeps {
 impl TasksDeps {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::try_get()?;
-        settings.ensure_experimental("`mise tasks deps`")?;
+        SETTINGS.ensure_experimental("`mise tasks deps`")?;
 
         let tasks = if self.tasks.is_none() {
             self.get_all_tasks(&config)?

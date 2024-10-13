@@ -32,6 +32,8 @@ mod env_directive;
 pub mod settings;
 pub mod tracking;
 
+pub use settings::SETTINGS;
+
 type AliasMap = BTreeMap<BackendArg, BTreeMap<String, String>>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
 type EnvWithSources = IndexMap<String, (String, PathBuf)>;
@@ -66,10 +68,9 @@ impl Config {
         Ok(config)
     }
     pub fn load() -> Result<Self> {
-        let settings = Settings::try_get()?;
-        trace!("Settings: {:#?}", settings);
+        trace!("Settings: {:#?}", SETTINGS);
 
-        let legacy_files = load_legacy_files(&settings);
+        let legacy_files = load_legacy_files(&SETTINGS);
         let config_filenames = legacy_files
             .keys()
             .chain(DEFAULT_CONFIG_FILENAMES.iter())
@@ -113,8 +114,7 @@ impl Config {
     pub fn env_with_sources(&self) -> eyre::Result<&EnvWithSources> {
         self.env_with_sources.get_or_try_init(|| {
             let mut env = self.env_results()?.env.clone();
-            let settings = Settings::get();
-            for env_file in settings.env_files() {
+            for env_file in SETTINGS.env_files() {
                 match dotenvy::from_path_iter(&env_file) {
                     Ok(iter) => {
                         for item in iter {
@@ -141,8 +141,7 @@ impl Config {
         Ok(&self.env_results()?.env_paths)
     }
     pub fn get_shorthands(&self) -> &Shorthands {
-        self.shorthands
-            .get_or_init(|| get_shorthands(&Settings::get()))
+        self.shorthands.get_or_init(|| get_shorthands(&SETTINGS))
     }
     pub fn get_tool_request_set(&self) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
@@ -461,7 +460,7 @@ impl Config {
             .map(|p| p.to_path_buf())
             .chain(env_results.env_files.clone())
             .chain(env_results.env_scripts.clone())
-            .chain(Settings::get().env_files())
+            .chain(SETTINGS.env_files())
             .collect())
     }
 
