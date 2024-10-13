@@ -1,5 +1,6 @@
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
+use std::collections::HashSet;
 use std::path::Path;
 use std::{env, fs};
 
@@ -12,6 +13,60 @@ fn main() {
     built::write_built_file().expect("Failed to acquire build-time information");
 
     codegen_settings();
+    codegen_registry();
+}
+
+fn codegen_registry() {
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("registry.rs");
+    let mut lines = vec![r#"
+const _REGISTRY: &[(&str, &[&str])] = &["#
+        .to_string()];
+
+    let registry: toml::Table = fs::read_to_string("registry.toml")
+        .unwrap()
+        .parse()
+        .unwrap();
+
+    let tools = registry.get("tools").unwrap().as_table().unwrap();
+    let mut trusted_ids = HashSet::new();
+    for (short, info) in tools {
+        let info = info.as_array().unwrap();
+        let mut fulls = vec![];
+        for backend in info {
+            match backend {
+                toml::Value::String(backend) => {
+                    fulls.push(backend.to_string());
+                }
+                toml::Value::Table(backend) => {
+                    fulls.push(backend.get("full").unwrap().as_str().unwrap().to_string());
+                    if let Some(trust) = backend.get("trust") {
+                        if trust.as_bool().unwrap() {
+                            trusted_ids.insert(short);
+                        }
+                    }
+                }
+                _ => panic!("Unknown backend type"),
+            }
+        }
+        lines.push(format!(
+            r#"    ("{short}", &["{fulls}"]),"#,
+            fulls = fulls.join("\", \"")
+        ));
+    }
+
+    lines.push(
+        r#"];
+
+const _TRUSTED_IDS: &[&str] = &["#
+            .to_string(),
+    );
+    for id in trusted_ids {
+        lines.push(format!(r#"    "{id}","#));
+    }
+    lines.push(r#"];"#.to_string());
+
+    fs::write(&dest_path, lines.join("\n")).unwrap();
 }
 
 fn codegen_settings() {

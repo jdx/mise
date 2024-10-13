@@ -109,7 +109,7 @@ pub fn local(
         }
         let tools = plugins
             .iter()
-            .map(|r| style(r).blue().for_stderr().to_string())
+            .map(|r| style(&r.short).blue().for_stderr().to_string())
             .join(" ");
         miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path));
     }

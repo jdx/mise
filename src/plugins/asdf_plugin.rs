@@ -15,8 +15,9 @@ use console::style;
 use contracts::requires;
 use eyre::{bail, eyre, Context};
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -31,6 +32,14 @@ pub struct AsdfPlugin {
     pub repo_url: Option<String>,
     pub script_man: ScriptManager,
 }
+
+pub static ASDF_PLUGIN_NAMES: Lazy<BTreeSet<String>> = Lazy::new(|| match AsdfPlugin::list() {
+    Ok(plugins) => plugins.into_iter().map(|p| p.name().to_string()).collect(),
+    Err(err) => {
+        warn!("Failed to list vfox plugins: {err}");
+        BTreeSet::new()
+    }
+});
 
 impl AsdfPlugin {
     #[requires(!name.is_empty())]

@@ -127,8 +127,8 @@
           "type": "boolean"
         },
         "asdf": {
-          "default": true,
           "description": "use asdf as a default plugin backend",
+          "deprecated": "Use disable_backends instead.",
           "type": "boolean"
         },
         "asdf_compat": {
@@ -171,8 +171,21 @@
           "description": "Sets log level to debug",
           "type": "boolean"
         },
+        "disable_backends": {
+          "default": [],
+          "description": "Backends to disable such as `asdf` or `pipx`",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "disable_default_registry": {
+          "description": "Disable the default mapping of short tool names like `go` -> `vfox:version-fox/vfox-golang`",
+          "type": "boolean"
+        },
         "disable_default_shorthands": {
           "description": "Disables built-in shorthands to asdf/vfox plugins",
+          "deprecated": "Replaced with `disable_default_registry`",
           "type": "boolean"
         },
         "disable_hints": {
@@ -509,6 +522,7 @@
         },
         "vfox": {
           "description": "Use vfox as a default plugin backend instead of asdf.",
+          "deprecated": "Use disable_backends instead.",
           "type": "boolean"
         },
         "yes": {

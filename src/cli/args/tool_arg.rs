@@ -3,19 +3,20 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::cli::args::BackendArg;
-use crate::toolset::ToolRequest;
+use crate::toolset::{ToolRequest, ToolVersionOptions};
 use crate::ui::style;
 use console::style;
 use eyre::bail;
-use regex::Regex;
 use xx::regex;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {
+    pub short: String,
     pub backend: BackendArg,
     pub version: Option<String>,
     pub version_type: ToolVersionType,
     pub tvr: Option<ToolRequest>,
+    pub opts: Option<ToolVersionOptions>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -32,22 +33,27 @@ impl FromStr for ToolArg {
     type Err = eyre::Error;
 
     fn from_str(input: &str) -> eyre::Result<Self> {
-        let (backend_input, version) = parse_input(input);
+        let (backend_input, _opts_str, version) = parse_input(input);
+
+        // TODO: handle opts_str so options can be passed on the command line
 
         let backend: BackendArg = backend_input.into();
+        let opts = backend.opts.clone();
         let version_type = match version.as_ref() {
             Some(version) => version.parse()?,
             None => ToolVersionType::Version(String::from("latest")),
         };
         let tvr = version
             .as_ref()
-            .map(|v| ToolRequest::new(backend.clone(), v))
+            .map(|v| ToolRequest::new_opts(backend.clone(), v, opts.clone().unwrap_or_default()))
             .transpose()?;
         Ok(Self {
+            short: backend.short.clone(),
             tvr,
             version: version.map(|v| v.to_string()),
             version_type,
             backend,
+            opts,
         })
     }
 }
@@ -97,10 +103,11 @@ impl ToolArg {
     pub fn double_tool_condition(tools: &[ToolArg]) -> eyre::Result<Vec<ToolArg>> {
         let mut tools = tools.to_vec();
         if tools.len() == 2 {
-            let re: &Regex = regex!(r"^\d+(\.\d+)*$");
+            let re = regex!(r"^\d+(\.\d+)*$");
             let a = tools[0].clone();
             let b = tools[1].clone();
             if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.backend.name) {
+                tools[1].short = a.short.clone();
                 tools[1].tvr = Some(ToolRequest::new(a.backend.clone(), &b.backend.name)?);
                 tools[1].backend = a.backend;
                 tools[1].version_type = b.backend.name.parse()?;
@@ -128,7 +135,7 @@ impl ToolArg {
             .unwrap_or(String::from("latest"));
         format!(
             "{}{}",
-            style(&self.backend.name).blue().for_stderr(),
+            style(&self.short).blue().for_stderr(),
             style(&format!("@{version}")).for_stderr()
         )
     }
@@ -143,24 +150,30 @@ impl Display for ToolArg {
     }
 }
 
-fn parse_input(s: &str) -> (&str, Option<&str>) {
-    let (backend, version) = s
+fn parse_input(s: &str) -> (&str, Option<&str>, Option<&str>) {
+    let (mut backend, version) = s
         .split_once('@')
         .map(|(f, v)| (f, Some(v)))
         .unwrap_or((s, None));
+    let mut opts = None;
+
+    if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(backend) {
+        backend = c.get(1).unwrap().as_str();
+        opts = Some(c.get(2).unwrap().as_str());
+    }
 
     // special case for packages with npm scopes like "npm:@antfu/ni"
     if backend == "npm:" {
         if let Some(v) = version {
             return if let Some(i) = v.find('@') {
-                (&s[..backend.len() + i + 1], Some(&v[i + 1..]))
+                (&s[..backend.len() + i + 1], opts, Some(&v[i + 1..]))
             } else {
-                (&s[..backend.len() + v.len() + 1], None)
+                (&s[..backend.len() + v.len() + 1], opts, None)
             };
         }
     }
 
-    (backend, version)
+    (backend, opts, version)
 }
 
 #[cfg(test)]
@@ -177,10 +190,12 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
+                short: "node".into(),
                 backend: "node".into(),
                 version: None,
                 version_type: ToolVersionType::Version("latest".into()),
                 tvr: None,
+                opts: None,
             }
         );
     }
@@ -192,10 +207,12 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
+                short: "node".into(),
                 backend: "node".into(),
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
                 tvr: Some(ToolRequest::new("node".into(), "20").unwrap()),
+                opts: None,
             }
         );
     }
@@ -207,10 +224,12 @@ mod tests {
         assert_eq!(
             tool,
             ToolArg {
+                short: "node".into(),
                 backend: "node".into(),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
                 tvr: Some(ToolRequest::new("node".into(), "lts").unwrap()),
+                opts: None,
             }
         );
     }
@@ -218,16 +237,40 @@ mod tests {
     #[test]
     fn test_tool_arg_parse_input() {
         reset();
-        let t = |input, f, v| {
-            let (backend, version) = parse_input(input);
+        let t = |input, f, o, v| {
+            let (backend, opts, version) = parse_input(input);
             assert_eq!(backend, f);
+            assert_eq!(opts, o);
             assert_eq!(version, v);
         };
-        t("npm:@antfu/ni", "npm:@antfu/ni", None);
-        t("npm:@antfu/ni@1.0.0", "npm:@antfu/ni", Some("1.0.0"));
-        t("npm:@antfu/ni@1.0.0@1", "npm:@antfu/ni", Some("1.0.0@1"));
-        t("npm:", "npm:", None);
-        t("npm:prettier", "npm:prettier", None);
-        t("npm:prettier@1.0.0", "npm:prettier", Some("1.0.0"));
+        t("npm:@antfu/ni", "npm:@antfu/ni", None, None);
+        t("npm:@antfu/ni@1.0.0", "npm:@antfu/ni", None, Some("1.0.0"));
+        t(
+            "npm:@antfu/ni@1.0.0@1",
+            "npm:@antfu/ni",
+            None,
+            Some("1.0.0@1"),
+        );
+        t("npm:", "npm:", None, None);
+        t("npm:prettier", "npm:prettier", None, None);
+        t("npm:prettier@1.0.0", "npm:prettier", None, Some("1.0.0"));
+        t(
+            "ubi:BurntSushi/ripgrep[exe=rg]",
+            "ubi:BurntSushi/ripgrep",
+            Some("exe=rg"),
+            None,
+        );
+        t(
+            "ubi:BurntSushi/ripgrep[exe=rg,match=musl]",
+            "ubi:BurntSushi/ripgrep",
+            Some("exe=rg,match=musl"),
+            None,
+        );
+        t(
+            "ubi:BurntSushi/ripgrep[exe=rg,match=musl]@1.0.0",
+            "ubi:BurntSushi/ripgrep",
+            Some("exe=rg,match=musl"),
+            Some("1.0.0"),
+        );
     }
 }

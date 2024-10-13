@@ -22,7 +22,37 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 "ubi:goreleaser/goreleaser" = "latest"
 ```
 
-### Supported Ubi Syntax
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `ubi` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `exe`
+
+The `exe` option allows you to specify the executable name in the archive. This is useful when the
+archive contains multiple executables.
+
+If you get an error like `could not find any files named cli in the downloaded zip file`, you can
+use the `exe` option to specify the executable name:
+
+```toml
+[tools]
+"ubi:cli/cli" = { exe = "gh" } # github's cli
+```
+
+### `matching`
+
+Set a string to match against the release filename when there are multiple files for your
+OS/arch, i.e. "gnu" or "musl". Note that this is only used when there is more than one
+matching release filename for your OS/arch. If only one release asset matches your OS/arch,
+then this will be ignored.
+
+```toml
+[tools]
+"ubi:BurntSushi/ripgrep" = { matching = "musl" }
+```
+
+## Supported Ubi Syntax
 
 | Description                                   | Usage                                                                                                   |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |

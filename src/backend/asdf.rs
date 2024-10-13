@@ -459,7 +459,7 @@ impl Backend for AsdfBackend {
 
 impl Debug for AsdfBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ExternalPlugin")
+        f.debug_struct("AsdfPlugin")
             .field("name", &self.name)
             .field("plugin_path", &self.plugin_path)
             .field("cache_path", &self.ba.cache_path)
@@ -489,6 +489,6 @@ mod tests {
     fn test_debug() {
         reset();
         let plugin = AsdfBackend::from_arg("dummy".into());
-        assert!(format!("{:?}", plugin).starts_with("ExternalPlugin { name: \"dummy\""));
+        assert!(format!("{:?}", plugin).starts_with("AsdfPlugin { name: \"dummy\""));
     }
 }

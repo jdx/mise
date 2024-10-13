@@ -25,7 +25,7 @@ use crate::shorthands::{get_shorthands, Shorthands};
 use crate::task::Task;
 use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder};
 use crate::ui::style;
-use crate::{backend, dirs, env, file};
+use crate::{backend, dirs, env, file, shorthands};
 
 pub mod config_file;
 mod env_directive;
@@ -159,10 +159,9 @@ impl Config {
 
     pub fn get_repo_url(&self, plugin_name: &String) -> Option<String> {
         match self.repo_urls.get(plugin_name) {
-            Some(url) => Some(url),
-            None => self.get_shorthands().get(plugin_name),
+            Some(url) => Some(url.to_string()),
+            None => self.get_shorthands().get(plugin_name).map(|full| shorthands::full_to_url(full)),
         }
-        .cloned()
     }
 
     pub fn get_all_aliases(&self) -> &AliasMap {

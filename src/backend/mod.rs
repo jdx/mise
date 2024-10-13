@@ -89,10 +89,10 @@ fn load_tools() -> BackendMap {
     let mut vfox_tools = Ok(vec![]);
     let mut backend_tools = Ok(vec![]);
     rayon::scope(|s| {
-        if !cfg!(windows) || SETTINGS.asdf {
+        if !cfg!(windows) || !SETTINGS.disable_backends.contains(&"asdf".to_string()) {
             s.spawn(|_| asdf_tools = asdf::AsdfBackend::list());
         }
-        if cfg!(windows) || SETTINGS.vfox {
+        if cfg!(windows) || !SETTINGS.disable_backends.contains(&"vfox".to_string()) {
             s.spawn(|_| vfox_tools = vfox::VfoxBackend::list());
         }
         backend_tools = list_installed_backends();

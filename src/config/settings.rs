@@ -157,6 +157,15 @@ impl Settings {
 
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
+        if let Some(false) = self.asdf {
+            self.disable_backends.push("asdf".to_string());
+        }
+        if let Some(false) = self.vfox {
+            self.disable_backends.push("vfox".to_string());
+        }
+        if let Some(disable_default_shorthands) = self.disable_default_shorthands {
+            self.disable_default_registry = disable_default_shorthands;
+        }
         if let Some(cargo_binstall) = self.cargo_binstall {
             self.cargo.binstall = cargo_binstall;
         }
