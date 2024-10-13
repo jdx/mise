@@ -15,7 +15,7 @@ use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::{ABackend, Backend, BackendList};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::settings::SETTINGS;
+use crate::config::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::DEFAULT_SHORTHANDS;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};

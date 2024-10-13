@@ -8,7 +8,7 @@ use crate::backend::{Backend, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::settings::SETTINGS;
+use crate::config::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::github;
 use crate::http::HTTP_FETCH;
