@@ -158,7 +158,7 @@ env = "MISE_DISABLE_DEFAULT_SHORTHANDS"
 type = "Bool"
 description = "Disables built-in shorthands to asdf/vfox plugins"
 deprecated = "Replaced with `disable_default_registry`"
-hidden = true
+hide = true
 optional = true
 docs = """
 Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
@@ -606,7 +606,7 @@ an organization.
 Shorthands make it so when a user runs something like `mise install elixir` mise will
 automatically install the [asdf-elixir](https://github.com/asdf-vm/asdf-elixir) plugin. By
 default, it uses the shorthands in
-[`src/default_shorthands.rs`](https://github.com/jdx/mise/blob/main/src/default_shorthands.rs).
+[`registry.toml`](https://github.com/jdx/mise/blob/main/registry.toml).
 
 The file should be in this toml format:
 

@@ -59,7 +59,7 @@ impl PluginsLsRemote {
 const LONG_ABOUT: &str = r#"
 List all available remote plugins
 
-The full list is here: https://github.com/jdx/mise/blob/main/src/default_shorthands.rs
+The full list is here: https://github.com/jdx/mise/blob/main/registry.toml
 
 Examples:
 
