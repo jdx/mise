@@ -9,8 +9,8 @@ use serde::{Deserialize, Deserializer};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
-use crate::config::settings::SETTINGS;
 use crate::config::Config;
+use crate::config::SETTINGS;
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::file::{display_path, which_non_pristine};

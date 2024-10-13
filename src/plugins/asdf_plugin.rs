@@ -1,4 +1,4 @@
-use crate::config::settings::SETTINGS;
+use crate::config::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
 use crate::errors::Error::PluginNotInstalled;
