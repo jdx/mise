@@ -1,11 +1,8 @@
-use std::process::exit;
-
+use crate::cli::version::VERSION;
+use crate::cli::Cli;
 use color_eyre::{Section, SectionExt};
 use eyre::Report;
 use itertools::Itertools;
-
-use crate::cli::version::VERSION;
-use crate::cli::Cli;
 
 #[cfg(test)]
 #[macro_use]
@@ -13,9 +10,6 @@ mod test;
 
 #[macro_use]
 mod output;
-
-#[macro_use]
-mod regex;
 
 #[macro_use]
 mod cmd;
@@ -29,9 +23,11 @@ mod default_shorthands;
 mod direnv;
 mod dirs;
 pub(crate) mod duration;
+pub(crate) mod eager;
 mod env;
 mod env_diff;
 mod errors;
+mod exit;
 #[cfg_attr(windows, path = "fake_asdf_windows.rs")]
 mod fake_asdf;
 mod file;
@@ -42,7 +38,7 @@ mod hook_env;
 mod http;
 mod install_context;
 mod lock_file;
-mod logger;
+pub(crate) mod logger;
 mod migrate;
 mod path_env;
 mod plugins;
@@ -60,14 +56,21 @@ mod toml;
 mod toolset;
 mod ui;
 
+pub use crate::exit::exit;
+
 fn main() -> eyre::Result<()> {
+    output::get_time_diff("", ""); // throwaway call to initialize the timer
+    eager::early_init();
     let args = env::args().collect_vec();
     color_eyre::install()?;
+    time!("main start");
 
     match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
         Ok(()) => Ok(()),
         Err(err) => handle_err(err),
-    }
+    }?;
+    time!("main done");
+    Ok(())
 }
 
 fn handle_err(err: Report) -> eyre::Result<()> {

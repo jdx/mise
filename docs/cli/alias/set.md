@@ -2,7 +2,7 @@
 
 **Usage**: `mise alias set <ARGS>…`
 
-**Aliases**: add, create
+**Aliases**: `add`, `create`
 
 Add/update an alias for a plugin
 

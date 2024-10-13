@@ -10,7 +10,7 @@ use crate::cli::self_update::SelfUpdate;
 #[cfg(not(test))]
 use crate::config::Settings;
 use crate::file::modified_duration;
-use crate::{dirs, duration, env, file};
+use crate::{dirs, duration, env, exit, file};
 
 /// Display the version of mise
 ///
@@ -72,7 +72,7 @@ pub fn print_version_if_requested(args: &[String]) -> std::io::Result<()> {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
             show_version()?;
-            std::process::exit(0);
+            exit(0);
         }
     }
     debug!("Version: {}", *VERSION);

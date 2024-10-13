@@ -2,7 +2,7 @@
 
 **Usage**: `mise alias unset <PLUGIN> <ALIAS>`
 
-**Aliases**: rm, remove, delete, del
+**Aliases**: `rm`, `remove`, `delete`, `del`
 
 Clears an alias for a plugin
 

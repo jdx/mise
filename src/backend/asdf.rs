@@ -15,8 +15,7 @@ use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::{ABackend, Backend, BackendList};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::SETTINGS;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SETTINGS};
 use crate::default_shorthands::DEFAULT_SHORTHANDS;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::git::Git;
@@ -96,6 +95,7 @@ impl AsdfBackend {
     pub fn list() -> Result<BackendList> {
         Ok(file::dir_subdirs(&dirs::PLUGINS)?
             .into_par_iter()
+            // if metadata.lua exists it's a vfox plugin (hopefully)
             .filter(|name| !dirs::PLUGINS.join(name).join("metadata.lua").exists())
             .map(|name| Arc::new(Self::from_arg(name.into())) as ABackend)
             .collect())

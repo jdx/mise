@@ -2,7 +2,7 @@
 
 **Usage**: `mise settings ls [--keys]`
 
-**Aliases**: list
+**Aliases**: `list`
 
 Show current settings
 

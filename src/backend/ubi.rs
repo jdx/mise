@@ -6,8 +6,7 @@ use ubi::UbiBuilder;
 use crate::backend::{Backend, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::settings::SETTINGS;
-use crate::config::Settings;
+use crate::config::SETTINGS;
 use crate::env::GITHUB_TOKEN;
 use crate::github;
 use crate::install_context::InstallContext;
@@ -50,8 +49,7 @@ impl Backend for UbiBackend {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let settings = Settings::get();
-        settings.ensure_experimental("ubi backend")?;
+        SETTINGS.ensure_experimental("ubi backend")?;
         // Workaround because of not knowing how to pull out the value correctly without quoting
         let path_with_bin = ctx.tv.install_path().join("bin");
 

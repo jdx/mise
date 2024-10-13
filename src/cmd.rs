@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::fmt::{Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
@@ -10,12 +11,13 @@ use std::thread;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
+use once_cell::sync::Lazy;
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::iterator::Signals;
 
-use crate::config::Settings;
+use crate::config::SETTINGS;
 use crate::env;
 use crate::env::PATH_KEY;
 use crate::errors::Error::ScriptFailed;
@@ -104,6 +106,8 @@ pub struct CmdLineRunner<'a> {
 
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
+static RUNNING_PIDS: Lazy<Mutex<HashSet<u32>>> = Lazy::new(Default::default);
+
 impl<'a> CmdLineRunner<'a> {
     pub fn new<P: AsRef<OsStr>>(program: P) -> Self {
         let mut cmd = if cfg!(windows) {
@@ -124,6 +128,34 @@ impl<'a> CmdLineRunner<'a> {
             prefix: String::new(),
             raw: false,
             pass_signals: false,
+        }
+    }
+
+    #[cfg(unix)]
+    pub fn kill_all(signal: nix::sys::signal::Signal) {
+        let pids = RUNNING_PIDS.lock().unwrap();
+        for pid in pids.iter() {
+            let pid = *pid as i32;
+            trace!("{signal}: {pid}");
+            if let Err(e) = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal) {
+                debug!("Failed to kill cmd {pid}: {e}");
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn kill_all() {
+        let pids = RUNNING_PIDS.lock().unwrap();
+        for pid in pids.iter() {
+            if let Err(e) = Command::new("taskkill")
+                .arg("/F")
+                .arg("/T")
+                .arg("/PID")
+                .arg(pid.to_string())
+                .spawn()
+            {
+                warn!("Failed to kill cmd {pid}: {e}");
+            }
         }
     }
 
@@ -235,9 +267,8 @@ impl<'a> CmdLineRunner<'a> {
     pub fn execute(mut self) -> Result<()> {
         static RAW_LOCK: RwLock<()> = RwLock::new(());
         let read_lock = RAW_LOCK.read().unwrap();
-        let settings = &Settings::try_get()?;
-        debug!("$ {}", self);
-        if settings.raw || self.raw {
+        debug!("$ {self}");
+        if SETTINGS.raw || self.raw {
             drop(read_lock);
             let _write_lock = RAW_LOCK.write().unwrap();
             return self.execute_raw();
@@ -246,6 +277,9 @@ impl<'a> CmdLineRunner<'a> {
             .cmd
             .spawn()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
+        let id = cp.id();
+        RUNNING_PIDS.lock().unwrap().insert(id);
+        trace!("Started process: {id} for {}", self.get_program());
         let (tx, rx) = channel();
         if let Some(stdout) = cp.stdout.take() {
             thread::spawn({
@@ -289,8 +323,6 @@ impl<'a> CmdLineRunner<'a> {
                 }
             });
         }
-        #[cfg(not(any(test, target_os = "windows")))]
-        let id = cp.id();
         thread::spawn(move || {
             let status = cp.wait().unwrap();
             #[cfg(not(any(test, target_os = "windows")))]
@@ -299,6 +331,7 @@ impl<'a> CmdLineRunner<'a> {
             }
             tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
         });
+
         let mut combined_output = vec![];
         let mut status = None;
         for line in rx {
@@ -312,12 +345,13 @@ impl<'a> CmdLineRunner<'a> {
                     combined_output.push(line);
                 }
                 ChildProcessOutput::ExitStatus(s) => {
+                    RUNNING_PIDS.lock().unwrap().remove(&id);
                     status = Some(s);
                 }
-                #[cfg(not(any(test, target_os = "windows")))]
+                #[cfg(not(any(test, windows)))]
                 ChildProcessOutput::Signal(sig) => {
                     if sig != SIGINT {
-                        debug!("Received signal {}, {id}", sig);
+                        debug!("Received signal {sig}, {id}");
                         let pid = nix::unistd::Pid::from_raw(id as i32);
                         let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
                         nix::sys::signal::kill(pid, sig)?;
@@ -325,6 +359,7 @@ impl<'a> CmdLineRunner<'a> {
                 }
             }
         }
+        RUNNING_PIDS.lock().unwrap().remove(&id);
         let status = status.unwrap();
 
         if !status.success() {
@@ -374,11 +409,10 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn on_error(&self, output: String, status: ExitStatus) -> Result<()> {
-        let settings = Settings::try_get()?;
         match self.pr {
             Some(pr) => {
                 error!("{} failed", self.get_program());
-                if !settings.verbose && !output.trim().is_empty() {
+                if !SETTINGS.verbose && !output.trim().is_empty() {
                     pr.println(output);
                 }
             }

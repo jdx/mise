@@ -2,7 +2,7 @@
 
 **Usage**: `mise install [FLAGS] [TOOL@VERSION]...`
 
-**Aliases**: i
+**Aliases**: `i`
 
 Install a tool version
 

@@ -55,6 +55,7 @@ color-print = "0.3.6"
 confique = { version = "0.2.5", default-features = false }
 console = "0.15.8"
 contracts = "0.6.3"
+crossbeam-channel = "0.5"
 demand = "1.1.2"
 dotenvy = "0.15.7"
 duct = "0.13.7"
@@ -159,6 +160,7 @@ test-log = "0.2"
 
 [features]
 default = ["native-tls"]
+timings = []
 native-tls = ["reqwest/native-tls", "ubi/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls", "ubi/rustls-tls"]
 rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls", "ubi/rustls-tls-native-roots"]

@@ -162,7 +162,7 @@ impl Upgrade {
     }
 
     fn get_interactive_tool_set(&self, outdated: &Vec<OutdatedInfo>) -> Result<Vec<OutdatedInfo>> {
-        let _ctrlc = ui::ctrlc::handle_ctrlc()?;
+        ui::ctrlc::show_cursor_after_ctrl_c();
         let mut ms = demand::MultiSelect::new("mise upgrade")
             .description("Select tools to upgrade")
             .filterable(true)

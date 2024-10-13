@@ -1,3 +1,10 @@
+use crate::backend::{Backend, BackendType};
+use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::cli::args::BackendArg;
+use crate::cmd::CmdLineRunner;
+use crate::config::{Settings, SETTINGS};
+use crate::install_context::InstallContext;
+use crate::{file, github};
 use eyre::WrapErr;
 use git2::Repository;
 use serde::de::{MapAccess, Visitor};
@@ -8,15 +15,7 @@ use std::fmt::{self, Debug};
 use std::path::PathBuf;
 use url::Url;
 use walkdir::WalkDir;
-
-use crate::backend::{Backend, BackendType};
-use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
-use crate::cmd::CmdLineRunner;
-use crate::config::Settings;
-use crate::config::SETTINGS;
-use crate::install_context::InstallContext;
-use crate::{file, github};
+use xx::regex;
 
 #[derive(Debug)]
 pub struct SPMBackend {

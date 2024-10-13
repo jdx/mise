@@ -2,7 +2,7 @@
 
 **Usage**: `mise watch [-t --task... <TASK>] [-g --glob... <GLOB>] [ARGS]...`
 
-**Aliases**: w
+**Aliases**: `w`
 
 [experimental] Run task(s) and watch for changes to rerun it
 

@@ -28,6 +28,11 @@ pub fn ered<D>(val: D) -> StyledObject<D> {
     estyle(val).red()
 }
 
+#[cfg(feature = "timings")]
+pub fn eblack<D>(val: D) -> StyledObject<D> {
+    estyle(val).black()
+}
+
 pub fn eunderline<D>(val: D) -> StyledObject<D> {
     estyle(val).underlined()
 }

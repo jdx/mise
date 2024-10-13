@@ -2,7 +2,7 @@
 
 **Usage**: `mise plugins ls [FLAGS]`
 
-**Aliases**: list
+**Aliases**: `list`
 
 List installed plugins
 

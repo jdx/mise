@@ -2,7 +2,7 @@
 
 **Usage**: `mise alias ls [--no-header] [PLUGIN]`
 
-**Aliases**: list
+**Aliases**: `list`
 
 List aliases
 Shows the aliases that can be specified.

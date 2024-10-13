@@ -2,7 +2,7 @@
 
 **Usage**: `mise generate git-pre-commit [FLAGS]`
 
-**Aliases**: pre-commit
+**Aliases**: `pre-commit`
 
 [experimental] Generate a git pre-commit hook
 

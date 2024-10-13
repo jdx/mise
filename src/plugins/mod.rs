@@ -24,6 +24,7 @@ pub mod script_manager;
 pub enum PluginType {
     Core,
     Asdf,
+    Vfox,
 }
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
@@ -57,7 +58,7 @@ pub fn list2() -> eyre::Result<PluginMap> {
 pub fn list_external() -> BackendList {
     list()
         .into_iter()
-        .filter(|tool| tool.get_plugin_type() == PluginType::Asdf)
+        .filter(|tool| matches!(tool.get_plugin_type(), PluginType::Asdf | PluginType::Vfox))
         .collect()
 }
 

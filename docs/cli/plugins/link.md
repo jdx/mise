@@ -2,7 +2,7 @@
 
 **Usage**: `mise plugins link [-f --force] <NAME> [PATH]`
 
-**Aliases**: ln
+**Aliases**: `ln`
 
 Symlinks a plugin into mise
 

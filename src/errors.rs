@@ -36,6 +36,14 @@ fn render_exit_status(exit_status: &Option<ExitStatus>) -> String {
 }
 
 impl Error {
+    pub fn get_exit_status(err: &Report) -> Option<i32> {
+        if let Some(Error::ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
+            status.code()
+        } else {
+            None
+        }
+    }
+
     pub fn is_argument_err(err: &Report) -> bool {
         err.downcast_ref::<Error>()
             .map(|e| {

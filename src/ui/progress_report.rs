@@ -42,7 +42,6 @@ pub struct ProgressReport {
     pub pb: ProgressBar,
     prefix: String,
     pad: usize,
-    _ctrlc: Option<ui::ctrlc::HandleGuard>,
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -70,18 +69,13 @@ fn success_prefix(pad: usize, prefix: &str) -> String {
 
 impl ProgressReport {
     pub fn new(prefix: String) -> ProgressReport {
-        let _ctrlc = ui::ctrlc::handle_ctrlc().unwrap_or_default();
+        ui::ctrlc::show_cursor_after_ctrl_c();
         let pad = *LONGEST_PLUGIN_NAME;
         let pb = ProgressBar::new(100)
             .with_style(SPIN_TEMPLATE.clone())
             .with_prefix(normal_prefix(pad, &prefix));
         pb.enable_steady_tick(Duration::from_millis(250));
-        ProgressReport {
-            prefix,
-            pb,
-            pad,
-            _ctrlc,
-        }
+        ProgressReport { prefix, pb, pad }
     }
 }
 
