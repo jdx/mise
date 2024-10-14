@@ -382,6 +382,10 @@ impl Settings {
             Some(humantime::parse_duration(&self.fetch_remote_versions_cache).unwrap())
         }
     }
+
+    pub fn log_level(&self) -> log::LevelFilter {
+        self.log_level.parse().unwrap_or(log::LevelFilter::Info)
+    }
 }
 
 impl Display for Settings {
