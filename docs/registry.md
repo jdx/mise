@@ -596,7 +596,7 @@ editLink: false
 | ruff | [asdf:simhem/asdf-ruff](https://github.com/simhem/asdf-ruff) |
 | rust | [asdf:code-lever/asdf-rust](https://github.com/code-lever/asdf-rust) |
 | rust-analyzer | [asdf:Xyven1/asdf-rust-analyzer](https://github.com/Xyven1/asdf-rust-analyzer) |
-| rustic | [asdf:jahands/asdf-rustic](https://github.com/jahands/asdf-rustic) |
+| rustic | [ubi:rustic-rs/rustic](https://github.com/rustic-rs/rustic) |
 | rye | [asdf:Azuki-bar/asdf-rye](https://github.com/Azuki-bar/asdf-rye) |
 | saml2aws | [asdf:elementalvoid/asdf-saml2aws](https://github.com/elementalvoid/asdf-saml2aws) |
 | sbcl | [asdf:smashedtoatoms/asdf-sbcl](https://github.com/smashedtoatoms/asdf-sbcl) |
