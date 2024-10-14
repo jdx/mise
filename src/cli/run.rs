@@ -205,7 +205,7 @@ impl Run {
                         trace!("running task: {task}");
                         if let Err(err) = self.run_task(&env, &task) {
                             let prefix = task.estyled_prefix();
-                            info_unprefix!("{prefix} {} {err}", style::ered("ERROR"),);
+                            eprintln!("{prefix} {} {err}", style::ered("ERROR"),);
                             let _ = tx_err.send((task.clone(), Error::get_exit_status(&err)));
                         }
                     }
@@ -234,13 +234,13 @@ impl Run {
 
         if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
             let prefix = task.estyled_prefix();
-            info_unprefix!("{prefix} {} task failed", style::ered("ERROR"));
+            eprintln!("{prefix} {} task failed", style::ered("ERROR"));
             exit(*status);
         }
 
         if self.timings && num_tasks > 1 {
             let msg = format!("finished in {}", time::format_duration(timer.elapsed()));
-            info!("{}", style::edim(msg));
+            eprintln!("{}", style::edim(msg));
         };
 
         time!("paralellize_tasks done");
@@ -251,7 +251,7 @@ impl Run {
     fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if !self.force && self.sources_are_fresh(task) {
-            info_unprefix_trunc!("{prefix} sources up-to-date, skipping");
+            eprintln!("{prefix} sources up-to-date, skipping");
             return Ok(());
         }
 
@@ -283,9 +283,8 @@ impl Run {
         }
 
         if self.timings {
-            miseprintln!(
-                "{} finished in {}",
-                prefix,
+            eprintln!(
+                "{prefix} finished in {}",
                 time::format_duration(timer.elapsed())
             );
         }
@@ -304,8 +303,8 @@ impl Run {
         prefix: &str,
     ) -> Result<()> {
         let script = script.trim_start();
-        let cmd = style::ebold(format!("$ {script}")).bright().to_string();
-        info_unprefix_trunc!("{prefix} {cmd}");
+        let cmd = trunc(&style::ebold(format!("$ {script}")).bright().to_string());
+        eprintln!("{prefix} {cmd}");
 
         if script.starts_with("#!") {
             let dir = tempfile::tempdir()?;
@@ -376,8 +375,8 @@ impl Run {
         }
 
         let cmd = format!("{} {}", display_path(file), args.join(" "));
-        let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
-        info_unprefix_trunc!("{prefix} {cmd}");
+        let cmd = trunc(&style::ebold(format!("$ {cmd}")).bright().to_string());
+        eprintln!("{prefix} {cmd}");
 
         self.exec(&command, &args, task, &env, prefix)
     }
@@ -670,6 +669,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 enum TaskOutput {
     Prefix,
     Interleave,
+}
+
+fn trunc(msg: &str) -> String {
+    let msg = msg.lines().next().unwrap_or_default();
+    console::truncate_str(msg, *env::TERM_WIDTH, "…").to_string()
 }
 
 #[cfg(test)]

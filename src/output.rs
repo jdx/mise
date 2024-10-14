@@ -60,24 +60,20 @@ macro_rules! info {
 #[cfg(test)]
 #[macro_export]
 macro_rules! warn {
-        ($($arg:tt)*) => {
-            $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-                let mise = console::style("mise").yellow().for_stderr();
-                stderr.push(format!("{} {}", mise, format!($($arg)*)));
-            })
-        }
+        ($($arg:tt)*) => {{
+            let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
+            let mise = console::style("mise").yellow().for_stderr();
+            stderr.push(format!("{} {}", mise, format!($($arg)*)));
+        }}
     }
 
 #[cfg(test)]
 #[macro_export]
 macro_rules! error {
         ($($arg:tt)*) => {
-            $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
-                let mise = console::style("mise").red().for_stderr();
-                stderr.push(format!("{} {}", mise, format!($($arg)*)));
-            })
+            let mut stderr = $crate::output::tests::STDERR.lock().unwrap();
+            let mise = console::style("mise").red().for_stderr();
+            stderr.push(format!("{} {}", mise, format!($($arg)*)));
         }
     }
 
@@ -137,12 +133,10 @@ macro_rules! hint {
             let disable_all = console::style("mise settings set disable_hints \"*\"")
                 .bold()
                 .for_stderr();
-            info_unprefix!("{} {} {}", prefix, format!($message), cmd);
-            info_unprefix!(
+            info!("{} {} {}", prefix, format!($message), cmd);
+            info!(
                 "{} disable this hint with {} or all with {}",
-                prefix,
-                disable_single,
-                disable_all
+                prefix, disable_single, disable_all
             );
         }
     }};
@@ -152,8 +146,7 @@ macro_rules! hint {
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {{
-        let mise = console::style("mise").dim().for_stderr();
-        info_unprefix!("{} {}", mise, format!($($arg)*));
+       log::info!($($arg)*);
     }};
 }
 
@@ -226,25 +219,12 @@ macro_rules! time {
 }
 
 #[macro_export]
-macro_rules! info_unprefix {
-    ($($arg:tt)*) => {{
-        if log::log_enabled!(log::Level::Debug) {
-           log::info!($($arg)*);
-        } else if log::log_enabled!(log::Level::Info) {
-            $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                eprintln!("{}", format!($($arg)*));
-            });
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! info_unprefix_trunc {
+macro_rules! info_trunc {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
         let msg = msg.lines().next().unwrap_or_default();
         let msg = console::truncate_str(&msg, *$crate::env::TERM_WIDTH, "…");
-        info_unprefix!("{msg}");
+        info!("{msg}");
     }};
 }
 
@@ -252,14 +232,7 @@ macro_rules! info_unprefix_trunc {
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {{
-        if log::log_enabled!(log::Level::Debug) {
-           log::warn!($($arg)*);
-        } else if log::log_enabled!(log::Level::Warn) {
-            $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                let mise = console::style("mise ").yellow().for_stderr();
-                eprintln!("{}{}", mise, format!($($arg)*));
-            });
-        }
+       log::warn!($($arg)*);
     }};
 }
 
@@ -267,14 +240,7 @@ macro_rules! warn {
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {{
-        if log::log_enabled!(log::Level::Debug) {
-           log::error!($($arg)*);
-        } else if log::log_enabled!(log::Level::Error) {
-            $crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                let mise = console::style("mise ").red().for_stderr();
-                eprintln!("{}{}", mise, format!($($arg)*));
-            });
-        }
+       log::error!($($arg)*);
     }};
 }
 
