@@ -118,14 +118,11 @@ pub fn should_display_hint(id: &str) -> bool {
 macro_rules! hint {
     ($id:expr, $message:expr, $example_cmd:expr) => {{
         if $crate::output::should_display_hint($id) {
-            let prefix = console::style("mise ").dim().for_stderr().to_string();
-            let prefix = prefix
-                + console::style("hint")
-                    .dim()
-                    .yellow()
-                    .for_stderr()
-                    .to_string()
-                    .as_str();
+            let prefix = console::style("hint")
+                .dim()
+                .yellow()
+                .for_stderr()
+                .to_string();
             let cmd = console::style($example_cmd).bold().for_stderr();
             let disable_single = console::style(format!("mise settings add disable_hints {}", $id))
                 .bold()
