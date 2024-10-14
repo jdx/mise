@@ -127,11 +127,12 @@ impl Logger {
 }
 
 pub fn init() {
-    // log::set_boxed_logger(Box::new(Logger {}))
-    //     .map(|()| log::set_max_level(settings.log_level()))?;
-    if let Err(err) = log::set_logger(&*LOGGER).map(|()| log::set_max_level(LOGGER.level)) {
-        eprintln!("mise: could not initialize logger: {err}");
-    }
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        if let Err(err) = log::set_logger(&*LOGGER).map(|()| log::set_max_level(LOGGER.level)) {
+            eprintln!("mise: could not initialize logger: {err}");
+        }
+    });
 }
 
 fn init_log_file(log_file: &Path) -> Result<File> {
