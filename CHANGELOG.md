@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.10.5](https://github.com/jdx/mise/compare/v2024.10.4..v2024.10.5) - 2024-10-14
+
+### 🐛 Bug Fixes
+
+- remove some non-working vfox plugins by [@jdx](https://github.com/jdx) in [7248fcc](https://github.com/jdx/mise/commit/7248fcccb43361979f112268fc15ecd54f2a7344)
+- use asdf by default unless on windows by [@jdx](https://github.com/jdx) in [b525a84](https://github.com/jdx/mise/commit/b525a84b816a418d3e7bfcca5fc03446d539c63a)
+
+### 🧪 Testing
+
+- snapshots by [@jdx](https://github.com/jdx) in [2817482](https://github.com/jdx/mise/commit/2817482678d38999ba9b866d1f5c7e47808ba13a)
+
+### 🔍 Other Changes
+
+- bump vfox by [@jdx](https://github.com/jdx) in [8549727](https://github.com/jdx/mise/commit/85497276a86067f3e1e7cf281840e4de968a0174)
+
 ## [2024.10.4](https://github.com/jdx/mise/compare/v2024.10.3..v2024.10.4) - 2024-10-14
 
 ### 🐛 Bug Fixes
