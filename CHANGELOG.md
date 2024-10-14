@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.10.4](https://github.com/jdx/mise/compare/v2024.10.3..v2024.10.4) - 2024-10-14
+
+### 🐛 Bug Fixes
+
+- some bugs with vfox by [@jdx](https://github.com/jdx) in [0c90062](https://github.com/jdx/mise/commit/0c90062cf9e148bcae4f85262bd6e4883496f385)
+
+### 🚜 Refactor
+
+- use ci_info to determine if running on CI by [@jdx](https://github.com/jdx) in [ac9a35b](https://github.com/jdx/mise/commit/ac9a35bc762e5679ea56b02a4ee278a88d358f78)
+
+### 🔍 Other Changes
+
+- enable more colors for tasks by [@jdx](https://github.com/jdx) in [f3b0e33](https://github.com/jdx/mise/commit/f3b0e33071376172142e89c010663add8365524b)
+
 ## [2024.10.3](https://github.com/jdx/mise/compare/v2024.10.2..v2024.10.3) - 2024-10-14
 
 ### 🚀 Features
@@ -40,6 +54,7 @@
 - bump usage-lib by [@jdx](https://github.com/jdx) in [f3a2e5f](https://github.com/jdx/mise/commit/f3a2e5f098b957a5a5745c7879cf98e27e32e403)
 - bump usage-lib by [@jdx](https://github.com/jdx) in [60f942d](https://github.com/jdx/mise/commit/60f942ddf3f3bc64f5f49015eb8c4093d616787b)
 - upgrade ubuntu version by [@jdx](https://github.com/jdx) in [978ea1a](https://github.com/jdx/mise/commit/978ea1a80a32574611d66aed552b34f7a10430d7)
+- added registry.toml to crate by [@jdx](https://github.com/jdx) in [be641ca](https://github.com/jdx/mise/commit/be641ca235b5b3ff944dfc5851206aa396bdfb09)
 
 ### New Contributors
 
