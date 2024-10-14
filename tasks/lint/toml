@@ -2,3 +2,4 @@
 set -euo pipefail
 
 toml-sort --check settings.toml --spaces-indent-inline-array 4
+toml-sort --check registry.toml --spaces-indent-inline-array 4
