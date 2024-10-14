@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::plugins;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::PluginType;
+use crate::registry::full_to_url;
 use crate::ui::table;
 
 /// List installed plugins
@@ -47,9 +48,9 @@ impl PluginsLs {
         let mut tools = plugins::list2()?;
 
         if self.all {
-            for (plugin, url) in config.get_shorthands() {
+            for (plugin, full) in config.get_shorthands() {
                 let mut ep = AsdfPlugin::new(plugin.to_string());
-                ep.repo_url = Some(url.to_string());
+                ep.repo_url = Some(full_to_url(full));
                 tools.insert(ep.name.clone(), Box::new(ep));
             }
         } else if self.user && self.core {

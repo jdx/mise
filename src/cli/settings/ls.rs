@@ -63,11 +63,11 @@ mod tests {
         all_compile = false
         always_keep_download = true
         always_keep_install = true
-        asdf = true
         asdf_compat = false
         cache_prune_age = "0"
         color = true
-        disable_default_shorthands = false
+        disable_backends = ["vfox"]
+        disable_default_registry = false
         disable_hints = []
         disable_tools = []
         experimental = true
@@ -132,13 +132,13 @@ mod tests {
         all_compile
         always_keep_download
         always_keep_install
-        asdf
         asdf_compat
         cache_prune_age
         cargo
         cargo.binstall
         color
-        disable_default_shorthands
+        disable_backends
+        disable_default_registry
         disable_hints
         disable_tools
         experimental

@@ -49,7 +49,7 @@ impl Backend for UbiBackend {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        SETTINGS.ensure_experimental("ubi backend")?;
+        let opts = ctx.tv.request.options();
         let mut v = ctx.tv.version.to_string();
 
         if let Err(err) = github::get_release(self.name(), &ctx.tv.version) {
@@ -74,13 +74,11 @@ impl Backend for UbiBackend {
             builder = builder.tag(&v);
         }
 
-        let exe = std::env::var("MISE_TOOL_OPTS__EXE").unwrap_or_default();
-        if !exe.is_empty() {
-            builder = builder.exe(&exe);
+        if let Some(exe) = opts.get("exe") {
+            builder = builder.exe(exe);
         }
-        let matching = std::env::var("MISE_TOOL_OPTS__MATCHING").unwrap_or_default();
-        if !matching.is_empty() {
-            builder = builder.matching(&matching);
+        if let Some(matching) = opts.get("matching") {
+            builder = builder.matching(matching);
         }
 
         let u = builder.build().map_err(|e| eyre!(e))?;

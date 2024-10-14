@@ -54,11 +54,11 @@ mod tests {
         all_compile = false
         always_keep_download = true
         always_keep_install = true
-        asdf = true
         asdf_compat = false
         cache_prune_age = "0"
         color = true
-        disable_default_shorthands = false
+        disable_backends = ["vfox"]
+        disable_default_registry = false
         disable_hints = []
         disable_tools = []
         experimental = true

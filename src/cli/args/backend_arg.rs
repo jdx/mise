@@ -1,14 +1,14 @@
-use heck::ToKebabCase;
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use std::fmt::{Debug, Display};
-use std::hash::Hash;
-use std::path::PathBuf;
-
 use crate::backend::backend_meta::BackendMeta;
 use crate::backend::{unalias_backend, BackendType};
 use crate::dirs;
-use crate::registry::REGISTRY;
+use crate::plugins::{PluginType, PLUGIN_NAMES_TO_TYPE};
+use crate::registry::REGISTRY_BACKEND_MAP;
+use crate::toolset::{parse_tool_options, ToolVersionOptions};
+use heck::ToKebabCase;
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
+use std::path::PathBuf;
+use xx::regex;
 
 #[derive(Clone, PartialOrd, Ord)]
 pub struct BackendArg {
@@ -26,6 +26,7 @@ pub struct BackendArg {
     pub installs_path: PathBuf,
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
+    pub opts: Option<ToolVersionOptions>,
 }
 
 impl<A: AsRef<str>> From<A> for BackendArg {
@@ -48,9 +49,26 @@ impl From<BackendMeta> for BackendArg {
 impl BackendArg {
     pub fn new(short: &str, full: &str) -> Self {
         let short = unalias_backend(short).to_string();
-        let (backend, name) = full.split_once(':').unwrap_or(("", full));
+
+        let (backend, mut name) = full.split_once(':').unwrap_or(("", full));
+
+        let mut opts = None;
+        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(name) {
+            name = c.get(1).unwrap().as_str();
+            opts = Some(parse_tool_options(c.get(2).unwrap().as_str()));
+        }
+
         let backend = unalias_backend(backend);
-        let backend_type = backend.parse().unwrap_or(BackendType::Asdf);
+
+        let backend_type = if let Some(pt) = PLUGIN_NAMES_TO_TYPE.get(&short) {
+            match pt {
+                PluginType::Asdf => BackendType::Asdf,
+                PluginType::Vfox => BackendType::Vfox,
+                PluginType::Core => BackendType::Core,
+            }
+        } else {
+            backend.parse().unwrap_or(BackendType::Asdf)
+        };
         let full = match backend_type {
             BackendType::Asdf | BackendType::Core => short.clone(),
             backend_type => format!("{backend_type}:{name}"),
@@ -64,6 +82,7 @@ impl BackendArg {
             cache_path: dirs::CACHE.join(&pathname),
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
+            opts,
         }
     }
 }
@@ -98,13 +117,6 @@ impl Hash for BackendArg {
     }
 }
 
-static REGISTRY_BACKEND_MAP: Lazy<HashMap<&'static str, BackendArg>> = Lazy::new(|| {
-    REGISTRY
-        .iter()
-        .map(|(short, full)| (*short, BackendArg::new(short, full)))
-        .collect()
-});
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,7 +139,7 @@ mod tests {
         let vfox = |s, id, name| t(s, id, name, BackendType::Vfox);
 
         asdf("asdf:poetry", "asdf:poetry", "poetry");
-        asdf("poetry", "poetry", "poetry");
+        asdf("poetry", "poetry", "mise-plugins/mise-poetry");
         asdf("", "", "");
         cargo("cargo:eza", "cargo:eza", "eza");
         // core("node", "node", "node");

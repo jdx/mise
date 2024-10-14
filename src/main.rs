@@ -19,7 +19,6 @@ pub(crate) mod build_time;
 mod cache;
 mod cli;
 mod config;
-mod default_shorthands;
 mod direnv;
 mod dirs;
 pub(crate) mod duration;

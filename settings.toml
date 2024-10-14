@@ -58,7 +58,9 @@ description = "should mise keep install files after installation even if the ins
 [asdf]
 env = "MISE_ASDF"
 type = "Bool"
-default = true
+hide = true
+optional = true
+deprecated = "Use disable_backends instead."
 description = "use asdf as a default plugin backend"
 docs = """
 Use asdf as a default plugin backend. This means running something like `mise use cmake` will
@@ -138,10 +140,26 @@ type = "Bool"
 hide = true
 description = "Sets log level to debug"
 
+[disable_backends]
+env = "MISE_DISABLE_BACKENDS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = []
+parse_env = "list_by_comma"
+description = "Backends to disable such as `asdf` or `pipx`"
+
+[disable_default_registry]
+env = "MISE_DISABLE_DEFAULT_REGISTRY"
+type = "Bool"
+description = "Disable the default mapping of short tool names like `go` -> `vfox:version-fox/vfox-golang`"
+
 [disable_default_shorthands]
 env = "MISE_DISABLE_DEFAULT_SHORTHANDS"
 type = "Bool"
 description = "Disables built-in shorthands to asdf/vfox plugins"
+deprecated = "Replaced with `disable_default_registry`"
+hidden = true
+optional = true
 docs = """
 Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
 installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/asdf-node.git`
@@ -677,6 +695,9 @@ description = "Shows more verbose output such as installation logs when installi
 [vfox]
 env = "MISE_VFOX"
 type = "Bool"
+hide = true
+optional = true
+deprecated = "Use disable_backends instead."
 description = "Use vfox as a default plugin backend instead of asdf."
 docs = """
 Use vfox as a default plugin backend. This means running something like `mise use cmake` will

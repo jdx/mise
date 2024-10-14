@@ -48,12 +48,6 @@ jobs:
           key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.toml') }}
           restore-keys: mise-tools-ubuntu-latest
       - run: mise install
-      - run: |
-          set -euxo pipefail
-          rm -rf registry
-          git clone https://github.com/mise-plugins/registry
-          rm -rf registry/.git
-          git add registry
       - run: mise run release-plz
         env:
           GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}

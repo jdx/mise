@@ -141,6 +141,7 @@ pub fn reset() {
         indoc! {r#"
             experimental = true
             verbose = true
+            vfox = false
             "#},
     )
     .unwrap();
