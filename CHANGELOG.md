@@ -1,5 +1,28 @@
 # Changelog
 
+## [2024.10.6](https://github.com/jdx/mise/compare/v2024.10.5..v2024.10.6) - 2024-10-14
+
+### 🚀 Features
+
+- add rustic backup plugin to registry by [@jahands](https://github.com/jahands) in [#2754](https://github.com/jdx/mise/pull/2754)
+- created custom logger by [@jdx](https://github.com/jdx) in [#2758](https://github.com/jdx/mise/pull/2758)
+- render task help via usage by [@jdx](https://github.com/jdx) in [#2760](https://github.com/jdx/mise/pull/2760)
+
+### 🐛 Bug Fixes
+
+- replace asdf-rustic with ubi by [@jdx](https://github.com/jdx) in [#2757](https://github.com/jdx/mise/pull/2757)
+- set trailing_var_arg on `mise run` by [@jdx](https://github.com/jdx) in [b1bb3d2](https://github.com/jdx/mise/commit/b1bb3d2a1e60eaccfc5e24250fc86966b6c9e69a)
+- prevent loading logger multiple times by [@jdx](https://github.com/jdx) in [1b83acd](https://github.com/jdx/mise/commit/1b83acd5cfef954643f3b24519fb51c8531cf59b)
+
+### 📚 Documentation
+
+- http_timeout should be a duration string by [@roele](https://github.com/roele) in [#2755](https://github.com/jdx/mise/pull/2755)
+- added hint about --bump flag for upgrade/outdated by [@jdx](https://github.com/jdx) in [#2761](https://github.com/jdx/mise/pull/2761)
+
+### 🧪 Testing
+
+- reset test by [@jdx](https://github.com/jdx) in [25f172f](https://github.com/jdx/mise/commit/25f172f226766b4e3e78b738bb14bff9a577c51b)
+
 ## [2024.10.5](https://github.com/jdx/mise/compare/v2024.10.4..v2024.10.5) - 2024-10-14
 
 ### 🐛 Bug Fixes
@@ -805,10 +828,6 @@
 
 - Use correct capitalization of GitHub by [@jahands](https://github.com/jahands) in [#2372](https://github.com/jdx/mise/pull/2372)
 - loosen git2 requirements by [@jdx](https://github.com/jdx) in [#2374](https://github.com/jdx/mise/pull/2374)
-
-### New Contributors
-
-- @jahands made their first contribution in [#2372](https://github.com/jdx/mise/pull/2372)
 
 ## [2024.7.2](https://github.com/jdx/mise/compare/v2024.7.1..v2024.7.2) - 2024-07-13
 
