@@ -132,10 +132,6 @@ User to run as
 
 **Usage**: `lint:ripgrep`
 
-## `lint:settings`
-
-**Usage**: `lint:settings`
-
 ## `lint:shellcheck`
 
 **Usage**: `lint:shellcheck`
@@ -143,6 +139,10 @@ User to run as
 ## `lint:shfmt`
 
 **Usage**: `lint:shfmt`
+
+## `lint:toml`
+
+**Usage**: `lint:toml`
 
 ## `pre-commit`
 
