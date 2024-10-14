@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 use super::args::ToolArg;
+use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
 use crate::config::{CONFIG, SETTINGS};
 use crate::errors::Error;
@@ -52,12 +53,16 @@ use nix::sys::signal::SIGTERM;
 ///     EOF
 ///     $ mise run build
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "r", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_alias = "r", verbatim_doc_comment, disable_help_flag = true, after_long_help = AFTER_LONG_HELP)]
 pub struct Run {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-    #[clap(verbatim_doc_comment, default_value = "default")]
+    #[clap(
+        allow_hyphen_values = true,
+        verbatim_doc_comment,
+        default_value = "default"
+    )]
     pub task: String,
 
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
@@ -117,6 +122,14 @@ pub struct Run {
 
 impl Run {
     pub fn run(self) -> Result<()> {
+        if self.task == "-h" {
+            self.get_clap_command().print_help()?;
+            return Ok(());
+        }
+        if self.task == "--help" {
+            self.get_clap_command().print_long_help()?;
+            return Ok(());
+        }
         SETTINGS.ensure_experimental("`mise run`")?;
         time!("run init");
         let task_list = self.get_task_lists()?;
@@ -124,6 +137,14 @@ impl Run {
         self.parallelize_tasks(task_list)?;
         time!("run done");
         Ok(())
+    }
+
+    fn get_clap_command(&self) -> clap::Command {
+        Cli::command()
+            .get_subcommands()
+            .find(|s| s.get_name() == "run")
+            .unwrap()
+            .clone()
     }
 
     fn get_task_lists(&self) -> Result<Vec<Task>> {
@@ -149,7 +170,7 @@ impl Run {
                     .collect_vec();
                 if tasks.is_empty() {
                     if t != "default" {
-                        err_no_task(&t)?;
+                        self.err_no_task(&t)?;
                     }
 
                     Ok(vec![self.prompt_for_task()?])
@@ -546,30 +567,31 @@ impl Run {
         // TODO
         Ok(())
     }
-}
 
-fn err_no_task(name: &str) -> Result<()> {
-    if let Some(cwd) = &*dirs::CWD {
-        let includes = CONFIG.task_includes_for_dir(cwd);
-        let path = includes
-            .iter()
-            .map(|d| d.join(name))
-            .find(|d| d.is_file() && !file::is_executable(d));
-        if let Some(path) = path {
-            warn!(
-                "no task {} found, but a non-executable file exists at {}",
-                style::ered(name),
-                display_path(&path)
-            );
-            let yn =
-                prompt::confirm("Mark this file as executable to allow it to be run as a task?")?;
-            if yn {
-                file::make_executable(&path)?;
-                info!("marked as executable, try running this task again");
+    fn err_no_task(&self, name: &str) -> Result<()> {
+        if let Some(cwd) = &*dirs::CWD {
+            let includes = CONFIG.task_includes_for_dir(cwd);
+            let path = includes
+                .iter()
+                .map(|d| d.join(name))
+                .find(|d| d.is_file() && !file::is_executable(d));
+            if let Some(path) = path {
+                warn!(
+                    "no task {} found, but a non-executable file exists at {}",
+                    style::ered(name),
+                    display_path(&path)
+                );
+                let yn = prompt::confirm(
+                    "Mark this file as executable to allow it to be run as a task?",
+                )?;
+                if yn {
+                    file::make_executable(&path)?;
+                    info!("marked as executable, try running this task again");
+                }
             }
         }
+        bail!("no task {} found", style::ered(name));
     }
-    bail!("no task {} found", style::ered(name));
 }
 
 fn is_glob_pattern(path: &str) -> bool {

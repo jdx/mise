@@ -68,8 +68,6 @@ run a command inside of development docker container
 
 ## `filetask`
 
-- Depends: lint, build
-
 **Usage**: `filetask [-f --force] [-u --user <user>] <file> <arg_with_default>`
 
 **Aliases**: `ft`
@@ -82,9 +80,17 @@ This is a test build script
 
 The file to write
 
+##### Default
+
+`file.txt`
+
 #### `<arg_with_default>`
 
 An arg with a default
+
+##### Default
+
+`mydefault`
 
 ### Flags
 
