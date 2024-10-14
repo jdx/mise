@@ -245,8 +245,8 @@ impl Task {
                 Color::Magenta,
                 Color::Cyan,
                 Color::Green,
-                // Color::Yellow,
-                // Color::Red,
+                Color::Yellow,
+                Color::Red,
             ]
         });
         let idx = self.name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
