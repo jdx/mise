@@ -1,4 +1,14 @@
+use crate::backend;
+use crate::backend::{ABackend, BackendList, BackendType};
+use crate::cli::args::BackendArg;
+use crate::errors::Error::PluginNotInstalled;
+use crate::plugins::asdf_plugin::{AsdfPlugin, ASDF_PLUGIN_NAMES};
+use crate::plugins::core::CorePlugin;
+use crate::plugins::vfox_plugin::VFOX_PLUGIN_NAMES;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
 use clap::Command;
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
 pub use script_manager::{Script, ScriptManager};
@@ -6,21 +16,13 @@ use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 use std::vec;
 
-use crate::backend;
-use crate::backend::{ABackend, BackendList, BackendType};
-use crate::cli::args::BackendArg;
-use crate::errors::Error::PluginNotInstalled;
-use crate::plugins::asdf_plugin::AsdfPlugin;
-use crate::plugins::core::CorePlugin;
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::SingleReport;
-
 pub mod asdf_plugin;
 pub mod core;
 pub mod mise_plugin_toml;
 pub mod script_manager;
+pub mod vfox_plugin;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
 pub enum PluginType {
     Core,
     Asdf,
@@ -38,10 +40,23 @@ pub fn get(name: &str) -> ABackend {
     BackendArg::new(name, name).into()
 }
 
+pub static PLUGIN_NAMES_TO_TYPE: Lazy<BTreeMap<String, PluginType>> = Lazy::new(|| {
+    let vfox = VFOX_PLUGIN_NAMES
+        .iter()
+        .map(|name| (name.clone(), PluginType::Vfox))
+        .collect_vec();
+    let asdf = ASDF_PLUGIN_NAMES
+        .iter()
+        .map(|name| (name.clone(), PluginType::Asdf))
+        .collect_vec();
+    asdf.into_iter().chain(vfox).collect()
+});
+
 pub fn list() -> BackendList {
+    // TODO: replace with list2
     backend::list()
         .into_iter()
-        .filter(|f| f.get_type() == BackendType::Asdf)
+        .filter(|f| matches!(f.get_type(), BackendType::Asdf | BackendType::Vfox))
         .collect()
 }
 
@@ -52,6 +67,7 @@ pub fn list2() -> eyre::Result<PluginMap> {
     let asdf = AsdfPlugin::list()?
         .into_iter()
         .map(|p| (p.name().to_string(), p));
+    // TODO: vfox
     Ok(core.chain(asdf).collect())
 }
 

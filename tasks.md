@@ -251,7 +251,3 @@ run end-to-end tests
 **Usage**: `test:unit`
 
 run unit tests
-
-## `update-shorthand-repo`
-
-**Usage**: `update-shorthand-repo`

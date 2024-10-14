@@ -41,6 +41,18 @@ mod tool_version_list;
 
 pub type ToolVersionOptions = BTreeMap<String, String>;
 
+pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
+    let mut opts = ToolVersionOptions::new();
+    for opt in s.split(',') {
+        let (k, v) = opt.split_once('=').unwrap_or((opt, ""));
+        if k.is_empty() {
+            continue;
+        }
+        opts.insert(k.to_string(), v.to_string());
+    }
+    opts
+}
+
 #[derive(Debug, Default)]
 pub struct InstallOptions {
     pub force: bool,
@@ -715,7 +727,7 @@ pub struct OutdatedInfo {
 impl OutdatedInfo {
     fn new(tv: ToolVersion, source: ToolSource) -> Self {
         Self {
-            name: tv.request.backend().name.clone(),
+            name: tv.backend.short.to_string(),
             current: None,
             requested: tv.request.version(),
             tool_request: tv.request.clone(),
@@ -759,7 +771,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use test_log::test;
 
-    use super::{check_semver_bump, is_outdated_version};
+    use super::{check_semver_bump, is_outdated_version, ToolVersionOptions};
 
     #[test]
     fn test_is_outdated_version() {
@@ -801,6 +813,33 @@ mod tests {
         std::assert_eq!(
             check_semver_bump("20.0.0", "20.0.1"),
             Some("20.0.1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_tool_version_options() {
+        crate::test::reset();
+        let t = |input, f| {
+            let opts = super::parse_tool_options(input);
+            assert_eq!(opts, f);
+        };
+        t("", ToolVersionOptions::new());
+        t(
+            "exe=rg",
+            [("exe".to_string(), "rg".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        t(
+            "exe=rg,match=musl",
+            [
+                ("exe".to_string(), "rg".to_string()),
+                ("match".to_string(), "musl".to_string()),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
         );
     }
 }

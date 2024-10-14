@@ -1,11 +1,10 @@
+use crate::cli::args::{BackendArg, ToolArg};
+use crate::config::Config;
+use crate::toolset::{InstallOptions, ToolRequest, ToolVersion, Toolset};
+use crate::ui::multi_progress_report::MultiProgressReport;
 use eyre::Result;
 use itertools::Itertools;
 use std::collections::HashSet;
-
-use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::Config;
-use crate::toolset::{InstallOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
-use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Install a tool version
 ///
@@ -84,7 +83,6 @@ impl Install {
     ) -> Result<Vec<ToolRequest>> {
         let mut requests = vec![];
         for ta in ToolArg::double_tool_condition(runtimes)? {
-            let default_opts = ToolVersionOptions::new();
             match ta.tvr {
                 // user provided an explicit version
                 // TODO: this should install using options from config if the version matches
@@ -105,7 +103,7 @@ impl Install {
                                 let tvr = ToolRequest::Version {
                                     backend: ta.backend.clone(),
                                     version: "latest".into(),
-                                    options: default_opts.clone(),
+                                    options: ta.opts.clone().unwrap_or(Default::default()),
                                 };
                                 requests.push(tvr);
                             }

@@ -1,5 +1,4 @@
 use crate::config::{Config, Settings, SETTINGS};
-use crate::default_shorthands::{DEFAULT_SHORTHANDS, TRUSTED_SHORTHANDS};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
 use crate::git::Git;
@@ -9,18 +8,18 @@ use crate::timeout::run_with_timeout;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, exit, lock_file};
+use crate::{dirs, exit, lock_file, registry};
 use clap::Command;
 use console::style;
 use contracts::requires;
 use eyre::{bail, eyre, Context};
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
-use url::Url;
 use xx::{file, regex};
 
 #[derive(Debug)]
@@ -31,6 +30,14 @@ pub struct AsdfPlugin {
     pub repo_url: Option<String>,
     pub script_man: ScriptManager,
 }
+
+pub static ASDF_PLUGIN_NAMES: Lazy<BTreeSet<String>> = Lazy::new(|| match AsdfPlugin::list() {
+    Ok(plugins) => plugins.into_iter().map(|p| p.name().to_string()).collect(),
+    Err(err) => {
+        warn!("Failed to list vfox plugins: {err}");
+        BTreeSet::new()
+    }
+});
 
 impl AsdfPlugin {
     #[requires(!name.is_empty())]
@@ -250,7 +257,7 @@ impl Plugin for AsdfPlugin {
             }
             if !settings.yes && self.repo_url.is_none() {
                 let url = self.get_repo_url(&config).unwrap_or_default();
-                if !is_trusted_plugin(self.name(), &url) {
+                if !registry::is_trusted_plugin(self.name(), &url) {
                     warn!(
                         "⚠️ {} is a community-developed plugin – {}",
                         style(&self.name).blue(),
@@ -416,23 +423,6 @@ Plugins could support local directories in the future but for now a symlink is r
         let result = self.script_man.cmd(&script).unchecked().run()?;
         exit(result.status.code().unwrap_or(-1));
     }
-}
-
-fn is_trusted_plugin(name: &str, remote: &str) -> bool {
-    let normalized_url = normalize_remote(remote).unwrap_or("INVALID_URL".into());
-    let is_shorthand = DEFAULT_SHORTHANDS
-        .get(name)
-        .is_some_and(|s| normalize_remote(s).unwrap_or_default() == normalized_url);
-    let is_mise_url = normalized_url.starts_with("github.com/mise-plugins/");
-
-    !is_shorthand || is_mise_url || TRUSTED_SHORTHANDS.contains(name)
-}
-
-fn normalize_remote(remote: &str) -> eyre::Result<String> {
-    let url = Url::parse(remote)?;
-    let host = url.host_str().unwrap();
-    let path = url.path().trim_end_matches(".git");
-    Ok(format!("{host}{path}"))
 }
 
 fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {

@@ -5,17 +5,21 @@ use eyre::Result;
 use toml::Table;
 
 use crate::config::Settings;
-use crate::default_shorthands::DEFAULT_SHORTHANDS;
+use crate::registry::REGISTRY;
 use crate::{dirs, file};
 
 pub type Shorthands = HashMap<String, String>;
 
 pub fn get_shorthands(settings: &Settings) -> Shorthands {
     let mut shorthands = HashMap::new();
-    if !settings.disable_default_shorthands && settings.asdf {
+    if !settings.disable_default_registry {
         shorthands.extend(
-            DEFAULT_SHORTHANDS
+            REGISTRY
                 .iter()
+                .filter(|(_, full)| {
+                    let backend = &full.split(':').next().unwrap().to_string();
+                    backend == "asdf" || backend == "vfox"
+                })
                 .map(|(k, v)| (k.to_string(), v.to_string())),
         );
     };
@@ -66,10 +70,7 @@ mod tests {
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
         let shorthands = get_shorthands(&settings);
-        assert_str_eq!(
-            shorthands["elixir"],
-            "https://github.com/mise-plugins/mise-elixir.git"
-        );
+        assert_str_eq!(shorthands["elixir"], "asdf:mise-plugins/mise-elixir");
         assert_str_eq!(shorthands["node"], "https://node");
         assert_str_eq!(shorthands["xxxxxx"], "https://xxxxxx");
     }
