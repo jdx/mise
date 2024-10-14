@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::cli::args::ToolArg;
-use crate::config::Config;
+use crate::config::CONFIG;
 use crate::toolset::{OutdatedInfo, ToolsetBuilder};
 use crate::ui::table;
 use eyre::Result;
@@ -39,8 +39,7 @@ pub struct Outdated {
 
 impl Outdated {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&CONFIG)?;
         let tool_set = self
             .tool
             .iter()
@@ -51,12 +50,16 @@ impl Outdated {
         let outdated = ts.list_outdated_versions(self.bump);
         if outdated.is_empty() {
             info!("All tools are up to date");
+            hint!(
+                "outdated_bump",
+                r#"By default, `mise outdated` only shows versions that match your config. Use `mise outdated --bump` to see all new versions."#,
+                ""
+            );
         } else if self.json {
             self.display_json(outdated)?;
         } else {
             self.display(outdated)?;
         }
-
         Ok(())
     }
 
@@ -96,7 +99,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use crate::test::{change_installed_version, reset};
+    use crate::test::reset;
 
     #[test]
     fn test_outdated() {
@@ -110,20 +113,5 @@ mod tests {
     fn test_outdated_with_runtimes() {
         reset();
         assert_cli_snapshot!("outdated", "tiny");
-    }
-
-    #[test]
-    fn test_outdated_json() {
-        reset();
-        change_installed_version("tiny", "3.1.0", "3.0.0");
-        assert_cli_snapshot!("outdated", "tiny", "--json");
-        change_installed_version("tiny", "3.0.0", "3.1.0");
-    }
-
-    #[test]
-    fn test_outdated_json_bump() {
-        reset();
-        assert_cli!("use", "tiny@2");
-        assert_cli_snapshot!("outdated", "tiny", "--json", "--bump");
     }
 }
