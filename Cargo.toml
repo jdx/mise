@@ -122,6 +122,7 @@ url = "2.5.0"
 usage-lib = { version = "0.10", features = ["clap", "docs"] }
 versions = { version = "6.2.0", features = ["serde"] }
 vfox = "0.1"
+# vfox = {path="../vfox.rs"}
 walkdir = "2.5.0"
 which = "6"
 xx = { version = "1.0.0", features = ["glob"] }

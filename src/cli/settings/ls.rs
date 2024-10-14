@@ -66,7 +66,7 @@ mod tests {
         asdf_compat = false
         cache_prune_age = "0"
         color = true
-        disable_backends = ["vfox"]
+        disable_backends = []
         disable_default_registry = false
         disable_hints = []
         disable_tools = []
@@ -94,7 +94,6 @@ mod tests {
         trusted_config_paths = []
         use_versions_host = true
         verbose = true
-        vfox = false
         yes = true
 
         [cargo]
@@ -182,7 +181,6 @@ mod tests {
         trusted_config_paths
         use_versions_host
         verbose
-        vfox
         yes
         "#);
     }

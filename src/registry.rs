@@ -14,7 +14,6 @@ include!(concat!(env!("OUT_DIR"), "/registry.rs"));
 pub static REGISTRY: Lazy<BTreeMap<&str, String>> = Lazy::new(|| {
     let backend_types = vec!["ubi", "vfox", "asdf", "cargo", "go", "npm", "pipx", "spm"]
         .into_iter()
-        .filter(|b| cfg!(windows) || SETTINGS.vfox == Some(true) || *b != "ubi")
         .filter(|b| !SETTINGS.disable_backends.contains(&b.to_string()))
         .collect::<HashSet<_>>();
 
