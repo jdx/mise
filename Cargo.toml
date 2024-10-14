@@ -99,7 +99,6 @@ sha2 = "0.10.8"
 shell-escape = "0.1.5"
 shell-words = "1.1.0"
 signal-hook = "0.3.17"
-simplelog = { version = "0.12.2" }
 siphasher = "1"
 strum = { version = "0.26.2", features = ["derive"] }
 sys-info = "0.9.1"

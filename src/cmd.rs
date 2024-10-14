@@ -399,7 +399,7 @@ impl<'a> CmdLineRunner<'a> {
                 }
             }
             None => {
-                if console::colors_enabled() {
+                if console::colors_enabled_stderr() {
                     eprintln!("{}{line}\x1b[0m", self.prefix);
                 } else {
                     eprintln!("{}{line}", self.prefix);

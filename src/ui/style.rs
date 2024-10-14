@@ -16,6 +16,10 @@ pub fn eblue<D>(val: D) -> StyledObject<D> {
     estyle(val).blue()
 }
 
+pub fn emagenta<D>(val: D) -> StyledObject<D> {
+    estyle(val).magenta()
+}
+
 pub fn egreen<D>(val: D) -> StyledObject<D> {
     estyle(val).green()
 }
