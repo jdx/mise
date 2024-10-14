@@ -9,7 +9,7 @@ process.env.MISE_VFOX = 0;
 const stdout = execSync("mise registry", { encoding: "utf-8" });
 // Regular expression to match plugin name and repository URL
 // e.g.: zprint asdf:carlduevel/asdf-zprint
-const regex = /^(.+?) +(.+?):(.+?) *$/gm;
+const regex = /^(.+?) +(.+?):(.+?)(\[.+\])? *$/gm;
 
 let match;
 let output = ["---\neditLink: false\n---"];
@@ -37,6 +37,10 @@ while ((match = regex.exec(stdout)) !== null) {
   } else if (match[2] === "pipx") {
     output.push(
       `| ${match[1]} | [${match[2]}:${match[3]}](https://pypi.org/project/${match[3]}) |`,
+    );
+  } else if (match[2] === "ubi") {
+    output.push(
+      `| ${match[1]} | [${match[2]}:${match[3]}](https://github.com/${match[3]}) |`,
     );
   } else {
     output.push(`| ${match[1]} | ${match[2]}:${match[3]} |`);

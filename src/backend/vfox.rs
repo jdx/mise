@@ -12,7 +12,7 @@ use url::Url;
 use crate::backend::{ABackend, Backend, BackendList, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::git::Git;
 use crate::install_context::InstallContext;
 use crate::plugins::PluginType;
@@ -62,8 +62,6 @@ impl Backend for VfoxBackend {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let settings = Settings::get();
-        settings.ensure_experimental("vfox backend")?;
         self.ensure_plugin_installed()?;
         self.runtime()?.block_on(self.vfox.install(
             &self.pathname,

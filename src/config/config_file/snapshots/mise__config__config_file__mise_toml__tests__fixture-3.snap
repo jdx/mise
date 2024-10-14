@@ -4,9 +4,9 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap())
 ---
 ToolRequestSet {
     tools: {
-        BackendArg("terraform"): [
+        BackendArg("terraform" -> "vfox:enochchau/vfox-terraform"): [
             Version {
-                backend: BackendArg("terraform"),
+                backend: BackendArg("terraform" -> "vfox:enochchau/vfox-terraform"),
                 version: "1.0.0",
                 options: {},
             },
@@ -75,7 +75,7 @@ ToolRequestSet {
         BackendArg("shellcheck"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        BackendArg("terraform"): MiseToml(
+        BackendArg("terraform" -> "vfox:enochchau/vfox-terraform"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
     },
