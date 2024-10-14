@@ -138,8 +138,7 @@ impl Settings {
         if !settings.color {
             console::set_colors_enabled(false);
             console::set_colors_enabled_stderr(false);
-        } else if *env::COLOR_NONTTY_OK {
-            console::set_colors_enabled(true);
+        } else if !cfg!(test) && *env::COLOR_NONTTY_OK {
             console::set_colors_enabled_stderr(true);
         }
         if settings.ci {
