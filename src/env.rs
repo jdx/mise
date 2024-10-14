@@ -164,6 +164,24 @@ pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
         .ok()
 });
 
+pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
+    if var("CLICOLOR_FORCE").is_ok_and(|v| v != "0") {
+        Some(true)
+    } else if let Ok(v) = var("CLICOLOR") {
+        Some(v != "0")
+    } else {
+        None
+    }
+});
+pub static GITHUB_ACTIONS: Lazy<bool> = Lazy::new(|| var("GITHUB_ACTIONS").is_ok());
+pub static TRAVIS: Lazy<bool> = Lazy::new(|| var("TRAVIS").is_ok());
+pub static CIRCLECI: Lazy<bool> = Lazy::new(|| var("CIRCLECI").is_ok());
+pub static APPVEYOR: Lazy<bool> = Lazy::new(|| var("APPVEYOR").is_ok());
+pub static GITLAB_CI: Lazy<bool> = Lazy::new(|| var("GITLAB_CI").is_ok());
+pub static COLOR_NONTTY_OK: Lazy<bool> = Lazy::new(|| {
+    *CLICOLOR != Some(false) && (*GITHUB_ACTIONS || *TRAVIS || *CIRCLECI || *APPVEYOR || *GITLAB_CI)
+});
+
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
