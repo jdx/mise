@@ -17,6 +17,7 @@ include = [
     "/README.md",
     "/build.rs",
     "/completions/*",
+    "/registry.toml",
     "/settings.toml",
     "/zipsign.pub",
     "src/**/*.rs",
