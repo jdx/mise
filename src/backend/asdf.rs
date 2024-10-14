@@ -16,7 +16,6 @@ use crate::backend::{ABackend, Backend, BackendList};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings, SETTINGS};
-use crate::default_shorthands::DEFAULT_SHORTHANDS;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::git::Git;
 use crate::hash::hash_to_str;
@@ -26,9 +25,10 @@ use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
+use crate::registry::REGISTRY;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, file, http};
+use crate::{dirs, env, file, http, registry};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct AsdfBackend {
@@ -110,9 +110,9 @@ impl AsdfBackend {
         let git = Git::new(&self.plugin_path);
         let normalized_remote = normalize_remote(&git.get_remote_url().unwrap_or_default())
             .unwrap_or("INVALID_URL".into());
-        let shorthand_remote = DEFAULT_SHORTHANDS
+        let shorthand_remote = REGISTRY
             .get(self.name.as_str())
-            .map(|s| s.to_string())
+            .map(|s| registry::full_to_url(s))
             .unwrap_or_default();
         if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
             return Ok(None);

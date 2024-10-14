@@ -36,16 +36,6 @@ pub fn get_shorthands(settings: &Settings) -> Shorthands {
     shorthands
 }
 
-pub fn full_to_url(full: &str) -> String {
-    let (_backend, url) = full.split_once(':').unwrap_or(("", full));
-    if url.starts_with("https://") {
-        url.to_string()
-    } else {
-        format!("https://github.com/{url}.git")
-    }
-}
-
-
 fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
     if f.starts_with("~") {
         f = dirs::HOME.join(f.strip_prefix("~")?);

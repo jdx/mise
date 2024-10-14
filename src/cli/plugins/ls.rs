@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::plugins;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::PluginType;
-use crate::shorthands::full_to_url;
+use crate::registry::full_to_url;
 use crate::ui::table;
 
 /// List installed plugins

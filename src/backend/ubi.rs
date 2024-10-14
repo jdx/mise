@@ -49,7 +49,6 @@ impl Backend for UbiBackend {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        SETTINGS.ensure_experimental("ubi backend")?;
         let opts = ctx.tv.request.options();
         let mut v = ctx.tv.version.to_string();
 
