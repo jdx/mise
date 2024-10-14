@@ -173,14 +173,6 @@ pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
         None
     }
 });
-pub static GITHUB_ACTIONS: Lazy<bool> = Lazy::new(|| var("GITHUB_ACTIONS").is_ok());
-pub static TRAVIS: Lazy<bool> = Lazy::new(|| var("TRAVIS").is_ok());
-pub static CIRCLECI: Lazy<bool> = Lazy::new(|| var("CIRCLECI").is_ok());
-pub static APPVEYOR: Lazy<bool> = Lazy::new(|| var("APPVEYOR").is_ok());
-pub static GITLAB_CI: Lazy<bool> = Lazy::new(|| var("GITLAB_CI").is_ok());
-pub static COLOR_NONTTY_OK: Lazy<bool> = Lazy::new(|| {
-    *CLICOLOR != Some(false) && (*GITHUB_ACTIONS || *TRAVIS || *CIRCLECI || *APPVEYOR || *GITLAB_CI)
-});
 
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
