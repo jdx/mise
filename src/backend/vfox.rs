@@ -5,7 +5,8 @@ use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, OnceLock};
+use std::thread;
 use tokio::runtime::Runtime;
 use url::Url;
 
@@ -24,7 +25,6 @@ use xx::regex;
 #[derive(Debug)]
 pub struct VfoxBackend {
     ba: BackendArg,
-    vfox: Vfox,
     plugin_path: PathBuf,
     remote_version_cache: CacheManager<Vec<String>>,
     exec_env_cache: CacheManager<BTreeMap<String, String>>,
@@ -48,10 +48,11 @@ impl Backend for VfoxBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
+                let (vfox, _log_rx) = self.vfox();
                 self.ensure_plugin_installed()?;
                 let versions = self
                     .runtime()?
-                    .block_on(self.vfox.list_available_versions(&self.pathname))?;
+                    .block_on(vfox.list_available_versions(&self.pathname))?;
                 Ok(versions
                     .into_iter()
                     .rev()
@@ -63,7 +64,14 @@ impl Backend for VfoxBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         self.ensure_plugin_installed()?;
-        self.runtime()?.block_on(self.vfox.install(
+        let (vfox, log_rx) = self.vfox();
+        thread::spawn(|| {
+            for line in log_rx {
+                // TODO: put this in ctx.pr.set_message()
+                info!("{}", line);
+            }
+        });
+        self.runtime()?.block_on(vfox.install(
             &self.pathname,
             &ctx.tv.version,
             ctx.tv.install_path(),
@@ -116,12 +124,6 @@ impl VfoxBackend {
     }
 
     pub fn from_arg(ba: BackendArg) -> Self {
-        let mut vfox = Vfox::new();
-        vfox.plugin_dir = dirs::PLUGINS.to_path_buf();
-        vfox.cache_dir = dirs::CACHE.to_path_buf();
-        vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
-        vfox.install_dir = dirs::INSTALLS.to_path_buf();
-        vfox.temp_dir = env::temp_dir().join("mise-vfox");
         let pathname = ba.short.to_kebab_case();
         let plugin_path = dirs::PLUGINS.join(&pathname);
         Self {
@@ -140,10 +142,20 @@ impl VfoxBackend {
                 .build(),
             repo: OnceLock::new(),
             ba,
-            vfox,
             plugin_path,
             pathname,
         }
+    }
+
+    fn vfox(&self) -> (Vfox, mpsc::Receiver<String>) {
+        let mut vfox = Vfox::new();
+        vfox.plugin_dir = dirs::PLUGINS.to_path_buf();
+        vfox.cache_dir = dirs::CACHE.to_path_buf();
+        vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
+        vfox.install_dir = dirs::INSTALLS.to_path_buf();
+        vfox.temp_dir = env::temp_dir().join("mise-vfox");
+        let rx = vfox.log_subscribe();
+        (vfox, rx)
     }
 
     fn runtime(&self) -> eyre::Result<Runtime, Report> {
@@ -157,9 +169,10 @@ impl VfoxBackend {
     fn _exec_env(&self, tv: &ToolVersion) -> eyre::Result<&BTreeMap<String, String>> {
         self.exec_env_cache.get_or_try_init(|| {
             self.ensure_plugin_installed()?;
+            let (vfox, _log_rx) = self.vfox();
             Ok(self
                 .runtime()?
-                .block_on(self.vfox.env_keys(&self.pathname, &tv.version))?
+                .block_on(vfox.env_keys(&self.pathname, &tv.version))?
                 .into_iter()
                 .map(|envkey| (envkey.key, envkey.value))
                 .collect())
