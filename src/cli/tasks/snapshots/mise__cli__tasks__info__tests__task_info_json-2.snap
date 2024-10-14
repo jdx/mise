@@ -52,6 +52,7 @@ expression: output
     "config": {
       "props": {}
     },
+    "disable_help": null,
     "name": "test",
     "usage": "",
     "version": null
