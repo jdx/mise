@@ -2016,7 +2016,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.10.3"
+version = "2024.10.4"
 dependencies = [
  "assert_cmd",
  "base64",
@@ -4226,9 +4226,9 @@ dependencies = [
 
 [[package]]
 name = "vfox"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f8122f37f0a8573ca23fd2be7cede3809ee8634a35421f2862d63cbe13679c7"
+checksum = "9d1986b1c92f01935d738b0ea408d7524af35fa922afdfda4f1f315b978dabe6"
 dependencies = [
  "homedir",
  "indexmap 2.6.0",
