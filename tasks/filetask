@@ -6,7 +6,6 @@
 #USAGE arg "<arg_with_default>" help="An arg with a default" default="mydefault"
 
 #MISE description="This is a test build script"
-#MISE depends=["lint", "build"]
 #MISE sources=[".test-tool-versions"]
 #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
 #MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}

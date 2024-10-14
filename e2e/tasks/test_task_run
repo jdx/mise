@@ -43,3 +43,4 @@ cat <<'EOF' >.mise/tasks/filetask
 echo "user=$usage_user"
 EOF
 assert "mise run filetask --user=jdx" "user=jdx"
+assert_contains "mise run filetask --help 2>&1 || true" "-u --user <user>"
