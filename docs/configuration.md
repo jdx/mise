@@ -142,12 +142,12 @@ trusted_config_paths = [
     '~/work/my-trusted-projects',
 ]
 
-verbose = false     # set to true to see full installation output, see `MISE_VERBOSE`
-asdf_compat = false # set to true to ensure .tool-versions will be compatible with asdf, see `MISE_ASDF_COMPAT`
-http_timeout = 30   # set the timeout for http requests in seconds, see `MISE_HTTP_TIMEOUT`
-jobs = 4            # number of plugins or runtimes to install in parallel. The default is `4`.
-raw = false         # set to true to directly pipe plugins to stdin/stdout/stderr
-yes = false         # set to true to automatically answer yes to all prompts
+verbose = false       # set to true to see full installation output, see `MISE_VERBOSE`
+asdf_compat = false   # set to true to ensure .tool-versions will be compatible with asdf, see `MISE_ASDF_COMPAT`
+http_timeout = "30s"  # set the timeout for http requests as duration string, see `MISE_HTTP_TIMEOUT`
+jobs = 4              # number of plugins or runtimes to install in parallel. The default is `4`.
+raw = false           # set to true to directly pipe plugins to stdin/stdout/stderr
+yes = false           # set to true to automatically answer yes to all prompts
 
 not_found_auto_install = true # see MISE_NOT_FOUND_AUTO_INSTALL
 task_output = "prefix" # see Tasks Runner for more information
