@@ -1,5 +1,11 @@
 # Changelog
 
+## [2024.10.7](https://github.com/jdx/mise/compare/v2024.10.6..v2024.10.7) - 2024-10-14
+
+### 🐛 Bug Fixes
+
+- remove schema/settings.json from release script by [@jdx](https://github.com/jdx) in [3086cae](https://github.com/jdx/mise/commit/3086cae4c8874ec85b8af776cafdd85a69dc80b5)
+
 ## [2024.10.6](https://github.com/jdx/mise/compare/v2024.10.5..v2024.10.6) - 2024-10-14
 
 ### 🚀 Features
