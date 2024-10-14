@@ -61,7 +61,7 @@ pub struct Run {
     pub task: String,
 
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
-    #[clap(allow_hyphen_values = true)]
+    #[clap(allow_hyphen_values = true, trailing_var_arg = true)]
     pub args: Vec<String>,
 
     /// Change to this directory before executing the command
