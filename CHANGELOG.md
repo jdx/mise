@@ -1,5 +1,50 @@
 # Changelog
 
+## [2024.10.3](https://github.com/jdx/mise/compare/v2024.10.2..v2024.10.3) - 2024-10-14
+
+### 🚀 Features
+
+- improve dynamic settings by [@jdx](https://github.com/jdx) in [#2731](https://github.com/jdx/mise/pull/2731)
+- added --force flag to reshim by [@jdx](https://github.com/jdx) in [#2734](https://github.com/jdx/mise/pull/2734)
+- added `mise settings add` by [@jdx](https://github.com/jdx) in [#2741](https://github.com/jdx/mise/pull/2741)
+- improve task scheduling by [@jdx](https://github.com/jdx) in [#2743](https://github.com/jdx/mise/pull/2743)
+- include ubi into mise directly by [@autarch](https://github.com/autarch) in [#2290](https://github.com/jdx/mise/pull/2290)
+- allow passing arbitrary args to pipx/uvx by [@jdx](https://github.com/jdx) in [#2746](https://github.com/jdx/mise/pull/2746)
+- new cross-backend registry by [@jdx](https://github.com/jdx) in [#2748](https://github.com/jdx/mise/pull/2748)
+- enable colors for CI services that support it by [@jdx](https://github.com/jdx) in [c892e27](https://github.com/jdx/mise/commit/c892e27bc21cdd32449195b643bea398eb339568)
+
+### 🐛 Bug Fixes
+
+- remove shims directory when running `mise x` by [@jdx](https://github.com/jdx) in [#2735](https://github.com/jdx/mise/pull/2735)
+- remove shims directory from PATH when executing shims by [@jdx](https://github.com/jdx) in [#2736](https://github.com/jdx/mise/pull/2736)
+- use same outdated logic for `mise ls` as `mise outdated` by [@jdx](https://github.com/jdx) in [#2737](https://github.com/jdx/mise/pull/2737)
+- do not include shims dir in path_env when reinserting by [@jdx](https://github.com/jdx) in [#2745](https://github.com/jdx/mise/pull/2745)
+- automatically prefix ubi installs with "v" if not found by [@jdx](https://github.com/jdx) in [#2747](https://github.com/jdx/mise/pull/2747)
+- some issues with new registry by [@jdx](https://github.com/jdx) in [8ec6fb8](https://github.com/jdx/mise/commit/8ec6fb801b00e40634b2afc253f4a17cb23648d6)
+- only enable colors for stderr by [@jdx](https://github.com/jdx) in [8d57b99](https://github.com/jdx/mise/commit/8d57b99f9e9ab989ce22eb663a8ae9e08936d5e5)
+
+### 🚜 Refactor
+
+- move task deps into its own file by [@jdx](https://github.com/jdx) in [bad9f68](https://github.com/jdx/mise/commit/bad9f68c383466811626185c3269b648b52319de)
+- use settings singleton in more places by [@jdx](https://github.com/jdx) in [#2742](https://github.com/jdx/mise/pull/2742)
+- clean up `settings set` by [@jdx](https://github.com/jdx) in [#2744](https://github.com/jdx/mise/pull/2744)
+
+### 📚 Documentation
+
+- use dashes in changelog by [@jdx](https://github.com/jdx) in [90bb910](https://github.com/jdx/mise/commit/90bb9108ff78ad5009632311550b841980020455)
+
+### 🔍 Other Changes
+
+- ran prettier on project by [@jdx](https://github.com/jdx) in [#2732](https://github.com/jdx/mise/pull/2732)
+- Fix typo in method name: "depedency" => "dependency" by [@autarch](https://github.com/autarch) in [#2738](https://github.com/jdx/mise/pull/2738)
+- bump usage-lib by [@jdx](https://github.com/jdx) in [f3a2e5f](https://github.com/jdx/mise/commit/f3a2e5f098b957a5a5745c7879cf98e27e32e403)
+- bump usage-lib by [@jdx](https://github.com/jdx) in [60f942d](https://github.com/jdx/mise/commit/60f942ddf3f3bc64f5f49015eb8c4093d616787b)
+- upgrade ubuntu version by [@jdx](https://github.com/jdx) in [978ea1a](https://github.com/jdx/mise/commit/978ea1a80a32574611d66aed552b34f7a10430d7)
+
+### New Contributors
+
+- @autarch made their first contribution in [#2290](https://github.com/jdx/mise/pull/2290)
+
 ## [2024.10.2](https://github.com/jdx/mise/compare/v2024.10.1..v2024.10.2) - 2024-10-12
 
 ### 🚀 Features
@@ -29,7 +74,7 @@
 
 ### New Contributors
 
-* @risu729 made their first contribution in [#2729](https://github.com/jdx/mise/pull/2729)
+- @risu729 made their first contribution in [#2729](https://github.com/jdx/mise/pull/2729)
 
 ## [2024.10.1](https://github.com/jdx/mise/compare/v2024.10.0..v2024.10.1) - 2024-10-07
 
@@ -75,8 +120,8 @@
 
 ### New Contributors
 
-* @yanskun made their first contribution in [#2701](https://github.com/jdx/mise/pull/2701)
-* @samuelallan72 made their first contribution in [#2393](https://github.com/jdx/mise/pull/2393)
+- @yanskun made their first contribution in [#2701](https://github.com/jdx/mise/pull/2701)
+- @samuelallan72 made their first contribution in [#2393](https://github.com/jdx/mise/pull/2393)
 
 ## [2024.9.13](https://github.com/jdx/mise/compare/v2024.9.12..v2024.9.13) - 2024-09-29
 
@@ -134,7 +179,7 @@
 
 ### New Contributors
 
-* @josb made their first contribution in [#2310](https://github.com/jdx/mise/pull/2310)
+- @josb made their first contribution in [#2310](https://github.com/jdx/mise/pull/2310)
 
 ## [2024.9.11](https://github.com/jdx/mise/compare/v2024.9.10..v2024.9.11) - 2024-09-27
 
@@ -162,7 +207,7 @@
 
 ### New Contributors
 
-* @matukoto made their first contribution in [#2669](https://github.com/jdx/mise/pull/2669)
+- @matukoto made their first contribution in [#2669](https://github.com/jdx/mise/pull/2669)
 
 ## [2024.9.10](https://github.com/jdx/mise/compare/v2024.9.9..v2024.9.10) - 2024-09-26
 
@@ -214,7 +259,7 @@
 
 ### New Contributors
 
-* @cwegener made their first contribution in [#2644](https://github.com/jdx/mise/pull/2644)
+- @cwegener made their first contribution in [#2644](https://github.com/jdx/mise/pull/2644)
 
 ## [2024.9.8](https://github.com/jdx/mise/compare/v2024.9.7..v2024.9.8) - 2024-09-25
 
@@ -268,7 +313,7 @@
 
 ### New Contributors
 
-* @gauravkumar37 made their first contribution in [#2619](https://github.com/jdx/mise/pull/2619)
+- @gauravkumar37 made their first contribution in [#2619](https://github.com/jdx/mise/pull/2619)
 
 ## [2024.9.6](https://github.com/jdx/mise/compare/v2024.9.5..v2024.9.6) - 2024-09-18
 
@@ -329,7 +374,7 @@
 
 ### New Contributors
 
-* @mtweeman made their first contribution in [#2577](https://github.com/jdx/mise/pull/2577)
+- @mtweeman made their first contribution in [#2577](https://github.com/jdx/mise/pull/2577)
 
 ## [2024.9.3](https://github.com/jdx/mise/compare/v2024.9.2..v2024.9.3) - 2024-09-12
 
@@ -345,7 +390,7 @@
 
 ### New Contributors
 
-* @fesplugas made their first contribution in [#2570](https://github.com/jdx/mise/pull/2570)
+- @fesplugas made their first contribution in [#2570](https://github.com/jdx/mise/pull/2570)
 
 ## [2024.9.2](https://github.com/jdx/mise/compare/v2024.9.1..v2024.9.2) - 2024-09-11
 
@@ -400,8 +445,8 @@
 
 ### New Contributors
 
-* @xavdid made their first contribution in [#2532](https://github.com/jdx/mise/pull/2532)
-* @stanhu made their first contribution in [#2524](https://github.com/jdx/mise/pull/2524)
+- @xavdid made their first contribution in [#2532](https://github.com/jdx/mise/pull/2532)
+- @stanhu made their first contribution in [#2524](https://github.com/jdx/mise/pull/2524)
 
 ## [2024.8.15](https://github.com/jdx/mise/compare/v2024.8.14..v2024.8.15) - 2024-08-28
 
@@ -459,7 +504,7 @@
 
 ### New Contributors
 
-* @mcallaway made their first contribution in [#2511](https://github.com/jdx/mise/pull/2511)
+- @mcallaway made their first contribution in [#2511](https://github.com/jdx/mise/pull/2511)
 
 ## [2024.8.13](https://github.com/jdx/mise/compare/v2024.8.12..v2024.8.13) - 2024-08-26
 
@@ -692,7 +737,7 @@
 
 ### New Contributors
 
-* @mollyIV made their first contribution in [#2411](https://github.com/jdx/mise/pull/2411)
+- @mollyIV made their first contribution in [#2411](https://github.com/jdx/mise/pull/2411)
 
 ## [2024.7.5](https://github.com/jdx/mise/compare/v2024.7.4..v2024.7.5) - 2024-07-29
 
@@ -707,7 +752,7 @@
 
 ### New Contributors
 
-* @chasinglogic made their first contribution in [#2409](https://github.com/jdx/mise/pull/2409)
+- @chasinglogic made their first contribution in [#2409](https://github.com/jdx/mise/pull/2409)
 
 ## [2024.7.4](https://github.com/jdx/mise/compare/v2024.7.3..v2024.7.4) - 2024-07-19
 
@@ -733,7 +778,7 @@
 
 ### New Contributors
 
-* @jahands made their first contribution in [#2372](https://github.com/jdx/mise/pull/2372)
+- @jahands made their first contribution in [#2372](https://github.com/jdx/mise/pull/2372)
 
 ## [2024.7.2](https://github.com/jdx/mise/compare/v2024.7.1..v2024.7.2) - 2024-07-13
 
@@ -758,7 +803,7 @@
 
 ### New Contributors
 
-* @gzurowski made their first contribution in [#2353](https://github.com/jdx/mise/pull/2353)
+- @gzurowski made their first contribution in [#2353](https://github.com/jdx/mise/pull/2353)
 
 ## [2024.7.0](https://github.com/jdx/mise/compare/v2024.6.6..v2024.7.0) - 2024-07-03
 
@@ -768,7 +813,7 @@
 
 ### New Contributors
 
-* @light-planck made their first contribution in [#2349](https://github.com/jdx/mise/pull/2349)
+- @light-planck made their first contribution in [#2349](https://github.com/jdx/mise/pull/2349)
 
 ## [2024.6.6](https://github.com/jdx/mise/compare/v2024.6.5..v2024.6.6) - 2024-06-20
 
@@ -800,7 +845,7 @@
 
 ### New Contributors
 
-* @adamdickinson made their first contribution in [#2286](https://github.com/jdx/mise/pull/2286)
+- @adamdickinson made their first contribution in [#2286](https://github.com/jdx/mise/pull/2286)
 
 ## [2024.6.3](https://github.com/jdx/mise/compare/v2024.6.2..v2024.6.3) - 2024-06-10
 
@@ -855,7 +900,7 @@
 
 ### New Contributors
 
-* @chrmod made their first contribution in [#2248](https://github.com/jdx/mise/pull/2248)
+- @chrmod made their first contribution in [#2248](https://github.com/jdx/mise/pull/2248)
 
 ## [2024.6.0](https://github.com/jdx/mise/compare/v2024.5.28..v2024.6.0) - 2024-06-01
 
@@ -952,7 +997,7 @@
 
 ### New Contributors
 
-* @donaldguy made their first contribution in [#2195](https://github.com/jdx/mise/pull/2195)
+- @donaldguy made their first contribution in [#2195](https://github.com/jdx/mise/pull/2195)
 
 ## [2024.5.23](https://github.com/jdx/mise/compare/v2024.5.22..v2024.5.23) - 2024-05-27
 
@@ -1002,7 +1047,7 @@
 
 ### New Contributors
 
-* @bklebe made their first contribution in [#2173](https://github.com/jdx/mise/pull/2173)
+- @bklebe made their first contribution in [#2173](https://github.com/jdx/mise/pull/2173)
 
 ## [2024.5.20](https://github.com/jdx/mise/compare/v2024.5.18..v2024.5.20) - 2024-05-21
 
@@ -1094,7 +1139,7 @@
 
 ### New Contributors
 
-* @vrslev made their first contribution in [#2116](https://github.com/jdx/mise/pull/2116)
+- @vrslev made their first contribution in [#2116](https://github.com/jdx/mise/pull/2116)
 
 ## [2024.5.15](https://github.com/jdx/mise/compare/v2024.5.14..v2024.5.15) - 2024-05-14
 
@@ -1149,7 +1194,7 @@
 
 ### New Contributors
 
-* @jiz4oh made their first contribution
+- @jiz4oh made their first contribution
 
 ## [2024.5.13](https://github.com/jdx/mise/compare/v2024.5.12..v2024.5.13) - 2024-05-14
 
@@ -1223,7 +1268,7 @@
 
 ### New Contributors
 
-* @FranklinYinanDing made their first contribution in [#2077](https://github.com/jdx/mise/pull/2077)
+- @FranklinYinanDing made their first contribution in [#2077](https://github.com/jdx/mise/pull/2077)
 
 ## [2024.5.8](https://github.com/jdx/mise/compare/v2024.5.7..v2024.5.8) - 2024-05-12
 
@@ -1308,6 +1353,6 @@
 
 ### New Contributors
 
-* @KlotzAndrew made their first contribution
+- @KlotzAndrew made their first contribution
 
 <!-- generated by git-cliff -->
