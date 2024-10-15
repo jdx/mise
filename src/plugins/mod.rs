@@ -14,6 +14,7 @@ use regex::Regex;
 pub use script_manager::{Script, ScriptManager};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
+use std::path::PathBuf;
 use std::vec;
 
 pub mod asdf_plugin;
@@ -84,6 +85,7 @@ pub type PluginList = Vec<APlugin>;
 
 pub trait Plugin: Debug + Send {
     fn name(&self) -> &str;
+    fn path(&self) -> PathBuf;
     fn get_plugin_type(&self) -> PluginType;
     fn get_remote_url(&self) -> eyre::Result<Option<String>>;
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>>;

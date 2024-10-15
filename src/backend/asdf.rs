@@ -7,28 +7,24 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
-use itertools::Itertools;
 use rayon::prelude::*;
-use url::Url;
 
 use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::{ABackend, Backend, BackendList};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::git::Git;
 use crate::hash::hash_to_str;
-use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
-use crate::registry::REGISTRY;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, file, http, registry};
+use crate::{dirs, env, file};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct AsdfBackend {
@@ -101,56 +97,6 @@ impl AsdfBackend {
             .collect())
     }
 
-    fn fetch_versions(&self) -> Result<Option<Vec<String>>> {
-        let settings = Settings::get();
-        if !settings.use_versions_host {
-            return Ok(None);
-        }
-        // ensure that we're using a default shorthand plugin
-        let git = Git::new(&self.plugin_path);
-        let normalized_remote = normalize_remote(&git.get_remote_url().unwrap_or_default())
-            .unwrap_or("INVALID_URL".into());
-        let shorthand_remote = REGISTRY
-            .get(self.name.as_str())
-            .map(|s| registry::full_to_url(s))
-            .unwrap_or_default();
-        if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
-            return Ok(None);
-        }
-        let settings = Settings::get();
-        let raw_versions = match settings.paranoid {
-            true => HTTP_FETCH.get_text(format!("https://mise-versions.jdx.dev/{}", self.name)),
-            false => HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", self.name)),
-        };
-        let versions =
-            // using http is not a security concern and enabling tls makes mise significantly slower
-            match raw_versions {
-                Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
-                res => res?,
-            };
-        let versions = versions
-            .lines()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-            .collect_vec();
-        match versions.is_empty() {
-            true => Ok(None),
-            false => Ok(Some(versions)),
-        }
-    }
-
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.fetch_versions() {
-            Ok(Some(versions)) => return Ok(versions),
-            Err(err) => warn!(
-                "Failed to fetch remote versions for plugin {}: {}",
-                style(&self.name).blue().for_stderr(),
-                err
-            ),
-            _ => {}
-        };
-        self.plugin.fetch_remote_versions()
-    }
     fn fetch_cached_legacy_file(&self, legacy_file: &Path) -> Result<Option<String>> {
         let fp = self.legacy_cache_file_path(legacy_file);
         if !fp.exists() || fp.metadata()?.modified()? < legacy_file.metadata()?.modified()? {
@@ -310,7 +256,7 @@ impl Backend for AsdfBackend {
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
+            .get_or_try_init(|| self.plugin.fetch_remote_versions())
             .wrap_err_with(|| {
                 eyre!(
                     "Failed listing remote versions for plugin {}",
@@ -468,13 +414,6 @@ impl Debug for AsdfBackend {
             .field("repo_url", &self.repo_url)
             .finish()
     }
-}
-
-fn normalize_remote(remote: &str) -> eyre::Result<String> {
-    let url = Url::parse(remote)?;
-    let host = url.host_str().unwrap();
-    let path = url.path().trim_end_matches(".git");
-    Ok(format!("{host}{path}"))
 }
 
 #[cfg(test)]

@@ -156,24 +156,6 @@ impl RubyPlugin {
         Ok(updated_at < DAILY)
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
-            Ok(Some(versions)) => return Ok(versions),
-            Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
-        }
-        if let Err(err) = self.update_build_tool() {
-            warn!("{err}");
-        }
-        let ruby_build_bin = self.ruby_build_bin();
-        let versions = CorePlugin::run_fetch_task_with_timeout(move || {
-            let output = cmd!(ruby_build_bin, "--definitions").read()?;
-            let versions = output.split('\n').map(|s| s.to_string()).collect();
-            Ok(versions)
-        })?;
-        Ok(versions)
-    }
-
     fn ruby_path(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin/ruby")
     }
@@ -346,10 +328,16 @@ impl Backend for RubyPlugin {
         &self.core.fa
     }
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
+        if let Err(err) = self.update_build_tool() {
+            warn!("{err}");
+        }
+        let ruby_build_bin = self.ruby_build_bin();
+        let versions = CorePlugin::run_fetch_task_with_timeout(move || {
+            let output = cmd!(ruby_build_bin, "--definitions").read()?;
+            let versions = output.split('\n').map(|s| s.to_string()).collect();
+            Ok(versions)
+        })?;
+        Ok(versions)
     }
 
     fn legacy_filenames(&self) -> Result<Vec<String>> {

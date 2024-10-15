@@ -84,6 +84,10 @@ impl Plugin for VfoxPlugin {
         &self.name
     }
 
+    fn path(&self) -> PathBuf {
+        self.plugin_path.clone()
+    }
+
     fn get_plugin_type(&self) -> PluginType {
         PluginType::Vfox
     }

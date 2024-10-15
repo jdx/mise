@@ -1,8 +1,5 @@
 use std::fmt::Debug;
 
-use eyre::eyre;
-use ubi::UbiBuilder;
-
 use crate::backend::{Backend, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -11,6 +8,9 @@ use crate::env::GITHUB_TOKEN;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 use crate::{github, http};
+use eyre::eyre;
+use ubi::UbiBuilder;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct UbiBackend {
@@ -41,6 +41,11 @@ impl Backend for UbiBackend {
                     Ok(github::list_releases(self.name())?
                         .into_iter()
                         .map(|r| r.tag_name)
+                        // trim 'v' prefixes if they exist
+                        .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
+                            true => t[1..].to_string(),
+                            false => t,
+                        })
                         .rev()
                         .collect())
                 })
