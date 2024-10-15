@@ -387,7 +387,11 @@ pub trait Backend: Debug + Send + Sync {
 
         if let Err(e) = self.install_version_impl(&ctx) {
             self.cleanup_install_dirs_on_error(&ctx.tv);
-            return Err(e);
+            return Err(e.wrap_err(format!(
+                "Failed to install {}@{}",
+                self.id(),
+                ctx.tv.version
+            )));
         }
 
         BackendMeta::write(&ctx.tv.backend)?;
