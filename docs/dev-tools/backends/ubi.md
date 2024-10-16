@@ -1,6 +1,8 @@
-# Ubi Backend <Badge type="warning" text="experimental" />
+# Ubi Backend
 
-You may install GitHub Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend.
+You may install GitHub Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend. ubi is directly compiled into
+the mise codebase so it does not need to be installed separately to be used. ubi is the preferred backend when it functions for tools as it is the
+simplest and requires minimal configuration.
 
 The code for this is inside of the mise repository at [`./src/backend/ubi.rs`](https://github.com/jdx/mise/blob/main/src/backend/ubi.rs).
 
