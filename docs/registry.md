@@ -615,7 +615,7 @@ editLink: false
 | semtag | [asdf:junminahn/asdf-semtag](https://github.com/junminahn/asdf-semtag) |
 | semver | [asdf:mathew-fleisch/asdf-semver](https://github.com/mathew-fleisch/asdf-semver) |
 | sentinel | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
-| sentry-cli | [asdf:MacPaw/asdf-sentry-cli](https://github.com/MacPaw/asdf-sentry-cli) |
+| sentry-cli | [ubi:getsentry/sentry-cli](https://github.com/getsentry/sentry-cli) |
 | serf | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | serverless | [asdf:pdemagny/asdf-serverless](https://github.com/pdemagny/asdf-serverless) |
 | setup-envtest | [asdf:pmalek/mise-setup-envtest](https://github.com/pmalek/mise-setup-envtest) |
