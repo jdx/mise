@@ -40,26 +40,6 @@ impl ZigPlugin {
             .execute()
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
-            Ok(Some(versions)) => {
-                return Ok(versions);
-            }
-            Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
-        }
-
-        let releases: Vec<GithubRelease> =
-            HTTP_FETCH.json("https://api.github.com/repos/ziglang/zig/releases?per_page=100")?;
-        let versions = releases
-            .into_iter()
-            .map(|r| r.tag_name)
-            .unique()
-            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
-            .collect();
-        Ok(versions)
-    }
-
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let url = if tv.version == "ref:master" {
             format!(
@@ -142,10 +122,15 @@ impl Backend for ZigPlugin {
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
+        let releases: Vec<GithubRelease> =
+            HTTP_FETCH.json("https://api.github.com/repos/ziglang/zig/releases?per_page=100")?;
+        let versions = releases
+            .into_iter()
+            .map(|r| r.tag_name)
+            .unique()
+            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
+            .collect();
+        Ok(versions)
     }
 
     fn legacy_filenames(&self) -> Result<Vec<String>> {

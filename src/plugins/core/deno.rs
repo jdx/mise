@@ -30,24 +30,6 @@ impl DenoPlugin {
         Self { core }
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
-            Ok(Some(versions)) => return Ok(versions),
-            Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
-        }
-        let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json")?;
-        let versions = versions
-            .cli
-            .into_iter()
-            .filter(|v| v.starts_with('v'))
-            .map(|v| v.trim_start_matches('v').to_string())
-            .unique()
-            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
-            .collect();
-        Ok(versions)
-    }
-
     fn deno_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join(if cfg!(target_os = "windows") {
             "bin/deno.exe"
@@ -111,10 +93,16 @@ impl Backend for DenoPlugin {
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
+        let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json")?;
+        let versions = versions
+            .cli
+            .into_iter()
+            .filter(|v| v.starts_with('v'))
+            .map(|v| v.trim_start_matches('v').to_string())
+            .unique()
+            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
+            .collect();
+        Ok(versions)
     }
 
     fn legacy_filenames(&self) -> Result<Vec<String>> {

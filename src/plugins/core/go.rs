@@ -6,7 +6,7 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SETTINGS};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::plugins::core::CorePlugin;
@@ -28,26 +28,6 @@ impl GoPlugin {
         Self {
             core: CorePlugin::new(BackendArg::new("go", "go")),
         }
-    }
-
-    fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
-            Ok(Some(versions)) => return Ok(versions),
-            Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
-        }
-        let settings = Settings::get();
-        CorePlugin::run_fetch_task_with_timeout(move || {
-            let output = cmd!("git", "ls-remote", "--tags", &settings.go_repo, "go*").read()?;
-            let lines = output.split('\n');
-            let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
-                .filter(|s| !s.is_empty())
-                .filter(|s| !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$").is_match(s))
-                .unique()
-                .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
-                .collect();
-            Ok(versions)
-        })
     }
 
     // Represents go binary path
@@ -190,10 +170,17 @@ impl Backend for GoPlugin {
         &self.core.fa
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
+        CorePlugin::run_fetch_task_with_timeout(move || {
+            let output = cmd!("git", "ls-remote", "--tags", &SETTINGS.go_repo, "go*").read()?;
+            let lines = output.split('\n');
+            let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
+                .filter(|s| !s.is_empty())
+                .filter(|s| !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$").is_match(s))
+                .unique()
+                .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
+                .collect();
+            Ok(versions)
+        })
     }
     fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".go-version".into()])

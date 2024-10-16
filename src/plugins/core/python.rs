@@ -1,4 +1,4 @@
-use crate::backend::Backend;
+use crate::backend::{Backend, VersionCacheManager};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -16,6 +16,7 @@ use eyre::{bail, eyre};
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use versions::Versioning;
 use xx::regex;
 
@@ -74,27 +75,6 @@ impl PythonPlugin {
         let git = Git::new(self.python_build_path());
         CorePlugin::run_fetch_task_with_timeout(move || git.update(None))?;
         Ok(())
-    }
-
-    fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
-            Ok(Some(versions)) => return Ok(versions),
-            Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
-        }
-        self.install_or_update_python_build()?;
-        let python_build_bin = self.python_build_bin();
-        CorePlugin::run_fetch_task_with_timeout(move || {
-            let output = cmd!(python_build_bin, "--definitions").read()?;
-            let versions = output
-                .split('\n')
-                // remove free-threaded pythons like 3.13t and 3.14t-dev
-                .filter(|s| !regex!(r"\dt(-dev)?$").is_match(s))
-                .map(|s| s.to_string())
-                .sorted_by_cached_key(|v| regex!(r"^\d+").is_match(v))
-                .collect();
-            Ok(versions)
-        })
     }
 
     fn python_path(&self, tv: &ToolVersion) -> PathBuf {
@@ -365,11 +345,33 @@ impl Backend for PythonPlugin {
                 .map(|(v, _, _)| v.clone())
                 .collect())
         } else {
-            self.core
-                .remote_version_cache
-                .get_or_try_init(|| self.fetch_remote_versions())
-                .cloned()
+            self.install_or_update_python_build()?;
+            let python_build_bin = self.python_build_bin();
+            CorePlugin::run_fetch_task_with_timeout(move || {
+                let output = cmd!(python_build_bin, "--definitions").read()?;
+                let versions = output
+                    .split('\n')
+                    // remove free-threaded pythons like 3.13t and 3.14t-dev
+                    .filter(|s| !regex!(r"\dt(-dev)?$").is_match(s))
+                    .map(|s| s.to_string())
+                    .sorted_by_cached_key(|v| regex!(r"^\d+").is_match(v))
+                    .collect();
+                Ok(versions)
+            })
         }
+    }
+
+    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
+        static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                CacheManagerBuilder::new(self.fa().cache_path.join("remote_versions.msgpack.z"))
+                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .with_cache_key((SETTINGS.python.compile == Some(false)).to_string())
+                    .build()
+                    .into()
+            })
+            .clone()
     }
 
     #[cfg(windows)]
