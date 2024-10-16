@@ -31,29 +31,6 @@ impl RubyPlugin {
         }
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        // TODO: use windows set of versions
-        //  match self.core.fetch_remote_versions_from_mise() {
-        //      Ok(Some(versions)) => return Ok(versions),
-        //      Ok(None) => {}
-        //      Err(e) => warn!("failed to fetch remote versions: {}", e),
-        //  }
-        let releases: Vec<GithubRelease> = github::list_releases("oneclick/rubyinstaller2")?;
-        let versions = releases
-            .into_iter()
-            .map(|r| r.tag_name)
-            .filter_map(|v| {
-                regex!(r"RubyInstaller-([0-9.]+)-.*")
-                    .replace(&v, "$1")
-                    .parse()
-                    .ok()
-            })
-            .unique()
-            .sorted_by_cached_key(|s: &String| (Versioning::new(s), s.to_string()))
-            .collect();
-        Ok(versions)
-    }
-
     fn ruby_path(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join("ruby.exe")
     }
@@ -164,10 +141,26 @@ impl Backend for RubyPlugin {
         &self.core.fa
     }
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
+        // TODO: use windows set of versions
+        //  match self.core.fetch_remote_versions_from_mise() {
+        //      Ok(Some(versions)) => return Ok(versions),
+        //      Ok(None) => {}
+        //      Err(e) => warn!("failed to fetch remote versions: {}", e),
+        //  }
+        let releases: Vec<GithubRelease> = github::list_releases("oneclick/rubyinstaller2")?;
+        let versions = releases
+            .into_iter()
+            .map(|r| r.tag_name)
+            .filter_map(|v| {
+                regex!(r"RubyInstaller-([0-9.]+)-.*")
+                    .replace(&v, "$1")
+                    .parse()
+                    .ok()
+            })
+            .unique()
+            .sorted_by_cached_key(|s: &String| (Versioning::new(s), s.to_string()))
+            .collect();
+        Ok(versions)
     }
 
     fn legacy_filenames(&self) -> Result<Vec<String>> {

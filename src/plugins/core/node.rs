@@ -1,11 +1,9 @@
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-
-use crate::backend::Backend;
+use crate::backend::{Backend, VersionCacheManager};
 use crate::build_time::built_info;
+use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::settings::{DEFAULT_NODE_MIRROR_URL, SETTINGS};
+use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -15,6 +13,9 @@ use crate::ui::progress_report::SingleReport;
 use crate::{env, file, hash, http};
 use eyre::{bail, ensure, Result};
 use serde_derive::Deserialize;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use tempfile::tempdir_in;
 use url::Url;
 use xx::regex;
@@ -29,44 +30,6 @@ impl NodePlugin {
         Self {
             core: CorePlugin::new(BackendArg::new("node", "node")),
         }
-    }
-
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        let settings = Settings::get();
-        let node_url_overridden = settings.node.mirror_url().as_str() != DEFAULT_NODE_MIRROR_URL;
-        if !node_url_overridden {
-            match self.core.fetch_remote_versions_from_mise() {
-                Ok(Some(versions)) => return Ok(versions),
-                Ok(None) => {}
-                Err(e) => warn!("failed to fetch remote versions: {}", e),
-            }
-        }
-        self.fetch_remote_versions_from_node(&settings.node.mirror_url())
-    }
-    fn fetch_remote_versions_from_node(&self, base: &Url) -> Result<Vec<String>> {
-        let settings = Settings::get();
-        let versions = HTTP_FETCH
-            .json::<Vec<NodeVersion>, _>(base.join("index.json")?)?
-            .into_iter()
-            .filter(|v| {
-                if let Some(flavor) = &settings.node.flavor {
-                    v.files
-                        .iter()
-                        .any(|f| f == &format!("{}-{}-{}", os(), arch(), flavor))
-                } else {
-                    true
-                }
-            })
-            .map(|v| {
-                if regex!(r"^v\d+\.").is_match(&v.version) {
-                    v.version.strip_prefix('v').unwrap().to_string()
-                } else {
-                    v.version
-                }
-            })
-            .rev()
-            .collect();
-        Ok(versions)
     }
 
     fn install_precompiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
@@ -294,11 +257,44 @@ impl Backend for NodePlugin {
         &self.core.fa
     }
 
+    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
+        static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                CacheManagerBuilder::new(self.fa().cache_path.join("remote_versions.msgpack.z"))
+                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
+                    .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())
+                    .build()
+                    .into()
+            })
+            .clone()
+    }
+
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
+        let base = SETTINGS.node.mirror_url();
+        let versions = HTTP_FETCH
+            .json::<Vec<NodeVersion>, _>(base.join("index.json")?)?
+            .into_iter()
+            .filter(|v| {
+                if let Some(flavor) = &SETTINGS.node.flavor {
+                    v.files
+                        .iter()
+                        .any(|f| f == &format!("{}-{}-{}", os(), arch(), flavor))
+                } else {
+                    true
+                }
+            })
+            .map(|v| {
+                if regex!(r"^v\d+\.").is_match(&v.version) {
+                    v.version.strip_prefix('v').unwrap().to_string()
+                } else {
+                    v.version
+                }
+            })
+            .rev()
+            .collect();
+        Ok(versions)
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {

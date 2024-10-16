@@ -54,6 +54,7 @@ pub(crate) mod timeout;
 mod toml;
 mod toolset;
 mod ui;
+mod versions_host;
 
 pub use crate::exit::exit;
 

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
@@ -9,12 +9,14 @@ use console::style;
 use contracts::requires;
 use eyre::{bail, eyre, WrapErr};
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use regex::Regex;
 use strum::IntoEnumIterator;
 use versions::Versioning;
 
 use self::backend_meta::BackendMeta;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, CONFIG, SETTINGS};
@@ -25,7 +27,7 @@ use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{is_outdated_version, ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, file, lock_file};
+use crate::{dirs, env, file, lock_file, versions_host};
 
 pub mod asdf;
 pub mod backend_meta;
@@ -41,6 +43,7 @@ pub mod vfox;
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
+pub type VersionCacheManager = CacheManager<Vec<String>>;
 
 #[derive(
     Debug,
@@ -196,24 +199,40 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(deps)
     }
+
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.ensure_dependencies_installed()?;
-        trace!("Listing remote versions for {}", self.fa().to_string());
-        let versions = self
-            ._list_remote_versions()?
-            .into_iter()
-            .filter(|v| match v.parse::<ToolVersionType>() {
-                Ok(ToolVersionType::Version(_)) => true,
-                _ => {
-                    warn!("Invalid version: {}@{v}", self.id());
-                    false
+        self.get_remote_version_cache()
+            .get_or_try_init(|| {
+                trace!("Listing remote versions for {}", self.fa().to_string());
+                match versions_host::list_versions(self.fa()) {
+                    Ok(Some(versions)) => return Ok(versions),
+                    Ok(None) => {}
+                    Err(e) => {
+                        debug!("Error getting versions from versions host: {:#}", e);
+                    }
+                };
+                trace!(
+                    "Calling backend to list remote versions for {}",
+                    self.fa().to_string()
+                );
+                let versions = self
+                    ._list_remote_versions()?
+                    .into_iter()
+                    .filter(|v| match v.parse::<ToolVersionType>() {
+                        Ok(ToolVersionType::Version(_)) => true,
+                        _ => {
+                            warn!("Invalid version: {}@{v}", self.id());
+                            false
+                        }
+                    })
+                    .collect_vec();
+                if versions.is_empty() {
+                    warn!("No versions found for {}", self.id());
                 }
+                Ok(versions)
             })
-            .collect_vec();
-        if versions.is_empty() {
-            warn!("No versions found for {}", self.id());
-        }
-        Ok(versions)
+            .cloned()
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
@@ -555,6 +574,30 @@ pub trait Backend: Debug + Send + Sync {
             })
             .collect();
         Ok(versions)
+    }
+
+    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
+        static REMOTE_VERSION_CACHE: Lazy<Mutex<HashMap<String, Arc<VersionCacheManager>>>> =
+            Lazy::new(|| Mutex::new(HashMap::new()));
+
+        REMOTE_VERSION_CACHE
+            .lock()
+            .unwrap()
+            .entry(self.fa().full.to_string())
+            .or_insert_with(|| {
+                let mut cm = CacheManagerBuilder::new(
+                    self.fa().cache_path.join("remote_versions.msgpack.z"),
+                )
+                .with_fresh_duration(SETTINGS.fetch_remote_versions_cache());
+                if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
+                    cm = cm
+                        .with_fresh_file(plugin_path.clone())
+                        .with_fresh_file(plugin_path.join("bin/list-all"))
+                }
+
+                Arc::new(cm.build())
+            })
+            .clone()
     }
 }
 

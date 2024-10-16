@@ -69,13 +69,13 @@ impl ErlangPlugin {
         file::make_executable(self.kerl_path())?;
         Ok(())
     }
+}
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
-            Ok(Some(versions)) => return Ok(versions),
-            Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
-        }
+impl Backend for ErlangPlugin {
+    fn fa(&self) -> &BackendArg {
+        &self.core.fa
+    }
+    fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.update_kerl()?;
         let versions = CorePlugin::run_fetch_task_with_timeout(move || {
             let output = cmd!(self.kerl_path(), "list", "releases", "all")
@@ -89,18 +89,6 @@ impl ErlangPlugin {
             Ok(versions)
         })?;
         Ok(versions)
-    }
-}
-
-impl Backend for ErlangPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
-    }
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {

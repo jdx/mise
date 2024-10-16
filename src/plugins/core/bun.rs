@@ -28,24 +28,6 @@ impl BunPlugin {
         Self { core }
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        match self.core.fetch_remote_versions_from_mise() {
-            Ok(Some(versions)) => return Ok(versions),
-            Ok(None) => {}
-            Err(e) => warn!("failed to fetch remote versions: {}", e),
-        }
-        let releases: Vec<GithubRelease> =
-            HTTP_FETCH.json("https://api.github.com/repos/oven-sh/bun/releases?per_page=100")?;
-        let versions = releases
-            .into_iter()
-            .map(|r| r.tag_name)
-            .filter_map(|v| v.strip_prefix("bun-v").map(|v| v.to_string()))
-            .unique()
-            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
-            .collect();
-        Ok(versions)
-    }
-
     fn bun_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin/bun")
     }
@@ -103,10 +85,16 @@ impl Backend for BunPlugin {
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
+        let releases: Vec<GithubRelease> =
+            HTTP_FETCH.json("https://api.github.com/repos/oven-sh/bun/releases?per_page=100")?;
+        let versions = releases
+            .into_iter()
+            .map(|r| r.tag_name)
+            .filter_map(|v| v.strip_prefix("bun-v").map(|v| v.to_string()))
+            .unique()
+            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
+            .collect();
+        Ok(versions)
     }
 
     fn legacy_filenames(&self) -> Result<Vec<String>> {

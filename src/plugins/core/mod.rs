@@ -1,18 +1,15 @@
 use eyre::Result;
-use itertools::Itertools;
 use once_cell::sync::Lazy;
 use std::ffi::OsString;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use python::PythonPlugin;
 
 use crate::backend::{Backend, BackendMap};
-use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Settings, SETTINGS};
-use crate::env;
 use crate::env::PATH_KEY;
-use crate::http::HTTP_FETCH;
 #[cfg(unix)]
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
@@ -31,6 +28,7 @@ use crate::plugins::core::zig::ZigPlugin;
 use crate::plugins::{Plugin, PluginList, PluginType};
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
+use crate::{dirs, env};
 
 #[cfg(unix)]
 mod bun;
@@ -85,10 +83,10 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         .collect()
 });
 
+// TODO: remove this struct
 #[derive(Debug)]
 pub struct CorePlugin {
     pub fa: BackendArg,
-    pub remote_version_cache: CacheManager<Vec<String>>,
 }
 
 impl CorePlugin {
@@ -102,16 +100,7 @@ impl CorePlugin {
     }
 
     pub fn new(fa: BackendArg) -> Self {
-        Self {
-            remote_version_cache: CacheManagerBuilder::new(
-                fa.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
-            .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())
-            .build(),
-            fa,
-        }
+        Self { fa }
     }
 
     pub fn path_env_with_tv_path(tv: &ToolVersion) -> Result<OsString> {
@@ -127,29 +116,16 @@ impl CorePlugin {
     {
         run_with_timeout(f, SETTINGS.fetch_remote_versions_timeout())
     }
-
-    pub fn fetch_remote_versions_from_mise(&self) -> Result<Option<Vec<String>>> {
-        let settings = Settings::get();
-        if !settings.use_versions_host {
-            return Ok(None);
-        }
-        // using http is not a security concern and enabling tls makes mise significantly slower
-        let raw = match settings.paranoid {
-            true => HTTP_FETCH.get_text(format!("https://mise-versions.jdx.dev/{}", &self.fa.name)),
-            false => HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", &self.fa.name)),
-        }?;
-        let versions = raw
-            .lines()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-            .collect_vec();
-        Ok(Some(versions))
-    }
 }
 
+// TODO: remove this since core "plugins" are not plugins, this is legacy from when it was just asdf/core
 impl Plugin for CorePlugin {
     fn name(&self) -> &str {
         &self.fa.name
+    }
+
+    fn path(&self) -> PathBuf {
+        dirs::PLUGINS.join(self.name())
     }
 
     fn get_plugin_type(&self) -> PluginType {

@@ -77,42 +77,6 @@ impl JavaPlugin {
         })
     }
 
-    fn fetch_remote_versions(&self) -> Result<Vec<String>> {
-        // TODO: find out how to get this to work for different os/arch
-        // See https://github.com/jdx/mise/issues/1196
-        // match self.core.fetch_remote_versions_from_mise() {
-        //     Ok(Some(versions)) => return Ok(versions),
-        //     Ok(None) => {}
-        //     Err(e) => warn!("failed to fetch remote versions: {}", e),
-        // }
-        let versions = self
-            .fetch_java_metadata("ga")?
-            .iter()
-            .sorted_by_cached_key(|(v, m)| {
-                let is_shorthand = regex!(r"^\d").is_match(v);
-                let vendor = &m.vendor;
-                let is_jdk = m
-                    .image_type
-                    .as_ref()
-                    .is_some_and(|image_type| image_type == "jdk");
-                let features = 10 - m.features.len();
-                let version = Versioning::new(v);
-                (
-                    is_shorthand,
-                    vendor,
-                    is_jdk,
-                    features,
-                    version,
-                    v.to_string(),
-                )
-            })
-            .map(|(v, _)| v.clone())
-            .unique()
-            .collect();
-
-        Ok(versions)
-    }
-
     fn java_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin/java")
     }
@@ -306,10 +270,39 @@ impl Backend for JavaPlugin {
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.core
-            .remote_version_cache
-            .get_or_try_init(|| self.fetch_remote_versions())
-            .cloned()
+        // TODO: find out how to get this to work for different os/arch
+        // See https://github.com/jdx/mise/issues/1196
+        // match self.core.fetch_remote_versions_from_mise() {
+        //     Ok(Some(versions)) => return Ok(versions),
+        //     Ok(None) => {}
+        //     Err(e) => warn!("failed to fetch remote versions: {}", e),
+        // }
+        let versions = self
+            .fetch_java_metadata("ga")?
+            .iter()
+            .sorted_by_cached_key(|(v, m)| {
+                let is_shorthand = regex!(r"^\d").is_match(v);
+                let vendor = &m.vendor;
+                let is_jdk = m
+                    .image_type
+                    .as_ref()
+                    .is_some_and(|image_type| image_type == "jdk");
+                let features = 10 - m.features.len();
+                let version = Versioning::new(v);
+                (
+                    is_shorthand,
+                    vendor,
+                    is_jdk,
+                    features,
+                    version,
+                    v.to_string(),
+                )
+            })
+            .map(|(v, _)| v.clone())
+            .unique()
+            .collect();
+
+        Ok(versions)
     }
 
     fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
