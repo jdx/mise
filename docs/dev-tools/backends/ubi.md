@@ -56,6 +56,6 @@ then this will be ignored.
 
 ## Supported Ubi Syntax
 
-**GitHub shorthand for latest release version:** `ubi:goreleaser/goreleaser`
-**GitHub shorthand for specific release version:** `ubi:goreleaser/goreleaser@1.25.1`
-**URL syntax:** `ubi:https://github.com/goreleaser/goreleaser/releases/download/v1.16.2/goreleaser_Darwin_arm64.tar.gz`
+* **GitHub shorthand for latest release version:** `ubi:goreleaser/goreleaser`
+* **GitHub shorthand for specific release version:** `ubi:goreleaser/goreleaser@1.25.1`
+* **URL syntax:** `ubi:https://github.com/goreleaser/goreleaser/releases/download/v1.16.2/goreleaser_Darwin_arm64.tar.gz`
