@@ -5,19 +5,19 @@ expression: output
 [
   {
     "path": "~/cwd/.test-tool-versions",
-    "plugins": [
+    "tools": [
       "tiny"
     ]
   },
   {
     "path": "~/.test-tool-versions",
-    "plugins": [
+    "tools": [
       "tiny",
       "dummy"
     ]
   },
   {
     "path": "~/config/config.toml",
-    "plugins": []
+    "tools": []
   }
 ]
