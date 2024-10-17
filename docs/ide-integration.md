@@ -40,6 +40,35 @@ end
 This assumes that `mise` is on PATH. If it is not, you'll need to use the absolute path (
 e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
+:::: tip
+Conditionally using shims is also possible. Some programs will set a `TERM_PROGRAM` environment
+variable, which may be used to determine which activation strategy to use.
+
+Here is an example using VSCode:
+
+::: code-group
+
+```zsh
+# ~/.zprofile
+if [[ "$TERM_PROGRAM" == "vscode" ]]; then
+  eval "$($HOME/.local/bin/mise activate zsh --shims)"
+elif; then
+  eval "$($HOME/.local/bin/mise activate zsh)"
+fi
+```
+
+```bash
+# ~/.bash_profile or ~/.bash_login or ~/.profile
+if [[ "$TERM_PROGRAM" == "vscode" ]]; then
+  eval "$($HOME/.local/bin/mise activate bash --shims)"
+elif; then
+  eval "$($HOME/.local/bin/mise activate bash)"
+fi
+```
+
+:::
+::::
+
 This won't work for all of mise's functionality. For example, arbitrary env vars in `[env]` will
 only be set
 if a shim is executed. For this we need tighter integration with the IDE and a custom plugin. If you
