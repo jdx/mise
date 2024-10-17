@@ -17,10 +17,23 @@ pub struct ConfigLs {
     /// Do not print table header
     #[clap(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
+
+    /// Output in JSON format
+    #[clap(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
 }
 
 impl ConfigLs {
     pub fn run(self) -> Result<()> {
+        if self.json {
+            self.display_json()?;
+        } else {
+            self.display()?;
+        }
+        Ok(())
+    }
+
+    fn display(&self) -> Result<()> {
         let rows = CONFIG
             .config_files
             .values()
@@ -30,7 +43,33 @@ impl ConfigLs {
         table::default_style(&mut table, self.no_header);
         table.with(Modify::new(Columns::last()).with(Width::truncate(40).suffix("…")));
         miseprintln!("{table}");
+        Ok(())
+    }
 
+    fn display_json(&self) -> Result<()> {
+        let array_items = CONFIG
+            .config_files
+            .values()
+            .map(|cf| {
+                let c: &dyn ConfigFile = cf.as_ref();
+                let mut item = serde_json::Map::new();
+                item.insert(
+                    "path".to_string(),
+                    serde_json::Value::String(c.get_path().to_string_lossy().to_string()),
+                );
+                let plugins = c
+                    .to_tool_request_set()
+                    .unwrap()
+                    .list_plugins()
+                    .into_iter()
+                    .map(|s| serde_json::Value::String(s.to_string()))
+                    .collect::<Vec<serde_json::Value>>();
+                item.insert("plugins".to_string(), serde_json::Value::Array(plugins));
+
+                item
+            })
+            .collect::<serde_json::Value>();
+        miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
         Ok(())
     }
 }
@@ -79,5 +118,11 @@ mod tests {
         ~/.test-tool-versions     tiny, dummy
         ~/config/config.toml      (none)
         "###);
+    }
+
+    #[test]
+    fn test_config_ls_json() {
+        reset();
+        assert_cli_snapshot!("cfg", "--json");
     }
 }

@@ -19,6 +19,10 @@ pub struct Config {
     /// Do not print table header
     #[clap(long, alias = "no-headers", verbatim_doc_comment)]
     no_header: bool,
+
+    /// Output in JSON format
+    #[clap(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -44,6 +48,7 @@ impl Config {
     pub fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::ConfigLs {
             no_header: self.no_header,
+            json: self.json,
         }));
 
         cmd.run()
