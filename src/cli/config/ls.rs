@@ -64,7 +64,7 @@ impl ConfigLs {
                     .into_iter()
                     .map(|s| serde_json::Value::String(s.to_string()))
                     .collect::<Vec<serde_json::Value>>();
-                item.insert("plugins".to_string(), serde_json::Value::Array(plugins));
+                item.insert("tools".to_string(), serde_json::Value::Array(plugins));
 
                 item
             })
@@ -74,7 +74,7 @@ impl ConfigLs {
     }
 }
 
-fn format_plugin_cell(s: String) -> String {
+fn format_tools_cell(s: String) -> String {
     match s.is_empty() {
         true => style("(none)").italic().dim().to_string(),
         false => style(s).dim().to_string(),
@@ -85,7 +85,7 @@ fn format_plugin_cell(s: String) -> String {
 #[tabled(rename_all = "PascalCase")]
 struct Row {
     path: String,
-    plugins: String,
+    tools: String,
 }
 
 impl From<&dyn ConfigFile> for Row {
@@ -93,8 +93,8 @@ impl From<&dyn ConfigFile> for Row {
         let path = display_path(cf.get_path());
         let ts = cf.to_tool_request_set().unwrap();
         let plugins = ts.list_plugins().into_iter().join(", ");
-        let plugins = format_plugin_cell(plugins);
-        Self { path, plugins }
+        let tools = format_tools_cell(plugins);
+        Self { path, tools }
     }
 }
 
