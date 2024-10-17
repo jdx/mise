@@ -45,9 +45,9 @@ impl Shell for Xonsh {
         // meanwhile, save variables twice: in shell env + in os env
         // use xonsh API instead of $.xsh to allow use inside of .py configs, which start faster due to being compiled to .pyc
         // todo: subprocess instead of $() is a bit faster, but lose auto-color detection (use $FORCE_COLOR)
+
         formatdoc! {r#"
             from os               import environ
-            import subprocess
             from xonsh.built_ins  import XSH
 
             def listen_prompt(): # Hook Events
@@ -56,15 +56,29 @@ impl Shell for Xonsh {
             envx = XSH.env
             envx[   'MISE_SHELL'] = 'xonsh'
             environ['MISE_SHELL'] = envx.get_detyped('MISE_SHELL')
-            XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
+            XSH.builtins.events.on_pre_prompt(listen_prompt)  # Activate hook: before showing the prompt
 
             def _mise(args):
-              if args and args[0] in ('deactivate', 'shell', 'sh'):
-                execx(subprocess.run(['command', 'mise', *args], stdout=subprocess.PIPE).stdout.decode())
-              else:
-                subprocess.run(['command', 'mise', *args])
+              from contextlib import nullcontext
+              import subprocess
+
+              misebin = $(which -s mise)
+              cm = nullcontext()
+              if $(@(misebin) settings get color).startswith('true'):
+                cm = __xonsh__.env.swap(FORCE_COLOR=1, CLICOLOR_FORCE=1, CLICOLOR=1)
+              with cm:
+                # cmd = !(@(misebin) @(args))
+                cmd = subprocess.run([misebin, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+              out = cmd.stdout.decode()
+              err = cmd.stderr.decode()
+              #err = '' if cmd.errors is None else cmd.errors
+              if args and args[0] in ('deactivate', 'shell', 'sh') and not ('--help' in args or '-h' in args):
+                out = execx(out)
+              return out, err
 
             XSH.aliases['mise'] = _mise
+
+            del _mise, envx, environ, XSH, listen_prompt
         "#}
     }
 
