@@ -250,7 +250,7 @@ impl Task {
             ]
         });
         let idx = self.name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
-        style::estyle(self.prefix()).fg(COLORS[idx]).to_string()
+        style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string()
     }
 }
 
