@@ -41,12 +41,13 @@ This assumes that `mise` is on PATH. If it is not, you'll need to use the absolu
 e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
 :::: tip
-Conditionally using shims is also possible. Some programs will set a `TERM_PROGRAM` environment 
+Conditionally using shims is also possible. Some programs will set a `TERM_PROGRAM` environment
 variable, which may be used to determine which activation strategy to use.
 
 Here is an example using VSCode:
 
 ::: code-group
+
 ```zsh
 # ~/.zprofile
 if [[ "$TERM_PROGRAM" == "vscode" ]]; then
@@ -64,6 +65,7 @@ elif; then
   eval "$($HOME/.local/bin/mise activate bash)"
 fi
 ```
+
 :::
 ::::
 
