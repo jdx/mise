@@ -1,6 +1,6 @@
 # `mise config ls`
 
-**Usage**: `mise config ls [--no-header]`
+**Usage**: `mise config ls [--no-header] [-J --json]`
 
 List config files currently in use
 
@@ -9,6 +9,10 @@ List config files currently in use
 ### `--no-header`
 
 Do not print table header
+
+### `-J --json`
+
+Output in JSON format
 
 Examples:
 
