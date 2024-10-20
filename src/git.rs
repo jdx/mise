@@ -1,8 +1,10 @@
+use std::env;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use duct::Expression;
 use eyre::{eyre, Result, WrapErr};
+use git2::{FetchOptions, ProxyOptions};
 use once_cell::sync::OnceCell;
 use xx::file;
 
@@ -107,7 +109,10 @@ impl Git {
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
-        if let Err(err) = git2::Repository::clone(url, &self.dir) {
+        if let Err(err) = git2::build::RepoBuilder::new()
+            .fetch_options(get_fetch_options()?)
+            .clone(url, &self.dir)
+        {
             warn!("git clone failed: {err:#}");
         } else {
             return Ok(());
@@ -221,6 +226,16 @@ impl Git {
             .trim()
             .into())
     }
+}
+
+fn get_fetch_options() -> Result<git2::FetchOptions<'static>> {
+    let mut fetch_options = FetchOptions::new();
+    if let Ok(proxy_url) = env::var("https_proxy").or_else(|_| env::var("http_proxy")) {
+        let mut proxy_options = ProxyOptions::new();
+        proxy_options.url(&proxy_url);
+        fetch_options.proxy_options(proxy_options);
+    }
+    Ok(fetch_options)
 }
 
 fn get_git_version() -> Result<String> {
