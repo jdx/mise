@@ -10,10 +10,19 @@ in the current directory and parent directories.
 These are intended to not be committed to version control.
 (Add `.mise.local.toml` and `.mise.*.local.toml` to your `.gitignore` file.)
 
-The priority of these files goes in this order (bottom overrides top):
+The priority of these files goes in this order (bottom overrides top).
 
+Global configuration files:
+
+- `{MISE_CONFIG_DIR}/config.toml`
+- `{MISE_CONFIG_DIR}/config.local.toml`
 - `{MISE_CONFIG_DIR}/config.{MISE_ENV}.toml`
+- `{MISE_CONFIG_DIR}/config.{MISE_ENV}.local.toml`
 - `{MISE_CONFIG_DIR}/mise.{MISE_ENV}.toml`
+- `{MISE_CONFIG_DIR}/mise.{MISE_ENV}.local.toml`
+
+Local configuration files:
+
 - `.config/mise/config.toml`
 - `mise/config.toml`
 - `mise.toml`

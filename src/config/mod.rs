@@ -655,13 +655,18 @@ pub fn global_config_files() -> Vec<PathBuf> {
         }
     };
     let global_config = env::MISE_GLOBAL_CONFIG_FILE.clone();
-    if global_config.is_file() {
-        config_files.push(global_config);
+    let global_local_config = global_config.with_extension("local.toml");
+    for f in [global_config, global_local_config] {
+        if f.is_file() {
+            config_files.push(f);
+        }
     }
     if let Some(env) = &*env::MISE_ENV {
         let global_profile_files = vec![
             dirs::CONFIG.join(format!("config.{env}.toml")),
+            dirs::CONFIG.join(format!("config.{env}.local.toml")),
             dirs::CONFIG.join(format!("mise.{env}.toml")),
+            dirs::CONFIG.join(format!("mise.{env}.local.toml")),
         ];
         for f in global_profile_files {
             if f.is_file() {
