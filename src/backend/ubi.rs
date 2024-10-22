@@ -6,9 +6,11 @@ use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::env::GITHUB_TOKEN;
 use crate::install_context::InstallContext;
+use crate::plugins::VERSION_REGEX;
 use crate::toolset::ToolRequest;
 use crate::{github, http};
 use eyre::eyre;
+use regex::Regex;
 use ubi::UbiBuilder;
 use xx::regex;
 
@@ -93,6 +95,29 @@ impl Backend for UbiBackend {
             .enable_time()
             .build()?;
         rt.block_on(u.install_binary()).map_err(|e| eyre!(e))
+    }
+
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+        let escaped_query = regex::escape(query);
+        let query = if query == "latest" {
+            "\\D*[0-9].*"
+        } else {
+            &escaped_query
+        };
+        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
+        let versions = versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if VERSION_REGEX.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect();
+        Ok(versions)
     }
 }
 
