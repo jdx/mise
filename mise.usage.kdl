@@ -186,6 +186,7 @@ cmd "config" help="Manage config files" {
     alias "cfg"
     alias "toml" hide=true
     flag "--no-header" help="Do not print table header"
+    flag "-J --json" help="Output in JSON format"
     cmd "generate" help="[experimental] Generate a mise.toml file" {
         alias "g"
         after_long_help r"Examples:
@@ -215,6 +216,7 @@ cmd "config" help="Manage config files" {
     $ mise config ls
 "
         flag "--no-header" help="Do not print table header"
+        flag "-J --json" help="Output in JSON format"
     }
     cmd "set" help="Display the value of a setting in a mise.toml file" {
         after_long_help r"Examples:
