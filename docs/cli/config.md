@@ -1,6 +1,6 @@
 # `mise config`
 
-**Usage**: `mise config [--no-header] <SUBCOMMAND>`
+**Usage**: `mise config [--no-header] [-J --json] <SUBCOMMAND>`
 
 **Aliases**: `cfg`
 
@@ -12,9 +12,13 @@ Manage config files
 
 Do not print table header
 
+### `-J --json`
+
+Output in JSON format
+
 ## Subcommands
 
 * [`mise config generate [-o --output <OUTPUT>]`](/cli/config/generate.md)
 * [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
-* [`mise config ls [--no-header]`](/cli/config/ls.md)
+* [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
 * [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)

@@ -1,5 +1,38 @@
 # Changelog
 
+## [2024.10.8](https://github.com/jdx/mise/compare/v2024.10.7..v2024.10.8) - 2024-10-22
+
+### 🚀 Features
+
+- allow config ls to return JSON by [@roele](https://github.com/roele) in [#2775](https://github.com/jdx/mise/pull/2775)
+- allow config ls to return JSON by [@roele](https://github.com/roele) in [#2776](https://github.com/jdx/mise/pull/2776)
+- add {MISE_CONFIG_DIR}/config.{MISE_ENV}.local.toml to config lookup by [@roele](https://github.com/roele) in [#2783](https://github.com/jdx/mise/pull/2783)
+
+### 🐛 Bug Fixes
+
+- trim "v" prefix for ubi backend tools by [@jdx](https://github.com/jdx) in [#2765](https://github.com/jdx/mise/pull/2765)
+- Use ubi for sentry-cli by [@jahands](https://github.com/jahands) in [#2767](https://github.com/jdx/mise/pull/2767)
+- reset color of task prefixes by [@jdx](https://github.com/jdx) in [#2772](https://github.com/jdx/mise/pull/2772)
+- installing from behind a proxy shows git clone errors and does not work by [@roele](https://github.com/roele) in [#2782](https://github.com/jdx/mise/pull/2782)
+- installing jq via new built-in ubi fails by [@roele](https://github.com/roele) in [#2771](https://github.com/jdx/mise/pull/2771)
+
+### 📚 Documentation
+
+- prettier by [@jdx](https://github.com/jdx) in [e0d0f65](https://github.com/jdx/mise/commit/e0d0f65dedf23fc36107467907acdb35dfb4c64a)
+- add tip for conditional shims using TERM_PROGRAM by [@htunnicliff](https://github.com/htunnicliff) in [#2770](https://github.com/jdx/mise/pull/2770)
+
+### 🔍 Other Changes
+
+- add error context for installs by [@jdx](https://github.com/jdx) in [c412b32](https://github.com/jdx/mise/commit/c412b3295aa768980774126315da18a9db4a8349)
+- Update ubi.md by [@jdx](https://github.com/jdx) in [8fd0685](https://github.com/jdx/mise/commit/8fd06859d5fbee40f02d9a1cd823f1c83765db41)
+- Update index.md by [@jdx](https://github.com/jdx) in [6e9f810](https://github.com/jdx/mise/commit/6e9f8106da3e804c270f1b913f8ca72893ea5a86)
+- Update ubi.md by [@jdx](https://github.com/jdx) in [b1e54d4](https://github.com/jdx/mise/commit/b1e54d4618742302f21ca518ab8d838c9559875f)
+- Update ubi.md by [@jdx](https://github.com/jdx) in [309454d](https://github.com/jdx/mise/commit/309454d5a604d5625a156c483d61ae106031b79d)
+
+### New Contributors
+
+- @htunnicliff made their first contribution in [#2770](https://github.com/jdx/mise/pull/2770)
+
 ## [2024.10.7](https://github.com/jdx/mise/compare/v2024.10.6..v2024.10.7) - 2024-10-14
 
 ### 🐛 Bug Fixes
