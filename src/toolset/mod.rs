@@ -355,7 +355,7 @@ impl Toolset {
                     return None;
                 }
                 // prefix is something like "temurin-" or "corretto-"
-                let prefix = regex!(r"^[a-zA-Z]+-")
+                let prefix = regex!(r"^[a-zA-Z-]+-")
                     .find(&tv.request.version())
                     .map(|m| m.as_str().to_string());
                 let latest_result = if bump {

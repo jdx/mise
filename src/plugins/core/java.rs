@@ -385,11 +385,17 @@ impl Backend for JavaPlugin {
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
-        let escaped_query = regex::escape(query.trim_end_matches('-'));
-        let query = if query == "latest" {
-            "[0-9].*"
-        } else {
-            &escaped_query
+        let query_trim = regex::escape(query.trim_end_matches('-'));
+        let query_version = format!("{}[0-9.]+", regex::escape(query));
+        let query_trim_version = format!("{}-[0-9.]+", query_trim);
+        let query = match query {
+            "latest" => "[0-9].*",
+            // ends with a dash; use <query><version>
+            q if q.ends_with('-') => &query_version,
+            // not a shorthand version; use <query>-<version>
+            q if regex!("^[a-zA-Z]+$").is_match(q) => &query_trim_version,
+            // else; use trimmed query
+            _ => &query_trim,
         };
         let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
         let versions = versions
