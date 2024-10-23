@@ -28,6 +28,7 @@ editLink: false
 | apollo-router | [asdf:safx/asdf-apollo-router](https://github.com/safx/asdf-apollo-router) |
 | arc | [asdf:ORCID/asdf-arc](https://github.com/ORCID/asdf-arc) |
 | arduino-cli | [asdf:egnor/asdf-arduino-cli](https://github.com/egnor/asdf-arduino-cli) |
+| argc | [ubi:sigoden/argc](https://github.com/sigoden/argc) |
 | argo | [asdf:sudermanjr/asdf-argo](https://github.com/sudermanjr/asdf-argo) |
 | argo-rollouts | [asdf:abatilo/asdf-argo-rollouts](https://github.com/abatilo/asdf-argo-rollouts) |
 | argocd | [asdf:beardix/asdf-argocd](https://github.com/beardix/asdf-argocd) |
@@ -451,7 +452,7 @@ editLink: false
 | make | [asdf:yacchi/asdf-make](https://github.com/yacchi/asdf-make) |
 | mani | [asdf:anweber/asdf-mani](https://github.com/anweber/asdf-mani) |
 | mark | [asdf:jfreeland/asdf-mark](https://github.com/jfreeland/asdf-mark) |
-| markdownlint-cli2 | [asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2](https://github.com/paulo-ferraz-oliveira/asdf-markdownlint-cli2) |
+| markdownlint-cli2 | [npm:markdownlint-cli2](https://www.npmjs.com/package/markdownlint-cli2) |
 | marp-cli | [asdf:xataz/asdf-marp-cli](https://github.com/xataz/asdf-marp-cli) |
 | mask | [asdf:aaaaninja/asdf-mask](https://github.com/aaaaninja/asdf-mask) |
 | maven | [asdf:mise-plugins/asdf-maven](https://github.com/mise-plugins/asdf-maven) |
