@@ -179,7 +179,7 @@ editLink: false
 | docker-compose-v1 | [asdf:yilas/asdf-docker-compose-v1](https://github.com/yilas/asdf-docker-compose-v1) |
 | docker-slim | [asdf:xataz/asdf-docker-slim](https://github.com/xataz/asdf-docker-slim) |
 | dockle | [asdf:mathew-fleisch/asdf-dockle](https://github.com/mathew-fleisch/asdf-dockle) |
-| doctl | [asdf:maristgeek/asdf-doctl](https://github.com/maristgeek/asdf-doctl) |
+| doctl | [ubi:digitalocean/doctl](https://github.com/digitalocean/doctl) |
 | doctoolchain | [asdf:joschi/asdf-doctoolchain](https://github.com/joschi/asdf-doctoolchain) |
 | docuum | [asdf:bradym/asdf-docuum](https://github.com/bradym/asdf-docuum) |
 | dome | [asdf:jtakakura/asdf-dome](https://github.com/jtakakura/asdf-dome) |
