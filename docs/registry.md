@@ -96,7 +96,7 @@ editLink: false
 | certstrap | [asdf:carnei-ro/asdf-certstrap](https://github.com/carnei-ro/asdf-certstrap) |
 | cf | [asdf:mattysweeps/asdf-cf](https://github.com/mattysweeps/asdf-cf) |
 | cfssl | [asdf:mathew-fleisch/asdf-cfssl](https://github.com/mathew-fleisch/asdf-cfssl) |
-| chamber | [asdf:mintel/asdf-chamber](https://github.com/mintel/asdf-chamber) |
+| chamber | [ubi:segmentio/chamber](https://github.com/segmentio/chamber) |
 | changie | [ubi:miniscruff/changie](https://github.com/miniscruff/changie) |
 | cheat | [asdf:jmoratilla/asdf-cheat-plugin](https://github.com/jmoratilla/asdf-cheat-plugin) |
 | checkov | [asdf:bosmak/asdf-checkov](https://github.com/bosmak/asdf-checkov) |
