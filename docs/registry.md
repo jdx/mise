@@ -622,7 +622,7 @@ editLink: false
 | serverless | [asdf:pdemagny/asdf-serverless](https://github.com/pdemagny/asdf-serverless) |
 | setup-envtest | [asdf:pmalek/mise-setup-envtest](https://github.com/pmalek/mise-setup-envtest) |
 | shell2http | [asdf:ORCID/asdf-shell2http](https://github.com/ORCID/asdf-shell2http) |
-| shellcheck | [asdf:luizm/asdf-shellcheck](https://github.com/luizm/asdf-shellcheck) |
+| shellcheck | [ubi:koalaman/shellcheck](https://github.com/koalaman/shellcheck) |
 | shellspec | [asdf:poikilotherm/asdf-shellspec](https://github.com/poikilotherm/asdf-shellspec) |
 | shfmt | [asdf:luizm/asdf-shfmt](https://github.com/luizm/asdf-shfmt) |
 | shorebird | [asdf:valian-ca/asdf-shorebird](https://github.com/valian-ca/asdf-shorebird) |
