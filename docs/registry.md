@@ -542,7 +542,7 @@ editLink: false
 | pivnet | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
 | pkl | [asdf:mise-plugins/asdf-pkl](https://github.com/mise-plugins/asdf-pkl) |
 | please | [asdf:asdf-community/asdf-please](https://github.com/asdf-community/asdf-please) |
-| pluto | [asdf:FairwindsOps/asdf-pluto](https://github.com/FairwindsOps/asdf-pluto) |
+| pluto | [ubi:FairwindsOps/pluto](https://github.com/FairwindsOps/pluto) |
 | pnpm | [asdf:jonathanmorley/asdf-pnpm](https://github.com/jonathanmorley/asdf-pnpm) |
 | podman | [asdf:tvon/asdf-podman](https://github.com/tvon/asdf-podman) |
 | poetry | [asdf:mise-plugins/mise-poetry](https://github.com/mise-plugins/mise-poetry) |
