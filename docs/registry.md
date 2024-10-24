@@ -233,7 +233,7 @@ editLink: false
 | flux2 | [asdf:tablexi/asdf-flux2](https://github.com/tablexi/asdf-flux2) |
 | fluxctl | [asdf:stefansedich/asdf-fluxctl](https://github.com/stefansedich/asdf-fluxctl) |
 | fly | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
-| flyctl | [asdf:chessmango/asdf-flyctl](https://github.com/chessmango/asdf-flyctl) |
+| flyctl | [ubi:superfly/flyctl](https://github.com/superfly/flyctl) |
 | flyway | [asdf:junminahn/asdf-flyway](https://github.com/junminahn/asdf-flyway) |
 | func-e | [asdf:carnei-ro/asdf-func-e](https://github.com/carnei-ro/asdf-func-e) |
 | furyctl | [asdf:sighupio/asdf-furyctl](https://github.com/sighupio/asdf-furyctl) |
