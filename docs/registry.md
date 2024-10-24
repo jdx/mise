@@ -478,6 +478,7 @@ editLink: false
 | mlton | [asdf:asdf-community/asdf-mlton](https://github.com/asdf-community/asdf-mlton) |
 | mockery | [asdf:cabify/asdf-mockery](https://github.com/cabify/asdf-mockery) |
 | mockolo | [asdf:MontakOleg/asdf-mockolo](https://github.com/MontakOleg/asdf-mockolo) |
+| mold | [ubi:rui314/mold](https://github.com/rui314/mold) |
 | monarch | [asdf:nyuyuyu/asdf-monarch](https://github.com/nyuyuyu/asdf-monarch) |
 | mongo-tools | [asdf:itspngu/asdf-mongo-tools](https://github.com/itspngu/asdf-mongo-tools) |
 | mongodb | [asdf:sylph01/asdf-mongodb](https://github.com/sylph01/asdf-mongodb) |
