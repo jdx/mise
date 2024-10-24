@@ -23,7 +23,7 @@ editLink: false
 | ambient | [asdf:jtakakura/asdf-ambient](https://github.com/jtakakura/asdf-ambient) |
 | ansible-base | [asdf:amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp) |
 | ant | [asdf:jackboespflug/asdf-ant](https://github.com/jackboespflug/asdf-ant) |
-| apko | [asdf:omissis/asdf-apko](https://github.com/omissis/asdf-apko) |
+| apko | [ubi:chainguard-dev/apko](https://github.com/chainguard-dev/apko) |
 | apollo-ios-cli | [asdf:MacPaw/asdf-apollo-ios-cli](https://github.com/MacPaw/asdf-apollo-ios-cli) |
 | apollo-router | [asdf:safx/asdf-apollo-router](https://github.com/safx/asdf-apollo-router) |
 | arc | [asdf:ORCID/asdf-arc](https://github.com/ORCID/asdf-arc) |
