@@ -425,7 +425,7 @@ editLink: false
 | lane | [asdf:CodeReaper/asdf-lane](https://github.com/CodeReaper/asdf-lane) |
 | lazygit | [asdf:nklmilojevic/asdf-lazygit](https://github.com/nklmilojevic/asdf-lazygit) |
 | lean | [asdf:asdf-community/asdf-lean](https://github.com/asdf-community/asdf-lean) |
-| lefthook | [asdf:jtzero/asdf-lefthook](https://github.com/jtzero/asdf-lefthook) |
+| lefthook | [ubi:evilmartians/lefthook](https://github.com/evilmartians/lefthook) |
 | leiningen | [asdf:miorimmax/asdf-lein](https://github.com/miorimmax/asdf-lein) |
 | levant | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | lfe | [asdf:asdf-community/asdf-lfe](https://github.com/asdf-community/asdf-lfe) |
