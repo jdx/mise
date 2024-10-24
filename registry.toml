@@ -9,7 +9,7 @@
 aapt2 = ["asdf:ronnnnn/asdf-aapt2"]
 act = ["asdf:gr1m0h/asdf-act"]
 action-validator = ["asdf:mpalmer/action-validator"]
-actionlint = ["asdf:crazy-matt/asdf-actionlint"]
+actionlint = ["ubi:rhysd/actionlint", "asdf:crazy-matt/asdf-actionlint"]
 adr-tools = ["asdf:https://gitlab.com/td7x/asdf/adr-tools"]
 ag = ["asdf:koketani/asdf-ag"]
 age = ["asdf:threkk/asdf-age"]
