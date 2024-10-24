@@ -293,7 +293,7 @@ editLink: false
 | groovy | [asdf:weibemoura/asdf-groovy](https://github.com/weibemoura/asdf-groovy) |
 | grpc-health-probe | [asdf:zufardhiyaulhaq/asdf-grpc-health-probe](https://github.com/zufardhiyaulhaq/asdf-grpc-health-probe) |
 | grpcurl | [asdf:asdf-community/asdf-grpcurl](https://github.com/asdf-community/asdf-grpcurl) |
-| grype | [asdf:poikilotherm/asdf-grype](https://github.com/poikilotherm/asdf-grype) |
+| grype | [ubi:anchore/grype](https://github.com/anchore/grype) |
 | guile | [asdf:indiebrain/asdf-guile](https://github.com/indiebrain/asdf-guile) |
 | gum | [asdf:lwiechec/asdf-gum](https://github.com/lwiechec/asdf-gum) |
 | gwvault | [asdf:GoodwayGroup/asdf-gwvault](https://github.com/GoodwayGroup/asdf-gwvault) |
