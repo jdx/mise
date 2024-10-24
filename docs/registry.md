@@ -5,7 +5,7 @@ editLink: false
 | ----------- | --------------- |
 | 1password-cli | [asdf:NeoHsu/asdf-1password-cli](https://github.com/NeoHsu/asdf-1password-cli) |
 | aapt2 | [asdf:ronnnnn/asdf-aapt2](https://github.com/ronnnnn/asdf-aapt2) |
-| act | [asdf:gr1m0h/asdf-act](https://github.com/gr1m0h/asdf-act) |
+| act | [ubi:nektos/act](https://github.com/nektos/act) |
 | action-validator | [asdf:mpalmer/action-validator](https://github.com/mpalmer/action-validator) |
 | actionlint | [ubi:rhysd/actionlint](https://github.com/rhysd/actionlint) |
 | adr-tools | [asdf:https://gitlab.com/td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) |
