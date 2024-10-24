@@ -152,7 +152,7 @@ editLink: false
 | crossplane-cli | [asdf:joke/asdf-crossplane-cli](https://github.com/joke/asdf-crossplane-cli) |
 | crystal | [asdf:asdf-community/asdf-crystal](https://github.com/asdf-community/asdf-crystal) |
 | ctlptl | [asdf:ezcater/asdf-ctlptl](https://github.com/ezcater/asdf-ctlptl) |
-| ctop | [asdf:NeoHsu/asdf-ctop](https://github.com/NeoHsu/asdf-ctop) |
+| ctop | [ubi:bcicen/ctop](https://github.com/bcicen/ctop) |
 | cue | [asdf:asdf-community/asdf-cue](https://github.com/asdf-community/asdf-cue) |
 | cyclonedx | [asdf:xeedio/asdf-cyclonedx](https://github.com/xeedio/asdf-cyclonedx) |
 | dagger | [asdf:virtualstaticvoid/asdf-dagger](https://github.com/virtualstaticvoid/asdf-dagger) |
