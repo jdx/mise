@@ -97,7 +97,7 @@ editLink: false
 | cf | [asdf:mattysweeps/asdf-cf](https://github.com/mattysweeps/asdf-cf) |
 | cfssl | [asdf:mathew-fleisch/asdf-cfssl](https://github.com/mathew-fleisch/asdf-cfssl) |
 | chamber | [asdf:mintel/asdf-chamber](https://github.com/mintel/asdf-chamber) |
-| changie | [asdf:pdemagny/asdf-changie](https://github.com/pdemagny/asdf-changie) |
+| changie | [ubi:miniscruff/changie](https://github.com/miniscruff/changie) |
 | cheat | [asdf:jmoratilla/asdf-cheat-plugin](https://github.com/jmoratilla/asdf-cheat-plugin) |
 | checkov | [asdf:bosmak/asdf-checkov](https://github.com/bosmak/asdf-checkov) |
 | chezmoi | [asdf:joke/asdf-chezmoi](https://github.com/joke/asdf-chezmoi) |
