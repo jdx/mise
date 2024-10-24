@@ -783,7 +783,7 @@ editLink: false
 | yj | [asdf:ryodocx/asdf-yj](https://github.com/ryodocx/asdf-yj) |
 | yor | [asdf:ordinaryexperts/asdf-yor](https://github.com/ordinaryexperts/asdf-yor) |
 | youtube-dl | [asdf:iul1an/asdf-youtube-dl](https://github.com/iul1an/asdf-youtube-dl) |
-| yq | [asdf:sudermanjr/asdf-yq](https://github.com/sudermanjr/asdf-yq) |
+| yq | [ubi:mikefarah/yq](https://github.com/mikefarah/yq) |
 | yt-dlp | [asdf:duhow/asdf-yt-dlp](https://github.com/duhow/asdf-yt-dlp) |
 | ytt | [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
 | zbctl | [asdf:camunda-community-hub/asdf-zbctl](https://github.com/camunda-community-hub/asdf-zbctl) |
