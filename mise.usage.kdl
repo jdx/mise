@@ -18,7 +18,9 @@ flag "-P --profile" help="Set the profile (environment)" global=true {
 }
 flag "--debug" help="Sets log level to debug" hide=true global=true
 flag "--log-level" help="Set the log output verbosity" hide=true global=true {
-    arg "<LEVEL>"
+    arg "<LEVEL>" {
+        choices "error" "warn" "info" "debug" "trace"
+    }
 }
 flag "-q --quiet" help="Suppress non-error messages" global=true
 flag "--trace" help="Sets log level to trace" hide=true global=true
@@ -53,14 +55,18 @@ Customize status output with `status` settings."#
     $ execx($(mise activate xonsh))
 "#
     flag "-s --shell" help="Shell type to generate the script for" hide=true {
-        arg "<SHELL>"
+        arg "<SHELL>" {
+            choices "bash" "fish" "nu" "xonsh" "zsh"
+        }
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
     flag "--shims" help="Use shims instead of modifying PATH\nEffectively the same as:" {
         long_help "Use shims instead of modifying PATH\nEffectively the same as:\n\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\""
     }
     flag "-q --quiet" help="Suppress non-error messages"
-    arg "[SHELL_TYPE]" help="Shell type to generate the script for"
+    arg "[SHELL_TYPE]" help="Shell type to generate the script for" {
+        choices "bash" "fish" "nu" "xonsh" "zsh"
+    }
 }
 cmd "alias" help="Manage aliases" {
     alias "a"
@@ -175,12 +181,16 @@ cmd "completion" help="Generate shell completions" {
     $ mise completion fish > ~/.config/fish/completions/mise.fish
 "
     flag "-s --shell" help="Shell type to generate completions for" hide=true {
-        arg "<SHELL_TYPE>"
+        arg "<SHELL_TYPE>" {
+            choices "bash" "fish" "zsh"
+        }
     }
     flag "--usage" help="Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first." hide=true {
         long_help "Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first.\n\nThis requires the `usage` CLI to be installed.\nhttps://usage.jdx.dev"
     }
-    arg "[SHELL]" help="Shell type to generate completions for"
+    arg "[SHELL]" help="Shell type to generate completions for" {
+        choices "bash" "fish" "zsh"
+    }
 }
 cmd "config" help="Manage config files" {
     alias "cfg"
@@ -230,7 +240,9 @@ cmd "config" help="Manage config files" {
             arg "<FILE>"
         }
         flag "-t --type" {
-            arg "<TYPE>"
+            arg "<TYPE>" {
+                choices "string" "integer" "float" "bool"
+            }
         }
         arg "<KEY>" help="The path of the config to display"
         arg "<VALUE>" help="The value to set the key to"
@@ -317,7 +329,9 @@ use this if you have `mise activate` in your shell rc file."
 "#
     flag "-J --json" help="Output in JSON format"
     flag "-s --shell" help="Shell type to generate environment variables for" {
-        arg "<SHELL>"
+        arg "<SHELL>" {
+            choices "bash" "fish" "nu" "xonsh" "zsh"
+        }
     }
     arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
 }
@@ -410,7 +424,9 @@ when you push changes to your repository."
             arg "<ROOT>"
         }
         flag "-s --style" {
-            arg "<STYLE>"
+            arg "<STYLE>" {
+                choices "simple" "detailed"
+            }
         }
     }
 }
@@ -448,14 +464,18 @@ Use `mise local` to set a tool version locally in the current directory."
 }
 cmd "hook-env" hide=true help="[internal] called by activate hook to update env vars directory change" {
     flag "-s --shell" help="Shell type to generate script for" {
-        arg "<SHELL>"
+        arg "<SHELL>" {
+            choices "bash" "fish" "nu" "xonsh" "zsh"
+        }
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
     flag "-q --quiet" help="Hide warnings such as when a tool is not installed"
 }
 cmd "hook-not-found" hide=true help="[internal] called by shell when a command is not found" {
     flag "-s --shell" help="Shell type to generate script for" {
-        arg "<SHELL>"
+        arg "<SHELL>" {
+            choices "bash" "fish" "nu" "xonsh" "zsh"
+        }
     }
     arg "<BIN>" help="Attempted bin to run"
 }
@@ -1078,10 +1098,14 @@ cmd "tasks" help="[experimental] Manage tasks" {
     flag "-x --extended" help="Show all columns"
     flag "--hidden" help="Show hidden tasks"
     flag "--sort" help="Sort by column. Default is name." {
-        arg "<COLUMN>"
+        arg "<COLUMN>" {
+            choices "name" "alias" "description" "source"
+        }
     }
     flag "--sort-order" help="Sort order. Default is asc." {
-        arg "<SORT_ORDER>"
+        arg "<SORT_ORDER>" {
+            choices "asc" "desc"
+        }
     }
     flag "-J --json" help="Output in JSON format"
     flag "--usage" hide=true
@@ -1161,10 +1185,14 @@ tasks will override the global ones if they have the same name."
         flag "-x --extended" help="Show all columns"
         flag "--hidden" help="Show hidden tasks"
         flag "--sort" help="Sort by column. Default is name." {
-            arg "<COLUMN>"
+            arg "<COLUMN>" {
+                choices "name" "alias" "description" "source"
+            }
         }
         flag "--sort-order" help="Sort order. Default is asc." {
-            arg "<SORT_ORDER>"
+            arg "<SORT_ORDER>" {
+                choices "asc" "desc"
+            }
         }
         flag "-J --json" help="Output in JSON format"
         flag "--usage" hide=true

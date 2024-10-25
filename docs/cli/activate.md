@@ -29,6 +29,14 @@ Customize status output with `status` settings.
 
 Shell type to generate the script for
 
+**Choices:**
+
+- `bash`
+- `fish`
+- `nu`
+- `xonsh`
+- `zsh`
+
 ## Flags
 
 ### `--shims`
