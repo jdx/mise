@@ -24,6 +24,13 @@ If not provided, the nearest mise.toml file will be used
 
 ### `-t --type <TYPE>`
 
+**Choices:**
+
+- `string`
+- `integer`
+- `float`
+- `bool`
+
 Examples:
 
     mise config set tools.python 3.12

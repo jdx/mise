@@ -25,6 +25,14 @@ Output in JSON format
 
 Shell type to generate environment variables for
 
+**Choices:**
+
+- `bash`
+- `fish`
+- `nu`
+- `xonsh`
+- `zsh`
+
 Examples:
 
     eval "$(mise env -s bash)"

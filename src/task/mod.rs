@@ -211,7 +211,7 @@ impl Task {
         let (spec, scripts) = self.parse_usage_spec(cwd)?;
         if has_any_args_defined(&spec) {
             Ok(
-                replace_template_placeholders_with_args(&spec, &scripts, args)
+                replace_template_placeholders_with_args(&spec, &scripts, args)?
                     .into_iter()
                     .map(|s| (s, vec![]))
                     .collect(),
