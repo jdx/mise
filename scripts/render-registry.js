@@ -12,7 +12,14 @@ const stdout = execSync("mise registry", { encoding: "utf-8" });
 const regex = /^(.+?) +(.+?):(.+?)(\[.+\])? *$/gm;
 
 let match;
-let output = ["---\neditLink: false\n---"];
+const output = [
+  `---
+editLink: false
+---
+
+# Registry
+`,
+];
 
 output.push("| Short | Full |\n| ----------- | --------------- |");
 while ((match = regex.exec(stdout)) !== null) {

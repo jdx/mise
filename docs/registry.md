@@ -1,6 +1,9 @@
 ---
 editLink: false
 ---
+
+# Registry
+
 | Short | Full |
 | ----------- | --------------- |
 | 1password-cli | [asdf:NeoHsu/asdf-1password-cli](https://github.com/NeoHsu/asdf-1password-cli) |
