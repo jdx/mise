@@ -1,6 +1,6 @@
 # Changelog
 
-## [2024.10.9](https://github.com/jdx/mise/compare/v2024.10.8..v2024.10.9) - 2024-10-23
+## [2024.10.9](https://github.com/jdx/mise/compare/v2024.10.8..v2024.10.9) - 2024-10-24
 
 ### 🚀 Features
 
