@@ -4,7 +4,7 @@ const { execSync } = require("node:child_process");
 const fs = require("node:fs");
 
 process.env.MISE_ASDF = 1;
-process.env.MISE_VFOX = 0;
+process.env.MISE_VFOX = 1;
 
 const stdout = execSync("mise registry", { encoding: "utf-8" });
 // Regular expression to match plugin name and repository URL
@@ -23,7 +23,7 @@ editLink: false
 
 output.push("| Short | Full |\n| ----------- | --------------- |");
 while ((match = regex.exec(stdout)) !== null) {
-  if (match[2] === "asdf") {
+  if (match[2] === "asdf" || match[2] === "vfox") {
     let repoUrl = match[3].replace(/\.git$/, "");
     if (!repoUrl.startsWith("http")) {
       repoUrl = `https://github.com/${repoUrl}`;
