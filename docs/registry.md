@@ -173,7 +173,7 @@ editLink: false
 | difftastic | [asdf:volf52/asdf-difftastic](https://github.com/volf52/asdf-difftastic) |
 | digdag | [asdf:jtakakura/asdf-digdag](https://github.com/jtakakura/asdf-digdag) |
 | direnv | [asdf:asdf-community/asdf-direnv](https://github.com/asdf-community/asdf-direnv) |
-| dive | [asdf:looztra/asdf-dive](https://github.com/looztra/asdf-dive) |
+| dive | [ubi:wagoodman/dive](https://github.com/wagoodman/dive) |
 | djinni | [asdf:cross-language-cpp/asdf-djinni](https://github.com/cross-language-cpp/asdf-djinni) |
 | dmd | [asdf:sylph01/asdf-dmd](https://github.com/sylph01/asdf-dmd) |
 | docker-compose-v1 | [asdf:yilas/asdf-docker-compose-v1](https://github.com/yilas/asdf-docker-compose-v1) |
