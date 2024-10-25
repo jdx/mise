@@ -732,11 +732,12 @@ editLink: false
 | typos | [asdf:aschiavon91/asdf-typos](https://github.com/aschiavon91/asdf-typos) |
 | typst | [asdf:stephane-klein/asdf-typst](https://github.com/stephane-klein/asdf-typst) |
 | uaa-cli | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
+| ubi | [ubi:houseabsolute/ubi](https://github.com/houseabsolute/ubi) |
 | unison | [asdf:susurri/asdf-unison](https://github.com/susurri/asdf-unison) |
 | updatecli | [asdf:updatecli/asdf-updatecli](https://github.com/updatecli/asdf-updatecli) |
 | upt | [asdf:ORCID/asdf-upt](https://github.com/ORCID/asdf-upt) |
 | upx | [asdf:jimmidyson/asdf-upx](https://github.com/jimmidyson/asdf-upx) |
-| usage | [asdf:jdx/mise-usage](https://github.com/jdx/mise-usage) |
+| usage | [ubi:jdx/usage](https://github.com/jdx/usage) |
 | usql | [asdf:itspngu/asdf-usql](https://github.com/itspngu/asdf-usql) |
 | uv | [asdf:asdf-community/asdf-uv](https://github.com/asdf-community/asdf-uv) |
 | v | [asdf:jthegedus/asdf-v](https://github.com/jthegedus/asdf-v) |

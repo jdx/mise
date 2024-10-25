@@ -58,10 +58,13 @@ impl Backend for UbiBackend {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let mut v = ctx.tv.version.to_string();
 
-        if let Err(_err) = github::get_release(self.name(), &ctx.tv.version) {
+        if let Err(err) = github::get_release(self.name(), &ctx.tv.version) {
             // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
             // if http::error_code(&err) == Some(404) {
-            debug!("no tag found for {}, try prefixing with 'v'", ctx.tv);
+            debug!(
+                "Failed to get release for {}, trying with 'v' prefix: {}",
+                ctx.tv, err
+            );
             v = format!("v{v}");
             // }
         }
