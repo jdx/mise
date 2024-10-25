@@ -522,7 +522,13 @@ pub fn split_file_name(path: &Path) -> (String, String) {
 
 pub fn same_file(a: &Path, b: &Path) -> bool {
     let canonicalize = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    canonicalize(a) == canonicalize(b)
+    if canonicalize(a) == canonicalize(b) {
+        return true;
+    }
+    if let (Ok(a), Ok(b)) = (fs::read_link(a), fs::read_link(b)) {
+        return canonicalize(&a) == canonicalize(&b);
+    }
+    false
 }
 
 #[cfg(test)]
