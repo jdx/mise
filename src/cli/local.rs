@@ -70,11 +70,17 @@ impl Local {
 }
 
 fn get_path() -> Result<PathBuf> {
-    let mise_toml = env::current_dir()?.join(MISE_DEFAULT_CONFIG_FILENAME.as_str());
-    if *env::MISE_USE_TOML || mise_toml.exists() {
+    let cwd = env::current_dir()?;
+    let mise_toml = cwd.join(MISE_DEFAULT_CONFIG_FILENAME.as_str());
+    let tool_versions = cwd.join(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+    if mise_toml.exists() {
+        Ok(mise_toml)
+    } else if tool_versions.exists() {
+        Ok(tool_versions)
+    } else if *env::MISE_USE_TOML {
         Ok(mise_toml)
     } else {
-        Ok(env::current_dir()?.join(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()))
+        Ok(tool_versions)
     }
 }
 

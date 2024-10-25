@@ -10,7 +10,7 @@ use crate::config::{config_file, is_global_config, Config, LOCAL_CONFIG_FILENAME
 use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
-use crate::file::display_path;
+use crate::file::{display_path, FindUp};
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{env, file, lockfile};
@@ -146,16 +146,27 @@ impl Use {
     }
 
     fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
+        let cwd = env::current_dir()?;
         let path = if let Some(env) = &*env::MISE_ENV {
-            config_file_from_dir(&env::current_dir()?.join(format!(".mise.{}.toml", env)))
+            config_file_from_dir(&cwd.join(format!("mise.{env}.toml")))
         } else if self.global {
             MISE_GLOBAL_CONFIG_FILE.clone()
         } else if let Some(env) = &self.env {
-            config_file_from_dir(&env::current_dir()?.join(format!(".mise.{}.toml", env)))
+            let p = cwd.join(format!(".mise.{env}.toml"));
+            if p.exists() {
+                p
+            } else {
+                cwd.join(format!("mise.{env}.toml"))
+            }
         } else if let Some(p) = &self.path {
-            config_file_from_dir(p)
+            let from_dir = config_file_from_dir(p);
+            if from_dir.starts_with(&cwd) {
+                from_dir
+            } else {
+                p.clone()
+            }
         } else {
-            config_file_from_dir(&env::current_dir()?)
+            config_file_from_dir(&cwd)
         };
         config_file::parse_or_init(&path)
     }
@@ -195,25 +206,18 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
-    let mise_toml = p.join(&*MISE_DEFAULT_CONFIG_FILENAME);
-    let tool_versions = p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME);
-    if mise_toml.exists() {
-        return mise_toml;
-    } else if tool_versions.exists() {
-        return tool_versions;
-    }
     let filenames = LOCAL_CONFIG_FILENAMES
         .iter()
-        .rev()
-        .filter(|f| is_global_config(Path::new(f)))
         .map(|f| f.to_string())
         .collect::<Vec<_>>();
-    if let Some(p) = file::find_up(p, &filenames) {
-        return p;
+    for p in FindUp::new(p, &filenames) {
+        if !is_global_config(&p) {
+            return p;
+        }
     }
     match SETTINGS.asdf_compat {
-        true => tool_versions,
-        false => mise_toml,
+        true => p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
+        false => p.join(&*MISE_DEFAULT_CONFIG_FILENAME),
     }
 }
 
