@@ -14,6 +14,7 @@ python = { version = "latest" }
 shellcheck = "0.10"
 shfmt = "3"
 jq = "latest"
+cargo-binstall = "latest"
 "cargo:cargo-edit" = "latest"
 "cargo:cargo-show" = "latest"
 "cargo:git-cliff" = "latest"
