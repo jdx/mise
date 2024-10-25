@@ -80,17 +80,13 @@ This is a test build script
 
 The file to write
 
-##### Default
-
-`file.txt`
+**Default:** `file.txt`
 
 #### `<arg_with_default>`
 
 An arg with a default
 
-##### Default
-
-`mydefault`
+**Default:** `mydefault`
 
 ### Flags
 

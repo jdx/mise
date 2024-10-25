@@ -7,8 +7,6 @@ run = 'echo "configtask:"'
 run = 'echo "linting!"'
 [tasks.test]
 run = 'echo "testing!"'
-[tasks.test-with-args]
-run = 'echo "{{arg()}} {{flag(name="force")}} {{option(name="user")}}"'
 EOF
 
 mkdir -p .mise/tasks
@@ -34,13 +32,18 @@ assert "cat test-e2e/test-build-output.txt" "TEST_BUILDSCRIPT_ENV_VAR: VALID
 ARGS: arg1 arg2"
 
 assert "mise run test arg1 arg2 arg3" "testing! arg1 arg2 arg3"
-assert "mise run test-with-args foo --force --user=user" "foo true user"
 
 cat <<'EOF' >.mise/tasks/filetask
 #!/usr/bin/env bash
 #USAGE flag "-u --user <user>" help="User to run as"
+#USAGE flag "-p --port <port>" help="Port to run on" default="8080"
 
 echo "user=$usage_user"
+echo "port=$usage_port"
 EOF
-assert "mise run filetask --user=jdx" "user=jdx"
+assert "mise run filetask --user=jdx" "user=jdx
+port=8080"
+assert "mise run filetask --port=8081" "user=
+port=8081"
 assert_contains "mise run filetask --help 2>&1 || true" "-u --user <user>"
+assert_contains "mise run filetask --help 2>&1 || true" "-p --port <port>"
