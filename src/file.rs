@@ -198,6 +198,17 @@ pub fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
     }
 }
 
+pub fn touch_file(file: &Path) -> Result<()> {
+    if !file.exists() {
+        create(file)?;
+        return Ok(());
+    }
+    trace!("touch_file {}", file.display());
+    let now = FileTime::now();
+    set_file_times(file, now, now)
+        .wrap_err_with(|| format!("failed to touch file: {}", display_path(file)))
+}
+
 pub fn touch_dir(dir: &Path) -> Result<()> {
     trace!("touch {}", dir.display());
     let now = FileTime::now();
