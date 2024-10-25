@@ -50,11 +50,13 @@ impl Outdated {
         let outdated = ts.list_outdated_versions(self.bump);
         if outdated.is_empty() {
             info!("All tools are up to date");
-            hint!(
-                "outdated_bump",
-                r#"By default, `mise outdated` only shows versions that match your config. Use `mise outdated --bump` to see all new versions."#,
-                ""
-            );
+            if !self.bump {
+                hint!(
+                    "outdated_bump",
+                    r#"By default, `mise outdated` only shows versions that match your config. Use `mise outdated --bump` to see all new versions."#,
+                    ""
+                );
+            }
         } else if self.json {
             self.display_json(outdated)?;
         } else {
