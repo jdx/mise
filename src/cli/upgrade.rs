@@ -67,11 +67,13 @@ impl Upgrade {
         }
         if outdated.is_empty() {
             info!("All tools are up to date");
-            hint!(
-                "outdated_bump",
-                r#"By default, `mise upgrade` only upgrades versions that match your config. Use `mise upgrade --bump` to upgrade all new versions."#,
-                ""
-            );
+            if !self.bump {
+                hint!(
+                    "outdated_bump",
+                    r#"By default, `mise upgrade` only upgrades versions that match your config. Use `mise upgrade --bump` to upgrade all new versions."#,
+                    ""
+                );
+            }
         } else {
             self.upgrade(&config, outdated)?;
         }
