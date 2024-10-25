@@ -40,9 +40,9 @@ ToolRequestSet {
                 options: {},
             },
         ],
-        BackendArg("shellcheck"): [
+        BackendArg("shellcheck" -> "ubi:koalaman/shellcheck"): [
             Version {
-                backend: BackendArg("shellcheck"),
+                backend: BackendArg("shellcheck" -> "ubi:koalaman/shellcheck"),
                 version: "0.9.0",
                 options: {},
             },
@@ -72,7 +72,7 @@ ToolRequestSet {
         BackendArg("python"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        BackendArg("shellcheck"): MiseToml(
+        BackendArg("shellcheck" -> "ubi:koalaman/shellcheck"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
         BackendArg("terraform"): MiseToml(
