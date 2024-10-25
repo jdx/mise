@@ -43,8 +43,9 @@ fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> Result<IndexMap<
     // TODO: make this a pure function and add test cases
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
+    let re = regex!(r"^[a-zA-Z0-9]+-");
     for v in installed_versions(&backend)? {
-        let prefix = regex!(r"^[a-zA-Z0-9]+-")
+        let prefix = re
             .find(&v)
             .map(|s| s.as_str().to_string())
             .unwrap_or_default();
