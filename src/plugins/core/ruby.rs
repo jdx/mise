@@ -312,8 +312,9 @@ impl RubyPlugin {
 
     fn fetch_patches(&self) -> Result<String> {
         let mut patches = vec![];
+        let re = regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#);
         for f in &self.fetch_patch_sources() {
-            if regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#).is_match(f) {
+            if re.is_match(f) {
                 patches.push(HTTP.get_text(f)?);
             } else {
                 patches.push(file::read_to_string(f)?);
