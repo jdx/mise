@@ -5,11 +5,11 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::env::GITHUB_TOKEN;
+use crate::github;
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::ToolRequest;
-use crate::{github, http};
-use eyre::eyre;
+use eyre::bail;
 use regex::Regex;
 use ubi::UbiBuilder;
 use xx::regex;
@@ -56,45 +56,63 @@ impl Backend for UbiBackend {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let opts = ctx.tv.request.options();
         let mut v = ctx.tv.version.to_string();
 
-        if let Err(err) = github::get_release(self.name(), &ctx.tv.version) {
-            if http::error_code(&err) == Some(404) {
-                // no tag found, try prefixing with 'v'
-                v = format!("v{v}");
+        if let Err(_err) = github::get_release(self.name(), &ctx.tv.version) {
+            // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
+            // if http::error_code(&err) == Some(404) {
+            debug!("no tag found for {}, try prefixing with 'v'", ctx.tv);
+            v = format!("v{v}");
+            // }
+        }
+
+        let install = |v: &str| {
+            let opts = ctx.tv.request.options();
+            // Workaround because of not knowing how to pull out the value correctly without quoting
+            let path_with_bin = ctx.tv.install_path().join("bin");
+
+            let mut builder = UbiBuilder::new()
+                .project(self.name())
+                .install_dir(path_with_bin);
+
+            if let Some(token) = &*GITHUB_TOKEN {
+                builder = builder.github_token(token);
+            }
+
+            if v != "latest" {
+                builder = builder.tag(v);
+            }
+
+            if let Some(exe) = opts.get("exe") {
+                builder = builder.exe(exe);
+            }
+            if let Some(matching) = opts.get("matching") {
+                builder = builder.matching(matching);
+            }
+
+            let ubi = builder.build()?;
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()?;
+
+            rt.block_on(ubi.install_binary())
+        };
+
+        if let Err(err) = install(&v) {
+            if v != ctx.tv.version {
+                debug!(
+                    "Failed to install with ubi version '{}': {}, trying with '{}'",
+                    v, err, ctx.tv
+                );
+                if let Err(_err2) = install(&ctx.tv.version) {
+                    bail!("Failed to install with ubi '{}': {}", ctx.tv, err);
+                }
             }
         }
 
-        // Workaround because of not knowing how to pull out the value correctly without quoting
-        let path_with_bin = ctx.tv.install_path().join("bin");
-
-        let mut builder = UbiBuilder::new()
-            .project(self.name())
-            .install_dir(path_with_bin);
-
-        if let Some(token) = &*GITHUB_TOKEN {
-            builder = builder.github_token(token);
-        }
-
-        if v != "latest" {
-            builder = builder.tag(&v);
-        }
-
-        if let Some(exe) = opts.get("exe") {
-            builder = builder.exe(exe);
-        }
-        if let Some(matching) = opts.get("matching") {
-            builder = builder.matching(matching);
-        }
-
-        let u = builder.build().map_err(|e| eyre!(e))?;
-
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_io()
-            .enable_time()
-            .build()?;
-        rt.block_on(u.install_binary()).map_err(|e| eyre!(e))
+        Ok(())
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
