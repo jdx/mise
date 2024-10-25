@@ -57,7 +57,7 @@ impl SelfUpdate {
 
     fn fetch_releases(&self) -> Result<Vec<Release>> {
         let mut releases = ReleaseList::configure();
-        if let Some(token) = &*env::GITHUB_API_TOKEN {
+        if let Some(token) = &*env::GITHUB_TOKEN {
             releases.auth_token(token);
         }
         let releases = releases
@@ -82,7 +82,7 @@ impl SelfUpdate {
             .map(|v| format!("v{}", v))?;
         let target = format!("{}-{}", *OS, *ARCH);
         let mut update = Update::configure();
-        if let Some(token) = &*env::GITHUB_API_TOKEN {
+        if let Some(token) = &*env::GITHUB_TOKEN {
             update.auth_token(token);
         }
         if self.force || self.version.is_some() {
