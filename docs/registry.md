@@ -372,7 +372,7 @@ editLink: false
 | kcl | [asdf:starkers/asdf-kcl](https://github.com/starkers/asdf-kcl) |
 | kconf | [asdf:particledecay/asdf-kconf](https://github.com/particledecay/asdf-kconf) |
 | ki | [asdf:comdotlinux/asdf-ki](https://github.com/comdotlinux/asdf-ki) |
-| kind | [asdf:johnlayton/asdf-kind](https://github.com/johnlayton/asdf-kind) |
+| kind | [ubi:kubernetes-sigs/kind](https://github.com/kubernetes-sigs/kind) |
 | kiota | [asdf:asdf-community/asdf-kiota](https://github.com/asdf-community/asdf-kiota) |
 | kn | [asdf:joke/asdf-kn](https://github.com/joke/asdf-kn) |
 | ko | [asdf:zasdaym/asdf-ko](https://github.com/zasdaym/asdf-ko) |
