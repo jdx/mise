@@ -38,9 +38,7 @@ Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
 
-#### Default
-
-`default`
+**Default:** `default`
 
 ### `[ARGS]...`
 
