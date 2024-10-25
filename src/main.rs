@@ -12,6 +12,9 @@ mod test;
 mod output;
 
 #[macro_use]
+mod hint;
+
+#[macro_use]
 mod cmd;
 
 mod backend;
