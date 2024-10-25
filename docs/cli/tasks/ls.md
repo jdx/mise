@@ -28,9 +28,21 @@ Show hidden tasks
 
 Sort by column. Default is name.
 
+**Choices:**
+
+- `name`
+- `alias`
+- `description`
+- `source`
+
 ### `--sort-order <SORT_ORDER>`
 
 Sort order. Default is asc.
+
+**Choices:**
+
+- `asc`
+- `desc`
 
 ### `-J --json`
 
