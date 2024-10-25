@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+cat <<EOF >.mise.toml
+[tasks.configtask]
+run = 'echo "configtask:"'
+[tasks.lint]
+run = 'echo "linting!"'
+[tasks.test]
+run = 'echo "testing!"'
+[tasks.test-with-args]
+run = 'echo "{{arg()}} {{flag(name="force")}} {{option(name="user")}}"'
+[tasks.test-with-defaults]
+run = 'echo {{arg(default="arg1")}} {{option(name="user", default="user1")}}'
+EOF
+
+assert "mise run test arg1 arg2 arg3" "testing! arg1 arg2 arg3"
+assert "mise run test-with-args foo --force --user=user" "foo true user"
+assert "mise run test-with-defaults" "arg1 user1"
+assert "mise run test-with-defaults arg2 --user=user2" "arg2 user2"

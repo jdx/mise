@@ -1,9 +1,10 @@
 use crate::tera::{get_tera, BASE_CONTEXT};
 use eyre::Result;
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use xx::regex;
 
 pub struct TaskScriptParser {
     dir: Option<PathBuf>,
@@ -284,55 +285,33 @@ pub fn replace_template_placeholders_with_args(
     spec: &usage::Spec,
     scripts: &[String],
     args: &[String],
-) -> Vec<String> {
-    let mut cmd = clap::Command::new("mise-task");
-    for arg in &spec.cmd.args {
-        cmd = cmd.arg(
-            clap::Arg::new(arg.name.clone())
-                .required(arg.required)
-                .action(if arg.var {
-                    clap::ArgAction::Append
-                } else {
-                    clap::ArgAction::Set
-                }),
-        );
-    }
-    let mut flags = HashSet::new();
-    for flag in &spec.cmd.flags {
-        if flag.arg.is_some() {
-            cmd = cmd.arg(
-                clap::Arg::new(flag.name.clone())
-                    .long(flag.name.clone())
-                    .action(if flag.var {
-                        clap::ArgAction::Append
-                    } else {
-                        clap::ArgAction::Set
-                    }),
-            );
-        } else {
-            flags.insert(flag.name.as_str());
-            cmd = cmd.arg(
-                clap::Arg::new(flag.name.clone())
-                    .long(flag.name.clone())
-                    .action(clap::ArgAction::SetTrue),
-            );
-        }
-    }
-    let matches = cmd.get_matches_from(["mise-task".to_string()].iter().chain(args.iter()));
+) -> Result<Vec<String>> {
+    let args = vec!["".to_string()]
+        .into_iter()
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>();
+    let m = usage::parse(spec, &args).map_err(|e| eyre::eyre!(e.to_string()))?;
     let mut out = vec![];
     for script in scripts {
         let mut script = script.clone();
-        for id in matches.ids() {
-            let value = if flags.contains(id.as_str()) {
-                matches.get_one::<bool>(id.as_str()).unwrap().to_string()
-            } else {
-                matches.get_many::<String>(id.as_str()).unwrap().join(" ")
-            };
-            script = script.replace(&format!("MISE_TASK_ARG:{id}:MISE_TASK_ARG"), &value);
+        for (arg, value) in &m.args {
+            script = script.replace(
+                &format!("MISE_TASK_ARG:{}:MISE_TASK_ARG", arg.name),
+                &value.to_string(),
+            );
         }
+        for (flag, value) in &m.flags {
+            script = script.replace(
+                &format!("MISE_TASK_ARG:{}:MISE_TASK_ARG", flag.name),
+                &value.to_string(),
+            );
+        }
+        script = regex!(r"MISE_TASK_ARG:(\w+):MISE_TASK_ARG")
+            .replace_all(&script, "")
+            .to_string();
         out.push(script);
     }
-    out
+    Ok(out)
 }
 
 pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
@@ -355,7 +334,7 @@ mod tests {
         assert_eq!(arg0.name, "foo");
 
         let scripts =
-            replace_template_placeholders_with_args(&spec, &scripts, &["abc".to_string()]);
+            replace_template_placeholders_with_args(&spec, &scripts, &["abc".to_string()]).unwrap();
         assert_eq!(scripts, vec!["echo abc"]);
     }
 
@@ -373,7 +352,8 @@ mod tests {
             &spec,
             &scripts,
             &["abc".to_string(), "def".to_string()],
-        );
+        )
+        .unwrap();
         assert_eq!(scripts, vec!["echo abc def"]);
     }
 
@@ -388,7 +368,8 @@ mod tests {
         assert_eq!(&flag.name, "foo");
 
         let scripts =
-            replace_template_placeholders_with_args(&spec, &scripts, &["--foo".to_string()]);
+            replace_template_placeholders_with_args(&spec, &scripts, &["--foo".to_string()])
+                .unwrap();
         assert_eq!(scripts, vec!["echo true"]);
     }
 
@@ -406,7 +387,8 @@ mod tests {
             &spec,
             &scripts,
             &["--foo".to_string(), "abc".to_string()],
-        );
+        )
+        .unwrap();
         assert_eq!(scripts, vec!["echo abc"]);
     }
 }

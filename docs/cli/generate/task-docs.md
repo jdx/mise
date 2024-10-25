@@ -32,6 +32,11 @@ root directory to search for tasks
 
 ### `-s --style <STYLE>`
 
+**Choices:**
+
+- `simple`
+- `detailed`
+
 Examples:
 
     mise generate task-docs
