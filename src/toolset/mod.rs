@@ -33,7 +33,7 @@ use versions::{Version, Versioning};
 use xx::regex;
 
 mod builder;
-mod tool_request;
+pub(crate) mod tool_request;
 mod tool_request_set;
 mod tool_source;
 mod tool_version;
