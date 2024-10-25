@@ -83,6 +83,13 @@ depends = ["build"]
 env = { NO_COLOR = "1" }
 run = "mise render-mangen"
 
+[tasks."render:q"]
+description = "Generates the Amazon Q spec file for auto completion"
+run = [
+    "mise generate q-spec -o completions/mise.ts",
+    "tsx tasks/render/q.ts"
+]
+
 [tasks."render:help"]
 depends = ["build"]
 env = { NO_COLOR = "1" }

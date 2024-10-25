@@ -51,6 +51,8 @@ chrono = { version = "0.4.38", default-features = false, features = [
 ci_info = "0.14.14"
 clap = { version = "4.5.4", features = ["env", "derive", "string"] }
 clap_mangen = { version = "0.2.20", optional = true }
+clap_complete = "4.5.35"
+clap_complete_fig = "4.5.2"
 color-eyre = "0.6.3"
 color-print = "0.3.6"
 confique = { version = "0.2.5", default-features = false }

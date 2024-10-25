@@ -14,6 +14,8 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@tsconfig/node18": "^18.2.4",
+    "@withfig/autocomplete-types": "^1.31.0",
     "handlebars": "^4.7.8",
     "toml": "^3.0.0",
     "ts-pattern": "^5.4.0",
