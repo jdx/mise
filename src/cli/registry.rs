@@ -21,8 +21,8 @@ impl Registry {
         settings::ensure_experimental("registry")?;
         let mut tools = BTreeMap::new();
 
+        let re = regex!(r#"^https://github.com/(.+?/.+?)(.git)?$"#);
         for (plugin, url) in Config::get().get_shorthands() {
-            let re = regex!(r#"^https://github.com/(.+?/.+?)(.git)?$"#);
             let full = if let Some(caps) = re.captures(url) {
                 format!("asdf:{}", &caps[1])
             } else {
