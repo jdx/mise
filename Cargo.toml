@@ -42,73 +42,73 @@ inherits = "release"
 lto = true
 
 [dependencies]
-base64 = "0.22.1"
-calm_io = "0.1.1"
-chrono = { version = "0.4.38", default-features = false, features = [
+base64 = "0.22"
+calm_io = "0.1"
+chrono = { version = "0.4", default-features = false, features = [
     "std",
     "clock",
 ] }
-ci_info = "0.14.14"
-clap = { version = "4.5.4", features = ["env", "derive", "string"] }
-clap_mangen = { version = "0.2.20", optional = true }
-color-eyre = "0.6.3"
-color-print = "0.3.6"
-confique = { version = "0.2.5", default-features = false }
-console = "0.15.8"
-contracts = "0.6.3"
+ci_info = "0.14"
+clap = { version = "4", features = ["env", "derive", "string"] }
+clap_mangen = { version = "0.2", optional = true }
+color-eyre = "0.6"
+color-print = "0.3"
+confique = { version = "0.2", default-features = false }
+console = "0.15"
+contracts = "0.6"
 crossbeam-channel = "0.5"
-demand = "1.1.2"
-dotenvy = "0.15.7"
-duct = "0.13.7"
-either = { version = "1.11.0", features = ["serde"] }
-eyre = "0.6.12"
-filetime = "0.2.23"
-flate2 = "1.0.30"
+demand = "1"
+dotenvy = "0.15"
+duct = "0.13"
+either = { version = "1", features = ["serde"] }
+eyre = "0.6"
+filetime = "0.2"
+flate2 = "1"
 fslock = "0.2.1"
 git2 = "<1"
 glob = "0.3"
 globset = "0.4"
 heck = "0.5"
-home = "0.5.9"
+home = "0.5"
 humantime = "2"
-indenter = "0.3.3"
+indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
-indicatif = { version = "0.17.8", features = ["default", "improved_unicode"] }
-indoc = "2.0.5"
+indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
+indoc = "2"
 itertools = "0.13"
-log = "0.4.21"
+log = "0.4"
 num_cpus = "1"
 number_prefix = "0.4"
-once_cell = "1.19.0"
-openssl = { version = "0.10.66", optional = true }
+once_cell = "1"
+openssl = { version = "0.10", optional = true }
 path-absolutize = "3"
-petgraph = "0.6.4"
-rand = "0.8.5"
-rayon = "1.10.0"
-regex = "1.10.4"
+petgraph = "0.6"
+rand = "0.8"
+rayon = "1"
+regex = "1"
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "gzip",
 ] }
-rmp-serde = "1.3.0"
-serde = "1.0.199"
-serde_derive = "1.0.199"
+rmp-serde = "1"
+serde = "1"
+serde_derive = "1"
 serde_ignored = "0.1"
-serde_json = { version = "1.0.116", features = [] }
+serde_json = { version = "1", features = [] }
 sha2 = "0.10.8"
-shell-escape = "0.1.5"
-shell-words = "1.1.0"
-signal-hook = "0.3.17"
+shell-escape = "0.1"
+shell-words = "1"
+signal-hook = "0.3"
 siphasher = "1"
-strum = { version = "0.26.2", features = ["derive"] }
-sys-info = "0.9.1"
+strum = { version = "0.26", features = ["derive"] }
+sys-info = "0.9"
 tabled = { version = "0.16", features = ["ansi"] }
-tar = "0.4.40"
-tempfile = "3.10.1"
-tera = "1.19"
+tar = "0.4"
+tempfile = "3"
+tera = "1"
 terminal_size = "0.4"
-thiserror = "1.0.59"
-tokio = { version = "1.37.0", features = [
+thiserror = "1"
+tokio = { version = "1", features = [
     "io-std",
     "rt",
     "time",
@@ -116,15 +116,15 @@ tokio = { version = "1.37.0", features = [
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
 ubi = { version = "0.2", default-features = false }
-url = "2.5.0"
+url = "2"
 # usage-lib = { path = "../usage/lib", features = ["clap", "docs"] }
 usage-lib = { version = "0.11", features = ["clap", "docs"] }
-versions = { version = "6.2.0", features = ["serde"] }
+versions = { version = "6", features = ["serde"] }
 vfox = "0.1"
 # vfox = {path="../vfox.rs"}
-walkdir = "2.5.0"
+walkdir = "2"
 which = "6"
-xx = { version = "1.0.0", features = ["glob"] }
+xx = { version = "1", features = ["glob"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
@@ -151,12 +151,12 @@ toml = "0.8"
 indexmap = "2"
 
 [dev-dependencies]
-assert_cmd = "2.0.14"
-ctor = "0.2.8"
-insta = { version = "1.38.0", features = ["filters", "json"] }
-predicates = "3.1.0"
-pretty_assertions = "1.4.0"
-test-case = "3.3.1"
+assert_cmd = "2"
+ctor = "0.2"
+insta = { version = "1", features = ["filters", "json"] }
+predicates = "3"
+pretty_assertions = "1"
+test-case = "3"
 test-log = "0.2"
 
 [features]

@@ -198,6 +198,17 @@ pub fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
     }
 }
 
+pub fn touch_file(file: &Path) -> Result<()> {
+    if !file.exists() {
+        create(file)?;
+        return Ok(());
+    }
+    trace!("touch_file {}", file.display());
+    let now = FileTime::now();
+    set_file_times(file, now, now)
+        .wrap_err_with(|| format!("failed to touch file: {}", display_path(file)))
+}
+
 pub fn touch_dir(dir: &Path) -> Result<()> {
     trace!("touch {}", dir.display());
     let now = FileTime::now();
@@ -511,7 +522,13 @@ pub fn split_file_name(path: &Path) -> (String, String) {
 
 pub fn same_file(a: &Path, b: &Path) -> bool {
     let canonicalize = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    canonicalize(a) == canonicalize(b)
+    if canonicalize(a) == canonicalize(b) {
+        return true;
+    }
+    if let (Ok(a), Ok(b)) = (fs::read_link(a), fs::read_link(b)) {
+        return canonicalize(&a) == canonicalize(&b);
+    }
+    false
 }
 
 #[cfg(test)]
