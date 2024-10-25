@@ -56,7 +56,7 @@ impl Client {
             debug!("GET {}", &url);
             let mut req = self.reqwest.get(url.clone());
             if url.host_str() == Some("api.github.com") {
-                if let Some(token) = &*env::GITHUB_API_TOKEN {
+                if let Some(token) = &*env::GITHUB_TOKEN {
                     req = req.header("authorization", format!("token {}", token));
                 }
             }
