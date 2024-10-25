@@ -53,7 +53,7 @@ clap = { version = "4", features = ["env", "derive", "string"] }
 clap_mangen = { version = "0.2", optional = true }
 color-eyre = "0.6"
 color-print = "0.3"
-confique = { version = "0.2", default-features = false }
+confique = { version = "0.3", default-features = false }
 console = "0.15"
 contracts = "0.6"
 crossbeam-channel = "0.5"
