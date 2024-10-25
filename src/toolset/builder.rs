@@ -99,12 +99,18 @@ impl ToolsetBuilder {
                     // in .mise.toml
 
                     // determine if we already have some active version in config
-                    let set_as_latest = !ts
+                    let current_active = ts
                         .list_current_requests()
-                        .iter()
-                        .any(|tvr| tvr.backend() == &arg.backend);
+                        .into_iter()
+                        .find(|tvr| tvr.backend() == &arg.backend);
 
-                    if set_as_latest {
+                    if let Some(current_active) = current_active {
+                        // active version, so don't set "latest"
+                        arg_ts.add_version(ToolRequest::new(
+                            arg.backend.clone(),
+                            &current_active.version(),
+                        )?);
+                    } else {
                         // no active version, so use "latest"
                         arg_ts.add_version(ToolRequest::new(arg.backend.clone(), "latest")?);
                     }
