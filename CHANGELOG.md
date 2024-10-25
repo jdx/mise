@@ -1,6 +1,36 @@
 # Changelog
 
-## [2024.10.9](https://github.com/jdx/mise/compare/v2024.10.8..v2024.10.9) - 2024-10-23
+## [2024.10.10](https://github.com/jdx/mise/compare/v2024.10.9..v2024.10.10) - 2024-10-25
+
+### 🚀 Features
+
+- automatically hide hints after displayed once by [@jdx](https://github.com/jdx) in [#2807](https://github.com/jdx/mise/pull/2807)
+- add ubi installers for various tools by [@BurnerWah](https://github.com/BurnerWah) in [#2801](https://github.com/jdx/mise/pull/2801)
+
+### 🐛 Bug Fixes
+
+- upgrade --bump with non-semver versions by [@jdx](https://github.com/jdx) in [#2809](https://github.com/jdx/mise/pull/2809)
+- parsing default task arg/flags by [@jdx](https://github.com/jdx) in [#2810](https://github.com/jdx/mise/pull/2810)
+- attempt ubi installs with/without "v" prefix if they fail by [@jdx](https://github.com/jdx) in [#2813](https://github.com/jdx/mise/pull/2813)
+- add cargo-binstall as dependency of cargo backend by [@jdx](https://github.com/jdx) in [#2811](https://github.com/jdx/mise/pull/2811)
+- use GITHUB_API_TOKEN or GITHUB_TOKEN by [@jdx](https://github.com/jdx) in [#2815](https://github.com/jdx/mise/pull/2815)
+- bug with ls-remote and "sub-" prefixes by [@jdx](https://github.com/jdx) in [#2814](https://github.com/jdx/mise/pull/2814)
+- autoinstalling on `mise x` when the tool is in the config by [@jdx](https://github.com/jdx) in [#2816](https://github.com/jdx/mise/pull/2816)
+
+### 📚 Documentation
+
+- hide outdated_bump message if already using --bump by [@jdx](https://github.com/jdx) in [#2808](https://github.com/jdx/mise/pull/2808)
+
+### 🔍 Other Changes
+
+- loosen versions in Cargo.toml by [@jdx](https://github.com/jdx) in [8253059](https://github.com/jdx/mise/commit/825305999683dc4121eefeb61a7399545e167001)
+- resolve regex loop clippy warning by [@jdx](https://github.com/jdx) in [#2812](https://github.com/jdx/mise/pull/2812)
+
+### 📦️ Dependency Updates
+
+- update rust crate confique to 0.3 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2803](https://github.com/jdx/mise/pull/2803)
+
+## [2024.10.9](https://github.com/jdx/mise/compare/v2024.10.8..v2024.10.9) - 2024-10-24
 
 ### 🚀 Features
 
@@ -22,7 +52,6 @@
 ### New Contributors
 
 - @yodatak made their first contribution in [#2792](https://github.com/jdx/mise/pull/2792)
-- @BurnerWah made their first contribution in [#2794](https://github.com/jdx/mise/pull/2794)
 - @rgeraskin made their first contribution in [#2790](https://github.com/jdx/mise/pull/2790)
 
 ## [2024.10.8](https://github.com/jdx/mise/compare/v2024.10.7..v2024.10.8) - 2024-10-22

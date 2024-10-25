@@ -36,7 +36,7 @@ Install mise (other methods [here](https://mise.jdx.dev/getting-started.html)):
 ```sh-session
 $ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
-2024.10.9 macos-arm64 (a1b2d3e 2024-10-23)
+2024.10.10 macos-arm64 (a1b2d3e 2024-10-25)
 ```
 
 or install a specific a version:
