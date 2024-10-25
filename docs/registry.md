@@ -377,7 +377,7 @@ editLink: false
 | kn | [asdf:joke/asdf-kn](https://github.com/joke/asdf-kn) |
 | ko | [asdf:zasdaym/asdf-ko](https://github.com/zasdaym/asdf-ko) |
 | koka | [asdf:susurri/asdf-koka](https://github.com/susurri/asdf-koka) |
-| kompose | [asdf:technikhil314/asdf-kompose](https://github.com/technikhil314/asdf-kompose) |
+| kompose | [ubi:kubernetes/kompose](https://github.com/kubernetes/kompose) |
 | kops | [asdf:Antiarchitect/asdf-kops](https://github.com/Antiarchitect/asdf-kops) |
 | kotlin | [asdf:asdf-community/asdf-kotlin](https://github.com/asdf-community/asdf-kotlin) |
 | kp | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
