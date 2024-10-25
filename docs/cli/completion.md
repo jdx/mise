@@ -10,6 +10,12 @@ Generate shell completions
 
 Shell type to generate completions for
 
+**Choices:**
+
+- `bash`
+- `fish`
+- `zsh`
+
 Examples:
 
     mise completion bash > /etc/bash_completion.d/mise
