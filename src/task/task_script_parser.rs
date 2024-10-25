@@ -292,6 +292,7 @@ pub fn replace_template_placeholders_with_args(
         .collect::<Vec<_>>();
     let m = usage::parse(spec, &args).map_err(|e| eyre::eyre!(e.to_string()))?;
     let mut out = vec![];
+    let re = regex!(r"MISE_TASK_ARG:(\w+):MISE_TASK_ARG");
     for script in scripts {
         let mut script = script.clone();
         for (arg, value) in &m.args {
@@ -306,9 +307,7 @@ pub fn replace_template_placeholders_with_args(
                 &value.to_string(),
             );
         }
-        script = regex!(r"MISE_TASK_ARG:(\w+):MISE_TASK_ARG")
-            .replace_all(&script, "")
-            .to_string();
+        script = re.replace_all(&script, "").to_string();
         out.push(script);
     }
     Ok(out)
