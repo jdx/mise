@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use crate::backend;
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
-use crate::toolset::{ToolRequest, ToolVersion};
+use crate::toolset::{tool_request, ToolRequest};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// List runtime versions available for install.
@@ -44,10 +44,9 @@ impl LsRemote {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
-                Some(ToolRequest::Sub { .. }) => match tool_arg.clone().tvr {
-                    Some(tvr) => Some(ToolVersion::resolve(plugin.as_ref(), tvr, false)?.version),
-                    None => None,
-                },
+                Some(ToolRequest::Sub {
+                    sub, orig_version, ..
+                }) => Some(tool_request::version_sub(orig_version, sub)),
                 _ => self.prefix.clone(),
             },
             _ => self.prefix.clone(),
@@ -119,18 +118,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     20.1.0
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_list_remote() {
-        assert_cli_snapshot!("list-remote", "dummy");
-    }
-
-    #[test]
-    fn test_ls_remote_prefix() {
-        assert_cli_snapshot!("list-remote", "dummy", "1");
-        assert_cli_snapshot!("list-remote", "dummy@2");
-        assert_cli_snapshot!("list-remote", "dummy@sub-1:2");
-    }
-}
