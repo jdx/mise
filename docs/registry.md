@@ -297,7 +297,7 @@ editLink: false
 | guile | [asdf:indiebrain/asdf-guile](https://github.com/indiebrain/asdf-guile) |
 | gum | [asdf:lwiechec/asdf-gum](https://github.com/lwiechec/asdf-gum) |
 | gwvault | [asdf:GoodwayGroup/asdf-gwvault](https://github.com/GoodwayGroup/asdf-gwvault) |
-| hadolint | [asdf:devlincashman/asdf-hadolint](https://github.com/devlincashman/asdf-hadolint) |
+| hadolint | [ubi:hadolint/hadolint](https://github.com/hadolint/hadolint) |
 | hamler | [asdf:scudelletti/asdf-hamler](https://github.com/scudelletti/asdf-hamler) |
 | has | [asdf:sylvainmetayer/asdf-has](https://github.com/sylvainmetayer/asdf-has) |
 | haskell | [asdf:asdf-community/asdf-haskell](https://github.com/asdf-community/asdf-haskell) |
