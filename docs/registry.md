@@ -557,6 +557,7 @@ editLink: false
 | powershell-core | [asdf:daveneeley/asdf-powershell-core](https://github.com/daveneeley/asdf-powershell-core) |
 | pre-commit | [asdf:jonathanmorley/asdf-pre-commit](https://github.com/jonathanmorley/asdf-pre-commit) |
 | promtool | [asdf:asdf-community/asdf-promtool](https://github.com/asdf-community/asdf-promtool) |
+| protobuf | [vfox:ahai-code/vfox-protobuf](https://github.com/ahai-code/vfox-protobuf) |
 | protoc | [asdf:paxosglobal/asdf-protoc](https://github.com/paxosglobal/asdf-protoc) |
 | protoc-gen-connect-go | [asdf:dylanrayboss/asdf-protoc-gen-connect-go](https://github.com/dylanrayboss/asdf-protoc-gen-connect-go) |
 | protoc-gen-go | [asdf:pbr0ck3r/asdf-protoc-gen-go](https://github.com/pbr0ck3r/asdf-protoc-gen-go) |
@@ -757,6 +758,7 @@ editLink: false
 | viddy | [asdf:ryodocx/asdf-viddy](https://github.com/ryodocx/asdf-viddy) |
 | vim | [asdf:tsuyoshicho/asdf-vim](https://github.com/tsuyoshicho/asdf-vim) |
 | virtualos | [asdf:tuist/asdf-virtualos](https://github.com/tuist/asdf-virtualos) |
+| vlang | [vfox:ahai-code/vfox-vlang](https://github.com/ahai-code/vfox-vlang) |
 | vlt | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | vultr-cli | [asdf:ikuradon/asdf-vultr-cli](https://github.com/ikuradon/asdf-vultr-cli) |
 | wasi-sdk | [asdf:coolreader18/asdf-wasi-sdk](https://github.com/coolreader18/asdf-wasi-sdk) |
