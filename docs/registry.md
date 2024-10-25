@@ -310,7 +310,7 @@ editLink: false
 | helm-ct | [asdf:tablexi/asdf-helm-ct](https://github.com/tablexi/asdf-helm-ct) |
 | helm-diff | [asdf:dex4er/asdf-helm-diff](https://github.com/dex4er/asdf-helm-diff) |
 | helm-docs | [asdf:sudermanjr/asdf-helm-docs](https://github.com/sudermanjr/asdf-helm-docs) |
-| helmfile | [asdf:feniix/asdf-helmfile](https://github.com/feniix/asdf-helmfile) |
+| helmfile | [ubi:helmfile/helmfile](https://github.com/helmfile/helmfile) |
 | helmsman | [ubi:Praqma/helmsman](https://github.com/Praqma/helmsman) |
 | heroku-cli | [asdf:mise-plugins/mise-heroku-cli](https://github.com/mise-plugins/mise-heroku-cli) |
 | hey | [asdf:raimon49/asdf-hey](https://github.com/raimon49/asdf-hey) |
