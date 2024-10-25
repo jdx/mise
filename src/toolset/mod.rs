@@ -662,8 +662,11 @@ pub fn is_outdated_version(current: &str, latest: &str) -> bool {
 /// used with `mise outdated --bump` to determine what new semver range to use
 /// given old: "20" and new: "21.2.3", return Some("21")
 fn check_semver_bump(old: &str, new: &str) -> Option<String> {
-    let old = Versioning::new(old);
-    let new = Versioning::new(new);
+    if !old.contains('.') && !new.contains('.') {
+        return Some(new.to_string());
+    }
+    let old_v = Versioning::new(old);
+    let new_v = Versioning::new(new);
     let chunkify = |v: &Versioning| {
         let mut chunks = vec![];
         while let Some(chunk) = v.nth(chunks.len()) {
@@ -671,7 +674,7 @@ fn check_semver_bump(old: &str, new: &str) -> Option<String> {
         }
         chunks
     };
-    if let (Some(old), Some(new)) = (old, new) {
+    if let (Some(old), Some(new)) = (old_v, new_v) {
         let old = chunkify(&old);
         let new = chunkify(&new);
         if old.len() > new.len() {
@@ -702,7 +705,7 @@ fn check_semver_bump(old: &str, new: &str) -> Option<String> {
             )
         }
     } else {
-        None
+        Some(new.to_string())
     }
 }
 
@@ -813,6 +816,10 @@ mod tests {
         std::assert_eq!(
             check_semver_bump("20.0.0", "20.0.1"),
             Some("20.0.1".to_string())
+        );
+        std::assert_eq!(
+            check_semver_bump("2024-09-16", "2024-10-21"),
+            Some("2024-10-21".to_string())
         );
     }
 
