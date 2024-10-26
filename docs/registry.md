@@ -765,7 +765,7 @@ editLink: false
 | wasm4 | [asdf:jtakakura/asdf-wasm4](https://github.com/jtakakura/asdf-wasm4) |
 | wasmer | [asdf:tachyonicbytes/asdf-wasmer](https://github.com/tachyonicbytes/asdf-wasmer) |
 | wasmtime | [asdf:tachyonicbytes/asdf-wasmtime](https://github.com/tachyonicbytes/asdf-wasmtime) |
-| watchexec | [asdf:nyrst/asdf-watchexec](https://github.com/nyrst/asdf-watchexec) |
+| watchexec | [ubi:watchexec/watchexec](https://github.com/watchexec/watchexec) |
 | waypoint | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | weave-gitops | [asdf:deas/asdf-weave-gitops](https://github.com/deas/asdf-weave-gitops) |
 | websocat | [asdf:bdellegrazie/asdf-websocat](https://github.com/bdellegrazie/asdf-websocat) |
