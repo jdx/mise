@@ -689,6 +689,7 @@ editLink: false
 | talosctl | [ubi:siderolabs/talos](https://github.com/siderolabs/talos) |
 | tanka | [asdf:trotttrotttrott/asdf-tanka](https://github.com/trotttrotttrott/asdf-tanka) |
 | tanzu | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
+| taplo | [ubi:tamasfe/taplo](https://github.com/tamasfe/taplo) |
 | task | [asdf:particledecay/asdf-task](https://github.com/particledecay/asdf-task) |
 | tctl | [asdf:eko/asdf-tctl](https://github.com/eko/asdf-tctl) |
 | tekton-cli | [asdf:johnhamelink/asdf-tekton-cli](https://github.com/johnhamelink/asdf-tekton-cli) |
