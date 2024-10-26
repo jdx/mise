@@ -796,5 +796,5 @@ editLink: false
 | zephyr | [asdf:nsaunders/asdf-zephyr](https://github.com/nsaunders/asdf-zephyr) |
 | zigmod | [asdf:mise-plugins/asdf-zigmod](https://github.com/mise-plugins/asdf-zigmod) |
 | zola | [asdf:salasrod/asdf-zola](https://github.com/salasrod/asdf-zola) |
-| zoxide | [asdf:nyrst/asdf-zoxide](https://github.com/nyrst/asdf-zoxide) |
+| zoxide | [ubi:ajeetdsouza/zoxide](https://github.com/ajeetdsouza/zoxide) |
 | zprint | [asdf:carlduevel/asdf-zprint](https://github.com/carlduevel/asdf-zprint) |
