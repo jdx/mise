@@ -1,3 +1,10 @@
+---
+head:
+  - - link
+    - rel: canonical
+      href: https://mise.jdx.dev/dev-tools/comparison-to-asdf
+---
+
 # Comparison to asdf
 
 mise can be used as a drop-in replacement for asdf. It supports the same `.tool-versions` files that

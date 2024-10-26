@@ -1,3 +1,10 @@
+---
+head:
+  - - link
+    - rel: canonical
+      href: https://mise.jdx.dev/lang/erlang
+---
+
 # Erlang
 
 The following are instructions for using the erlang core plugin.

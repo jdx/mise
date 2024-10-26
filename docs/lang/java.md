@@ -1,3 +1,10 @@
+---
+head:
+  - - link
+    - rel: canonical
+      href: https://mise.jdx.dev/lang/java
+---
+
 # Java
 
 The following are instructions for using the java mise core plugin. This is used when there isn't a
