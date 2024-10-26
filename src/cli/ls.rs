@@ -7,6 +7,7 @@ use console::style;
 use eyre::{ensure, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
+use rayon::prelude::*;
 use serde_derive::Serialize;
 use tabled::{Table, Tabled};
 use versions::Versioning;
@@ -161,15 +162,18 @@ impl Ls {
         //     .into_iter()
         //     .map(|(plugin, tv, source)| (plugin.to_string(), tv.to_string()))
         //     .collect_vec();
-        let rows = runtimes.into_iter().map(|(p, tv, source)| Row {
-            tool: p.clone(),
-            version: (p.as_ref(), &tv, &source).into(),
-            requested: match source.is_some() {
-                true => Some(tv.request.version()),
-                false => None,
-            },
-            source,
-        });
+        let rows = runtimes
+            .into_par_iter()
+            .map(|(p, tv, source)| Row {
+                tool: p.clone(),
+                version: (p.as_ref(), &tv, &source).into(),
+                requested: match source.is_some() {
+                    true => Some(tv.request.version()),
+                    false => None,
+                },
+                source,
+            })
+            .collect::<Vec<_>>();
         let mut table = Table::new(rows);
         table::default_style(&mut table, self.no_header);
         miseprintln!("{}", table.to_string());

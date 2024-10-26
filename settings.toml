@@ -410,6 +410,12 @@ type = "String"
 default = "7d"
 description = "How long to wait before updating plugins automatically (note this isn't currently implemented)."
 
+[profile]
+env = "MISE_PROFILE"
+type = "String"
+description = "Profile to use for mise.${MISE_ENV}.toml files."
+optional = true
+
 [python.compile]
 env = "MISE_PYTHON_COMPILE"
 type = "Bool"

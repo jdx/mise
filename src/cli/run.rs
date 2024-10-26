@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 use super::args::ToolArg;
-use crate::cli::Cli;
+use crate::cli::CLI;
 use crate::cmd::CmdLineRunner;
 use crate::config::{CONFIG, SETTINGS};
 use crate::errors::Error;
@@ -140,8 +140,7 @@ impl Run {
     }
 
     fn get_clap_command(&self) -> clap::Command {
-        Cli::command()
-            .get_subcommands()
+        CLI.get_subcommands()
             .find(|s| s.get_name() == "run")
             .unwrap()
             .clone()

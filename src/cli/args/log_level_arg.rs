@@ -1,10 +1,15 @@
 use clap::{Arg, ArgAction};
+use once_cell::sync::Lazy;
+
+pub static LOG_LEVEL_ARG: Lazy<Arg> = Lazy::new(LogLevelArg::arg);
+pub static DEBUG_ARG: Lazy<Arg> = Lazy::new(DebugArg::arg);
+pub static TRACE_ARG: Lazy<Arg> = Lazy::new(TraceArg::arg);
 
 #[derive(Clone)]
 pub struct LogLevelArg;
 
 impl LogLevelArg {
-    pub fn arg() -> clap::Arg {
+    fn arg() -> clap::Arg {
         Arg::new("log-level")
             .long("log-level")
             .value_name("LEVEL")
@@ -18,7 +23,7 @@ impl LogLevelArg {
 pub struct DebugArg;
 
 impl DebugArg {
-    pub fn arg() -> clap::Arg {
+    fn arg() -> clap::Arg {
         Arg::new("debug")
             .long("debug")
             .help("Sets log level to debug")
@@ -31,7 +36,7 @@ impl DebugArg {
 pub struct TraceArg;
 
 impl TraceArg {
-    pub fn arg() -> clap::Arg {
+    fn arg() -> clap::Arg {
         Arg::new("trace")
             .long("trace")
             .help("Sets log level to trace")

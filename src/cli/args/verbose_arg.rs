@@ -1,10 +1,13 @@
 use clap::{Arg, ArgAction};
+use once_cell::sync::Lazy;
 
 #[derive(Clone)]
 pub struct VerboseArg;
 
+pub static VERBOSE_ARG: Lazy<clap::Arg> = Lazy::new(VerboseArg::arg);
+
 impl VerboseArg {
-    pub fn arg() -> clap::Arg {
+    fn arg() -> clap::Arg {
         Arg::new("verbose")
             .short('v')
             .long("verbose")

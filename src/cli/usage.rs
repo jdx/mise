@@ -1,7 +1,7 @@
 use clap::builder::Resettable;
 use eyre::Result;
 
-use crate::cli;
+use crate::cli::CLI;
 
 /// Generate a usage CLI spec
 ///
@@ -12,7 +12,7 @@ pub struct Usage {}
 
 impl Usage {
     pub fn run(self) -> Result<()> {
-        let cli = cli::Cli::command().version(Resettable::Reset);
+        let cli = CLI.clone().version(Resettable::Reset);
         let mut spec: usage::Spec = cli.into();
         let run = spec.cmd.subcommands.get_mut("run").unwrap();
         run.args = vec![];
