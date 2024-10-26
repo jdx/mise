@@ -261,6 +261,7 @@ editLink: false
 | github-markdown-toc | [asdf:skyzyx/asdf-github-markdown-toc](https://github.com/skyzyx/asdf-github-markdown-toc) |
 | gitleaks | [asdf:jmcvetta/asdf-gitleaks](https://github.com/jmcvetta/asdf-gitleaks) |
 | gitsign | [asdf:spencergilbert/asdf-gitsign](https://github.com/spencergilbert/asdf-gitsign) |
+| gitu | [ubi:altsem/gitu](https://github.com/altsem/gitu) |
 | gitui | [asdf:looztra/asdf-gitui](https://github.com/looztra/asdf-gitui) |
 | glab | [asdf:particledecay/asdf-glab](https://github.com/particledecay/asdf-glab) |
 | gleam | [asdf:asdf-community/asdf-gleam](https://github.com/asdf-community/asdf-gleam) |
@@ -279,6 +280,8 @@ editLink: false
 | gohugo | [asdf:nklmilojevic/asdf-hugo](https://github.com/nklmilojevic/asdf-hugo) |
 | gojq | [asdf:jimmidyson/asdf-gojq](https://github.com/jimmidyson/asdf-gojq) |
 | golangci-lint | [ubi:golangci/golangci-lint](https://github.com/golangci/golangci-lint) |
+| golangci-lint-langserver | [ubi:nametake/golangci-lint-langserver](https://github.com/nametake/golangci-lint-langserver) |
+| golines | [ubi:segmentio/golines](https://github.com/segmentio/golines) |
 | gomigrate | [asdf:joschi/asdf-gomigrate](https://github.com/joschi/asdf-gomigrate) |
 | gomplate | [asdf:sneakybeaky/asdf-gomplate](https://github.com/sneakybeaky/asdf-gomplate) |
 | gopass | [asdf:trallnag/asdf-gopass](https://github.com/trallnag/asdf-gopass) |
@@ -317,6 +320,7 @@ editLink: false
 | heroku-cli | [asdf:mise-plugins/mise-heroku-cli](https://github.com/mise-plugins/mise-heroku-cli) |
 | hey | [asdf:raimon49/asdf-hey](https://github.com/raimon49/asdf-hey) |
 | hishtory | [asdf:asdf-community/asdf-hishtory](https://github.com/asdf-community/asdf-hishtory) |
+| hivemind | [ubi:DarthSim/hivemind](https://github.com/DarthSim/hivemind) |
 | hledger | [asdf:airtonix/asdf-hledger](https://github.com/airtonix/asdf-hledger) |
 | hledger-flow | [asdf:airtonix/asdf-hledger-flow](https://github.com/airtonix/asdf-hledger-flow) |
 | hls | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
@@ -355,6 +359,8 @@ editLink: false
 | jsonnet | [asdf:Banno/asdf-jsonnet](https://github.com/Banno/asdf-jsonnet) |
 | julia | [asdf:rkyleg/asdf-julia](https://github.com/rkyleg/asdf-julia) |
 | just | [asdf:olofvndrhr/asdf-just](https://github.com/olofvndrhr/asdf-just) |
+| jwt | [ubi:mike-engel/jwt-cli](https://github.com/mike-engel/jwt-cli) |
+| jwtui | [ubi:jwt-rs/jwt-ui](https://github.com/jwt-rs/jwt-ui) |
 | jx | [asdf:vbehar/asdf-jx](https://github.com/vbehar/asdf-jx) |
 | k0sctl | [asdf:Its-Alex/asdf-plugin-k0sctl](https://github.com/Its-Alex/asdf-plugin-k0sctl) |
 | k14s | [asdf:k14s/asdf-k14s](https://github.com/k14s/asdf-k14s) |
@@ -527,6 +533,7 @@ editLink: false
 | oras | [asdf:bodgit/asdf-oras](https://github.com/bodgit/asdf-oras) |
 | osm | [asdf:nlamirault/asdf-osm](https://github.com/nlamirault/asdf-osm) |
 | osqueryi | [asdf:davidecavestro/asdf-osqueryi](https://github.com/davidecavestro/asdf-osqueryi) |
+| overmind | [ubi:DarthSim/overmind](https://github.com/DarthSim/overmind) |
 | pachctl | [asdf:abatilo/asdf-pachctl](https://github.com/abatilo/asdf-pachctl) |
 | packer | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | pandoc | [asdf:Fbrisset/asdf-pandoc](https://github.com/Fbrisset/asdf-pandoc) |
@@ -590,6 +597,7 @@ editLink: false
 | regctl | [asdf:ORCID/asdf-regctl](https://github.com/ORCID/asdf-regctl) |
 | regsync | [asdf:rsrchboy/asdf-regsync](https://github.com/rsrchboy/asdf-regsync) |
 | restic | [asdf:xataz/asdf-restic](https://github.com/xataz/asdf-restic) |
+| restish | [ubi:danielgtaylor/restish](https://github.com/danielgtaylor/restish) |
 | revive | [asdf:bjw-s/asdf-revive](https://github.com/bjw-s/asdf-revive) |
 | richgo | [asdf:paxosglobal/asdf-richgo](https://github.com/paxosglobal/asdf-richgo) |
 | riff | [asdf:abinet/asdf-riff](https://github.com/abinet/asdf-riff) |
@@ -681,6 +689,7 @@ editLink: false
 | talosctl | [ubi:siderolabs/talos](https://github.com/siderolabs/talos) |
 | tanka | [asdf:trotttrotttrott/asdf-tanka](https://github.com/trotttrotttrott/asdf-tanka) |
 | tanzu | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
+| taplo | [ubi:tamasfe/taplo](https://github.com/tamasfe/taplo) |
 | task | [asdf:particledecay/asdf-task](https://github.com/particledecay/asdf-task) |
 | tctl | [asdf:eko/asdf-tctl](https://github.com/eko/asdf-tctl) |
 | tekton-cli | [asdf:johnhamelink/asdf-tekton-cli](https://github.com/johnhamelink/asdf-tekton-cli) |
