@@ -1,10 +1,3 @@
----
-head:
-  - - link
-    - rel: canonical
-      href: https://mise.jdx.dev/lang/zig
----
-
 # Zig
 
 The following are instructions for using the zig mise core plugin.

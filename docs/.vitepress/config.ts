@@ -1,4 +1,4 @@
-import { defineConfig } from "vitepress";
+import { defineConfig, type TransfomContext } from "vitepress";
 import { Command, commands } from "./cli_commands";
 
 // https://vitepress.dev/reference/site-config
@@ -156,6 +156,17 @@ export default defineConfig({
       gtag('config', 'G-B69G389C8T');`,
     ],
   ],
+  transformPageData(pageData) {
+    const canonicalUrl = `https://mise.jdx.dev/${pageData.relativePath}`
+      .replace(/index\.md$/, "")
+      .replace(/\.md$/, ".html");
+
+    pageData.frontmatter.head ??= [];
+    pageData.frontmatter.head.push([
+      "link",
+      { rel: "canonical", href: canonicalUrl },
+    ]);
+  },
 });
 
 function cliReference(commands: { [key: string]: Command }) {
