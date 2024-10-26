@@ -62,7 +62,7 @@ static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
-    s.python_default_packages_file = Some(env::HOME.join(".default-python-packages"));
+    s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
     if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str()) {
         if !cfg!(test) {
             s.all_compile = Some(true);

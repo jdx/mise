@@ -422,6 +422,7 @@
         },
         "python_venv_stdlib": {
           "description": "Prefer to use venv from Python's standard library.",
+          "deprecated": "Use python.venv_stdlib instead.",
           "type": "boolean"
         },
         "quiet": {
