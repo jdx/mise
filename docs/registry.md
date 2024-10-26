@@ -173,7 +173,7 @@ editLink: false
 | desk | [asdf:endorama/asdf-desk](https://github.com/endorama/asdf-desk) |
 | devspace | [asdf:NeoHsu/asdf-devspace](https://github.com/NeoHsu/asdf-devspace) |
 | dhall | [asdf:aaaaninja/asdf-dhall](https://github.com/aaaaninja/asdf-dhall) |
-| difftastic | [asdf:volf52/asdf-difftastic](https://github.com/volf52/asdf-difftastic) |
+| difftastic | [ubi:wilfred/difftastic](https://github.com/wilfred/difftastic) |
 | digdag | [asdf:jtakakura/asdf-digdag](https://github.com/jtakakura/asdf-digdag) |
 | direnv | [asdf:asdf-community/asdf-direnv](https://github.com/asdf-community/asdf-direnv) |
 | dive | [ubi:wagoodman/dive](https://github.com/wagoodman/dive) |
