@@ -44,7 +44,7 @@ impl ToolsetBuilder {
             warn!("failed to resolve toolset: {err:#}");
         }
 
-        time!("toolset::builder::build", "{toolset}");
+        time!("toolset::builder::build");
         Ok(toolset)
     }
 
