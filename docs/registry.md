@@ -278,7 +278,7 @@ editLink: false
 | gofumpt | [asdf:looztra/asdf-gofumpt](https://github.com/looztra/asdf-gofumpt) |
 | gohugo | [asdf:nklmilojevic/asdf-hugo](https://github.com/nklmilojevic/asdf-hugo) |
 | gojq | [asdf:jimmidyson/asdf-gojq](https://github.com/jimmidyson/asdf-gojq) |
-| golangci-lint | [asdf:hypnoglow/asdf-golangci-lint](https://github.com/hypnoglow/asdf-golangci-lint) |
+| golangci-lint | [ubi:golangci/golangci-lint](https://github.com/golangci/golangci-lint) |
 | gomigrate | [asdf:joschi/asdf-gomigrate](https://github.com/joschi/asdf-gomigrate) |
 | gomplate | [asdf:sneakybeaky/asdf-gomplate](https://github.com/sneakybeaky/asdf-gomplate) |
 | gopass | [asdf:trallnag/asdf-gopass](https://github.com/trallnag/asdf-gopass) |
