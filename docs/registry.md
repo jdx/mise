@@ -320,6 +320,7 @@ editLink: false
 | heroku-cli | [asdf:mise-plugins/mise-heroku-cli](https://github.com/mise-plugins/mise-heroku-cli) |
 | hey | [asdf:raimon49/asdf-hey](https://github.com/raimon49/asdf-hey) |
 | hishtory | [asdf:asdf-community/asdf-hishtory](https://github.com/asdf-community/asdf-hishtory) |
+| hivemind | [ubi:DarthSim/hivemind](https://github.com/DarthSim/hivemind) |
 | hledger | [asdf:airtonix/asdf-hledger](https://github.com/airtonix/asdf-hledger) |
 | hledger-flow | [asdf:airtonix/asdf-hledger-flow](https://github.com/airtonix/asdf-hledger-flow) |
 | hls | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
