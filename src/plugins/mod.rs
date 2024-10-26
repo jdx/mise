@@ -1,4 +1,3 @@
-use crate::backend;
 use crate::backend::{ABackend, BackendList, BackendType};
 use crate::cli::args::BackendArg;
 use crate::errors::Error::PluginNotInstalled;
@@ -7,6 +6,7 @@ use crate::plugins::core::CorePlugin;
 use crate::plugins::vfox_plugin::VFOX_PLUGIN_NAMES;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend, dirs, file};
 use clap::Command;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -52,6 +52,26 @@ pub static PLUGIN_NAMES_TO_TYPE: Lazy<BTreeMap<String, PluginType>> = Lazy::new(
         .collect_vec();
     asdf.into_iter().chain(vfox).collect()
 });
+
+pub static INSTALLED_PLUGINS: Lazy<Vec<(PathBuf, PluginType)>> =
+    Lazy::new(|| match file::dir_subdirs(&dirs::PLUGINS) {
+        Ok(dirs) => dirs
+            .into_iter()
+            .map(|d| {
+                let path = dirs::PLUGINS.join(&d);
+                let plugin_type = if path.join("metadata.lua").exists() {
+                    PluginType::Vfox
+                } else {
+                    PluginType::Asdf
+                };
+                (path, plugin_type)
+            })
+            .collect(),
+        Err(e) => {
+            warn!("error reading plugin dirs: {e}");
+            vec![]
+        }
+    });
 
 pub fn list() -> BackendList {
     // TODO: replace with list2

@@ -8,19 +8,18 @@ use crate::timeout::run_with_timeout;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, exit, lock_file, registry};
+use crate::{dirs, exit, lock_file, plugins, registry};
 use clap::Command;
 use console::style;
 use contracts::requires;
 use eyre::{bail, eyre, Context};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use rayon::prelude::*;
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
-use xx::{file, regex};
+use xx::regex;
 
 #[derive(Debug)]
 pub struct AsdfPlugin {
@@ -55,21 +54,16 @@ impl AsdfPlugin {
 
     pub fn list() -> eyre::Result<PluginList> {
         let settings = Settings::get();
-        match file::ls(*dirs::PLUGINS) {
-            Ok(dirs) => {
-                let plugins = dirs
-                    .into_par_iter()
-                    .filter(|dir| dir.is_dir())
-                    .map(|dir| {
-                        let name = dir.file_name().unwrap().to_string_lossy().to_string();
-                        Box::new(AsdfPlugin::new(name)) as Box<dyn Plugin>
-                    })
-                    .filter(|p| !settings.disable_tools.contains(p.name()))
-                    .collect();
-                Ok(plugins)
-            }
-            Err(_) => Ok(PluginList::new()),
-        }
+        let plugins = plugins::INSTALLED_PLUGINS
+            .iter()
+            .filter(|(_, pt)| matches!(pt, PluginType::Asdf))
+            .map(|(dir, _)| {
+                let name = dir.file_name().unwrap().to_string_lossy().to_string();
+                Box::new(AsdfPlugin::new(name)) as Box<dyn Plugin>
+            })
+            .filter(|p| !settings.disable_tools.contains(p.name()))
+            .collect();
+        Ok(plugins)
     }
 
     fn repo(&self) -> MutexGuard<Git> {

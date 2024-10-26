@@ -1,7 +1,6 @@
-use crate::env;
+use crate::{env, plugins};
 use eyre::{Report, WrapErr};
 use heck::ToKebabCase;
-use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
@@ -18,7 +17,7 @@ use crate::git::Git;
 use crate::install_context::InstallContext;
 use crate::plugins::PluginType;
 use crate::toolset::{ToolVersion, Toolset};
-use crate::{dirs, file, registry};
+use crate::{dirs, registry};
 use vfox::Vfox;
 use xx::regex;
 
@@ -116,10 +115,14 @@ fn vfox_to_url(name: &str) -> eyre::Result<Url> {
 
 impl VfoxBackend {
     pub fn list() -> eyre::Result<BackendList> {
-        Ok(file::dir_subdirs(&dirs::PLUGINS)?
-            .into_par_iter()
-            .filter(|name| dirs::PLUGINS.join(name).join("metadata.lua").exists())
-            .map(|name| Arc::new(Self::from_arg(name.into())) as ABackend)
+        Ok(plugins::INSTALLED_PLUGINS
+            .iter()
+            .filter(|(_, pt)| matches!(pt, PluginType::Vfox))
+            .map(|(d, _)| {
+                Arc::new(Self::from_arg(
+                    d.file_name().unwrap().to_string_lossy().into(),
+                )) as ABackend
+            })
             .collect())
     }
 

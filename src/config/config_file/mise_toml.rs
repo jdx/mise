@@ -99,7 +99,7 @@ impl MiseToml {
         for task in rf.tasks.0.values_mut() {
             task.config_source.clone_from(&rf.path);
         }
-        trace!("{}", rf.dump()?);
+        // trace!("{}", rf.dump()?);
         Ok(rf)
     }
 

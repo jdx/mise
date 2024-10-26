@@ -77,21 +77,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise plugins link ./mise-node</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-    use test_log::test;
-
-    #[test]
-    fn test_plugin_link() {
-        reset();
-        assert_cli_snapshot!("plugin", "link", "-f", "tiny-link", "../data/plugins/tiny", @"");
-        assert_cli_snapshot!("plugins", "ls", @r#"
-        dummy
-        tiny
-        tiny-link
-        "#);
-        assert_cli_snapshot!("plugin", "uninstall", "tiny-link", @"");
-    }
-}

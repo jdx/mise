@@ -10,7 +10,6 @@ use contracts::requires;
 use eyre::{bail, eyre, WrapErr};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use rayon::prelude::*;
 use regex::Regex;
 use strum::IntoEnumIterator;
 use versions::Versioning;
@@ -84,14 +83,15 @@ fn load_tools() -> BackendMap {
     if let Some(backends) = &*memo_tools {
         return backends.clone();
     }
-    time!("load_tools: start");
-    let mut tools = CORE_PLUGINS
+    time!("load_tools start");
+    let core_tools = CORE_PLUGINS
         .iter()
         .map(|(_, p)| p.clone())
         .collect::<Vec<ABackend>>();
+    time!("load_tools core");
     let mut asdf_tools = Ok(vec![]);
     let mut vfox_tools = Ok(vec![]);
-    let mut backend_tools = Ok(vec![]);
+    let mut backend_tools = vec![];
     rayon::scope(|s| {
         if !SETTINGS.disable_backends.contains(&"asdf".to_string()) {
             s.spawn(|_| asdf_tools = asdf::AsdfBackend::list());
@@ -99,11 +99,13 @@ fn load_tools() -> BackendMap {
         if !SETTINGS.disable_backends.contains(&"vfox".to_string()) {
             s.spawn(|_| vfox_tools = vfox::VfoxBackend::list());
         }
-        backend_tools = list_installed_backends();
+        backend_tools = INSTALLED_BACKENDS.clone();
     });
+    time!("load_tools backends");
+    let mut tools = core_tools;
     tools.extend(asdf_tools.expect("asdf tools failed to load"));
     tools.extend(vfox_tools.expect("vfox tools failed to load"));
-    tools.extend(backend_tools.expect("backend tools failed to load"));
+    tools.extend(backend_tools);
     tools.retain(|backend| !SETTINGS.disable_tools.contains(backend.id()));
 
     let tools: BackendMap = tools
@@ -115,13 +117,14 @@ fn load_tools() -> BackendMap {
     tools
 }
 
-fn list_installed_backends() -> eyre::Result<BackendList> {
-    Ok(file::dir_subdirs(&dirs::INSTALLS)?
-        .into_par_iter()
+pub static INSTALLED_BACKENDS: Lazy<Vec<ABackend>> = Lazy::new(|| {
+    file::dir_subdirs(&dirs::INSTALLS)
+        .unwrap()
+        .into_iter()
         .map(|dir| arg_to_backend(BackendMeta::read(&dir).into()))
         .filter(|f| !matches!(f.fa().backend_type, BackendType::Asdf | BackendType::Vfox))
-        .collect())
-}
+        .collect()
+});
 
 pub fn list() -> BackendList {
     load_tools().values().cloned().collect()
