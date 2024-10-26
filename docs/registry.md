@@ -785,7 +785,7 @@ editLink: false
 | yamlscript | [asdf:FeryET/asdf-yamlscript](https://github.com/FeryET/asdf-yamlscript) |
 | yarn | [asdf:mise-plugins/asdf-yarn](https://github.com/mise-plugins/asdf-yarn) |
 | yay | [asdf:aaaaninja/asdf-yay](https://github.com/aaaaninja/asdf-yay) |
-| yj | [asdf:ryodocx/asdf-yj](https://github.com/ryodocx/asdf-yj) |
+| yj | [ubi:sclevine/yj](https://github.com/sclevine/yj) |
 | yor | [asdf:ordinaryexperts/asdf-yor](https://github.com/ordinaryexperts/asdf-yor) |
 | youtube-dl | [asdf:iul1an/asdf-youtube-dl](https://github.com/iul1an/asdf-youtube-dl) |
 | yq | [ubi:mikefarah/yq](https://github.com/mikefarah/yq) |
