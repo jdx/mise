@@ -597,6 +597,7 @@ editLink: false
 | regctl | [asdf:ORCID/asdf-regctl](https://github.com/ORCID/asdf-regctl) |
 | regsync | [asdf:rsrchboy/asdf-regsync](https://github.com/rsrchboy/asdf-regsync) |
 | restic | [asdf:xataz/asdf-restic](https://github.com/xataz/asdf-restic) |
+| restish | [ubi:danielgtaylor/restish](https://github.com/danielgtaylor/restish) |
 | revive | [asdf:bjw-s/asdf-revive](https://github.com/bjw-s/asdf-revive) |
 | richgo | [asdf:paxosglobal/asdf-richgo](https://github.com/paxosglobal/asdf-richgo) |
 | riff | [asdf:abinet/asdf-riff](https://github.com/abinet/asdf-riff) |
