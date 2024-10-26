@@ -1,10 +1,3 @@
-use std::collections::{HashMap, HashSet};
-pub use std::env::*;
-use std::path::PathBuf;
-use std::string::ToString;
-use std::sync::RwLock;
-use std::{path, process};
-
 use crate::cli::args::PROFILE_ARG;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
@@ -12,6 +5,12 @@ use crate::hook_env::{deserialize_watches, HookEnvWatches};
 use itertools::Itertools;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
+use std::collections::{HashMap, HashSet};
+pub use std::env::*;
+use std::path::PathBuf;
+use std::string::ToString;
+use std::sync::RwLock;
+use std::{path, process};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 #[cfg(unix)]

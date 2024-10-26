@@ -65,7 +65,18 @@ fn main() -> eyre::Result<()> {
     #[cfg(feature = "timings")]
     output::get_time_diff(""); // throwaway call to initialize the timer
     eager::early_init();
+
+    // used when debugging to make everything run in series
+    #[cfg(debug_assertions)]
+    if env::var("MISE_JOBS") == Ok("1".to_string()) {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build_global()
+            .unwrap();
+    }
+
     let args = env::args().collect_vec();
+    env::ARGS.write().unwrap().clone_from(&args);
     color_eyre::install()?;
     time!("main start");
 

@@ -6,7 +6,9 @@ use crate::backend;
 use crate::cli::args::BackendArg;
 
 pub fn commands() -> Vec<Command> {
-    backend::list()
+    time!("commands start");
+
+    let commands = backend::list()
         .into_par_iter()
         .flat_map(|b| {
             if let Some(p) = b.plugin() {
@@ -18,7 +20,10 @@ pub fn commands() -> Vec<Command> {
             }
             vec![]
         })
-        .collect()
+        .collect();
+    time!("commands done");
+
+    commands
 }
 
 pub fn execute(fa: &BackendArg, args: &ArgMatches) -> Result<()> {

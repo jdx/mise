@@ -1,11 +1,9 @@
-use crate::config::Settings;
 use crate::ui::ctrlc;
-use crate::{eager, logger, migrate, shims};
+use crate::{logger, migrate, shims};
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
 use indoc::indoc;
 use once_cell::sync::Lazy;
-
 mod activate;
 mod alias;
 pub mod args;
@@ -182,7 +180,6 @@ impl Commands {
 pub static CLI: Lazy<clap::Command> = Lazy::new(|| {
     Commands::augment_subcommands(
         clap::Command::new("mise")
-            .version(version::VERSION.to_string())
             .about(env!("CARGO_PKG_DESCRIPTION"))
             .author("Jeff Dickey <@jdx>")
             .long_about(LONG_ABOUT)
@@ -196,7 +193,8 @@ pub static CLI: Lazy<clap::Command> = Lazy::new(|| {
             .arg(args::QUIET_ARG.clone())
             .arg(args::TRACE_ARG.clone())
             .arg(args::VERBOSE_ARG.clone())
-            .arg(args::YES_ARG.clone()),
+            .arg(args::YES_ARG.clone())
+            .version(version::VERSION.to_string()),
     )
 });
 
@@ -207,7 +205,9 @@ impl Cli {
         shims::handle_shim()?;
         time!("run handle_shim");
         ctrlc::init();
+        time!("run ctrlc::init");
         version::print_version_if_requested(args)?;
+        time!("run print_version_if_requested");
 
         let matches = CLI.clone().try_get_matches_from(args).unwrap_or_else(|_| {
             CLI.clone()
@@ -215,18 +215,17 @@ impl Cli {
                 .get_matches_from(args)
         });
         time!("run get_matches_from");
-        Settings::add_cli_matches(&matches);
-        time!("run add_cli_matches");
         logger::init();
         time!("run logger init");
         migrate::run();
-        eager::post_settings();
+        time!("run migrate");
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
         }
+        time!("run auto_prune");
 
         debug!("ARGS: {}", &args.join(" "));
-        time!("run");
+        time!("run command");
         match Commands::from_arg_matches(&matches) {
             Ok(cmd) => cmd.run(),
             Err(err) => matches

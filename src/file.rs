@@ -415,42 +415,19 @@ fn is_empty_dir_ignore(path: &Path, ignore_files: Vec<String>) -> Result<bool> {
         .wrap_err_with(|| format!("failed to read_dir: {}", display_path(path)))
 }
 
-pub struct FindUp {
-    current_dir: PathBuf,
-    current_dir_filenames: Vec<String>,
-    filenames: Vec<String>,
-}
-
-impl FindUp {
-    pub fn new(from: &Path, filenames: &[String]) -> Self {
-        let filenames: Vec<String> = filenames.iter().map(|s| s.to_string()).collect();
-        Self {
-            current_dir: from.to_path_buf(),
-            filenames: filenames.clone(),
-            current_dir_filenames: filenames,
-        }
-    }
-}
-
-impl Iterator for FindUp {
-    type Item = PathBuf;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(filename) = self.current_dir_filenames.pop() {
-            let path = self.current_dir.join(filename);
-            if path.is_file() {
-                return Some(path);
-            }
-        }
-        self.current_dir_filenames.clone_from(&self.filenames);
-        if cfg!(test) && self.current_dir == *dirs::HOME {
-            return None; // in tests, do not recurse further than ./test
-        }
-        if !self.current_dir.pop() {
-            return None;
-        }
-        self.next()
-    }
+pub fn find_up_all(from: &Path, filenames: &[String]) -> Vec<PathBuf> {
+    from.ancestors()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .flat_map(|path| {
+            filenames
+                .iter()
+                .rev()
+                .map(|filename| path.join(filename))
+                .filter(|path| path.is_file())
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// returns the first executable in PATH
@@ -521,14 +498,17 @@ pub fn split_file_name(path: &Path) -> (String, String) {
 }
 
 pub fn same_file(a: &Path, b: &Path) -> bool {
-    let canonicalize = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    if canonicalize(a) == canonicalize(b) {
-        return true;
+    desymlink_path(a) == desymlink_path(b)
+}
+
+pub fn desymlink_path(p: &Path) -> PathBuf {
+    if let Ok(target) = fs::read_link(p) {
+        target
+            .canonicalize()
+            .unwrap_or_else(|_| target.to_path_buf())
+    } else {
+        p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
     }
-    if let (Ok(a), Ok(b)) = (fs::read_link(a), fs::read_link(b)) {
-        return canonicalize(&a) == canonicalize(&b);
-    }
-    false
 }
 
 #[cfg(test)]
@@ -551,7 +531,7 @@ mod tests {
             .map(|s| s.to_string())
             .collect_vec();
         #[allow(clippy::needless_collect)]
-        let find_up = FindUp::new(path, &filenames).collect::<Vec<_>>();
+        let find_up = find_up_all(path, &filenames);
         let mut find_up = find_up.into_iter();
         assert_eq!(
             find_up.next(),

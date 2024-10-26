@@ -80,7 +80,8 @@ impl Display for BackendType {
 static TOOLS: Mutex<Option<BackendMap>> = Mutex::new(None);
 
 fn load_tools() -> BackendMap {
-    if let Some(backends) = TOOLS.lock().unwrap().as_ref() {
+    let mut memo_tools = TOOLS.lock().unwrap();
+    if let Some(backends) = &*memo_tools {
         return backends.clone();
     }
     time!("load_tools: start");
@@ -109,7 +110,7 @@ fn load_tools() -> BackendMap {
         .into_iter()
         .map(|plugin| (plugin.id().to_string(), plugin))
         .collect();
-    *TOOLS.lock().unwrap() = Some(tools.clone());
+    *memo_tools = Some(tools.clone());
     time!("load_tools done");
     tools
 }
@@ -351,19 +352,21 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
-        trace!("Ensuring dependencies installed for {}", self.id());
         let deps = self
             .get_all_dependencies(&ToolRequest::System(self.id().into()))?
             .into_iter()
             .collect::<HashSet<_>>();
-        let config = Config::get();
-        let ts = config.get_tool_request_set()?.filter_by_tool(&deps);
-        if !ts.missing_tools().is_empty() {
-            bail!(
-                "Dependency {} not installed for {}",
-                deps.iter().map(|d| d.to_string()).join(", "),
-                self.id()
-            );
+        if !deps.is_empty() {
+            trace!("Ensuring dependencies installed for {}", self.id());
+            let config = Config::get();
+            let ts = config.get_tool_request_set()?.filter_by_tool(&deps);
+            if !ts.missing_tools().is_empty() {
+                bail!(
+                    "Dependency {} not installed for {}",
+                    deps.iter().map(|d| d.to_string()).join(", "),
+                    self.id()
+                );
+            }
         }
         Ok(())
     }

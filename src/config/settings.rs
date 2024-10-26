@@ -1,5 +1,5 @@
-use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
-use crate::file::FindUp;
+use crate::cli::args;
+use crate::config::{config_file, DEFAULT_CONFIG_FILENAMES};
 use crate::{config, dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
@@ -7,6 +7,7 @@ use confique::{Config, Partial};
 use eyre::{bail, Result};
 use indexmap::{indexmap, IndexMap};
 use once_cell::sync::Lazy;
+use rayon::prelude::*;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
@@ -81,17 +82,27 @@ impl Settings {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
     }
+    pub fn is_loaded() -> bool {
+        BASE_SETTINGS.read().unwrap().is_some()
+    }
     pub fn try_get() -> Result<Arc<Self>> {
         if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
         }
+        let mut base_settings = BASE_SETTINGS.write().unwrap();
+        if let Some(settings) = base_settings.as_ref() {
+            return Ok(settings.clone());
+        }
 
+        time!("load start");
+        let cli_settings = Self::load_cli_settings();
         // Initial pass to obtain cd option
-        let mut sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
-            .env();
+        time!("load cli_settings");
+        let mut sb = Self::builder().preloaded(cli_settings.clone()).env();
 
+        time!("load cd");
         let mut settings = sb.load()?;
+        time!("load cd");
         if let Some(mut cd) = settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
             if cd.is_relative() {
@@ -99,17 +110,19 @@ impl Settings {
             }
             env::set_current_dir(cd)?;
         }
+        time!("load cd");
 
         // Reload settings after current directory option processed
-        sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
-            .env();
+        sb = Self::builder().preloaded(cli_settings).env();
         for file in Self::all_settings_files() {
             sb = sb.preloaded(file);
         }
+        time!("load config files");
         sb = sb.preloaded(DEFAULT_SETTINGS.clone());
+        time!("load default settings");
 
         settings = sb.load()?;
+        time!("load confique");
         if settings.raw {
             settings.jobs = 1;
         }
@@ -152,8 +165,10 @@ impl Settings {
         }
         settings.set_hidden_configs();
         let settings = Arc::new(settings);
-        *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
+        *base_settings = Some(settings.clone());
         trace!("Settings: {:#?}", settings);
+        time!("load done");
+
         Ok(settings)
     }
 
@@ -200,8 +215,30 @@ impl Settings {
         }
     }
 
-    pub fn add_cli_matches(m: &clap::ArgMatches) {
+    fn load_cli_settings() -> SettingsPartial {
+        let mut cli_settings_m = CLI_SETTINGS.lock().unwrap();
+        if let Some(settings) = &*cli_settings_m {
+            return settings.clone();
+        }
+        time!("load_cli_settings start");
         let mut s = SettingsPartial::empty();
+        let m = clap::Command::new("mise")
+            .arg(clap::arg!(<cmd>...))
+            .arg(args::YES_ARG.clone())
+            .arg(args::VERBOSE_ARG.clone())
+            .arg(args::TRACE_ARG.clone())
+            .arg(args::QUIET_ARG.clone())
+            .arg(args::PROFILE_ARG.clone())
+            .arg(args::LOG_LEVEL_ARG.clone())
+            .arg(args::DEBUG_ARG.clone())
+            .arg(args::CD_ARG.clone())
+            .ignore_errors(true)
+            .disable_help_subcommand(true)
+            .disable_version_flag(true)
+            .disable_help_flag(true)
+            .try_get_matches_from(&*env::ARGS.read().unwrap())
+            .unwrap_or_default();
+        time!("load_cli_settings get_matches_from");
         for arg in &*env::ARGS.read().unwrap() {
             if arg == "--" {
                 break;
@@ -213,8 +250,14 @@ impl Settings {
         if let Some(cd) = m.get_one::<PathBuf>("cd") {
             s.cd = Some(cd.clone());
         }
-        if let Some(true) = m.get_one::<bool>("yes") {
-            s.yes = Some(true);
+        if let Some(true) = m.get_one::<bool>("debug") {
+            s.log_level = Some("debug".to_string());
+        }
+        if let Some(log_level) = m.get_one::<String>("log-level") {
+            s.log_level = Some(log_level.to_string());
+        }
+        if let Some(profile) = m.get_one::<String>("profile") {
+            s.profile = Some(profile.to_string());
         }
         if let Some(true) = m.get_one::<bool>("quiet") {
             s.quiet = Some(true);
@@ -222,35 +265,19 @@ impl Settings {
         if let Some(true) = m.get_one::<bool>("trace") {
             s.log_level = Some("trace".to_string());
         }
-        if let Some(true) = m.get_one::<bool>("debug") {
-            s.log_level = Some("debug".to_string());
+        if let Some(verbose) = m.get_one::<u8>("verbose") {
+            if verbose > &0 {
+                s.verbose = Some(true);
+            }
+            if verbose > &1 {
+                s.log_level = Some("trace".to_string());
+            }
         }
-        if let Some(log_level) = m.get_one::<String>("log-level") {
-            s.log_level = Some(log_level.to_string());
+        if let Some(true) = m.get_one::<bool>("yes") {
+            s.yes = Some(true);
         }
-        if *m.get_one::<u8>("verbose").unwrap() > 0 {
-            s.verbose = Some(true);
-        }
-        if *m.get_one::<u8>("verbose").unwrap() > 1 {
-            s.log_level = Some("trace".to_string());
-        }
-        Self::reset(Some(s));
-    }
-
-    fn config_settings() -> Result<SettingsPartial> {
-        let global_config = &*env::MISE_GLOBAL_CONFIG_FILE;
-        let filename = global_config
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
-        // if the file doesn't exist or is actually a .tool-versions config
-        if !global_config.exists()
-            || filename == *env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME
-            || filename == ".tool-versions"
-        {
-            return Ok(Default::default());
-        }
-        Self::parse_settings_file(global_config)
+        *cli_settings_m = Some(s.clone());
+        s
     }
 
     fn deprecated_settings_file() -> Result<SettingsPartial> {
@@ -259,10 +286,21 @@ impl Settings {
         if !settings_file.exists() {
             return Ok(Default::default());
         }
+        eprintln!(
+            "mise WARN The settings file {settings_file:?} is deprecated. Please put settings in config.toml"
+        );
         Self::from_file(settings_file)
     }
 
-    fn parse_settings_file(path: &PathBuf) -> Result<SettingsPartial> {
+    fn parse_settings_from_config_file(path: &PathBuf) -> Result<SettingsPartial> {
+        rayon::spawn({
+            let path = path.clone();
+            move || {
+                // asynchronously load this as a config file since we likely will need to load it later
+                let _ = config_file::parse_cached(&path);
+            }
+        });
+
         let raw = file::read_to_string(path)?;
         let settings_file: SettingsFile = toml::from_str(&raw)?;
         Ok(settings_file.settings)
@@ -270,16 +308,18 @@ impl Settings {
 
     fn all_settings_files() -> Vec<SettingsPartial> {
         config::load_config_paths(&DEFAULT_CONFIG_FILENAMES)
-            .iter()
+            .par_iter()
             .filter(|p| {
                 let filename = p.file_name().unwrap_or_default().to_string_lossy();
                 filename != *env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME
                     && filename != ".tool-versions"
             })
-            .map(Self::parse_settings_file)
-            .chain(once(Self::config_settings()))
+            .inspect(|_p| time!("all_settings_files {}", file::display_path(_p)))
+            .map(Self::parse_settings_from_config_file)
+            .inspect(|_| time!("all_settings_files parse"))
+            .collect::<Vec<_>>()
+            .into_iter()
             .chain(once(Self::deprecated_settings_file()))
-            .chain(system_config_files().iter().map(Self::parse_settings_file))
             .filter_map(|cfg| match cfg {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
@@ -312,6 +352,7 @@ impl Settings {
         &HIDDEN_CONFIGS
     }
 
+    #[cfg(test)]
     pub fn reset(cli_settings: Option<SettingsPartial>) {
         *CLI_SETTINGS.lock().unwrap() = cli_settings;
         *BASE_SETTINGS.write().unwrap() = None;
@@ -345,7 +386,7 @@ impl Settings {
         if let Some(cwd) = &*dirs::CWD {
             if let Some(env_file) = &self.env_file {
                 let env_file = env_file.to_string_lossy().to_string();
-                for p in FindUp::new(cwd, &[env_file]) {
+                for p in file::find_up_all(cwd, &[env_file]) {
                     files.push(p);
                 }
             }

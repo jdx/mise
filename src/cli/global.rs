@@ -46,7 +46,7 @@ pub struct Global {
 
 impl Global {
     pub fn run(self) -> Result<()> {
-        let settings = Settings::try_get()?;
+        let settings = Settings::get();
         local(
             &settings.global_tools_file(),
             self.tool,

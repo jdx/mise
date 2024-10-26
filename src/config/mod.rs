@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use eyre::{ensure, eyre, Context, Result};
 use indexmap::IndexMap;
@@ -53,18 +53,19 @@ pub struct Config {
 }
 
 pub static CONFIG: Lazy<Arc<Config>> = Lazy::new(Config::get);
-static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
+static _CONFIG: Mutex<Option<Arc<Config>>> = Mutex::new(None);
 
 impl Config {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
     }
     pub fn try_get() -> Result<Arc<Self>> {
-        if let Some(config) = &*_CONFIG.read().unwrap() {
+        let mut config_m = _CONFIG.lock().unwrap();
+        if let Some(config) = &*config_m {
             return Ok(config.clone());
         }
         let config = Arc::new(Self::load()?);
-        *_CONFIG.write().unwrap() = Some(config.clone());
+        *config_m = Some(config.clone());
         Ok(config)
     }
     pub fn load() -> Result<Self> {
@@ -517,7 +518,7 @@ impl Config {
     #[cfg(test)]
     pub fn reset() {
         Settings::reset(None);
-        _CONFIG.write().unwrap().take();
+        _CONFIG.lock().unwrap().take();
     }
 }
 
@@ -615,18 +616,23 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
 });
 
 pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
-    let mut config_files = Vec::new();
+    time!("load_config_paths start");
 
+    let mut local = Vec::new();
     // The current directory is not always available, e.g.
     // when a directory was deleted or inside FUSE mounts.
     if let Some(current_dir) = &*dirs::CWD {
-        config_files.extend(file::FindUp::new(current_dir, config_filenames));
+        local = file::find_up_all(current_dir, config_filenames);
     };
 
-    config_files.extend(global_config_files());
-    config_files.extend(system_config_files());
-
-    config_files.into_iter().unique().collect()
+    let out = local
+        .into_iter()
+        .chain(global_config_files().iter().cloned())
+        .chain(system_config_files().iter().cloned())
+        .unique_by(|p| file::desymlink_path(p))
+        .collect();
+    time!("load_config_paths done");
+    out
 }
 
 pub fn is_global_config(path: &Path) -> bool {
@@ -636,49 +642,57 @@ pub fn is_global_config(path: &Path) -> bool {
         .any(|p| p == path)
 }
 
-pub fn global_config_files() -> Vec<PathBuf> {
-    let mut config_files = vec![];
-    if env::var_path("MISE_CONFIG_FILE").is_none()
-        && env::var_path("MISE_GLOBAL_CONFIG_FILE").is_none()
-        && !*env::MISE_USE_TOML
-    {
-        // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
-        // because that's how the user overrides the default
-        let home_config = dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
-        if home_config.is_file() {
-            config_files.push(home_config);
-        }
-    };
-    let global_config = env::MISE_GLOBAL_CONFIG_FILE.clone();
-    let global_local_config = global_config.with_extension("local.toml");
-    for f in [global_config, global_local_config] {
-        if f.is_file() {
-            config_files.push(f);
-        }
-    }
-    if let Some(env) = &*env::MISE_ENV {
-        let global_profile_files = vec![
-            dirs::CONFIG.join(format!("config.{env}.toml")),
-            dirs::CONFIG.join(format!("config.{env}.local.toml")),
-            dirs::CONFIG.join(format!("mise.{env}.toml")),
-            dirs::CONFIG.join(format!("mise.{env}.local.toml")),
-        ];
-        for f in global_profile_files {
+pub fn global_config_files() -> &'static Vec<PathBuf> {
+    static GLOBAL_CONFIG_FILES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+        let mut config_files = vec![];
+        if env::var_path("MISE_CONFIG_FILE").is_none()
+            && env::var_path("MISE_GLOBAL_CONFIG_FILE").is_none()
+            && !*env::MISE_USE_TOML
+        {
+            // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
+            // because that's how the user overrides the default
+            let home_config = dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+            if home_config.is_file() {
+                config_files.push(home_config);
+            }
+        };
+        let global_config = env::MISE_GLOBAL_CONFIG_FILE.clone();
+        let global_local_config = global_config.with_extension("local.toml");
+        for f in [global_config, global_local_config] {
             if f.is_file() {
                 config_files.push(f);
             }
         }
-    }
-    config_files
+        if let Some(env) = &*env::MISE_ENV {
+            let global_profile_files = vec![
+                dirs::CONFIG.join(format!("config.{env}.toml")),
+                dirs::CONFIG.join(format!("config.{env}.local.toml")),
+                dirs::CONFIG.join(format!("mise.{env}.toml")),
+                dirs::CONFIG.join(format!("mise.{env}.local.toml")),
+            ];
+            for f in global_profile_files {
+                if f.is_file() {
+                    config_files.push(f);
+                }
+            }
+        }
+        config_files
+    });
+
+    GLOBAL_CONFIG_FILES.as_ref()
 }
 
-pub fn system_config_files() -> Vec<PathBuf> {
-    let mut config_files = vec![];
-    let system = dirs::SYSTEM.join("config.toml");
-    if system.is_file() {
-        config_files.push(system);
-    }
-    config_files
+pub fn system_config_files() -> &'static Vec<PathBuf> {
+    static SYSTEM_CONFIG_FILES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+        let mut config_files = vec![];
+        let system = dirs::SYSTEM.join("config.toml");
+        if system.is_file() {
+            config_files.push(system);
+        }
+        config_files
+    });
+
+    &SYSTEM_CONFIG_FILES
 }
 
 fn load_all_config_files(
@@ -721,7 +735,7 @@ fn parse_config_file(
                 .collect::<Vec<_>>();
             LegacyVersionFile::parse(f.into(), tools).map(|f| Box::new(f) as Box<dyn ConfigFile>)
         }
-        None => config_file::parse(f),
+        None => config_file::parse_cached(f),
     }
 }
 

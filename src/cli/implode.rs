@@ -46,7 +46,7 @@ impl Implode {
     }
 
     fn confirm_remove(&self, f: &Path) -> Result<bool> {
-        let settings = Settings::try_get()?;
+        let settings = Settings::get();
         if self.dry_run {
             Ok(false)
         } else if settings.yes {

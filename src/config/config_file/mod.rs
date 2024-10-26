@@ -16,7 +16,7 @@ use tool_versions::ToolVersions;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{AliasMap, Settings};
+use crate::config::{AliasMap, Settings, SETTINGS};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::{file_hash_sha256, hash_to_str};
@@ -85,6 +85,8 @@ pub trait ConfigFile: Debug + Send + Sync {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
     }
+
+    fn clone_box(&self) -> Box<dyn ConfigFile>;
 }
 
 impl dyn ConfigFile {
@@ -180,6 +182,21 @@ pub fn parse_or_init(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
         true => parse(path)?,
         false => init(path),
     };
+    Ok(cf)
+}
+
+pub fn parse_cached(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, Box<dyn ConfigFile>>>> =
+        Lazy::new(|| Mutex::new(HashMap::new()));
+
+    let mut cache = CACHE.lock().unwrap();
+    if !(cfg!(test) || Settings::is_loaded() && SETTINGS.cd.is_some()) {
+        if let Some(cf) = cache.get(path) {
+            return Ok(cf.clone_box());
+        }
+    }
+    let cf = parse(path)?;
+    cache.insert(path.to_path_buf(), cf.clone_box());
     Ok(cf)
 }
 
