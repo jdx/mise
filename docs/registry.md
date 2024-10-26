@@ -593,7 +593,7 @@ editLink: false
 | revive | [asdf:bjw-s/asdf-revive](https://github.com/bjw-s/asdf-revive) |
 | richgo | [asdf:paxosglobal/asdf-richgo](https://github.com/paxosglobal/asdf-richgo) |
 | riff | [asdf:abinet/asdf-riff](https://github.com/abinet/asdf-riff) |
-| ripgrep | [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
+| ripgrep | [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) |
 | rke | [asdf:particledecay/asdf-rke](https://github.com/particledecay/asdf-rke) |
 | rlwrap | [asdf:asdf-community/asdf-rlwrap](https://github.com/asdf-community/asdf-rlwrap) |
 | rome | [asdf:kichiemon/asdf-rome](https://github.com/kichiemon/asdf-rome) |
