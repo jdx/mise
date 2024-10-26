@@ -359,6 +359,7 @@ editLink: false
 | jsonnet | [asdf:Banno/asdf-jsonnet](https://github.com/Banno/asdf-jsonnet) |
 | julia | [asdf:rkyleg/asdf-julia](https://github.com/rkyleg/asdf-julia) |
 | just | [asdf:olofvndrhr/asdf-just](https://github.com/olofvndrhr/asdf-just) |
+| jwt | [ubi:mike-engel/jwt-cli](https://github.com/mike-engel/jwt-cli) |
 | jx | [asdf:vbehar/asdf-jx](https://github.com/vbehar/asdf-jx) |
 | k0sctl | [asdf:Its-Alex/asdf-plugin-k0sctl](https://github.com/Its-Alex/asdf-plugin-k0sctl) |
 | k14s | [asdf:k14s/asdf-k14s](https://github.com/k14s/asdf-k14s) |
