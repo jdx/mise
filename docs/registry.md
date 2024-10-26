@@ -639,7 +639,7 @@ editLink: false
 | soft-serve | [asdf:chessmango/asdf-soft-serve](https://github.com/chessmango/asdf-soft-serve) |
 | solidity | [asdf:diegodorado/asdf-solidity](https://github.com/diegodorado/asdf-solidity) |
 | sonobuoy | [asdf:Nick-Triller/asdf-sonobuoy](https://github.com/Nick-Triller/asdf-sonobuoy) |
-| sops | [asdf:mise-plugins/mise-sops](https://github.com/mise-plugins/mise-sops) |
+| sops | [ubi:getsops/sops](https://github.com/getsops/sops) |
 | sopstool | [asdf:elementalvoid/asdf-sopstool](https://github.com/elementalvoid/asdf-sopstool) |
 | soracom | [asdf:gr1m0h/asdf-soracom](https://github.com/gr1m0h/asdf-soracom) |
 | sourcery | [asdf:younke/asdf-sourcery](https://github.com/younke/asdf-sourcery) |
