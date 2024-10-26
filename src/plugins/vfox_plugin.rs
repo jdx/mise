@@ -7,16 +7,15 @@ use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, lock_file};
+use crate::{dirs, lock_file, plugins};
 use console::style;
 use contracts::requires;
 use eyre::{bail, eyre, Context};
 use once_cell::sync::Lazy;
-use rayon::prelude::*;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
-use xx::{file, regex};
+use xx::regex;
 
 #[derive(Debug)]
 pub struct VfoxPlugin {
@@ -49,21 +48,16 @@ impl VfoxPlugin {
 
     pub fn list() -> eyre::Result<PluginList> {
         let settings = Settings::get();
-        match file::ls(*dirs::PLUGINS) {
-            Ok(dirs) => {
-                let plugins = dirs
-                    .into_par_iter()
-                    .filter(|dir| dir.join("metadata.lua").exists())
-                    .map(|dir| {
-                        let name = dir.file_name().unwrap().to_string_lossy().to_string();
-                        Box::new(VfoxPlugin::new(name)) as Box<dyn Plugin>
-                    })
-                    .filter(|p| !settings.disable_tools.contains(p.name()))
-                    .collect();
-                Ok(plugins)
-            }
-            Err(_) => Ok(PluginList::new()),
-        }
+        let plugins = plugins::INSTALLED_PLUGINS
+            .iter()
+            .filter(|(_, t)| matches!(t, PluginType::Vfox))
+            .map(|(dir, _)| {
+                let name = dir.file_name().unwrap().to_string_lossy().to_string();
+                Box::new(VfoxPlugin::new(name)) as Box<dyn Plugin>
+            })
+            .filter(|p| !settings.disable_tools.contains(p.name()))
+            .collect();
+        Ok(plugins)
     }
 
     fn repo(&self) -> MutexGuard<Git> {
