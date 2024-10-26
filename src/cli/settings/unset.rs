@@ -79,7 +79,6 @@ mod tests {
         paranoid = false
         pin = false
         plugin_autoupdate_last_check_duration = "20m"
-        python_default_packages_file = "~/.default-python-packages"
         quiet = false
         raw = false
         trusted_config_paths = []
