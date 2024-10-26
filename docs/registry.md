@@ -61,7 +61,7 @@ editLink: false
 | balena-cli | [asdf:boatkit-io/asdf-balena-cli](https://github.com/boatkit-io/asdf-balena-cli) |
 | bashbot | [asdf:mathew-fleisch/asdf-bashbot](https://github.com/mathew-fleisch/asdf-bashbot) |
 | bashly | [asdf:pcrockett/asdf-bashly](https://github.com/pcrockett/asdf-bashly) |
-| bat | [asdf:https://gitlab.com/wt0f/asdf-bat](https://gitlab.com/wt0f/asdf-bat) |
+| bat | [ubi:sharkdp/bat](https://github.com/sharkdp/bat) |
 | bat-extras | [asdf:vhdirk/asdf-bat-extras](https://github.com/vhdirk/asdf-bat-extras) |
 | batect | [asdf:johnlayton/asdf-batect](https://github.com/johnlayton/asdf-batect) |
 | bats | [asdf:timgluz/asdf-bats](https://github.com/timgluz/asdf-bats) |
