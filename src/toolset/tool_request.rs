@@ -46,30 +46,30 @@ impl ToolRequest {
         };
         Ok(match s.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => Self::Ref {
-                backend,
                 ref_: r.to_string(),
                 ref_type: ref_type.to_string(),
-                options: Default::default(),
+                options: backend.opts.clone().unwrap_or_default(),
+                backend,
             },
             Some(("prefix", p)) => Self::Prefix {
-                backend,
                 prefix: p.to_string(),
-                options: Default::default(),
+                options: backend.opts.clone().unwrap_or_default(),
+                backend,
             },
             Some(("path", p)) => Self::Path(backend, PathBuf::from(p)),
             Some((p, v)) if p.starts_with("sub-") => Self::Sub {
-                backend,
                 sub: p.split_once('-').unwrap().1.to_string(),
                 orig_version: v.to_string(),
+                backend,
             },
             None => {
                 if s == "system" {
                     Self::System(backend)
                 } else {
                     Self::Version {
-                        backend,
                         version: s,
-                        options: Default::default(),
+                        options: backend.opts.clone().unwrap_or_default(),
+                        backend,
                     }
                 }
             }
