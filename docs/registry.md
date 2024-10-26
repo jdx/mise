@@ -521,7 +521,7 @@ editLink: false
 | opensearch | [asdf:randikabanura/asdf-opensearch](https://github.com/randikabanura/asdf-opensearch) |
 | opensearch-cli | [asdf:iul1an/asdf-opensearch-cli](https://github.com/iul1an/asdf-opensearch-cli) |
 | openshift-install | [asdf:hhemied/asdf-openshift-install](https://github.com/hhemied/asdf-openshift-install) |
-| opentofu | [asdf:virtualroot/asdf-opentofu](https://github.com/virtualroot/asdf-opentofu) |
+| opentofu | [ubi:opentofu/opentofu](https://github.com/opentofu/opentofu) |
 | operator-sdk | [asdf:Medium/asdf-operator-sdk](https://github.com/Medium/asdf-operator-sdk) |
 | opsgenie-lamp | [asdf:ORCID/asdf-opsgenie-lamp](https://github.com/ORCID/asdf-opsgenie-lamp) |
 | oras | [asdf:bodgit/asdf-oras](https://github.com/bodgit/asdf-oras) |
