@@ -360,6 +360,7 @@ editLink: false
 | julia | [asdf:rkyleg/asdf-julia](https://github.com/rkyleg/asdf-julia) |
 | just | [asdf:olofvndrhr/asdf-just](https://github.com/olofvndrhr/asdf-just) |
 | jwt | [ubi:mike-engel/jwt-cli](https://github.com/mike-engel/jwt-cli) |
+| jwtui | [ubi:jwt-rs/jwt-ui](https://github.com/jwt-rs/jwt-ui) |
 | jx | [asdf:vbehar/asdf-jx](https://github.com/vbehar/asdf-jx) |
 | k0sctl | [asdf:Its-Alex/asdf-plugin-k0sctl](https://github.com/Its-Alex/asdf-plugin-k0sctl) |
 | k14s | [asdf:k14s/asdf-k14s](https://github.com/k14s/asdf-k14s) |
