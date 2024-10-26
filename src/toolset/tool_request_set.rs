@@ -148,7 +148,7 @@ impl ToolRequestSetBuilder {
             }
         }
 
-        time!("tool_request_set::build", "{trs}");
+        time!("tool_request_set::build");
         Ok(trs)
     }
 

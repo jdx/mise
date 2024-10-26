@@ -74,7 +74,7 @@ impl Logger {
             LevelFilter::Trace => {
                 let meta = ui::style::edim(format!(
                     "{thread_id:>2} [{file}:{line}]",
-                    thread_id = self.thread_id(),
+                    thread_id = thread_id(),
                     file = record.file().unwrap_or("<unknown>"),
                     line = record.line().unwrap_or(0),
                 ));
@@ -108,12 +108,6 @@ impl Logger {
         }
     }
 
-    fn thread_id(&self) -> String {
-        let id = format!("{:?}", thread::current().id());
-        let id = id.replace("ThreadId(", "");
-        id.replace(")", "")
-    }
-
     fn styled_level(&self, level: Level) -> String {
         let level = match level {
             Level::Error => ui::style::ered("ERROR").to_string(),
@@ -124,6 +118,12 @@ impl Logger {
         };
         console::pad_str(&level, 5, console::Alignment::Left, None).to_string()
     }
+}
+
+pub fn thread_id() -> String {
+    let id = format!("{:?}", thread::current().id());
+    let id = id.replace("ThreadId(", "");
+    id.replace(")", "")
 }
 
 pub fn init() {
