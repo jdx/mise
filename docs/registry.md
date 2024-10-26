@@ -34,7 +34,7 @@ editLink: false
 | argc | [ubi:sigoden/argc](https://github.com/sigoden/argc) |
 | argo | [asdf:sudermanjr/asdf-argo](https://github.com/sudermanjr/asdf-argo) |
 | argo-rollouts | [asdf:abatilo/asdf-argo-rollouts](https://github.com/abatilo/asdf-argo-rollouts) |
-| argocd | [asdf:beardix/asdf-argocd](https://github.com/beardix/asdf-argocd) |
+| argocd | [ubi:argoproj/argo-cd](https://github.com/argoproj/argo-cd) |
 | aria2 | [asdf:asdf-community/asdf-aria2](https://github.com/asdf-community/asdf-aria2) |
 | asciidoctorj | [asdf:gliwka/asdf-asciidoctorj](https://github.com/gliwka/asdf-asciidoctorj) |
 | asdf-plugin-manager | [asdf:asdf-community/asdf-plugin-manager](https://github.com/asdf-community/asdf-plugin-manager) |
