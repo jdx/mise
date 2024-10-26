@@ -20,7 +20,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 // shfmt 3.6.0
 
 /// represents asdf's .tool-versions file
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ToolVersions {
     context: Context,
     path: PathBuf,
@@ -29,7 +29,7 @@ pub struct ToolVersions {
     tools: ToolRequestSet,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ToolVersionPlugin {
     orig_name: String,
     versions: Vec<String>,
@@ -200,6 +200,10 @@ impl ConfigFile for ToolVersions {
 
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         Ok(self.tools.clone())
+    }
+
+    fn clone_box(&self) -> Box<dyn ConfigFile> {
+        Box::new(self.clone())
     }
 }
 

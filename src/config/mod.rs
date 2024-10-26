@@ -626,7 +626,10 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
     config_files.extend(global_config_files());
     config_files.extend(system_config_files());
 
-    config_files.into_iter().unique().collect()
+    config_files
+        .into_iter()
+        .unique_by(|p| file::desymlink_path(p))
+        .collect()
 }
 
 pub fn is_global_config(path: &Path) -> bool {

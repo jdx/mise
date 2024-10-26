@@ -362,6 +362,10 @@ impl ConfigFile for MiseToml {
     fn task_config(&self) -> &TaskConfig {
         &self.task_config
     }
+
+    fn clone_box(&self) -> Box<dyn ConfigFile> {
+        Box::new(self.clone())
+    }
 }
 
 impl Debug for MiseToml {

@@ -7,7 +7,7 @@ use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LegacyVersionFile {
     path: PathBuf,
     tools: ToolRequestSet,
@@ -73,5 +73,9 @@ impl ConfigFile for LegacyVersionFile {
 
     fn to_tool_request_set(&self) -> Result<ToolRequestSet> {
         Ok(self.tools.clone())
+    }
+
+    fn clone_box(&self) -> Box<dyn ConfigFile> {
+        Box::new(self.clone())
     }
 }
