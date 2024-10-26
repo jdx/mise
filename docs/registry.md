@@ -611,7 +611,7 @@ editLink: false
 | scaleway-cli | [asdf:albarralnunez/asdf-plugin-scaleway-cli](https://github.com/albarralnunez/asdf-plugin-scaleway-cli) |
 | scalingo-cli | [asdf:brandon-welsch/asdf-scalingo-cli](https://github.com/brandon-welsch/asdf-scalingo-cli) |
 | scarb | [asdf:software-mansion/asdf-scarb](https://github.com/software-mansion/asdf-scarb) |
-| sccache | [asdf:emersonmx/asdf-sccache](https://github.com/emersonmx/asdf-sccache) |
+| sccache | [ubi:mozilla/sccache](https://github.com/mozilla/sccache) |
 | scenery | [asdf:skyzyx/asdf-scenery](https://github.com/skyzyx/asdf-scenery) |
 | schemacrawler | [asdf:davidecavestro/asdf-schemacrawler](https://github.com/davidecavestro/asdf-schemacrawler) |
 | scie-pants | [asdf:robzr/asdf-scie-pants](https://github.com/robzr/asdf-scie-pants) |
