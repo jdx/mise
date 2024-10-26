@@ -657,7 +657,7 @@ editLink: false
 | starboard | [asdf:zufardhiyaulhaq/asdf-starboard](https://github.com/zufardhiyaulhaq/asdf-starboard) |
 | starknet-foundry | [asdf:foundry-rs/asdf-starknet-foundry](https://github.com/foundry-rs/asdf-starknet-foundry) |
 | starport | [asdf:nikever/asdf-starport](https://github.com/nikever/asdf-starport) |
-| starship | [asdf:gr1m0h/asdf-starship](https://github.com/gr1m0h/asdf-starship) |
+| starship | [ubi:starship/starship](https://github.com/starship/starship) |
 | staticcheck | [asdf:pbr0ck3r/asdf-staticcheck](https://github.com/pbr0ck3r/asdf-staticcheck) |
 | steampipe | [asdf:carnei-ro/asdf-steampipe](https://github.com/carnei-ro/asdf-steampipe) |
 | step | [asdf:log2/asdf-step](https://github.com/log2/asdf-step) |
