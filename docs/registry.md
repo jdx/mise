@@ -282,7 +282,7 @@ editLink: false
 | gomigrate | [asdf:joschi/asdf-gomigrate](https://github.com/joschi/asdf-gomigrate) |
 | gomplate | [asdf:sneakybeaky/asdf-gomplate](https://github.com/sneakybeaky/asdf-gomplate) |
 | gopass | [asdf:trallnag/asdf-gopass](https://github.com/trallnag/asdf-gopass) |
-| goreleaser | [asdf:kforsthoevel/asdf-goreleaser](https://github.com/kforsthoevel/asdf-goreleaser) |
+| goreleaser | [ubi:goreleaser/goreleaser](https://github.com/goreleaser/goreleaser) |
 | goss | [asdf:raimon49/asdf-goss](https://github.com/raimon49/asdf-goss) |
 | gotestsum | [asdf:pmalek/mise-gotestsum](https://github.com/pmalek/mise-gotestsum) |
 | graalvm | [asdf:asdf-community/asdf-graalvm](https://github.com/asdf-community/asdf-graalvm) |
