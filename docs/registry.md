@@ -364,7 +364,7 @@ editLink: false
 | k3s | [asdf:dmpe/asdf-k3s](https://github.com/dmpe/asdf-k3s) |
 | k3sup | [asdf:cgroschupp/asdf-k3sup](https://github.com/cgroschupp/asdf-k3sup) |
 | k6 | [asdf:gr1m0h/asdf-k6](https://github.com/gr1m0h/asdf-k6) |
-| k9s | [asdf:looztra/asdf-k9s](https://github.com/looztra/asdf-k9s) |
+| k9s | [ubi:derailed/k9s](https://github.com/derailed/k9s) |
 | kafka | [asdf:ueisele/asdf-kafka](https://github.com/ueisele/asdf-kafka) |
 | kafkactl | [asdf:anweber/asdf-kafkactl](https://github.com/anweber/asdf-kafkactl) |
 | kapp | [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
