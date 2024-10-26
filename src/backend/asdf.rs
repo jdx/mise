@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
-use rayon::prelude::*;
 
 use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::{ABackend, Backend, BackendList};
@@ -24,7 +23,7 @@ use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, file};
+use crate::{dirs, env, file, plugins};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct AsdfBackend {
@@ -89,11 +88,15 @@ impl AsdfBackend {
     }
 
     pub fn list() -> Result<BackendList> {
-        Ok(file::dir_subdirs(&dirs::PLUGINS)?
-            .into_par_iter()
+        Ok(plugins::INSTALLED_PLUGINS
+            .iter()
             // if metadata.lua exists it's a vfox plugin (hopefully)
-            .filter(|name| !dirs::PLUGINS.join(name).join("metadata.lua").exists())
-            .map(|name| Arc::new(Self::from_arg(name.into())) as ABackend)
+            .filter(|(_, pt)| matches!(pt, PluginType::Asdf))
+            .map(|(d, _)| {
+                Arc::new(Self::from_arg(
+                    d.file_name().unwrap().to_string_lossy().into(),
+                )) as ABackend
+            })
             .collect())
     }
 

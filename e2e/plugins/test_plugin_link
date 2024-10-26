@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+assert "mise plugin link -f tiny-link $MISE_DATA_DIR/plugins/dummy" ""
+assert "mise plugin ls" "dummy
+tiny-link"
+assert "mise plugin uninstall tiny-link" ""
+assert "mise plugin ls" "dummy"
