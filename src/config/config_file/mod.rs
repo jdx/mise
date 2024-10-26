@@ -85,6 +85,7 @@ pub trait ConfigFile: Debug + Send + Sync {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
     }
+    fn clone_box(&self) -> Box<dyn ConfigFile>;
 }
 
 impl dyn ConfigFile {
