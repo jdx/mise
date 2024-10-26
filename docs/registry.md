@@ -198,7 +198,7 @@ editLink: false
 | dt | [asdf:so-dang-cool/asdf-dt](https://github.com/so-dang-cool/asdf-dt) |
 | dtm | [asdf:zhenyuanlau/asdf-dtm](https://github.com/zhenyuanlau/asdf-dtm) |
 | duf | [asdf:NeoHsu/asdf-duf](https://github.com/NeoHsu/asdf-duf) |
-| dust | [asdf:looztra/asdf-dust](https://github.com/looztra/asdf-dust) |
+| dust | [ubi:bootandy/dust](https://github.com/bootandy/dust) |
 | dvc | [asdf:fwfurtado/asdf-dvc](https://github.com/fwfurtado/asdf-dvc) |
 | dyff | [asdf:https://gitlab.com/wt0f/asdf-dyff](https://gitlab.com/wt0f/asdf-dyff) |
 | dynatrace-monaco | [asdf:nsaputro/asdf-monaco](https://github.com/nsaputro/asdf-monaco) |
