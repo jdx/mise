@@ -1,10 +1,3 @@
----
-head:
-  - - link
-    - rel: canonical
-      href: https://mise.jdx.dev/lang/python
----
-
 # Python
 
 The following are instructions for using the python mise core plugin. The core plugin will be used

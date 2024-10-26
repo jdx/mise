@@ -1,10 +1,3 @@
----
-head:
-  - - link
-    - rel: canonical
-      href: https://mise.jdx.dev/lang/rust
----
-
 # Rust
 
 Rust is not currently offered as a core plugin. In fact, I don't think you

@@ -1,10 +1,3 @@
----
-head:
-  - - link
-    - rel: canonical
-      href: https://mise.jdx.dev/lang/ruby
----
-
 # Ruby
 
 The following are instructions for using the ruby mise core plugin. This is used when there isn't a
