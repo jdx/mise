@@ -325,7 +325,7 @@ editLink: false
 | hub | [asdf:mise-plugins/asdf-hub](https://github.com/mise-plugins/asdf-hub) |
 | hugo | [asdf:NeoHsu/asdf-hugo](https://github.com/NeoHsu/asdf-hugo) |
 | hurl | [asdf:raimon49/asdf-hurl](https://github.com/raimon49/asdf-hurl) |
-| hwatch | [asdf:chessmango/asdf-hwatch](https://github.com/chessmango/asdf-hwatch) |
+| hwatch | [ubi:blacknon/hwatch](https://github.com/blacknon/hwatch) |
 | hygen | [asdf:brentjanderson/asdf-hygen](https://github.com/brentjanderson/asdf-hygen) |
 | hyperfine | [asdf:volf52/asdf-hyperfine](https://github.com/volf52/asdf-hyperfine) |
 | iam-policy-json-to-terraform | [asdf:carlduevel/asdf-iam-policy-json-to-terraform](https://github.com/carlduevel/asdf-iam-policy-json-to-terraform) |
