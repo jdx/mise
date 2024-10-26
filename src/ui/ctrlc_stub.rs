@@ -1,6 +1,4 @@
-pub fn init() -> eyre::Result<()> {
-    Ok(())
-}
+pub fn init() {}
 
 // pub fn add_handler(_func: impl Fn() + Send + Sync + 'static) {}
 

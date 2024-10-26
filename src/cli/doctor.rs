@@ -189,7 +189,7 @@ impl Doctor {
                 ));
             }
         }
-        time!("doctor::analyze_shims: {:?}");
+        time!("doctor::analyze_shims");
     }
 
     fn analyze_plugins(&mut self) {

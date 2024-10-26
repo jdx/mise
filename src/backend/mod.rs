@@ -110,7 +110,7 @@ fn load_tools() -> BackendMap {
         .map(|plugin| (plugin.id().to_string(), plugin))
         .collect();
     *TOOLS.lock().unwrap() = Some(tools.clone());
-    time!("load_tools", "done");
+    time!("load_tools done");
     tools
 }
 

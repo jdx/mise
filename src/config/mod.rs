@@ -262,12 +262,7 @@ impl Config {
             })
             .map(|t| (t.name.clone(), t))
             .collect();
-        time!(
-            "load_all_tasks",
-            "{count} {tasks}",
-            count = tasks.len(),
-            tasks = if tasks.len() == 1 { "task" } else { "tasks" },
-        );
+        time!("load_all_tasks {count}", count = tasks.len(),);
         Ok(tasks)
     }
 

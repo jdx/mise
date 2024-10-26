@@ -206,7 +206,7 @@ impl Cli {
         time!("run init");
         shims::handle_shim()?;
         time!("run handle_shim");
-        ctrlc::init()?;
+        ctrlc::init();
         version::print_version_if_requested(args)?;
 
         let matches = CLI.clone().try_get_matches_from(args).unwrap_or_else(|_| {

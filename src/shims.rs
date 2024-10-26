@@ -17,13 +17,12 @@ use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
-use xx::regex;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
-    if regex!(r"^(mise|rtx)(\-.*)?(\.exe)?$").is_match(bin_name) || cfg!(test) {
+    if bin_name.starts_with("mise") || cfg!(test) {
         return Ok(());
     }
     logger::init();
@@ -174,7 +173,7 @@ pub fn get_shim_diffs(
         desired_shims.difference(&actual_shims).cloned().collect(),
         actual_shims.difference(&desired_shims).cloned().collect(),
     );
-    time!("get_shim_diffs", "sizes: ({},{})", out.0.len(), out.1.len());
+    time!("get_shim_diffs sizes: ({},{})", out.0.len(), out.1.len());
     Ok(out)
 }
 

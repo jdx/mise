@@ -96,7 +96,7 @@ macro_rules! info {
 }
 
 #[cfg(feature = "timings")]
-pub fn get_time_diff(module: &str, extra: &str) -> String {
+pub fn get_time_diff(module: &str) -> String {
     static PREV: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
     let now = std::time::Instant::now();
     if PREV.lock().unwrap().is_none() {
@@ -106,7 +106,8 @@ pub fn get_time_diff(module: &str, extra: &str) -> String {
     let diff = now.duration_since(prev.unwrap());
     *prev = Some(now);
     let diff_str = crate::ui::time::format_duration(diff);
-    let out = format!("[TIME] {module} {diff_str} {extra}")
+    let thread_id = crate::logger::thread_id();
+    let out = format!("[TIME] {thread_id} {module} {diff_str}")
         .trim()
         .to_string();
     if diff.as_micros() > 8000 {
@@ -118,18 +119,13 @@ pub fn get_time_diff(module: &str, extra: &str) -> String {
     } else if diff.as_micros() > 1000 {
         style::eyellow(out).bright()
     } else if diff.as_micros() > 500 {
-        style::eyellow(out)
+        style::eyellow(out).dim()
     } else if diff.as_micros() > 100 {
-        style::ecyan(out)
+        style::ecyan(out).dim()
     } else {
         style::edim(out)
     }
     .to_string()
-}
-
-#[cfg(not(feature = "timings"))]
-pub fn get_time_diff(_module: &str, _extra: &str) -> String {
-    "".to_string()
 }
 
 #[macro_export]
@@ -137,20 +133,19 @@ pub fn get_time_diff(_module: &str, _extra: &str) -> String {
 macro_rules! time {
     () => {{
         if *$crate::env::MISE_TIMINGS {
-            eprintln!("{}", $crate::output::get_time_diff(module_path!(), ""));
+            eprintln!("{}", $crate::output::get_time_diff(module_path!()));
         }
     }};
     ($fn:expr) => {{
         if *$crate::env::MISE_TIMINGS {
-            let module = format!("{}::{}", module_path!(), $fn);
-            eprintln!("{}", $crate::output::get_time_diff(&module, ""));
+            let module = format!("{}::{}", module_path!(), format!($fn));
+            eprintln!("{}", $crate::output::get_time_diff(&module));
         }
     }};
     ($fn:expr, $($arg:tt)+) => {{
         if *$crate::env::MISE_TIMINGS {
-            let module = format!("{}::{}", module_path!(), $fn);
-            let extra = format!($($arg)+);
-            eprintln!("{}", $crate::output::get_time_diff(&module, &extra));
+            let module = format!("{}::{}", module_path!(), format!($fn, $($arg)+));
+            eprintln!("{}", $crate::output::get_time_diff(&module));
         }
     }};
 }
