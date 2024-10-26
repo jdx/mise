@@ -578,7 +578,7 @@ editLink: false
 | raku | [asdf:m-dango/asdf-raku](https://github.com/m-dango/asdf-raku) |
 | rancher | [asdf:abinet/asdf-rancher](https://github.com/abinet/asdf-rancher) |
 | rbac-lookup | [asdf:looztra/asdf-rbac-lookup](https://github.com/looztra/asdf-rbac-lookup) |
-| rclone | [asdf:johnlayton/asdf-rclone](https://github.com/johnlayton/asdf-rclone) |
+| rclone | [ubi:rclone/rclone](https://github.com/rclone/rclone) |
 | rebar | [asdf:Stratus3D/asdf-rebar](https://github.com/Stratus3D/asdf-rebar) |
 | reckoner | [asdf:FairwindsOps/asdf-reckoner](https://github.com/FairwindsOps/asdf-reckoner) |
 | redis | [asdf:smashedtoatoms/asdf-redis](https://github.com/smashedtoatoms/asdf-redis) |
