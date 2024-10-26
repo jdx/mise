@@ -704,7 +704,7 @@ editLink: false
 | tfc-agent | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | tfctl | [asdf:deas/asdf-tfctl](https://github.com/deas/asdf-tfctl) |
 | tfenv | [asdf:carlduevel/asdf-tfenv](https://github.com/carlduevel/asdf-tfenv) |
-| tflint | [asdf:skyzyx/asdf-tflint](https://github.com/skyzyx/asdf-tflint) |
+| tflint | [ubi:terraform-linters/tflint](https://github.com/terraform-linters/tflint) |
 | tfmigrate | [asdf:dex4er/asdf-tfmigrate](https://github.com/dex4er/asdf-tfmigrate) |
 | tfnotify | [asdf:jnavarrof/asdf-tfnotify](https://github.com/jnavarrof/asdf-tfnotify) |
 | tfsec | [asdf:woneill/asdf-tfsec](https://github.com/woneill/asdf-tfsec) |
