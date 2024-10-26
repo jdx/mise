@@ -1,9 +1,12 @@
 use clap::{Arg, ArgAction};
+use once_cell::sync::Lazy;
 
 pub struct YesArg;
 
+pub static YES_ARG: Lazy<Arg> = Lazy::new(YesArg::arg);
+
 impl YesArg {
-    pub fn arg() -> Arg {
+    fn arg() -> Arg {
         Arg::new("yes")
             .short('y')
             .long("yes")

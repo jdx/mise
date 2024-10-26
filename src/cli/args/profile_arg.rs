@@ -1,10 +1,13 @@
 use clap::{Arg, ArgAction};
+use once_cell::sync::Lazy;
 
 #[derive(Clone, Debug)]
 pub struct ProfileArg;
 
+pub static PROFILE_ARG: Lazy<Arg> = Lazy::new(ProfileArg::arg);
+
 impl ProfileArg {
-    pub fn arg() -> Arg {
+    fn arg() -> Arg {
         Arg::new("profile")
             .short('P')
             .long("profile")

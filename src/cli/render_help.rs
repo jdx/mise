@@ -2,7 +2,7 @@ use eyre::Result;
 use indoc::formatdoc;
 use itertools::Itertools;
 
-use crate::cli::Cli;
+use crate::cli::CLI;
 use crate::file;
 
 /// internal command to generate markdown from help
@@ -34,7 +34,8 @@ fn render_command_ts() -> String {
         }};
         "#});
     doc.push_str("export const commands: { [key: string]: Command } = {\n");
-    let mut cli = Cli::command()
+    let mut cli = CLI
+        .clone()
         .term_width(80)
         .max_term_width(80)
         .disable_help_subcommand(true)

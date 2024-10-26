@@ -1,10 +1,13 @@
 use clap::{Arg, ArgAction};
+use once_cell::sync::Lazy;
 
 #[derive(Clone)]
 pub struct QuietArg;
 
+pub static QUIET_ARG: Lazy<Arg> = Lazy::new(QuietArg::arg);
+
 impl QuietArg {
-    pub fn arg() -> Arg {
+    fn arg() -> Arg {
         Arg::new("quiet")
             .short('q')
             .long("quiet")

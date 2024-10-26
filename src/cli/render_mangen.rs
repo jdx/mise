@@ -4,7 +4,7 @@ use std::{env, fs};
 use eyre::Result;
 use xx::file;
 
-use crate::cli::{version, Cli};
+use crate::cli::{version, CLI};
 
 /// internal command to generate markdown from help
 #[derive(Debug, clap::Args)]
@@ -13,7 +13,8 @@ pub struct RenderMangen {}
 
 impl RenderMangen {
     pub fn run(self) -> Result<()> {
-        let cli = Cli::command()
+        let cli = CLI
+            .clone()
             .version(version::V.to_string())
             .disable_colored_help(true);
 

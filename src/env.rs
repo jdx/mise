@@ -5,14 +5,13 @@ use std::string::ToString;
 use std::sync::RwLock;
 use std::{path, process};
 
-use itertools::Itertools;
-use log::LevelFilter;
-use once_cell::sync::Lazy;
-
-use crate::cli::args::ProfileArg;
+use crate::cli::args::PROFILE_ARG;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
 use crate::hook_env::{deserialize_watches, HookEnvWatches};
+use itertools::Itertools;
+use log::LevelFilter;
+use once_cell::sync::Lazy;
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 #[cfg(unix)]
@@ -343,8 +342,8 @@ fn prefer_stale(args: &[String]) -> bool {
 }
 
 fn environment(args: &[String]) -> Option<String> {
-    let long_arg = format!("--{}", ProfileArg::arg().get_long().unwrap_or_default());
-    let short_arg = format!("-{}", ProfileArg::arg().get_short().unwrap_or_default());
+    let long_arg = format!("--{}", PROFILE_ARG.get_long().unwrap_or_default());
+    let short_arg = format!("-{}", PROFILE_ARG.get_short().unwrap_or_default());
 
     args.windows(2)
         .find_map(|window| {
