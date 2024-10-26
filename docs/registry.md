@@ -677,8 +677,8 @@ editLink: false
 | syft | [asdf:davidgp1701/asdf-syft](https://github.com/davidgp1701/asdf-syft) |
 | syncher | [asdf:nwillc/syncher](https://github.com/nwillc/syncher) |
 | talhelper | [asdf:bjw-s/asdf-talhelper](https://github.com/bjw-s/asdf-talhelper) |
-| talos | [asdf:particledecay/asdf-talos](https://github.com/particledecay/asdf-talos) |
-| talosctl | [asdf:bjw-s/asdf-talosctl](https://github.com/bjw-s/asdf-talosctl) |
+| talos | [ubi:siderolabs/talos](https://github.com/siderolabs/talos) |
+| talosctl | [ubi:siderolabs/talos](https://github.com/siderolabs/talos) |
 | tanka | [asdf:trotttrotttrott/asdf-tanka](https://github.com/trotttrotttrott/asdf-tanka) |
 | tanzu | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
 | task | [asdf:particledecay/asdf-task](https://github.com/particledecay/asdf-task) |
