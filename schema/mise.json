@@ -337,6 +337,10 @@
           "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
           "type": "string"
         },
+        "profile": {
+          "description": "Profile to use for mise.${MISE_ENV}.toml files.",
+          "type": "string"
+        },
         "python": {
           "additionalProperties": false,
           "properties": {

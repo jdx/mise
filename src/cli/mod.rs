@@ -1,10 +1,10 @@
-use clap::{FromArgMatches, Subcommand};
-use color_eyre::Result;
-use indoc::indoc;
-
 use crate::config::Settings;
 use crate::ui::ctrlc;
 use crate::{eager, logger, migrate, shims};
+use clap::{FromArgMatches, Subcommand};
+use color_eyre::Result;
+use indoc::indoc;
+use once_cell::sync::Lazy;
 
 mod activate;
 mod alias;
@@ -179,28 +179,28 @@ impl Commands {
     }
 }
 
-impl Cli {
-    pub fn command() -> clap::Command {
-        Commands::augment_subcommands(
-            clap::Command::new("mise")
-                .version(version::VERSION.to_string())
-                .about(env!("CARGO_PKG_DESCRIPTION"))
-                .author("Jeff Dickey <@jdx>")
-                .long_about(LONG_ABOUT)
-                .arg_required_else_help(true)
-                .subcommand_required(true)
-                .after_long_help(AFTER_LONG_HELP)
-                .arg(args::CdArg::arg())
-                .arg(args::ProfileArg::arg())
-                .arg(args::DebugArg::arg())
-                .arg(args::LogLevelArg::arg())
-                .arg(args::QuietArg::arg())
-                .arg(args::TraceArg::arg())
-                .arg(args::VerboseArg::arg())
-                .arg(args::YesArg::arg()),
-        )
-    }
+pub static CLI: Lazy<clap::Command> = Lazy::new(|| {
+    Commands::augment_subcommands(
+        clap::Command::new("mise")
+            .version(version::VERSION.to_string())
+            .about(env!("CARGO_PKG_DESCRIPTION"))
+            .author("Jeff Dickey <@jdx>")
+            .long_about(LONG_ABOUT)
+            .arg_required_else_help(true)
+            .subcommand_required(true)
+            .after_long_help(AFTER_LONG_HELP)
+            .arg(args::CD_ARG.clone())
+            .arg(args::DEBUG_ARG.clone())
+            .arg(args::LOG_LEVEL_ARG.clone())
+            .arg(args::PROFILE_ARG.clone())
+            .arg(args::QUIET_ARG.clone())
+            .arg(args::TRACE_ARG.clone())
+            .arg(args::VERBOSE_ARG.clone())
+            .arg(args::YES_ARG.clone()),
+    )
+});
 
+impl Cli {
     pub fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
         time!("run init");
@@ -209,13 +209,11 @@ impl Cli {
         ctrlc::init()?;
         version::print_version_if_requested(args)?;
 
-        let matches = Self::command()
-            .try_get_matches_from(args)
-            .unwrap_or_else(|_| {
-                Self::command()
-                    .subcommands(external::commands())
-                    .get_matches_from(args)
-            });
+        let matches = CLI.clone().try_get_matches_from(args).unwrap_or_else(|_| {
+            CLI.clone()
+                .subcommands(external::commands())
+                .get_matches_from(args)
+        });
         time!("run get_matches_from");
         Settings::add_cli_matches(&matches);
         time!("run add_cli_matches");

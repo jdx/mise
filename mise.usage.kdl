@@ -13,14 +13,14 @@ usage "Usage: mise [OPTIONS] <COMMAND>"
 flag "-C --cd" help="Change directory before running command" global=true {
     arg "<DIR>"
 }
-flag "-P --profile" help="Set the profile (environment)" global=true {
-    arg "<PROFILE>"
-}
 flag "--debug" help="Sets log level to debug" hide=true global=true
 flag "--log-level" help="Set the log output verbosity" hide=true global=true {
     arg "<LEVEL>" {
         choices "error" "warn" "info" "debug" "trace"
     }
+}
+flag "-P --profile" help="Set the profile (environment)" global=true {
+    arg "<PROFILE>"
 }
 flag "-q --quiet" help="Suppress non-error messages" global=true
 flag "--trace" help="Sets log level to trace" hide=true global=true
