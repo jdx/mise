@@ -220,7 +220,7 @@ editLink: false
 | esy | [asdf:asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy) |
 | etcd | [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) |
 | evans | [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
-| eza | [ubi:eza-community/eza](https://github.com/eza-community/eza) |
+| eza | [asdf:lwiechec/asdf-eza](https://github.com/lwiechec/asdf-eza) |
 | fd | [asdf:https://gitlab.com/wt0f/asdf-fd](https://gitlab.com/wt0f/asdf-fd) |
 | ffmpeg | [asdf:acj/asdf-ffmpeg](https://github.com/acj/asdf-ffmpeg) |
 | figma-export | [asdf:younke/asdf-figma-export](https://github.com/younke/asdf-figma-export) |
