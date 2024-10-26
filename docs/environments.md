@@ -85,6 +85,10 @@ The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/issues/
 for a potential alternative that would work with binaries or other script languages.
 :::
 
+## Plugin-provided `env._` Directives
+
+Plugins can provide their own `env._` directives. See [mise-env-sample](https://github.com/jdx/mise-env-sample) for an example of one.
+
 ## Multiple `env._` Directives
 
 It may be necessary to use multiple `env._` directives, however TOML fails with this syntax

@@ -24,7 +24,7 @@ include = [
     "src/assets/**",
     "src/plugins/core/assets/**",
 ]
-rust-version = "1.76.0"
+rust-version = "1.79"
 build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -120,8 +120,8 @@ url = "2"
 # usage-lib = { path = "../usage/lib", features = ["clap", "docs"] }
 usage-lib = { version = "0.11", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
-vfox = "0.1"
-# vfox = {path="../vfox.rs"}
+# vfox = { path="../vfox.rs" }
+vfox = "0.2"
 walkdir = "2"
 which = "6"
 xx = { version = "1", features = ["glob"] }

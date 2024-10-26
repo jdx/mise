@@ -1,20 +1,22 @@
-use crate::config::{Config, Settings};
-use crate::errors::Error::PluginNotInstalled;
+use crate::config::Settings;
 use crate::file::{display_path, remove_all};
 use crate::git::Git;
 use crate::plugins::{Plugin, PluginList, PluginType};
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::ui::prompt;
-use crate::{dirs, lock_file, plugins};
+use crate::{dirs, env, plugins, registry};
 use console::style;
 use contracts::requires;
-use eyre::{bail, eyre, Context};
+use eyre::{eyre, Context, Report};
+use indexmap::{indexmap, IndexMap};
 use once_cell::sync::Lazy;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{mpsc, Mutex, MutexGuard};
+use tokio::runtime::Runtime;
+use url::Url;
+use vfox::Vfox;
 use xx::regex;
 
 #[derive(Debug)]
@@ -50,6 +52,7 @@ impl VfoxPlugin {
         let settings = Settings::get();
         let plugins = plugins::INSTALLED_PLUGINS
             .iter()
+            .inspect(|(dir, _)| debug!("vfox_plugin: {:?}", dir))
             .filter(|(_, t)| matches!(t, PluginType::Vfox))
             .map(|(dir, _)| {
                 let name = dir.file_name().unwrap().to_string_lossy().to_string();
@@ -64,12 +67,50 @@ impl VfoxPlugin {
         self.repo.lock().unwrap()
     }
 
-    fn get_repo_url(&self, config: &Config) -> eyre::Result<String> {
-        self.repo_url
-            .clone()
-            .or_else(|| self.repo().get_remote_url())
-            .or_else(|| config.get_repo_url(&self.name))
-            .ok_or_else(|| eyre!("No repository found for plugin {}", self.name))
+    fn get_repo_url(&self) -> eyre::Result<Url> {
+        if let Some(url) = self.repo().get_remote_url() {
+            return Ok(Url::parse(&url)?);
+        }
+        vfox_to_url(&self.name)
+    }
+
+    pub fn mise_env(&self, opts: &toml::Value) -> Result<Option<IndexMap<String, String>>> {
+        let (vfox, _) = self.vfox();
+        let mut out = indexmap!();
+        let results = self.runtime()?.block_on(vfox.mise_env(&self.name, opts))?;
+        for env in results {
+            out.insert(env.key, env.value);
+        }
+        Ok(Some(out))
+    }
+
+    pub fn mise_path(&self, opts: &toml::Value) -> Result<Option<Vec<String>>> {
+        let (vfox, _) = self.vfox();
+        let mut out = vec![];
+        let results = self.runtime()?.block_on(vfox.mise_path(&self.name, opts))?;
+        for env in results {
+            out.push(env);
+        }
+        Ok(Some(out))
+    }
+
+    pub fn vfox(&self) -> (Vfox, mpsc::Receiver<String>) {
+        let mut vfox = Vfox::new();
+        vfox.plugin_dir = dirs::PLUGINS.to_path_buf();
+        vfox.cache_dir = dirs::CACHE.to_path_buf();
+        vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
+        vfox.install_dir = dirs::INSTALLS.to_path_buf();
+        vfox.temp_dir = env::temp_dir().join("mise-vfox");
+        let rx = vfox.log_subscribe();
+        (vfox, rx)
+    }
+
+    pub fn runtime(&self) -> eyre::Result<Runtime, Report> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .enable_io()
+            .build()?;
+        Ok(rt)
     }
 }
 
@@ -117,34 +158,13 @@ impl Plugin for VfoxPlugin {
             .wrap_err("run with --yes to install plugin automatically"))
     }
 
-    fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {
-        let config = Config::get();
-        let settings = Settings::try_get()?;
-        if !force {
-            if self.is_installed() {
-                return Ok(());
-            }
-            if !settings.yes && self.repo_url.is_none() {
-                let url = self.get_repo_url(&config).unwrap_or_default();
-                warn!(
-                    "⚠️ {} is a community-developed plugin – {}",
-                    style(&self.name).blue(),
-                    style(url.trim_end_matches(".git")).yellow()
-                );
-                if settings.paranoid {
-                    bail!(
-                        "Paranoid mode is enabled, refusing to install community-developed plugin"
-                    );
-                }
-                if !prompt::confirm_with_all(format!("Would you like to install {}?", self.name))? {
-                    Err(PluginNotInstalled(self.name.clone()))?
-                }
-            }
+    fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> Result<()> {
+        if !self.plugin_path.exists() {
+            let url = self.get_repo_url()?;
+            trace!("Cloning vfox plugin: {url}");
+            self.repo().clone(url.as_str())?;
         }
-        let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
-        let pr = mpr.add(&prefix);
-        let _lock = lock_file::get(&self.plugin_path, force)?;
-        self.install(pr.as_ref())
+        Ok(())
     }
 
     fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
@@ -200,9 +220,8 @@ impl Plugin for VfoxPlugin {
     }
 
     fn install(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
-        let config = Config::get();
-        let repository = self.get_repo_url(&config)?;
-        let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
+        let repository = self.get_repo_url()?;
+        let (repo_url, repo_ref) = Git::split_url_and_ref(repository.as_str());
         debug!("vfox_plugin[{}]:install {:?}", self.name, repository);
 
         if self.is_installed() {
@@ -231,4 +250,19 @@ Plugins could support local directories in the future but for now a symlink is r
         ));
         Ok(())
     }
+}
+
+fn vfox_to_url(name: &str) -> eyre::Result<Url> {
+    if let Some(full) = registry::REGISTRY_VFOX.get(name.trim_start_matches("vfox-")) {
+        // bun -> version-fox/vfox-bun
+        return vfox_to_url(full.split_once(':').unwrap().1);
+    }
+    let res = if let Some(caps) = regex!(r#"^([^/]+)/([^/]+)$"#).captures(name) {
+        let user = caps.get(1).unwrap().as_str();
+        let repo = caps.get(2).unwrap().as_str();
+        format!("https://github.com/{user}/{repo}").parse()
+    } else {
+        name.to_string().parse()
+    };
+    res.wrap_err_with(|| format!("Invalid version: {name}"))
 }

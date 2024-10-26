@@ -477,7 +477,6 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             }
 
                             #[derive(Deserialize)]
-                            #[serde(deny_unknown_fields)]
                             struct EnvDirectives {
                                 #[serde(default, deserialize_with = "deserialize_path_entry_arr")]
                                 path: Vec<PathEntry>,
@@ -487,6 +486,8 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 source: Vec<PathBuf>,
                                 #[serde(default)]
                                 python: EnvDirectivePython,
+                                #[serde(flatten)]
+                                other: BTreeMap<String, toml::Value>,
                             }
 
                             impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
@@ -566,6 +567,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             }
                             for source in directives.source {
                                 env.push(EnvDirective::Source(source));
+                            }
+                            for (key, value) in directives.other {
+                                env.push(EnvDirective::Module(key, value));
                             }
                             if let Some(venv) = directives.python.venv {
                                 env.push(EnvDirective::PythonVenv {
