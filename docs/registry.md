@@ -533,6 +533,7 @@ editLink: false
 | oras | [asdf:bodgit/asdf-oras](https://github.com/bodgit/asdf-oras) |
 | osm | [asdf:nlamirault/asdf-osm](https://github.com/nlamirault/asdf-osm) |
 | osqueryi | [asdf:davidecavestro/asdf-osqueryi](https://github.com/davidecavestro/asdf-osqueryi) |
+| overmind | [ubi:DarthSim/overmind](https://github.com/DarthSim/overmind) |
 | pachctl | [asdf:abatilo/asdf-pachctl](https://github.com/abatilo/asdf-pachctl) |
 | packer | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | pandoc | [asdf:Fbrisset/asdf-pandoc](https://github.com/Fbrisset/asdf-pandoc) |
