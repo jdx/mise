@@ -275,7 +275,7 @@ editLink: false
 | go-sdk | [asdf:yacchi/asdf-go-sdk](https://github.com/yacchi/asdf-go-sdk) |
 | go-swagger | [asdf:jfreeland/asdf-go-swagger](https://github.com/jfreeland/asdf-go-swagger) |
 | goconvey | [asdf:therounds-contrib/asdf-goconvey](https://github.com/therounds-contrib/asdf-goconvey) |
-| gofumpt | [asdf:looztra/asdf-gofumpt](https://github.com/looztra/asdf-gofumpt) |
+| gofumpt | [ubi:mvdan/gofumpt](https://github.com/mvdan/gofumpt) |
 | gohugo | [asdf:nklmilojevic/asdf-hugo](https://github.com/nklmilojevic/asdf-hugo) |
 | gojq | [asdf:jimmidyson/asdf-gojq](https://github.com/jimmidyson/asdf-gojq) |
 | golangci-lint | [ubi:golangci/golangci-lint](https://github.com/golangci/golangci-lint) |
