@@ -261,6 +261,7 @@ editLink: false
 | github-markdown-toc | [asdf:skyzyx/asdf-github-markdown-toc](https://github.com/skyzyx/asdf-github-markdown-toc) |
 | gitleaks | [asdf:jmcvetta/asdf-gitleaks](https://github.com/jmcvetta/asdf-gitleaks) |
 | gitsign | [asdf:spencergilbert/asdf-gitsign](https://github.com/spencergilbert/asdf-gitsign) |
+| gitu | [ubi:altsem/gitu](https://github.com/altsem/gitu) |
 | gitui | [asdf:looztra/asdf-gitui](https://github.com/looztra/asdf-gitui) |
 | glab | [asdf:particledecay/asdf-glab](https://github.com/particledecay/asdf-glab) |
 | gleam | [asdf:asdf-community/asdf-gleam](https://github.com/asdf-community/asdf-gleam) |
