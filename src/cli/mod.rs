@@ -182,7 +182,6 @@ impl Commands {
 pub static CLI: Lazy<clap::Command> = Lazy::new(|| {
     Commands::augment_subcommands(
         clap::Command::new("mise")
-            .version(version::VERSION.to_string())
             .about(env!("CARGO_PKG_DESCRIPTION"))
             .author("Jeff Dickey <@jdx>")
             .long_about(LONG_ABOUT)
@@ -196,7 +195,8 @@ pub static CLI: Lazy<clap::Command> = Lazy::new(|| {
             .arg(args::QUIET_ARG.clone())
             .arg(args::TRACE_ARG.clone())
             .arg(args::VERBOSE_ARG.clone())
-            .arg(args::YES_ARG.clone()),
+            .arg(args::YES_ARG.clone())
+            .version(version::VERSION.to_string()),
     )
 });
 

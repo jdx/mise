@@ -521,14 +521,17 @@ pub fn split_file_name(path: &Path) -> (String, String) {
 }
 
 pub fn same_file(a: &Path, b: &Path) -> bool {
-    let canonicalize = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    if canonicalize(a) == canonicalize(b) {
-        return true;
+    desymlink_path(a) == desymlink_path(b)
+}
+
+pub fn desymlink_path(p: &Path) -> PathBuf {
+    if let Ok(target) = fs::read_link(p) {
+        target
+            .canonicalize()
+            .unwrap_or_else(|_| target.to_path_buf())
+    } else {
+        p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
     }
-    if let (Ok(a), Ok(b)) = (fs::read_link(a), fs::read_link(b)) {
-        return canonicalize(&a) == canonicalize(&b);
-    }
-    false
 }
 
 #[cfg(test)]

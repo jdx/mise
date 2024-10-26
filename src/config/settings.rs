@@ -1,6 +1,6 @@
 use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
 use crate::file::FindUp;
-use crate::{config, dirs, env, file};
+use crate::{config, dirs, eager, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
@@ -213,6 +213,9 @@ impl Settings {
         if let Some(cd) = m.get_one::<PathBuf>("cd") {
             s.cd = Some(cd.clone());
         }
+        if let Some(profile) = m.get_one::<String>("profile") {
+            s.profile = Some(profile.clone());
+        }
         if let Some(true) = m.get_one::<bool>("yes") {
             s.yes = Some(true);
         }
@@ -265,6 +268,10 @@ impl Settings {
     fn parse_settings_file(path: &PathBuf) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
         let settings_file: SettingsFile = toml::from_str(&raw)?;
+
+        // eagerly parse the file as a config file in the background for later
+        eager::CONFIG_FILES.lock().unwrap().push(path.clone());
+
         Ok(settings_file.settings)
     }
 
