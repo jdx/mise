@@ -88,7 +88,6 @@ mod tests {
         paranoid = false
         pin = false
         plugin_autoupdate_last_check_duration = "20m"
-        python_default_packages_file = "~/.default-python-packages"
         quiet = false
         raw = false
         trusted_config_paths = []
@@ -166,7 +165,6 @@ mod tests {
         python.pyenv_repo
         python.venv_auto_create
         python.venv_stdlib
-        python_default_packages_file
         quiet
         raw
         ruby
