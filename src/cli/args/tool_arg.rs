@@ -33,9 +33,7 @@ impl FromStr for ToolArg {
     type Err = eyre::Error;
 
     fn from_str(input: &str) -> eyre::Result<Self> {
-        let (backend_input, _opts_str, version) = parse_input(input);
-
-        // TODO: handle opts_str so options can be passed on the command line
+        let (backend_input, version) = parse_input(input);
 
         let backend: BackendArg = backend_input.into();
         let opts = backend.opts.clone();
@@ -150,30 +148,24 @@ impl Display for ToolArg {
     }
 }
 
-fn parse_input(s: &str) -> (&str, Option<&str>, Option<&str>) {
-    let (mut backend, version) = s
+fn parse_input(s: &str) -> (&str, Option<&str>) {
+    let (backend, version) = s
         .split_once('@')
         .map(|(f, v)| (f, Some(v)))
         .unwrap_or((s, None));
-    let mut opts = None;
-
-    if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(backend) {
-        backend = c.get(1).unwrap().as_str();
-        opts = Some(c.get(2).unwrap().as_str());
-    }
 
     // special case for packages with npm scopes like "npm:@antfu/ni"
     if backend == "npm:" {
         if let Some(v) = version {
             return if let Some(i) = v.find('@') {
-                (&s[..backend.len() + i + 1], opts, Some(&v[i + 1..]))
+                (&s[..backend.len() + i + 1], Some(&v[i + 1..]))
             } else {
-                (&s[..backend.len() + v.len() + 1], opts, None)
+                (&s[..backend.len() + v.len() + 1], None)
             };
         }
     }
 
-    (backend, opts, version)
+    (backend, version)
 }
 
 #[cfg(test)]
@@ -237,39 +229,30 @@ mod tests {
     #[test]
     fn test_tool_arg_parse_input() {
         reset();
-        let t = |input, f, o, v| {
-            let (backend, opts, version) = parse_input(input);
+        let t = |input, f, v| {
+            let (backend, version) = parse_input(input);
             assert_eq!(backend, f);
-            assert_eq!(opts, o);
             assert_eq!(version, v);
         };
-        t("npm:@antfu/ni", "npm:@antfu/ni", None, None);
-        t("npm:@antfu/ni@1.0.0", "npm:@antfu/ni", None, Some("1.0.0"));
-        t(
-            "npm:@antfu/ni@1.0.0@1",
-            "npm:@antfu/ni",
-            None,
-            Some("1.0.0@1"),
-        );
-        t("npm:", "npm:", None, None);
-        t("npm:prettier", "npm:prettier", None, None);
-        t("npm:prettier@1.0.0", "npm:prettier", None, Some("1.0.0"));
+        t("npm:@antfu/ni", "npm:@antfu/ni", None);
+        t("npm:@antfu/ni@1.0.0", "npm:@antfu/ni", Some("1.0.0"));
+        t("npm:@antfu/ni@1.0.0@1", "npm:@antfu/ni", Some("1.0.0@1"));
+        t("npm:", "npm:", None);
+        t("npm:prettier", "npm:prettier", None);
+        t("npm:prettier@1.0.0", "npm:prettier", Some("1.0.0"));
         t(
             "ubi:BurntSushi/ripgrep[exe=rg]",
-            "ubi:BurntSushi/ripgrep",
-            Some("exe=rg"),
+            "ubi:BurntSushi/ripgrep[exe=rg]",
             None,
         );
         t(
             "ubi:BurntSushi/ripgrep[exe=rg,match=musl]",
-            "ubi:BurntSushi/ripgrep",
-            Some("exe=rg,match=musl"),
+            "ubi:BurntSushi/ripgrep[exe=rg,match=musl]",
             None,
         );
         t(
             "ubi:BurntSushi/ripgrep[exe=rg,match=musl]@1.0.0",
-            "ubi:BurntSushi/ripgrep",
-            Some("exe=rg,match=musl"),
+            "ubi:BurntSushi/ripgrep[exe=rg,match=musl]",
             Some("1.0.0"),
         );
     }
