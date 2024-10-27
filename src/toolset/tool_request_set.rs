@@ -179,7 +179,7 @@ impl ToolRequestSetBuilder {
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = ToolRequestSet::new();
                 for v in v.split_whitespace() {
-                    let tvr = ToolRequest::new(fa.clone(), v)?;
+                    let tvr = ToolRequest::new(fa.clone(), v, source.clone())?;
                     env_ts.add_version(tvr, &source);
                 }
                 merge(trs, env_ts);
@@ -205,7 +205,8 @@ impl ToolRequestSetBuilder {
 
                     if !trs.tools.contains_key(&arg.backend) {
                         // no active version, so use "latest"
-                        let tr = ToolRequest::new(arg.backend.clone(), "latest")?;
+                        let tr =
+                            ToolRequest::new(arg.backend.clone(), "latest", ToolSource::Argument)?;
                         arg_ts.add_version(tr, &ToolSource::Argument);
                     }
                 }

@@ -119,7 +119,7 @@ impl Backend for DenoPlugin {
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        if let ToolRequest::System(_) = tv.request {
+        if let ToolRequest::System(..) = tv.request {
             return Ok(vec![]);
         }
         let bin_paths = vec![

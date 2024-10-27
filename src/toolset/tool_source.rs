@@ -7,13 +7,14 @@ use indexmap::{indexmap, IndexMap};
 use crate::file::display_path;
 
 /// where a tool version came from (e.g.: .tool-versions)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum ToolSource {
     ToolVersions(PathBuf),
     MiseToml(PathBuf),
     LegacyVersionFile(PathBuf),
     Argument,
     Environment(String, String),
+    Unknown,
 }
 
 impl Display for ToolSource {
@@ -24,6 +25,7 @@ impl Display for ToolSource {
             ToolSource::LegacyVersionFile(path) => write!(f, "{}", display_path(path)),
             ToolSource::Argument => write!(f, "--runtime"),
             ToolSource::Environment(k, v) => write!(f, "{k}={v}"),
+            ToolSource::Unknown => write!(f, "unknown"),
         }
     }
 }
@@ -60,6 +62,9 @@ impl ToolSource {
                 "key".to_string() => key.to_string(),
                 "value".to_string() => value.to_string(),
             },
+            ToolSource::Unknown => indexmap! {
+                "type".to_string() => "unknown".to_string(),
+            },
         }
     }
 }
@@ -90,6 +95,9 @@ impl Serialize for ToolSource {
                 s.serialize_field("type", "environment")?;
                 s.serialize_field("key", key)?;
                 s.serialize_field("value", value)?;
+            }
+            ToolSource::Unknown => {
+                s.serialize_field("type", "unknown")?;
             }
         }
 

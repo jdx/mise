@@ -9,6 +9,9 @@ ToolRequestSet {
                 backend: BackendArg("terraform"),
                 version: "1.0.0",
                 options: {},
+                source: MiseToml(
+                    "~/fixtures/.mise.toml",
+                ),
             },
         ],
         BackendArg("node"): [
@@ -16,21 +19,33 @@ ToolRequestSet {
                 backend: BackendArg("node"),
                 version: "18",
                 options: {},
+                source: MiseToml(
+                    "~/fixtures/.mise.toml",
+                ),
             },
             Prefix {
                 backend: BackendArg("node"),
                 prefix: "20",
                 options: {},
+                source: MiseToml(
+                    "~/fixtures/.mise.toml",
+                ),
             },
             Ref {
                 backend: BackendArg("node"),
                 ref_: "master",
                 ref_type: "ref",
                 options: {},
+                source: MiseToml(
+                    "~/fixtures/.mise.toml",
+                ),
             },
             Path(
                 BackendArg("node"),
                 "~/.nodes/18",
+                MiseToml(
+                    "~/fixtures/.mise.toml",
+                ),
             ),
         ],
         BackendArg("jq"): [
@@ -38,6 +53,9 @@ ToolRequestSet {
                 backend: BackendArg("jq"),
                 prefix: "1.6",
                 options: {},
+                source: MiseToml(
+                    "~/fixtures/.mise.toml",
+                ),
             },
         ],
         BackendArg("shellcheck" -> "ubi:koalaman/shellcheck"): [
@@ -45,6 +63,9 @@ ToolRequestSet {
                 backend: BackendArg("shellcheck" -> "ubi:koalaman/shellcheck"),
                 version: "0.9.0",
                 options: {},
+                source: MiseToml(
+                    "~/fixtures/.mise.toml",
+                ),
             },
         ],
         BackendArg("python"): [
@@ -54,11 +75,17 @@ ToolRequestSet {
                 options: {
                     "venv": ".venv",
                 },
+                source: MiseToml(
+                    "~/fixtures/.mise.toml",
+                ),
             },
             Version {
                 backend: BackendArg("python"),
                 version: "3.9.0",
                 options: {},
+                source: MiseToml(
+                    "~/fixtures/.mise.toml",
+                ),
             },
         ],
     },

@@ -67,7 +67,7 @@ impl ToolVersion {
 
     pub fn install_path(&self) -> PathBuf {
         let pathname = match &self.request {
-            ToolRequest::Path(_, p) => p.to_string_lossy().to_string(),
+            ToolRequest::Path(_, p, ..) => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
         let path = self.backend.installs_path.join(pathname);
@@ -93,7 +93,7 @@ impl ToolVersion {
             return self.install_path();
         }
         let pathname = match &self.request {
-            ToolRequest::Path(_, p) => p.to_string_lossy().to_string(),
+            ToolRequest::Path(_, p, ..) => p.to_string_lossy().to_string(),
             _ => self.tv_short_pathname(),
         };
         let sp = self.backend.installs_path.join(pathname);
@@ -133,8 +133,8 @@ impl ToolVersion {
             ToolRequest::Prefix { .. } => self.version.to_string(),
             ToolRequest::Sub { .. } => self.version.to_string(),
             ToolRequest::Ref { ref_: r, .. } => format!("ref-{}", r),
-            ToolRequest::Path(_, p) => format!("path-{}", hash_to_str(p)),
-            ToolRequest::System(_) => "system".to_string(),
+            ToolRequest::Path(_, p, ..) => format!("path-{}", hash_to_str(p)),
+            ToolRequest::System(..) => "system".to_string(),
         }
         .replace([':', '/'], "-")
     }
@@ -161,10 +161,11 @@ impl ToolVersion {
                     r.to_string(),
                     ref_type.to_string(),
                     request.options(),
+                    &request,
                 ));
             }
             Some(("path", p)) => {
-                return Self::resolve_path(backend, PathBuf::from(p));
+                return Self::resolve_path(backend, PathBuf::from(p), &request);
             }
             Some(("prefix", p)) => {
                 return Self::resolve_prefix(backend, request, p);
@@ -241,20 +242,22 @@ impl ToolVersion {
         ref_: String,
         ref_type: String,
         opts: ToolVersionOptions,
+        tr: &ToolRequest,
     ) -> Self {
         let request = ToolRequest::Ref {
             backend: tool.fa().clone(),
             ref_,
             ref_type,
             options: opts.clone(),
+            source: tr.source().clone(),
         };
         let version = request.version();
         Self::new(tool, request, version)
     }
 
-    fn resolve_path(tool: &dyn Backend, path: PathBuf) -> Result<ToolVersion> {
+    fn resolve_path(tool: &dyn Backend, path: PathBuf, tr: &ToolRequest) -> Result<ToolVersion> {
         let path = fs::canonicalize(path)?;
-        let request = ToolRequest::Path(tool.fa().clone(), path);
+        let request = ToolRequest::Path(tool.fa().clone(), path, tr.source().clone());
         let version = request.version();
         Ok(Self::new(tool, request, version))
     }

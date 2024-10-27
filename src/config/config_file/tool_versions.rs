@@ -128,7 +128,7 @@ impl ToolVersions {
         let source = ToolSource::ToolVersions(self.path.clone());
         for (plugin, tvp) in &self.plugins {
             for version in &tvp.versions {
-                let tvr = ToolRequest::new(plugin.clone(), version)?;
+                let tvr = ToolRequest::new(plugin.clone(), version, source.clone())?;
                 self.tools.add_version(tvr, &source)
             }
         }

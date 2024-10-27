@@ -24,7 +24,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::core::{CorePlugin, CORE_PLUGINS};
 use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{is_outdated_version, ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{is_outdated_version, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, lock_file, versions_host};
 
@@ -198,7 +198,7 @@ pub trait Backend: Debug + Send + Sync {
         let dep_backends = deps.iter().map(|fa| fa.into()).collect::<Vec<ABackend>>();
         for dep in dep_backends {
             // TODO: pass the right tvr
-            let tvr = ToolRequest::System(dep.id().into());
+            let tvr = ToolRequest::System(dep.id().into(), ToolSource::Unknown);
             deps.extend(dep.get_all_dependencies(&tvr)?);
         }
         Ok(deps)
@@ -257,7 +257,7 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn is_version_installed(&self, tv: &ToolVersion, check_symlink: bool) -> bool {
         match tv.request {
-            ToolRequest::System(_) => true,
+            ToolRequest::System(..) => true,
             _ => {
                 let check_path = |install_path: &Path| {
                     let is_installed = install_path.exists();
@@ -356,7 +356,7 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
         let deps = self
-            .get_all_dependencies(&ToolRequest::System(self.id().into()))?
+            .get_all_dependencies(&ToolRequest::System(self.id().into(), ToolSource::Unknown))?
             .into_iter()
             .collect::<HashSet<_>>();
         if !deps.is_empty() {
@@ -490,7 +490,7 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
         match tv.request {
-            ToolRequest::System(_) => Ok(vec![]),
+            ToolRequest::System(..) => Ok(vec![]),
             _ => Ok(vec![tv.install_short_path().join("bin")]),
         }
     }
@@ -544,7 +544,10 @@ pub trait Backend: Debug + Send + Sync {
     fn dependency_toolset(&self) -> eyre::Result<Toolset> {
         let config = Config::get();
         let dependencies = self
-            .get_all_dependencies(&ToolRequest::System(self.name().into()))?
+            .get_all_dependencies(&ToolRequest::System(
+                self.name().into(),
+                ToolSource::Unknown,
+            ))?
             .into_iter()
             .collect();
         let mut ts: Toolset = config

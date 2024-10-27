@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::toolset::{ToolRequest, ToolVersion, ToolsetBuilder};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, runtime_symlinks, shims};
 
@@ -104,7 +104,7 @@ impl Uninstall {
                 let mut tvs = matches
                     .into_iter()
                     .map(|v| {
-                        let tvr = ToolRequest::new(tool.fa().clone(), v)?;
+                        let tvr = ToolRequest::new(tool.fa().clone(), v, ToolSource::Unknown)?;
                         let tv = ToolVersion::new(tool.as_ref(), tvr, v.into());
                         Ok((tool.clone(), tv))
                     })
