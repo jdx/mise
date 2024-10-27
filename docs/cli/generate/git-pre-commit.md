@@ -2,6 +2,8 @@
 
 **Usage**: `mise generate git-pre-commit [FLAGS]`
 
+**Source code**: [`src/cli/generate/git-pre-commit.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/git-pre-commit.rs)
+
 **Aliases**: `pre-commit`
 
 [experimental] Generate a git pre-commit hook

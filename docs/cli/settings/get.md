@@ -2,6 +2,8 @@
 
 **Usage**: `mise settings get <SETTING>`
 
+**Source code**: [`src/cli/settings/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/get.rs)
+
 Show a current setting
 
 This is the contents of a single entry in ~/.config/mise/config.toml

@@ -2,6 +2,8 @@
 
 **Usage**: `mise ls-remote [--all] [TOOL@VERSION] [PREFIX]`
 
+**Source code**: [`src/cli/ls-remote.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls-remote.rs)
+
 List runtime versions available for install.
 
 Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.

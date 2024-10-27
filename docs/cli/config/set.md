@@ -2,6 +2,8 @@
 
 **Usage**: `mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`
 
+**Source code**: [`src/cli/config/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/set.rs)
+
 Display the value of a setting in a mise.toml file
 
 ## Arguments

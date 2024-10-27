@@ -2,6 +2,8 @@
 
 **Usage**: `mise tasks run [FLAGS] [TASK] [ARGS]...`
 
+**Source code**: [`src/cli/tasks/run.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/run.rs)
+
 **Aliases**: `r`
 
 [experimental] Run task(s)

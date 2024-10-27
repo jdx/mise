@@ -2,6 +2,8 @@
 
 **Usage**: `mise alias ls [--no-header] [PLUGIN]`
 
+**Source code**: [`src/cli/alias/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/ls.rs)
+
 **Aliases**: `list`
 
 List aliases

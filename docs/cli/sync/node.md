@@ -2,6 +2,8 @@
 
 **Usage**: `mise sync node [FLAGS]`
 
+**Source code**: [`src/cli/sync/node.rs`](https://github.com/jdx/mise/blob/main/src/cli/sync/node.rs)
+
 Symlinks all tool versions from an external tool into mise
 
 For example, use this to import all Homebrew node installs into mise

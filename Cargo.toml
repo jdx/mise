@@ -118,7 +118,7 @@ toml_edit = { version = "0.22", features = ["parse"] }
 ubi = { version = "0.2", default-features = false }
 url = "2"
 # usage-lib = { path = "../usage/lib", features = ["clap", "docs"] }
-usage-lib = { version = "0.11", features = ["clap", "docs"] }
+usage-lib = { version = "0.12", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 # vfox = { path="../vfox.rs" }
 vfox = "0.2"

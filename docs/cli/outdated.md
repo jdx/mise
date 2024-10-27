@@ -2,6 +2,8 @@
 
 **Usage**: `mise outdated [FLAGS] [TOOL@VERSION]...`
 
+**Source code**: [`src/cli/outdated.rs`](https://github.com/jdx/mise/blob/main/src/cli/outdated.rs)
+
 Shows outdated tool versions
 
 See `mise upgrade` to upgrade these versions.

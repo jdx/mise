@@ -2,6 +2,8 @@
 
 **Usage**: `mise direnv <SUBCOMMAND>`
 
+**Source code**: [`src/cli/direnv.rs`](https://github.com/jdx/mise/blob/main/src/cli/direnv.rs)
+
 Output direnv function to use mise inside direnv
 
 See <https://mise.jdx.dev/direnv.html> for more information
@@ -12,4 +14,4 @@ direnv may not know to update environment variables when legacy file versions ch
 
 ## Subcommands
 
-* [`mise direnv activate`](/cli/direnv/activate.md)
+- [`mise direnv activate`](/cli/direnv/activate.md)

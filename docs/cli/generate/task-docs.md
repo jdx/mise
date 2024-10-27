@@ -2,6 +2,8 @@
 
 **Usage**: `mise generate task-docs [FLAGS]`
 
+**Source code**: [`src/cli/generate/task-docs.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/task-docs.rs)
+
 [experimental] Generate documentation for tasks in a project
 
 ## Flags

@@ -2,6 +2,8 @@
 
 **Usage**: `mise plugins install [FLAGS] [NEW_PLUGIN] [GIT_URL]`
 
+**Source code**: [`src/cli/plugins/install.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/install.rs)
+
 **Aliases**: `i`, `a`, `add`
 
 Install a plugin

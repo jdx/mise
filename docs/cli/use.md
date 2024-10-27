@@ -2,6 +2,8 @@
 
 **Usage**: `mise use [FLAGS] [TOOL@VERSION]...`
 
+**Source code**: [`src/cli/use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs)
+
 **Aliases**: `u`
 
 Installs a tool and adds the version it to mise.toml.

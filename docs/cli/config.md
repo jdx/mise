@@ -2,6 +2,8 @@
 
 **Usage**: `mise config [--no-header] [-J --json] <SUBCOMMAND>`
 
+**Source code**: [`src/cli/config.rs`](https://github.com/jdx/mise/blob/main/src/cli/config.rs)
+
 **Aliases**: `cfg`
 
 Manage config files
@@ -18,7 +20,7 @@ Output in JSON format
 
 ## Subcommands
 
-* [`mise config generate [-o --output <OUTPUT>]`](/cli/config/generate.md)
-* [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
-* [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
-* [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)
+- [`mise config generate [-o --output <OUTPUT>]`](/cli/config/generate.md)
+- [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
+- [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
+- [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)

@@ -2,6 +2,8 @@
 
 **Usage**: `mise which [FLAGS] <BIN_NAME>`
 
+**Source code**: [`src/cli/which.rs`](https://github.com/jdx/mise/blob/main/src/cli/which.rs)
+
 Shows the path that a tool's bin points to.
 
 Use this to figure out what version of a tool is currently active.

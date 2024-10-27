@@ -2,6 +2,8 @@
 
 **Usage**: `mise registry [NAME]`
 
+**Source code**: [`src/cli/registry.rs`](https://github.com/jdx/mise/blob/main/src/cli/registry.rs)
+
 List available tools to install
 
 This command lists the tools available in the registry as shorthand names.
