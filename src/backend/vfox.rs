@@ -1,33 +1,28 @@
 use crate::{env, plugins};
-use eyre::{Report, WrapErr};
 use heck::ToKebabCase;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::Arc;
 use std::thread;
-use tokio::runtime::Runtime;
-use url::Url;
 
 use crate::backend::{ABackend, Backend, BackendList, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, SETTINGS};
-use crate::git::Git;
+use crate::dirs;
 use crate::install_context::InstallContext;
-use crate::plugins::PluginType;
+use crate::plugins::vfox_plugin::VfoxPlugin;
+use crate::plugins::{Plugin, PluginType};
 use crate::toolset::{ToolVersion, Toolset};
-use crate::{dirs, registry};
-use vfox::Vfox;
-use xx::regex;
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
 pub struct VfoxBackend {
     ba: BackendArg,
-    plugin_path: PathBuf,
+    plugin: Box<VfoxPlugin>,
     remote_version_cache: CacheManager<Vec<String>>,
     exec_env_cache: CacheManager<BTreeMap<String, String>>,
-    repo: OnceLock<Mutex<Git>>,
     pathname: String,
 }
 
@@ -47,9 +42,10 @@ impl Backend for VfoxBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let (vfox, _log_rx) = self.vfox();
+                let (vfox, _log_rx) = self.plugin.vfox();
                 self.ensure_plugin_installed()?;
                 let versions = self
+                    .plugin
                     .runtime()?
                     .block_on(vfox.list_available_versions(&self.pathname))?;
                 Ok(versions
@@ -63,14 +59,14 @@ impl Backend for VfoxBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         self.ensure_plugin_installed()?;
-        let (vfox, log_rx) = self.vfox();
+        let (vfox, log_rx) = self.plugin.vfox();
         thread::spawn(|| {
             for line in log_rx {
                 // TODO: put this in ctx.pr.set_message()
                 info!("{}", line);
             }
         });
-        self.runtime()?.block_on(vfox.install(
+        self.plugin.runtime()?.block_on(vfox.install(
             &self.pathname,
             &ctx.tv.version,
             ctx.tv.install_path(),
@@ -96,21 +92,6 @@ impl Backend for VfoxBackend {
     ) -> eyre::Result<BTreeMap<String, String>> {
         self._exec_env(tv).cloned()
     }
-}
-
-fn vfox_to_url(name: &str) -> eyre::Result<Url> {
-    if let Some(full) = registry::REGISTRY_VFOX.get(name) {
-        // bun -> version-fox/vfox-bun
-        return vfox_to_url(full.split_once(':').unwrap().1);
-    }
-    let res = if let Some(caps) = regex!(r#"^([^/]+)/([^/]+)$"#).captures(name) {
-        let user = caps.get(1).unwrap().as_str();
-        let repo = caps.get(2).unwrap().as_str();
-        format!("https://github.com/{user}/{repo}").parse()
-    } else {
-        name.to_string().parse()
-    };
-    res.wrap_err_with(|| format!("Invalid version: {name}"))
 }
 
 impl VfoxBackend {
@@ -143,37 +124,18 @@ impl VfoxBackend {
                 .with_fresh_file(plugin_path.to_path_buf())
                 .with_fresh_file(ba.installs_path.to_path_buf())
                 .build(),
-            repo: OnceLock::new(),
+            plugin: Box::new(VfoxPlugin::new(pathname.clone())),
             ba,
-            plugin_path,
             pathname,
         }
-    }
-
-    fn vfox(&self) -> (Vfox, mpsc::Receiver<String>) {
-        let mut vfox = Vfox::new();
-        vfox.plugin_dir = dirs::PLUGINS.to_path_buf();
-        vfox.cache_dir = dirs::CACHE.to_path_buf();
-        vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
-        vfox.install_dir = dirs::INSTALLS.to_path_buf();
-        vfox.temp_dir = env::temp_dir().join("mise-vfox");
-        let rx = vfox.log_subscribe();
-        (vfox, rx)
-    }
-
-    fn runtime(&self) -> eyre::Result<Runtime, Report> {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .enable_io()
-            .build()?;
-        Ok(rt)
     }
 
     fn _exec_env(&self, tv: &ToolVersion) -> eyre::Result<&BTreeMap<String, String>> {
         self.exec_env_cache.get_or_try_init(|| {
             self.ensure_plugin_installed()?;
-            let (vfox, _log_rx) = self.vfox();
+            let (vfox, _log_rx) = self.plugin.vfox();
             Ok(self
+                .plugin
                 .runtime()?
                 .block_on(vfox.env_keys(&self.pathname, &tv.version))?
                 .into_iter()
@@ -182,29 +144,8 @@ impl VfoxBackend {
         })
     }
 
-    fn get_url(&self) -> eyre::Result<Url> {
-        if let Ok(Some(url)) = self.repo().map(|r| r.get_remote_url()) {
-            return Ok(Url::parse(&url)?);
-        }
-        vfox_to_url(&self.ba.name)
-    }
-
-    fn repo(&self) -> eyre::Result<MutexGuard<Git>> {
-        if let Some(repo) = self.repo.get() {
-            Ok(repo.lock().unwrap())
-        } else {
-            let repo = Mutex::new(Git::new(self.plugin_path.clone()));
-            self.repo.set(repo).unwrap();
-            self.repo()
-        }
-    }
-
     fn ensure_plugin_installed(&self) -> eyre::Result<()> {
-        if !self.plugin_path.exists() {
-            let url = self.get_url()?;
-            trace!("Cloning vfox plugin: {url}");
-            self.repo()?.clone(url.as_str())?;
-        }
-        Ok(())
+        self.plugin
+            .ensure_installed(&MultiProgressReport::get(), false)
     }
 }

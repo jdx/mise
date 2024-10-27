@@ -1673,15 +1673,6 @@ checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
 
 [[package]]
 name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
@@ -1775,9 +1766,9 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.2.8"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ec2a862134d2a7d32d7983ddcdd1c4923530833c9f2ea1a44fc5fa473989058"
+checksum = "3bda4c6077b0b08da2c48b172195795498381a7c8988c9e6212a6c55c5b9bd70"
 
 [[package]]
 name = "libredox"
@@ -2045,7 +2036,7 @@ dependencies = [
  "indicatif",
  "indoc",
  "insta",
- "itertools 0.13.0",
+ "itertools",
  "log",
  "nix",
  "num_cpus",
@@ -2098,17 +2089,18 @@ dependencies = [
 
 [[package]]
 name = "mlua"
-version = "0.9.9"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d111deb18a9c9bd33e1541309f4742523bfab01d276bfa9a27519f6de9c11dc7"
+checksum = "0f6ddbd668297c46be4bdea6c599dcc1f001a129586272d53170b7ac0a62961e"
 dependencies = [
  "bstr",
+ "either",
  "erased-serde",
  "futures-util",
  "mlua-sys",
  "mlua_derive",
  "num-traits",
- "once_cell",
+ "parking_lot",
  "rustc-hash",
  "serde",
  "serde-value",
@@ -2129,11 +2121,11 @@ dependencies = [
 
 [[package]]
 name = "mlua_derive"
-version = "0.9.3"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09697a6cec88e7f58a02c7ab5c18c611c6907c8654613df9cc0192658a4fb859"
+checksum = "2cfc5faa2e0d044b3f5f0879be2920e0a711c97744c42cf1c295cb183668933e"
 dependencies = [
- "itertools 0.12.1",
+ "itertools",
  "once_cell",
  "proc-macro-error",
  "proc-macro2",
@@ -4000,7 +3992,7 @@ dependencies = [
  "bzip2",
  "document-features",
  "flate2",
- "itertools 0.13.0",
+ "itertools",
  "lazy-regex",
  "log",
  "platforms",
@@ -4137,7 +4129,7 @@ dependencies = [
  "clap",
  "heck 0.5.0",
  "indexmap 2.6.0",
- "itertools 0.13.0",
+ "itertools",
  "kdl",
  "log",
  "miette",
@@ -4186,25 +4178,26 @@ version = "6.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f25d498b63d1fdb376b4250f39ab3a5ee8d103957346abacd911e2d8b612c139"
 dependencies = [
- "itertools 0.13.0",
+ "itertools",
  "nom",
  "serde",
 ]
 
 [[package]]
 name = "vfox"
-version = "0.1.6"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1b6e4bf58751169b5816123ea9d06f25a5135e9ff34f65a1eb72a93882c7664"
+checksum = "af618a78aa1d1b9299b363e84d27647928c634dc838c78b68f5a2b90509c798b"
 dependencies = [
  "homedir",
  "indexmap 2.6.0",
- "itertools 0.13.0",
+ "itertools",
  "log",
  "mlua",
  "once_cell",
  "reqwest",
  "scraper",
+ "serde",
  "serde_json",
  "thiserror",
  "tokio",

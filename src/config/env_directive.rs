@@ -13,6 +13,7 @@ use crate::config::{Config, SETTINGS};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::file::{display_path, which_non_pristine};
+use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::ToolsetBuilder;
 use crate::{dirs, env};
@@ -86,6 +87,7 @@ pub enum EnvDirective {
         path: PathBuf,
         create: bool,
     },
+    Module(String, toml::Value),
 }
 
 impl From<(String, String)> for EnvDirective {
@@ -108,6 +110,7 @@ impl Display for EnvDirective {
             EnvDirective::File(path) => write!(f, "dotenv {}", display_path(path)),
             EnvDirective::Path(path) => write!(f, "path_add {}", display_path(path)),
             EnvDirective::Source(path) => write!(f, "source {}", display_path(path)),
+            EnvDirective::Module(name, _) => write!(f, "module {}", name),
             EnvDirective::PythonVenv { path, create } => {
                 write!(f, "python venv path={}", display_path(path))?;
                 if *create {
@@ -296,6 +299,19 @@ impl EnvResults {
                             python -m venv {p}",
                             p = display_path(&venv)
                         );
+                    }
+                }
+                EnvDirective::Module(name, value) => {
+                    let plugin = VfoxPlugin::new(name);
+                    if let Some(env) = plugin.mise_env(&value)? {
+                        for (k, v) in env {
+                            r.env.insert(k, (v, source.clone()));
+                        }
+                    }
+                    if let Some(path) = plugin.mise_path(&value)? {
+                        for p in path {
+                            r.env_paths.push(p.into());
+                        }
                     }
                 }
             };

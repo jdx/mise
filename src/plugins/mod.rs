@@ -3,7 +3,7 @@ use crate::cli::args::BackendArg;
 use crate::errors::Error::PluginNotInstalled;
 use crate::plugins::asdf_plugin::{AsdfPlugin, ASDF_PLUGIN_NAMES};
 use crate::plugins::core::CorePlugin;
-use crate::plugins::vfox_plugin::VFOX_PLUGIN_NAMES;
+use crate::plugins::vfox_plugin::{VfoxPlugin, VFOX_PLUGIN_NAMES};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend, dirs, file};
@@ -88,8 +88,10 @@ pub fn list2() -> eyre::Result<PluginMap> {
     let asdf = AsdfPlugin::list()?
         .into_iter()
         .map(|p| (p.name().to_string(), p));
-    // TODO: vfox
-    Ok(core.chain(asdf).collect())
+    let vfox = VfoxPlugin::list()?
+        .into_iter()
+        .map(|p| (p.name().to_string(), p));
+    Ok(core.chain(asdf).chain(vfox).collect())
 }
 
 pub fn list_external() -> BackendList {
