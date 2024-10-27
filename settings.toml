@@ -89,7 +89,7 @@ docs = """
 The age of the cache before it is considered stale. mise will occasionally delete cache files which
 have not been accessed in this amount of time.
 
-Set to `0` to keep cache files indefinitely.
+Set to `0s` to keep cache files indefinitely.
 """
 
 [cargo.binstall]
@@ -302,7 +302,7 @@ for example, `.nvmrc` in the case of node's nvm. See [legacy version files](#leg
 for more
 information.
 
-Set to "0" to disable legacy version file parsing.
+Set to "false" to disable legacy version file parsing.
 """
 
 [legacy_version_file_disable_tools]
