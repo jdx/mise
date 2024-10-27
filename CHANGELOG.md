@@ -1,5 +1,45 @@
 # Changelog
 
+## [2024.10.11](https://github.com/jdx/mise/compare/v2024.10.10..v2024.10.11) - 2024-10-27
+
+### 🚀 Features
+
+- **(registry)** add ubi as primary backend for additional tools by [@jimeh](https://github.com/jimeh) in [#2827](https://github.com/jdx/mise/pull/2827)
+- **(registry)** add various new tools by [@jimeh](https://github.com/jimeh) in [#2833](https://github.com/jdx/mise/pull/2833)
+- add ubi backend for eza by [@yodatak](https://github.com/yodatak) in [#2823](https://github.com/jdx/mise/pull/2823)
+- added env-only plugin support by [@jdx](https://github.com/jdx) in [#2832](https://github.com/jdx/mise/pull/2832)
+
+### 🐛 Bug Fixes
+
+- make ubi installs with exe work for `mise x` by [@jdx](https://github.com/jdx) in [#2825](https://github.com/jdx/mise/pull/2825)
+
+### 📚 Documentation
+
+- add header to registry by [@jdx](https://github.com/jdx) in [2b518f9](https://github.com/jdx/mise/commit/2b518f9e0ee977a7c2c244de540877e3073c49ad)
+- add vfox to registry by [@jdx](https://github.com/jdx) in [ba01ad6](https://github.com/jdx/mise/commit/ba01ad693c542031bdb5012296e89b1e40c726f7)
+- added rel=canonical tags by [@jdx](https://github.com/jdx) in [19869b6](https://github.com/jdx/mise/commit/19869b612d51e9f9920ff15ecabdc652d0d95e70)
+- added rel=canonical tags by [@jdx](https://github.com/jdx) in [b2a95a4](https://github.com/jdx/mise/commit/b2a95a427b2637c5fbbf42cdd6d8a33b916bb48d)
+
+### ⚡ Performance
+
+- memoize CLI loading by [@jdx](https://github.com/jdx) in [#2826](https://github.com/jdx/mise/pull/2826)
+- improve shim loading by [@jdx](https://github.com/jdx) in [#2828](https://github.com/jdx/mise/pull/2828)
+- eager load some data to improve performance by [@jdx](https://github.com/jdx) in [#2829](https://github.com/jdx/mise/pull/2829)
+- eager load plugin/backend data by [@jdx](https://github.com/jdx) in [#2830](https://github.com/jdx/mise/pull/2830)
+
+### 🧪 Testing
+
+- updated snapshots by [@jdx](https://github.com/jdx) in [fc3e5d5](https://github.com/jdx/mise/commit/fc3e5d582ee5c82a69535e4009f143cba4c87ccb)
+
+### 🔍 Other Changes
+
+- minor tweaks to settings by [@jdx](https://github.com/jdx) in [b4e2413](https://github.com/jdx/mise/commit/b4e241323977b584551d30dbbdf169e8db1d6011)
+- Revert "feat: add ubi backend for eza" by [@jdx](https://github.com/jdx) in [#2831](https://github.com/jdx/mise/pull/2831)
+
+### New Contributors
+
+- @jimeh made their first contribution in [#2833](https://github.com/jdx/mise/pull/2833)
+
 ## [2024.10.10](https://github.com/jdx/mise/compare/v2024.10.9..v2024.10.10) - 2024-10-25
 
 ### 🚀 Features
@@ -51,7 +91,6 @@
 
 ### New Contributors
 
-- @yodatak made their first contribution in [#2792](https://github.com/jdx/mise/pull/2792)
 - @rgeraskin made their first contribution in [#2790](https://github.com/jdx/mise/pull/2790)
 
 ## [2024.10.8](https://github.com/jdx/mise/compare/v2024.10.7..v2024.10.8) - 2024-10-22
