@@ -21,6 +21,7 @@ export default defineConfig({
     ],
     sidebar: [
       { text: "Getting Started", link: "/getting-started" },
+      { text: "Walkthrough", link: "/walkthrough" },
       { text: "About", link: "/about" },
       { text: "Continuous Integration", link: "/continuous-integration" },
       { text: "Demo", link: "/demo" },
