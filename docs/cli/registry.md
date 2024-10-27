@@ -1,12 +1,18 @@
 # `mise registry`
 
-**Usage**: `mise registry`
+**Usage**: `mise registry [NAME]`
 
-[experimental] List available tools to install
+List available tools to install
 
 This command lists the tools available in the registry as shorthand names.
 
 For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
+
+## Arguments
+
+### `[NAME]`
+
+Show only the specified tool's full name
 
 Examples:
 
@@ -14,3 +20,6 @@ Examples:
     node    core:node
     poetry  asdf:mise-plugins/mise-poetry
     ubi     cargo:ubi-cli
+
+    $ mise registry poetry
+    asdf:mise-plugins/mise-poetry

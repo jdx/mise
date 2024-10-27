@@ -404,10 +404,6 @@ impl Display for Settings {
     }
 }
 
-pub fn ensure_experimental(what: &str) -> Result<()> {
-    Settings::get().ensure_experimental(what)
-}
-
 pub const DEFAULT_NODE_MIRROR_URL: &str = "https://nodejs.org/dist/";
 
 impl SettingsNode {
