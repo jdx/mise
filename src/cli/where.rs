@@ -30,39 +30,29 @@ pub struct Where {
 impl Where {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        let runtime = match self.tool.tvr {
+        let tvr = match self.tool.tvr {
+            Some(tvr) => tvr,
             None => match self.asdf_version {
-                Some(version) => self.tool.with_version(&version),
+                Some(version) => self.tool.with_version(&version).tvr.unwrap(),
                 None => {
-                    let ts = ToolsetBuilder::new()
-                        .with_args(&[self.tool.clone()])
-                        .build(&config)?;
-                    let v = ts
-                        .versions
+                    let ts = ToolsetBuilder::new().build(&config)?;
+                    ts.versions
                         .get(&self.tool.backend)
-                        .and_then(|v| v.requests.first())
-                        .map(|r| r.version());
-                    self.tool.with_version(&v.unwrap_or(String::from("latest")))
+                        .and_then(|tvr| tvr.requests.first().cloned())
+                        .unwrap_or_else(|| self.tool.with_version("latest").tvr.unwrap())
                 }
             },
-            _ => self.tool,
         };
 
-        let plugin = backend::get(&runtime.backend);
+        let ba = tvr.backend();
+        let backend = backend::get(ba);
+        let tv = tvr.resolve(backend.as_ref(), false)?;
 
-        match runtime
-            .tvr
-            .as_ref()
-            .map(|tvr| tvr.resolve(plugin.as_ref(), false))
-        {
-            Some(Ok(tv)) if plugin.is_version_installed(&tv, true) => {
-                miseprintln!("{}", tv.install_path().to_string_lossy());
-                Ok(())
-            }
-            _ => Err(VersionNotInstalled(
-                runtime.backend.to_string(),
-                runtime.tvr.map(|tvr| tvr.version()).unwrap_or_default(),
-            ))?,
+        if backend.is_version_installed(&tv, true) {
+            miseprintln!("{}", tv.install_path().to_string_lossy());
+            Ok(())
+        } else {
+            Err(VersionNotInstalled(ba.to_string(), tvr.version()))?
         }
     }
 }

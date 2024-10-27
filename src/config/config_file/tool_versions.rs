@@ -198,6 +198,10 @@ impl ConfigFile for ToolVersions {
         Ok(s.trim_end().to_string() + "\n")
     }
 
+    fn source(&self) -> ToolSource {
+        ToolSource::ToolVersions(self.path.clone())
+    }
+
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         Ok(self.tools.clone())
     }

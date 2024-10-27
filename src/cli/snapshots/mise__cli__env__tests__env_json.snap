@@ -4,6 +4,6 @@ expression: output
 ---
 {
   "JDXCODE_TINY": "3.1.0",
-  "PATH": "~/data/installs/tiny/3/bin:~/data/installs/dummy/ref-master/bin:$PATH",
+  "PATH": "~/data/installs/tiny/3.1.0/bin:~/data/installs/dummy/ref-master/bin:$PATH",
   "TEST_ENV_VAR": "test-123"
 }

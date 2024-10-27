@@ -71,6 +71,10 @@ impl ConfigFile for LegacyVersionFile {
         unimplemented!()
     }
 
+    fn source(&self) -> ToolSource {
+        ToolSource::LegacyVersionFile(self.path.clone())
+    }
+
     fn to_tool_request_set(&self) -> Result<ToolRequestSet> {
         Ok(self.tools.clone())
     }

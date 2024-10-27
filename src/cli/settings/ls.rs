@@ -84,6 +84,7 @@ mod tests {
         legacy_version_file = true
         legacy_version_file_disable_tools = []
         libgit2 = true
+        lockfile = false
         not_found_auto_install = true
         paranoid = false
         pin = false
@@ -153,6 +154,7 @@ mod tests {
         legacy_version_file
         legacy_version_file_disable_tools
         libgit2
+        lockfile
         node
         not_found_auto_install
         paranoid

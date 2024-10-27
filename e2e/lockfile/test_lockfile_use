@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+mise install tiny@1.0.0
+mise use tiny@1
+mise install tiny@1.0.1
+assert "mise config get -f .mise.toml tools.tiny" "1"
+assert "mise where tiny" "$MISE_DATA_DIR/installs/tiny/1.0.0"
+assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
+assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
+assert "cat .mise.lock" '[tools]
+tiny = "1.0.0"'
+
+mise use tiny@1
+assert "cat .mise.lock" '[tools]
+tiny = "1.0.1"'
+assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
+assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.1"
+
+mise up tiny
+assert "cat .mise.lock" '[tools]
+tiny = "1.1.0"'
+assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
+assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.1.0"
+
+mise up tiny --bump
+assert "cat .mise.lock" '[tools]
+tiny = "3.1.0"'
+assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "3"
+assert "mise ls tiny --json --current | jq -r '.[0].version'" "3.1.0"

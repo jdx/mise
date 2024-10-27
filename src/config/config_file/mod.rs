@@ -74,6 +74,7 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn replace_versions(&mut self, fa: &BackendArg, versions: &[String]) -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
     fn dump(&self) -> eyre::Result<String>;
+    fn source(&self) -> ToolSource;
     fn to_toolset(&self) -> eyre::Result<Toolset> {
         Ok(self.to_tool_request_set()?.into())
     }

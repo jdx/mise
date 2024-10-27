@@ -39,6 +39,12 @@ impl ToolVersion {
         request: ToolRequest,
         latest_versions: bool,
     ) -> Result<Self> {
+        if !latest_versions {
+            if let Some(v) = request.lockfile_resolve()? {
+                let tv = Self::new(backend, request.clone(), v);
+                return Ok(tv);
+            }
+        }
         if let Some(plugin) = backend.plugin() {
             if !plugin.is_installed() {
                 let tv = Self::new(backend, request.clone(), request.version());
@@ -88,21 +94,6 @@ impl ToolVersion {
         }
         path
     }
-    pub fn install_short_path(&self) -> PathBuf {
-        if cfg!(windows) {
-            return self.install_path();
-        }
-        let pathname = match &self.request {
-            ToolRequest::Path(_, p, ..) => p.to_string_lossy().to_string(),
-            _ => self.tv_short_pathname(),
-        };
-        let sp = self.backend.installs_path.join(pathname);
-        if sp.exists() {
-            sp
-        } else {
-            self.install_path()
-        }
-    }
     pub fn cache_path(&self) -> PathBuf {
         self.backend.cache_path.join(self.tv_pathname())
     }
@@ -138,14 +129,6 @@ impl ToolVersion {
         }
         .replace([':', '/'], "-")
     }
-    fn tv_short_pathname(&self) -> String {
-        match &self.request {
-            ToolRequest::Version { version: v, .. } => v.to_string(),
-            _ => self.tv_pathname(),
-        }
-        .replace([':', '/'], "-")
-    }
-
     fn resolve_version(
         backend: &dyn Backend,
         request: ToolRequest,
