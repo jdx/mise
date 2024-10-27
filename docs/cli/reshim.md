@@ -13,10 +13,10 @@ If you think mise should automatically call this for a particular command, pleas
 open an issue on the mise repo. You can also setup a shell function to reshim
 automatically (it's really fast so you don't need to worry about overhead):
 
-npm() {
-  command npm "$@"
-  mise reshim
-}
+    npm() {
+      command npm "$@"
+      mise reshim
+    }
 
 Note that this creates shims for _all_ installed tools, not just the ones that are
 currently active in mise.toml.

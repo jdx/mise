@@ -25,11 +25,9 @@ required system dependencies.
 ## Settings
 
 <script setup>
-import { data } from '/settings.data.ts';
-import Setting from '/components/setting.vue';
-const settings = data.find(s => s.key === 'node').settings;
+import Settings from '/components/settings.vue';
 </script>
-<Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
+<Settings child="node" :level="3" />
 
 ### Environment Variables
 

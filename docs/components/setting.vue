@@ -3,14 +3,21 @@ defineProps(["setting", "level"]);
 </script>
 
 <template>
-  <h2 v-if="level === 2">
-    <code>{{ setting.key }}</code>
+  <h2 v-if="level === 2" :id="setting.key">
+    <code>{{ setting.key }}</code
+    ><a :href="`#${setting.key}`" class="header-anchor"></a>
     <span v-if="setting.deprecated" class="VPBadge warning">deprecated</span>
   </h2>
-  <h3 v-if="level === 3">
-    <code>{{ setting.key }}</code>
+  <h3 v-if="level === 3" :id="setting.key">
+    <code>{{ setting.key }}</code
+    ><a :href="`#${setting.key}`" class="header-anchor"></a>
     <span v-if="setting.deprecated" class="VPBadge warning">deprecated</span>
   </h3>
+  <h4 v-if="level === 4" :id="setting.key">
+    <code>{{ setting.key }}</code
+    ><a :href="`#${setting.key}`" class="header-anchor"></a>
+    <span v-if="setting.deprecated" class="VPBadge warning">deprecated</span>
+  </h4>
 
   <ul>
     <li>
