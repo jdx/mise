@@ -2,6 +2,8 @@
 
 **Usage**: `mise watch [-t --task... <TASK>] [-g --glob... <GLOB>] [ARGS]...`
 
+**Source code**: [`src/cli/watch.rs`](https://github.com/jdx/mise/blob/main/src/cli/watch.rs)
+
 **Aliases**: `w`
 
 [experimental] Run task(s) and watch for changes to rerun it

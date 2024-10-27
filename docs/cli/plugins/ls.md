@@ -2,6 +2,8 @@
 
 **Usage**: `mise plugins ls [FLAGS]`
 
+**Source code**: [`src/cli/plugins/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/ls.rs)
+
 **Aliases**: `list`
 
 List installed plugins

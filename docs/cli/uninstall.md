@@ -2,6 +2,8 @@
 
 **Usage**: `mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`
 
+**Source code**: [`src/cli/uninstall.rs`](https://github.com/jdx/mise/blob/main/src/cli/uninstall.rs)
+
 **Aliases**: `remove`, `rm`
 
 Removes installed tool versions

@@ -2,6 +2,8 @@
 
 **Usage**: `mise generate github-action [FLAGS]`
 
+**Source code**: [`src/cli/generate/github-action.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/github-action.rs)
+
 [experimental] Generate a GitHub Action workflow file
 
 This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`

@@ -2,6 +2,8 @@
 
 **Usage**: `mise alias unset <PLUGIN> <ALIAS>`
 
+**Source code**: [`src/cli/alias/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/unset.rs)
+
 **Aliases**: `rm`, `remove`, `delete`, `del`
 
 Clears an alias for a plugin

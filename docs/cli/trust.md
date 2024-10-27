@@ -2,6 +2,8 @@
 
 **Usage**: `mise trust [FLAGS] [CONFIG_FILE]`
 
+**Source code**: [`src/cli/trust.rs`](https://github.com/jdx/mise/blob/main/src/cli/trust.rs)
+
 Marks a config file as trusted
 
 This means mise will parse the file with potentially dangerous

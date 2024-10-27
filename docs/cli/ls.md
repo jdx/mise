@@ -2,6 +2,8 @@
 
 **Usage**: `mise ls [FLAGS] [PLUGIN]...`
 
+**Source code**: [`src/cli/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls.rs)
+
 **Aliases**: `list`
 
 List installed and active tool versions

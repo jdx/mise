@@ -2,6 +2,8 @@
 
 **Usage**: `mise tasks ls [FLAGS]`
 
+**Source code**: [`src/cli/tasks/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/ls.rs)
+
 [experimental] List available tasks to execute
 These may be included from the config file or from the project's .mise/tasks directory
 mise will merge all tasks from all parent directories into this list.

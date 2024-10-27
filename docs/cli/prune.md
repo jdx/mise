@@ -2,6 +2,8 @@
 
 **Usage**: `mise prune [FLAGS] [PLUGIN]...`
 
+**Source code**: [`src/cli/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/prune.rs)
+
 Delete unused versions of tools
 
 mise tracks which config files have been used in ~/.local/share/mise/tracked_config_files

@@ -2,6 +2,8 @@
 
 **Usage**: `mise latest [-i --installed] <TOOL@VERSION>`
 
+**Source code**: [`src/cli/latest.rs`](https://github.com/jdx/mise/blob/main/src/cli/latest.rs)
+
 Gets the latest available version for a plugin
 
 Supports prefixes such as `node@20` to get the latest version of node 20.

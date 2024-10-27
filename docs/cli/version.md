@@ -2,6 +2,8 @@
 
 **Usage**: `mise version`
 
+**Source code**: [`src/cli/version.rs`](https://github.com/jdx/mise/blob/main/src/cli/version.rs)
+
 **Aliases**: `v`
 
 Display the version of mise
