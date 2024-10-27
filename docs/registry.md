@@ -167,7 +167,7 @@ editLink: false
 | daytona | [asdf:CrouchingMuppet/asdf-daytona](https://github.com/CrouchingMuppet/asdf-daytona) |
 | dbmate | [asdf:juusujanar/asdf-dbmate](https://github.com/juusujanar/asdf-dbmate) |
 | deck | [asdf:nutellinoit/asdf-deck](https://github.com/nutellinoit/asdf-deck) |
-| delta | [asdf:andweeb/asdf-delta](https://github.com/andweeb/asdf-delta) |
+| delta | [ubi:dandavison/delta](https://github.com/dandavison/delta) |
 | dep | [asdf:paxosglobal/asdf-dep](https://github.com/paxosglobal/asdf-dep) |
 | depot | [asdf:depot/asdf-depot](https://github.com/depot/asdf-depot) |
 | desk | [asdf:endorama/asdf-desk](https://github.com/endorama/asdf-desk) |
@@ -221,7 +221,7 @@ editLink: false
 | etcd | [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) |
 | evans | [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
 | eza | [asdf:lwiechec/asdf-eza](https://github.com/lwiechec/asdf-eza) |
-| fd | [asdf:https://gitlab.com/wt0f/asdf-fd](https://gitlab.com/wt0f/asdf-fd) |
+| fd | [ubi:sharkdp/fd](https://github.com/sharkdp/fd) |
 | ffmpeg | [asdf:acj/asdf-ffmpeg](https://github.com/acj/asdf-ffmpeg) |
 | figma-export | [asdf:younke/asdf-figma-export](https://github.com/younke/asdf-figma-export) |
 | fillin | [asdf:ouest/asdf-fillin](https://github.com/ouest/asdf-fillin) |
@@ -277,7 +277,7 @@ editLink: false
 | go-swagger | [asdf:jfreeland/asdf-go-swagger](https://github.com/jfreeland/asdf-go-swagger) |
 | goconvey | [asdf:therounds-contrib/asdf-goconvey](https://github.com/therounds-contrib/asdf-goconvey) |
 | gofumpt | [ubi:mvdan/gofumpt](https://github.com/mvdan/gofumpt) |
-| gohugo | [asdf:nklmilojevic/asdf-hugo](https://github.com/nklmilojevic/asdf-hugo) |
+| gohugo | [ubi:gohugoio/hugo](https://github.com/gohugoio/hugo) |
 | gojq | [asdf:jimmidyson/asdf-gojq](https://github.com/jimmidyson/asdf-gojq) |
 | golangci-lint | [ubi:golangci/golangci-lint](https://github.com/golangci/golangci-lint) |
 | golangci-lint-langserver | [ubi:nametake/golangci-lint-langserver](https://github.com/nametake/golangci-lint-langserver) |
@@ -331,7 +331,7 @@ editLink: false
 | hurl | [asdf:raimon49/asdf-hurl](https://github.com/raimon49/asdf-hurl) |
 | hwatch | [ubi:blacknon/hwatch](https://github.com/blacknon/hwatch) |
 | hygen | [asdf:brentjanderson/asdf-hygen](https://github.com/brentjanderson/asdf-hygen) |
-| hyperfine | [asdf:volf52/asdf-hyperfine](https://github.com/volf52/asdf-hyperfine) |
+| hyperfine | [ubi:sharkdp/hyperfine](https://github.com/sharkdp/hyperfine) |
 | iam-policy-json-to-terraform | [asdf:carlduevel/asdf-iam-policy-json-to-terraform](https://github.com/carlduevel/asdf-iam-policy-json-to-terraform) |
 | iamlive | [asdf:chessmango/asdf-iamlive](https://github.com/chessmango/asdf-iamlive) |
 | ibmcloud | [asdf:triangletodd/asdf-ibmcloud](https://github.com/triangletodd/asdf-ibmcloud) |
@@ -358,7 +358,7 @@ editLink: false
 | jreleaser | [asdf:joschi/asdf-jreleaser](https://github.com/joschi/asdf-jreleaser) |
 | jsonnet | [asdf:Banno/asdf-jsonnet](https://github.com/Banno/asdf-jsonnet) |
 | julia | [asdf:rkyleg/asdf-julia](https://github.com/rkyleg/asdf-julia) |
-| just | [asdf:olofvndrhr/asdf-just](https://github.com/olofvndrhr/asdf-just) |
+| just | [ubi:casey/just](https://github.com/casey/just) |
 | jwt | [ubi:mike-engel/jwt-cli](https://github.com/mike-engel/jwt-cli) |
 | jwtui | [ubi:jwt-rs/jwt-ui](https://github.com/jwt-rs/jwt-ui) |
 | jx | [asdf:vbehar/asdf-jx](https://github.com/vbehar/asdf-jx) |
@@ -728,7 +728,7 @@ editLink: false
 | titan | [asdf:gabitchov/asdf-titan](https://github.com/gabitchov/asdf-titan) |
 | tlsg-cli | [asdf:0ghny/asdf-tlsgcli](https://github.com/0ghny/asdf-tlsgcli) |
 | tmux | [asdf:aphecetche/asdf-tmux](https://github.com/aphecetche/asdf-tmux) |
-| tokei | [asdf:gasuketsu/asdf-tokei](https://github.com/gasuketsu/asdf-tokei) |
+| tokei | [ubi:XAMPPRocky/tokei](https://github.com/XAMPPRocky/tokei) |
 | tomcat | [asdf:mbutov/asdf-tomcat](https://github.com/mbutov/asdf-tomcat) |
 | tonnage | [asdf:elementalvoid/asdf-tonnage](https://github.com/elementalvoid/asdf-tonnage) |
 | tool-versions-to-env | [asdf:smartcontractkit/tool-versions-to-env-action](https://github.com/smartcontractkit/tool-versions-to-env-action) |
@@ -787,7 +787,7 @@ editLink: false
 | xcodegen | [asdf:younke/asdf-xcodegen](https://github.com/younke/asdf-xcodegen) |
 | xcodes | [asdf:younke/asdf-xcodes](https://github.com/younke/asdf-xcodes) |
 | xcresultparser | [asdf:MacPaw/asdf-xcresultparser](https://github.com/MacPaw/asdf-xcresultparser) |
-| xh | [asdf:NeoHsu/asdf-xh](https://github.com/NeoHsu/asdf-xh) |
+| xh | [ubi:ducaale/xh](https://github.com/ducaale/xh) |
 | yadm | [asdf:particledecay/asdf-yadm](https://github.com/particledecay/asdf-yadm) |
 | yamlfmt | [asdf:mise-plugins/asdf-yamlfmt](https://github.com/mise-plugins/asdf-yamlfmt) |
 | yamllint | [asdf:ericcornelissen/asdf-yamllint](https://github.com/ericcornelissen/asdf-yamllint) |
