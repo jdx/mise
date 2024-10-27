@@ -1998,7 +1998,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.10.11"
+version = "2024.10.12"
 dependencies = [
  "assert_cmd",
  "base64",
@@ -2977,9 +2977,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.37"
+version = "0.38.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8acb788b847c24f28525660c4d7758620a7210875711f79e7f663cc152726811"
+checksum = "aa260229e6538e52293eeb577aabd09945a09d6d9cc0fc550ed7529056c2e32a"
 dependencies = [
  "bitflags",
  "errno 0.3.9",

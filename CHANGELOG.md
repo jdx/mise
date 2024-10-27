@@ -1,5 +1,33 @@
 # Changelog
 
+## [2024.10.12](https://github.com/jdx/mise/compare/v2024.10.11..v2024.10.12) - 2024-10-27
+
+### 🚀 Features
+
+- **(registry)** Use ubi for delta, fd, gohugo, hyperfine, just, tokei, xh by [@vrslev](https://github.com/vrslev) in [#2836](https://github.com/jdx/mise/pull/2836)
+- accept argument for `mise registry` by [@jdx](https://github.com/jdx) in [#2841](https://github.com/jdx/mise/pull/2841)
+- allow listing all versions from github by [@jdx](https://github.com/jdx) in [#2844](https://github.com/jdx/mise/pull/2844)
+- lockfiles by [@jdx](https://github.com/jdx) in [#2839](https://github.com/jdx/mise/pull/2839)
+
+### 🐛 Bug Fixes
+
+- allow passing ubi:[exe=] on the command line by [@jdx](https://github.com/jdx) in [#2843](https://github.com/jdx/mise/pull/2843)
+- pass ubi config from mise.toml by [@jdx](https://github.com/jdx) in [#2842](https://github.com/jdx/mise/pull/2842)
+
+### 🚜 Refactor
+
+- added ToolSource to ToolRequest by [@jdx](https://github.com/jdx) in [#2846](https://github.com/jdx/mise/pull/2846)
+
+### 📚 Documentation
+
+- added anchor tags for settings by [@jdx](https://github.com/jdx) in [#2845](https://github.com/jdx/mise/pull/2845)
+
+### 🔍 Other Changes
+
+- Disable ruby plugin test as no network access to GitHub in derivation by [@laozc](https://github.com/laozc) in [#2835](https://github.com/jdx/mise/pull/2835)
+- remove extra code coverage comment by [@jdx](https://github.com/jdx) in [2c83dff](https://github.com/jdx/mise/commit/2c83dfff4f9b98a9efeede022dc6948b8f6be764)
+- updated ubi by [@jdx](https://github.com/jdx) in [#2847](https://github.com/jdx/mise/pull/2847)
+
 ## [2024.10.11](https://github.com/jdx/mise/compare/v2024.10.10..v2024.10.11) - 2024-10-27
 
 ### 🚀 Features
@@ -1317,10 +1345,6 @@
 ### 🔍 Other Changes
 
 - add rustfmt to release-plz by [@jdx](https://github.com/jdx) in [2d530f6](https://github.com/jdx/mise/commit/2d530f645b6263c6162380684ab7914efc3dce39)
-
-### New Contributors
-
-- @vrslev made their first contribution in [#2116](https://github.com/jdx/mise/pull/2116)
 
 ## [2024.5.15](https://github.com/jdx/mise/compare/v2024.5.14..v2024.5.15) - 2024-05-14
 
