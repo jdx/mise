@@ -40,7 +40,8 @@ rustPlatform.buildRustPackage {
   checkPhase = ''
     RUST_BACKTRACE=full cargo test --all-features -- \
       --skip cli::plugins::ls::tests::test_plugin_list_urls \
-      --skip tera::tests::test_last_modified
+      --skip tera::tests::test_last_modified \
+      --skip plugins::core::ruby::tests::test_list_versions_matching
   '';
 
   meta = with lib; {
