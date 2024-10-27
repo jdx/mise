@@ -74,7 +74,7 @@ export const commands: { [key: string]: Command } = {
     },
   },
   current: {
-    hide: false,
+    hide: true,
   },
   deactivate: {
     hide: false,

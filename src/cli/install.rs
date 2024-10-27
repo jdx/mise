@@ -1,8 +1,9 @@
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::Config;
+use crate::lockfile;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use std::collections::HashSet;
 
@@ -64,7 +65,9 @@ impl Install {
             warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
             return Ok(vec![]);
         }
-        ts.install_versions(config, tool_versions, &mpr, &self.install_opts())
+        let versions = ts.install_versions(config, tool_versions, &mpr, &self.install_opts())?;
+        lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
+        Ok(versions)
     }
 
     fn install_opts(&self) -> InstallOptions {
@@ -125,7 +128,9 @@ impl Install {
         }
         let mpr = MultiProgressReport::get();
         let mut ts = Toolset::from(trs.clone());
-        ts.install_versions(config, versions, &mpr, &self.install_opts())
+        let versions = ts.install_versions(config, versions, &mpr, &self.install_opts())?;
+        lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
+        Ok(versions)
     }
 }
 

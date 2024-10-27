@@ -77,10 +77,7 @@ impl Config {
             .cloned()
             .collect_vec();
         time!("load config_filenames");
-        let config_paths = load_config_paths(&config_filenames)
-            .into_iter()
-            .unique_by(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
-            .collect_vec();
+        let config_paths = load_config_paths(&config_filenames);
         time!("load config_paths");
         trace!("config_paths: {config_paths:?}");
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;

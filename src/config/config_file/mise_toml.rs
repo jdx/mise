@@ -320,6 +320,10 @@ impl ConfigFile for MiseToml {
         Ok(self.doc()?.to_string())
     }
 
+    fn source(&self) -> ToolSource {
+        ToolSource::MiseToml(self.path.clone())
+    }
+
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();

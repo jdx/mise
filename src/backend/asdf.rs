@@ -383,7 +383,7 @@ impl Backend for AsdfBackend {
             .cache
             .list_bin_paths(self, tv, || self.fetch_bin_paths(tv))?
             .into_iter()
-            .map(|path| tv.install_short_path().join(path))
+            .map(|path| tv.install_path().join(path))
             .collect())
     }
 

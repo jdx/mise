@@ -46,7 +46,6 @@ Answer yes to all confirmation prompts
 * [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
 * [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
 * [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)
-* [`mise current [PLUGIN]`](/cli/current.md)
 * [`mise deactivate`](/cli/deactivate.md)
 * [`mise direnv <SUBCOMMAND>`](/cli/direnv.md)
 * [`mise direnv activate`](/cli/direnv/activate.md)

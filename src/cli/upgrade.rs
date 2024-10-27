@@ -4,7 +4,7 @@ use crate::file::display_path;
 use crate::toolset::{InstallOptions, OutdatedInfo, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{runtime_symlinks, shims, ui};
+use crate::{lockfile, runtime_symlinks, shims, ui};
 use demand::DemandOption;
 use eyre::{Context, Result};
 
@@ -13,6 +13,8 @@ use eyre::{Context, Result};
 /// By default, this keeps the range specified in mise.toml. So if you have node@20 set, it will
 /// upgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version
 /// and bump the version in mise.toml.
+///
+/// This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Upgrade {
@@ -142,7 +144,7 @@ impl Upgrade {
             latest_versions: true,
         };
         let new_versions = outdated.iter().map(|o| o.tool_request.clone()).collect();
-        ts.install_versions(config, new_versions, &mpr, &opts)?;
+        let versions = ts.install_versions(config, new_versions, &mpr, &opts)?;
 
         for (o, bump, mut cf) in config_file_updates {
             cf.replace_versions(o.tool_request.backend(), &[bump])?;
@@ -154,6 +156,7 @@ impl Upgrade {
             self.uninstall_old_version(&o.tool_version, pr.as_ref())?;
         }
 
+        lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
         let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
         shims::reshim(&ts, false).wrap_err("failed to reshim")?;
         runtime_symlinks::rebuild(config)?;
