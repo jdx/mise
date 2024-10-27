@@ -12,7 +12,7 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
 
 echo "::group::Build w/ coverage"
-cargo build --all-features
+cargo build -q --all-features
 echo "::endgroup::"
 ./e2e/run_all_tests
 if [[ "${TEST_TRANCHE:-}" == 0 ]]; then

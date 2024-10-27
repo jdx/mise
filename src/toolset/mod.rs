@@ -15,10 +15,10 @@ use crate::errors::Error;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{backend, env, runtime_symlinks, shims};
+use crate::{backend, env, lockfile, runtime_symlinks, shims};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
-use eyre::{eyre, Result};
+use eyre::{eyre, Result, WrapErr};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -144,7 +144,9 @@ impl Toolset {
             .filter(|tv| matches!(self.versions[&tv.backend].source, ToolSource::Argument))
             .map(|tv| tv.request)
             .collect_vec();
-        self.install_versions(config, versions, &mpr, opts)
+        let versions = self.install_versions(config, versions, &mpr, opts)?;
+        lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
+        Ok(versions)
     }
 
     pub fn list_missing_plugins(&self) -> Vec<String> {
@@ -528,6 +530,7 @@ impl Toolset {
                 let mpr = MultiProgressReport::get();
                 let versions =
                     self.install_versions(&config, versions.clone(), &mpr, &InstallOptions::new())?;
+                lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
                 return Ok(Some(versions));
             }
         }

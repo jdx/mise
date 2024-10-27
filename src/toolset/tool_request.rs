@@ -5,11 +5,11 @@ use eyre::{bail, Result};
 use versions::{Chunk, Version};
 use xx::file;
 
-use crate::backend;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
+use crate::{backend, lockfile};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ToolRequest {
@@ -98,6 +98,17 @@ impl ToolRequest {
             _ => Default::default(),
         }
         Ok(tvr)
+    }
+    pub fn set_source(&mut self, source: ToolSource) -> Self {
+        match self {
+            Self::Version { source: s, .. }
+            | Self::Prefix { source: s, .. }
+            | Self::Ref { source: s, .. }
+            | Self::Path(_, _, s)
+            | Self::Sub { source: s, .. }
+            | Self::System(_, s) => *s = source,
+        }
+        self.clone()
     }
     pub fn backend(&self) -> &BackendArg {
         match self {
@@ -192,7 +203,17 @@ impl ToolRequest {
         }
     }
 
+    pub fn lockfile_resolve(&self) -> Result<Option<String>> {
+        if let Some(path) = self.source().path() {
+            return lockfile::get_locked_version(path, &self.backend().short);
+        }
+        Ok(None)
+    }
+
     pub fn local_resolve(&self, v: &str) -> eyre::Result<Option<String>> {
+        if let Some(v) = self.lockfile_resolve()? {
+            return Ok(Some(v));
+        }
         let backend = backend::get(self.backend());
         let matches = backend.list_installed_versions_matching(v)?;
         if matches.iter().any(|m| m == v) {

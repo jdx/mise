@@ -491,7 +491,7 @@ pub trait Backend: Debug + Send + Sync {
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
         match tv.request {
             ToolRequest::System(..) => Ok(vec![]),
-            _ => Ok(vec![tv.install_short_path().join("bin")]),
+            _ => Ok(vec![tv.install_path().join("bin")]),
         }
     }
 

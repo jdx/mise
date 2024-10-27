@@ -9,4 +9,4 @@ watch_file ~/config/config.toml
 export JDXCODE_TINY=3.1.0
 export TEST_ENV_VAR=test-123
 PATH_add ~/data/installs/dummy/ref-master/bin
-PATH_add ~/data/installs/tiny/3/bin
+PATH_add ~/data/installs/tiny/3.1.0/bin

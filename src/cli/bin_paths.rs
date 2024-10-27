@@ -28,9 +28,9 @@ mod tests {
     fn test_bin_paths() {
         reset();
         assert_cli!("i");
-        assert_cli_snapshot!("bin-paths", @r###"
-        ~/data/installs/tiny/3/bin
+        assert_cli_snapshot!("bin-paths", @r#"
+        ~/data/installs/tiny/3.1.0/bin
         ~/data/installs/dummy/ref-master/bin
-        "###);
+        "#);
     }
 }

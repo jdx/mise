@@ -25,7 +25,7 @@ eval "$(mise activate bash --status)"
 mise use dummy@latest && _mise_hook && _direnv_hook
 
 # Should use dummy@latest
-assert "which dummy" "$MISE_DATA_DIR/installs/dummy/latest/bin/dummy"
+assert "which dummy" "$MISE_DATA_DIR/installs/dummy/2.0.0/bin/dummy"
 # shellcheck disable=SC2016
 assert 'echo $FIRST' "last"
 
@@ -41,7 +41,7 @@ assert 'echo $FIRST' "first"
 direnv deny && _mise_hook && _direnv_hook
 
 # Should use dummy@latest again
-assert "which dummy" "$MISE_DATA_DIR/installs/dummy/latest/bin/dummy"
+assert "which dummy" "$MISE_DATA_DIR/installs/dummy/2.0.0/bin/dummy"
 # shellcheck disable=SC2016
 assert 'echo $FIRST' "last"
 

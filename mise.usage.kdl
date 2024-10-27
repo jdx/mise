@@ -248,7 +248,7 @@ cmd "config" help="Manage config files" {
         arg "<VALUE>" help="The value to set the key to"
     }
 }
-cmd "current" help="Shows current active and installed runtime versions" {
+cmd "current" hide=true help="Shows current active and installed runtime versions" {
     long_help r"Shows current active and installed runtime versions
 
 This is similar to `mise ls --current`, but this only shows the runtime
@@ -1333,7 +1333,9 @@ cmd "upgrade" help="Upgrades outdated tools" {
 
 By default, this keeps the range specified in mise.toml. So if you have node@20 set, it will
 upgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version
-and bump the version in mise.toml."
+and bump the version in mise.toml.
+
+This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile"
     after_long_help r"Examples:
 
     # Upgrades node to the latest version matching the range in mise.toml

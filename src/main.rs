@@ -40,6 +40,7 @@ mod hook_env;
 mod http;
 mod install_context;
 mod lock_file;
+mod lockfile;
 pub(crate) mod logger;
 mod migrate;
 mod path_env;

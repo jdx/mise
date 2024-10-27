@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use console::style;
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
@@ -13,7 +13,7 @@ use crate::env::{
 use crate::file::display_path;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{env, file};
+use crate::{env, file, lockfile};
 
 /// Installs a tool and adds the version it to mise.toml.
 ///
@@ -97,7 +97,7 @@ impl Use {
                 None => ToolRequest::new(t.backend, "latest", ToolSource::Argument),
             })
             .collect::<Result<_>>()?;
-        let versions = ts.install_versions(
+        let mut versions = ts.install_versions(
             &config,
             versions.clone(),
             &mpr,
@@ -133,6 +133,14 @@ impl Use {
             cf.remove_plugin(plugin_name)?;
         }
         cf.save()?;
+
+        for tv in &mut versions {
+            // update the source so the lockfile is updated correctly
+            tv.request.set_source(cf.source());
+        }
+
+        lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
+
         self.render_success_message(cf.as_ref(), &versions)?;
         Ok(())
     }

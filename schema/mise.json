@@ -284,6 +284,11 @@
           "description": "Use libgit2 for git operations, set to false to shell out to git.",
           "type": "boolean"
         },
+        "lockfile": {
+          "default": false,
+          "description": "Create and read lockfiles for tool versions.",
+          "type": "boolean"
+        },
         "log_level": {
           "default": "info",
           "description": "Show more/less output.",

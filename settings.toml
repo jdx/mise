@@ -323,6 +323,25 @@ Use libgit2 for git operations. This is generally faster but may not be as compa
 system's libgit2 is not the same version as the one used by mise.
 """
 
+[lockfile]
+env = "MISE_LOCKFILE"
+type = "Bool"
+default = false
+description = "Create and read lockfiles for tool versions."
+docs = """
+Create and read lockfiles for tool versions. This is useful when you'd like to have loose versions in mise.toml like this:
+
+```toml
+[tools]
+node = "22"
+gh = "latest"
+```
+
+But you'd like the versions installed to be consistent within a project. When this is enabled, mise will automatically
+create mise.lock files next to mise.toml files containing pinned versions.
+When installing tools, mise will reference this lockfile if it exists and this setting is enabled to resolve versions.
+"""
+
 [log_level]
 env = "MISE_LOG_LEVEL"
 type = "String"
