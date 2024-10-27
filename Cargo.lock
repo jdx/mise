@@ -3983,9 +3983,9 @@ checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
 
 [[package]]
 name = "ubi"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18d478e9147a27f8a8d973dead8057eb4cac66ec9e4ecbcfd46545a80375802c"
+checksum = "2548274fb2071b9f1f97522c77a433810f7e289b552c3e66d69055e706441457"
 dependencies = [
  "anyhow",
  "binstall-tar",
@@ -4003,7 +4003,8 @@ dependencies = [
  "tempfile",
  "thiserror",
  "url",
- "xz",
+ "which",
+ "xz2",
  "zip",
 ]
 
@@ -4617,15 +4618,6 @@ dependencies = [
  "tokio",
  "xz2",
  "zip",
-]
-
-[[package]]
-name = "xz"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c887690ff2a2e233e8e49633461521f98ec57fbff9d59a884c9a4f04ec1da34"
-dependencies = [
- "xz2",
 ]
 
 [[package]]

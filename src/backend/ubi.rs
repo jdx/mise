@@ -93,7 +93,7 @@ impl Backend for UbiBackend {
                 builder = builder.matching(matching);
             }
 
-            let ubi = builder.build()?;
+            let mut ubi = builder.build()?;
 
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_io()
