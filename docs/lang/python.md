@@ -35,13 +35,9 @@ additional to that python in mise has a few extra configuration variables.
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
 
 <script setup>
-import { data } from '/settings.data.ts';
-import Setting from '/components/setting.vue';
-
-const settings = data.find(s => s.key === 'python').settings;
+import Settings from '/components/settings.vue';
 </script>
-
-<Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
+<Settings child="python" :level="3" />
 
 ## Default Python packages
 

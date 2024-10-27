@@ -18,5 +18,5 @@ The alias to show
 
 Examples:
 
-   $ mise alias get node lts-hydrogen
-   20.0.0
+    $ mise alias get node lts-hydrogen
+    20.0.0

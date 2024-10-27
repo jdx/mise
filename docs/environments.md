@@ -46,7 +46,7 @@ _.file = '.env'
 
 _This uses [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have problems with
 the way `env._.file` works, you will likely need to post an issue there,
-not to mise since there is not much mise can do about the way that crate works._
+not to mise since there is not much mise can do about the way that crate works.\_
 
 Or set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any
 directory.
