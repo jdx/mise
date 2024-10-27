@@ -127,7 +127,7 @@ impl AsdfBackend {
 
     fn fetch_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<String>> {
         let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
-        let bin_paths = if matches!(tv.request, ToolRequest::System(_)) {
+        let bin_paths = if matches!(tv.request, ToolRequest::System(..)) {
             Vec::new()
         } else if list_bin_paths.exists() {
             let sm = self.script_man_for_tv(tv)?;
@@ -192,9 +192,9 @@ impl AsdfBackend {
         let install_type = match &tv.request {
             ToolRequest::Version { .. } | ToolRequest::Prefix { .. } => "version",
             ToolRequest::Ref { .. } => "ref",
-            ToolRequest::Path(_, _) => "path",
+            ToolRequest::Path(..) => "path",
             ToolRequest::Sub { .. } => "sub",
-            ToolRequest::System(_) => {
+            ToolRequest::System(..) => {
                 panic!("should not be called for system tool")
             }
         };
@@ -393,7 +393,7 @@ impl Backend for AsdfBackend {
         ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        if matches!(tv.request, ToolRequest::System(_)) {
+        if matches!(tv.request, ToolRequest::System(..)) {
             return Ok(BTreeMap::new());
         }
         if !self.plugin.script_man.script_exists(&ExecEnv) || *env::__MISE_SCRIPT {

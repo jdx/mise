@@ -9,7 +9,7 @@ use crate::backend;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ToolRequest {
@@ -17,29 +17,33 @@ pub enum ToolRequest {
         backend: BackendArg,
         version: String,
         options: ToolVersionOptions,
+        source: ToolSource,
     },
     Prefix {
         backend: BackendArg,
         prefix: String,
         options: ToolVersionOptions,
+        source: ToolSource,
     },
     Ref {
         backend: BackendArg,
         ref_: String,
         ref_type: String,
         options: ToolVersionOptions,
+        source: ToolSource,
     },
     Sub {
         backend: BackendArg,
         sub: String,
         orig_version: String,
+        source: ToolSource,
     },
-    Path(BackendArg, PathBuf),
-    System(BackendArg),
+    Path(BackendArg, PathBuf, ToolSource),
+    System(BackendArg, ToolSource),
 }
 
 impl ToolRequest {
-    pub fn new(backend: BackendArg, s: &str) -> eyre::Result<Self> {
+    pub fn new(backend: BackendArg, s: &str, source: ToolSource) -> eyre::Result<Self> {
         let s = match s.split_once('-') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => format!("{ref_type}:{r}"),
             _ => s.to_string(),
@@ -50,26 +54,30 @@ impl ToolRequest {
                 ref_type: ref_type.to_string(),
                 options: backend.opts.clone().unwrap_or_default(),
                 backend,
+                source,
             },
             Some(("prefix", p)) => Self::Prefix {
                 prefix: p.to_string(),
                 options: backend.opts.clone().unwrap_or_default(),
                 backend,
+                source,
             },
-            Some(("path", p)) => Self::Path(backend, PathBuf::from(p)),
+            Some(("path", p)) => Self::Path(backend, PathBuf::from(p), source),
             Some((p, v)) if p.starts_with("sub-") => Self::Sub {
                 sub: p.split_once('-').unwrap().1.to_string(),
                 orig_version: v.to_string(),
                 backend,
+                source,
             },
             None => {
                 if s == "system" {
-                    Self::System(backend)
+                    Self::System(backend, source)
                 } else {
                     Self::Version {
                         version: s,
                         options: backend.opts.clone().unwrap_or_default(),
                         backend,
+                        source,
                     }
                 }
             }
@@ -80,8 +88,9 @@ impl ToolRequest {
         backend: BackendArg,
         s: &str,
         options: ToolVersionOptions,
+        source: ToolSource,
     ) -> eyre::Result<Self> {
-        let mut tvr = Self::new(backend, s)?;
+        let mut tvr = Self::new(backend, s, source)?;
         match &mut tvr {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
@@ -95,9 +104,19 @@ impl ToolRequest {
             Self::Version { backend: f, .. }
             | Self::Prefix { backend: f, .. }
             | Self::Ref { backend: f, .. }
-            | Self::Path(f, _)
+            | Self::Path(f, ..)
             | Self::Sub { backend: f, .. }
-            | Self::System(f) => f,
+            | Self::System(f, ..) => f,
+        }
+    }
+    pub fn source(&self) -> &ToolSource {
+        match self {
+            Self::Version { source, .. }
+            | Self::Prefix { source, .. }
+            | Self::Ref { source, .. }
+            | Self::Path(.., source)
+            | Self::Sub { source, .. }
+            | Self::System(_, source) => source,
         }
     }
     pub fn dependencies(&self) -> eyre::Result<Vec<BackendArg>> {
@@ -111,11 +130,11 @@ impl ToolRequest {
             Self::Ref {
                 ref_: r, ref_type, ..
             } => format!("{ref_type}:{r}"),
-            Self::Path(_, p) => format!("path:{}", p.display()),
+            Self::Path(_, p, ..) => format!("path:{}", p.display()),
             Self::Sub {
                 sub, orig_version, ..
             } => format!("sub-{}:{}", sub, orig_version),
-            Self::System(_) => "system".to_string(),
+            Self::System(..) => "system".to_string(),
         }
     }
 
@@ -150,6 +169,7 @@ impl ToolRequest {
                 backend,
                 sub,
                 orig_version,
+                ..
             } => self
                 .local_resolve(orig_version)
                 .inspect_err(|e| warn!("ToolRequest.local_resolve: {e:#}"))
@@ -167,8 +187,8 @@ impl ToolRequest {
                     .cloned(),
                 Err(_) => None,
             },
-            Self::Path(_, path) => Some(path.clone()),
-            Self::System(_) => None,
+            Self::Path(_, path, ..) => Some(path.clone()),
+            Self::System(..) => None,
         }
     }
 

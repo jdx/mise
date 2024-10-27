@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::cli::args::BackendArg;
-use crate::toolset::{ToolRequest, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
 use crate::ui::style;
 use console::style;
 use eyre::bail;
@@ -43,7 +43,14 @@ impl FromStr for ToolArg {
         };
         let tvr = version
             .as_ref()
-            .map(|v| ToolRequest::new_opts(backend.clone(), v, opts.clone().unwrap_or_default()))
+            .map(|v| {
+                ToolRequest::new_opts(
+                    backend.clone(),
+                    v,
+                    opts.clone().unwrap_or_default(),
+                    ToolSource::Argument,
+                )
+            })
             .transpose()?;
         Ok(Self {
             short: backend.short.clone(),
@@ -106,7 +113,11 @@ impl ToolArg {
             let b = tools[1].clone();
             if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.backend.name) {
                 tools[1].short = a.short.clone();
-                tools[1].tvr = Some(ToolRequest::new(a.backend.clone(), &b.backend.name)?);
+                tools[1].tvr = Some(ToolRequest::new(
+                    a.backend.clone(),
+                    &b.backend.name,
+                    ToolSource::Argument,
+                )?);
                 tools[1].backend = a.backend;
                 tools[1].version_type = b.backend.name.parse()?;
                 tools[1].version = Some(b.backend.name);
@@ -118,7 +129,9 @@ impl ToolArg {
 
     pub fn with_version(self, version: &str) -> Self {
         Self {
-            tvr: Some(ToolRequest::new(self.backend.clone(), version).unwrap()),
+            tvr: Some(
+                ToolRequest::new(self.backend.clone(), version, ToolSource::Argument).unwrap(),
+            ),
             version: Some(version.into()),
             version_type: version.parse().unwrap(),
             ..self
@@ -203,7 +216,7 @@ mod tests {
                 backend: "node".into(),
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
-                tvr: Some(ToolRequest::new("node".into(), "20").unwrap()),
+                tvr: Some(ToolRequest::new("node".into(), "20", ToolSource::Argument).unwrap()),
                 opts: None,
             }
         );
@@ -220,7 +233,7 @@ mod tests {
                 backend: "node".into(),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
-                tvr: Some(ToolRequest::new("node".into(), "lts").unwrap()),
+                tvr: Some(ToolRequest::new("node".into(), "lts", ToolSource::Argument).unwrap()),
                 opts: None,
             }
         );

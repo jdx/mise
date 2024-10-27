@@ -333,10 +333,10 @@ impl ConfigFile for MiseToml {
                     for v in options.values_mut() {
                         *v = self.parse_template(v)?;
                     }
-                    let tvr = ToolRequest::new_opts(fa.clone(), &version, options)?;
+                    let tvr = ToolRequest::new_opts(fa.clone(), &version, options, source.clone())?;
                     trs.add_version(tvr, &source);
                 } else {
-                    let tvr = ToolRequest::new(fa.clone(), &version)?;
+                    let tvr = ToolRequest::new(fa.clone(), &version, source.clone())?;
                     trs.add_version(tvr, &source);
                 }
             }
