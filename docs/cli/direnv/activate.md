@@ -2,6 +2,8 @@
 
 **Usage**: `mise direnv activate`
 
+**Source code**: [`src/cli/direnv/activate.rs`](https://github.com/jdx/mise/blob/main/src/cli/direnv/activate.rs)
+
 Output direnv function to use mise inside direnv
 
 See <https://mise.jdx.dev/direnv.html> for more information

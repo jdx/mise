@@ -54,6 +54,7 @@ expression: output
     },
     "disable_help": null,
     "name": "test",
+    "source_code_link_template": null,
     "usage": "",
     "version": null
   }

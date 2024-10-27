@@ -2,6 +2,8 @@
 
 **Usage**: `mise settings set <SETTING> <VALUE>`
 
+**Source code**: [`src/cli/settings/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/set.rs)
+
 **Aliases**: `create`
 
 Add/update a setting

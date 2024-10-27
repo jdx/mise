@@ -2,6 +2,8 @@
 
 **Usage**: `mise upgrade [FLAGS] [TOOL@VERSION]...`
 
+**Source code**: [`src/cli/upgrade.rs`](https://github.com/jdx/mise/blob/main/src/cli/upgrade.rs)
+
 **Aliases**: `up`
 
 Upgrades outdated tools

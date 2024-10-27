@@ -2,6 +2,8 @@
 
 **Usage**: `mise tasks [FLAGS] <SUBCOMMAND>`
 
+**Source code**: [`src/cli/tasks.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks.rs)
+
 **Aliases**: `t`
 
 [experimental] Manage tasks
@@ -46,11 +48,11 @@ Output in JSON format
 
 ## Subcommands
 
-* [`mise tasks deps [--hidden] [--dot] [TASKS]...`](/cli/tasks/deps.md)
-* [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
-* [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
-* [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
-* [`mise tasks run [FLAGS] [TASK] [ARGS]...`](/cli/tasks/run.md)
+- [`mise tasks deps [--hidden] [--dot] [TASKS]...`](/cli/tasks/deps.md)
+- [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
+- [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
+- [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
+- [`mise tasks run [FLAGS] [TASK] [ARGS]...`](/cli/tasks/run.md)
 
 Examples:
 

@@ -2,6 +2,8 @@
 
 **Usage**: `mise plugins link [-f --force] <NAME> [PATH]`
 
+**Source code**: [`src/cli/plugins/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/link.rs)
+
 **Aliases**: `ln`
 
 Symlinks a plugin into mise

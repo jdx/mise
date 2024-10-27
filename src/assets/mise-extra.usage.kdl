@@ -1,3 +1,5 @@
+source_code_link_template "https://github.com/jdx/mise/blob/main/src/cli/{{path}}.rs"
+
 complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
 complete "config_file" type="file"
 complete "new_plugin" run="mise plugins --all"

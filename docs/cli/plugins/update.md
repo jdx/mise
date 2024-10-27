@@ -2,6 +2,8 @@
 
 **Usage**: `mise plugins update [-j --jobs <JOBS>] [PLUGIN]...`
 
+**Source code**: [`src/cli/plugins/update.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/update.rs)
+
 **Aliases**: `up`, `upgrade`
 
 Updates a plugin to the latest version

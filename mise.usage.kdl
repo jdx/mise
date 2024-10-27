@@ -1507,6 +1507,8 @@ Use this to figure out what version of a tool is currently active."
 cmd "render-help" hide=true help="internal command to generate markdown from help"
 cmd "render-mangen" hide=true help="internal command to generate markdown from help"
 
+source_code_link_template "https://github.com/jdx/mise/blob/main/src/cli/{{path}}.rs"
+
 complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
 complete "config_file" type="file"
 complete "new_plugin" run="mise plugins --all"

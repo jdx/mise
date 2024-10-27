@@ -2,6 +2,8 @@
 
 **Usage**: `mise link [-f --force] <TOOL@VERSION> <PATH>`
 
+**Source code**: [`src/cli/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/link.rs)
+
 **Aliases**: `ln`
 
 Symlinks a tool version into mise
