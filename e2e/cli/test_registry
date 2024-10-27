@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+assert "mise registry gh" "ubi:cli/cli[exe=gh]"
+assert_contains "mise registry" "gh                           ubi:cli/cli[exe=gh]"

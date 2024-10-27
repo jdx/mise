@@ -825,8 +825,8 @@ as will versions only referenced on the command line `mise exec <PLUGIN>@<VERSIO
     flag "--tools" help="Prune only unused versions of tools"
     arg "[PLUGIN]..." help="Prune only versions from this plugin(s)" var=true
 }
-cmd "registry" help="[experimental] List available tools to install" {
-    long_help r"[experimental] List available tools to install
+cmd "registry" help="List available tools to install" {
+    long_help r"List available tools to install
 
 This command lists the tools available in the registry as shorthand names.
 
@@ -837,7 +837,11 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`."
     node    core:node
     poetry  asdf:mise-plugins/mise-poetry
     ubi     cargo:ubi-cli
+
+    $ mise registry poetry
+    asdf:mise-plugins/mise-poetry
 "
+    arg "[NAME]" help="Show only the specified tool's full name"
 }
 cmd "reshim" help="Creates new shims based on bin paths from currently installed tools." {
     long_help r#"Creates new shims based on bin paths from currently installed tools.
