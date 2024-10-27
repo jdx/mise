@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use eyre::{bail, Report, Result};
 use once_cell::sync::Lazy;
+use reqwest::header::HeaderMap;
 use reqwest::{ClientBuilder, IntoUrl, Response};
 use tokio::runtime::Runtime;
 use url::Url;
@@ -98,17 +99,25 @@ impl Client {
         Ok(text)
     }
 
-    pub fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
+    pub fn json_headers<T, U: IntoUrl>(&self, url: U) -> Result<(T, HeaderMap)>
     where
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url().unwrap();
         let rt = self.runtime()?;
-        let json = rt.block_on(async {
+        let (json, headers) = rt.block_on(async {
             let resp = self.get(url).await?;
-            Ok::<T, eyre::Error>(resp.json().await?)
+            let headers = resp.headers().clone();
+            Ok::<(T, HeaderMap), eyre::Error>((resp.json().await?, headers))
         })?;
-        Ok(json)
+        Ok((json, headers))
+    }
+
+    pub fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        self.json_headers(url).map(|(json, _)| json)
     }
 
     pub fn download_file<U: IntoUrl>(
