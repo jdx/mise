@@ -182,19 +182,6 @@ jobs:
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           coverage-reports: coverage.lcov
-      - uses: irongut/CodeCoverageSummary@v1.3.0
-        with:
-          filename: coverage.xml
-          badge: true
-          format: markdown
-          output: both
-      - name: Add Coverage PR Comment
-        uses: marocchino/sticky-pull-request-comment@v2
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        with:
-          recreate: true
-          path: code-coverage-results.md
   windows-unit:
     runs-on: windows-latest
     timeout-minutes: 20
