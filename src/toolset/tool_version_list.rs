@@ -56,7 +56,8 @@ mod tests {
         reset();
         let fa: BackendArg = "tiny".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
-        tvl.requests.push(ToolRequest::new(fa, "latest").unwrap());
+        tvl.requests
+            .push(ToolRequest::new(fa, "latest", ToolSource::Argument).unwrap());
         tvl.resolve(true).unwrap();
         assert_eq!(tvl.versions.len(), 1);
     }
@@ -69,7 +70,8 @@ mod tests {
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
         let fa: BackendArg = "dummy".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
-        tvl.requests.push(ToolRequest::new(fa, "latest").unwrap());
+        tvl.requests
+            .push(ToolRequest::new(fa, "latest", ToolSource::Argument).unwrap());
         let _ = tvl.resolve(true);
         assert_eq!(tvl.versions.len(), 0);
     }

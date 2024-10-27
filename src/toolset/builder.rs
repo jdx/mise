@@ -72,9 +72,9 @@ impl ToolsetBuilder {
                 }
                 let fa: BackendArg = plugin_name.as_str().into();
                 let source = ToolSource::Environment(k, v.clone());
-                let mut env_ts = Toolset::new(source);
+                let mut env_ts = Toolset::new(source.clone());
                 for v in v.split_whitespace() {
-                    let tvr = ToolRequest::new(fa.clone(), v)?;
+                    let tvr = ToolRequest::new(fa.clone(), v, source.clone())?;
                     env_ts.add_version(tvr);
                 }
                 ts.merge(env_ts);
@@ -109,10 +109,15 @@ impl ToolsetBuilder {
                         arg_ts.add_version(ToolRequest::new(
                             arg.backend.clone(),
                             &current_active.version(),
+                            ToolSource::Argument,
                         )?);
                     } else {
                         // no active version, so use "latest"
-                        arg_ts.add_version(ToolRequest::new(arg.backend.clone(), "latest")?);
+                        arg_ts.add_version(ToolRequest::new(
+                            arg.backend.clone(),
+                            "latest",
+                            ToolSource::Argument,
+                        )?);
                     }
                 }
             }

@@ -94,7 +94,7 @@ impl Use {
             .cloned()
             .map(|t| match t.tvr {
                 Some(tvr) => Ok(tvr),
-                None => ToolRequest::new(t.backend, "latest"),
+                None => ToolRequest::new(t.backend, "latest", ToolSource::Argument),
             })
             .collect::<Result<_>>()?;
         let versions = ts.install_versions(

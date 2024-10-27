@@ -281,7 +281,7 @@ impl Toolset {
                         |v| match current_versions.get(&(p.id().into(), v.clone())) {
                             Some((p, tv)) => Ok((p.clone(), tv.clone())),
                             None => {
-                                let tv = ToolRequest::new(p.fa().clone(), &v)?
+                                let tv = ToolRequest::new(p.fa().clone(), &v, ToolSource::Unknown)?
                                     .resolve(p.as_ref(), false)
                                     .unwrap();
                                 Ok((p.clone(), tv))
@@ -328,6 +328,7 @@ impl Toolset {
                                 ref_: r.to_string(),
                                 ref_type: ref_type.to_string(),
                                 options: v.request.options().clone(),
+                                source: v.request.source().clone(),
                             };
                             let version = format!("ref:{r}");
                             ToolVersion::new(p.as_ref(), request, version)
@@ -363,8 +364,7 @@ impl Toolset {
                 } else {
                     tv.latest_version(t.as_ref()).map(Option::from)
                 };
-                let mut out =
-                    OutdatedInfo::new(tv.clone(), self.find_source(&tv.request).unwrap().clone());
+                let mut out = OutdatedInfo::new(tv.clone(), tv.request.source().clone());
                 out.current = if t.is_version_installed(&tv, true) {
                     Some(tv.version.clone())
                 } else {
@@ -402,10 +402,12 @@ impl Toolset {
                                     backend,
                                     version: _version,
                                     options,
+                                    source,
                                 } => {
                                     out.tool_request = ToolRequest::Version {
                                         backend,
                                         options,
+                                        source,
                                         version: out.bump.clone().unwrap(),
                                     };
                                 }
@@ -449,7 +451,7 @@ impl Toolset {
         let entries = self
             .list_current_installed_versions()
             .into_par_iter()
-            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System(_)))
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System(..)))
             .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
                 Ok(env) => env.into_iter().collect(),
                 Err(e) => {
@@ -482,7 +484,7 @@ impl Toolset {
     pub fn list_paths(&self) -> Vec<PathBuf> {
         self.list_current_installed_versions()
             .into_par_iter()
-            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System(_)))
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System(..)))
             .flat_map(|(p, tv)| {
                 p.list_bin_paths(&tv).unwrap_or_else(|e| {
                     warn!("Error listing bin paths for {tv}: {e:#}");
@@ -579,10 +581,6 @@ impl Toolset {
     fn is_disabled(&self, fa: &BackendArg) -> bool {
         let fa = fa.to_string();
         SETTINGS.disable_tools.iter().any(|s| s == &fa)
-    }
-
-    pub fn find_source(&self, tr: &ToolRequest) -> Option<&ToolSource> {
-        self.versions.get(tr.backend()).map(|tvl| &tvl.source)
     }
 }
 

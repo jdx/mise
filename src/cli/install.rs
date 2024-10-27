@@ -1,6 +1,6 @@
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::Config;
-use crate::toolset::{InstallOptions, ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use eyre::Result;
 use itertools::Itertools;
@@ -104,6 +104,7 @@ impl Install {
                                     backend: ta.backend.clone(),
                                     version: "latest".into(),
                                     options: ta.opts.clone().unwrap_or(Default::default()),
+                                    source: ToolSource::Argument,
                                 };
                                 requests.push(tvr);
                             }
