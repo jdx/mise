@@ -61,7 +61,7 @@ pub struct MiseTomlToolList(Vec<MiseTomlTool>);
 #[derive(Debug, Clone)]
 pub struct MiseTomlTool {
     pub tt: ToolVersionType,
-    pub options: ToolVersionOptions,
+    pub options: Option<ToolVersionOptions>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -329,12 +329,16 @@ impl ConfigFile for MiseToml {
                     trust_check(&self.path)?;
                 }
                 let version = self.parse_template(&tool.tt.to_string())?;
-                let mut options = tool.options.clone();
-                for v in options.values_mut() {
-                    *v = self.parse_template(v)?;
+                if let Some(mut options) = tool.options.clone() {
+                    for v in options.values_mut() {
+                        *v = self.parse_template(v)?;
+                    }
+                    let tvr = ToolRequest::new_opts(fa.clone(), &version, options)?;
+                    trs.add_version(tvr, &source);
+                } else {
+                    let tvr = ToolRequest::new(fa.clone(), &version)?;
+                    trs.add_version(tvr, &source);
                 }
-                let tvr = ToolRequest::new_opts(fa.clone(), &version, options)?;
-                trs.add_version(tvr, &source);
             }
         }
         Ok(trs)
@@ -676,10 +680,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 let tt: ToolVersionType = v
                     .parse()
                     .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
-                Ok(MiseTomlToolList(vec![MiseTomlTool {
-                    tt,
-                    options: Default::default(),
-                }]))
+                Ok(MiseTomlToolList(vec![MiseTomlTool { tt, options: None }]))
             }
 
             fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
@@ -707,7 +708,10 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                     .ok_or_else(|| de::Error::custom("missing version"))?
                     .parse()
                     .map_err(de::Error::custom)?;
-                Ok(MiseTomlToolList(vec![MiseTomlTool { tt, options }]))
+                Ok(MiseTomlToolList(vec![MiseTomlTool {
+                    tt,
+                    options: Some(options),
+                }]))
             }
         }
 
@@ -735,10 +739,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 let tt: ToolVersionType = v
                     .parse()
                     .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
-                Ok(MiseTomlTool {
-                    tt,
-                    options: Default::default(),
-                })
+                Ok(MiseTomlTool { tt, options: None })
             }
 
             fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
@@ -755,7 +756,10 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                     .ok_or_else(|| de::Error::custom("missing version"))?
                     .parse()
                     .map_err(de::Error::custom)?;
-                Ok(MiseTomlTool { tt, options })
+                Ok(MiseTomlTool {
+                    tt,
+                    options: Some(options),
+                })
             }
         }
 
