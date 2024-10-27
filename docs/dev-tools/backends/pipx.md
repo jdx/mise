@@ -58,11 +58,9 @@ Other syntax may work but is unsupported and untested.
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
 
 <script setup>
-import { data } from '/settings.data.ts';
-import Setting from '/components/setting.vue';
-const settings = data.find(s => s.key === 'pipx').settings;
+import Settings from '/components/settings.vue';
 </script>
-<Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
+<Settings child="pipx" :level="3" />
 
 ## Tool Options
 

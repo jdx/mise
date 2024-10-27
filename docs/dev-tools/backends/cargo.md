@@ -63,11 +63,9 @@ This will execute a `cargo install` command with the corresponding Git options.
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
 
 <script setup>
-import { data } from '/settings.data.ts';
-import Setting from '/components/setting.vue';
-const settings = data.find(s => s.key === 'cargo').settings;
+import Settings from '/components/settings.vue';
 </script>
-<Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
+<Settings child="cargo" :level="3" />
 
 ## Tool Options
 

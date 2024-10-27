@@ -30,13 +30,9 @@ for additional settings and some troubleshooting.
 in additional to that mise has a few extra settings:
 
 <script setup>
-import { data } from '/settings.data.ts';
-import Setting from '/components/setting.vue';
-
-const settings = data.find(s => s.key === 'ruby').settings;
+import Settings from '/components/settings.vue';
 </script>
-
-<Setting v-for="setting in settings" :setting="setting" :key="setting.key" :level="3" />
+<Settings child="ruby" :level="3" />
 
 ## Default gems
 
