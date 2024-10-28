@@ -1,5 +1,25 @@
 # Changelog
 
+## [2024.10.13](https://github.com/jdx/mise/compare/v2024.10.12..v2024.10.13) - 2024-10-28
+
+### 🚀 Features
+
+- bring tasks out of experimental by [@jdx](https://github.com/jdx) in [#2851](https://github.com/jdx/mise/pull/2851)
+
+### 🐛 Bug Fixes
+
+- correct python ls-remote with python.compile option by [@jdx](https://github.com/jdx) in [acfd7f1](https://github.com/jdx/mise/commit/acfd7f13411faf784e585e1e489dccfd97a0de66)
+
+### 📚 Documentation
+
+- added walkthrough by [@jdx](https://github.com/jdx) in [#2848](https://github.com/jdx/mise/pull/2848)
+- added source code links by [@jdx](https://github.com/jdx) in [#2850](https://github.com/jdx/mise/pull/2850)
+
+### 🔍 Other Changes
+
+- Revert "fix: correct python ls-remote with python.compile option" by [@jdx](https://github.com/jdx) in [f65c0b6](https://github.com/jdx/mise/commit/f65c0b67106c22686055f46d81760bb44405d663)
+- fetch mise compressed in standalone installer by [@jdx](https://github.com/jdx) in [62a7aac](https://github.com/jdx/mise/commit/62a7aacae1a2db36d39a4a872b4d83846effa912)
+
 ## [2024.10.12](https://github.com/jdx/mise/compare/v2024.10.11..v2024.10.12) - 2024-10-27
 
 ### 🚀 Features
