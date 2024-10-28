@@ -32,7 +32,12 @@ impl Backend for CargoBackend {
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        Ok(vec!["cargo".into(), "rust".into(), "cargo-binstall".into()])
+        Ok(vec![
+            "cargo".into(),
+            "rust".into(),
+            "cargo-binstall".into(),
+            "sccache".into(),
+        ])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
