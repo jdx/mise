@@ -50,6 +50,7 @@ impl Client {
         ClientBuilder::new()
             .user_agent(format!("mise/{}", &*version::VERSION))
             .gzip(true)
+            .zstd(true)
     }
 
     async fn get<U: IntoUrl>(&self, url: U) -> Result<Response> {
