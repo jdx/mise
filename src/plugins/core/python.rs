@@ -88,13 +88,9 @@ impl PythonPlugin {
     fn fetch_precompiled_remote_versions(&self) -> eyre::Result<&Vec<(String, String, String)>> {
         self.precompiled_cache.get_or_try_init(|| {
             let raw = match SETTINGS.paranoid {
-                true => {
-                    HTTP_FETCH.get_text_gz("https://mise-versions.jdx.dev/python-precompiled.gz")
-                }
+                true => HTTP_FETCH.get_text("https://mise-versions.jdx.dev/python-precompiled"),
                 // using http is not a security concern and enabling tls makes mise significantly slower
-                false => {
-                    HTTP_FETCH.get_text_gz("http://mise-versions.jdx.dev/python-precompiled.gz")
-                }
+                false => HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled"),
             }?;
             let arch = python_arch();
             let os = python_os();
@@ -342,7 +338,13 @@ impl Backend for PythonPlugin {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        if SETTINGS.python.compile == Some(true) {
+        if SETTINGS.python.compile == Some(false) {
+            Ok(self
+                .fetch_precompiled_remote_versions()?
+                .iter()
+                .map(|(v, _, _)| v.clone())
+                .collect())
+        } else {
             self.install_or_update_python_build()?;
             let python_build_bin = self.python_build_bin();
             CorePlugin::run_fetch_task_with_timeout(move || {
@@ -356,12 +358,6 @@ impl Backend for PythonPlugin {
                     .collect();
                 Ok(versions)
             })
-        } else {
-            Ok(self
-                .fetch_precompiled_remote_versions()?
-                .iter()
-                .map(|(v, _, _)| v.clone())
-                .collect())
         }
     }
 
@@ -371,7 +367,7 @@ impl Backend for PythonPlugin {
             .get_or_init(|| {
                 CacheManagerBuilder::new(self.fa().cache_path.join("remote_versions.msgpack.z"))
                     .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-                    .with_cache_key((SETTINGS.python.compile == Some(true)).to_string())
+                    .with_cache_key((SETTINGS.python.compile == Some(false)).to_string())
                     .build()
                     .into()
             })
