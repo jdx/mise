@@ -6,7 +6,7 @@
 
 **Aliases**: `w`
 
-[experimental] Run task(s) and watch for changes to rerun it
+Run task(s) and watch for changes to rerun it
 
 This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
 It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.

@@ -5,10 +5,10 @@ use eyre::{eyre, Result};
 
 use crate::cli::args::BackendArg;
 use crate::cmd;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::toolset::ToolsetBuilder;
 
-/// [experimental] Run task(s) and watch for changes to rerun it
+/// Run task(s) and watch for changes to rerun it
 ///
 /// This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
 /// It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
@@ -71,9 +71,7 @@ pub struct Watch {
 impl Watch {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
-        settings.ensure_experimental("`mise watch`")?;
         if let Err(err) = which::which("watchexec") {
             let watchexec: BackendArg = "watchexec".into();
             if !ts.versions.contains_key(&watchexec) {

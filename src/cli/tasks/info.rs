@@ -1,12 +1,12 @@
 use eyre::{bail, Result};
 use serde_json::json;
 
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::CONFIG;
 use crate::file::display_path;
 use crate::task::Task;
 use crate::ui::info;
 
-/// [experimental] Get information about a task
+/// Get information about a task
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TasksInfo {
@@ -20,7 +20,6 @@ pub struct TasksInfo {
 
 impl TasksInfo {
     pub fn run(self) -> Result<()> {
-        SETTINGS.ensure_experimental("`mise tasks info`")?;
         let task = CONFIG.tasks()?.get(&self.task);
 
         if let Some(task) = task {

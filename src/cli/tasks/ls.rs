@@ -3,13 +3,13 @@ use eyre::Result;
 use itertools::Itertools;
 use tabled::Tabled;
 
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::file::display_path;
 use crate::task::Task;
 use crate::ui::info::trim_line_end_whitespace;
 use crate::ui::{style, table};
 
-/// [experimental] List available tasks to execute
+/// List available tasks to execute
 /// These may be included from the config file or from the project's .mise/tasks directory
 /// mise will merge all tasks from all parent directories into this list.
 ///
@@ -64,8 +64,6 @@ pub enum SortOrder {
 impl TasksLs {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::try_get()?;
-        settings.ensure_experimental("`mise tasks ls`")?;
         let tasks = config
             .tasks()?
             .values()

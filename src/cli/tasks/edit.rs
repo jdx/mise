@@ -1,10 +1,10 @@
 use eyre::Result;
 
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::task::Task;
 use crate::{env, file};
 
-/// [experimental] Edit a tasks with $EDITOR
+/// Edit a tasks with $EDITOR
 ///
 /// The tasks will be created as a standalone script if it does not already exist.
 #[derive(Debug, clap::Args)]
@@ -22,8 +22,6 @@ pub struct TasksEdit {
 impl TasksEdit {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        let settings = Settings::try_get()?;
-        settings.ensure_experimental("`mise tasks edit`")?;
 
         let task = config
             .tasks_with_aliases()?
