@@ -92,6 +92,7 @@ editLink: false
 | calicoctl | [asdf:TheCubicleJockey/asdf-calicoctl](https://github.com/TheCubicleJockey/asdf-calicoctl) |
 | camunda-modeler | [asdf:barmac/asdf-camunda-modeler](https://github.com/barmac/asdf-camunda-modeler) |
 | cargo-binstall | [ubi:cargo-bins/cargo-binstall](https://github.com/cargo-bins/cargo-binstall) |
+| cargo-insta | [ubi:mitsuhiko/insta](https://github.com/mitsuhiko/insta) |
 | cargo-make | [asdf:mise-plugins/asdf-cargo-make](https://github.com/mise-plugins/asdf-cargo-make) |
 | carp | [asdf:susurri/asdf-carp](https://github.com/susurri/asdf-carp) |
 | carthage | [asdf:younke/asdf-carthage](https://github.com/younke/asdf-carthage) |
@@ -240,7 +241,7 @@ editLink: false
 | func-e | [asdf:carnei-ro/asdf-func-e](https://github.com/carnei-ro/asdf-func-e) |
 | furyctl | [asdf:sighupio/asdf-furyctl](https://github.com/sighupio/asdf-furyctl) |
 | fx | [asdf:https://gitlab.com/wt0f/asdf-fx](https://gitlab.com/wt0f/asdf-fx) |
-| fzf | [asdf:kompiro/asdf-fzf](https://github.com/kompiro/asdf-fzf) |
+| fzf | [ubi:junegunn/fzf](https://github.com/junegunn/fzf) |
 | gallery-dl | [asdf:iul1an/asdf-gallery-dl](https://github.com/iul1an/asdf-gallery-dl) |
 | gam | [asdf:offbyone/asdf-gam](https://github.com/offbyone/asdf-gam) |
 | gator | [asdf:MxNxPx/asdf-gator](https://github.com/MxNxPx/asdf-gator) |
@@ -380,6 +381,7 @@ editLink: false
 | kcl | [asdf:starkers/asdf-kcl](https://github.com/starkers/asdf-kcl) |
 | kconf | [asdf:particledecay/asdf-kconf](https://github.com/particledecay/asdf-kconf) |
 | ki | [asdf:comdotlinux/asdf-ki](https://github.com/comdotlinux/asdf-ki) |
+| killport | [ubi:jkfran/killport](https://github.com/jkfran/killport) |
 | kind | [ubi:kubernetes-sigs/kind](https://github.com/kubernetes-sigs/kind) |
 | kiota | [asdf:asdf-community/asdf-kiota](https://github.com/asdf-community/asdf-kiota) |
 | kn | [asdf:joke/asdf-kn](https://github.com/joke/asdf-kn) |
@@ -491,6 +493,7 @@ editLink: false
 | mongo-tools | [asdf:itspngu/asdf-mongo-tools](https://github.com/itspngu/asdf-mongo-tools) |
 | mongodb | [asdf:sylph01/asdf-mongodb](https://github.com/sylph01/asdf-mongodb) |
 | mongosh | [asdf:itspngu/asdf-mongosh](https://github.com/itspngu/asdf-mongosh) |
+| mprocs | [ubi:pvolok/mprocs](https://github.com/pvolok/mprocs) |
 | mutanus | [asdf:SoriUR/asdf-mutanus](https://github.com/SoriUR/asdf-mutanus) |
 | mvnd | [asdf:joschi/asdf-mvnd](https://github.com/joschi/asdf-mvnd) |
 | mysql | [asdf:iroddis/asdf-mysql](https://github.com/iroddis/asdf-mysql) |
