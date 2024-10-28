@@ -407,7 +407,7 @@ when you push changes to your repository."
         }
         flag "-w --write" help="write to .github/workflows/$name.yml"
     }
-    cmd "task-docs" help="[experimental] Generate documentation for tasks in a project" {
+    cmd "task-docs" help="Generate documentation for tasks in a project" {
         after_long_help r"Examples:
 
     $ mise generate task-docs
@@ -872,9 +872,9 @@ currently active in mise.toml."#
     arg "[PLUGIN]" hide=true
     arg "[VERSION]" hide=true
 }
-cmd "run" help="[experimental] Run task(s)" {
+cmd "run" help="Run task(s)" {
     alias "r"
-    long_help r#"[experimental] Run task(s)
+    long_help r#"Run task(s)
 
 This command will run a tasks, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
@@ -1091,7 +1091,7 @@ For example, use this to import all pyenv installs into mise"
         flag "--pyenv" help="Get tool versions from pyenv" required=true
     }
 }
-cmd "tasks" help="[experimental] Manage tasks" {
+cmd "tasks" help="Manage tasks" {
     alias "t"
     alias "task" hide=true
     after_long_help r"Examples:
@@ -1113,7 +1113,7 @@ cmd "tasks" help="[experimental] Manage tasks" {
     }
     flag "-J --json" help="Output in JSON format"
     flag "--usage" hide=true
-    cmd "deps" help="[experimental] Display a tree visualization of a dependency graph" {
+    cmd "deps" help="Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
 
     # Show dependencies for all tasks
@@ -1129,8 +1129,8 @@ cmd "tasks" help="[experimental] Manage tasks" {
         flag "--dot" help="Display dependencies in DOT format"
         arg "[TASKS]..." help="Tasks to show dependencies for\nCan specify multiple tasks by separating with spaces\ne.g.: mise tasks deps lint test check" var=true
     }
-    cmd "edit" help="[experimental] Edit a tasks with $EDITOR" {
-        long_help r"[experimental] Edit a tasks with $EDITOR
+    cmd "edit" help="Edit a tasks with $EDITOR" {
+        long_help r"Edit a tasks with $EDITOR
 
 The tasks will be created as a standalone script if it does not already exist."
         after_long_help r"Examples:
@@ -1141,7 +1141,7 @@ The tasks will be created as a standalone script if it does not already exist."
         flag "-p --path" help="Display the path to the tasks instead of editing it"
         arg "<TASK>" help="Tasks to edit"
     }
-    cmd "info" help="[experimental] Get information about a task" {
+    cmd "info" help="Get information about a task" {
         after_long_help r#"Examples:
 
     $ mise tasks info
@@ -1173,8 +1173,8 @@ The tasks will be created as a standalone script if it does not already exist."
         flag "-J --json" help="Output in JSON format"
         arg "<TASK>" help="Name of the task to get information about"
     }
-    cmd "ls" help="[experimental] List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list." {
-        long_help r"[experimental] List available tasks to execute
+    cmd "ls" help="List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list." {
+        long_help r"List available tasks to execute
 These may be included from the config file or from the project's .mise/tasks directory
 mise will merge all tasks from all parent directories into this list.
 
@@ -1201,9 +1201,9 @@ tasks will override the global ones if they have the same name."
         flag "-J --json" help="Output in JSON format"
         flag "--usage" hide=true
     }
-    cmd "run" help="[experimental] Run task(s)" {
+    cmd "run" help="Run task(s)" {
         alias "r"
-        long_help r#"[experimental] Run task(s)
+        long_help r#"Run task(s)
 
 This command will run a tasks, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
@@ -1436,9 +1436,9 @@ If the version is out of date, it will display a warning."
     $ mise -V
 "
 }
-cmd "watch" help="[experimental] Run task(s) and watch for changes to rerun it" {
+cmd "watch" help="Run task(s) and watch for changes to rerun it" {
     alias "w"
-    long_help r"[experimental] Run task(s) and watch for changes to rerun it
+    long_help r"Run task(s) and watch for changes to rerun it
 
 This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
 It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`."

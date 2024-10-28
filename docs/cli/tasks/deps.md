@@ -4,7 +4,7 @@
 
 **Source code**: [`src/cli/tasks/deps.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/deps.rs)
 
-[experimental] Display a tree visualization of a dependency graph
+Display a tree visualization of a dependency graph
 
 ## Arguments
 

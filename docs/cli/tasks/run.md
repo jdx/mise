@@ -6,7 +6,7 @@
 
 **Aliases**: `r`
 
-[experimental] Run task(s)
+Run task(s)
 
 This command will run a tasks, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.

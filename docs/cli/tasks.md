@@ -6,7 +6,7 @@
 
 **Aliases**: `t`
 
-[experimental] Manage tasks
+Manage tasks
 
 ## Flags
 

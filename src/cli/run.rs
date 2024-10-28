@@ -27,7 +27,7 @@ use itertools::Itertools;
 #[cfg(unix)]
 use nix::sys::signal::SIGTERM;
 
-/// [experimental] Run task(s)
+/// Run task(s)
 ///
 /// This command will run a tasks, or multiple tasks in parallel.
 /// Tasks may have dependencies on other tasks or on source files.
@@ -130,7 +130,6 @@ impl Run {
             self.get_clap_command().print_long_help()?;
             return Ok(());
         }
-        SETTINGS.ensure_experimental("`mise run`")?;
         time!("run init");
         let task_list = self.get_task_lists()?;
         time!("run get_task_lists");

@@ -8,7 +8,7 @@ mod edit;
 mod info;
 mod ls;
 
-/// [experimental] Manage tasks
+/// Manage tasks
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "t", alias = "task", verbatim_doc_comment)]
 pub struct Tasks {
