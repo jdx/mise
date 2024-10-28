@@ -3,12 +3,12 @@ use eyre::{eyre, Result};
 use itertools::Itertools;
 use petgraph::dot::Dot;
 
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::CONFIG;
 use crate::task::{Deps, Task};
 use crate::ui::style::{self};
 use crate::ui::tree::print_tree;
 
-/// [experimental] Display a tree visualization of a dependency graph
+/// Display a tree visualization of a dependency graph
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TasksDeps {
@@ -29,8 +29,6 @@ pub struct TasksDeps {
 
 impl TasksDeps {
     pub fn run(self) -> Result<()> {
-        SETTINGS.ensure_experimental("`mise tasks deps`")?;
-
         let tasks = if self.tasks.is_none() {
             self.get_all_tasks()?
         } else {

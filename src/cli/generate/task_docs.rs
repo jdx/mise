@@ -1,8 +1,8 @@
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::CONFIG;
 use crate::{dirs, file};
 use std::path::PathBuf;
 
-/// [experimental] Generate documentation for tasks in a project
+/// Generate documentation for tasks in a project
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TaskDocs {
@@ -40,7 +40,6 @@ enum TaskDocsStyle {
 
 impl TaskDocs {
     pub fn run(self) -> eyre::Result<()> {
-        SETTINGS.ensure_experimental("generate task-docs")?;
         let dir = dirs::CWD.as_ref().unwrap();
         let tasks = CONFIG.load_tasks_in_dir(dir)?;
         let mut out = vec![];

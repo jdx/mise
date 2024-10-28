@@ -4,7 +4,7 @@
 
 **Source code**: [`src/cli/tasks/info.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/info.rs)
 
-[experimental] Get information about a task
+Get information about a task
 
 ## Arguments
 
