@@ -1,9 +1,10 @@
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Duration;
 
 use eyre::{bail, Report, Result};
+use flate2::read::GzDecoder;
 use once_cell::sync::Lazy;
 use reqwest::header::HeaderMap;
 use reqwest::{ClientBuilder, IntoUrl, Response};
@@ -97,6 +98,14 @@ impl Client {
             bail!("Got HTML instead of text from {}", url);
         }
         Ok(text)
+    }
+
+    pub fn get_text_gz<U: IntoUrl>(&self, url: U) -> Result<String> {
+        let text = self.get_text(url)?;
+        let bytes = GzDecoder::new(text.as_bytes())
+            .bytes()
+            .collect::<Result<Vec<u8>, _>>()?;
+        Ok(String::from_utf8(bytes)?)
     }
 
     pub fn json_headers<T, U: IntoUrl>(&self, url: U) -> Result<(T, HeaderMap)>
