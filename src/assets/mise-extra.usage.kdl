@@ -47,7 +47,7 @@ case $cur in
     done
     ;;
   *)
-    plugins=$(mise plugins --core --user)
+    plugins=$(mise ls --installed | awk '{print $1}' | sed '1!G;h;$!d')
     for plugin in $plugins; do
       echo "$plugin@"
     done
