@@ -122,3 +122,20 @@ We also urge users to look after the plugins they use, and urge plugin authors t
 the users they serve.
 
 For more details see [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md).
+
+## 403 Forbidden when installing a tool
+
+You may get an error like one of the following:
+
+    HTTP status client error (403 Forbidden) for url 
+    403 API rate limit exceeded for
+
+This can happen if the tool is hosted on GitHub, and you've hit the API rate limit. This is especially
+common running mise in a CI environment like GitHub Actions. If you don't have a `GITHUB_TOKEN`
+set, the rate limit is quite low. You can fix this by creating a GitHub token (which needs no scopes)
+by going to <https://github.com/settings/tokens> and setting it as an environment variable. You can
+use any of the following (in order of preference):
+
+- `MISE_GITHUB_TOKEN`
+- `GITHUB_TOKEN`
+- `GITHUB_API_TOKEN`
