@@ -118,7 +118,7 @@ get_checksum() {
 	else
 		if command -v curl >/dev/null 2>&1; then
 			debug ">" curl -fsSL "$url"
-			checksums="$(curl -fsSL "$url")"
+			checksums="$(curl --compressed -fsSL "$url")"
 		else
 			if command -v wget >/dev/null 2>&1; then
 				debug ">" wget -qO - "$url"
