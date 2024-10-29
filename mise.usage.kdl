@@ -81,8 +81,8 @@ cmd "alias" help="Manage aliases" {
 This is the contents of an alias.<PLUGIN> entry in ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise alias get node lts-hydrogen
-    20.0.0
+    $ mise alias get node lts-jod
+    22
 "
         arg "<PLUGIN>" help="The plugin to show the alias for"
         arg "<ALIAS>" help="The alias to show"
@@ -100,7 +100,7 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
         after_long_help r"Examples:
 
     $ mise aliases
-    node    lts-hydrogen   20.0.0
+    node    lts-jod      22
 "
         flag "--no-header" help="Don't show table header"
         arg "[PLUGIN]" help="Show aliases for <PLUGIN>"
@@ -112,7 +112,7 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise alias set node lts-hydrogen 18.0.0
+    $ mise alias set node lts-jod 22.0.0
 "
         arg "<PLUGIN>" help="The plugin to set the alias for"
         arg "<ALIAS>" help="The alias to set"
@@ -125,7 +125,7 @@ This modifies the contents of ~/.config/mise/config.toml"
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise alias unset node lts-hydrogen
+    $ mise alias unset node lts-jod
 "
         arg "<PLUGIN>" help="The plugin to remove the alias from"
         arg "<ALIAS>" help="The alias to remove"
