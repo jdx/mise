@@ -42,7 +42,9 @@ impl Shell for Zsh {
             }}
 
             _mise_hook() {{
-              eval "$({exe} hook-env{flags} -s zsh)";
+              if [[ -n "$ZLAST_COMMANDS" ]]; then
+                eval "$({exe} hook-env{flags} -s zsh)";
+              fi
             }}
             typeset -ag precmd_functions;
             if [[ -z "${{precmd_functions[(r)_mise_hook]+1}}" ]]; then
