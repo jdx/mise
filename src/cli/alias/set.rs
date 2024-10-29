@@ -29,7 +29,7 @@ impl AliasSet {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise alias set node lts-hydrogen 18.0.0</bold>
+    $ <bold>mise alias set node lts-jod 22.0.0</bold>
 "#
 );
 
@@ -44,7 +44,7 @@ pub mod tests {
 
         assert_cli_snapshot!("aliases", @r#"
         java  lts          21   
-        node  lts          20   
+        node  lts          22   
         node  lts-argon    4    
         node  lts-boron    6    
         node  lts-carbon   8    
@@ -54,6 +54,7 @@ pub mod tests {
         node  lts-gallium  16   
         node  lts-hydrogen 18   
         node  lts-iron     20   
+        node  lts-jod      22   
         tiny  lts          3.1.0
         tiny  lts-prev     2.0.0
         tiny  my/alias     3.0
