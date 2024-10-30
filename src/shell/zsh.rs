@@ -87,7 +87,7 @@ impl Shell for Zsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        precmd_functions=( ${{precmd_functions:#_mise_hook}} )
+        precmd_functions=( ${{precmd_functions:#_mise_hook_cmd}} )
         chpwd_functions=( ${{chpwd_functions:#_mise_hook}} )
         unset -f _mise_hook_cmd
         unset -f _mise_hook
