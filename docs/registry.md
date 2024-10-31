@@ -112,7 +112,7 @@ editLink: false
 | chromedriver | [asdf:schinckel/asdf-chromedriver](https://github.com/schinckel/asdf-chromedriver) |
 | cidr-merger | [asdf:ORCID/asdf-cidr-merger](https://github.com/ORCID/asdf-cidr-merger) |
 | cidrchk | [asdf:ORCID/asdf-cidrchk](https://github.com/ORCID/asdf-cidrchk) |
-| cilium-cli | [asdf:carnei-ro/asdf-cilium-cli](https://github.com/carnei-ro/asdf-cilium-cli) |
+| cilium-cli | [ubi:cilium/cilium-cli](https://github.com/cilium/cilium-cli) |
 | cilium-hubble | [asdf:NitriKx/asdf-cilium-hubble](https://github.com/NitriKx/asdf-cilium-hubble) |
 | circleci-cli | [asdf:ucpr/asdf-circleci-cli](https://github.com/ucpr/asdf-circleci-cli) |
 | clang | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
