@@ -366,7 +366,7 @@ editLink: false
 | k0sctl | [asdf:Its-Alex/asdf-plugin-k0sctl](https://github.com/Its-Alex/asdf-plugin-k0sctl) |
 | k14s | [asdf:k14s/asdf-k14s](https://github.com/k14s/asdf-k14s) |
 | k2tf | [asdf:carlduevel/asdf-k2tf](https://github.com/carlduevel/asdf-k2tf) |
-| k3d | [asdf:spencergilbert/asdf-k3d](https://github.com/spencergilbert/asdf-k3d) |
+| k3d | [ubi:k3d-io/k3d](https://github.com/k3d-io/k3d) |
 | k3kcli | [asdf:xanmanning/asdf-k3kcli](https://github.com/xanmanning/asdf-k3kcli) |
 | k3s | [asdf:dmpe/asdf-k3s](https://github.com/dmpe/asdf-k3s) |
 | k3sup | [asdf:cgroschupp/asdf-k3sup](https://github.com/cgroschupp/asdf-k3sup) |
