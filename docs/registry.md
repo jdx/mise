@@ -804,7 +804,7 @@ editLink: false
 | yt-dlp | [asdf:duhow/asdf-yt-dlp](https://github.com/duhow/asdf-yt-dlp) |
 | ytt | [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
 | zbctl | [asdf:camunda-community-hub/asdf-zbctl](https://github.com/camunda-community-hub/asdf-zbctl) |
-| zellij | [asdf:chessmango/asdf-zellij](https://github.com/chessmango/asdf-zellij) |
+| zellij | [ubi:zellij-org/zellij](https://github.com/zellij-org/zellij) |
 | zephyr | [asdf:nsaunders/asdf-zephyr](https://github.com/nsaunders/asdf-zephyr) |
 | zigmod | [asdf:mise-plugins/asdf-zigmod](https://github.com/mise-plugins/asdf-zigmod) |
 | zola | [asdf:salasrod/asdf-zola](https://github.com/salasrod/asdf-zola) |
