@@ -609,7 +609,7 @@ editLink: false
 | rlwrap | [asdf:asdf-community/asdf-rlwrap](https://github.com/asdf-community/asdf-rlwrap) |
 | rome | [asdf:kichiemon/asdf-rome](https://github.com/kichiemon/asdf-rome) |
 | rstash | [asdf:carlduevel/asdf-rstash](https://github.com/carlduevel/asdf-rstash) |
-| ruff | [asdf:simhem/asdf-ruff](https://github.com/simhem/asdf-ruff) |
+| ruff | [ubi:astral-sh/ruff](https://github.com/astral-sh/ruff) |
 | rust | [asdf:code-lever/asdf-rust](https://github.com/code-lever/asdf-rust) |
 | rust-analyzer | [asdf:Xyven1/asdf-rust-analyzer](https://github.com/Xyven1/asdf-rust-analyzer) |
 | rustic | [ubi:rustic-rs/rustic](https://github.com/rustic-rs/rustic) |
