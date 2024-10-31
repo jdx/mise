@@ -104,7 +104,7 @@ editLink: false
 | changie | [ubi:miniscruff/changie](https://github.com/miniscruff/changie) |
 | cheat | [asdf:jmoratilla/asdf-cheat-plugin](https://github.com/jmoratilla/asdf-cheat-plugin) |
 | checkov | [asdf:bosmak/asdf-checkov](https://github.com/bosmak/asdf-checkov) |
-| chezmoi | [asdf:joke/asdf-chezmoi](https://github.com/joke/asdf-chezmoi) |
+| chezmoi | [ubi:twpayne/chezmoi](https://github.com/twpayne/chezmoi) |
 | chezscheme | [asdf:asdf-community/asdf-chezscheme](https://github.com/asdf-community/asdf-chezscheme) |
 | chicken | [asdf:evhan/asdf-chicken](https://github.com/evhan/asdf-chicken) |
 | chisel | [asdf:lwiechec/asdf-chisel](https://github.com/lwiechec/asdf-chisel) |
