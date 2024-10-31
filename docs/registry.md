@@ -15,7 +15,7 @@ editLink: false
 | ag | [asdf:koketani/asdf-ag](https://github.com/koketani/asdf-ag) |
 | age | [asdf:threkk/asdf-age](https://github.com/threkk/asdf-age) |
 | age-plugin-yubikey | [asdf:joke/asdf-age-plugin-yubikey](https://github.com/joke/asdf-age-plugin-yubikey) |
-| agebox | [asdf:slok/asdf-agebox](https://github.com/slok/asdf-agebox) |
+| agebox | [ubi:slok/agebox](https://github.com/slok/agebox) |
 | air | [asdf:pdemagny/asdf-air](https://github.com/pdemagny/asdf-air) |
 | aks-engine | [asdf:robsonpeixoto/asdf-aks-engine](https://github.com/robsonpeixoto/asdf-aks-engine) |
 | alias | [asdf:andrewthauer/asdf-alias](https://github.com/andrewthauer/asdf-alias) |
