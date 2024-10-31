@@ -185,7 +185,7 @@ editLink: false
 | dockle | [asdf:mathew-fleisch/asdf-dockle](https://github.com/mathew-fleisch/asdf-dockle) |
 | doctl | [ubi:digitalocean/doctl](https://github.com/digitalocean/doctl) |
 | doctoolchain | [asdf:joschi/asdf-doctoolchain](https://github.com/joschi/asdf-doctoolchain) |
-| docuum | [asdf:bradym/asdf-docuum](https://github.com/bradym/asdf-docuum) |
+| docuum | [ubi:stepchowfun/docuum](https://github.com/stepchowfun/docuum) |
 | dome | [asdf:jtakakura/asdf-dome](https://github.com/jtakakura/asdf-dome) |
 | doppler | [asdf:takutakahashi/asdf-doppler](https://github.com/takutakahashi/asdf-doppler) |
 | dotenv-linter | [ubi:dotenv-linter/dotenv-linter](https://github.com/dotenv-linter/dotenv-linter) |
