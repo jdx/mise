@@ -693,7 +693,7 @@ editLink: false
 | tanka | [asdf:trotttrotttrott/asdf-tanka](https://github.com/trotttrotttrott/asdf-tanka) |
 | tanzu | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
 | taplo | [ubi:tamasfe/taplo](https://github.com/tamasfe/taplo) |
-| task | [asdf:particledecay/asdf-task](https://github.com/particledecay/asdf-task) |
+| task | [ubi:go-task/task](https://github.com/go-task/task) |
 | tctl | [asdf:eko/asdf-tctl](https://github.com/eko/asdf-tctl) |
 | tekton-cli | [asdf:johnhamelink/asdf-tekton-cli](https://github.com/johnhamelink/asdf-tekton-cli) |
 | teleport-community | [asdf:MaloPolese/asdf-teleport-community](https://github.com/MaloPolese/asdf-teleport-community) |
