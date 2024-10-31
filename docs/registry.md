@@ -188,7 +188,7 @@ editLink: false
 | docuum | [asdf:bradym/asdf-docuum](https://github.com/bradym/asdf-docuum) |
 | dome | [asdf:jtakakura/asdf-dome](https://github.com/jtakakura/asdf-dome) |
 | doppler | [asdf:takutakahashi/asdf-doppler](https://github.com/takutakahashi/asdf-doppler) |
-| dotenv-linter | [asdf:wesleimp/asdf-dotenv-linter](https://github.com/wesleimp/asdf-dotenv-linter) |
+| dotenv-linter | [ubi:dotenv-linter/dotenv-linter](https://github.com/dotenv-linter/dotenv-linter) |
 | dotnet | [asdf:hensou/asdf-dotnet](https://github.com/hensou/asdf-dotnet) |
 | dotnet-core | [asdf:emersonsoares/asdf-dotnet-core](https://github.com/emersonsoares/asdf-dotnet-core) |
 | dotty | [asdf:asdf-community/asdf-dotty](https://github.com/asdf-community/asdf-dotty) |
