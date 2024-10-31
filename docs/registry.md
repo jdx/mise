@@ -134,7 +134,7 @@ editLink: false
 | codefresh | [asdf:gurukulkarni/asdf-codefresh](https://github.com/gurukulkarni/asdf-codefresh) |
 | codeql | [asdf:bored-engineer/asdf-codeql](https://github.com/bored-engineer/asdf-codeql) |
 | coder | [asdf:mise-plugins/asdf-coder](https://github.com/mise-plugins/asdf-coder) |
-| colima | [asdf:CrouchingMuppet/asdf-colima](https://github.com/CrouchingMuppet/asdf-colima) |
+| colima | [ubi:abiosoft/colima](https://github.com/abiosoft/colima) |
 | conan | [asdf:amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp) |
 | concourse | [asdf:mattysweeps/asdf-concourse](https://github.com/mattysweeps/asdf-concourse) |
 | conduit | [asdf:gmcabrita/asdf-conduit](https://github.com/gmcabrita/asdf-conduit) |
