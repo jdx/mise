@@ -363,7 +363,7 @@ editLink: false
 | jwt | [ubi:mike-engel/jwt-cli](https://github.com/mike-engel/jwt-cli) |
 | jwtui | [ubi:jwt-rs/jwt-ui](https://github.com/jwt-rs/jwt-ui) |
 | jx | [ubi:jenkins-x/jx](https://github.com/jenkins-x/jx) |
-| k0sctl | [asdf:Its-Alex/asdf-plugin-k0sctl](https://github.com/Its-Alex/asdf-plugin-k0sctl) |
+| k0sctl | [ubi:k0sproject/k0sctl](https://github.com/k0sproject/k0sctl) |
 | k14s | [asdf:k14s/asdf-k14s](https://github.com/k14s/asdf-k14s) |
 | k2tf | [asdf:carlduevel/asdf-k2tf](https://github.com/carlduevel/asdf-k2tf) |
 | k3d | [ubi:k3d-io/k3d](https://github.com/k3d-io/k3d) |
