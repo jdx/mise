@@ -244,7 +244,7 @@ editLink: false
 | fzf | [ubi:junegunn/fzf](https://github.com/junegunn/fzf) |
 | gallery-dl | [asdf:iul1an/asdf-gallery-dl](https://github.com/iul1an/asdf-gallery-dl) |
 | gam | [asdf:offbyone/asdf-gam](https://github.com/offbyone/asdf-gam) |
-| gator | [asdf:MxNxPx/asdf-gator](https://github.com/MxNxPx/asdf-gator) |
+| gator | [ubi:open-policy-agent/gatekeeper](https://github.com/open-policy-agent/gatekeeper) |
 | gauche | [asdf:sakuro/asdf-gauche](https://github.com/sakuro/asdf-gauche) |
 | gcc-arm-none-eabi | [asdf:dlech/asdf-gcc-arm-none-eabi](https://github.com/dlech/asdf-gcc-arm-none-eabi) |
 | gcloud | [asdf:jthegedus/asdf-gcloud](https://github.com/jthegedus/asdf-gcloud) |
