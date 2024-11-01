@@ -484,7 +484,7 @@ editLink: false
 | mint | [asdf:mint-lang/asdf-mint](https://github.com/mint-lang/asdf-mint) |
 | mirrord | [asdf:metalbear-co/asdf-mirrord](https://github.com/metalbear-co/asdf-mirrord) |
 | mitmproxy | [asdf:NeoHsu/asdf-mitmproxy](https://github.com/NeoHsu/asdf-mitmproxy) |
-| mkcert | [asdf:salasrod/asdf-mkcert](https://github.com/salasrod/asdf-mkcert) |
+| mkcert | [ubi:FiloSottile/mkcert](https://github.com/FiloSottile/mkcert) |
 | mlton | [asdf:asdf-community/asdf-mlton](https://github.com/asdf-community/asdf-mlton) |
 | mockery | [asdf:cabify/asdf-mockery](https://github.com/cabify/asdf-mockery) |
 | mockolo | [asdf:MontakOleg/asdf-mockolo](https://github.com/MontakOleg/asdf-mockolo) |
