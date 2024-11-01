@@ -362,7 +362,7 @@ editLink: false
 | just | [ubi:casey/just](https://github.com/casey/just) |
 | jwt | [ubi:mike-engel/jwt-cli](https://github.com/mike-engel/jwt-cli) |
 | jwtui | [ubi:jwt-rs/jwt-ui](https://github.com/jwt-rs/jwt-ui) |
-| jx | [asdf:vbehar/asdf-jx](https://github.com/vbehar/asdf-jx) |
+| jx | [ubi:jenkins-x/jx](https://github.com/jenkins-x/jx) |
 | k0sctl | [asdf:Its-Alex/asdf-plugin-k0sctl](https://github.com/Its-Alex/asdf-plugin-k0sctl) |
 | k14s | [asdf:k14s/asdf-k14s](https://github.com/k14s/asdf-k14s) |
 | k2tf | [asdf:carlduevel/asdf-k2tf](https://github.com/carlduevel/asdf-k2tf) |
