@@ -114,7 +114,7 @@ editLink: false
 | cidrchk | [asdf:ORCID/asdf-cidrchk](https://github.com/ORCID/asdf-cidrchk) |
 | cilium-cli | [ubi:cilium/cilium-cli](https://github.com/cilium/cilium-cli) |
 | cilium-hubble | [asdf:NitriKx/asdf-cilium-hubble](https://github.com/NitriKx/asdf-cilium-hubble) |
-| circleci-cli | [asdf:ucpr/asdf-circleci-cli](https://github.com/ucpr/asdf-circleci-cli) |
+| circleci-cli | [ubi:CircleCI-Public/circleci-cli](https://github.com/CircleCI-Public/circleci-cli) |
 | clang | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | clang-format | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | clangd | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
