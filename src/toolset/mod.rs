@@ -758,11 +758,10 @@ fn check_semver_bump(old: &str, new: &str) -> Option<String> {
     if !old_chunks.is_empty() && !new_chunks.is_empty() {
         if old_chunks.len() > new_chunks.len() {
             warn!(
-                "something weird happened with versioning, old: {old:?}, new: {new:?}, skipping",
+                "something weird happened with versioning, old: {old:?}, new: {new:?}",
                 old = old_chunks,
                 new = new_chunks,
             );
-            return None;
         }
         let bump = new_chunks
             .into_iter()
@@ -915,6 +914,10 @@ mod tests {
         std::assert_eq!(
             check_semver_bump("20.0.0", "20.0.1"),
             Some("20.0.1".to_string())
+        );
+        std::assert_eq!(
+            check_semver_bump("20.0.1", "20.1"),
+            Some("20.1".to_string())
         );
         std::assert_eq!(
             check_semver_bump("2024-09-16", "2024-10-21"),
