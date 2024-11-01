@@ -370,7 +370,7 @@ editLink: false
 | k3kcli | [asdf:xanmanning/asdf-k3kcli](https://github.com/xanmanning/asdf-k3kcli) |
 | k3s | [asdf:dmpe/asdf-k3s](https://github.com/dmpe/asdf-k3s) |
 | k3sup | [asdf:cgroschupp/asdf-k3sup](https://github.com/cgroschupp/asdf-k3sup) |
-| k6 | [asdf:gr1m0h/asdf-k6](https://github.com/gr1m0h/asdf-k6) |
+| k6 | [ubi:grafana/k6](https://github.com/grafana/k6) |
 | k9s | [ubi:derailed/k9s](https://github.com/derailed/k9s) |
 | kafka | [asdf:ueisele/asdf-kafka](https://github.com/ueisele/asdf-kafka) |
 | kafkactl | [asdf:anweber/asdf-kafkactl](https://github.com/anweber/asdf-kafkactl) |
