@@ -28,7 +28,7 @@ pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
-use versions::{Version, Versioning};
+use versions::{Mess, Version, Versioning};
 use xx::regex;
 
 mod builder;
@@ -753,51 +753,57 @@ pub fn is_outdated_version(current: &str, latest: &str) -> bool {
 /// used with `mise outdated --bump` to determine what new semver range to use
 /// given old: "20" and new: "21.2.3", return Some("21")
 fn check_semver_bump(old: &str, new: &str) -> Option<String> {
-    if !old.contains('.') && !new.contains('.') {
-        return Some(new.to_string());
-    }
-    let old_v = Versioning::new(old);
-    let new_v = Versioning::new(new);
-    let chunkify = |v: &Versioning| {
-        let mut chunks = vec![];
-        while let Some(chunk) = v.nth(chunks.len()) {
-            chunks.push(chunk);
-        }
-        chunks
-    };
-    if let (Some(old), Some(new)) = (old_v, new_v) {
-        let old = chunkify(&old);
-        let new = chunkify(&new);
-        if old.len() > new.len() {
+    let old_chunks = chunkify_version(old);
+    let new_chunks = chunkify_version(new);
+    if !old_chunks.is_empty() && !new_chunks.is_empty() {
+        if old_chunks.len() > new_chunks.len() {
             warn!(
-                "something weird happened with versioning, old: {old}, new: {new}, skipping",
-                old = old
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<_>>()
-                    .join("."),
-                new = new
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<_>>()
-                    .join("."),
+                "something weird happened with versioning, old: {old:?}, new: {new:?}, skipping",
+                old = old_chunks,
+                new = new_chunks,
             );
             return None;
         }
-        let bump = new.into_iter().take(old.len()).collect::<Vec<_>>();
-        if bump == old {
+        let bump = new_chunks
+            .into_iter()
+            .take(old_chunks.len())
+            .collect::<Vec<_>>();
+        if bump == old_chunks {
             None
         } else {
-            Some(
-                bump.iter()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<_>>()
-                    .join("."),
-            )
+            Some(bump.join(""))
         }
     } else {
         Some(new.to_string())
     }
+}
+
+/// split a version number into chunks
+/// given v: "1.2-3a4" return ["1", ".2", "-3", "a4"]
+fn chunkify_version(v: &str) -> Vec<String> {
+    fn chunkify(m: &Mess, sep0: &str, chunks: &mut Vec<String>) {
+        for (i, chunk) in m.chunks.iter().enumerate() {
+            let sep = if i == 0 { sep0 } else { "." };
+            chunks.push(format!("{}{}", sep, chunk));
+        }
+        if let Some((next_sep, next_mess)) = &m.next {
+            chunkify(next_mess, next_sep.to_string().as_ref(), chunks)
+        }
+    }
+
+    let mut chunks = vec![];
+    // don't parse "latest", otherwise bump from latest to any version would have one chunk only
+    if v != "latest" {
+        if let Some(v) = Versioning::new(v) {
+            let m = match v {
+                Versioning::Ideal(sem_ver) => sem_ver.to_mess(),
+                Versioning::General(version) => version.to_mess(),
+                Versioning::Complex(mess) => mess,
+            };
+            chunkify(&m, "", &mut chunks);
+        }
+    }
+    chunks
 }
 
 #[derive(Debug, Serialize, Clone, Tabled)]
@@ -913,6 +919,22 @@ mod tests {
         std::assert_eq!(
             check_semver_bump("2024-09-16", "2024-10-21"),
             Some("2024-10-21".to_string())
+        );
+        std::assert_eq!(
+            check_semver_bump("20.0a1", "20.0a2"),
+            Some("20.0a2".to_string())
+        );
+        std::assert_eq!(check_semver_bump("v20", "v20.0.0"), None);
+        std::assert_eq!(check_semver_bump("v20.0", "v20.0.0"), None);
+        std::assert_eq!(check_semver_bump("v20.0.0", "v20.0.0"), None);
+        std::assert_eq!(check_semver_bump("v20", "v21.0.0"), Some("v21".to_string()));
+        std::assert_eq!(
+            check_semver_bump("v20.0.0", "v20.0.1"),
+            Some("v20.0.1".to_string())
+        );
+        std::assert_eq!(
+            check_semver_bump("latest", "20.0.0"),
+            Some("20.0.0".to_string())
         );
     }
 
