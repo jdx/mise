@@ -503,7 +503,7 @@ editLink: false
 | neko | [asdf:asdf-community/asdf-neko](https://github.com/asdf-community/asdf-neko) |
 | neovim | [asdf:richin13/asdf-neovim](https://github.com/richin13/asdf-neovim) |
 | nerdctl | [asdf:dmpe/asdf-nerdctl](https://github.com/dmpe/asdf-nerdctl) |
-| newrelic-cli | [asdf:NeoHsu/asdf-newrelic-cli](https://github.com/NeoHsu/asdf-newrelic-cli) |
+| newrelic-cli | [ubi:newrelic/newrelic-cli](https://github.com/newrelic/newrelic-cli) |
 | nfpm | [ubi:goreleaser/nfpm](https://github.com/goreleaser/nfpm) |
 | nim | [asdf:asdf-community/asdf-nim](https://github.com/asdf-community/asdf-nim) |
 | ninja | [asdf:asdf-community/asdf-ninja](https://github.com/asdf-community/asdf-ninja) |
