@@ -26,4 +26,4 @@ The value to set the alias to
 
 Examples:
 
-    mise alias set node lts-hydrogen 18.0.0
+    mise alias set node lts-jod 22.0.0
