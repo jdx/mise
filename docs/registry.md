@@ -28,7 +28,8 @@ editLink: false
 | ant | [asdf:jackboespflug/asdf-ant](https://github.com/jackboespflug/asdf-ant) |
 | apko | [ubi:chainguard-dev/apko](https://github.com/chainguard-dev/apko) |
 | apollo-ios-cli | [asdf:MacPaw/asdf-apollo-ios-cli](https://github.com/MacPaw/asdf-apollo-ios-cli) |
-| apollo-router | [asdf:safx/asdf-apollo-router](https://github.com/safx/asdf-apollo-router) |
+| apollo-router | [ubi:apollographql/router](https://github.com/apollographql/router) |
+| apollo-rover | [ubi:apollographql/rover](https://github.com/apollographql/rover) |
 | arc | [asdf:ORCID/asdf-arc](https://github.com/ORCID/asdf-arc) |
 | arduino-cli | [asdf:egnor/asdf-arduino-cli](https://github.com/egnor/asdf-arduino-cli) |
 | argc | [ubi:sigoden/argc](https://github.com/sigoden/argc) |
