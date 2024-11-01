@@ -195,7 +195,7 @@ editLink: false
 | dprint | [asdf:asdf-community/asdf-dprint](https://github.com/asdf-community/asdf-dprint) |
 | draft | [asdf:kristoflemmens/asdf-draft](https://github.com/kristoflemmens/asdf-draft) |
 | driftctl | [asdf:nlamirault/asdf-driftctl](https://github.com/nlamirault/asdf-driftctl) |
-| drone | [asdf:virtualstaticvoid/asdf-drone](https://github.com/virtualstaticvoid/asdf-drone) |
+| drone | [ubi:harness/drone-cli](https://github.com/harness/drone-cli) |
 | dt | [asdf:so-dang-cool/asdf-dt](https://github.com/so-dang-cool/asdf-dt) |
 | dtm | [asdf:zhenyuanlau/asdf-dtm](https://github.com/zhenyuanlau/asdf-dtm) |
 | duf | [asdf:NeoHsu/asdf-duf](https://github.com/NeoHsu/asdf-duf) |
