@@ -19,9 +19,10 @@ mise use -g ruby@3.2
 ```
 
 Behind the scenes, mise uses [`ruby-build`](https://github.com/rbenv/ruby-build) to compile ruby
-from source. You can check its
-[README](https://github.com/rbenv/ruby-build/blob/master/README.md)
-for additional settings and some troubleshooting.
+from source. Ensure that you have the necessary
+[dependencies](https://github.com/rbenv/ruby-build/wiki#suggested-build-environment) installed.
+You can check its [README](https://github.com/rbenv/ruby-build/blob/master/README.md) for additional settings and some
+troubleshooting.
 
 ## Settings
 
