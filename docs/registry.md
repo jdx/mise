@@ -365,7 +365,7 @@ editLink: false
 | jx | [ubi:jenkins-x/jx](https://github.com/jenkins-x/jx) |
 | k0sctl | [ubi:k0sproject/k0sctl](https://github.com/k0sproject/k0sctl) |
 | k14s | [asdf:k14s/asdf-k14s](https://github.com/k14s/asdf-k14s) |
-| k2tf | [asdf:carlduevel/asdf-k2tf](https://github.com/carlduevel/asdf-k2tf) |
+| k2tf | [ubi:sl1pm4t/k2tf](https://github.com/sl1pm4t/k2tf) |
 | k3d | [ubi:k3d-io/k3d](https://github.com/k3d-io/k3d) |
 | k3kcli | [asdf:xanmanning/asdf-k3kcli](https://github.com/xanmanning/asdf-k3kcli) |
 | k3s | [asdf:dmpe/asdf-k3s](https://github.com/dmpe/asdf-k3s) |
