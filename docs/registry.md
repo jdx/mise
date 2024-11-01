@@ -108,7 +108,7 @@ editLink: false
 | chezscheme | [asdf:asdf-community/asdf-chezscheme](https://github.com/asdf-community/asdf-chezscheme) |
 | chicken | [asdf:evhan/asdf-chicken](https://github.com/evhan/asdf-chicken) |
 | chisel | [ubi:jpillora/chisel](https://github.com/jpillora/chisel) |
-| choose | [asdf:carbonteq/asdf-choose](https://github.com/carbonteq/asdf-choose) |
+| choose | [ubi:theryangeary/choose](https://github.com/theryangeary/choose) |
 | chromedriver | [asdf:schinckel/asdf-chromedriver](https://github.com/schinckel/asdf-chromedriver) |
 | cidr-merger | [asdf:ORCID/asdf-cidr-merger](https://github.com/ORCID/asdf-cidr-merger) |
 | cidrchk | [asdf:ORCID/asdf-cidrchk](https://github.com/ORCID/asdf-cidrchk) |
