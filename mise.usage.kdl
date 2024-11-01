@@ -81,8 +81,8 @@ cmd "alias" help="Manage aliases" {
 This is the contents of an alias.<PLUGIN> entry in ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise alias get node lts-jod
-    22
+    $ mise alias get node lts-hydrogen
+    20.0.0
 "
         arg "<PLUGIN>" help="The plugin to show the alias for"
         arg "<ALIAS>" help="The alias to show"
@@ -96,11 +96,11 @@ These can come from user config or from plugins in `bin/list-aliases`.
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
     [alias.node]
-    lts = "20.0.0""#
+    lts = "22.0.0""#
         after_long_help r"Examples:
 
     $ mise aliases
-    node    lts-jod      22
+    node  lts-jod      22   
 "
         flag "--no-header" help="Don't show table header"
         arg "[PLUGIN]" help="Show aliases for <PLUGIN>"
@@ -1556,7 +1556,7 @@ case $cur in
     done
     ;;
   *)
-    plugins=$(mise plugins --core --user)
+    plugins=$(mise ls --installed | awk '{print $1}' | sed '1!G;h;$!d')
     for plugin in $plugins; do
       echo "$plugin@"
     done
