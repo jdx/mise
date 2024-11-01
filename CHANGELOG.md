@@ -1,5 +1,25 @@
 # Changelog
 
+## [2024.11.0](https://github.com/jdx/mise/compare/v2024.10.13..v2024.11.0) - 2024-11-01
+
+### 🚀 Features
+
+- **(node)** update aliases for latest LTS release (jod/v22) by [@jasisk](https://github.com/jasisk) in [#2865](https://github.com/jdx/mise/pull/2865)
+- **(registry)** Add cargo-insta, mprocs, killport, fzf with ubi by [@vrslev](https://github.com/vrslev) in [#2852](https://github.com/jdx/mise/pull/2852)
+
+### 🐛 Bug Fixes
+
+- added sccache as a dependency for cargo backend by [@jdx](https://github.com/jdx) in [#2855](https://github.com/jdx/mise/pull/2855)
+
+### 🔍 Other Changes
+
+- add zstd compression for http requests by [@jdx](https://github.com/jdx) in [612bbd0](https://github.com/jdx/mise/commit/612bbd0374bed208752cda8674ad192b5886fde9)
+- Fix installed_tool@version complete script by [@miguelmig](https://github.com/miguelmig) in [#2859](https://github.com/jdx/mise/pull/2859)
+
+### New Contributors
+
+- @miguelmig made their first contribution in [#2859](https://github.com/jdx/mise/pull/2859)
+
 ## [2024.10.13](https://github.com/jdx/mise/compare/v2024.10.12..v2024.10.13) - 2024-10-28
 
 ### 🚀 Features

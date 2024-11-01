@@ -22,4 +22,4 @@ The alias to remove
 
 Examples:
 
-    mise alias unset node lts-hydrogen
+    mise alias unset node lts-jod

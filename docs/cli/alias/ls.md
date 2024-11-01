@@ -13,7 +13,7 @@ These can come from user config or from plugins in `bin/list-aliases`.
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
     [alias.node]
-    lts = "20.0.0"
+    lts = "22.0.0"
 
 ## Arguments
 
@@ -30,4 +30,4 @@ Don't show table header
 Examples:
 
     $ mise aliases
-    node    lts-hydrogen   20.0.0
+    node  lts-jod      22

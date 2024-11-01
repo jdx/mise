@@ -1,10 +1,11 @@
 use crate::cli::config::top_toml_config;
 use crate::config::config_file::mise_toml::MiseToml;
+use crate::config::settings::{SettingsType, SETTINGS_META};
 use clap::ValueEnum;
 use eyre::bail;
 use std::path::PathBuf;
 
-/// Display the value of a setting in a mise.toml file
+/// Set the value of a setting in a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct ConfigSet {
@@ -27,6 +28,7 @@ pub struct ConfigSet {
 #[derive(ValueEnum, Default, Clone, Debug)]
 pub enum TomlValueTypes {
     #[default]
+    Infer,
     #[value()]
     String,
     #[value()]
@@ -35,6 +37,8 @@ pub enum TomlValueTypes {
     Float,
     #[value()]
     Bool,
+    #[value()]
+    List,
 }
 
 impl ConfigSet {
@@ -56,11 +60,43 @@ impl ConfigSet {
             }
             let last_key = parts.last().unwrap();
 
-            let value = match self.type_ {
+            let type_to_use = match self.type_ {
+                TomlValueTypes::Infer => {
+                    let expected_type = if !self.key.starts_with("settings.") {
+                        None
+                    } else {
+                        SETTINGS_META.get(&(*last_key).to_string())
+                    };
+                    match expected_type {
+                        Some(meta) => match meta.type_ {
+                            SettingsType::Bool => TomlValueTypes::Bool,
+                            SettingsType::String => TomlValueTypes::String,
+                            SettingsType::Integer => TomlValueTypes::Integer,
+                            SettingsType::Duration => TomlValueTypes::String,
+                            SettingsType::Path => TomlValueTypes::String,
+                            SettingsType::Url => TomlValueTypes::String,
+                            SettingsType::ListString => TomlValueTypes::List,
+                            SettingsType::ListPath => TomlValueTypes::List,
+                        },
+                        None => TomlValueTypes::String,
+                    }
+                }
+                _ => self.type_,
+            };
+
+            let value = match type_to_use {
                 TomlValueTypes::String => toml_edit::value(self.value),
                 TomlValueTypes::Integer => toml_edit::value(self.value.parse::<i64>()?),
                 TomlValueTypes::Float => toml_edit::value(self.value.parse::<f64>()?),
                 TomlValueTypes::Bool => toml_edit::value(self.value.parse::<bool>()?),
+                TomlValueTypes::List => {
+                    let mut list = toml_edit::Array::new();
+                    for item in self.value.split(',').map(|s| s.trim()) {
+                        list.push(item);
+                    }
+                    toml_edit::Item::Value(toml_edit::Value::Array(list))
+                }
+                TomlValueTypes::Infer => bail!("Type not found"),
             };
 
             container.as_table_mut().unwrap().insert(last_key, value);
@@ -81,6 +117,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise config set tools.python 3.12</bold>
     $ <bold>mise config set settings.always_keep_download true</bold>
     $ <bold>mise config set env.TEST_ENV_VAR ABC</bold>
+    $ <bold>mise config set settings.disable_tools --type list node,rust</bold>
+
+    # Type for `settings` is inferred
+    $ <bold>mise config set settings.jobs 4</bold>
 "#
 );
 
@@ -102,5 +142,11 @@ mod tests {
 
         assert_cli_snapshot!("config", "set", "settings.jobs", "--type", "integer", "4", @"");
         assert_cli_snapshot!("config", "get", "settings.jobs", @"4");
+
+        assert_cli_snapshot!("config", "set", "settings.jobs", "4", @"");
+        assert_cli_snapshot!("config", "get", "settings.jobs", @"4");
+
+        assert_cli_snapshot!("config", "set", "settings.disable_tools", "--type", "list", "node,rust", @"");
+        assert_cli_snapshot!("config", "get", "settings.disable_tools", @"[\"node\", \"rust\"]");
     }
 }

@@ -1,0 +1,5 @@
+---
+source: src/shell/elvish.rs
+expression: "Elvish::default().unset_env(\"FOO\")"
+---
+unset-env FOO
