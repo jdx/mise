@@ -8,7 +8,7 @@
 1password-cli = ["asdf:NeoHsu/asdf-1password-cli"]
 aapt2 = ["asdf:ronnnnn/asdf-aapt2"]
 act = ["ubi:nektos/act", "asdf:gr1m0h/asdf-act"]
-action-validator = ["asdf:mpalmer/action-validator"]
+action-validator = ["ubi:mpalmer/action-validator", "asdf:mpalmer/action-validator"]
 actionlint = ["ubi:rhysd/actionlint", "asdf:crazy-matt/asdf-actionlint"]
 adr-tools = ["asdf:https://gitlab.com/td7x/asdf/adr-tools"]
 ag = ["asdf:koketani/asdf-ag"]
