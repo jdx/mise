@@ -722,7 +722,7 @@ pub struct OutdatedInfo {
     pub requested: String,
     #[tabled(display_with("Self::display_current", self))]
     pub current: Option<String>,
-    #[tabled(skip)]
+    #[tabled(display_with("Self::display_bump", self))]
     pub bump: Option<String>,
     pub latest: String,
     pub source: ToolSource,
@@ -749,23 +749,29 @@ impl OutdatedInfo {
             "[MISSING]".to_string()
         }
     }
+
+    fn display_bump(&self) -> String {
+        if let Some(bump) = &self.bump {
+            bump.clone()
+        } else {
+            "[NONE]".to_string()
+        }
+    }
 }
 
 impl Display for OutdatedInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:<20} ", self.name)?;
         if let Some(current) = &self.current {
-            write!(
-                f,
-                "{:<20} {:<10} -> {:<10} ({})",
-                self.name, current, self.latest, self.source
-            )
+            write!(f, "{:<20} ", current)?;
         } else {
-            write!(
-                f,
-                "{:<20} {:<10} -> {:<10} ({})",
-                self.name, "MISSING", self.latest, self.source
-            )
+            write!(f, "{:<20} ", "MISSING")?;
         }
+        write!(f, "-> {:<10} (", self.latest)?;
+        if let Some(bump) = &self.bump {
+            write!(f, "bump to {} in ", bump)?;
+        }
+        write!(f, "{})", self.source)
     }
 }
 
