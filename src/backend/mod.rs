@@ -30,6 +30,7 @@ use crate::{dirs, env, file, lock_file, versions_host};
 
 pub mod asdf;
 pub mod backend_meta;
+pub mod bun;
 pub mod cargo;
 mod external_plugin_cache;
 pub mod go;
@@ -60,6 +61,7 @@ pub type VersionCacheManager = CacheManager<Vec<String>>;
 #[strum(serialize_all = "snake_case")]
 pub enum BackendType {
     Asdf,
+    Bun,
     Cargo,
     Core,
     Go,
@@ -151,6 +153,7 @@ pub fn get(fa: &BackendArg) -> ABackend {
 pub fn arg_to_backend(ba: BackendArg) -> ABackend {
     match ba.backend_type {
         BackendType::Asdf => Arc::new(asdf::AsdfBackend::from_arg(ba)),
+        BackendType::Bun => Arc::new(bun::BunBackend::from_arg(ba)),
         BackendType::Cargo => Arc::new(cargo::CargoBackend::from_arg(ba)),
         BackendType::Core => Arc::new(asdf::AsdfBackend::from_arg(ba)),
         BackendType::Npm => Arc::new(npm::NPMBackend::from_arg(ba)),
