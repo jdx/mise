@@ -228,6 +228,11 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "shell": {
+              "description": "specify a shell command to run the script with",
+              "type": "string",
+              "default": "sh -c"
             }
           },
           "type": "object"
@@ -286,7 +291,17 @@
       "type": "object"
     },
     "env": {
-      "$ref": "#/$defs/env"
+      "oneOf": [
+        {
+          "$ref": "#/$defs/env"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/env"
+          }
+        }
+      ]
     },
     "min_version": {
       "description": "minimum version of mise required to use this config",
