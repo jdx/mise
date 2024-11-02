@@ -126,6 +126,7 @@ impl SPMBackend {
             "--package-path",
             &repo_dir
         )
+        .full_env(self.dependency_env()?)
         .read()?;
         let executables = serde_json::from_str::<PackageDescription>(&package_json)
             .wrap_err("Failed to parse package description")?
@@ -153,7 +154,8 @@ impl SPMBackend {
             .arg(executable)
             .arg("--package-path")
             .arg(repo_dir)
-            .with_pr(ctx.pr.as_ref());
+            .with_pr(ctx.pr.as_ref())
+            .prepend_path(self.dependency_toolset()?.list_paths())?;
         build_cmd.execute()?;
         let bin_path = cmd!(
             "swift",
@@ -166,6 +168,7 @@ impl SPMBackend {
             &repo_dir,
             "--show-bin-path"
         )
+        .full_env(self.dependency_env()?)
         .read()?;
         Ok(PathBuf::from(bin_path.trim().to_string()))
     }
