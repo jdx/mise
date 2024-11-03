@@ -16,6 +16,7 @@
 - `.config/mise/config.toml`
 
 See [Profiles](/profiles) for more information about `.mise.$MISE_ENV.toml` files.
+
 These files recurse upwards, so if you have a `~/src/work/myproj/.mise.toml` file, what is defined
 there will override anything set in
 `~/src/work/.mise.toml` or `~/.config/mise.toml`. The config contents are merged together.
@@ -46,6 +47,9 @@ python = 'https://github.com/asdf-community/asdf-python'
 
 [alias.node] # project-local aliases
 my_custom_node = '20'
+
+[tasks.build]
+run = 'echo "running build tasks"'
 ```
 
 `.mise.toml` files are hierarchical. The configuration in a file in the current directory will
@@ -72,9 +76,21 @@ will be `3.1`. You can check the active versions with `mise ls --current`.
 You can also have environment specific config files like `.mise.production.toml`, see
 [Profiles](/profiles) for more details.
 
+### `[tools]` - Dev tools
+
+See [Tools](/dev-tools/).
+
 ### `[env]` - Arbitrary Environment Variables
 
 See [environments](/environments).
+
+### `[tasks.*]` - Run files or shell scripts
+
+See [Tasks](/tasks/).
+
+### `[settings]` - Mise Settings
+
+See [Settings](/configuration/settings) for the full list of settings.
 
 ### `[plugins]` - Specify Custom Plugin Repository URLs
 
@@ -108,6 +124,11 @@ note adding an alias will also add a symlink, in this case:
 ```toml
 my_custom_node = '20'
 ```
+
+### `mise.toml` schema
+
+- You can find the JSON schema for `.mise.toml` [here](https://github.com/jdx/mise/blob/main/schema/mise.json).
+- Most editors can use this to provide autocompletion and validation for when editing a `mise.toml` file ([VSCode](https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings), [IntelliJ](https://www.jetbrains.com/help/idea/json.html#ws_json_using_schemas), [neovim](https://github.com/b0o/SchemaStore.nvim), etc.)
 
 ## Global config: `~/.config/mise/config.toml`
 
