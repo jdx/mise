@@ -415,14 +415,14 @@ make sure they match)
 
 Add following to your `rc.elv`:
 
-```elvish
+```shell
 var mise: = (eval &ns=[&] &on-end=$put~ (mise activate elvish | slurp))
 mise:activate
 ```
 
 Optionally alias `mise` to `mise:mise` for seamless integration of `mise {activate,deactivate,shell}`:
 
-```elvish
+```shell
 fn mise {|@args| mise:mise $@args }
 ```
 
