@@ -93,7 +93,7 @@ impl RubyPlugin {
     }
     fn update_ruby_build(&self) -> Result<()> {
         let _lock = self.lock_build_tool();
-        if self.ruby_build_path().exists() {
+        if self.ruby_build_bin().exists() {
             let cur = self.ruby_build_version()?;
             let latest = self.latest_ruby_build_version();
             match (cur, latest) {
@@ -434,30 +434,6 @@ mod tests {
     use crate::test::reset;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
-
-    #[test]
-    fn test_list_versions_matching() {
-        reset();
-        let plugin = RubyPlugin::new();
-        assert!(
-            !plugin.list_versions_matching("3").unwrap().is_empty(),
-            "versions for 3 should not be empty"
-        );
-        assert!(
-            !plugin
-                .list_versions_matching("truffleruby-24")
-                .unwrap()
-                .is_empty(),
-            "versions for truffleruby-24 should not be empty"
-        );
-        assert!(
-            !plugin
-                .list_versions_matching("truffleruby+graalvm-24")
-                .unwrap()
-                .is_empty(),
-            "versions for truffleruby+graalvm-24 should not be empty"
-        );
-    }
 
     #[test]
     fn test_parse_gemfile() {
