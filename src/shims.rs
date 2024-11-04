@@ -54,7 +54,7 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
             return Ok(bin);
         }
     }
-    if SETTINGS.not_found_auto_install {
+    if SETTINGS.not_found_auto_install && console::user_attended() {
         for tv in ts.install_missing_bin(bin_name)?.unwrap_or_default() {
             let p = tv.get_backend();
             if let Some(bin) = p.which(&tv, bin_name)? {
