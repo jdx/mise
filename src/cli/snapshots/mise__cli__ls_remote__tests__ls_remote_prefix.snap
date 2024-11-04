@@ -1,6 +1,0 @@
----
-source: src/cli/ls_remote.rs
-expression: output
----
-1.0.0
-1.1.0
