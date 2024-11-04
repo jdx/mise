@@ -1,8 +1,7 @@
 # `mise tasks deps`
 
-**Usage**: `mise tasks deps [--hidden] [--dot] [TASKS]...`
-
-**Source code**: [`src/cli/tasks/deps.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/deps.rs)
+- **Usage**: `mise tasks deps [--hidden] [--dot] [TASKS]...`
+- **Source code**: [`src/cli/tasks/deps.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/deps.rs)
 
 Display a tree visualization of a dependency graph
 

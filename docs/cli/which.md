@@ -1,8 +1,7 @@
 # `mise which`
 
-**Usage**: `mise which [FLAGS] <BIN_NAME>`
-
-**Source code**: [`src/cli/which.rs`](https://github.com/jdx/mise/blob/main/src/cli/which.rs)
+- **Usage**: `mise which [FLAGS] <BIN_NAME>`
+- **Source code**: [`src/cli/which.rs`](https://github.com/jdx/mise/blob/main/src/cli/which.rs)
 
 Shows the path that a tool's bin points to.
 

@@ -1,8 +1,7 @@
 # `mise prune`
 
-**Usage**: `mise prune [FLAGS] [PLUGIN]...`
-
-**Source code**: [`src/cli/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/prune.rs)
+- **Usage**: `mise prune [FLAGS] [PLUGIN]...`
+- **Source code**: [`src/cli/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/prune.rs)
 
 Delete unused versions of tools
 

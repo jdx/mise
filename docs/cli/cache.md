@@ -1,8 +1,7 @@
 # `mise cache`
 
-**Usage**: `mise cache <SUBCOMMAND>`
-
-**Source code**: [`src/cli/cache.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache.rs)
+- **Usage**: `mise cache <SUBCOMMAND>`
+- **Source code**: [`src/cli/cache.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache.rs)
 
 Manage the mise cache
 
