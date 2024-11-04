@@ -38,7 +38,6 @@ impl ExternalPluginCache {
                 None => tv.cache_path().join("list_bin_paths.msgpack.z"),
             };
             CacheManagerBuilder::new(list_bin_paths_filename)
-                .with_fresh_file(dirs::DATA.to_path_buf())
                 .with_fresh_file(plugin.plugin_path.clone())
                 .with_fresh_file(tv.install_path())
                 .build()
