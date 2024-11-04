@@ -45,7 +45,7 @@ jobs:
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
-          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.toml') }}
+          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.lock') }}
           restore-keys: mise-tools-ubuntu-latest
       - run: mise install
       - run: mise run release-plz

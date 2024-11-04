@@ -50,7 +50,7 @@ jobs:
       - name: cache mise
         uses: actions/cache@v4
         with:
-          key: mise-tools-${{ matrix.os }}-${{ hashFiles('.mise.toml') }}
+          key: mise-tools-${{ matrix.os }}-${{ hashFiles('.mise.lock') }}
           restore-keys: mise-tools-${{ matrix.os }}
           path: |
             ~/.local/share/mise/installs
@@ -82,7 +82,7 @@ jobs:
       - name: cache mise
         uses: actions/cache@v4
         with:
-          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.toml') }}
+          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.lock') }}
           restore-keys: mise-tools-ubuntu-latest
           path: |
             ~/.local/share/mise/installs
