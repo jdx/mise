@@ -17,4 +17,4 @@ assert_contains "GITHUB_TOKEN=foobar mise install -f cargo:eza@0.18.24 2>&1" "to
 assert_contains "GITHUB_API_TOKEN=foobar mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"
 
 # This should prefer GITHUB_API_TOKEN
-assert_contains "GITHUB_TOKEN=foobar GITHUB_API_TOKEN=barquz mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"
+assert_contains "GITHUB_API_TOKEN=foobar GITHUB_TOKEN=barquz mise install -f cargo:eza@0.18.24 2>&1" "token=foobar"
