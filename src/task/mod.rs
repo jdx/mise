@@ -217,8 +217,7 @@ impl Task {
                     .collect(),
             )
         } else {
-            Ok(self
-                .run
+            Ok(scripts
                 .iter()
                 .enumerate()
                 .map(|(i, script)| {
