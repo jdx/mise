@@ -25,7 +25,7 @@ direnv = "latest"
 actionlint = "latest"
 ripgrep = "latest"
 "pipx:toml-sort" = "latest"
-usage = "1"
+"cargo:usage-cli" = "1"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 #ruby = "3.1"
 

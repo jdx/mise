@@ -37,9 +37,9 @@ impl ToolVersion {
     pub fn resolve(
         backend: &dyn Backend,
         request: ToolRequest,
-        latest_versions: bool,
+        opts: &ResolveOptions,
     ) -> Result<Self> {
-        if !latest_versions {
+        if opts.use_locked_version {
             if let Some(v) = request.lockfile_resolve()? {
                 let tv = Self::new(backend, request.clone(), v);
                 return Ok(tv);
@@ -53,12 +53,12 @@ impl ToolVersion {
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
-                Self::resolve_version(backend, request, latest_versions, &v)?
+                Self::resolve_version(backend, request, &v, opts)?
             }
             ToolRequest::Prefix { prefix, .. } => Self::resolve_prefix(backend, request, &prefix)?,
             ToolRequest::Sub {
                 sub, orig_version, ..
-            } => Self::resolve_sub(backend, request, latest_versions, &sub, &orig_version)?,
+            } => Self::resolve_sub(backend, request, &sub, &orig_version, opts)?,
             _ => {
                 let version = request.version();
                 Self::new(backend, request, version)
@@ -101,7 +101,11 @@ impl ToolVersion {
         self.backend.downloads_path.join(self.tv_pathname())
     }
     pub fn latest_version(&self, tool: &dyn Backend) -> Result<String> {
-        let tv = self.request.resolve(tool, true)?;
+        let opts = ResolveOptions {
+            latest_versions: true,
+            use_locked_version: false,
+        };
+        let tv = self.request.resolve(tool, &opts)?;
         // map cargo backend specific prefixes to ref
         let version = match tv.request.version().split_once(':') {
             Some((_ref_type @ ("tag" | "branch" | "rev"), r)) => {
@@ -132,8 +136,8 @@ impl ToolVersion {
     fn resolve_version(
         backend: &dyn Backend,
         request: ToolRequest,
-        latest_versions: bool,
         v: &str,
+        opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
         let config = Config::get();
         let v = config.resolve_alias(backend, v)?;
@@ -155,7 +159,7 @@ impl ToolVersion {
             }
             Some((part, v)) if part.starts_with("sub-") => {
                 let sub = part.split_once('-').unwrap().1;
-                return Self::resolve_sub(backend, request, latest_versions, sub, v);
+                return Self::resolve_sub(backend, request, sub, v, opts);
             }
             _ => (),
         }
@@ -169,7 +173,7 @@ impl ToolVersion {
         }
 
         if v == "latest" {
-            if !latest_versions {
+            if !opts.latest_versions {
                 if let Some(v) = backend.latest_installed_version(None)? {
                     return build(v);
                 }
@@ -178,7 +182,7 @@ impl ToolVersion {
                 return build(v);
             }
         }
-        if !latest_versions {
+        if !opts.latest_versions {
             let matches = backend.list_installed_versions_matching(&v)?;
             if matches.contains(&v) {
                 return build(v);
@@ -198,16 +202,16 @@ impl ToolVersion {
     fn resolve_sub(
         tool: &dyn Backend,
         request: ToolRequest,
-        latest_versions: bool,
         sub: &str,
         v: &str,
+        opts: &ResolveOptions,
     ) -> Result<Self> {
         let v = match v {
             "latest" => tool.latest_version(None)?.unwrap(),
             _ => Config::get().resolve_alias(tool, v)?,
         };
         let v = tool_request::version_sub(&v, sub);
-        Self::resolve_version(tool, request, latest_versions, &v)
+        Self::resolve_version(tool, request, &v, opts)
     }
 
     fn resolve_prefix(tool: &dyn Backend, request: ToolRequest, prefix: &str) -> Result<Self> {
@@ -279,5 +283,20 @@ impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.backend.full.hash(state);
         self.version.hash(state);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolveOptions {
+    pub latest_versions: bool,
+    pub use_locked_version: bool,
+}
+
+impl Default for ResolveOptions {
+    fn default() -> Self {
+        Self {
+            latest_versions: false,
+            use_locked_version: true,
+        }
     }
 }

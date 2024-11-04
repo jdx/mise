@@ -62,7 +62,7 @@ impl Exec {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
-            latest_versions: false,
+            resolve_options: Default::default(),
         };
         ts.install_arg_versions(&config, &opts)?;
         ts.notify_if_versions_missing();
