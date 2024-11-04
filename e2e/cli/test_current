@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+mise i dummy@3 tiny@2
+mise use dummy@3
+
+assert "mise current" "dummy 3"
+assert "mise current dummy" "3"
+assert "mise current tiny" ""
