@@ -10,7 +10,7 @@ use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{backend, lockfile, runtime_symlinks, shims};
+use crate::{backend, dirs, file, lockfile, runtime_symlinks, shims};
 
 /// Removes installed tool versions
 ///
@@ -67,6 +67,7 @@ impl Uninstall {
             }
         }
 
+        file::touch_dir(&dirs::DATA)?;
         lockfile::update_lockfiles(&[]).wrap_err("failed to update lockfiles")?;
         let ts = ToolsetBuilder::new().build(&config)?;
         shims::reshim(&ts, false).wrap_err("failed to reshim")?;
