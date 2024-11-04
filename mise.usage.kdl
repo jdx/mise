@@ -56,7 +56,7 @@ Customize status output with `status` settings."#
 "#
     flag "-s --shell" help="Shell type to generate the script for" hide=true {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
@@ -65,7 +65,7 @@ Customize status output with `status` settings."#
     }
     flag "-q --quiet" help="Suppress non-error messages"
     arg "[SHELL_TYPE]" help="Shell type to generate the script for" {
-        choices "bash" "fish" "nu" "xonsh" "zsh"
+        choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
     }
 }
 cmd "alias" help="Manage aliases" {
@@ -96,11 +96,11 @@ These can come from user config or from plugins in `bin/list-aliases`.
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
     [alias.node]
-    lts = "20.0.0""#
+    lts = "22.0.0""#
         after_long_help r"Examples:
 
     $ mise aliases
-    node    lts-hydrogen   20.0.0
+    node  lts-jod      22   
 "
         flag "--no-header" help="Don't show table header"
         arg "[PLUGIN]" help="Show aliases for <PLUGIN>"
@@ -112,7 +112,7 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise alias set node lts-hydrogen 18.0.0
+    $ mise alias set node lts-jod 22.0.0
 "
         arg "<PLUGIN>" help="The plugin to set the alias for"
         arg "<ALIAS>" help="The alias to set"
@@ -125,7 +125,7 @@ This modifies the contents of ~/.config/mise/config.toml"
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise alias unset node lts-hydrogen
+    $ mise alias unset node lts-jod
 "
         arg "<PLUGIN>" help="The plugin to remove the alias from"
         arg "<ALIAS>" help="The alias to remove"
@@ -228,12 +228,16 @@ cmd "config" help="Manage config files" {
         flag "--no-header" help="Do not print table header"
         flag "-J --json" help="Output in JSON format"
     }
-    cmd "set" help="Display the value of a setting in a mise.toml file" {
+    cmd "set" help="Set the value of a setting in a mise.toml file" {
         after_long_help r"Examples:
 
     $ mise config set tools.python 3.12
     $ mise config set settings.always_keep_download true
     $ mise config set env.TEST_ENV_VAR ABC
+    $ mise config set settings.disable_tools --type list node,rust
+
+    # Type for `settings` is inferred
+    $ mise config set settings.jobs 4
 "
         flag "-f --file" help="The path to the mise.toml file to edit" {
             long_help "The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
@@ -241,7 +245,7 @@ cmd "config" help="Manage config files" {
         }
         flag "-t --type" {
             arg "<TYPE>" {
-                choices "string" "integer" "float" "bool"
+                choices "infer" "string" "integer" "float" "bool" "list"
             }
         }
         arg "<KEY>" help="The path of the config to display"
@@ -330,7 +334,7 @@ use this if you have `mise activate` in your shell rc file."
     flag "-J --json" help="Output in JSON format"
     flag "-s --shell" help="Shell type to generate environment variables for" {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
@@ -465,7 +469,7 @@ Use `mise local` to set a tool version locally in the current directory."
 cmd "hook-env" hide=true help="[internal] called by activate hook to update env vars directory change" {
     flag "-s --shell" help="Shell type to generate script for" {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
@@ -474,7 +478,7 @@ cmd "hook-env" hide=true help="[internal] called by activate hook to update env 
 cmd "hook-not-found" hide=true help="[internal] called by shell when a command is not found" {
     flag "-s --shell" help="Shell type to generate script for" {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     arg "<BIN>" help="Attempted bin to run"
@@ -810,7 +814,7 @@ note: this updates the plugin itself, not the runtime versions"
 cmd "prune" help="Delete unused versions of tools" {
     long_help r"Delete unused versions of tools
 
-mise tracks which config files have been used in ~/.local/share/mise/tracked_config_files
+mise tracks which config files have been used in ~/.local/state/mise/tracked-configs
 Versions which are no longer the latest specified in any of those configs are deleted.
 Versions installed only with environment variables `MISE_<PLUGIN>_VERSION` will be deleted,
 as will versions only referenced on the command line `mise exec <PLUGIN>@<VERSION>`."
@@ -1264,6 +1268,7 @@ The name of the script will be the name of the tasks.
         flag "--timings" help="Shows elapsed time after each tasks"
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
+        mount run="mise tasks --usage"
     }
 }
 cmd "trust" help="Marks a config file as trusted" {
@@ -1556,7 +1561,7 @@ case $cur in
     done
     ;;
   *)
-    plugins=$(mise plugins --core --user)
+    plugins=$(mise ls --installed | awk '{print $1}' | sed '1!G;h;$!d')
     for plugin in $plugins; do
       echo "$plugin@"
     done

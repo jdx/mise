@@ -411,6 +411,21 @@ don't have these two set differently (might
 throw `os.environ['PATH'] = xonsh.built_ins.XSH.env.get_detyped('PATH')` at the end of a config to
 make sure they match)
 
+### Elvish
+
+Add following to your `rc.elv`:
+
+```shell
+var mise: = (eval &ns=[&] &on-end=$put~ (mise activate elvish | slurp))
+mise:activate
+```
+
+Optionally alias `mise` to `mise:mise` for seamless integration of `mise {activate,deactivate,shell}`:
+
+```shell
+fn mise {|@args| mise:mise $@args }
+```
+
 ### Something else?
 
 Adding a new shell is not hard at all since very little shell code is

@@ -381,8 +381,9 @@ default = true
 description = "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions."
 docs = """
 Set to false to disable the "command not found" handler to autoinstall missing tool versions.
-Disable this if experiencing strange behavior in your shell when a command is not found—but please submit a
-ticket to help diagnose problems.
+Disable this if experiencing strange behavior in your shell when a command is not found.
+
+This also runs in shims if the terminal is interactive.
 """
 
 [paranoid]

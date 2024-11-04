@@ -56,6 +56,47 @@ jobs:
       - run: shellcheck scripts/*.sh
 ```
 
+## GitLab CI
+
+You can use any docker image with `mise` installed to run your CI jobs.
+Here's an example using `debian-slim` as base image:
+::: details
+
+```dockerfile
+FROM debian:12-slim
+
+RUN apt-get update  \
+    && apt-get -y --no-install-recommends install  \
+      # install any tools you need
+      sudo curl git ca-certificates build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl https://mise.run | MISE_VERSION=v... MISE_INSTALL_PATH=/usr/local/bin/mise sh
+```
+
+:::
+
+When configuring your job, you can cache some of the [Mise directories](/directories).
+
+```yaml
+build-job:
+  stage: build
+  image: mise-debian-slim # Use the image you created
+  variables:
+    MISE_DATA_DIR: .mise/mise-data
+    MISE_CACHE_DIR: .mise/mise-cache
+  cache:
+    - key:
+        prefix: mise-
+        files: ["mise.toml", "mise.lock"] # mise.lock is optional, only if using `lockfile = true`
+      paths:
+        - $MISE_DATA_DIR
+        - $MISE_CACHE_DIR
+  script:
+    - mise install
+    - mise exec --command 'npm build'
+```
+
 ## Xcode Cloud
 
 If you are using Xcode Cloud, you can use custom `ci_post_clone.sh` [build script](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts) to install Mise. Here's an example:

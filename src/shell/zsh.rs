@@ -32,7 +32,7 @@ impl Shell for Zsh {
               shift
 
               case "$command" in
-              deactivate|s|shell)
+              deactivate|shell|sh)
                 # if argv doesn't contains -h,--help
                 if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
                   eval "$(command {exe} "$command" "$@")"

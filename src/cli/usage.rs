@@ -20,6 +20,12 @@ impl Usage {
             run: "mise tasks --usage".to_string(),
         });
 
+        let tasks = spec.cmd.subcommands.get_mut("tasks").unwrap();
+        let tasks_run = tasks.subcommands.get_mut("run").unwrap();
+        tasks_run.mounts.push(usage::SpecMount {
+            run: "mise tasks --usage".to_string(),
+        });
+
         let extra = include_str!("../assets/mise-extra.usage.kdl");
         println!("{spec}\n{extra}");
         Ok(())
