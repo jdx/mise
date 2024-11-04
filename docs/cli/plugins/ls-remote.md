@@ -1,10 +1,8 @@
 # `mise plugins ls-remote`
 
-**Usage**: `mise plugins ls-remote [-u --urls] [--only-names]`
-
-**Source code**: [`src/cli/plugins/ls-remote.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/ls-remote.rs)
-
-**Aliases**: `list-remote`, `list-all`
+- **Usage**: `mise plugins ls-remote [-u --urls] [--only-names]`
+- **Aliases**: `list-remote`, `list-all`
+- **Source code**: [`src/cli/plugins/ls-remote.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/ls-remote.rs)
 
 List all available remote plugins
 

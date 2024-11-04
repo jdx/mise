@@ -1,10 +1,8 @@
 # `mise tasks`
 
-**Usage**: `mise tasks [FLAGS] <SUBCOMMAND>`
-
-**Source code**: [`src/cli/tasks.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks.rs)
-
-**Aliases**: `t`
+- **Usage**: `mise tasks [FLAGS] <SUBCOMMAND>`
+- **Aliases**: `t`
+- **Source code**: [`src/cli/tasks.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks.rs)
 
 Manage tasks
 

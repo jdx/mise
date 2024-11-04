@@ -1,10 +1,8 @@
 # `mise plugins link`
 
-**Usage**: `mise plugins link [-f --force] <NAME> [PATH]`
-
-**Source code**: [`src/cli/plugins/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/link.rs)
-
-**Aliases**: `ln`
+- **Usage**: `mise plugins link [-f --force] <NAME> [PATH]`
+- **Aliases**: `ln`
+- **Source code**: [`src/cli/plugins/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/link.rs)
 
 Symlinks a plugin into mise
 

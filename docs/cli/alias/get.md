@@ -1,8 +1,7 @@
 # `mise alias get`
 
-**Usage**: `mise alias get <PLUGIN> <ALIAS>`
-
-**Source code**: [`src/cli/alias/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/get.rs)
+- **Usage**: `mise alias get <PLUGIN> <ALIAS>`
+- **Source code**: [`src/cli/alias/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/get.rs)
 
 Show an alias for a plugin
 
