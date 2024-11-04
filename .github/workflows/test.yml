@@ -17,7 +17,7 @@ env:
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1
   RUST_BACKTRACE: 1
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.RTX_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
   NPM_CONFIG_FUND: false
 
 permissions:
