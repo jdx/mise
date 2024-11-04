@@ -30,6 +30,7 @@ Shell type to generate environment variables for
 **Choices:**
 
 - `bash`
+- `elvish`
 - `fish`
 - `nu`
 - `xonsh`

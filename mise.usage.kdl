@@ -56,7 +56,7 @@ Customize status output with `status` settings."#
 "#
     flag "-s --shell" help="Shell type to generate the script for" hide=true {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
@@ -65,7 +65,7 @@ Customize status output with `status` settings."#
     }
     flag "-q --quiet" help="Suppress non-error messages"
     arg "[SHELL_TYPE]" help="Shell type to generate the script for" {
-        choices "bash" "fish" "nu" "xonsh" "zsh"
+        choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
     }
 }
 cmd "alias" help="Manage aliases" {
@@ -334,7 +334,7 @@ use this if you have `mise activate` in your shell rc file."
     flag "-J --json" help="Output in JSON format"
     flag "-s --shell" help="Shell type to generate environment variables for" {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
@@ -469,7 +469,7 @@ Use `mise local` to set a tool version locally in the current directory."
 cmd "hook-env" hide=true help="[internal] called by activate hook to update env vars directory change" {
     flag "-s --shell" help="Shell type to generate script for" {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
@@ -478,7 +478,7 @@ cmd "hook-env" hide=true help="[internal] called by activate hook to update env 
 cmd "hook-not-found" hide=true help="[internal] called by shell when a command is not found" {
     flag "-s --shell" help="Shell type to generate script for" {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     arg "<BIN>" help="Attempted bin to run"
@@ -1268,6 +1268,7 @@ The name of the script will be the name of the tasks.
         flag "--timings" help="Shows elapsed time after each tasks"
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
+        mount run="mise tasks --usage"
     }
 }
 cmd "trust" help="Marks a config file as trusted" {
