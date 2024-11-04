@@ -34,6 +34,7 @@ Shell type to generate the script for
 **Choices:**
 
 - `bash`
+- `elvish`
 - `fish`
 - `nu`
 - `xonsh`
