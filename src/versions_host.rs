@@ -6,7 +6,10 @@ use crate::{backend, http, registry};
 use url::Url;
 
 pub fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>> {
-    if !SETTINGS.use_versions_host || ba.short.contains(':') {
+    if !SETTINGS.use_versions_host
+        || ba.short.contains(':')
+        || !REGISTRY.contains_key(ba.short.as_str())
+    {
         return Ok(None);
     }
     // ensure that we're using a default shorthand plugin
