@@ -124,7 +124,7 @@ pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
         .unwrap_or_else(|| "mise".into())
 });
 #[cfg(feature = "timings")]
-pub static MISE_TIMINGS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_TIMINGS"));
+pub static MISE_TIMINGS: Lazy<Option<String>> = Lazy::new(|| var("MISE_TIMINGS").ok());
 pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
