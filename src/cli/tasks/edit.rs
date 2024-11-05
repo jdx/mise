@@ -29,14 +29,9 @@ impl TasksEdit {
             .cloned()
             .map_or_else(
                 || {
-                    let path = config
-                        .project_root
-                        .as_ref()
-                        .unwrap_or(&env::current_dir()?)
-                        .join(".mise")
-                        .join("tasks")
-                        .join(&self.task);
-                    Task::from_path(&path)
+                    let project_root = config.project_root.clone().unwrap_or(env::current_dir()?);
+                    let path = project_root.join(".mise").join("tasks").join(&self.task);
+                    Task::from_path(&path, path.parent().unwrap(), &project_root)
                 },
                 Ok,
             )?;

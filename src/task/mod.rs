@@ -40,6 +40,8 @@ pub struct Task {
     pub aliases: Vec<String>,
     #[serde(skip)]
     pub config_source: PathBuf,
+    #[serde(skip)]
+    pub config_root: Option<PathBuf>,
     #[serde(default)]
     pub depends: Vec<String>,
     #[serde(default)]
@@ -93,7 +95,7 @@ impl Debug for EitherStringOrBool {
 }
 
 impl Task {
-    pub fn from_path(path: &Path) -> Result<Task> {
+    pub fn from_path(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
@@ -113,16 +115,15 @@ impl Task {
                 map
             });
         let info = toml::Value::Table(info);
-        let config_root =
-            config_root(&path).ok_or_else(|| eyre!("config root not found: {}", path.display()))?;
         let mut tera_ctx = BASE_CONTEXT.clone();
         tera_ctx.insert("config_root", &config_root);
         let p = TomlParser::new(&info, get_tera(Some(config_root)), tera_ctx);
         // trace!("task info: {:#?}", info);
 
         let task = Task {
-            name: name_from_path(config_root, path)?,
+            name: name_from_path(prefix, path)?,
             config_source: path.to_path_buf(),
+            config_root: Some(config_root.to_path_buf()),
             hide: !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default(),
             aliases: p
                 .parse_array("alias")?
@@ -183,7 +184,8 @@ impl Task {
             spec.cmd.name = self.name.clone();
             (spec, vec![])
         } else {
-            let (scripts, spec) = TaskScriptParser::new(cwd).parse_run_scripts(&self.run)?;
+            let (scripts, spec) =
+                TaskScriptParser::new(cwd).parse_run_scripts(&self.config_root, &self.run)?;
             (spec, scripts)
         };
         spec.name = self.name.clone();
@@ -251,12 +253,36 @@ impl Task {
         let idx = self.name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
         style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string()
     }
+
+    pub fn dir(&self) -> Result<Option<PathBuf>> {
+        if let Some(dir) = &self.dir {
+            // TODO: memoize
+            // let dir = self.dir_rendered.get_or_try_init(|| -> Result<PathBuf> {
+            let dir = dir.to_string_lossy().to_string();
+            let mut tera = get_tera(self.config_root.as_deref());
+            let mut ctx = BASE_CONTEXT.clone();
+            if let Some(config_root) = &self.config_root {
+                ctx.insert("config_root", config_root);
+            }
+            let dir = tera.render_str(&dir, &ctx)?;
+            let dir = file::replace_path(&dir);
+            if dir.is_absolute() {
+                Ok(Some(dir.to_path_buf()))
+            } else if let Some(root) = &self.config_root {
+                Ok(Some(root.join(dir)))
+            } else {
+                Ok(Some(dir.clone()))
+            }
+        } else {
+            Ok(self.config_root.clone())
+        }
+    }
 }
 
-fn name_from_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
+fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
     Ok(path
         .as_ref()
-        .strip_prefix(root)
+        .strip_prefix(prefix)
         .map(|p| match p {
             p if p.starts_with("mise-tasks") => p.strip_prefix("mise-tasks"),
             p if p.starts_with(".mise-tasks") => p.strip_prefix(".mise-tasks"),
@@ -288,6 +314,7 @@ impl Default for Task {
             description: "".to_string(),
             aliases: vec![],
             config_source: PathBuf::new(),
+            config_root: None,
             depends: vec![],
             env: BTreeMap::new(),
             dir: None,
@@ -354,32 +381,6 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
     }
 }
 
-fn config_root(config_source: &impl AsRef<Path>) -> Option<&Path> {
-    for ancestor in config_source.as_ref().ancestors() {
-        if ancestor.ends_with("mise-tasks") {
-            return ancestor.parent();
-        }
-
-        if ancestor.ends_with(".mise-tasks") {
-            return ancestor.parent();
-        }
-
-        if ancestor.ends_with(".mise/tasks") {
-            return ancestor.parent()?.parent();
-        }
-
-        if ancestor.ends_with(".config/mise/tasks") {
-            return ancestor.parent()?.parent()?.parent();
-        }
-
-        if ancestor.ends_with("mise/tasks") {
-            return ancestor.parent()?.parent();
-        }
-    }
-
-    config_source.as_ref().parent()
-}
-
 pub trait GetMatchingExt<T> {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
 }
@@ -409,12 +410,12 @@ where
 mod tests {
     use std::path::Path;
 
-    use pretty_assertions::assert_eq;
-
+    use crate::dirs;
     use crate::task::Task;
     use crate::test::reset;
+    use pretty_assertions::assert_eq;
 
-    use super::{config_root, name_from_path};
+    use super::name_from_path;
 
     #[test]
     fn test_from_path() {
@@ -422,7 +423,12 @@ mod tests {
         let test_cases = [(".mise/tasks/filetask", "filetask", vec!["ft"])];
 
         for (path, name, aliases) in test_cases {
-            let t = Task::from_path(Path::new(path)).unwrap();
+            let t = Task::from_path(
+                Path::new(path),
+                Path::new(".mise/tasks"),
+                Path::new(dirs::CWD.as_ref().unwrap()),
+            )
+            .unwrap();
             assert_eq!(t.name, name);
             assert_eq!(t.aliases, aliases);
         }
@@ -451,21 +457,6 @@ mod tests {
 
         for (root, path) in test_cases {
             assert!(name_from_path(root, path).is_err())
-        }
-    }
-
-    #[test]
-    fn test_config_root() {
-        reset();
-        let test_cases = [
-            ("/base", Some(Path::new("/"))),
-            ("/base/.mise/tasks", Some(Path::new("/base"))),
-            ("/base/.config/mise/tasks", Some(Path::new("/base"))),
-            ("/base/mise/tasks", Some(Path::new("/base"))),
-        ];
-
-        for (src, expected) in test_cases {
-            assert_eq!(config_root(&src), expected)
         }
     }
 }
