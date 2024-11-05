@@ -402,11 +402,11 @@ pub trait Backend: Debug + Send + Sync {
         if self.is_version_installed(&ctx.tv, true) {
             if ctx.force {
                 self.uninstall_version(&ctx.tv, ctx.pr.as_ref(), false)?;
-                ctx.pr.set_message("installing".into());
             } else {
                 return Ok(());
             }
         }
+        ctx.pr.set_message("installing".into());
         let _lock = lock_file::get(&ctx.tv.install_path(), ctx.force)?;
         self.create_install_dirs(&ctx.tv)?;
 
