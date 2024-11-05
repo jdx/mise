@@ -36,7 +36,7 @@ mise use --rm dummy --path .mise.local.toml
 assert "cat .mise.local.toml" ""
 
 rm -f .mise.local.toml .mise.toml
-echo "dummy 1.0.0" > .tool-versions
+echo "dummy 1.0.0" >.tool-versions
 mise use dummy@2
 assert "cat .tool-versions" "dummy 2"
 
