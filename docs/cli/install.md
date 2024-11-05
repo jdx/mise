@@ -1,10 +1,8 @@
 # `mise install`
 
-**Usage**: `mise install [FLAGS] [TOOL@VERSION]...`
-
-**Source code**: [`src/cli/install.rs`](https://github.com/jdx/mise/blob/main/src/cli/install.rs)
-
-**Aliases**: `i`
+- **Usage**: `mise install [FLAGS] [TOOL@VERSION]...`
+- **Aliases**: `i`
+- **Source code**: [`src/cli/install.rs`](https://github.com/jdx/mise/blob/main/src/cli/install.rs)
 
 Install a tool version
 

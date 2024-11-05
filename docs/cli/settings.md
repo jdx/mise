@@ -1,8 +1,7 @@
 # `mise settings`
 
-**Usage**: `mise settings [--keys] <SUBCOMMAND>`
-
-**Source code**: [`src/cli/settings.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings.rs)
+- **Usage**: `mise settings [--keys] <SUBCOMMAND>`
+- **Source code**: [`src/cli/settings.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings.rs)
 
 Manage settings
 

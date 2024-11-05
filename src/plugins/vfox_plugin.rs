@@ -22,6 +22,7 @@ use xx::regex;
 #[derive(Debug)]
 pub struct VfoxPlugin {
     pub name: String,
+    pub full: Option<String>,
     pub plugin_path: PathBuf,
     pub repo: Mutex<Git>,
     pub repo_url: Option<String>,
@@ -42,6 +43,7 @@ impl VfoxPlugin {
         let repo = Git::new(&plugin_path);
         Self {
             name,
+            full: None,
             repo_url: None,
             repo: Mutex::new(repo),
             plugin_path,
@@ -71,7 +73,7 @@ impl VfoxPlugin {
         if let Some(url) = self.repo().get_remote_url() {
             return Ok(Url::parse(&url)?);
         }
-        vfox_to_url(&self.name)
+        vfox_to_url(self.full.as_ref().unwrap_or(&self.name))
     }
 
     pub fn mise_env(&self, opts: &toml::Value) -> Result<Option<IndexMap<String, String>>> {
@@ -253,6 +255,7 @@ Plugins could support local directories in the future but for now a symlink is r
 }
 
 fn vfox_to_url(name: &str) -> eyre::Result<Url> {
+    let name = name.strip_prefix("vfox:").unwrap_or(name);
     if let Some(full) = registry::REGISTRY_VFOX.get(name.trim_start_matches("vfox-")) {
         // bun -> version-fox/vfox-bun
         return vfox_to_url(full.split_once(':').unwrap().1);

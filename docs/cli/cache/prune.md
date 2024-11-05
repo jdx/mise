@@ -1,10 +1,8 @@
 # `mise cache prune`
 
-**Usage**: `mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`
-
-**Source code**: [`src/cli/cache/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/prune.rs)
-
-**Aliases**: `p`
+- **Usage**: `mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`
+- **Aliases**: `p`
+- **Source code**: [`src/cli/cache/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/prune.rs)
 
 Removes stale mise cache files
 

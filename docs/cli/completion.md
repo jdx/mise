@@ -1,8 +1,7 @@
 # `mise completion`
 
-**Usage**: `mise completion [SHELL]`
-
-**Source code**: [`src/cli/completion.rs`](https://github.com/jdx/mise/blob/main/src/cli/completion.rs)
+- **Usage**: `mise completion [SHELL]`
+- **Source code**: [`src/cli/completion.rs`](https://github.com/jdx/mise/blob/main/src/cli/completion.rs)
 
 Generate shell completions
 

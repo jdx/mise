@@ -14,7 +14,7 @@ use crate::dirs;
 use crate::install_context::InstallContext;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::plugins::{Plugin, PluginType};
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
@@ -92,6 +92,15 @@ impl Backend for VfoxBackend {
     ) -> eyre::Result<BTreeMap<String, String>> {
         self._exec_env(tv).cloned()
     }
+
+    fn get_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
+        let out = match tvr.backend().name.as_str() {
+            "poetry" | "pipenv" | "pipx" => vec!["python"],
+            "elixir" => vec!["erlang"],
+            _ => vec![],
+        };
+        Ok(out.into_iter().map(|s| s.into()).collect())
+    }
 }
 
 impl VfoxBackend {
@@ -110,6 +119,8 @@ impl VfoxBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         let pathname = ba.short.to_kebab_case();
         let plugin_path = dirs::PLUGINS.join(&pathname);
+        let mut plugin = VfoxPlugin::new(pathname.clone());
+        plugin.full = Some(ba.full.clone());
         Self {
             remote_version_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("remote_versions.msgpack.z"),
@@ -124,7 +135,7 @@ impl VfoxBackend {
                 .with_fresh_file(plugin_path.to_path_buf())
                 .with_fresh_file(ba.installs_path.to_path_buf())
                 .build(),
-            plugin: Box::new(VfoxPlugin::new(pathname.clone())),
+            plugin: Box::new(plugin),
             ba,
             pathname,
         }

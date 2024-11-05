@@ -2,7 +2,7 @@
 
 **Usage**: `mise [FLAGS] <SUBCOMMAND>`
 
-**Usage**: `mise [FLAGS] <SUBCOMMAND>`
+- **Usage**: `mise [FLAGS] <SUBCOMMAND>`
 
 ## Global Flags
 

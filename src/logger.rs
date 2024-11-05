@@ -85,9 +85,8 @@ impl Logger {
                 )
             }
             LevelFilter::Debug => format!(
-                "{level} {module_path} {args}",
+                "{level} {args}",
                 level = self.styled_level(record.level()),
-                module_path = record.module_path().unwrap_or_default(),
                 args = record.args()
             ),
             _ => {

@@ -1,8 +1,7 @@
 # `mise deactivate`
 
-**Usage**: `mise deactivate`
-
-**Source code**: [`src/cli/deactivate.rs`](https://github.com/jdx/mise/blob/main/src/cli/deactivate.rs)
+- **Usage**: `mise deactivate`
+- **Source code**: [`src/cli/deactivate.rs`](https://github.com/jdx/mise/blob/main/src/cli/deactivate.rs)
 
 Disable mise for current shell session
 

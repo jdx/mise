@@ -46,7 +46,7 @@ impl Where {
 
         let ba = tvr.backend();
         let backend = backend::get(ba);
-        let tv = tvr.resolve(backend.as_ref(), false)?;
+        let tv = tvr.resolve(backend.as_ref(), &Default::default())?;
 
         if backend.is_version_installed(&tv, true) {
             miseprintln!("{}", tv.install_path().to_string_lossy());
