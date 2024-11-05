@@ -150,7 +150,7 @@ impl Upgrade {
         let versions = ts.install_versions(config, new_versions, &mpr, &opts)?;
 
         for (o, bump, mut cf) in config_file_updates {
-            cf.replace_versions(o.tool_request.backend(), &[bump])?;
+            cf.replace_versions(o.tool_request.backend(), &[(bump, o.tool_request.options())])?;
             cf.save()?;
         }
 
