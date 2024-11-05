@@ -105,7 +105,7 @@ impl Use {
                 force: self.force,
                 jobs: self.jobs,
                 raw: self.raw,
-                latest_versions: false,
+                resolve_options: Default::default(),
             },
         )?;
 
