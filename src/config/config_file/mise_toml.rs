@@ -96,8 +96,10 @@ impl MiseToml {
         rf.context
             .insert("config_root", path.parent().unwrap().to_str().unwrap());
         rf.path = path.to_path_buf();
+        let project_root = rf.project_root().map(|p| p.to_path_buf());
         for task in rf.tasks.0.values_mut() {
             task.config_source.clone_from(&rf.path);
+            task.config_root = project_root.clone();
         }
         // trace!("{}", rf.dump()?);
         Ok(rf)

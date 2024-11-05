@@ -224,7 +224,7 @@ impl Run {
                         trace!("running task: {task}");
                         if let Err(err) = self.run_task(&env, &task) {
                             let prefix = task.estyled_prefix();
-                            eprintln!("{prefix} {} {err}", style::ered("ERROR"),);
+                            eprintln!("{prefix} {} {err:?}", style::ered("ERROR"),);
                             let _ = tx_err.send((task.clone(), Error::get_exit_status(&err)));
                         }
                     }
@@ -269,7 +269,7 @@ impl Run {
 
     fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
-        if !self.force && self.sources_are_fresh(task) {
+        if !self.force && self.sources_are_fresh(task)? {
             eprintln!("{prefix} sources up-to-date, skipping");
             return Ok(());
         }
@@ -322,7 +322,11 @@ impl Run {
         prefix: &str,
     ) -> Result<()> {
         let script = script.trim_start();
-        let cmd = trunc(&style::ebold(format!("$ {script}")).bright().to_string());
+        let cmd = trunc(
+            &style::ebold(format!("$ {script} {args}", args = args.join(" ")))
+                .bright()
+                .to_string(),
+        );
         eprintln!("{prefix} {cmd}");
 
         if script.starts_with("#!") {
@@ -423,9 +427,15 @@ impl Run {
         if self.raw(task) {
             cmd.with_raw();
         }
-        if let Some(cd) = &self.cd.as_ref().or(task.dir.as_ref()) {
-            cmd = cmd.current_dir(cd);
+        let dir = self.cwd(task)?;
+        if !dir.exists() {
+            eprintln!(
+                "{prefix} {} task directory does not exist: {}",
+                style::eyellow("WARN"),
+                display_path(&dir)
+            );
         }
+        cmd = cmd.current_dir(dir);
         if self.dry_run {
             return Ok(());
         }
@@ -496,23 +506,23 @@ impl Run {
         Ok(())
     }
 
-    fn sources_are_fresh(&self, task: &Task) -> bool {
+    fn sources_are_fresh(&self, task: &Task) -> Result<bool> {
         if task.sources.is_empty() && task.outputs.is_empty() {
-            return false;
+            return Ok(false);
         }
         let run = || -> Result<bool> {
-            let sources = self.get_last_modified(&self.cwd(task), &task.sources)?;
-            let outputs = self.get_last_modified(&self.cwd(task), &task.outputs)?;
+            let sources = self.get_last_modified(&self.cwd(task)?, &task.sources)?;
+            let outputs = self.get_last_modified(&self.cwd(task)?, &task.outputs)?;
             trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {
                 (Some(sources), Some(outputs)) => Ok(sources < outputs),
                 _ => Ok(false),
             }
         };
-        run().unwrap_or_else(|err| {
+        Ok(run().unwrap_or_else(|err| {
             warn!("sources_are_fresh: {err}");
             false
-        })
+        }))
     }
 
     fn add_failed_task(&self, task: Task, status: Option<i32>) {
@@ -549,13 +559,17 @@ impl Run {
         Ok(last_mod)
     }
 
-    fn cwd(&self, task: &Task) -> PathBuf {
-        self.cd
-            .as_ref()
-            .or(task.dir.as_ref())
-            .cloned()
-            .or_else(|| CONFIG.project_root.clone())
-            .unwrap_or_else(|| env::current_dir().unwrap().clone())
+    fn cwd(&self, task: &Task) -> Result<PathBuf> {
+        if let Some(d) = &self.cd {
+            Ok(d.clone())
+        } else if let Some(d) = task.dir()? {
+            Ok(d)
+        } else {
+            Ok(CONFIG
+                .project_root
+                .clone()
+                .unwrap_or_else(|| env::current_dir().unwrap()))
+        }
     }
 
     fn save_checksum(&self, task: &Task) -> Result<()> {
