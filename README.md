@@ -12,6 +12,7 @@
 <a href="https://github.com/jdx/mise/actions/workflows/test.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdx/mise/test.yml?style=for-the-badge"></a>
 <a href="https://app.codacy.com/gh/jdx/mise/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage"><img alt="Codacy coverage (branch)" src="https://img.shields.io/codacy/coverage/af322e1f36ca41f0a296f49733a705f5/main?color=%2344CC11&style=for-the-badge"></a>
 <a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge"></a>
+<a href="https://gurubase.io/g/mise"><img alt="Gurubase" src="https://img.shields.io/badge/Gurubase-Ask%20Mise%20Guru-006BFF?style=for-the-badge"></a>
 <p><em>The front-end to your dev env.</em></p>
 </div>
 
