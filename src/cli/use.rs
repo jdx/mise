@@ -255,7 +255,13 @@ mod tests {
         tiny = "2"
         "###);
 
-        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @"mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0");
+        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @r"
+        mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0
+        mise mise tiny@1.0.1 installing
+        mise mise tiny@1.0.1 installing
+        mise mise tiny@1.0.1 ~/data/plugins/tiny/bin/install
+        mise mise tiny@1.0.1 ✓ installed
+        ");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
         [tools]
         tiny = ["1", "2", "3"]
@@ -292,7 +298,13 @@ mod tests {
       tiny = "2"
       "###);
 
-        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @"mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0");
+        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @r"
+        mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0
+        mise mise tiny@1.0.1 installing
+        mise mise tiny@1.0.1 installing
+        mise mise tiny@1.0.1 ~/data/plugins/tiny/bin/install
+        mise mise tiny@1.0.1 ✓ installed
+        ");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
       [tools]
       tiny = ["1", "2", "3"]
@@ -350,10 +362,14 @@ mod tests {
         let cf_path = dirs::CONFIG.join("config.toml");
         let orig = file::read_to_string(&cf_path).unwrap();
 
-        assert_cli_snapshot!("use", "-g", "tiny@2", @r###"
+        assert_cli_snapshot!("use", "-g", "tiny@2", @r"
         mise ~/config/config.toml tools: tiny@2.1.0
+        mise mise tiny@2.1.0 installing
+        mise mise tiny@2.1.0 installing
+        mise mise tiny@2.1.0 ~/data/plugins/tiny/bin/install
+        mise mise tiny@2.1.0 ✓ installed
         mise tiny is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
-        "###);
+        ");
         assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r##"
         [env]
         TEST_ENV_VAR = 'test-123'

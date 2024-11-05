@@ -144,9 +144,8 @@ impl SingleReport for VerboseReport {
         eprintln!("{message}");
     }
     fn set_message(&self, message: String) {
-        // let prefix = normal_prefix(self.pad, &self.prefix);
-        // eprintln!("{prefix} {message}");
-        eprintln!("{message}");
+        let prefix = normal_prefix(self.pad, &self.prefix);
+        info!("{prefix} {message}");
     }
     fn finish(&self) {
         self.finish_with_message(style::egreen("done").to_string());
@@ -154,7 +153,7 @@ impl SingleReport for VerboseReport {
     fn finish_with_message(&self, message: String) {
         let prefix = success_prefix(self.pad - 2, &self.prefix);
         let ico = style::egreen("✓").bright();
-        eprintln!("{prefix} {ico} {message}");
+        info!("{prefix} {ico} {message}");
     }
 }
 
