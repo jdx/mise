@@ -291,7 +291,7 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
         match tv.install_path() {
-            path if path.is_symlink() => Some(path),
+            path if path.is_symlink() && !is_runtime_symlink(&path) => Some(path),
             _ => None,
         }
     }
