@@ -121,10 +121,10 @@ url = "2"
 # usage-lib = { path = "../usage/lib", features = ["clap", "docs"] }
 usage-lib = { version = "1", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
-# vfox = { path="../vfox.rs" }
-vfox = "0.2"
+# vfox = { path = "../vfox.rs" }
+vfox = "0.3"
 walkdir = "2"
-which = "6"
+which = "7"
 xx = { version = "1", features = ["glob"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
