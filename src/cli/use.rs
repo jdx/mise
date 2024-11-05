@@ -113,13 +113,13 @@ impl Use {
         let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
 
         for (fa, tvl) in &versions.iter().chunk_by(|tv| &tv.backend) {
-            let versions: Vec<String> = tvl
+            let versions: Vec<_> = tvl
                 .into_iter()
                 .map(|tv| {
                     if pin {
-                        tv.version.clone()
+                        (tv.version.clone(), tv.request.options())
                     } else {
-                        tv.request.version()
+                        (tv.request.version(), tv.request.options())
                     }
                 })
                 .collect();
