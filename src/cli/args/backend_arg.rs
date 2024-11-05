@@ -49,6 +49,7 @@ impl From<BackendMeta> for BackendArg {
 impl BackendArg {
     pub fn new(short: &str, full: &str) -> Self {
         let short = unalias_backend(short).to_string();
+        let short = regex!(r#"\[.+\]$"#).replace_all(&short, "").to_string();
 
         let (backend, mut name) = full.split_once(':').unwrap_or(("", full));
 
