@@ -162,7 +162,11 @@ impl ConfigFile for ToolVersions {
         Ok(())
     }
 
-    fn replace_versions(&mut self, fa: &BackendArg, versions: &[(String, ToolVersionOptions)]) -> eyre::Result<()> {
+    fn replace_versions(
+        &mut self,
+        fa: &BackendArg,
+        versions: &[(String, ToolVersionOptions)],
+    ) -> eyre::Result<()> {
         self.get_or_create_plugin(fa).versions.clear();
         for (version, opts) in versions {
             if !opts.is_empty() {
