@@ -1,5 +1,13 @@
 ---
 source: src/cli/upgrade.rs
 expression: output
+snapshot_kind: text
 ---
-
+mise mise tiny@3.1.0 installing
+mise mise tiny@3.1.0 installing
+mise mise tiny@3.1.0 ~/data/plugins/tiny/bin/install
+mise mise tiny@3.1.0 ✓ installed
+mise mise Uninstalling tiny@3.0.0 uninstall
+mise mise Uninstalling tiny@3.0.0 removing ~/data/installs/tiny/3.0.0
+mise mise Uninstalling tiny@3.0.0 removing ~/data/cache/tiny/3.0.0
+mise mise Uninstalling tiny@3.0.0 ✓ done
