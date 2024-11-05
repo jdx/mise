@@ -1,5 +1,10 @@
 ---
 source: src/cli/shell.rs
 expression: output
+snapshot_kind: text
 ---
 export MISE_TINY_VERSION=1.0.1
+mise mise tiny@1.0.1 installing
+mise mise tiny@1.0.1 installing
+mise mise tiny@1.0.1 ~/data/plugins/tiny/bin/install
+mise mise tiny@1.0.1 ✓ installed
