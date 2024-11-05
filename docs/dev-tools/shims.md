@@ -4,7 +4,14 @@
 The [beginner's guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4), and my [blog post](https://jdx.dev/posts/2024-04-13-shims-how-they-work-in-mise-en-place/) are helpful resources to dive deeper into shims.
 :::
 
-While the PATH design of mise works great in most cases, there are some situations where shims are
+## Introduction
+
+There are two ways for dev tools to be loaded into your shell: `mise activate` and `shims`.
+
+- Mise's "PATH" activation method updates environment variables at each prompt by modifying `PATH`
+- The "shims" method uses symlinks to the mise binary that intercept commands and load the appropriate environment
+
+While the `PATH` design of mise works great in most cases, there are some situations where shims are
 preferable. One example is when calling mise binaries from an IDE.
 
 To support this, mise does have a shim dir that can be used. It's located at `~/.local/share/mise/shims`.
@@ -31,6 +38,34 @@ in that scenario. Also, this bears repeating but: `mise reshim` just creates/rem
 mise also runs a reshim anytime a tool is installed/updated/removed so you don't need to use it for those scenarios.
 
 Also don't put things in there manually, mise will just delete it next reshim.
+:::
+
+## How to add mise shims to PATH
+
+If you prefer to use shims, you can run the following to use mise without activating it.
+
+You can use `.bashrc`/`.zshrc` instead of `.bash_profile`/`.zprofile` if you prefer to only use
+mise in interactive sessions (`.bash_profile`/`.zprofile` will work in non-interactive places
+like scripts or IDEs).
+
+::: code-group
+
+```sh [bash]
+# note that bash will read from ~/.profile or ~/.bash_profile if the latter exists
+# ergo, you may want to check to see which is defined on your system and only append to the existing file
+echo 'export PATH="$HOME/.local/share/mise/shims:$PATH"' >> ~/.bash_profile
+```
+
+```sh [zsh]
+echo 'export PATH="$HOME/.local/share/mise/shims:$PATH"' >> ~/.zprofile
+```
+
+```sh [fish]
+fish_add_path ~/.local/share/mise/shims
+```
+
+:::tip
+You can also run `mise activate --shims` which will do the above for you.
 :::
 
 ## Shims vs PATH
