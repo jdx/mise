@@ -20,8 +20,6 @@ impl Shell for Zsh {
             export MISE_SHELL=zsh
             export __MISE_ORIG_PATH="$PATH"
 
-            eval "$({exe} hook-env{flags} -s zsh)"
-
             mise() {{
               local command
               command="${{1:-}}"
