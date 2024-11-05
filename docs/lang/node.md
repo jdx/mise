@@ -59,7 +59,9 @@ You can specify a non-default location of this file by setting a `MISE_NODE_DEFA
 
 ## `.nvmrc` and `.node-version` support
 
-mise uses a `.tool-versions` or `.mise.toml` file for auto-switching between software versions. To ease migration, you can have also have it read an existing `.nvmrc` or `.node-version` file to find out what version of Node.js should be used. This will be used if `node` isn't defined in `.tool-versions`/`.mise.toml`.
+mise uses a `.tool-versions` or `.mise.toml` file for auto-switching between software versions.
+To ease migration, you can have also have it read an existing `.nvmrc` or `.node-version` file to find out what version of Node.js should be used.
+This will be used if `node` isn't defined in `.tool-versions`/`.mise.toml`.
 
 ## "nodejs" -> "node" Alias
 
@@ -89,3 +91,158 @@ To use these, set `node.flavor`:
 mise settings set node.flavor musl
 mise settings set node.flavor glibc-217
 ```
+
+## Migrating from `nvm` to `mise`
+
+As indicated above, mise can read `.nvmrc` files to determine the required Node.js version.
+This will help migrating from `nvm`.
+
+### Example setup
+
+For the migration example, we will consider the following NodeJS setup:
+
+- Node.JS 20 and 22 are installed globally using `nvm`
+- Node 22 is used by default
+- There are two projects, one using Node 17 and the other using Node 18
+
+The project directories contain `.nvmrc` files:
+
+```text
+- node-project-17/.nvmrc: 17
+- node-project-18/.nvmrc: 18
+```
+
+:::details Here is what you one might have done using `nvm`
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+source ~/.bashrc
+
+nvm install 22
+nvm install 20
+nvm alias default 22
+
+mkdir -p node-18-project && cd node-18-project && echo "18" > .nvmrc && nvm install && cd -
+mkdir -p node-17-project && cd node-17-project && echo "17" > .nvmrc && nvm install && cd -
+```
+
+:::
+
+### Stop loading `nvm`
+
+If it's not already done, install `mise` (see [Getting Started](/getting-started)).
+
+Open your shell configuration file (`.bashrc`, `.zshrc`, ...) and remove or comment out the `nvm` initialization script:
+
+```shell
+# Comment out or remove these lines
+# export NVM_DIR="$HOME/.nvm"...
+```
+
+then restart your shell.
+
+:::details If you are using `bash`, this is how you can do it
+
+```bash
+curl https://mise.run | sh
+echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
+source ~/.bashrc
+
+sed -i.bak '/NVM_DIR\|nvm.sh\|bash_completion/d' ~/.bashrc
+# start a new shell
+```
+
+:::
+
+### Migration Options
+
+You now have two options for migration:
+
+#### Option A: Clean Installation (Remove nvm)
+
+1. Unload `nvm` and remove its directory:
+
+   ```shell
+   nvm_dir="${NVM_DIR:-~/.nvm}"
+   nvm unload
+   rm -rf "$nvm_dir"
+   ```
+
+2. Reinstall your global Node.js version with `mise`:
+
+   ```shell
+   mise use -g node@22
+   ```
+
+   This will install Node.js 22 globally and set it as the default version.
+   If you also want to install Node.js 20, you can run `mise install node@20` without setting it as the default version.
+
+3. Install Node.js 17 and 18 for the projects:
+
+   ```shell
+   cd node-project-17
+   mise install
+
+   cd ../node-project-18
+   mise install
+   ```
+
+#### Option B: Keep Existing `nvm` Installations (Symlink)
+
+This option is useful if you want to keep your existing `nvm` installations and use them with `mise`. (You won't need to reinstall global packages for example.)
+
+1. Sync existing `nvm` installations with `mise`:
+
+   ```bash
+   mise sync node --nvm
+   ```
+
+2. Verify the sync by listing installations with `mise ls`:
+
+   :::details `mise ls`
+
+   ```shell
+   Tool  Version            Config Source Requested
+   node  17.9.1 (symlink)
+   node  18.20.4 (symlink)
+   node  20.11.0 (symlink)
+   node  22.1.0 (symlink)
+   ```
+
+   :::
+
+3. If you navigate to `node-project-17` and `node-project-18`, you will see that the correct Node.js version is used.
+   :::details `mise ls`
+
+   ```shell
+   node-18-project# mise ls
+   Tool  Version            Config Source           Requested
+   node  17.9.1 (symlink)
+   node  18.20.4 (symlink)  /node-18-project/.nvmrc 18
+   node  22.11.0 (symlink)
+   node  23.1.0 (symlink)
+   node-18-project# node -v
+   v18.20.4
+   ```
+
+   :::
+
+4. Let's now create a new project with Node 19:
+
+   ```shell
+   mkdir node-project-19 && cd node-project-19
+   mise use node@19 # create a mise.toml file with node@19
+   cat mise.toml
+   mise ls
+   ```
+
+   :::details `mise ls`
+
+   ```shell
+   Tool  Version            Config Source               Requested
+   node  17.9.1 (symlink)
+   node  18.20.4 (symlink)
+   node  19.9.0             /node-project-19/.mise.toml 19
+   node  22.11.0 (symlink)
+   node  23.1.0 (symlink)
+   ```
