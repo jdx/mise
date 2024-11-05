@@ -15,7 +15,7 @@ pub fn init() {
     thread::spawn(move || {
         let mut signals = Signals::new([SIGINT]).unwrap();
         let _handle = signals.handle();
-        if let Some(_signal) = signals.into_iter().next() {
+        while let Some(_signal) = signals.forever().next() {
             if SHOW_CURSOR.load(Ordering::Relaxed) {
                 let _ = Term::stderr().show_cursor();
             }
