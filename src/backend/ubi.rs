@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use crate::backend::{Backend, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -11,6 +9,8 @@ use crate::plugins::VERSION_REGEX;
 use crate::toolset::ToolRequest;
 use eyre::bail;
 use regex::Regex;
+use std::fmt::Debug;
+use std::sync::OnceLock;
 use ubi::UbiBuilder;
 use xx::regex;
 
@@ -40,6 +40,8 @@ impl Backend for UbiBackend {
         } else {
             self.remote_version_cache
                 .get_or_try_init(|| {
+                    let opts = self.ba.opts.clone().unwrap_or_default();
+                    let tag_regex = OnceLock::new();
                     Ok(github::list_releases(self.name())?
                         .into_iter()
                         .map(|r| r.tag_name)
@@ -47,6 +49,15 @@ impl Backend for UbiBackend {
                         .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
                             true => t[1..].to_string(),
                             false => t,
+                        })
+                        .filter(|v| {
+                            if let Some(re) = opts.get("tag_regex") {
+                                let re =
+                                    tag_regex.get_or_init(|| Regex::new(re).unwrap());
+                                re.is_match(v)
+                            } else {
+                                true
+                            }
                         })
                         .rev()
                         .collect())
