@@ -112,7 +112,10 @@ impl Uninstall {
                     })
                     .collect::<Result<Vec<_>>>()?;
                 if let Some(tvr) = &a.tvr {
-                    tvs.push((tool.clone(), tvr.resolve(tool.as_ref(), false)?));
+                    tvs.push((
+                        tool.clone(),
+                        tvr.resolve(tool.as_ref(), &Default::default())?,
+                    ));
                 }
                 if tvs.is_empty() {
                     warn!("no versions found for {}", style(&tool).blue().for_stderr());

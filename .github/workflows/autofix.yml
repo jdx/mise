@@ -3,8 +3,8 @@ name: autofix.ci
 on:
   workflow_call:
   pull_request:
-  push:
-    branches: ["main"]
+#  push:
+#    branches: ["main"]
 
 permissions:
   contents: read
@@ -43,6 +43,8 @@ jobs:
             ~/.local/share/mise/plugins
       - run: mise install
       - run: npm install
-      - run: "mise run snapshots ::: lint-fix ::: render && git diff HEAD"
+      - run: mise run render
+      - run: mise run lint-fix
+      - run: mise run snapshots
       - uses: autofix-ci/action@v1.3.1
         if: ${{ always() }}
