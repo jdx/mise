@@ -337,7 +337,7 @@ impl Toolset {
                         }
                         _ => v.clone(),
                     };
-                    (p.clone(), tv.clone())
+                    (p.clone(), tv)
                 })
             })
             .collect()
