@@ -1,6 +1,6 @@
 # Installing Mise
 
-If you are new to `mise`, follow the [getting Started](/getting-started) guide first.
+If you are new to `mise`, follow the [Getting Started](/getting-started) guide first.
 
 ## Installation Methods
 
