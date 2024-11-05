@@ -18,8 +18,13 @@ pub const FORGE_META_FILENAME: &str = ".mise.backend.json";
 impl BackendMeta {
     pub fn read(dirname: &str) -> BackendMeta {
         let meta_path = &dirs::INSTALLS.join(dirname).join(FORGE_META_FILENAME);
-        let json = file::read_to_string(meta_path).unwrap_or_default();
-        serde_json::from_str(&json).unwrap_or(Self::default_meta(dirname))
+        if meta_path.exists() {
+            let json = file::read_to_string(meta_path).unwrap_or_default();
+            if let Ok(meta) = serde_json::from_str(&json) {
+                return meta;
+            }
+        }
+        Self::default_meta(dirname)
     }
 
     pub fn write(fa: &BackendArg) -> eyre::Result<()> {

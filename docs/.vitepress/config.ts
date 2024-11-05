@@ -30,6 +30,7 @@ export default defineConfig({
             collapsed: true,
             items: [{ text: "Demo", link: "/demo" }],
           },
+          { text: "Installing mise", link: "/installing-mise" },
           { text: "IDE Integration", link: "/ide-integration" },
           { text: "Continuous Integration", link: "/continuous-integration" },
         ],
