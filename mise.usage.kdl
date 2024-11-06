@@ -159,6 +159,7 @@ Run `mise cache` with no args to view the current cache directory."
     cmd "clear" help="Deletes all cache files in mise" {
         alias "c"
         alias "clean" hide=true
+        flag "--outdate" help="Mark all cache files as old" hide=true
         arg "[PLUGIN]..." help="Plugin(s) to clear cache for e.g.: node, python" var=true
     }
     cmd "prune" help="Removes stale mise cache files" {
