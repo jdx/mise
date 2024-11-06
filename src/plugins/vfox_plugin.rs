@@ -54,8 +54,8 @@ impl VfoxPlugin {
         let settings = Settings::get();
         let plugins = plugins::INSTALLED_PLUGINS
             .iter()
-            .inspect(|(dir, _)| debug!("vfox_plugin: {:?}", dir))
             .filter(|(_, t)| matches!(t, PluginType::Vfox))
+            .inspect(|(dir, _)| trace!("vfox_plugin: {:?}", dir))
             .map(|(dir, _)| {
                 let name = dir.file_name().unwrap().to_string_lossy().to_string();
                 Box::new(VfoxPlugin::new(name)) as Box<dyn Plugin>
