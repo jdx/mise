@@ -32,7 +32,7 @@ pub struct BackendArg {
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
         let s = s.as_ref();
-        if let Some(fa) = REGISTRY_BACKEND_MAP.get(s) {
+        if let Some(fa) = REGISTRY_BACKEND_MAP.get(s).and_then(|rbm| rbm.first()) {
             fa.clone()
         } else {
             Self::new(s, s)
