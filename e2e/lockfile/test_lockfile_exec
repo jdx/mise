@@ -3,6 +3,7 @@
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 
+touch .mise.lock
 mise install tiny@1.0.0
 mise use tiny@1
 mise install tiny@1.0.1
