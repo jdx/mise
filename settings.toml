@@ -698,6 +698,11 @@ docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 """
 
+[task_timings]
+env = "MISE_TASK_TIMINGS"
+type = "Bool"
+description = "Show completion message with elapsed time for each task on `mise run`."
+
 [trace]
 env = "MISE_TRACE"
 type = "Bool"

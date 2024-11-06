@@ -28,6 +28,10 @@ pub struct Use {
     ///
     /// e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
     /// If no version is specified, it will default to @latest
+    ///
+    /// Tool options can be set with this syntax:
+    ///
+    ///     mise use ubi:BurntSushi/ripgrep[exe=rg]
     #[clap(
         value_name = "TOOL@VERSION",
         verbatim_doc_comment,

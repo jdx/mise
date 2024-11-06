@@ -91,6 +91,7 @@ mod tests {
         plugin_autoupdate_last_check_duration = "20m"
         quiet = false
         raw = false
+        task_timings = false
         trusted_config_paths = []
         use_versions_host = true
         verbose = true
@@ -126,7 +127,7 @@ mod tests {
     #[test]
     fn test_settings_ls_keys() {
         reset();
-        assert_cli_snapshot!("settings", "--keys", @r#"
+        assert_cli_snapshot!("settings", "--keys", @r"
         activate_aggressive
         all_compile
         always_keep_download
@@ -178,10 +179,11 @@ mod tests {
         status.missing_tools
         status.show_env
         status.show_tools
+        task_timings
         trusted_config_paths
         use_versions_host
         verbose
         yes
-        "#);
+        ");
     }
 }
