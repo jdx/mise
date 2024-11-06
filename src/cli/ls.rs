@@ -49,6 +49,10 @@ pub struct Ls {
     #[clap(long, short)]
     installed: bool,
 
+    /// Don't fetch information such as outdated versions
+    #[clap(long, short)]
+    offline: bool,
+
     /// Output in an easily parseable format
     #[clap(long, hide = true, conflicts_with = "json")]
     parseable: bool,
@@ -82,16 +86,16 @@ impl Ls {
         if self.current || self.global {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally
-            runtimes.retain(|(_, _, source)| source.is_some());
+            runtimes.retain(|(_, _, _, source)| source.is_some());
         }
         if self.installed {
-            runtimes.retain(|(p, tv, _)| p.is_version_installed(tv, true));
+            runtimes.retain(|(_, p, tv, _)| p.is_version_installed(tv, true));
         }
         if self.missing {
-            runtimes.retain(|(p, tv, _)| !p.is_version_installed(tv, true));
+            runtimes.retain(|(_, p, tv, _)| !p.is_version_installed(tv, true));
         }
         if let Some(prefix) = &self.prefix {
-            runtimes.retain(|(_, tv, _)| tv.version.starts_with(prefix));
+            runtimes.retain(|(_, _, tv, _)| tv.version.starts_with(prefix));
         }
         if self.json {
             self.display_json(runtimes)
@@ -119,7 +123,7 @@ impl Ls {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
                 .into_iter()
-                .filter(|(p, _, _)| plugins.contains(p.fa()))
+                .filter(|(_, p, _, _)| plugins.contains(p.fa()))
                 .map(|row| row.into())
                 .collect();
             miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
@@ -129,7 +133,7 @@ impl Ls {
         let mut plugins = JSONOutput::new();
         for (plugin_name, runtimes) in &runtimes
             .into_iter()
-            .chunk_by(|(p, _, _)| p.id().to_string())
+            .chunk_by(|(_, p, _, _)| p.id().to_string())
         {
             let runtimes = runtimes.map(|row| row.into()).collect();
             plugins.insert(plugin_name.clone(), runtimes);
@@ -143,7 +147,7 @@ impl Ls {
         warn!("Please use the regular output format instead which has been modified to be more easily parseable.");
         let tvs = runtimes
             .into_iter()
-            .map(|(p, tv, _)| (p, tv))
+            .map(|(_, p, tv, _)| (p, tv))
             .filter(|(p, tv)| p.is_version_installed(tv, true))
             .map(|(_, tv)| tv);
         for tv in tvs {
@@ -164,9 +168,9 @@ impl Ls {
         //     .collect_vec();
         let rows = runtimes
             .into_par_iter()
-            .map(|(p, tv, source)| Row {
+            .map(|(ls, p, tv, source)| Row {
                 tool: p.clone(),
-                version: (p.as_ref(), &tv, &source).into(),
+                version: (ls, p.as_ref(), &tv, &source).into(),
                 requested: match source.is_some() {
                     true => Some(tv.request.version()),
                     false => None,
@@ -227,11 +231,11 @@ impl Ls {
                     Some((_, tv)) => ts.versions.get(&tv.backend).map(|tv| tv.source.clone()),
                     None => None,
                 };
-                (p, tv, source)
+                (self, p, tv, source)
             })
             // if it isn't installed and it's not specified, don't show it
-            .filter(|(p, tv, source)| source.is_some() || p.is_version_installed(tv, true))
-            .filter(|(p, _, _)| match &self.plugin {
+            .filter(|(_ls, p, tv, source)| source.is_some() || p.is_version_installed(tv, true))
+            .filter(|(_ls, p, _, _)| match &self.plugin {
                 Some(backend) => backend.contains(p.fa()),
                 None => true,
             })
@@ -257,7 +261,7 @@ struct JSONToolVersion {
     active: bool,
 }
 
-type RuntimeRow = (Arc<dyn Backend>, ToolVersion, Option<ToolSource>);
+type RuntimeRow<'a> = (&'a Ls, Arc<dyn Backend>, ToolVersion, Option<ToolSource>);
 
 #[derive(Tabled)]
 #[tabled(rename_all = "PascalCase")]
@@ -289,10 +293,10 @@ impl Row {
     }
 }
 
-impl From<RuntimeRow> for JSONToolVersion {
+impl From<RuntimeRow<'_>> for JSONToolVersion {
     fn from(row: RuntimeRow) -> Self {
-        let (p, tv, source) = row;
-        let vs: VersionStatus = (p.as_ref(), &tv, &source).into();
+        let (ls, p, tv, source) = row;
+        let vs: VersionStatus = (ls, p.as_ref(), &tv, &source).into();
         JSONToolVersion {
             symlinked_to: p.symlink_path(&tv),
             install_path: tv.install_path(),
@@ -312,14 +316,19 @@ enum VersionStatus {
     Symlink(String, bool),
 }
 
-impl From<(&dyn Backend, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
-    fn from((p, tv, source): (&dyn Backend, &ToolVersion, &Option<ToolSource>)) -> Self {
+impl From<(&Ls, &dyn Backend, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
+    fn from((ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &Option<ToolSource>)) -> Self {
         if p.symlink_path(tv).is_some() {
             VersionStatus::Symlink(tv.version.clone(), source.is_some())
         } else if !p.is_version_installed(tv, true) {
             VersionStatus::Missing(tv.version.clone())
         } else if source.is_some() {
-            VersionStatus::Active(tv.version.clone(), p.is_version_outdated(tv, p))
+            let outdated = if ls.offline {
+                false
+            } else {
+                p.is_version_outdated(tv, p)
+            };
+            VersionStatus::Active(tv.version.clone(), outdated)
         } else {
             VersionStatus::Inactive(tv.version.clone())
         }

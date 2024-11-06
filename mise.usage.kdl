@@ -632,6 +632,7 @@ It's a useful command to get the current state of your tools."#
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
+    flag "-o --offline" help="Don't fetch information such as outdated versions"
     flag "--parseable" help="Output in an easily parseable format" hide=true
     flag "-J --json" help="Output in JSON format"
     flag "-m --missing" help="Display missing tool versions"
