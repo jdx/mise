@@ -125,7 +125,7 @@ url = "2"
 usage-lib = { version = "1", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 # vfox = { path = "../vfox.rs" }
-vfox = "0.3"
+vfox = { version = "0.3", default-features = false }
 walkdir = "2"
 which = "7"
 xx = { version = "1", features = ["glob"] }
@@ -164,7 +164,7 @@ test-case = "3"
 test-log = "0.2"
 
 [features]
-default = ["native-tls"]
+default = ["native-tls", "vfox/vendored-lua"]
 timings = []
 native-tls = ["reqwest/native-tls", "ubi/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls", "ubi/rustls-tls"]
