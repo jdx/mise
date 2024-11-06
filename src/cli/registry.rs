@@ -18,7 +18,7 @@ pub struct Registry {
 impl Registry {
     pub fn run(self) -> Result<()> {
         if let Some(name) = &self.name {
-            if let Some(full) = REGISTRY.get(name.as_str()) {
+            if let Some(full) = REGISTRY.get(name.as_str()).and_then(|r| r.first()) {
                 miseprintln!("{full}");
             } else {
                 bail!("tool not found in registry: {name}");
@@ -26,7 +26,7 @@ impl Registry {
         } else {
             let data = REGISTRY
                 .iter()
-                .map(|(short, full)| (short.to_string(), full.to_string()).into())
+                .map(|(short, full)| (short.to_string(), full.first().unwrap().to_string()).into())
                 .collect::<Vec<Row>>();
             let mut table = Table::new(data);
             table::default_style(&mut table, false);
