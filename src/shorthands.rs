@@ -17,10 +17,10 @@ pub fn get_shorthands(settings: &Settings) -> Shorthands {
             REGISTRY
                 .iter()
                 .filter(|(_, full)| {
-                    let backend = &full.split(':').next().unwrap().to_string();
+                    let backend = &full[0].split(':').next().unwrap().to_string();
                     backend == "asdf" || backend == "vfox"
                 })
-                .map(|(k, v)| (k.to_string(), v.to_string())),
+                .map(|(k, v)| (k.to_string(), v[0].to_string())),
         );
     };
     if let Some(f) = &settings.shorthands_file {
