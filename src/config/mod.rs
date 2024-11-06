@@ -47,7 +47,7 @@ pub struct Config {
     env_with_sources: OnceCell<EnvWithSources>,
     all_aliases: OnceLock<AliasMap>,
     repo_urls: HashMap<String, String>,
-    shorthands: OnceLock<HashMap<String, String>>,
+    shorthands: OnceLock<Shorthands>,
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
 }
@@ -160,7 +160,7 @@ impl Config {
             None => self
                 .get_shorthands()
                 .get(plugin_name)
-                .map(|full| registry::full_to_url(full)),
+                .map(|full| registry::full_to_url(&full[0])),
         }
     }
 

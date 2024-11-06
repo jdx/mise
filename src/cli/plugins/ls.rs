@@ -48,10 +48,12 @@ impl PluginsLs {
         let mut tools = plugins::list2()?;
 
         if self.all {
-            for (plugin, full) in config.get_shorthands() {
-                let mut ep = AsdfPlugin::new(plugin.to_string());
-                ep.repo_url = Some(full_to_url(full));
-                tools.insert(ep.name.clone(), Box::new(ep));
+            for (plugin, backends) in config.get_shorthands() {
+                for full in backends {
+                    let mut ep = AsdfPlugin::new(plugin.to_string());
+                    ep.repo_url = Some(full_to_url(full));
+                    tools.insert(ep.name.clone(), Box::new(ep));
+                }
             }
         } else if self.user && self.core {
         } else if self.core {
