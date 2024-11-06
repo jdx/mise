@@ -20,6 +20,10 @@ Tool(s) to add to config file
 e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
 If no version is specified, it will default to @latest
 
+Tool options can be set with this syntax:
+
+    mise use ubi:BurntSushi/ripgrep[exe=rg]
+
 ## Flags
 
 ### `-f --force`
