@@ -301,7 +301,7 @@ impl Config {
         let file_tasks = includes
             .into_par_iter()
             .flat_map(|p| {
-                self.load_tasks_includes(&p).unwrap_or_else(|err| {
+                self.load_tasks_includes(&p, dir).unwrap_or_else(|err| {
                     warn!("loading tasks in {}: {err}", display_path(&p));
                     vec![]
                 })
@@ -348,19 +348,24 @@ impl Config {
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
         let cf = self.config_files.get(&*env::MISE_GLOBAL_CONFIG_FILE);
+        let config_root = cf.and_then(|cf| cf.project_root()).unwrap_or(&*env::HOME);
         Ok(self
             .load_config_tasks(&cf)
             .into_iter()
-            .chain(self.load_file_tasks(&cf))
+            .chain(self.load_file_tasks(&cf, config_root))
             .collect())
     }
 
     fn load_system_tasks(&self) -> Result<Vec<Task>> {
         let cf = self.config_files.get(&dirs::SYSTEM.join("config.toml"));
+        let config_root = cf
+            .and_then(|cf| cf.project_root())
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
         Ok(self
             .load_config_tasks(&cf)
             .into_iter()
-            .chain(self.load_file_tasks(&cf))
+            .chain(self.load_file_tasks(&cf, &config_root))
             .collect())
     }
 
@@ -374,7 +379,7 @@ impl Config {
     }
 
     #[allow(clippy::borrowed_box)]
-    fn load_file_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
+    fn load_file_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>, config_root: &Path) -> Vec<Task> {
         let includes = match cf {
             Some(cf) => cf
                 .task_config()
@@ -389,15 +394,16 @@ impl Config {
         includes
             .into_iter()
             .flat_map(|p| {
-                self.load_tasks_includes(&p).unwrap_or_else(|err| {
-                    warn!("loading tasks in {}: {err}", display_path(&p));
-                    vec![]
-                })
+                self.load_tasks_includes(&p, config_root)
+                    .unwrap_or_else(|err| {
+                        warn!("loading tasks in {}: {err}", display_path(&p));
+                        vec![]
+                    })
             })
             .collect()
     }
 
-    fn load_tasks_includes(&self, root: &Path) -> Result<Vec<Task>> {
+    fn load_tasks_includes(&self, root: &Path, config_root: &Path) -> Result<Vec<Task>> {
         if !root.is_dir() {
             return Ok(vec![]);
         }
@@ -411,7 +417,7 @@ impl Config {
             .try_collect::<_, Vec<PathBuf>, _>()?
             .into_par_iter()
             .filter(|p| file::is_executable(p))
-            .map(|path| Task::from_path(&path))
+            .map(|path| Task::from_path(&path, root, config_root))
             .collect()
     }
 

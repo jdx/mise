@@ -1,8 +1,7 @@
 # `mise sync node`
 
-**Usage**: `mise sync node [FLAGS]`
-
-**Source code**: [`src/cli/sync/node.rs`](https://github.com/jdx/mise/blob/main/src/cli/sync/node.rs)
+- **Usage**: `mise sync node [FLAGS]`
+- **Source code**: [`src/cli/sync/node.rs`](https://github.com/jdx/mise/blob/main/src/cli/sync/node.rs)
 
 Symlinks all tool versions from an external tool into mise
 

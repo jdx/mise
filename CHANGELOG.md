@@ -1,5 +1,78 @@
 # Changelog
 
+## [2024.11.1](https://github.com/jdx/mise/compare/v2024.11.0..v2024.11.1) - 2024-11-05
+
+### 🚀 Features
+
+- **(registry)** add ubi (+ go & cargo) installers for tools by [@BurnerWah](https://github.com/BurnerWah) in [#2881](https://github.com/jdx/mise/pull/2881)
+- **(registry)** switch apollo-router to ubi; add apollo-rover by [@glasser](https://github.com/glasser) in [#2872](https://github.com/jdx/mise/pull/2872)
+- add elvish integration by [@SolitudeSF](https://github.com/SolitudeSF) in [#2857](https://github.com/jdx/mise/pull/2857)
+- add autocompletion for tasks run by [@roele](https://github.com/roele) in [#2908](https://github.com/jdx/mise/pull/2908)
+- show bump in mise outdated and upgrade --interactive by [@liskin](https://github.com/liskin) in [#2892](https://github.com/jdx/mise/pull/2892)
+
+### 🐛 Bug Fixes
+
+- **(ruby)** ensure ruby-build bin exists before trying to use by [@jdx](https://github.com/jdx) in [#2913](https://github.com/jdx/mise/pull/2913)
+- update json schema by [@hverlin](https://github.com/hverlin) in [#2896](https://github.com/jdx/mise/pull/2896)
+- wrong alias in shell implementations by [@roele](https://github.com/roele) in [#2901](https://github.com/jdx/mise/pull/2901)
+- only run not_found_auto_install if non-tty in shims by [@jdx](https://github.com/jdx) in [#2909](https://github.com/jdx/mise/pull/2909)
+- apply fixes to pull requests by [@jdx](https://github.com/jdx) in [#2912](https://github.com/jdx/mise/pull/2912)
+- allow setting MISE_GITHUB_TOKEN to empty string to not use any gh token by [@jdx](https://github.com/jdx) in [#2915](https://github.com/jdx/mise/pull/2915)
+- parse task run template even if no args/flags by [@jdx](https://github.com/jdx) in [#2918](https://github.com/jdx/mise/pull/2918)
+- touch MISE_DATA_DIR after uninstall by [@jdx](https://github.com/jdx) in [#2919](https://github.com/jdx/mise/pull/2919)
+- respect lockfile on `mise install` by [@jdx](https://github.com/jdx) in [#2920](https://github.com/jdx/mise/pull/2920)
+- show installing message by [@jdx](https://github.com/jdx) in [0329868](https://github.com/jdx/mise/commit/032986877d7f5aba46759bbe097589ca2c642a4c)
+- clean up debug log output by [@jdx](https://github.com/jdx) in [#2922](https://github.com/jdx/mise/pull/2922)
+
+### 📚 Documentation
+
+- add hint/link to ruby-build dependencies by [@roele](https://github.com/roele) in [#2867](https://github.com/jdx/mise/pull/2867)
+- Fix path to tracked-configs by [@liskin](https://github.com/liskin) in [#2887](https://github.com/jdx/mise/pull/2887)
+- Add GitLab CI example by [@hverlin](https://github.com/hverlin) in [#2897](https://github.com/jdx/mise/pull/2897)
+- add [tasks.*.file] to json schema by [@hverlin](https://github.com/hverlin) in [#2911](https://github.com/jdx/mise/pull/2911)
+- Update sidebar by [@hverlin](https://github.com/hverlin) in [#2891](https://github.com/jdx/mise/pull/2891)
+
+### 🧪 Testing
+
+- added e2e test for js task by [@jdx](https://github.com/jdx) in [#2914](https://github.com/jdx/mise/pull/2914)
+
+### 🔍 Other Changes
+
+- "mise config set": add support for list by [@hverlin](https://github.com/hverlin) in [#2882](https://github.com/jdx/mise/pull/2882)
+- Update aliases.md by [@jdx](https://github.com/jdx) in [40966a9](https://github.com/jdx/mise/commit/40966a9e1bb39063bf9ae8e33d05a89e35db2688)
+- fix autofix PR action by [@jdx](https://github.com/jdx) in [#2917](https://github.com/jdx/mise/pull/2917)
+- added Unicode-3.0 to cargo-deny by [@jdx](https://github.com/jdx) in [496cb4d](https://github.com/jdx/mise/commit/496cb4d5a783fb548da24737e461efa7b1ad37e1)
+- bump usage by [@jdx](https://github.com/jdx) in [85e4442](https://github.com/jdx/mise/commit/85e44424acd8af0eae01944e5549dceb33f9a403)
+- bump usage by [@jdx](https://github.com/jdx) in [1907b0f](https://github.com/jdx/mise/commit/1907b0f2ce32d37a749297b2329e32a5f7528f32)
+- use mise.lock as cache key for mise by [@jdx](https://github.com/jdx) in [5b1d306](https://github.com/jdx/mise/commit/5b1d306e7b613a1f9a4bb3f00f99522da630672b)
+
+### New Contributors
+
+- @hverlin made their first contribution in [#2891](https://github.com/jdx/mise/pull/2891)
+- @liskin made their first contribution in [#2892](https://github.com/jdx/mise/pull/2892)
+- @SolitudeSF made their first contribution in [#2857](https://github.com/jdx/mise/pull/2857)
+- @glasser made their first contribution in [#2872](https://github.com/jdx/mise/pull/2872)
+
+## [2024.11.0](https://github.com/jdx/mise/compare/v2024.10.13..v2024.11.0) - 2024-11-01
+
+### 🚀 Features
+
+- **(node)** update aliases for latest LTS release (jod/v22) by [@jasisk](https://github.com/jasisk) in [#2865](https://github.com/jdx/mise/pull/2865)
+- **(registry)** Add cargo-insta, mprocs, killport, fzf with ubi by [@vrslev](https://github.com/vrslev) in [#2852](https://github.com/jdx/mise/pull/2852)
+
+### 🐛 Bug Fixes
+
+- added sccache as a dependency for cargo backend by [@jdx](https://github.com/jdx) in [#2855](https://github.com/jdx/mise/pull/2855)
+
+### 🔍 Other Changes
+
+- add zstd compression for http requests by [@jdx](https://github.com/jdx) in [612bbd0](https://github.com/jdx/mise/commit/612bbd0374bed208752cda8674ad192b5886fde9)
+- Fix installed_tool@version complete script by [@miguelmig](https://github.com/miguelmig) in [#2859](https://github.com/jdx/mise/pull/2859)
+
+### New Contributors
+
+- @miguelmig made their first contribution in [#2859](https://github.com/jdx/mise/pull/2859)
+
 ## [2024.10.13](https://github.com/jdx/mise/compare/v2024.10.12..v2024.10.13) - 2024-10-28
 
 ### 🚀 Features

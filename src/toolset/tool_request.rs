@@ -8,6 +8,7 @@ use xx::file;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
 use crate::{backend, lockfile};
 
@@ -225,8 +226,8 @@ impl ToolRequest {
         Ok(None)
     }
 
-    pub fn resolve(&self, plugin: &dyn Backend, latest_versions: bool) -> Result<ToolVersion> {
-        ToolVersion::resolve(plugin, self.clone(), latest_versions)
+    pub fn resolve(&self, plugin: &dyn Backend, opts: &ResolveOptions) -> Result<ToolVersion> {
+        ToolVersion::resolve(plugin, self.clone(), opts)
     }
 }
 

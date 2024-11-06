@@ -1,10 +1,8 @@
 # `mise config generate`
 
-**Usage**: `mise config generate [-o --output <OUTPUT>]`
-
-**Source code**: [`src/cli/config/generate.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/generate.rs)
-
-**Aliases**: `g`
+- **Usage**: `mise config generate [-o --output <OUTPUT>]`
+- **Aliases**: `g`
+- **Source code**: [`src/cli/config/generate.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/generate.rs)
 
 [experimental] Generate a mise.toml file
 

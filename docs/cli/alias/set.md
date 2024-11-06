@@ -1,10 +1,8 @@
 # `mise alias set`
 
-**Usage**: `mise alias set <ARGS>…`
-
-**Source code**: [`src/cli/alias/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/set.rs)
-
-**Aliases**: `add`, `create`
+- **Usage**: `mise alias set <ARGS>…`
+- **Aliases**: `add`, `create`
+- **Source code**: [`src/cli/alias/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/set.rs)
 
 Add/update an alias for a plugin
 
@@ -26,4 +24,4 @@ The value to set the alias to
 
 Examples:
 
-    mise alias set node lts-hydrogen 18.0.0
+    mise alias set node lts-jod 22.0.0

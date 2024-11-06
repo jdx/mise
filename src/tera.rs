@@ -29,25 +29,8 @@ pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     context
 });
 
-pub fn get_tera(dir: Option<&Path>) -> Tera {
+static TERA: Lazy<Tera> = Lazy::new(|| {
     let mut tera = Tera::default();
-    let dir = dir.map(PathBuf::from);
-    tera.register_function(
-        "exec",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            match args.get("command") {
-                Some(Value::String(command)) => {
-                    let mut cmd = cmd("bash", ["-c", command]).full_env(&*env::PRISTINE_ENV);
-                    if let Some(dir) = &dir {
-                        cmd = cmd.dir(dir);
-                    }
-                    let result = cmd.read()?;
-                    Ok(Value::String(result))
-                }
-                _ => Err("exec command must be a string".into()),
-            }
-        },
-    );
     tera.register_function(
         "arch",
         move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
@@ -305,6 +288,29 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
                 _ => Err("semver_matching argument must be a string".into()),
             },
             _ => Err("semver_matching input must be a string".into()),
+        },
+    );
+
+    tera
+});
+
+pub fn get_tera(dir: Option<&Path>) -> Tera {
+    let mut tera = TERA.clone();
+    let dir = dir.map(PathBuf::from);
+    tera.register_function(
+        "exec",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            match args.get("command") {
+                Some(Value::String(command)) => {
+                    let mut cmd = cmd("bash", ["-c", command]).full_env(&*env::PRISTINE_ENV);
+                    if let Some(dir) = &dir {
+                        cmd = cmd.dir(dir);
+                    }
+                    let result = cmd.read()?;
+                    Ok(Value::String(result))
+                }
+                _ => Err("exec command must be a string".into()),
+            }
         },
     );
 

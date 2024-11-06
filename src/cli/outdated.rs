@@ -6,6 +6,8 @@ use crate::toolset::{OutdatedInfo, ToolsetBuilder};
 use crate::ui::table;
 use eyre::Result;
 use indexmap::IndexMap;
+use tabled::settings::location::ByColumnName;
+use tabled::settings::Disable;
 
 /// Shows outdated tool versions
 ///
@@ -67,6 +69,9 @@ impl Outdated {
 
     fn display(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
         let mut table = tabled::Table::new(outdated);
+        if !self.bump {
+            table.with(Disable::column(ByColumnName::new("bump")));
+        }
         table::default_style(&mut table, self.no_header);
         miseprintln!("{table}");
         Ok(())

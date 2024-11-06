@@ -1,7 +1,7 @@
 use crate::cli::args::ToolArg;
 use crate::config::{config_file, Config};
 use crate::file::display_path;
-use crate::toolset::{InstallOptions, OutdatedInfo, ToolVersion, ToolsetBuilder};
+use crate::toolset::{InstallOptions, OutdatedInfo, ResolveOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{lockfile, runtime_symlinks, shims, ui};
@@ -141,13 +141,19 @@ impl Upgrade {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
-            latest_versions: true,
+            resolve_options: ResolveOptions {
+                use_locked_version: false,
+                latest_versions: true,
+            },
         };
         let new_versions = outdated.iter().map(|o| o.tool_request.clone()).collect();
         let versions = ts.install_versions(config, new_versions, &mpr, &opts)?;
 
         for (o, bump, mut cf) in config_file_updates {
-            cf.replace_versions(o.tool_request.backend(), &[bump])?;
+            cf.replace_versions(
+                o.tool_request.backend(),
+                &[(bump, o.tool_request.options())],
+            )?;
             cf.save()?;
         }
 

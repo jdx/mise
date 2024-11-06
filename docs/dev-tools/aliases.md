@@ -2,7 +2,7 @@
 
 mise supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
 versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for <node@20.x>
-so you can use set it with `node lts-hydrogen` in `.tool-versions`/`.mise.toml`.
+so you can use set it with `node lts-hydrogen` in `.tool-versions`/`mise.toml`.
 
 User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/mise/config.toml`:
 

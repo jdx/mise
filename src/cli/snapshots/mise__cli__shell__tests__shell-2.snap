@@ -1,5 +1,6 @@
 ---
 source: src/cli/shell.rs
 expression: output
+snapshot_kind: text
 ---
 export MISE_TINY_VERSION=1.0.1

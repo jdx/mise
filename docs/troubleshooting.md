@@ -127,8 +127,10 @@ For more details see [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURIT
 
 You may get an error like one of the following:
 
-    HTTP status client error (403 Forbidden) for url 
-    403 API rate limit exceeded for
+```text
+HTTP status client error (403 Forbidden) for url
+403 API rate limit exceeded for
+```
 
 This can happen if the tool is hosted on GitHub, and you've hit the API rate limit. This is especially
 common running mise in a CI environment like GitHub Actions. If you don't have a `GITHUB_TOKEN`

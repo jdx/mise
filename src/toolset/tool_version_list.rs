@@ -2,6 +2,7 @@ use crate::backend;
 use crate::cli::args::BackendArg;
 use crate::errors::Error;
 use crate::toolset::tool_request::ToolRequest;
+use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion};
 
 /// represents several versions of a tool for a particular plugin
@@ -22,11 +23,11 @@ impl ToolVersionList {
             source,
         }
     }
-    pub fn resolve(&mut self, latest_versions: bool) -> eyre::Result<()> {
+    pub fn resolve(&mut self, opts: &ResolveOptions) -> eyre::Result<()> {
         self.versions.clear();
         let plugin = backend::get(&self.backend);
         for tvr in &mut self.requests {
-            match tvr.resolve(plugin.as_ref(), latest_versions) {
+            match tvr.resolve(plugin.as_ref(), opts) {
                 Ok(v) => self.versions.push(v),
                 Err(err) => {
                     return Err(Error::FailedToResolveVersion {
@@ -58,7 +59,11 @@ mod tests {
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
         tvl.requests
             .push(ToolRequest::new(fa, "latest", ToolSource::Argument).unwrap());
-        tvl.resolve(true).unwrap();
+        tvl.resolve(&ResolveOptions {
+            latest_versions: true,
+            use_locked_version: false,
+        })
+        .unwrap();
         assert_eq!(tvl.versions.len(), 1);
     }
 
@@ -72,7 +77,10 @@ mod tests {
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
         tvl.requests
             .push(ToolRequest::new(fa, "latest", ToolSource::Argument).unwrap());
-        let _ = tvl.resolve(true);
+        let _ = tvl.resolve(&ResolveOptions {
+            latest_versions: true,
+            use_locked_version: false,
+        });
         assert_eq!(tvl.versions.len(), 0);
     }
 }

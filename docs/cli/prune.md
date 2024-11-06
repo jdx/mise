@@ -1,12 +1,11 @@
 # `mise prune`
 
-**Usage**: `mise prune [FLAGS] [PLUGIN]...`
-
-**Source code**: [`src/cli/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/prune.rs)
+- **Usage**: `mise prune [FLAGS] [PLUGIN]...`
+- **Source code**: [`src/cli/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/prune.rs)
 
 Delete unused versions of tools
 
-mise tracks which config files have been used in ~/.local/share/mise/tracked_config_files
+mise tracks which config files have been used in ~/.local/state/mise/tracked-configs
 Versions which are no longer the latest specified in any of those configs are deleted.
 Versions installed only with environment variables `MISE_<PLUGIN>_VERSION` will be deleted,
 as will versions only referenced on the command line `mise exec <PLUGIN>@<VERSION>`.

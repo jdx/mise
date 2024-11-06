@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.10.13"
+version = "2024.11.1"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -40,6 +40,9 @@ path = "src/main.rs"
 [profile.serious]
 inherits = "release"
 lto = true
+
+[profile.dev.package.backtrace]
+opt-level = 3
 
 [dependencies]
 base64 = "0.22"
@@ -119,12 +122,12 @@ toml_edit = { version = "0.22", features = ["parse"] }
 ubi = { version = "0.2", default-features = false }
 url = "2"
 # usage-lib = { path = "../usage/lib", features = ["clap", "docs"] }
-usage-lib = { version = "0.12", features = ["clap", "docs"] }
+usage-lib = { version = "1", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
-# vfox = { path="../vfox.rs" }
-vfox = "0.2"
+# vfox = { path = "../vfox.rs" }
+vfox = "0.3"
 walkdir = "2"
-which = "6"
+which = "7"
 xx = { version = "1", features = ["glob"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 

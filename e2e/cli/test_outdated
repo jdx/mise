@@ -11,7 +11,7 @@ assert_not_contains "mise ls --installed dummy" "1.1.0"
 #assert_not_contains "mise ls --installed dummy" "1.0.0"
 
 assert "mise outdated dummy" "dummy  1  1.0.0  1.1.0 ~/workdir/.tool-versions"
-assert "mise outdated dummy --bump" "dummy  1  1.0.0  2.0.0 ~/workdir/.tool-versions"
+assert "mise outdated dummy --bump" "dummy  1  1.0.0  2  2.0.0 ~/workdir/.tool-versions"
 
 assert "mise outdated dummy --json | jq -r '.dummy.latest'" "1.1.0"
 assert "mise outdated dummy --bump --json | jq -r '.dummy.latest'" "2.0.0"

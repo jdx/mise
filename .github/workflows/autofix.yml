@@ -1,0 +1,50 @@
+name: autofix.ci
+
+on:
+  workflow_call:
+  pull_request:
+#  push:
+#    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  MISE_EXPERIMENTAL: 1
+  RUST_BACKTRACE: 1
+  NPM_CONFIG_FUND: false
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          { toolchain: nightly, components: "rustfmt, clippy", rustflags: "" }
+      - run: |
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - name: cache mise
+        uses: actions/cache@v4
+        with:
+          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.lock') }}
+          restore-keys: mise-tools-ubuntu-latest
+          path: |
+            ~/.local/share/mise/installs
+            ~/.local/share/mise/plugins
+      - run: mise install
+      - run: npm install
+      - run: mise run render
+      - run: mise run lint-fix
+      - run: mise run snapshots
+      - uses: autofix-ci/action@v1.3.1
+        if: ${{ always() }}

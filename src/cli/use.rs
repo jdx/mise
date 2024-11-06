@@ -105,7 +105,7 @@ impl Use {
                 force: self.force,
                 jobs: self.jobs,
                 raw: self.raw,
-                latest_versions: false,
+                resolve_options: Default::default(),
             },
         )?;
 
@@ -113,13 +113,13 @@ impl Use {
         let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
 
         for (fa, tvl) in &versions.iter().chunk_by(|tv| &tv.backend) {
-            let versions: Vec<String> = tvl
+            let versions: Vec<_> = tvl
                 .into_iter()
                 .map(|tv| {
                     if pin {
-                        tv.version.clone()
+                        (tv.version.clone(), tv.request.options())
                     } else {
-                        tv.request.version()
+                        (tv.request.version(), tv.request.options())
                     }
                 })
                 .collect();
@@ -235,159 +235,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise use --env staging node@20</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-
-    use crate::test::reset;
-    use crate::{dirs, env, file};
-
-    #[test]
-    fn test_use_local_reuse() {
-        reset();
-        let cf_path = env::current_dir().unwrap().join(".test.mise.toml");
-        file::write(&cf_path, "").unwrap();
-
-        assert_cli_snapshot!("use", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-        [tools]
-        tiny = "2"
-        "###);
-
-        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @"mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-        [tools]
-        tiny = ["1", "2", "3"]
-        "###);
-
-        assert_cli_snapshot!("use", "--pin", "tiny", @"mise ~/cwd/.test.mise.toml tools: tiny@3.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-        [tools]
-        tiny = "3.1.0"
-        "###);
-
-        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-        [tools]
-        tiny = "2"
-        "###);
-
-        let p = cf_path.to_string_lossy().to_string();
-        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"mise ~/cwd/.test.mise.toml tools:");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @"");
-
-        let _ = file::remove_file(&cf_path);
-    }
-
-    #[test]
-    fn test_use_local_create() {
-        reset();
-        let _ = file::remove_file(env::current_dir().unwrap().join(".test-tool-versions"));
-        let cf_path = env::current_dir().unwrap().join(".test.mise.toml");
-
-        assert_cli_snapshot!("use", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-      [tools]
-      tiny = "2"
-      "###);
-
-        assert_cli_snapshot!("use", "tiny@1", "tiny@2", "tiny@3", @"mise ~/cwd/.test.mise.toml tools: tiny@1.0.1, tiny@2.1.0, tiny@3.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-      [tools]
-      tiny = ["1", "2", "3"]
-      "###);
-
-        assert_cli_snapshot!("use", "--pin", "tiny", @"mise ~/cwd/.test.mise.toml tools: tiny@3.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-      [tools]
-      tiny = "3.1.0"
-      "###);
-
-        assert_cli_snapshot!("use", "--fuzzy", "tiny@2", @"mise ~/cwd/.test.mise.toml tools: tiny@2.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-      [tools]
-      tiny = "2"
-      "###);
-
-        let p = cf_path.to_string_lossy().to_string();
-        assert_cli_snapshot!("use", "--rm", "tiny", "--path", &p, @"mise ~/cwd/.test.mise.toml tools:");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @"");
-
-        let _ = file::remove_file(&cf_path);
-    }
-
-    #[test]
-    fn test_use_local_tool_versions_reuse() {
-        reset();
-        let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
-        file::write(&cf_path, "").unwrap();
-
-        assert_cli_snapshot!("use", "tiny@3", @"mise ~/cwd/.test-tool-versions tools: tiny@3.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-        tiny 3
-        "###);
-
-        let _ = file::remove_file(&cf_path);
-    }
-
-    #[test]
-    fn test_use_local_tool_versions_create() {
-        reset();
-        let cf_path = env::current_dir().unwrap().join(".test-tool-versions");
-
-        assert_cli_snapshot!("use", "tiny@3", @"mise ~/cwd/.test-tool-versions tools: tiny@3.1.0");
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r###"
-        tiny 3
-        "###);
-
-        let _ = file::remove_file(&cf_path);
-    }
-
-    #[test]
-    fn test_use_global() {
-        reset();
-        let cf_path = dirs::CONFIG.join("config.toml");
-        let orig = file::read_to_string(&cf_path).unwrap();
-
-        assert_cli_snapshot!("use", "-g", "tiny@2", @r###"
-        mise ~/config/config.toml tools: tiny@2.1.0
-        mise tiny is defined in ~/cwd/.test-tool-versions which overrides the global config (~/config/config.toml)
-        "###);
-        assert_snapshot!(file::read_to_string(&cf_path).unwrap(), @r##"
-        [env]
-        TEST_ENV_VAR = 'test-123'
-
-        [alias.tiny]
-        "my/alias" = '3.0'
-
-        [tasks.configtask]
-        run = 'echo "configtask:"'
-        [tasks.lint]
-        run = 'echo "linting!"'
-        [tasks.test]
-        run = 'echo "testing!"'
-        [tasks."shell invalid"]
-        shell = 'bash'
-        run = 'echo "invalid shell"'
-        [tasks.shell]
-        shell = 'bash -c'
-        run = '''
-        #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
-        cd "$MISE_PROJECT_ROOT" || exit 1
-        echo "using shell $0" > test-build-output.txt
-        '''
-        [settings]
-        always_keep_download= true
-        always_keep_install= true
-        legacy_version_file= true
-        plugin_autoupdate_last_check_duration = "20m"
-        jobs = 2
-
-        [tools]
-        tiny = "2"
-        "##);
-
-        file::write(&cf_path, orig).unwrap();
-    }
-}

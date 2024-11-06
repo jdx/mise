@@ -1,10 +1,8 @@
 # `mise exec`
 
-**Usage**: `mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`
-
-**Source code**: [`src/cli/exec.rs`](https://github.com/jdx/mise/blob/main/src/cli/exec.rs)
-
-**Aliases**: `x`
+- **Usage**: `mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`
+- **Aliases**: `x`
+- **Source code**: [`src/cli/exec.rs`](https://github.com/jdx/mise/blob/main/src/cli/exec.rs)
 
 Execute a command with tool(s) set
 

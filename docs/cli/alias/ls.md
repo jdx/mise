@@ -1,10 +1,8 @@
 # `mise alias ls`
 
-**Usage**: `mise alias ls [--no-header] [PLUGIN]`
-
-**Source code**: [`src/cli/alias/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/ls.rs)
-
-**Aliases**: `list`
+- **Usage**: `mise alias ls [--no-header] [PLUGIN]`
+- **Aliases**: `list`
+- **Source code**: [`src/cli/alias/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/ls.rs)
 
 List aliases
 Shows the aliases that can be specified.
@@ -13,7 +11,7 @@ These can come from user config or from plugins in `bin/list-aliases`.
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
     [alias.node]
-    lts = "20.0.0"
+    lts = "22.0.0"
 
 ## Arguments
 
@@ -30,4 +28,4 @@ Don't show table header
 Examples:
 
     $ mise aliases
-    node    lts-hydrogen   20.0.0
+    node  lts-jod      22

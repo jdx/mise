@@ -21,7 +21,7 @@ use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::{file_hash_sha256, hash_to_str};
 use crate::task::Task;
-use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionList, Toolset};
+use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionList, ToolVersionOptions, Toolset};
 use crate::ui::{prompt, style};
 use crate::{backend, dirs, env, file};
 
@@ -71,7 +71,11 @@ pub trait ConfigFile: Debug + Send + Sync {
         Default::default()
     }
     fn remove_plugin(&mut self, _fa: &BackendArg) -> eyre::Result<()>;
-    fn replace_versions(&mut self, fa: &BackendArg, versions: &[String]) -> eyre::Result<()>;
+    fn replace_versions(
+        &mut self,
+        fa: &BackendArg,
+        versions: &[(String, ToolVersionOptions)],
+    ) -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
     fn dump(&self) -> eyre::Result<String>;
     fn source(&self) -> ToolSource;
@@ -120,10 +124,10 @@ impl dyn ConfigFile {
                 .map(|tvr| {
                     if pin {
                         let plugin = backend::get(&fa);
-                        let tv = tvr.resolve(plugin.as_ref(), false)?;
-                        Ok(tv.version)
+                        let tv = tvr.resolve(plugin.as_ref(), &Default::default())?;
+                        Ok((tv.version, tv.request.options()))
                     } else {
-                        Ok(tvr.version())
+                        Ok((tvr.version(), tvr.options()))
                     }
                 })
                 .collect::<eyre::Result<Vec<_>>>()?;

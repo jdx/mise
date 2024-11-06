@@ -1,8 +1,7 @@
 # `mise set`
 
-**Usage**: `mise set [--file <FILE>] [-g --global] [ENV_VARS]...`
-
-**Source code**: [`src/cli/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/set.rs)
+- **Usage**: `mise set [--file <FILE>] [-g --global] [ENV_VARS]...`
+- **Source code**: [`src/cli/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/set.rs)
 
 Set environment variables in mise.toml
 

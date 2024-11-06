@@ -1,10 +1,8 @@
 # `mise alias`
 
-**Usage**: `mise alias [-p --plugin <PLUGIN>] [--no-header] <SUBCOMMAND>`
-
-**Source code**: [`src/cli/alias.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias.rs)
-
-**Aliases**: `a`
+- **Usage**: `mise alias [-p --plugin <PLUGIN>] [--no-header] <SUBCOMMAND>`
+- **Aliases**: `a`
+- **Source code**: [`src/cli/alias.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias.rs)
 
 Manage aliases
 

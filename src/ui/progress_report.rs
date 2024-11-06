@@ -125,17 +125,11 @@ impl QuietReport {
 
 impl SingleReport for QuietReport {}
 
-pub struct VerboseReport {
-    prefix: String,
-    pad: usize,
-}
+pub struct VerboseReport {}
 
 impl VerboseReport {
-    pub fn new(prefix: String) -> VerboseReport {
-        VerboseReport {
-            prefix,
-            pad: *LONGEST_PLUGIN_NAME,
-        }
+    pub fn new(_prefix: String) -> VerboseReport {
+        VerboseReport {}
     }
 }
 
@@ -144,17 +138,14 @@ impl SingleReport for VerboseReport {
         eprintln!("{message}");
     }
     fn set_message(&self, message: String) {
-        // let prefix = normal_prefix(self.pad, &self.prefix);
-        // eprintln!("{prefix} {message}");
-        eprintln!("{message}");
+        log::info!("{message}");
     }
     fn finish(&self) {
         self.finish_with_message(style::egreen("done").to_string());
     }
     fn finish_with_message(&self, message: String) {
-        let prefix = success_prefix(self.pad - 2, &self.prefix);
         let ico = style::egreen("✓").bright();
-        eprintln!("{prefix} {ico} {message}");
+        log::info!("{ico} {message}");
     }
 }
 

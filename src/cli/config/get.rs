@@ -33,6 +33,7 @@ impl ConfigGet {
                     })?;
                 }
             }
+
             match value {
                 toml::Value::String(s) => miseprintln!("{}", s),
                 toml::Value::Integer(i) => miseprintln!("{}", i),
@@ -40,7 +41,21 @@ impl ConfigGet {
                 toml::Value::Float(f) => miseprintln!("{}", f),
                 toml::Value::Datetime(d) => miseprintln!("{}", d),
                 toml::Value::Array(a) => {
-                    miseprintln!("{}", toml::to_string(a)?);
+                    // seems that the toml crate does not have a way to serialize an array directly?
+                    // workaround which only handle non-nested arrays
+                    let elements: Vec<String> = a
+                        .iter()
+                        .map(|v| match v {
+                            toml::Value::String(s) => format!("\"{}\"", s),
+                            toml::Value::Integer(i) => i.to_string(),
+                            toml::Value::Boolean(b) => b.to_string(),
+                            toml::Value::Float(f) => f.to_string(),
+                            toml::Value::Datetime(d) => d.to_string(),
+                            toml::Value::Array(_) => "[...]".to_string(),
+                            toml::Value::Table(_) => "{...}".to_string(),
+                        })
+                        .collect();
+                    miseprintln!("[{}]", elements.join(", "));
                 }
                 toml::Value::Table(t) => {
                     miseprintln!("{}", toml::to_string(t)?);

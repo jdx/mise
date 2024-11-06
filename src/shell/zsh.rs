@@ -30,7 +30,7 @@ impl Shell for Zsh {
               shift
 
               case "$command" in
-              deactivate|s|shell)
+              deactivate|shell|sh)
                 # if argv doesn't contains -h,--help
                 if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
                   eval "$(command {exe} "$command" "$@")"
@@ -44,9 +44,14 @@ impl Shell for Zsh {
             _mise_hook() {{
               eval "$({exe} hook-env{flags} -s zsh)";
             }}
+            _mise_hook_cmd() {{
+              if [[ -n "$ZLAST_COMMANDS" ]]; then
+                _mise_hook;
+              fi
+            }}
             typeset -ag precmd_functions;
-            if [[ -z "${{precmd_functions[(r)_mise_hook]+1}}" ]]; then
-              precmd_functions=( _mise_hook ${{precmd_functions[@]}} )
+            if [[ -z "${{precmd_functions[(r)_mise_hook_cmd]+1}}" ]]; then
+              precmd_functions=( _mise_hook_cmd ${{precmd_functions[@]}} )
             fi
             typeset -ag chpwd_functions;
             if [[ -z "${{chpwd_functions[(r)_mise_hook]+1}}" ]]; then
@@ -80,8 +85,9 @@ impl Shell for Zsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        precmd_functions=( ${{precmd_functions:#_mise_hook}} )
+        precmd_functions=( ${{precmd_functions:#_mise_hook_cmd}} )
         chpwd_functions=( ${{chpwd_functions:#_mise_hook}} )
+        unset -f _mise_hook_cmd
         unset -f _mise_hook
         unset -f mise
         unset MISE_SHELL
