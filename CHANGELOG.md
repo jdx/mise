@@ -1,5 +1,41 @@
 # Changelog
 
+## [2024.11.2](https://github.com/jdx/mise/compare/v2024.11.1..v2024.11.2) - 2024-11-06
+
+### 🐛 Bug Fixes
+
+- **(backend)** include backend dependencies in paths by [@risu729](https://github.com/risu729) in [#2893](https://github.com/jdx/mise/pull/2893)
+- **(completions)** set usage cache-key by [@jdx](https://github.com/jdx) in [#2937](https://github.com/jdx/mise/pull/2937)
+- **(ls)** only show symlink_path when not runtime-symlink by [@jdx](https://github.com/jdx) in [#2927](https://github.com/jdx/mise/pull/2927)
+- upgrade vfox.rs with http module by [@jdx](https://github.com/jdx) in [#2934](https://github.com/jdx/mise/pull/2934)
+- hide extra "mise" prefix when installing by [@jdx](https://github.com/jdx) in [#2935](https://github.com/jdx/mise/pull/2935)
+- only show actual cargo-binstall versions by [@jdx](https://github.com/jdx) in [#2936](https://github.com/jdx/mise/pull/2936)
+- use project_root for task execution by [@jdx](https://github.com/jdx) in [#2942](https://github.com/jdx/mise/pull/2942)
+- upgrade with options by [@jdx](https://github.com/jdx) in [#2925](https://github.com/jdx/mise/pull/2925)
+- remove duplicate "mise" in logs by [@jdx](https://github.com/jdx) in [693f39b](https://github.com/jdx/mise/commit/693f39b8b9d7506c035e5fa9cdb77be7287ac7e1)
+
+### 📚 Documentation
+
+- move alternative ways to install mise to a separate page by [@hverlin](https://github.com/hverlin) in [#2930](https://github.com/jdx/mise/pull/2930)
+- show information about github rate limits when erroring due to 403 by [@jdx](https://github.com/jdx) in [#2856](https://github.com/jdx/mise/pull/2856)
+
+### ⚡ Performance
+
+- **(shell/zsh.rs)** avoid hook-env execution on Enter without command by [@powerman](https://github.com/powerman) in [#2861](https://github.com/jdx/mise/pull/2861)
+- skip reading backend-meta files if they do not exist by [@jdx](https://github.com/jdx) in [#2941](https://github.com/jdx/mise/pull/2941)
+
+### 🧪 Testing
+
+- move use tests to e2e by [@jdx](https://github.com/jdx) in [#2924](https://github.com/jdx/mise/pull/2924)
+
+### 🔍 Other Changes
+
+- Update installing-mise.md by [@jdx](https://github.com/jdx) in [c8cd667](https://github.com/jdx/mise/commit/c8cd667c15b7d0ba25bbe475c5f11dc142496a18)
+
+### New Contributors
+
+- @powerman made their first contribution in [#2861](https://github.com/jdx/mise/pull/2861)
+
 ## [2024.11.1](https://github.com/jdx/mise/compare/v2024.11.0..v2024.11.1) - 2024-11-05
 
 ### 🚀 Features
@@ -48,7 +84,6 @@
 
 ### New Contributors
 
-- @hverlin made their first contribution in [#2891](https://github.com/jdx/mise/pull/2891)
 - @liskin made their first contribution in [#2892](https://github.com/jdx/mise/pull/2892)
 - @SolitudeSF made their first contribution in [#2857](https://github.com/jdx/mise/pull/2857)
 - @glasser made their first contribution in [#2872](https://github.com/jdx/mise/pull/2872)
@@ -377,10 +412,6 @@
 ### 🔍 Other Changes
 
 - move /.mise/tasks to /tasks by [@jdx](https://github.com/jdx) in [#2728](https://github.com/jdx/mise/pull/2728)
-
-### New Contributors
-
-- @risu729 made their first contribution in [#2729](https://github.com/jdx/mise/pull/2729)
 
 ## [2024.10.1](https://github.com/jdx/mise/compare/v2024.10.0..v2024.10.1) - 2024-10-07
 
