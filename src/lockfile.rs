@@ -13,7 +13,7 @@ use std::sync::Mutex;
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lockfile {
-    tools: BTreeMap<String, String>,
+    tools: BTreeMap<String, toml::Value>,
 }
 
 impl Lockfile {
@@ -76,6 +76,9 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
     let empty = HashMap::new();
     for config_path in lockfiles {
         let lockfile_path = config_path.with_extension("lock");
+        if !lockfile_path.exists() {
+            continue;
+        }
         let tool_source = ToolSource::MiseToml(config_path.clone());
         let tools = tools_by_source.get(&tool_source).unwrap_or(&empty);
         trace!(
@@ -94,10 +97,19 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
             .retain(|k, _| all_tool_names.contains(k) || SETTINGS.disable_tools.contains(k));
 
         for (short, tvl) in tools {
-            for tv in &tvl.versions {
-                existing_lockfile
-                    .tools
-                    .insert(short.to_string(), tv.version.to_string());
+            if tvl.versions.len() > 1 {
+                let versions = toml::Value::Array(
+                    tvl.versions
+                        .iter()
+                        .map(|tv| tv.version.clone().into())
+                        .collect(),
+                );
+                existing_lockfile.tools.insert(short.to_string(), versions);
+            } else {
+                existing_lockfile.tools.insert(
+                    short.to_string(),
+                    toml::Value::String(tvl.versions[0].version.clone()),
+                );
             }
         }
 
@@ -107,7 +119,7 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
     Ok(())
 }
 
-pub fn get_locked_version(path: &Path, short: &str) -> Result<Option<String>> {
+pub fn get_locked_version(path: &Path, short: &str, prefix: &str) -> Result<Option<String>> {
     static CACHE: Lazy<Mutex<HashMap<PathBuf, Lockfile>>> = Lazy::new(Default::default);
 
     if !SETTINGS.lockfile {
@@ -122,7 +134,25 @@ pub fn get_locked_version(path: &Path, short: &str) -> Result<Option<String>> {
             .unwrap_or_else(|err| handle_missing_lockfile(err, &lockfile_path))
     });
 
-    Ok(lockfile.tools.get(short).cloned())
+    if let Some(tool) = lockfile.tools.get(short) {
+        // TODO: handle something like `mise use python@3 python@3.1`
+        match tool {
+            toml::Value::String(v) => {
+                if v.starts_with(prefix) {
+                    Ok(Some(v.clone()))
+                } else {
+                    Ok(None)
+                }
+            }
+            toml::Value::Array(v) => Ok(v
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .find(|v| v.starts_with(prefix))),
+            _ => unimplemented!("unsupported lockfile format"),
+        }
+    } else {
+        Ok(None)
+    }
 }
 
 fn handle_missing_lockfile(err: Report, lockfile_path: &Path) -> Lockfile {

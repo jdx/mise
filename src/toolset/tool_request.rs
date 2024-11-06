@@ -206,7 +206,7 @@ impl ToolRequest {
 
     pub fn lockfile_resolve(&self) -> Result<Option<String>> {
         if let Some(path) = self.source().path() {
-            return lockfile::get_locked_version(path, &self.backend().short);
+            return lockfile::get_locked_version(path, &self.backend().short, &self.version());
         }
         Ok(None)
     }
