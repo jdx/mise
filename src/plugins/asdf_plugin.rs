@@ -57,6 +57,7 @@ impl AsdfPlugin {
         let plugins = plugins::INSTALLED_PLUGINS
             .iter()
             .filter(|(_, pt)| matches!(pt, PluginType::Asdf))
+            .inspect(|(dir, _)| trace!("vfox_plugin: {:?}", dir))
             .map(|(dir, _)| {
                 let name = dir.file_name().unwrap().to_string_lossy().to_string();
                 Box::new(AsdfPlugin::new(name)) as Box<dyn Plugin>

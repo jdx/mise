@@ -32,6 +32,10 @@ Only show tool versions currently specified in the global mise.toml
 
 Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
 
+### `-o --offline`
+
+Don't fetch information such as outdated versions
+
 ### `-J --json`
 
 Output in JSON format
