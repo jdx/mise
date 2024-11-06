@@ -207,17 +207,7 @@ impl Backend for GoPlugin {
             return Ok(vec![]);
         }
         // goroot/bin must always be included, irrespective of MISE_GO_SET_GOROOT
-        let mut paths = vec![
-            self.gobin(tv),
-            // TODO: this can be removed at some point since go is not installed here anymore
-            tv.install_path().join("go/bin"),
-        ];
-        let settings = Settings::get();
-        if settings.go_set_gopath {
-            // TODO: this can be removed at some point since things are installed to GOBIN instead
-            paths.push(self.gopath(tv).join("bin"));
-        }
-        Ok(paths)
+        Ok(vec![self.gobin(tv)])
     }
 
     fn exec_env(

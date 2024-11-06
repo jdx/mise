@@ -1,10 +1,8 @@
 # `mise settings ls`
 
-**Usage**: `mise settings ls [--keys]`
-
-**Source code**: [`src/cli/settings/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/ls.rs)
-
-**Aliases**: `list`
+- **Usage**: `mise settings ls [--keys]`
+- **Aliases**: `list`
+- **Source code**: [`src/cli/settings/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/ls.rs)
 
 Show current settings
 

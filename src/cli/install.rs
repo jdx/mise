@@ -1,7 +1,9 @@
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::Config;
 use crate::lockfile;
-use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, Toolset};
+use crate::toolset::{
+    InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use eyre::{Result, WrapErr};
 use itertools::Itertools;
@@ -75,7 +77,10 @@ impl Install {
             force: self.force,
             jobs: self.jobs,
             raw: self.raw,
-            latest_versions: true,
+            resolve_options: ResolveOptions {
+                use_locked_version: true,
+                latest_versions: true,
+            },
         }
     }
 

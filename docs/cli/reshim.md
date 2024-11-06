@@ -1,8 +1,7 @@
 # `mise reshim`
 
-**Usage**: `mise reshim [-f --force]`
-
-**Source code**: [`src/cli/reshim.rs`](https://github.com/jdx/mise/blob/main/src/cli/reshim.rs)
+- **Usage**: `mise reshim [-f --force]`
+- **Source code**: [`src/cli/reshim.rs`](https://github.com/jdx/mise/blob/main/src/cli/reshim.rs)
 
 Creates new shims based on bin paths from currently installed tools.
 

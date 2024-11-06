@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+touch mise.lock
+mise use tiny@1
+cat <<EOF >mise.lock
+[tools]
+tiny = "1.0.0"
+EOF
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+mise install
+assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
+assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"

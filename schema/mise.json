@@ -510,6 +510,10 @@
           "type": "string",
           "enum": ["prefix", "interleave"]
         },
+        "task_timings": {
+          "description": "Show completion message with elapsed time for each task on `mise run`.",
+          "type": "boolean"
+        },
         "trace": {
           "description": "Sets log level to trace",
           "type": "boolean"
@@ -644,6 +648,10 @@
                   "type": "array"
                 }
               ]
+            },
+            "file": {
+              "description": "Execute an external script",
+              "type": "string"
             },
             "sources": {
               "description": "files that this task depends on",

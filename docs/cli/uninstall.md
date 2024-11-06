@@ -1,10 +1,8 @@
 # `mise uninstall`
 
-**Usage**: `mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`
-
-**Source code**: [`src/cli/uninstall.rs`](https://github.com/jdx/mise/blob/main/src/cli/uninstall.rs)
-
-**Aliases**: `remove`, `rm`
+- **Usage**: `mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`
+- **Aliases**: `remove`, `rm`
+- **Source code**: [`src/cli/uninstall.rs`](https://github.com/jdx/mise/blob/main/src/cli/uninstall.rs)
 
 Removes installed tool versions
 

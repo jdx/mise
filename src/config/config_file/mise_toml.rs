@@ -10,7 +10,7 @@ use serde::de::Visitor;
 use serde::{de, Deserializer};
 use serde_derive::Deserialize;
 use tera::Context as TeraContext;
-use toml_edit::{table, value, Array, DocumentMut, Item, Value};
+use toml_edit::{table, value, Array, DocumentMut, InlineTable, Item, Value};
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
@@ -96,8 +96,10 @@ impl MiseToml {
         rf.context
             .insert("config_root", path.parent().unwrap().to_str().unwrap());
         rf.path = path.to_path_buf();
+        let project_root = rf.project_root().map(|p| p.to_path_buf());
         for task in rf.tasks.0.values_mut() {
             task.config_source.clone_from(&rf.path);
+            task.config_root = project_root.clone();
         }
         // trace!("{}", rf.dump()?);
         Ok(rf)
@@ -277,12 +279,21 @@ impl ConfigFile for MiseToml {
         Ok(())
     }
 
-    fn replace_versions(&mut self, fa: &BackendArg, versions: &[String]) -> eyre::Result<()> {
-        self.tools.entry(fa.clone()).or_default().0 = versions
+    fn replace_versions(
+        &mut self,
+        fa: &BackendArg,
+        versions: &[(String, ToolVersionOptions)],
+    ) -> eyre::Result<()> {
+        let existing = self.tools.entry(fa.clone()).or_default();
+        existing.0 = versions
             .iter()
-            .map(|v| MiseTomlTool {
+            .map(|(v, opts)| MiseTomlTool {
                 tt: ToolVersionType::Version(v.clone()),
-                options: Default::default(),
+                options: if !opts.is_empty() {
+                    Some(opts.clone())
+                } else {
+                    None
+                },
             })
             .collect();
         let tools = self
@@ -296,11 +307,29 @@ impl ConfigFile for MiseToml {
         tools.remove(&fa.full.to_string());
 
         if versions.len() == 1 {
-            tools.insert(&fa.short, value(versions[0].clone()));
+            if versions[0].1.is_empty() {
+                tools.insert(&fa.short, value(versions[0].0.clone()));
+            } else {
+                let mut table = InlineTable::new();
+                table.insert("version", versions[0].0.to_string().into());
+                for (k, v) in &versions[0].1 {
+                    table.insert(k, v.clone().into());
+                }
+                tools.insert(&fa.short, table.into());
+            }
         } else {
             let mut arr = Array::new();
-            for v in versions {
-                arr.push(v);
+            for (v, opts) in versions {
+                if opts.is_empty() {
+                    arr.push(v.to_string());
+                } else {
+                    let mut table = InlineTable::new();
+                    table.insert("version", v.to_string().into());
+                    for (k, v) in opts {
+                        table.insert(k, v.clone().into());
+                    }
+                    arr.push(table);
+                }
             }
             tools.insert(&fa.short, Item::Value(Value::Array(arr)));
         }
@@ -1148,8 +1177,14 @@ mod tests {
         .unwrap();
         let mut cf = MiseToml::from_file(&p).unwrap();
         let node = "node".into();
-        cf.replace_versions(&node, &["16.0.1".into(), "18.0.1".into()])
-            .unwrap();
+        cf.replace_versions(
+            &node,
+            &[
+                ("16.0.1".into(), Default::default()),
+                ("18.0.1".into(), Default::default()),
+            ],
+        )
+        .unwrap();
 
         assert_debug_snapshot!(cf.to_toolset().unwrap());
         let cf: Box<dyn ConfigFile> = Box::new(cf);

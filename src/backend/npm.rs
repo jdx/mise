@@ -34,7 +34,9 @@ impl Backend for NPMBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!(PROGRAM, "view", self.name(), "versions", "--json").read()?;
+                let raw = cmd!(PROGRAM, "view", self.name(), "versions", "--json")
+                    .full_env(self.dependency_env()?)
+                    .read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
             })

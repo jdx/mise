@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use eyre::Result;
+use itertools::Itertools;
 use toml::Table;
 
 use crate::config::Settings;
 use crate::registry::REGISTRY;
 use crate::{dirs, file};
 
-pub type Shorthands = HashMap<String, String>;
+pub type Shorthands = HashMap<String, Vec<String>>;
 
 pub fn get_shorthands(settings: &Settings) -> Shorthands {
     let mut shorthands = HashMap::new();
@@ -16,11 +17,16 @@ pub fn get_shorthands(settings: &Settings) -> Shorthands {
         shorthands.extend(
             REGISTRY
                 .iter()
-                .filter(|(_, full)| {
-                    let backend = &full.split(':').next().unwrap().to_string();
-                    backend == "asdf" || backend == "vfox"
+                .map(|(id, full)| {
+                    (
+                        id.to_string(),
+                        full.iter()
+                            .filter(|f| f.starts_with("asdf:") || f.starts_with("vfox:"))
+                            .map(|f| f.to_string())
+                            .collect_vec(),
+                    )
                 })
-                .map(|(k, v)| (k.to_string(), v.to_string())),
+                .filter(|(_, fulls)| !fulls.is_empty()),
         );
     };
     if let Some(f) = &settings.shorthands_file {
@@ -46,7 +52,7 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
     let mut shorthands = HashMap::new();
     for (k, v) in toml {
         if let Some(v) = v.as_str() {
-            shorthands.insert(k, v.to_string());
+            shorthands.insert(k, vec![v.to_string()]);
         }
     }
     Ok(shorthands)
@@ -70,9 +76,9 @@ mod tests {
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
         let shorthands = get_shorthands(&settings);
-        assert_str_eq!(shorthands["elixir"], "asdf:mise-plugins/mise-elixir");
-        assert_str_eq!(shorthands["node"], "https://node");
-        assert_str_eq!(shorthands["xxxxxx"], "https://xxxxxx");
+        assert_str_eq!(shorthands["elixir"][0], "asdf:mise-plugins/mise-elixir");
+        assert_str_eq!(shorthands["node"][0], "https://node");
+        assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
     }
 
     #[test]

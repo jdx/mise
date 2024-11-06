@@ -1,8 +1,7 @@
 # `mise unset`
 
-**Usage**: `mise unset [-f --file <FILE>] [-g --global] [KEYS]...`
-
-**Source code**: [`src/cli/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/unset.rs)
+- **Usage**: `mise unset [-f --file <FILE>] [-g --global] [KEYS]...`
+- **Source code**: [`src/cli/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/unset.rs)
 
 Remove environment variable(s) from the config file.
 

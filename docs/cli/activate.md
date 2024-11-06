@@ -1,8 +1,7 @@
 # `mise activate`
 
-**Usage**: `mise activate [--shims] [-q --quiet] [SHELL_TYPE]`
-
-**Source code**: [`src/cli/activate.rs`](https://github.com/jdx/mise/blob/main/src/cli/activate.rs)
+- **Usage**: `mise activate [--shims] [-q --quiet] [SHELL_TYPE]`
+- **Source code**: [`src/cli/activate.rs`](https://github.com/jdx/mise/blob/main/src/cli/activate.rs)
 
 Initializes mise in the current shell session
 

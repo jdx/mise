@@ -1,10 +1,8 @@
 # `mise alias set`
 
-**Usage**: `mise alias set <ARGS>…`
-
-**Source code**: [`src/cli/alias/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/set.rs)
-
-**Aliases**: `add`, `create`
+- **Usage**: `mise alias set <ARGS>…`
+- **Aliases**: `add`, `create`
+- **Source code**: [`src/cli/alias/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/set.rs)
 
 Add/update an alias for a plugin
 

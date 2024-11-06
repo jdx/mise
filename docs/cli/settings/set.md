@@ -1,10 +1,8 @@
 # `mise settings set`
 
-**Usage**: `mise settings set <SETTING> <VALUE>`
-
-**Source code**: [`src/cli/settings/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/set.rs)
-
-**Aliases**: `create`
+- **Usage**: `mise settings set <SETTING> <VALUE>`
+- **Aliases**: `create`
+- **Source code**: [`src/cli/settings/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/set.rs)
 
 Add/update a setting
 

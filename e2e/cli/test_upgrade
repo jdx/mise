@@ -14,3 +14,13 @@ assert_not_contains "mise ls --installed dummy" "1.0.0"
 mise upgrade dummy --bump
 assert_contains "mise ls --installed dummy" "2.0.0"
 assert_not_contains "mise ls --installed dummy" "1.1.0"
+rm .tool-versions
+
+# ensure options are retained
+mise use "ubi:bazelbuild/buildtools[exe=buildifier,matching=buildifier]@7.1.2"
+assert "cat mise.toml" '[tools]
+"ubi:bazelbuild/buildtools" = { version = "7.1.2", exe = "buildifier", matching = "buildifier" }'
+bazelbuild_latest=$(mise latest ubi:bazelbuild/buildtools)
+mise up --bump ubi:bazelbuild/buildtools
+assert "cat mise.toml" "[tools]
+\"ubi:bazelbuild/buildtools\" = { version = \"$bazelbuild_latest\", exe = \"buildifier\", matching = \"buildifier\" }"

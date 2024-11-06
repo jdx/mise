@@ -27,7 +27,7 @@ use tabled::Tabled;
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
-pub use tool_version::ToolVersion;
+pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
 use versions::{Version, Versioning};
 use xx::regex;
@@ -58,7 +58,7 @@ pub struct InstallOptions {
     pub force: bool,
     pub jobs: Option<usize>,
     pub raw: bool,
-    pub latest_versions: bool,
+    pub resolve_options: ResolveOptions,
 }
 
 impl InstallOptions {
@@ -118,7 +118,7 @@ impl Toolset {
             .iter_mut()
             .collect::<Vec<_>>()
             .par_iter_mut()
-            .map(|(_, v)| v.resolve(false))
+            .map(|(_, v)| v.resolve(&Default::default()))
             .filter(|r| r.is_err())
             .map(|r| r.unwrap_err())
             .collect::<Vec<_>>();
@@ -225,7 +225,7 @@ impl Toolset {
                                         sleep(Duration::from_millis(100));
                                     }
                                 }
-                                let tv = tr.resolve(t.as_ref(), opts.latest_versions)?;
+                                let tv = tr.resolve(t.as_ref(), &opts.resolve_options)?;
                                 let ctx = InstallContext {
                                     ts,
                                     pr: mpr.add(&tv.style()),
@@ -284,7 +284,7 @@ impl Toolset {
                             Some((p, tv)) => Ok((p.clone(), tv.clone())),
                             None => {
                                 let tv = ToolRequest::new(p.fa().clone(), &v, ToolSource::Unknown)?
-                                    .resolve(p.as_ref(), false)
+                                    .resolve(p.as_ref(), &Default::default())
                                     .unwrap();
                                 Ok((p.clone(), tv))
                             }
@@ -337,7 +337,7 @@ impl Toolset {
                         }
                         _ => v.clone(),
                     };
-                    (p.clone(), tv.clone())
+                    (p.clone(), tv)
                 })
             })
             .collect()
@@ -722,7 +722,7 @@ pub struct OutdatedInfo {
     pub requested: String,
     #[tabled(display_with("Self::display_current", self))]
     pub current: Option<String>,
-    #[tabled(skip)]
+    #[tabled(display_with("Self::display_bump", self))]
     pub bump: Option<String>,
     pub latest: String,
     pub source: ToolSource,
@@ -749,23 +749,29 @@ impl OutdatedInfo {
             "[MISSING]".to_string()
         }
     }
+
+    fn display_bump(&self) -> String {
+        if let Some(bump) = &self.bump {
+            bump.clone()
+        } else {
+            "[NONE]".to_string()
+        }
+    }
 }
 
 impl Display for OutdatedInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:<20} ", self.name)?;
         if let Some(current) = &self.current {
-            write!(
-                f,
-                "{:<20} {:<10} -> {:<10} ({})",
-                self.name, current, self.latest, self.source
-            )
+            write!(f, "{:<20} ", current)?;
         } else {
-            write!(
-                f,
-                "{:<20} {:<10} -> {:<10} ({})",
-                self.name, "MISSING", self.latest, self.source
-            )
+            write!(f, "{:<20} ", "MISSING")?;
         }
+        write!(f, "-> {:<10} (", self.latest)?;
+        if let Some(bump) = &self.bump {
+            write!(f, "bump to {} in ", bump)?;
+        }
+        write!(f, "{})", self.source)
     }
 }
 

@@ -8,6 +8,7 @@ use eyre::Result;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -44,7 +45,7 @@ impl CacheManagerBuilder {
         Self {
             cache_file_path: cache_file_path.as_ref().to_path_buf(),
             cache_keys: BASE_CACHE_KEYS.clone(),
-            fresh_files: Vec::new(),
+            fresh_files: vec![dirs::DATA.to_path_buf()],
             fresh_duration: None,
         }
     }
@@ -173,7 +174,7 @@ where
 
     fn freshest_duration(&self) -> Option<Duration> {
         let mut freshest = self.fresh_duration;
-        for path in &self.fresh_files {
+        for path in self.fresh_files.iter().unique() {
             let duration = modified_duration(path).unwrap_or_default();
             freshest = Some(match freshest {
                 None => duration,

@@ -5,7 +5,7 @@ export MISE_USE_TOML=1
 mise i dummy@{1,2} tiny@3
 
 mise local dummy@2
-assert "mise local --path" "$PWD/.mise.toml"
+assert "mise local --path" "$PWD/mise.toml"
 assert "mise local" '[tools]
 dummy = "2"'
 assert_contains "mise x -- dummy" "2.0.0"
@@ -19,7 +19,7 @@ mkdir subdir
 (
   cd subdir || exit
   mise local --parent dummy@2
-  assert "mise local --parent --path" "$HOME/workdir/.mise.toml"
+  assert "mise local --parent --path" "$HOME/workdir/mise.toml"
   assert "mise local --parent" '[tools]
 dummy = "2"'
 
@@ -29,7 +29,7 @@ dummy = "2"'
 (
   cd subdir || exit
   mise local tiny@3
-  assert "mise local --path" "$PWD/.mise.toml"
+  assert "mise local --path" "$PWD/mise.toml"
   assert "mise local" '[tools]
 tiny = "3"'
 

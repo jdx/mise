@@ -17,7 +17,7 @@ env:
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1
   RUST_BACKTRACE: 1
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.RTX_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
   NPM_CONFIG_FUND: false
 
 permissions:
@@ -30,11 +30,13 @@ jobs:
       matrix: { os: [ubuntu-latest, macos-latest] }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.head_ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with: { toolchain: stable, components: rustfmt }
@@ -48,7 +50,7 @@ jobs:
       - name: cache mise
         uses: actions/cache@v4
         with:
-          key: mise-tools-${{ matrix.os }}-${{ hashFiles('.mise.toml') }}
+          key: mise-tools-${{ matrix.os }}-${{ hashFiles('.mise.lock') }}
           restore-keys: mise-tools-${{ matrix.os }}
           path: |
             ~/.local/share/mise/installs
@@ -59,16 +61,6 @@ jobs:
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
-      - run: mise settings set experimental true
-      - run: mise run render
-      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
-        run: mise run lint-fix && git diff HEAD
-      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
-        uses: EndBug/add-and-commit@v9
-        with:
-          push: true
-          author_name: mise[bot]
-          author_email: 123107610+mise-en-dev@users.noreply.github.com
       - uses: actions-rust-lang/rustfmt@v1
       - run: mise run lint
 
@@ -79,7 +71,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.head_ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -90,21 +82,13 @@ jobs:
       - name: cache mise
         uses: actions/cache@v4
         with:
-          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.toml') }}
+          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.lock') }}
           restore-keys: mise-tools-ubuntu-latest
           path: |
             ~/.local/share/mise/installs
             ~/.local/share/mise/plugins
       - run: mise install
       - run: mise run test:shuffle
-      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
-        run: mise run lint-fix && git diff HEAD
-      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'jdx/mise'
-        uses: EndBug/add-and-commit@v9
-        with:
-          push: true
-          author_name: mise[bot]
-          author_email: 123107610+mise-en-dev@users.noreply.github.com
 
   coverage:
     name: coverage-${{matrix.tranche}}

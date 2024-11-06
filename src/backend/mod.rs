@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use console::style;
 use contracts::requires;
 use eyre::{bail, eyre, WrapErr};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -23,6 +24,7 @@ use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::plugins::core::{CorePlugin, CORE_PLUGINS};
 use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
+use crate::registry::REGISTRY_BACKEND_MAP;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{is_outdated_version, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
@@ -194,14 +196,26 @@ pub trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
     fn get_all_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        let mut deps = self.get_dependencies(tvr)?;
+        let mut deps: IndexSet<_> = self
+            .get_dependencies(tvr)?
+            .into_iter()
+            .flat_map(|fa| {
+                let short = fa.short.clone();
+                [fa].into_iter().chain(
+                    REGISTRY_BACKEND_MAP
+                        .get(short.as_str())
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
         let dep_backends = deps.iter().map(|fa| fa.into()).collect::<Vec<ABackend>>();
         for dep in dep_backends {
             // TODO: pass the right tvr
             let tvr = ToolRequest::System(dep.id().into(), ToolSource::Unknown);
             deps.extend(dep.get_all_dependencies(&tvr)?);
         }
-        Ok(deps)
+        Ok(deps.into_iter().collect())
     }
 
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
@@ -291,7 +305,7 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
         match tv.install_path() {
-            path if path.is_symlink() => Some(path),
+            path if path.is_symlink() && !is_runtime_symlink(&path) => Some(path),
             _ => None,
         }
     }
@@ -402,11 +416,11 @@ pub trait Backend: Debug + Send + Sync {
         if self.is_version_installed(&ctx.tv, true) {
             if ctx.force {
                 self.uninstall_version(&ctx.tv, ctx.pr.as_ref(), false)?;
-                ctx.pr.set_message("installing".into());
             } else {
                 return Ok(());
             }
         }
+        ctx.pr.set_message("installing".into());
         let _lock = lock_file::get(&ctx.tv.install_path(), ctx.force)?;
         self.create_install_dirs(&ctx.tv)?;
 

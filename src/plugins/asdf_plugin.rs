@@ -8,7 +8,7 @@ use crate::timeout::run_with_timeout;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, exit, lock_file, plugins, registry};
+use crate::{dirs, env, exit, lock_file, plugins, registry};
 use clap::Command;
 use console::style;
 use contracts::requires;
@@ -57,6 +57,7 @@ impl AsdfPlugin {
         let plugins = plugins::INSTALLED_PLUGINS
             .iter()
             .filter(|(_, pt)| matches!(pt, PluginType::Asdf))
+            .inspect(|(dir, _)| trace!("vfox_plugin: {:?}", dir))
             .map(|(dir, _)| {
                 let name = dir.file_name().unwrap().to_string_lossy().to_string();
                 Box::new(AsdfPlugin::new(name)) as Box<dyn Plugin>
@@ -425,12 +426,17 @@ Plugins could support local directories in the future but for now a symlink is r
 
 fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
     let plugin_path_s = plugin_path.to_string_lossy().to_string();
-    ScriptManager::new(plugin_path.to_path_buf())
+    let mut sm = ScriptManager::new(plugin_path.to_path_buf())
         .with_env("ASDF_PLUGIN_PATH", plugin_path_s.clone())
         .with_env("RTX_PLUGIN_PATH", plugin_path_s.clone())
         .with_env("RTX_PLUGIN_NAME", name.to_string())
         .with_env("RTX_SHIMS_DIR", *dirs::SHIMS)
         .with_env("MISE_PLUGIN_NAME", name.to_string())
         .with_env("MISE_PLUGIN_PATH", plugin_path)
-        .with_env("MISE_SHIMS_DIR", *dirs::SHIMS)
+        .with_env("MISE_SHIMS_DIR", *dirs::SHIMS);
+    if let Some(token) = &*env::GITHUB_TOKEN {
+        // asdf plugins often use GITHUB_API_TOKEN as the env var for GitHub API token
+        sm = sm.with_env("GITHUB_API_TOKEN", token.to_string());
+    }
+    sm
 }

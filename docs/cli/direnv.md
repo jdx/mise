@@ -1,8 +1,7 @@
 # `mise direnv`
 
-**Usage**: `mise direnv <SUBCOMMAND>`
-
-**Source code**: [`src/cli/direnv.rs`](https://github.com/jdx/mise/blob/main/src/cli/direnv.rs)
+- **Usage**: `mise direnv <SUBCOMMAND>`
+- **Source code**: [`src/cli/direnv.rs`](https://github.com/jdx/mise/blob/main/src/cli/direnv.rs)
 
 Output direnv function to use mise inside direnv
 

@@ -1,14 +1,14 @@
 ---
 source: src/cli/generate/task_docs.rs
 expression: output
+snapshot_kind: text
 ---
 ## `filetask`
 
 - Depends: lint, test
 
-**Usage**: `filetask [--user <user>]`
-
-**Aliases**: `ft`
+- **Usage**: `filetask [--user <user>]`
+- **Aliases**: `ft`
 
 This is a test build script
 
