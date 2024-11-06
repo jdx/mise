@@ -109,7 +109,9 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
 
-    /// Shows elapsed time after each tasks
+    /// Shows elapsed time after each task completes
+    ///
+    /// Default to always show with `MISE_TASK_TIMINGS=1`
     #[clap(long, alias = "timing", verbatim_doc_comment)]
     pub timings: bool,
 
@@ -257,8 +259,8 @@ impl Run {
             exit(*status);
         }
 
-        if self.timings && num_tasks > 1 {
-            let msg = format!("finished in {}", time::format_duration(timer.elapsed()));
+        if (self.timings || SETTINGS.task_timings) && num_tasks > 1 {
+            let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
             eprintln!("{}", style::edim(msg));
         };
 
@@ -301,7 +303,7 @@ impl Run {
             }
         }
 
-        if self.timings {
+        if self.timings || SETTINGS.task_timings {
             eprintln!(
                 "{prefix} finished in {}",
                 time::format_duration(timer.elapsed())
