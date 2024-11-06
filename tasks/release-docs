@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
+#MISE dir="docs"
 
 export AWS_REGION=auto
 export AWS_ENDPOINT_URL=https://6e243906ff257b965bcae8025c2fc344.r2.cloudflarestorage.com
