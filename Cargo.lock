@@ -4061,9 +4061,9 @@ dependencies = [
 
 [[package]]
 name = "vfox"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc55334e13c664925be7922bb42a448c3d7cabab2216ba738cdcdc8c5f0b7f04"
+checksum = "124e7a9b4bf350dd7824f0b4b345d4266011aab13933f8e34fd25637df86543a"
 dependencies = [
  "homedir",
  "indexmap 2.6.0",
