@@ -1,5 +1,22 @@
 # Changelog
 
+## [2024.11.4](https://github.com/jdx/mise/compare/v2024.11.3..v2024.11.4) - 2024-11-06
+
+### 🚀 Features
+
+- added --offline flag to ls by [@jdx](https://github.com/jdx) in [#2954](https://github.com/jdx/mise/pull/2954)
+- added MISE_TASK_TIMINGS setting by [@jdx](https://github.com/jdx) in [#2957](https://github.com/jdx/mise/pull/2957)
+
+### 🐛 Bug Fixes
+
+- **(go)** remove old GOPATH bin dir by [@jdx](https://github.com/jdx) in [#2959](https://github.com/jdx/mise/pull/2959)
+- allow installing asdf/vfox plugins by shorthand when overridden by ubi by [@jdx](https://github.com/jdx) in [#2956](https://github.com/jdx/mise/pull/2956)
+- set docs directory in release-docs task by [@jdx](https://github.com/jdx) in [6efac79](https://github.com/jdx/mise/commit/6efac7976b2d1ebdb988baf6e50f8faa8218053b)
+
+### 🔍 Other Changes
+
+- added hidden --outdate option for cache clear by [@jdx](https://github.com/jdx) in [9535aa1](https://github.com/jdx/mise/commit/9535aa15ceb0ad43e1ca0f2623a7cbbde59ce6f0)
+
 ## [2024.11.3](https://github.com/jdx/mise/compare/v2024.11.2..v2024.11.3) - 2024-11-06
 
 ### 🐛 Bug Fixes
