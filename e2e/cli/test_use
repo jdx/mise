@@ -12,30 +12,34 @@ assert_not_contains "mise use --rm dummy" "dummy"
 assert "mise current dummy" ""
 
 assert_contains "mise use --env local dummy@2" "dummy@2."
-assert "cat .mise.local.toml" '[tools]
+assert "cat mise.local.toml" '[tools]
 dummy = "2"'
 assert "mise current dummy" "2.0.0"
-rm .mise.local.toml
+rm mise.local.toml
 
 mise use dummy@1 dummy@2
 assert "mise current dummy" "1.0.0 2.0.0"
 
 mise use --pin dummy@1
-assert "cat .mise.toml" '[tools]
+assert "cat mise.toml" '[tools]
 dummy = "1.0.0"'
 
 MISE_PIN=1 mise use --fuzzy dummy@1
-assert "cat .mise.toml" '[tools]
+assert "cat mise.toml" '[tools]
 dummy = "1"'
 
-MISE_PIN=1 mise use dummy@1 --path .mise.local.toml
-assert "cat .mise.local.toml" '[tools]
+MISE_PIN=1 mise use dummy@1 --path mise.local.toml
+assert "cat mise.local.toml" '[tools]
 dummy = "1.0.0"'
 
-mise use --rm dummy --path .mise.local.toml
-assert "cat .mise.local.toml" ""
+mise use --rm dummy --path mise.local.toml
+assert "cat mise.local.toml" ""
 
-rm -f .mise.local.toml .mise.toml
+mise use dummy@1
+assert "cat mise.local.toml" '[tools]
+dummy = "1"'
+
+rm -f mise.local.toml mise.toml
 echo "dummy 1.0.0" >.tool-versions
 mise use dummy@2
 assert "cat .tool-versions" "dummy 2"

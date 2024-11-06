@@ -3,9 +3,9 @@
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 
-touch .mise.lock
+touch mise.lock
 mise use tiny@1
-cat <<EOF >.mise.lock
+cat <<EOF >mise.lock
 [tools]
 tiny = "1.0.0"
 EOF

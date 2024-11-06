@@ -570,7 +570,7 @@ fn load_legacy_files() -> BTreeMap<String, Vec<String>> {
 }
 
 pub static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
-    if *env::MISE_DEFAULT_CONFIG_FILENAME == ".mise.toml" {
+    if *env::MISE_DEFAULT_CONFIG_FILENAME == "mise.toml" {
         vec![
             &*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME, // .tool-versions
             ".config/mise/config.toml",
@@ -579,8 +579,8 @@ pub static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
             "mise/config.toml",
             ".mise/config.toml",
             ".rtx.toml",
-            "mise.toml",
-            &*env::MISE_DEFAULT_CONFIG_FILENAME, // .mise.toml
+            &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
+            ".mise.toml",
             ".config/mise/config.local.toml",
             ".config/mise.local.toml",
             ".mise/config.local.toml",
