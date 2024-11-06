@@ -1,7 +1,6 @@
 ---
 source: src/shell/zsh.rs
 expression: "zsh.activate(exe, \" --status\".into())"
-snapshot_kind: text
 ---
 export MISE_SHELL=zsh
 export __MISE_ORIG_PATH="$PATH"
@@ -30,14 +29,9 @@ mise() {
 _mise_hook() {
   eval "$(/some/dir/mise hook-env --status -s zsh)";
 }
-_mise_hook_cmd() {
-  if [[ -n "$ZLAST_COMMANDS" ]]; then
-    _mise_hook;
-  fi
-}
 typeset -ag precmd_functions;
-if [[ -z "${precmd_functions[(r)_mise_hook_cmd]+1}" ]]; then
-  precmd_functions=( _mise_hook_cmd ${precmd_functions[@]} )
+if [[ -z "${precmd_functions[(r)_mise_hook]+1}" ]]; then
+  precmd_functions=( _mise_hook ${precmd_functions[@]} )
 fi
 typeset -ag chpwd_functions;
 if [[ -z "${chpwd_functions[(r)_mise_hook]+1}" ]]; then
