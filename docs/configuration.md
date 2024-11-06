@@ -339,13 +339,12 @@ Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 Set the version for a runtime. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
 of what is set in `.tool-versions`/`.mise.toml`.
 
-### `MISE_USE_TOML=0`
+### `MISE_USE_TOML=1`
 
-Set to `1` to default to using `.mise.toml` in `mise local` instead of `.tool-versions` for
+Set to `0` to default to using `.tool-verisons` in `mise local` instead of `mise.toml` for
 configuration.
 
-For now this is not used by `mise use` which will only use `.mise.toml` unless `--path` is
-specified.
+This is not used by `mise use` which will only use `mise.toml` unless `--path` is specified.
 
 ### `MISE_TRUSTED_CONFIG_PATHS`
 
