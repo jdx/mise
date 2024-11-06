@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.11.3](https://github.com/jdx/mise/compare/v2024.11.2..v2024.11.3) - 2024-11-06
+
+### 🐛 Bug Fixes
+
+- support multiple versions in lockfile by [@jdx](https://github.com/jdx) in [#2923](https://github.com/jdx/mise/pull/2923)
+- use mise.toml instead of .mise.toml by default in `mise use` by [@jdx](https://github.com/jdx) in [#2818](https://github.com/jdx/mise/pull/2818)
+- explode backend dependencies by [@jdx](https://github.com/jdx) in [#2945](https://github.com/jdx/mise/pull/2945)
+- show install prefix in output by [@jdx](https://github.com/jdx) in [#2946](https://github.com/jdx/mise/pull/2946)
+- make vfox/vendored-lua optional by [@jdx](https://github.com/jdx) in [acc674b](https://github.com/jdx/mise/commit/acc674b00c307241fb8b87ba7e27fba1f08a1a22)
+
+### 🔍 Other Changes
+
+- Revert "perf(shell/zsh.rs): avoid hook-env execution on Enter without command " by [@jdx](https://github.com/jdx) in [7e19251](https://github.com/jdx/mise/commit/7e1925188eff61a4d93657d15c23bef4b5c55424)
+
 ## [2024.11.2](https://github.com/jdx/mise/compare/v2024.11.1..v2024.11.2) - 2024-11-06
 
 ### 🐛 Bug Fixes
