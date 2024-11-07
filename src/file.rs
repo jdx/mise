@@ -21,6 +21,8 @@ use walkdir::WalkDir;
 use zip::ZipArchive;
 
 use crate::{dirs, env};
+#[cfg(windows)]
+use crate::config::SETTINGS;
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     let path = path.as_ref();
@@ -364,7 +366,10 @@ pub fn is_executable(path: &Path) -> bool {
 #[cfg(windows)]
 pub fn is_executable(path: &Path) -> bool {
     path.extension().map_or(false, |ext| {
-        ext == "exe" || ext == "bat" || ext == "cmd" || ext == "com" || ext == "ps1" || ext == "vbs"
+        if let Some(str_val) = ext.to_str() {
+            return SETTINGS.windows_executable_extensions.contains(&str_val.to_string());
+        }
+        false
     })
 }
 

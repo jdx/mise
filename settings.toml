@@ -748,6 +748,14 @@ Use vfox as a default plugin backend. This means running something like `mise us
 default to using an vfox plugin for cmake.
 """
 
+[windows_executable_extensions]
+env = "MISE_WINDOWS_EXECUTABLE_EXTENSIONS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
+parse_env = "list_by_comma"
+description = "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on."
+
 [yes]
 env = "MISE_YES"
 type = "Bool"

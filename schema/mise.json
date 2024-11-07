@@ -540,6 +540,21 @@
           "deprecated": "Use disable_backends instead.",
           "type": "boolean"
         },
+        "windows_executable_extensions": {
+          "default": [
+            "exe",
+            "bat",
+            "cmd",
+            "com",
+            "ps1",
+            "vbs"
+          ],
+          "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"

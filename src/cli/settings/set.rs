@@ -161,6 +161,7 @@ pub mod tests {
         trusted_config_paths = []
         use_versions_host = true
         verbose = true
+        windows_executable_extensions = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
         yes = true
 
         [cargo]
