@@ -20,9 +20,9 @@ use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
-use crate::{dirs, env};
 #[cfg(windows)]
 use crate::config::SETTINGS;
+use crate::{dirs, env};
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     let path = path.as_ref();
@@ -367,7 +367,9 @@ pub fn is_executable(path: &Path) -> bool {
 pub fn is_executable(path: &Path) -> bool {
     path.extension().map_or(false, |ext| {
         if let Some(str_val) = ext.to_str() {
-            return SETTINGS.windows_executable_extensions.contains(&str_val.to_string());
+            return SETTINGS
+                .windows_executable_extensions
+                .contains(&str_val.to_string());
         }
         false
     })

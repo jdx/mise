@@ -284,6 +284,27 @@
           "description": "Use libgit2 for git operations, set to false to shell out to git.",
           "type": "boolean"
         },
+        "linux_default_file_shell_args": {
+          "default": [
+            "sh"
+          ],
+          "description": "List of default shell arguments for Linux to be used with `file`. For example `sh`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "linux_default_inline_shell_args": {
+          "default": [
+            "sh",
+            "-c"
+          ],
+          "description": "List of default shell arguments for Linux to be used with inline commands. For example, `sh`, `/c` for sh.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "lockfile": {
           "default": false,
           "description": "Create and read lockfiles for tool versions.",
@@ -539,6 +560,28 @@
           "description": "Use vfox as a default plugin backend instead of asdf.",
           "deprecated": "Use disable_backends instead.",
           "type": "boolean"
+        },
+        "windows_default_file_shell_args": {
+          "default": [
+            "cmd",
+            "/c"
+          ],
+          "description": "List of default shell arguments for Windows to be used for file commands. For example, `cmd`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "windows_default_inline_shell_args": {
+          "default": [
+            "cmd",
+            "/c"
+          ],
+          "description": "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "windows_executable_extensions": {
           "default": [

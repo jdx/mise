@@ -323,6 +323,22 @@ Use libgit2 for git operations. This is generally faster but may not be as compa
 system's libgit2 is not the same version as the one used by mise.
 """
 
+[linux_default_file_shell_args]
+env = "MISE_LINUX_DEFAULT_FILE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["sh"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for Linux to be used with `file`. For example `sh`."
+
+[linux_default_inline_shell_args]
+env = "MISE_LINUX_DEFAULT_INLINE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["sh", "-c"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for Linux to be used with inline commands. For example, `sh`, `/c` for sh."
+
 [lockfile]
 env = "MISE_LOCKFILE"
 type = "Bool"
@@ -747,6 +763,22 @@ docs = """
 Use vfox as a default plugin backend. This means running something like `mise use cmake` will
 default to using an vfox plugin for cmake.
 """
+
+[windows_default_file_shell_args]
+env = "MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["cmd", "/c"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for Windows to be used for file commands. For example, `cmd`."
+
+[windows_default_inline_shell_args]
+env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["cmd", "/c"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe."
 
 [windows_executable_extensions]
 env = "MISE_WINDOWS_EXECUTABLE_EXTENSIONS"
