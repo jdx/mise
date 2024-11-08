@@ -731,7 +731,7 @@ type = "ListString"
 rust_type = "Vec<String>"
 default = ["sh", "-c"]
 parse_env = "list_by_comma"
-description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `/c` for sh."
+description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh."
 
 [use_file_shell_for_executable_tasks]
 env = "MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS"
@@ -776,7 +776,7 @@ type = "ListString"
 rust_type = "Vec<String>"
 default = ["cmd", "/c"]
 parse_env = "list_by_comma"
-description = "List of default shell arguments for Windows to be used for file commands. For example, `cmd`."
+description = "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe."
 
 [windows_default_inline_shell_args]
 env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
