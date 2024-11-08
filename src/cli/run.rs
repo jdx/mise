@@ -371,11 +371,10 @@ impl Run {
         let shell = self.get_shell(task, default_shell);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
-        #[cfg(windows)]
-        let script = format!("{} {}", command, args.join(" "));
-        #[cfg(unix)]
-        let script = format!("{} {}", command, shell_words::join(args));
-        full_args.push(script);
+        full_args.push(command.to_string());
+        if !args.is_empty() {
+            full_args.extend(args.iter().cloned());
+        }
         (shell[0].clone(), full_args[1..].to_vec())
     }
 

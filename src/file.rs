@@ -387,6 +387,7 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
 
 #[cfg(windows)]
 pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
+    warn!("make executable is not available on Windows, use windows_executable_extensions settings instead");
     Ok(())
 }
 
