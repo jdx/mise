@@ -323,22 +323,6 @@ Use libgit2 for git operations. This is generally faster but may not be as compa
 system's libgit2 is not the same version as the one used by mise.
 """
 
-[linux_default_file_shell_args]
-env = "MISE_LINUX_DEFAULT_FILE_SHELL_ARGS"
-type = "ListString"
-rust_type = "Vec<String>"
-default = ["sh"]
-parse_env = "list_by_comma"
-description = "List of default shell arguments for Linux to be used with `file`. For example `sh`."
-
-[linux_default_inline_shell_args]
-env = "MISE_LINUX_DEFAULT_INLINE_SHELL_ARGS"
-type = "ListString"
-rust_type = "Vec<String>"
-default = ["sh", "-c"]
-parse_env = "list_by_comma"
-description = "List of default shell arguments for Linux to be used with inline commands. For example, `sh`, `/c` for sh."
-
 [lockfile]
 env = "MISE_LOCKFILE"
 type = "Bool"
@@ -732,6 +716,28 @@ rust_type = "BTreeSet<PathBuf>"
 default = []
 parse_env = "list_by_colon"
 description = "This is a list of config paths that mise will automatically mark as trusted."
+
+[unix_default_file_shell_args]
+env = "MISE_UNIX_DEFAULT_FILE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["sh"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for unix to be used with `file`. For example `sh`."
+
+[unix_default_inline_shell_args]
+env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["sh", "-c"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `/c` for sh."
+
+[use_file_shell_for_executable_tasks]
+env = "MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS"
+type = "Bool"
+default = false
+description = "Determines whether to use a specified shell for executing tasks in the tasks directory. When set to true, the shell defined in the file will be used, or the default shell specified by `windows_default_file_shell_args` or `unix_default_file_shell_args` will be applied. If set to false, tasks will be executed directly as programs."
 
 [use_versions_host]
 env = "MISE_USE_VERSIONS_HOST"

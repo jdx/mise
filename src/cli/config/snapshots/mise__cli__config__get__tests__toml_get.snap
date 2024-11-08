@@ -31,7 +31,7 @@ shell = "bash -c"
 
 [tasks."shell invalid"]
 run = 'echo "invalid shell"'
-shell = "bash"
+shell = " "
 
 [tasks.test]
 run = 'echo "testing!"'

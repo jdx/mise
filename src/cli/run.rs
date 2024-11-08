@@ -342,61 +342,71 @@ impl Run {
             self.exec(&file, args, task, env, prefix)
         } else {
             let default_shell = self.clone_default_inline_shell();
-            let (program, args) =  self.get_cmd_program_and_args(script, task, args, &default_shell);
+            let (program, args) = self.get_cmd_program_and_args(script, task, args, default_shell);
             self.exec_program(&program, &args, task, env, prefix)
         }
     }
-   
-    fn get_file_program_and_args(&self, file: &Path, task: &Task, args: &[String]) -> (String, Vec<String>) {
+
+    fn get_file_program_and_args(
+        &self,
+        file: &Path,
+        task: &Task,
+        args: &[String],
+    ) -> (String, Vec<String>) {
         let display = file.display().to_string();
-        if file::is_executable(file) {
+        if file::is_executable(file) && !SETTINGS.use_file_shell_for_executable_tasks {
             return (display, args.to_vec());
         }
         let default_shell = self.clone_default_file_shell();
-        self.get_cmd_program_and_args(&display, task, args, &default_shell)
+        self.get_cmd_program_and_args(&display, task, args, default_shell)
     }
 
-    fn get_cmd_program_and_args(&self, command: &str, task: &Task, args: &[String], default_shell: &Vec<String>) -> (String, Vec<String>) {
+    fn get_cmd_program_and_args(
+        &self,
+        command: &str,
+        task: &Task,
+        args: &[String],
+        default_shell: Vec<String>,
+    ) -> (String, Vec<String>) {
         let shell = self.get_shell(task, default_shell);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
         #[cfg(windows)]
         let script = format!("{} {}", command, args.join(" "));
         #[cfg(unix)]
-        let script = format!("{} {}", command, shell_words::join(args));            
+        let script = format!("{} {}", command, shell_words::join(args));
         full_args.push(script);
         (shell[0].clone(), full_args[1..].to_vec())
     }
 
-    fn clone_default_inline_shell(&self) -> Vec<String>{
+    fn clone_default_inline_shell(&self) -> Vec<String> {
         #[cfg(windows)]
         return SETTINGS.windows_default_inline_shell_args.clone();
         #[cfg(unix)]
-        return SETTINGS.linux_default_inline_shell_args.clone();
+        return SETTINGS.unix_default_inline_shell_args.clone();
     }
 
-    fn clone_default_file_shell(&self) -> Vec<String>{
+    fn clone_default_file_shell(&self) -> Vec<String> {
         #[cfg(windows)]
         return SETTINGS.windows_default_file_shell_args.clone();
         #[cfg(unix)]
-        return SETTINGS.linux_default_file_shell_args.clone();
+        return SETTINGS.unix_default_file_shell_args.clone();
     }
-    
-    fn get_shell(&self, task: &Task, default_shell: &Vec<String>) -> Vec<String>{
+
+    fn get_shell(&self, task: &Task, default_shell: Vec<String>) -> Vec<String> {
         let default_shell = default_shell.clone();
         if let Some(shell) = task.shell.clone() {
             let shell_cmd = shell
                 .split_whitespace()
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>();
-            if shell_cmd.len() >= 1 {
+            if !shell_cmd.is_empty() && !shell_cmd[0].trim().is_empty() {
                 return shell_cmd;
             }
-            warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c).");
+            warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c)");
         }
         default_shell
     }
-
 
     fn exec_file(
         &self,
@@ -421,13 +431,20 @@ impl Run {
         let cmd = trunc(&style::ebold(format!("$ {cmd}")).bright().to_string());
         eprintln!("{prefix} {cmd}");
 
-        self.exec(&file, &args, task, &env, prefix)
+        self.exec(file, &args, task, &env, prefix)
     }
 
-    fn exec(&self, file: &Path, args: &[String], task: &Task, env: &BTreeMap<String, String>, prefix: &str) -> Result<()> {
-        let (program, args) = self.get_file_program_and_args(&file, task, args);
+    fn exec(
+        &self,
+        file: &Path,
+        args: &[String],
+        task: &Task,
+        env: &BTreeMap<String, String>,
+        prefix: &str,
+    ) -> Result<()> {
+        let (program, args) = self.get_file_program_and_args(file, task, args);
         self.exec_program(&program, &args, task, env, prefix)
-    }   
+    }
 
     fn exec_program(
         &self,
@@ -781,6 +798,6 @@ mod tests {
         assert_cli_snapshot!(
             "r",
             "shell invalid",
-        @"mise invalid shell 'bash', expected '<program> <argument>' (e.g. sh -c)");
+        @"mise invalid shell ' ', expected '<program> <argument>' (e.g. sh -c)");
     }
 }

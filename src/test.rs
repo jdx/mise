@@ -160,7 +160,7 @@ pub fn reset() {
             [tasks.test]
             run = 'echo "testing!"'
             [tasks."shell invalid"]
-            shell = 'bash'
+            shell = ' '
             run = 'echo "invalid shell"'
             [tasks.shell]
             shell = 'bash -c'
