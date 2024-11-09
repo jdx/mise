@@ -45,7 +45,7 @@ impl CacheManagerBuilder {
         Self {
             cache_file_path: cache_file_path.as_ref().to_path_buf(),
             cache_keys: BASE_CACHE_KEYS.clone(),
-            fresh_files: vec![dirs::DATA.to_path_buf()],
+            fresh_files: vec![],
             fresh_duration: None,
         }
     }
