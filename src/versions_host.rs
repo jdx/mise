@@ -1,14 +1,26 @@
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::http::HTTP_FETCH;
+use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
 use crate::{backend, http, registry};
+use once_cell::sync::Lazy;
+use std::collections::HashSet;
 use url::Url;
+
+static PLUGINS_USE_VERSION_HOST: Lazy<HashSet<&str>> = Lazy::new(|| {
+    CORE_PLUGINS
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .chain(REGISTRY.keys().copied())
+        .filter(|name| !matches!(*name, "java" | "python"))
+        .collect()
+});
 
 pub fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>> {
     if !SETTINGS.use_versions_host
         || ba.short.contains(':')
-        || !REGISTRY.contains_key(ba.short.as_str())
+        || !PLUGINS_USE_VERSION_HOST.contains(ba.short.as_str())
     {
         return Ok(None);
     }
