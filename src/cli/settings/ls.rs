@@ -103,7 +103,7 @@ mod tests {
         [node]
 
         [npm]
-        bun = true
+        bun = false
 
         [pipx]
         uvx = false
