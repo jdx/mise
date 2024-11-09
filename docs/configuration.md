@@ -2,30 +2,29 @@
 
 ## `mise.toml`
 
-`mise.toml` is the config file for mise. It can use any of the following file paths (in order of precedence, top is highest):
+`mise.toml` is the config file for mise. They can be at any of the following file paths (in order of precedence, top overrides configuration of lower paths):
 
-- `.mise.local.toml` - used for local config, this should not be committed to source control
-- `mise.local.toml`
-- `.mise.$MISE_ENV.toml`
-- `mise.$MISE_ENV.toml` - used for environment-specific config such as `mise.staging.toml`
-- `.mise.toml`
-- `.mise/config.toml`
+- `mise.local.toml` - used for local config, this should not be committed to source control
 - `mise.toml`
 - `mise/config.toml`
 - `.config/mise.toml` - use this in order to group config files into a common directory
 - `.config/mise/config.toml`
 
-See [Profiles](/profiles) for more information about `.mise.$MISE_ENV.toml` files.
+Notes:
 
-These files recurse upwards, so if you have a `~/src/work/myproj/.mise.toml` file, what is defined
+- Paths which start with `mise` can be dotfiles, e.g.: `mise.toml` or `.mise/config.toml`.
+- This list doesn't include [Profiles](/profiles) which allow for environment-specific config files like `mise.development.toml`—set with `MISE_PROFILE=development`.
+- See [`LOCAL_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
+
+These files recurse upwards, so if you have a `~/src/work/myproj/mise.toml` file, what is defined
 there will override anything set in
-`~/src/work/.mise.toml` or `~/.config/mise.toml`. The config contents are merged together.
+`~/src/work/mise.toml` or `~/.config/mise.toml`. The config contents are merged together.
 
 :::tip
-Run `mise config` to see what files mise has loaded along with their precedence.
+Run `mise config` to see what files mise has loaded in order of precedence.
 :::
 
-Here is what an `.mise.toml` looks like:
+Here is what a `mise.toml` looks like:
 
 ```toml
 [env]
@@ -52,8 +51,8 @@ my_custom_node = '20'
 run = 'echo "running build tasks"'
 ```
 
-`.mise.toml` files are hierarchical. The configuration in a file in the current directory will
-override conflicting configuration in parent directories. For example, if `~/src/myproj/.mise.toml`
+`mise.toml` files are hierarchical. The configuration in a file in the current directory will
+override conflicting configuration in parent directories. For example, if `~/src/myproj/mise.toml`
 defines the following:
 
 ```toml
@@ -62,7 +61,7 @@ node = '20'
 python = '3.10'
 ```
 
-And `~/src/myproj/backend/.mise.toml` defines:
+And `~/src/myproj/backend/mise.toml` defines:
 
 ```toml
 [tools]
@@ -321,9 +320,9 @@ a different name.
 Set to something other than `.mise.toml` to have mise look for `.mise.toml` config files with a
 different name.
 
-### `MISE_ENV`
+### `MISE_PROFILE`
 
-Enables environment-specific config files such as `.mise.development.toml`.
+Enables profile-specific config files such as `.mise.development.toml`.
 Use this for different env vars or different tool versions in
 development/staging/production environments. See
 [Profiles](/profiles) for more on how

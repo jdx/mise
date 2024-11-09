@@ -50,7 +50,7 @@ rubocop --pre # install prerelease version
 
 ## `.ruby-version` and `Gemfile` support
 
-mise uses a `.tool-versions` or `.mise.toml` file for auto-switching between software versions.
+mise uses a `.tool-versions` or `mise.toml` file for auto-switching between software versions.
 However it can also read ruby-specific version files `.ruby-version` or `Gemfile`
 (if it specifies a ruby version).
 
