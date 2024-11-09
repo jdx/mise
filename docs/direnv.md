@@ -88,4 +88,4 @@ While making mise compatible with direnv is, and will always be a major goal of 
 want mise to be capable of replacing direnv if needed. This is why mise includes support for
 managing
 env vars and [virtualenv](lang/python.md#automatic-virtualenv-activation)
-for python using `.mise.toml`.
+for python using `mise.toml`.

@@ -54,7 +54,7 @@ but you get the idea.
 You may think that is excessive to run `mise hook-env` every time the prompt is displayed
 and it should only run on `cd`, however there are plenty of
 situations where it needs to run without the directory changing, for example if `.tool-versions` or
-`.mise.toml` was just edited in the current shell.
+`mise.toml` was just edited in the current shell.
 
 Because it runs on prompt display, if you attempt to use `mise activate` in a
 non-interactive session (like a bash script), it will never call `mise hook-env` and in effect will
@@ -158,7 +158,7 @@ call asdf commands.
 If you need to switch to/from asdf or work in a project with asdf users, you can set
 [`MISE_ASDF_COMPAT=1`](/configuration#mise_asdf_compat1). That prevents
 mise from writing `.tool-versions` files that will not be
-compatible with asdf. Also consider using `.mise.toml` instead which won't conflict with asdf
+compatible with asdf. Also consider using `mise.toml` instead which won't conflict with asdf
 setups.
 
 ## How do I disable/force CLI color output?

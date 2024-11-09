@@ -5,7 +5,7 @@ The name refers to a French culinary phrase that roughly translates to "setup" o
 The idea is that before one begins cooking, they should have all their utensils and ingredients
 ready to go in their place.
 
-`mise` does the same for your projects. Using its `.mise.toml` config file,
+`mise` does the same for your projects. Using its `mise.toml` config file,
 you'll have a consistent way to setup and interact with your projects no matter what
 language they're written in.
 

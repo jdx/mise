@@ -115,7 +115,7 @@ vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
 Xcode projects can run system commands from script build phases and schemes. Since Xcode sandboxes
 the execution of the script using the tool `/usr/bin/sandbox-exec`, don't expect Mise and the
 automatically-activated tools to work out of the box. First, you'll need to
-add `$(SRCROOT)/.mise.toml` to the list of **Input files**. This is necessary for Xcode to allow
+add `$(SRCROOT)/mise.toml` to the list of **Input files**. This is necessary for Xcode to allow
 reads to that file. Then, you can use `mise activate` to activate the tools you need:
 
 ```bash
