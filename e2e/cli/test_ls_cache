@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# verify that cache is reused for `mise ls`
+# see https://github.com/jdx/mise/issues/2961
+
+assert_contains "mise -v use bat 2>&1" "GET http://mise-versions.jdx.dev/bat 200 OK"
+touch -t 202001010000 "$MISE_CACHE_DIR/bat/"*
+assert_not_contains "mise -v ls bat 2>&1" "GET http://mise-versions.jdx.dev/bat 200 OK"
