@@ -398,6 +398,21 @@ Disable this if experiencing strange behavior in your shell when a command is no
 This also runs in shims if the terminal is interactive.
 """
 
+[npm.bun]
+type = "Bool"
+description = "Use bun instead of npm if bun is installed and on PATH."
+docs = """
+If true, mise will use `bun` instead of `npm` if
+[`bun`](https://bun.sh/) is installed and on PATH.
+This makes installing CLIs faster by using `bun` as the package manager.
+
+You can install it with mise:
+
+```sh
+mise use -g bun
+```
+"""
+
 [paranoid]
 env = "MISE_PARANOID"
 type = "Bool"

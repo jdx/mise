@@ -1,4 +1,6 @@
+use serde::Deserialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 use crate::backend::{Backend, BackendType};
@@ -6,6 +8,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
+use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
@@ -16,7 +19,7 @@ pub struct NPMBackend {
     latest_version_cache: CacheManager<Option<String>>,
 }
 
-const PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
+const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
 
 impl Backend for NPMBackend {
     fn get_type(&self) -> BackendType {
@@ -28,16 +31,15 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        Ok(vec!["node".into()])
+        Ok(vec!["node".into(), "bun".into()])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!(PROGRAM, "view", self.name(), "versions", "--json")
-                    .full_env(self.dependency_env()?)
-                    .read()?;
-                let versions: Vec<String> = serde_json::from_str(&raw)?;
+                let url = format!("https://registry.npmjs.org/{}", self.name());
+                let package: NpmPackage = HTTP_FETCH.json(url)?;
+                let versions = package.versions.keys().cloned().collect();
                 Ok(versions)
             })
             .cloned()
@@ -46,13 +48,11 @@ impl Backend for NPMBackend {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!(PROGRAM, "view", self.name(), "dist-tags", "--json")
-                    .full_env(self.dependency_env()?)
-                    .read()?;
-                let dist_tags: Value = serde_json::from_str(&raw)?;
-                let latest = match dist_tags["latest"] {
-                    Value::String(ref s) => Some(s.clone()),
-                    _ => self.latest_version(Some("latest".into())).unwrap(),
+                let url = format!("https://registry.npmjs.org/{}", self.name());
+                let package: NpmPackage = HTTP_FETCH.json(url)?;
+                let latest = match package.dist_tags.get("latest") {
+                    Some(s) => Some(s.clone()),
+                    None => self.latest_version(Some("latest".into())).unwrap(),
                 };
                 Ok(latest)
             })
@@ -62,27 +62,44 @@ impl Backend for NPMBackend {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
 
-        CmdLineRunner::new(PROGRAM)
-            .arg("install")
-            .arg("-g")
-            .arg(format!("{}@{}", self.name(), ctx.tv.version))
-            .arg("--prefix")
-            .arg(ctx.tv.install_path())
-            .with_pr(ctx.pr.as_ref())
-            .envs(ctx.ts.env_with_path(&config)?)
-            .prepend_path(ctx.ts.list_paths())?
-            .prepend_path(self.dependency_toolset()?.list_paths())?
-            .execute()?;
-
+        if SETTINGS.npm.bun {
+            CmdLineRunner::new("bun")
+                .arg("install")
+                .arg(format!("{}@{}", self.name(), ctx.tv.version))
+                .arg("--cwd")
+                .arg(ctx.tv.install_path())
+                .with_pr(ctx.pr.as_ref())
+                .envs(ctx.ts.env_with_path(&config)?)
+                .prepend_path(ctx.ts.list_paths())?
+                .prepend_path(self.dependency_toolset()?.list_paths())?
+                .execute()?;
+        } else {
+            CmdLineRunner::new(NPM_PROGRAM)
+                .arg("install")
+                .arg("-g")
+                .arg(format!("{}@{}", self.name(), ctx.tv.version))
+                .arg("--prefix")
+                .arg(ctx.tv.install_path())
+                .with_pr(ctx.pr.as_ref())
+                .envs(ctx.ts.env_with_path(&config)?)
+                .prepend_path(ctx.ts.list_paths())?
+                .prepend_path(self.dependency_toolset()?.list_paths())?
+                .execute()?;
+        }
         Ok(())
     }
 
-    #[cfg(windows)]
     fn list_bin_paths(
         &self,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        Ok(vec![tv.install_path()])
+        if SETTINGS.npm.bun {
+            return Ok(vec![tv.install_path().join("node_modules").join(".bin")]);
+        }
+        if cfg!(windows) {
+            return Ok(vec![tv.install_path()]);
+        }
+        Ok(vec![tv.install_path().join("bin")])
     }
 }
 
@@ -102,4 +119,11 @@ impl NPMBackend {
             ba,
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct NpmPackage {
+    #[serde(rename = "dist-tags")]
+    dist_tags: BTreeMap<String, String>,
+    versions: BTreeMap<String, Value>,
 }

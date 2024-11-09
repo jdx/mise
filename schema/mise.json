@@ -317,6 +317,15 @@
           "description": "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions.",
           "type": "boolean"
         },
+        "npm": {
+          "additionalProperties": false,
+          "properties": {
+            "bun": {
+              "description": "Use bun instead of npm if bun is installed and on PATH.",
+              "type": "boolean"
+            }
+          }
+        },
         "paranoid": {
           "description": "Enables extra-secure behavior.",
           "type": "boolean"
