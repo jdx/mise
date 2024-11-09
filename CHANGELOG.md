@@ -1,5 +1,25 @@
 # Changelog
 
+## [2024.11.5](https://github.com/jdx/mise/compare/v2024.11.4..v2024.11.5) - 2024-11-09
+
+### 🚀 Features
+
+- show overridden tools in registry by [@jdx](https://github.com/jdx) in [#2974](https://github.com/jdx/mise/pull/2974)
+
+### 🐛 Bug Fixes
+
+- use versions host for core plugins by [@jdx](https://github.com/jdx) in [#2970](https://github.com/jdx/mise/pull/2970)
+- reuse cache when old by [@jdx](https://github.com/jdx) in [#2971](https://github.com/jdx/mise/pull/2971)
+- MISE_PROFILE fixes by [@jdx](https://github.com/jdx) in [#2973](https://github.com/jdx/mise/pull/2973)
+
+### 🧪 Testing
+
+- added win-e2e task test by [@jdx](https://github.com/jdx) in [#2972](https://github.com/jdx/mise/pull/2972)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress to v1.5.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#2966](https://github.com/jdx/mise/pull/2966)
+
 ## [2024.11.4](https://github.com/jdx/mise/compare/v2024.11.3..v2024.11.4) - 2024-11-06
 
 ### 🚀 Features
