@@ -1,6 +1,4 @@
-use serde::Deserialize;
 use serde_json::Value;
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 use crate::backend::{Backend, BackendType};
@@ -8,7 +6,6 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
-use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
 
@@ -37,9 +34,10 @@ impl Backend for NPMBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let url = format!("https://registry.npmjs.org/{}", self.name());
-                let package: NpmPackage = HTTP_FETCH.json(url)?;
-                let versions = package.versions.keys().cloned().collect();
+                let raw = cmd!(NPM_PROGRAM, "view", self.name(), "versions", "--json")
+                    .full_env(self.dependency_env()?)
+                    .read()?;
+                let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
             })
             .cloned()
@@ -48,11 +46,13 @@ impl Backend for NPMBackend {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
-                let url = format!("https://registry.npmjs.org/{}", self.name());
-                let package: NpmPackage = HTTP_FETCH.json(url)?;
-                let latest = match package.dist_tags.get("latest") {
-                    Some(s) => Some(s.clone()),
-                    None => self.latest_version(Some("latest".into())).unwrap(),
+                let raw = cmd!(NPM_PROGRAM, "view", self.name(), "dist-tags", "--json")
+                    .full_env(self.dependency_env()?)
+                    .read()?;
+                let dist_tags: Value = serde_json::from_str(&raw)?;
+                let latest = match dist_tags["latest"] {
+                    Value::String(ref s) => Some(s.clone()),
+                    _ => self.latest_version(Some("latest".into())).unwrap(),
                 };
                 Ok(latest)
             })
@@ -118,11 +118,4 @@ impl NPMBackend {
             ba,
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct NpmPackage {
-    #[serde(rename = "dist-tags")]
-    dist_tags: BTreeMap<String, String>,
-    versions: BTreeMap<String, Value>,
 }
