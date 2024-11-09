@@ -84,7 +84,7 @@ pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
 });
 pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> =
     Lazy::new(|| var("MISE_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| "mise.toml".into()));
-pub static MISE_ENV: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
+pub static MISE_PROFILE: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 pub static MISE_SETTINGS_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SETTINGS_FILE").unwrap_or_else(|| MISE_CONFIG_DIR.join("settings.toml"))
 });
@@ -356,13 +356,10 @@ fn environment(args: &[String]) -> Option<String> {
                 None
             }
         })
-        .or_else(|| match var("MISE_ENV") {
-            Ok(env) => Some(env),
-            _ => match var("MISE_ENVIRONMENT") {
-                Ok(env) => Some(env),
-                _ => None,
-            },
-        })
+        .or_else(|| var("MISE_PROFILE").ok())
+        // TODO: it may make sense to deprecate these in the future if we want to reuse MISE_ENV for something else
+        .or_else(|| var("MISE_ENV").ok())
+        .or_else(|| var("MISE_ENVIRONMENT").ok())
 }
 
 fn log_file_level() -> Option<LevelFilter> {

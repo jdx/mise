@@ -55,6 +55,13 @@ mise run test:e2e
 
 Slow tests do not run by default or on PRs. They can be manually enabled with `TEST_ALL=1`.
 
+### Windows E2E Tests
+
+:::sh
+pwsh e2e-win\run.ps1
+pwsh e2e-win\run.ps1 task # run tests matching `*task*`
+:::
+
 ## Dependencies
 
 - [rust](https://www.rust-lang.org/) stable 1.70.0+ (I test with the beta channel locally, but CI uses stable, you can use whatever)

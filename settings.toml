@@ -349,7 +349,6 @@ touch mise.lock && mise install
 The lockfile is named the same as the config file but with `.lock` instead of `.toml` as the extension, e.g.:
 
 - `mise.toml` -> `mise.lock`
-- `.mise.toml` -> `.mise.lock`
 - `mise.local.toml` -> `mise.local.lock`
 - `.config/mise.toml` -> `.config/mise.lock`
 """
@@ -445,7 +444,7 @@ description = "How long to wait before updating plugins automatically (note this
 [profile]
 env = "MISE_PROFILE"
 type = "String"
-description = "Profile to use for mise.${MISE_ENV}.toml files."
+description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 optional = true
 
 [python.compile]

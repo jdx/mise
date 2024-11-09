@@ -5,7 +5,7 @@ your environment and project settings.
 You can define and use templates in the following locations:
 
 - `.tool-versions` files
-- `.mise.toml` files for most configuration
+- `mise.toml` files for most configuration
 - _(Submit a ticket if you want to see it used elsewhere!)_
 
 ## Template Rendering

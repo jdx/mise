@@ -41,7 +41,7 @@ const AFTER_LONG_HELP: &str = color_print::cstr!(
 
 impl Unset {
     pub fn run(self) -> Result<()> {
-        let filename = if let Some(env) = &*env::MISE_ENV {
+        let filename = if let Some(env) = &*env::MISE_PROFILE {
             config_file_from_dir(&env::current_dir()?.join(format!(".mise.{}.toml", env)))
         } else if self.global {
             env::MISE_GLOBAL_CONFIG_FILE.clone()

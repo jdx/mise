@@ -237,12 +237,8 @@ impl Config {
             s.spawn(|_| {
                 file_tasks = Some(self.load_file_tasks_recursively());
             });
-            s.spawn(|_| {
-                global_tasks = Some(self.load_global_tasks());
-            });
-            s.spawn(|_| {
-                system_tasks = Some(self.load_system_tasks());
-            });
+            global_tasks = Some(self.load_global_tasks());
+            system_tasks = Some(self.load_system_tasks());
         });
         let tasks: BTreeMap<String, Task> = file_tasks
             .unwrap()?
@@ -424,6 +420,7 @@ impl Config {
     fn configs_at_root(&self, dir: &Path) -> Vec<&dyn ConfigFile> {
         DEFAULT_CONFIG_FILENAMES
             .iter()
+            .rev()
             .map(|f| dir.join(f))
             .filter_map(|f| self.config_files.get(&f).map(|cf| cf.as_ref()))
             .collect()
@@ -600,7 +597,7 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         .iter()
         .map(|f| f.to_string())
         .collect_vec();
-    if let Some(env) = &*env::MISE_ENV {
+    if let Some(env) = &*env::MISE_PROFILE {
         filenames.push(format!(".config/mise/config.{env}.toml"));
         filenames.push(format!(".config/mise.{env}.toml"));
         filenames.push(format!("mise/config.{env}.toml"));
@@ -662,7 +659,7 @@ pub fn global_config_files() -> Vec<PathBuf> {
             config_files.push(f);
         }
     }
-    if let Some(env) = &*env::MISE_ENV {
+    if let Some(env) = &*env::MISE_PROFILE {
         let global_profile_files = vec![
             dirs::CONFIG.join(format!("config.{env}.toml")),
             dirs::CONFIG.join(format!("config.{env}.local.toml")),
