@@ -88,7 +88,7 @@ characters and everyone knows what it is.
 
 ## `.mise.local.toml`
 
-I'm a heavy user of this concept. I rarely like to actually commit `.mise.toml`
+I'm a heavy user of this concept. I rarely like to actually commit `mise.toml`
 files into projects. I tend to see my mise config as my personal config that
 I use within other projects that I don't particularly want to share with others.
 

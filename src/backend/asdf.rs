@@ -202,7 +202,7 @@ impl AsdfBackend {
             ToolRequest::Ref { ref_: v, .. } => v, // should not have "ref:" prefix
             _ => &tv.version,
         };
-        // add env vars from .mise.toml files
+        // add env vars from mise.toml files
         for (key, value) in config.env()? {
             sm = sm.with_env(key, value.clone());
         }

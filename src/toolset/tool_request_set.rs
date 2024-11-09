@@ -201,7 +201,7 @@ impl ToolRequestSetBuilder {
                 } else if self.default_to_latest {
                     // this logic is required for `mise x` because with that specific command mise
                     // should default to installing the "latest" version if no version is specified
-                    // in .mise.toml
+                    // in mise.toml
 
                     if !trs.tools.contains_key(&arg.backend) {
                         // no active version, so use "latest"
