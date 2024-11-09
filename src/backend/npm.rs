@@ -68,6 +68,7 @@ impl Backend for NPMBackend {
                 .arg(format!("{}@{}", self.name(), ctx.tv.version))
                 .arg("--cwd")
                 .arg(ctx.tv.install_path())
+                .arg("--trust")
                 .with_pr(ctx.pr.as_ref())
                 .envs(ctx.ts.env_with_path(&config)?)
                 .prepend_path(ctx.ts.list_paths())?
