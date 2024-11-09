@@ -68,9 +68,12 @@ impl Backend for NPMBackend {
                 .arg(format!("{}@{}", self.name(), ctx.tv.version))
                 .arg("--cwd")
                 .arg(ctx.tv.install_path())
+                .arg("--global")
                 .arg("--trust")
                 .with_pr(ctx.pr.as_ref())
                 .envs(ctx.ts.env_with_path(&config)?)
+                .env("BUN_INSTALL_GLOBAL_DIR", ctx.tv.install_path())
+                .env("BUN_INSTALL_BIN", ctx.tv.install_path().join("bin"))
                 .prepend_path(ctx.ts.list_paths())?
                 .prepend_path(self.dependency_toolset()?.list_paths())?
                 .execute()?;
@@ -90,17 +93,12 @@ impl Backend for NPMBackend {
         Ok(())
     }
 
+    #[cfg(windows)]
     fn list_bin_paths(
         &self,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        if SETTINGS.npm.bun {
-            return Ok(vec![tv.install_path().join("node_modules").join(".bin")]);
-        }
-        if cfg!(windows) {
-            return Ok(vec![tv.install_path()]);
-        }
-        Ok(vec![tv.install_path().join("bin")])
+        Ok(vec![tv.install_path()])
     }
 }
 
