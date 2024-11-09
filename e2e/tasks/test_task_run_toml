@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 cat <<EOF >mise.toml
+tasks.multi = ['echo a', 'echo b']
 [tasks.configtask]
 run = 'echo "configtask:"'
 [tasks.lint]
@@ -15,6 +16,8 @@ run = 'echo {{arg(default="arg1")}} {{option(name="user", default="user1")}}'
 run = 'echo {{1 + 1}}'
 EOF
 
+assert "mise run multi c" "a
+b c"
 assert "mise run test arg1 arg2 arg3" "testing! arg1 arg2 arg3"
 assert "mise run test-with-args foo --force --user=user" "foo true user"
 assert "mise run test-with-defaults" "arg1 user1"
