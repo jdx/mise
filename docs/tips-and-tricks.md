@@ -33,7 +33,7 @@ mise-x64 use -g node@20
 ## Shebang
 
 You can specify a tool and its version in a shebang without needing to first
-setup `.tool-versions`/`.mise.toml` config:
+setup `.tool-versions`/`mise.toml` config:
 
 ```typescript
 #!/usr/bin/env -S mise x node@20 -- node
@@ -70,12 +70,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: jdx/mise-action@v1
-      - run: node -v # will be the node version from `.mise.toml`/`.tool-versions`
+      - run: node -v # will be the node version from `mise.toml`/`.tool-versions`
 ```
 
 ## `mise set`
 
-Instead of manually editing `.mise.toml` to add env vars, you can use `mise set` instead:
+Instead of manually editing `mise.toml` to add env vars, you can use `mise set` instead:
 
 ```sh
 mise set NODE_ENV=production
