@@ -93,6 +93,9 @@ mod tests {
 
         [node]
 
+        [npm]
+        bun = false
+
         [pipx]
         uvx = false
 
