@@ -96,6 +96,10 @@ Overwrite existing &lt;file>
 
 User to run as
 
+## `filetask.bat`
+
+- **Usage**: `filetask.bat`
+
 ## `lint`
 
 - Depends: lint:*
