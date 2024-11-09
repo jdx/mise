@@ -18,15 +18,15 @@ pub struct Registry {
 impl Registry {
     pub fn run(self) -> Result<()> {
         if let Some(name) = &self.name {
-            if let Some(full) = REGISTRY.get(name.as_str()).and_then(|r| r.first()) {
-                miseprintln!("{full}");
+            if let Some(fulls) = REGISTRY.get(name.as_str()) {
+                miseprintln!("{}", fulls.join(" "));
             } else {
                 bail!("tool not found in registry: {name}");
             }
         } else {
             let data = REGISTRY
                 .iter()
-                .map(|(short, full)| (short.to_string(), full.first().unwrap().to_string()).into())
+                .map(|(short, full)| (short.to_string(), full.join(" ")).into())
                 .collect::<Vec<Row>>();
             let mut table = Table::new(data);
             table::default_style(&mut table, false);
