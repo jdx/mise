@@ -353,7 +353,7 @@
           "type": "string"
         },
         "profile": {
-          "description": "Profile to use for mise.${MISE_ENV}.toml files.",
+          "description": "Profile to use for mise.${MISE_PROFILE}.toml files.",
           "type": "string"
         },
         "python": {

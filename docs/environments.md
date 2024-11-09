@@ -1,6 +1,6 @@
 # Environments
 
-Use mise to specify environment variables used for different projects. Create a `.mise.toml` file
+Use mise to specify environment variables used for different projects. Create a `mise.toml` file
 in the root of your project directory:
 
 ```toml
@@ -23,7 +23,7 @@ $ mise set NODE_ENV
 development
 $ mise set
 key       value        source
-NODE_ENV  development  .mise.toml
+NODE_ENV  development  mise.toml
 $ mise unset NODE_ENV
 ```
 
@@ -36,7 +36,7 @@ TOML table for the configuration of these directives.
 
 ### `env._.file`
 
-In `.mise.toml`: `env._.file` can be used to specify a [dotenv](https://dotenv.org) file to load.
+In `mise.toml`: `env._.file` can be used to specify a [dotenv](https://dotenv.org) file to load.
 It can be a string or array and uses relative or absolute paths:
 
 ```toml
@@ -60,7 +60,7 @@ directory.
 _.path = [
     # adds an absolute path
     "~/.local/share/bin",
-    # adds a path relative to the .mise.toml, not PWD
+    # adds a path relative to the mise.toml, not PWD
     "./node_modules/.bin",
 ]
 ```

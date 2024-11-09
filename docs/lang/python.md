@@ -124,7 +124,7 @@ brew link pkg-config
 
 ## Automatic virtualenv activation
 
-Python comes with virtualenv support built in, use it with `.mise.toml` configuration like
+Python comes with virtualenv support built in, use it with `mise.toml` configuration like
 one of the following:
 
 ```toml

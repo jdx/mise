@@ -5,13 +5,10 @@ const fs = require("node:fs");
 
 process.env.MISE_ASDF = 1;
 process.env.MISE_VFOX = 1;
+process.env.MISE_EXPERIMENTAL = 1;
 
 const stdout = execSync("mise registry", { encoding: "utf-8" });
-// Regular expression to match plugin name and repository URL
-// e.g.: zprint asdf:carlduevel/asdf-zprint
-const regex = /^(.+?) +(.+?):(.+?)(\[.+\])? *$/gm;
 
-let match;
 const output = [
   `---
 editLink: false
@@ -22,36 +19,37 @@ editLink: false
 ];
 
 output.push("| Short | Full |\n| ----------- | --------------- |");
-while ((match = regex.exec(stdout)) !== null) {
-  if (match[2] === "asdf" || match[2] === "vfox") {
-    let repoUrl = match[3].replace(/\.git$/, "");
-    if (!repoUrl.startsWith("http")) {
-      repoUrl = `https://github.com/${repoUrl}`;
-    }
-    output.push(`| ${match[1]} | [${match[2]}:${match[3]}](${repoUrl}) |`);
-  } else if (match[2] === "core") {
-    output.push(
-      `| ${match[1]} | [${match[2]}:${match[3]}](https://mise.jdx.dev/lang/${match[1]}.html) |`,
-    );
-  } else if (match[2] === "cargo") {
-    output.push(
-      `| ${match[1]} | [${match[2]}:${match[3]}](https://crates.io/crates/${match[3]}) |`,
-    );
-  } else if (match[2] === "npm") {
-    output.push(
-      `| ${match[1]} | [${match[2]}:${match[3]}](https://www.npmjs.com/package/${match[3]}) |`,
-    );
-  } else if (match[2] === "pipx") {
-    output.push(
-      `| ${match[1]} | [${match[2]}:${match[3]}](https://pypi.org/project/${match[3]}) |`,
-    );
-  } else if (match[2] === "ubi") {
-    output.push(
-      `| ${match[1]} | [${match[2]}:${match[3]}](https://github.com/${match[3]}) |`,
-    );
-  } else {
-    output.push(`| ${match[1]} | ${match[2]}:${match[3]} |`);
-  }
+for (const match of stdout.split("\n")) {
+  // e.g.: asdf:carlduevel/asdf-zprint
+  const [short, ...fulls] = match.split(" ");
+  const full = fulls
+    .filter((x) => x !== "")
+    .map((full) => {
+      const match = full.match(/^(.+?):(.+?)(\[.+])?$/);
+      if (match[1] === "asdf" || match[1] === "vfox") {
+        let repoUrl = match[2].replace(/\.git$/, "");
+        if (!repoUrl.startsWith("http")) {
+          repoUrl = `https://github.com/${repoUrl}`;
+        }
+        return `[${match[1]}:${match[2]}](${repoUrl})`;
+      } else if (match[1] === "core") {
+        return `[${match[1]}:${match[2]}](https://mise.jdx.dev/lang/${match[1]}.html)`;
+      } else if (match[1] === "cargo") {
+        return `[${match[1]}:${match[2]}](https://crates.io/crates/${match[2]})`;
+      } else if (match[1] === "npm") {
+        return `[${match[1]}:${match[2]}](https://www.npmjs.com/package/${match[2]})`;
+      } else if (match[1] === "pipx") {
+        return `[${match[1]}:${match[2]}](https://pypi.org/project/${match[2]})`;
+      } else if (match[1] === "go") {
+        return `[${match[1]}:${match[2]}](https://pkg.go.dev/${match[2]})`;
+      } else if (match[1] === "ubi") {
+        return `[${match[1]}:${match[2]}](https://github.com/${match[2]})`;
+      } else {
+        throw new Error(`Unknown registry: ${full}`);
+      }
+    })
+    .join(" ");
+  if (full !== "") output.push(`| ${short} | ${full} |`);
 }
 output.push("");
 

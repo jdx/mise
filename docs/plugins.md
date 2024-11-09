@@ -33,7 +33,7 @@ and I'd be happy to host it for you.
 
 ## Plugin Options
 
-mise has support for "plugin options" which is configuration specified in `.mise.toml` to change behavior
+mise has support for "plugin options" which is configuration specified in `mise.toml` to change behavior
 of plugins. One example of this is virtualenv on python runtimes:
 
 ```toml

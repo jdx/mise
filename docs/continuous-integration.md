@@ -49,7 +49,7 @@ jobs:
           experimental: true # [default: false] enable experimental features
           tool_versions: |
             shellcheck 0.9.0
-          # or, if you prefer .mise.toml format:
+          # or, if you prefer mise.toml format:
           mise_toml: |
             [tools]
             shellcheck = "0.9.0"
@@ -106,7 +106,7 @@ If you are using Xcode Cloud, you can use custom `ci_post_clone.sh` [build scrip
 curl https://mise.run | sh
 export PATH="$HOME/.local/bin:$PATH"
 
-mise install # Installs the tools in .mise.toml
+mise install # Installs the tools in mise.toml
 eval "$(mise activate bash --shims)" # Adds the activated tools to $PATH
 
 swiftlint {args}
