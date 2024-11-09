@@ -5,7 +5,7 @@ cat >mise.toml <<EOF
 bun = true
 EOF
 
-mise use bun
+mise use bun node
 
 assert "mise x npm:prettier@3.1.0 -- prettier -v" "3.1.0"
 assert "FORCE_COLOR=0 mise x npm:@antfu/ni@0.21.12 -- ni -v 2>/dev/null | head -n1" "@antfu/ni  v0.21.12"
