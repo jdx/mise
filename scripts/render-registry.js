@@ -33,7 +33,7 @@ for (const match of stdout.split("\n")) {
         }
         return `[${match[1]}:${match[2]}](${repoUrl})`;
       } else if (match[1] === "core") {
-        return `[${match[1]}:${match[2]}](https://mise.jdx.dev/lang/${match[1]}.html)`;
+        return `[${match[1]}:${match[2]}](https://mise.jdx.dev/lang/${match[2]}.html)`;
       } else if (match[1] === "cargo") {
         return `[${match[1]}:${match[2]}](https://crates.io/crates/${match[2]})`;
       } else if (match[1] === "npm") {
