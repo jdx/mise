@@ -2,6 +2,7 @@ use crate::cli::version::VERSION;
 use crate::cli::Cli;
 use color_eyre::{Section, SectionExt};
 use eyre::Report;
+use indoc::indoc;
 use itertools::Itertools;
 
 #[cfg(test)]
@@ -84,14 +85,30 @@ fn handle_err(err: Report) -> eyre::Result<()> {
             return Ok(());
         }
     }
+    show_github_rate_limit_err(&err);
     if cfg!(not(debug_assertions)) && log::max_level() < log::LevelFilter::Debug {
-        display_friendly_err(err);
+        display_friendly_err(&err);
         exit(1);
     }
     Err(err)
 }
 
-fn display_friendly_err(err: Report) {
+fn show_github_rate_limit_err(err: &Report) {
+    let msg = format!("{err:?}");
+    if msg.contains("HTTP status client error (403 Forbidden) for url (https://api.github.com") {
+        warn!("GitHub API returned a 403 Forbidden error. This likely means you have exceeded the rate limit.");
+        if env::GITHUB_TOKEN.is_none() {
+            warn!(indoc!(
+                r#"GITHUB_TOKEN is not set. This means mise is making unauthenticated requests to GitHub which have a lower rate limit.
+                   To increase the rate limit, set the GITHUB_TOKEN environment variable to a GitHub personal access token.
+                   Create a token at https://github.com/settings/tokens and set it as GITHUB_TOKEN in your environment.
+                   You do not need to give this token any scopes."#
+            ));
+        }
+    }
+}
+
+fn display_friendly_err(err: &Report) {
     for err in err.chain() {
         error!("{err}");
     }

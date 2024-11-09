@@ -41,15 +41,17 @@ impl PluginsLsRemote {
             warn!("default shorthands are disabled");
         }
 
-        for (plugin, repo) in shorthands {
-            let installed = if !self.only_names && installed_plugins.contains(plugin.as_str()) {
-                "*"
-            } else {
-                " "
-            };
-            let url = if self.urls { repo } else { "" };
-            let plugin = pad_str(plugin, max_plugin_len, Alignment::Left, None);
-            miseprintln!("{} {}{}", plugin, installed, url);
+        for (plugin, backends) in shorthands {
+            for repo in backends {
+                let installed = if !self.only_names && installed_plugins.contains(plugin.as_str()) {
+                    "*"
+                } else {
+                    " "
+                };
+                let url = if self.urls { repo } else { "" };
+                let plugin = pad_str(plugin, max_plugin_len, Alignment::Left, None);
+                miseprintln!("{} {}{}", plugin, installed, url);
+            }
         }
 
         Ok(())

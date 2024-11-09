@@ -1,10 +1,8 @@
 # `mise backends ls`
 
-**Usage**: `mise backends ls`
-
-**Source code**: [`src/cli/backends/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/backends/ls.rs)
-
-**Aliases**: `list`
+- **Usage**: `mise backends ls`
+- **Aliases**: `list`
+- **Source code**: [`src/cli/backends/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/backends/ls.rs)
 
 List built-in backends
 

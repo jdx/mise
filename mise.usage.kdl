@@ -56,7 +56,7 @@ Customize status output with `status` settings."#
 "#
     flag "-s --shell" help="Shell type to generate the script for" hide=true {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
@@ -65,7 +65,7 @@ Customize status output with `status` settings."#
     }
     flag "-q --quiet" help="Suppress non-error messages"
     arg "[SHELL_TYPE]" help="Shell type to generate the script for" {
-        choices "bash" "fish" "nu" "xonsh" "zsh"
+        choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
     }
 }
 cmd "alias" help="Manage aliases" {
@@ -159,6 +159,7 @@ Run `mise cache` with no args to view the current cache directory."
     cmd "clear" help="Deletes all cache files in mise" {
         alias "c"
         alias "clean" hide=true
+        flag "--outdate" help="Mark all cache files as old" hide=true
         arg "[PLUGIN]..." help="Plugin(s) to clear cache for e.g.: node, python" var=true
     }
     cmd "prune" help="Removes stale mise cache files" {
@@ -334,7 +335,7 @@ use this if you have `mise activate` in your shell rc file."
     flag "-J --json" help="Output in JSON format"
     flag "-s --shell" help="Shell type to generate environment variables for" {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
@@ -469,7 +470,7 @@ Use `mise local` to set a tool version locally in the current directory."
 cmd "hook-env" hide=true help="[internal] called by activate hook to update env vars directory change" {
     flag "-s --shell" help="Shell type to generate script for" {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
@@ -478,7 +479,7 @@ cmd "hook-env" hide=true help="[internal] called by activate hook to update env 
 cmd "hook-not-found" hide=true help="[internal] called by shell when a command is not found" {
     flag "-s --shell" help="Shell type to generate script for" {
         arg "<SHELL>" {
-            choices "bash" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
     arg "<BIN>" help="Attempted bin to run"
@@ -631,6 +632,7 @@ It's a useful command to get the current state of your tools."#
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
+    flag "-o --offline" help="Don't fetch information such as outdated versions"
     flag "--parseable" help="Output in an easily parseable format" hide=true
     flag "-J --json" help="Output in JSON format"
     flag "-m --missing" help="Display missing tool versions"
@@ -936,7 +938,9 @@ The name of the script will be the name of the tasks.
         arg "<JOBS>"
     }
     flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
-    flag "--timings" help="Shows elapsed time after each tasks"
+    flag "--timings" help="Shows elapsed time after each task completes" {
+        long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
+    }
     mount run="mise tasks --usage"
 }
 cmd "self-update" help="Updates mise itself." {
@@ -1265,9 +1269,12 @@ The name of the script will be the name of the tasks.
             arg "<JOBS>"
         }
         flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
-        flag "--timings" help="Shows elapsed time after each tasks"
+        flag "--timings" help="Shows elapsed time after each task completes" {
+            long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
+        }
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
+        mount run="mise tasks --usage"
     }
 }
 cmd "trust" help="Marks a config file as trusted" {
@@ -1423,7 +1430,7 @@ Use the `--global` flag to use the global config file instead."
         arg "<PATH>"
     }
     flag "--pin" help="Save exact version to config file\ne.g.: `mise use --pin node@20` will save 20.0.0 as the version\nSet `MISE_PIN=1` or `MISE_ASDF_COMPAT=1` to make this the default behavior"
-    arg "[TOOL@VERSION]..." help="Tool(s) to add to config file" help_long="Tool(s) to add to config file\n\ne.g.: node@20, cargo:ripgrep@latest npm:prettier@3\nIf no version is specified, it will default to @latest" var=true
+    arg "[TOOL@VERSION]..." help="Tool(s) to add to config file" help_long="Tool(s) to add to config file\n\ne.g.: node@20, cargo:ripgrep@latest npm:prettier@3\nIf no version is specified, it will default to @latest\n\nTool options can be set with this syntax:\n\n    mise use ubi:BurntSushi/ripgrep[exe=rg]" var=true
 }
 cmd "version" help="Display the version of mise" {
     alias "v"

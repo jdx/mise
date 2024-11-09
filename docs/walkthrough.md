@@ -15,35 +15,49 @@ Both of these are required to use a tool. If you simply install a tool via `mise
 It must also be added to `mise.toml`—which is why I promote using `mise use` since it does both.
 :::
 
-You use it like so—note that mise must be [activated](/cli/activate) for this to work:
+You use it like so (note that `mise` must be [activated](/getting-started.html#_2-activate-mise) for this to work):
 
 ```bash
-$ mise use node@22
-$ node -v
-v22.0.0
+mkdir example-project && cd example-project
+mise use node@22
+node -v
+# v22.0.0
 ```
 
 And you'll also note that you now have a `mise.toml` file with the following content:
+
+```shell
+cat mise.toml
+```
 
 ```toml
 [tools]
 node = "22"
 ```
 
-If this file is in the root of a project, node will be installed whenever someone runs [`mise install|i`](/cli/install).
-This is the command you want to run when you first clone a project or when you want to update installed tools.
+- If this file is in the root of a project, `node` will be installed whenever someone runs [`mise install|i`](/cli/install).
+- This is the command you want to run when you first clone a project or when you want to update installed tools.
 
 ## `mise.toml` Configuration
 
-Share this file with others so they can get the same tools you're using. [`mise.local.toml`](/configuration#mise-toml)
-is an alternate config file you can use that is intended _not_ to be shared with others.
+Use [`mise.toml`](/configuration#mise-toml) to share your tool configurations with others. This file should be committed to version control and contains the common toolset needed for your project.
 
-Note that these files are hierarchical, so you can have a `~/mise.toml` file for global settings, a
-`~/work/mise.toml` file for settings specific to work projects, and `~/work/project/mise.toml` for
-settings specific to a project. mise will use all the parent directories together to determine the
-set of tools—overriding configuration as it goes lower in the hierarchy.
+For tools or settings you want to keep private, use [`mise.local.toml`](/configuration#mise-toml). This file should be added to `.gitignore` and is perfect for personal preferences or configurations.
 
-In general, it's preferred to use loose versions like this in mise so that other people working
+`mise` supports nested configuration files that cascade from broad to specific settings:
+
+1. `~/.config/mise/config.toml` - Global settings for all projects
+2. `~/work/mise.toml` - Work-specific settings
+3. `~/work/project/mise.toml` - Project-specific settings
+4. `~/work/project/mise.local.toml` - Project-specific settings that should not be shared
+
+`mise` will use all the parent directories together to determine the set of tools—overriding configuration as it goes lower in the hierarchy.
+
+:::tip
+Use [`mise config ls`](/cli/config/ls) to see the configuration files currently used by `mise`.
+:::
+
+In general, it's preferred to use loose versions like this in `mise` so that other people working
 on a project don't have to worry about the exact version of a tool you're using. If you'd like to
 pin the version to enforce a specific version, use `mise use --pin` or the [`lockfile`](/configuration/settings#lockfile) setting.
 
@@ -51,8 +65,10 @@ If you leave out the version, then mise will default to `node@latest`.
 
 ## Dev Tool Backends
 
-Tools are installed with a variety of backends like asdf, ubi, and vfox. See [registry](/registry.html) for
-the full list of shorthands like `node` you can use. You can also use other backends like `npm` or `cargo`
+Tools are installed with a variety of backends like `asdf`, `ubi`, or `vfox`. See [registry](/registry.html) for
+the full list of shorthands like `node` you can use.
+
+You can also use other backends like `npm` or `cargo`
 which can install any package from their respective registries:
 
 ```bash
@@ -66,11 +82,11 @@ Upgrading tool versions can be done with [`mise upgrade|up`](/cli/upgrade). By d
 the version prefix in `mise.toml`. If [lockfile](/configuration/settings#lockfile) is enabled,
 mise will update `mise.lock` to the latest version of the tool with the prefix from `mise.toml`.
 
-So if you have `node = "22"` in `mise.toml`, then `mise upgrade node` will upgrade to the latest version of node 22.
+So if you have `node = "22"` in `mise.toml`, then `mise upgrade node` will upgrade to the latest version of `node 22`.
 
 If you'd like to upgrade to the latest version of node, you can use `mise upgrade --bump node`. It will set the version
 at the same specificity as the current version, so if you have `node = "22"`, but use `mise upgrade --bump node` to update to
-node@24, then it will set `node = "24"` in `mise.toml`.
+`node@24`, then it will set `node = "24"` in `mise.toml`.
 
 _See [Dev Tools](/dev-tools/) for more information on working with tools._
 
@@ -80,9 +96,9 @@ mise can also be used to set environment variables for your project. You can set
 with the CLI:
 
 ```bash
-$ mise set MY_VAR=123
-$ echo $MY_VAR
-123
+mise set MY_VAR=123
+echo $MY_VAR
+# 123
 ```
 
 Or by directly modifying `mise.toml`:
@@ -99,7 +115,8 @@ Some examples on where this can be used:
 - Setting `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for AWS
 - Setting `RUST_TEST_THREADS=1` to run cargo tests in series
 
-You can also modify PATH with `mise.toml`—in this example making CLIs installed with npm available:
+You can also modify `PATH` with `mise.toml`.
+This example makes CLIs installed with `npm` available:
 
 ```toml
 [env]

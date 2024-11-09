@@ -1,10 +1,8 @@
 # `mise cache clear`
 
-**Usage**: `mise cache clear [PLUGIN]...`
-
-**Source code**: [`src/cli/cache/clear.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/clear.rs)
-
-**Aliases**: `c`
+- **Usage**: `mise cache clear [PLUGIN]...`
+- **Aliases**: `c`
+- **Source code**: [`src/cli/cache/clear.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/clear.rs)
 
 Deletes all cache files in mise
 

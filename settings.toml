@@ -329,7 +329,7 @@ type = "Bool"
 default = false
 description = "Create and read lockfiles for tool versions."
 docs = """
-Create and read lockfiles for tool versions. This is useful when you'd like to have loose versions in mise.toml like this:
+Read/update lockfiles for tool versions. This is useful when you'd like to have loose versions in mise.toml like this:
 
 ```toml
 [tools]
@@ -337,9 +337,21 @@ node = "22"
 gh = "latest"
 ```
 
-But you'd like the versions installed to be consistent within a project. When this is enabled, mise will automatically
-create mise.lock files next to mise.toml files containing pinned versions.
-When installing tools, mise will reference this lockfile if it exists and this setting is enabled to resolve versions.
+But you'd like the versions installed to be consistent within a project. When this is enabled, mise will update mise.lock
+files next to mise.toml files containing pinned versions. When installing tools, mise will reference this lockfile if it exists and this setting is enabled to resolve versions.
+
+The lockfiles are not created automatically. To generate them, run the following (assuming the config file is `mise.toml`):
+
+```sh
+touch mise.lock && mise install
+```
+
+The lockfile is named the same as the config file but with `.lock` instead of `.toml` as the extension, e.g.:
+
+- `mise.toml` -> `mise.lock`
+- `.mise.toml` -> `.mise.lock`
+- `mise.local.toml` -> `mise.local.lock`
+- `.config/mise.toml` -> `.config/mise.lock`
 """
 
 [log_level]
@@ -381,8 +393,9 @@ default = true
 description = "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions."
 docs = """
 Set to false to disable the "command not found" handler to autoinstall missing tool versions.
-Disable this if experiencing strange behavior in your shell when a command is not found—but please submit a
-ticket to help diagnose problems.
+Disable this if experiencing strange behavior in your shell when a command is not found.
+
+This also runs in shims if the terminal is interactive.
 """
 
 [paranoid]
@@ -684,6 +697,11 @@ enum = [
 docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 """
+
+[task_timings]
+env = "MISE_TASK_TIMINGS"
+type = "Bool"
+description = "Show completion message with elapsed time for each task on `mise run`."
 
 [trace]
 env = "MISE_TRACE"

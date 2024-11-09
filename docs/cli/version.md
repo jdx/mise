@@ -1,10 +1,8 @@
 # `mise version`
 
-**Usage**: `mise version`
-
-**Source code**: [`src/cli/version.rs`](https://github.com/jdx/mise/blob/main/src/cli/version.rs)
-
-**Aliases**: `v`
+- **Usage**: `mise version`
+- **Aliases**: `v`
+- **Source code**: [`src/cli/version.rs`](https://github.com/jdx/mise/blob/main/src/cli/version.rs)
 
 Display the version of mise
 

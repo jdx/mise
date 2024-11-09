@@ -1,10 +1,8 @@
 # `mise ls`
 
-**Usage**: `mise ls [FLAGS] [PLUGIN]...`
-
-**Source code**: [`src/cli/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls.rs)
-
-**Aliases**: `list`
+- **Usage**: `mise ls [FLAGS] [PLUGIN]...`
+- **Aliases**: `list`
+- **Source code**: [`src/cli/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls.rs)
 
 List installed and active tool versions
 
@@ -33,6 +31,10 @@ Only show tool versions currently specified in the global mise.toml
 ### `-i --installed`
 
 Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
+
+### `-o --offline`
+
+Don't fetch information such as outdated versions
 
 ### `-J --json`
 

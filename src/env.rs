@@ -83,7 +83,7 @@ pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
 });
 pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> =
-    Lazy::new(|| var("MISE_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| ".mise.toml".into()));
+    Lazy::new(|| var("MISE_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| "mise.toml".into()));
 pub static MISE_ENV: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 pub static MISE_SETTINGS_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SETTINGS_FILE").unwrap_or_else(|| MISE_CONFIG_DIR.join("settings.toml"))
@@ -93,7 +93,7 @@ pub static MISE_GLOBAL_CONFIG_FILE: Lazy<PathBuf> = Lazy::new(|| {
         .or_else(|| var_path("MISE_CONFIG_FILE"))
         .unwrap_or_else(|| MISE_CONFIG_DIR.join("config.toml"))
 });
-pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| var_is_true("MISE_USE_TOML"));
+pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_USE_TOML"));
 pub static MISE_LIST_ALL_VERSIONS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LIST_ALL_VERSIONS"));
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
 pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
@@ -124,7 +124,7 @@ pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
         .unwrap_or_else(|| "mise".into())
 });
 #[cfg(feature = "timings")]
-pub static MISE_TIMINGS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_TIMINGS"));
+pub static MISE_TIMINGS: Lazy<Option<String>> = Lazy::new(|| var("MISE_TIMINGS").ok());
 pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
@@ -157,9 +157,11 @@ pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var(&*PATH
 });
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
 pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
-    var("GITHUB_TOKEN")
+    var("MISE_GITHUB_TOKEN")
         .or_else(|_| var("GITHUB_API_TOKEN"))
+        .or_else(|_| var("GITHUB_TOKEN"))
         .ok()
+        .and_then(|v| if v.is_empty() { None } else { Some(v) })
 });
 
 pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {

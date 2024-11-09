@@ -1,8 +1,7 @@
 # `mise tasks edit`
 
-**Usage**: `mise tasks edit [-p --path] <TASK>`
-
-**Source code**: [`src/cli/tasks/edit.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/edit.rs)
+- **Usage**: `mise tasks edit [-p --path] <TASK>`
+- **Source code**: [`src/cli/tasks/edit.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/edit.rs)
 
 Edit a tasks with $EDITOR
 

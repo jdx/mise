@@ -1,10 +1,8 @@
 # `mise use`
 
-**Usage**: `mise use [FLAGS] [TOOL@VERSION]...`
-
-**Source code**: [`src/cli/use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs)
-
-**Aliases**: `u`
+- **Usage**: `mise use [FLAGS] [TOOL@VERSION]...`
+- **Aliases**: `u`
+- **Source code**: [`src/cli/use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs)
 
 Installs a tool and adds the version it to mise.toml.
 
@@ -21,6 +19,10 @@ Tool(s) to add to config file
 
 e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
 If no version is specified, it will default to @latest
+
+Tool options can be set with this syntax:
+
+    mise use ubi:BurntSushi/ripgrep[exe=rg]
 
 ## Flags
 

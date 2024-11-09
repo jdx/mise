@@ -1,8 +1,7 @@
 # `mise settings get`
 
-**Usage**: `mise settings get <SETTING>`
-
-**Source code**: [`src/cli/settings/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/get.rs)
+- **Usage**: `mise settings get <SETTING>`
+- **Source code**: [`src/cli/settings/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/get.rs)
 
 Show a current setting
 

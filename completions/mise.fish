@@ -6,5 +6,7 @@ if ! command -v usage &> /dev/null
     return 1
 end
 
-set _usage_spec_mise (mise usage | string collect)
-complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise" -- (commandline -cop) (commandline -t))'
+if ! set -q _usage_spec_mise_2024_11_4
+  set -U _usage_spec_mise_2024_11_4 (mise usage | string collect)
+end
+complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2024_11_4" -- (commandline -cop) (commandline -t))'

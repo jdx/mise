@@ -1,8 +1,7 @@
 # `mise tasks info`
 
-**Usage**: `mise tasks info [-J --json] <TASK>`
-
-**Source code**: [`src/cli/tasks/info.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/info.rs)
+- **Usage**: `mise tasks info [-J --json] <TASK>`
+- **Source code**: [`src/cli/tasks/info.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/info.rs)
 
 Get information about a task
 

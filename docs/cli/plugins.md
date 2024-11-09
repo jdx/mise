@@ -1,10 +1,8 @@
 # `mise plugins`
 
-**Usage**: `mise plugins [FLAGS] <SUBCOMMAND>`
-
-**Source code**: [`src/cli/plugins.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins.rs)
-
-**Aliases**: `p`
+- **Usage**: `mise plugins [FLAGS] <SUBCOMMAND>`
+- **Aliases**: `p`
+- **Source code**: [`src/cli/plugins.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins.rs)
 
 Manage plugins
 

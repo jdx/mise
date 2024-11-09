@@ -1,10 +1,8 @@
 # `mise run`
 
-**Usage**: `mise run [FLAGS]`
-
-**Source code**: [`src/cli/run.rs`](https://github.com/jdx/mise/blob/main/src/cli/run.rs)
-
-**Aliases**: `r`
+- **Usage**: `mise run [FLAGS]`
+- **Aliases**: `r`
+- **Source code**: [`src/cli/run.rs`](https://github.com/jdx/mise/blob/main/src/cli/run.rs)
 
 Run task(s)
 
@@ -75,7 +73,9 @@ Configure with `raw` config or `MISE_RAW` env var
 
 ### `--timings`
 
-Shows elapsed time after each tasks
+Shows elapsed time after each task completes
+
+Default to always show with `MISE_TASK_TIMINGS=1`
 
 Examples:
 

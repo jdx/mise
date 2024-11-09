@@ -1,10 +1,8 @@
 # `mise env`
 
-**Usage**: `mise env [-J --json] [-s --shell <SHELL>] [TOOL@VERSION]...`
-
-**Source code**: [`src/cli/env.rs`](https://github.com/jdx/mise/blob/main/src/cli/env.rs)
-
-**Aliases**: `e`
+- **Usage**: `mise env [-J --json] [-s --shell <SHELL>] [TOOL@VERSION]...`
+- **Aliases**: `e`
+- **Source code**: [`src/cli/env.rs`](https://github.com/jdx/mise/blob/main/src/cli/env.rs)
 
 Exports env vars to activate mise a single time
 
@@ -30,6 +28,7 @@ Shell type to generate environment variables for
 **Choices:**
 
 - `bash`
+- `elvish`
 - `fish`
 - `nu`
 - `xonsh`

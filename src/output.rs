@@ -97,15 +97,24 @@ macro_rules! info {
 
 #[cfg(feature = "timings")]
 pub fn get_time_diff(module: &str) -> String {
+    static START: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
     static PREV: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
     let now = std::time::Instant::now();
     if PREV.lock().unwrap().is_none() {
+        *START.lock().unwrap() = Some(std::time::Instant::now());
         *PREV.lock().unwrap() = Some(std::time::Instant::now());
     }
     let mut prev = PREV.lock().unwrap();
     let diff = now.duration_since(prev.unwrap());
     *prev = Some(now);
-    let diff_str = crate::ui::time::format_duration(diff);
+    let diff_str = if crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s == "2") {
+        let relative = crate::ui::time::format_duration(diff);
+        let from_start =
+            crate::ui::time::format_duration(now.duration_since(START.lock().unwrap().unwrap()));
+        format!("{relative} {from_start}")
+    } else {
+        crate::ui::time::format_duration(diff)
+    };
     let thread_id = crate::logger::thread_id();
     let out = format!("[TIME] {thread_id} {module} {diff_str}")
         .trim()
@@ -132,18 +141,18 @@ pub fn get_time_diff(module: &str) -> String {
 #[cfg(feature = "timings")]
 macro_rules! time {
     () => {{
-        if *$crate::env::MISE_TIMINGS {
+        if $crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s != "0") {
             eprintln!("{}", $crate::output::get_time_diff(module_path!()));
         }
     }};
     ($fn:expr) => {{
-        if *$crate::env::MISE_TIMINGS {
+        if $crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s != "0") {
             let module = format!("{}::{}", module_path!(), format!($fn));
             eprintln!("{}", $crate::output::get_time_diff(&module));
         }
     }};
     ($fn:expr, $($arg:tt)+) => {{
-        if *$crate::env::MISE_TIMINGS {
+        if $crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s != "0") {
             let module = format!("{}::{}", module_path!(), format!($fn, $($arg)+));
             eprintln!("{}", $crate::output::get_time_diff(&module));
         }

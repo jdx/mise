@@ -31,11 +31,10 @@ impl Backend for GoBackend {
         self.remote_version_cache
             .get_or_try_init(|| {
                 let mut mod_path = Some(self.name());
-                let env = self.dependency_env()?;
 
                 while let Some(cur_mod_path) = mod_path {
                     let res = cmd!("go", "list", "-m", "-versions", "-json", cur_mod_path)
-                        .full_env(&env)
+                        .full_env(self.dependency_env()?)
                         .read();
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);

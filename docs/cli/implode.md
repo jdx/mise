@@ -1,8 +1,7 @@
 # `mise implode`
 
-**Usage**: `mise implode [--config] [-n --dry-run]`
-
-**Source code**: [`src/cli/implode.rs`](https://github.com/jdx/mise/blob/main/src/cli/implode.rs)
+- **Usage**: `mise implode [--config] [-n --dry-run]`
+- **Source code**: [`src/cli/implode.rs`](https://github.com/jdx/mise/blob/main/src/cli/implode.rs)
 
 Removes mise CLI and all related data
 

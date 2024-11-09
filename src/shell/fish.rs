@@ -35,7 +35,7 @@ impl Shell for Fish {
               end
 
               switch "$command"
-              case deactivate s shell
+              case deactivate shell sh
                 # if help is requested, don't eval
                 if contains -- -h $argv
                   command {exe} "$command" $argv

@@ -50,7 +50,9 @@ impl Completion {
             shell.to_string(),
             "mise",
             "--usage-cmd",
-            "mise usage"
+            "mise usage",
+            "--cache-key",
+            env!("CARGO_PKG_VERSION")
         )
         .read()
     }

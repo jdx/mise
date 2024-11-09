@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+export MISE_USE_TOML=0
 export MISE_DEFAULT_TOOL_VERSIONS_FILENAME=.alternate-tool-versions
 export MISE_DEFAULT_CONFIG_FILENAME=.MISSING
 

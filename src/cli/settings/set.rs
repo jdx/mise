@@ -157,6 +157,7 @@ pub mod tests {
         plugin_autoupdate_last_check_duration = "1"
         quiet = false
         raw = false
+        task_timings = false
         trusted_config_paths = []
         use_versions_host = true
         verbose = true
