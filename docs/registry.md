@@ -807,7 +807,6 @@ editLink: false
 | zbctl | [asdf:camunda-community-hub/asdf-zbctl](https://github.com/camunda-community-hub/asdf-zbctl) |
 | zellij | [ubi:zellij-org/zellij](https://github.com/zellij-org/zellij) |
 | zephyr | [asdf:nsaunders/asdf-zephyr](https://github.com/nsaunders/asdf-zephyr) |
-| zig | [asdf:cheetah/asdf-zig](https://github.com/cheetah/asdf-zig) |
 | zigmod | [asdf:mise-plugins/asdf-zigmod](https://github.com/mise-plugins/asdf-zigmod) |
 | zola | [ubi:getzola/zola](https://github.com/getzola/zola) |
 | zoxide | [ubi:ajeetdsouza/zoxide](https://github.com/ajeetdsouza/zoxide) |
