@@ -50,3 +50,13 @@ mise use -g dummy@1
 assert "cat ~/.config/mise/config.toml" '[tools]
 dummy = "1"'
 rm -f ~/.config/mise/config.toml
+
+mise use -g "ubi:cli/cli[exe=gh]"
+assert "cat ~/.config/mise/config.toml" '[tools]
+"ubi:cli/cli" = { version = "latest", exe = "gh" }'
+rm -f ~/.config/mise/config.toml
+
+mise use -g gh@2
+assert "cat ~/.config/mise/config.toml" '[tools]
+gh = "2"'
+rm -f ~/.config/mise/config.toml
