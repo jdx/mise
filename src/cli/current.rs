@@ -77,10 +77,12 @@ impl Current {
             }
             for tv in versions {
                 if !plugin.is_version_installed(tv, true) {
-                    let source = ts.versions.get(&tv.backend).unwrap().source.clone();
+                    let source = ts.versions.get(tv.backend()).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",
-                        &tv.backend, &tv.version, &source
+                        &tv.backend(),
+                        &tv.version,
+                        &source
                     );
                     hint!(
                         "tools_missing",

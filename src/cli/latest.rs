@@ -42,7 +42,7 @@ impl Latest {
             plugin.ensure_installed(&mpr, false)?;
         }
         if let Some(v) = prefix {
-            prefix = Some(config.resolve_alias(backend.as_ref(), &v)?);
+            prefix = Some(config.resolve_alias(&backend, &v)?);
         }
 
         let latest_version = if self.installed {
