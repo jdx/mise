@@ -108,6 +108,9 @@ mod tests {
 
         [node]
 
+        [npm]
+        bun = false
+
         [pipx]
         uvx = false
 
@@ -164,6 +167,8 @@ mod tests {
         lockfile
         node
         not_found_auto_install
+        npm
+        npm.bun
         paranoid
         pin
         pipx
