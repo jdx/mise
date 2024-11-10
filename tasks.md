@@ -178,6 +178,12 @@ User to run as
 
 - **Usage**: `render:completions`
 
+## `render:fig`
+
+- Depends: build, render:usage
+
+- **Usage**: `render:fig`
+
 ## `render:help`
 
 - Depends: build
