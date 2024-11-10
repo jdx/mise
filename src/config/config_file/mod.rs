@@ -123,8 +123,7 @@ impl dyn ConfigFile {
                 .into_iter()
                 .map(|tvr| {
                     if pin {
-                        let plugin = backend::get(&fa);
-                        let tv = tvr.resolve(plugin.as_ref(), &Default::default())?;
+                        let tv = tvr.resolve(&Default::default())?;
                         Ok((tv.version, tv.request.options()))
                     } else {
                         Ok((tvr.version(), tvr.options()))

@@ -12,7 +12,7 @@ use rayon::prelude::*;
 pub use settings::Settings;
 use walkdir::WalkDir;
 
-use crate::backend::Backend;
+use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
 use crate::cli::version;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
@@ -186,7 +186,7 @@ impl Config {
             .collect())
     }
 
-    pub fn resolve_alias(&self, backend: &dyn Backend, v: &str) -> Result<String> {
+    pub fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
         if let Some(plugin_aliases) = self.aliases.get(backend.fa()) {
             if let Some(alias) = plugin_aliases.get(v) {
                 return Ok(alias.clone());

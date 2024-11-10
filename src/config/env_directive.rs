@@ -262,7 +262,7 @@ impl EnvResults {
                         if ts
                             .list_missing_versions()
                             .iter()
-                            .any(|tv| tv.backend.name == "python")
+                            .any(|tv| tv.backend().name == "python")
                         {
                             debug!("python not installed, skipping venv creation");
                         } else {
