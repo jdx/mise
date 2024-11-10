@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use crate::backend;
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
-use crate::config::Config;
+use crate::config::{Config, CONFIG};
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -29,14 +29,23 @@ impl ToolVersion {
         ToolVersion { request, version }
     }
 
-    pub fn resolve(request: ToolRequest, opts: &ResolveOptions) -> Result<Self> {
-        let backend = backend::get(request.backend());
+    pub fn resolve(mut request: ToolRequest, opts: &ResolveOptions) -> Result<Self> {
+        if let Some(full) = CONFIG
+            .get_all_aliases()
+            .get(&request.backend().short)
+            .and_then(|a| a.full.clone())
+        {
+            let mut backend = request.backend().clone();
+            backend.full = full;
+            request = request.with_backend(backend);
+        }
         if opts.use_locked_version {
             if let Some(v) = request.lockfile_resolve()? {
                 let tv = Self::new(request.clone(), v);
                 return Ok(tv);
             }
         }
+        let backend = backend::get(request.backend());
         if let Some(plugin) = backend.plugin() {
             if !plugin.is_installed() {
                 let tv = Self::new(request.clone(), request.version());

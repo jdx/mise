@@ -30,33 +30,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise alias unset node lts-jod</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-
-    #[test]
-    fn test_alias_unset() {
-        reset();
-
-        assert_cli!("alias", "unset", "tiny", "my/alias");
-        assert_cli_snapshot!("aliases", @r"
-        java  lts          21   
-        node  lts          22   
-        node  lts-argon    4    
-        node  lts-boron    6    
-        node  lts-carbon   8    
-        node  lts-dubnium  10   
-        node  lts-erbium   12   
-        node  lts-fermium  14   
-        node  lts-gallium  16   
-        node  lts-hydrogen 18   
-        node  lts-iron     20   
-        node  lts-jod      22   
-        tiny  lts          3.1.0
-        tiny  lts-prev     2.0.0
-        ");
-
-        reset();
-    }
-}

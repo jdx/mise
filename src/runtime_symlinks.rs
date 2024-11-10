@@ -1,9 +1,8 @@
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::backend::{backend_meta, Backend};
-use crate::config::Config;
+use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::{backend, file};
@@ -59,10 +58,11 @@ fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> Result<IndexMap<
             symlinks.insert(from, rel_path(&v));
         }
         symlinks.insert(format!("{prefix}latest"), rel_path(&v));
-        for (from, to) in config
+        for (from, to) in &config
             .get_all_aliases()
-            .get(backend.fa())
-            .unwrap_or(&BTreeMap::new())
+            .get(&backend.fa().short)
+            .unwrap_or(&Alias::default())
+            .versions
         {
             if from.contains('/') {
                 continue;

@@ -6,8 +6,11 @@ snapshot_kind: text
 MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: 
  {
     alias: {
-        BackendArg("node"): {
-            "18": "18.0.0",
+        "node": Alias {
+            full: None,
+            versions: {
+                "18": "18.0.0",
+            },
         },
     },
 }

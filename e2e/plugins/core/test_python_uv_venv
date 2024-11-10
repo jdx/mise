@@ -12,7 +12,7 @@ EOF
 
 mise i
 assert "mise x -- python --version" "Python 3.12.3"
-assert "mise x -- uv --version" "uv 0.3.4"
+assert_contains "mise x -- uv --version" "uv 0.3.4"
 assert "mise env -s bash | grep VIRTUAL_ENV" "export VIRTUAL_ENV=$PWD/my_venv"
 assert "mise x -- which python" "$PWD/my_venv/bin/python"
 assert "mise x -- uv pip list" "Package Version

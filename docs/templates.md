@@ -160,7 +160,7 @@ Mise offers additional functions:
 A example of function using `exec`:
 
 ```toml
-[alias.node]
+[alias.node.versions]
 current = "{{ exec(command='node --version') }}"
 ```
 

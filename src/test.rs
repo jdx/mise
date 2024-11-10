@@ -150,7 +150,7 @@ pub fn reset() {
             [env]
             TEST_ENV_VAR = 'test-123'
 
-            [alias.tiny]
+            [alias.tiny.versions]
             "my/alias" = '3.0'
 
             [tasks.configtask]
