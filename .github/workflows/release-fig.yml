@@ -1,11 +1,11 @@
-name: 'Publish mise completions version'
+name: "Publish mise completions version"
 on:
   push:
-    tags:        
-      - 'v*' ## Only run the action on new versions, this prevents useless runs of the action
+    tags:
+      - "v*" ## Only run the action on new versions, this prevents useless runs of the action
 
 jobs:
-  push-to-fig-autocomplete: 
+  push-to-fig-autocomplete:
     ## if github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     steps:
