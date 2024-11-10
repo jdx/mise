@@ -81,12 +81,18 @@ const configPathGenerator: Fig.Generator = {
   postProcess: (out) => JSON.parse(out).map((r: ConfigLsOutput) => ({name: r.path, description: r.path}))
 }
 
-function groupBy<T, K extends keyof T>(array: T[], key: K): Record<K, T[]> {
+
+type ObjectKeyType = string | symbol | number
+type ObjectAcceptableKeyValues = {
+  [key: string]: ObjectKeyType
+}
+
+function groupBy<T extends ObjectAcceptableKeyValues>(array: T[], key: keyof T): Record<T[keyof T], T[]> {
   return array.reduce((result, currentItem) => {
-    (result[currentItem[key] as string|number|symbol] = result[currentItem[key] as string|number|symbol] || [])
+    (result[currentItem[key] as (ObjectKeyType)] = result[currentItem[key] as (ObjectKeyType)] || [])
       .push(currentItem);
     return result;
-  }, {} as Record<K, T[]>);
+  }, {} as Record<ObjectKeyType, T[]>);
 };
 
 const installedToolsGenerator: Fig.Generator = {
