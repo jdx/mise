@@ -1,6 +1,7 @@
 ---
 source: src/shell/zsh.rs
 expression: "zsh.activate(exe, \" --status\".into())"
+snapshot_kind: text
 ---
 export MISE_SHELL=zsh
 export __MISE_ORIG_PATH="$PATH"

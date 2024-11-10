@@ -1,6 +1,7 @@
 ---
 source: src/cli/generate/git_pre_commit.rs
 expression: "file::read_to_string(&path).unwrap()"
+snapshot_kind: text
 ---
 #!/bin/sh
 mise run pre-commit

@@ -1,6 +1,7 @@
 ---
 source: src/config/mod.rs
 expression: config
+snapshot_kind: text
 ---
 Config {
     Config Files: [

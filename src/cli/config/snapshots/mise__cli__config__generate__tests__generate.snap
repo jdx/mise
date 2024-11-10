@@ -1,6 +1,7 @@
 ---
 source: src/cli/config/generate.rs
 expression: output
+snapshot_kind: text
 ---
 # # mise config files are hierarchical. mise will find all of the config files
 # # in all parent directories and merge them together.

@@ -1,6 +1,7 @@
 ---
 source: src/cli/generate/github_action.rs
 expression: contents
+snapshot_kind: text
 ---
 name: testing123
 

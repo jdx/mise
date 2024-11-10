@@ -1,6 +1,7 @@
 ---
 source: src/cli/config/get.rs
 expression: output
+snapshot_kind: text
 ---
 [alias.tiny]
 "my/alias" = "3.0"

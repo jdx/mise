@@ -996,7 +996,7 @@ mod tests {
         let dump = cf.dump().unwrap();
         let env = parse_env(file::read_to_string(&p).unwrap());
 
-        assert_debug_snapshot!(env, @r###""foo=bar\nfoo2=qux\\nquux\nfoo3=qux\nquux""###);
+        assert_debug_snapshot!(env, @r#""foo=bar\nfoo2=qux\\nquux\nfoo3=qux\nquux""#);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         with_settings!({
             assert_snapshot!(dump);
@@ -1020,13 +1020,13 @@ mod tests {
         bar2="qux\nquux"
         "#});
 
-        assert_snapshot!(env, @r###"
+        assert_snapshot!(env, @r"
         foo=bar
         bar=baz
         foo2=qux\nquux
         bar2=qux
         quux
-        "###);
+        ");
     }
 
     #[test]
@@ -1038,11 +1038,11 @@ mod tests {
             foo="bar"
             "#});
 
-        assert_snapshot!(env, @r###"
+        assert_snapshot!(env, @r"
         path_add /foo
         path_add ./bar
         foo=bar
-        "###);
+        ");
 
         let env = parse_env(formatdoc! {r#"
             env_path="./bar"
@@ -1053,16 +1053,16 @@ mod tests {
             [env]
             _.path = "./bar"
             "#});
-        assert_debug_snapshot!(env, @r###""path_add ./bar""###);
+        assert_debug_snapshot!(env, @r#""path_add ./bar""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.path = ["/foo", "./bar"]
             "#});
-        assert_snapshot!(env, @r###"
+        assert_snapshot!(env, @r"
         path_add /foo
         path_add ./bar
-        "###);
+        ");
 
         let env = parse_env(formatdoc! {r#"
             [[env]]
@@ -1070,20 +1070,20 @@ mod tests {
             [[env]]
             _.path = "./bar"
             "#});
-        assert_snapshot!(env, @r###"
+        assert_snapshot!(env, @r"
         path_add /foo
         path_add ./bar
-        "###);
+        ");
 
         let env = parse_env(formatdoc! {r#"
             env_path = "/foo"
             [env]
             _.path = "./bar"
             "#});
-        assert_snapshot!(env, @r###"
+        assert_snapshot!(env, @r"
         path_add /foo
         path_add ./bar
-        "###);
+        ");
     }
 
     #[test]
@@ -1093,31 +1093,31 @@ mod tests {
             env_file = ".env"
             "#});
 
-        assert_debug_snapshot!(env, @r###""dotenv .env""###);
+        assert_debug_snapshot!(env, @r#""dotenv .env""#);
 
         let env = parse_env(formatdoc! {r#"
             env_file=[".env", ".env2"]
             "#});
-        assert_debug_snapshot!(env, @r###""dotenv .env\ndotenv .env2""###);
+        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.file = ".env"
             "#});
-        assert_debug_snapshot!(env, @r###""dotenv .env""###);
+        assert_debug_snapshot!(env, @r#""dotenv .env""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.file = [".env", ".env2"]
             "#});
-        assert_debug_snapshot!(env, @r###""dotenv .env\ndotenv .env2""###);
+        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
 
         let env = parse_env(formatdoc! {r#"
             dotenv = ".env"
             [env]
             _.file = ".env2"
             "#});
-        assert_debug_snapshot!(env, @r###""dotenv .env\ndotenv .env2""###);
+        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
     }
 
     #[test]
@@ -1241,14 +1241,14 @@ mod tests {
         _.file=".env"
         foo3="3"
         "#};
-        assert_snapshot!(parse_env(toml), @r###"
+        assert_snapshot!(parse_env(toml), @r"
         foo1=1
         unset rm
         path_add /foo
         dotenv .env
         foo2=2
         foo3=3
-        "###);
+        ");
     }
 
     #[test]
@@ -1273,7 +1273,7 @@ mod tests {
         foo6="6"
         _.source="/baz2"
         "#};
-        assert_snapshot!(parse_env(toml), @r###"
+        assert_snapshot!(parse_env(toml), @r"
         foo1=1
         unset rm
         path_add /foo
@@ -1288,7 +1288,7 @@ mod tests {
         source /baz2
         foo5=5
         foo6=6
-        "###);
+        ");
     }
 
     fn parse(s: String) -> MiseToml {

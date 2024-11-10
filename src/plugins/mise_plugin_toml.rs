@@ -129,7 +129,7 @@ mod tests {
         cache-key = ["foo"]
         "#});
 
-        assert_debug_snapshot!(cf.exec_env, @r###"
+        assert_debug_snapshot!(cf.exec_env, @r#"
         MisePluginTomlScriptConfig {
             cache_key: Some(
                 [
@@ -139,7 +139,7 @@ mod tests {
             ),
             data: None,
         }
-        "###);
+        "#);
     }
 
     fn parse(s: &str) -> MisePluginToml {

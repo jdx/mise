@@ -1,6 +1,7 @@
 ---
 source: src/shell/elvish.rs
 expression: replace_path(&deactivate)
+snapshot_kind: text
 ---
 unset-env MISE_SHELL
 unset-env __MISE_DIFF

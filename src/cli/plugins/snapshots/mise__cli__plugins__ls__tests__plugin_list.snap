@@ -1,6 +1,7 @@
 ---
 source: src/cli/plugins/ls.rs
 expression: output
+snapshot_kind: text
 ---
 dummy
 tiny

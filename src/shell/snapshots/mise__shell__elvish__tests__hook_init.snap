@@ -1,6 +1,7 @@
 ---
 source: src/shell/elvish.rs
 expression: "elvish.activate(exe, \" --status\".into())"
+snapshot_kind: text
 ---
 var hook-enabled = $false
 

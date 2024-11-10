@@ -1,5 +1,6 @@
 ---
 source: src/shell/bash.rs
 expression: "Bash::default().set_env(\"FOO\", \"1\")"
+snapshot_kind: text
 ---
 export FOO=1

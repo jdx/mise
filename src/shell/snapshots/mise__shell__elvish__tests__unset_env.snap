@@ -1,5 +1,6 @@
 ---
 source: src/shell/elvish.rs
 expression: "Elvish::default().unset_env(\"FOO\")"
+snapshot_kind: text
 ---
 unset-env FOO

@@ -1,6 +1,7 @@
 ---
 source: src/cli/trust.rs
 expression: output
+snapshot_kind: text
 ---
 ~/config/config.toml: trusted
 ~/.test-tool-versions: trusted

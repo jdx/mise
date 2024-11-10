@@ -787,9 +787,7 @@ mod tests {
             "arg4"
         , @"");
         let body = file::read_to_string("test-build-output.txt").unwrap();
-        assert_snapshot!(body, @r###"
-        TEST_BUILDSCRIPT_ENV_VAR: VALID
-        "###);
+        assert_snapshot!(body, @"TEST_BUILDSCRIPT_ENV_VAR: VALID");
     }
 
     #[test]
@@ -801,9 +799,7 @@ mod tests {
           "shell",
       @"");
         let body = file::read_to_string("test-build-output.txt").unwrap();
-        assert_snapshot!(body, @r###"
-        using shell bash
-        "###);
+        assert_snapshot!(body, @"using shell bash");
     }
 
     #[test]

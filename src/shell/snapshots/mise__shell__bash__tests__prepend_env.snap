@@ -1,5 +1,6 @@
 ---
 source: src/shell/bash.rs
 expression: "replace_path(&bash.prepend_env(\"PATH\", \"/some/dir:/2/dir\"))"
+snapshot_kind: text
 ---
 export PATH="/some/dir:/2/dir:$PATH"

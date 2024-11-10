@@ -1,6 +1,7 @@
 ---
 source: src/shell/nushell.rs
 expression: "nushell.activate(exe, \" --status\".into())"
+snapshot_kind: text
 ---
 export-env {
   $env.MISE_SHELL = "nu"

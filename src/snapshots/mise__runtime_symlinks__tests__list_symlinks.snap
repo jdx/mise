@@ -1,6 +1,7 @@
 ---
 source: src/runtime_symlinks.rs
 expression: symlinks
+snapshot_kind: text
 ---
 {
     "latest": "./3.1.0",

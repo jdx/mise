@@ -54,7 +54,7 @@ mod tests {
     fn test_settings_get() {
         reset();
         assert_cli_snapshot!("settings", "get", "legacy_version_file", @"true");
-        assert_cli_snapshot!("settings", "get", "status.missing_tools", @r###""if_other_versions_installed""###);
+        assert_cli_snapshot!("settings", "get", "status.missing_tools", @r#""if_other_versions_installed""#);
     }
 
     #[test]

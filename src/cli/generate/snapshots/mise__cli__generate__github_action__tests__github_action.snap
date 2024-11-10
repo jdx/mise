@@ -1,6 +1,7 @@
 ---
 source: src/cli/generate/github_action.rs
 expression: output
+snapshot_kind: text
 ---
 name: ci
 

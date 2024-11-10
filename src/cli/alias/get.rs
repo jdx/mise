@@ -50,9 +50,7 @@ mod tests {
     fn test_alias_get() {
         reset();
         let stdout = assert_cli!("alias", "get", "tiny", "my/alias");
-        assert_snapshot!(stdout, @r###"
-        3.0
-        "###);
+        assert_snapshot!(stdout, @"3.0");
     }
 
     #[test]

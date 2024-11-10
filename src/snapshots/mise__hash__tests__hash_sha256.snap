@@ -1,5 +1,6 @@
 ---
 source: src/hash.rs
 expression: hash
+snapshot_kind: text
 ---
 0b0debe521bb0f275806469aa295bb0fab42f0fbd3a1bea15b3f7ccd06985a4a
