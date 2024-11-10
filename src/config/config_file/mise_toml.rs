@@ -20,6 +20,7 @@ use crate::config::env_directive::{EnvDirective, PathEntry};
 use crate::config::settings::SettingsPartial;
 use crate::config::AliasMap;
 use crate::file::{create_dir_all, display_path};
+use crate::registry::REGISTRY_BACKEND_MAP;
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -285,11 +286,23 @@ impl ConfigFile for MiseToml {
         versions: &[(String, ToolVersionOptions)],
     ) -> eyre::Result<()> {
         let existing = self.tools.entry(fa.clone()).or_default();
+        let output_empty_opts = |opts: &ToolVersionOptions| {
+            if let Some(reg_ba) = REGISTRY_BACKEND_MAP
+                .get(fa.short.as_str())
+                .and_then(|b| b.first())
+            {
+                if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
+                    // in this case the options specified are the same as in the registry so output no options and rely on the defaults
+                    return true;
+                }
+            }
+            opts.is_empty()
+        };
         existing.0 = versions
             .iter()
             .map(|(v, opts)| MiseTomlTool {
                 tt: ToolVersionType::Version(v.clone()),
-                options: if !opts.is_empty() {
+                options: if !output_empty_opts(opts) {
                     Some(opts.clone())
                 } else {
                     None
@@ -307,7 +320,7 @@ impl ConfigFile for MiseToml {
         tools.remove(&fa.full.to_string());
 
         if versions.len() == 1 {
-            if versions[0].1.is_empty() {
+            if output_empty_opts(&versions[0].1) {
                 tools.insert(&fa.short, value(versions[0].0.clone()));
             } else {
                 let mut table = InlineTable::new();
@@ -320,7 +333,7 @@ impl ConfigFile for MiseToml {
         } else {
             let mut arr = Array::new();
             for (v, opts) in versions {
-                if opts.is_empty() {
+                if output_empty_opts(opts) {
                     arr.push(v.to_string());
                 } else {
                     let mut table = InlineTable::new();
