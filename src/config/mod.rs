@@ -13,7 +13,6 @@ pub use settings::Settings;
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
-use crate::cli::args::BackendArg;
 use crate::cli::version;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
 use crate::config::config_file::mise_toml::MiseToml;
@@ -34,15 +33,15 @@ pub mod tracking;
 
 pub use settings::SETTINGS;
 
-type AliasMap = BTreeMap<BackendArg, BTreeMap<String, String>>;
+type AliasMap = IndexMap<String, Alias>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
 type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
 #[derive(Default)]
 pub struct Config {
-    pub aliases: AliasMap,
     pub config_files: ConfigMap,
     pub project_root: Option<PathBuf>,
+    aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
     all_aliases: OnceLock<AliasMap>,
@@ -52,8 +51,18 @@ pub struct Config {
     tool_request_set: OnceCell<ToolRequestSet>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct Alias {
+    pub full: Option<String>,
+    pub versions: IndexMap<String, String>,
+}
+
 pub static CONFIG: Lazy<Arc<Config>> = Lazy::new(Config::get);
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
+
+pub fn is_loaded() -> bool {
+    _CONFIG.read().unwrap().is_some()
+}
 
 impl Config {
     pub fn get() -> Arc<Self> {
@@ -187,8 +196,8 @@ impl Config {
     }
 
     pub fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
-        if let Some(plugin_aliases) = self.aliases.get(backend.fa()) {
-            if let Some(alias) = plugin_aliases.get(v) {
+        if let Some(plugin_aliases) = self.get_all_aliases().get(&backend.fa().short) {
+            if let Some(alias) = plugin_aliases.versions.get(v) {
                 return Ok(alias.clone());
             }
         }
@@ -212,16 +221,21 @@ impl Config {
             .collect();
         for (fa, plugin_aliases) in plugin_aliases {
             for (from, to) in plugin_aliases {
-                aliases.entry(fa.clone()).or_default().insert(from, to);
+                aliases
+                    .entry(fa.short.to_string())
+                    .or_default()
+                    .versions
+                    .insert(from, to);
             }
         }
 
-        for (plugin, plugin_aliases) in &self.aliases {
-            for (from, to) in plugin_aliases {
-                aliases
-                    .entry(plugin.clone())
-                    .or_default()
-                    .insert(from.clone(), to.clone());
+        for (short, plugin_aliases) in &self.aliases {
+            let alias = aliases.entry(short.clone()).or_default();
+            if let Some(full) = &plugin_aliases.full {
+                alias.full = Some(full.clone());
+            }
+            for (from, to) in &plugin_aliases.versions {
+                alias.versions.insert(from.clone(), to.clone());
             }
         }
 
@@ -733,8 +747,12 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
 
     for config_file in config_files.values() {
         for (plugin, plugin_aliases) in config_file.aliases()? {
-            for (from, to) in plugin_aliases {
-                aliases.entry(plugin.clone()).or_default().insert(from, to);
+            let alias = aliases.entry(plugin.clone()).or_default();
+            if let Some(full) = plugin_aliases.full {
+                alias.full = Some(full);
+            }
+            for (from, to) in plugin_aliases.versions {
+                alias.versions.insert(from, to);
             }
         }
     }

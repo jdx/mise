@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+tools.mytool = "2"
+tools.mytool-lts = "lts"
+
+alias.mytool = "asdf:tiny"
+[alias.mytool-lts]
+full = "asdf:tiny"
+versions = {lts = "1.0.1"}
+EOF
+
+assert_contains "mise x mytool -- rtx-tiny" "rtx-tiny: v2.1.0"
+assert_contains "mise x mytool-lts -- rtx-tiny" "rtx-tiny: v1.0.1"

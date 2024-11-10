@@ -3,7 +3,7 @@ source: src/cli/config/get.rs
 expression: output
 snapshot_kind: text
 ---
-[alias.tiny]
+[alias.tiny.versions]
 "my/alias" = "3.0"
 
 [env]

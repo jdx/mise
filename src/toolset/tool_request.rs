@@ -120,6 +120,58 @@ impl ToolRequest {
             | Self::System(f, ..) => f,
         }
     }
+    pub fn with_backend(self, backend: BackendArg) -> Self {
+        match self {
+            Self::Version {
+                version,
+                options,
+                source,
+                backend: _,
+            } => Self::Version {
+                backend,
+                version,
+                options,
+                source,
+            },
+            Self::Prefix {
+                prefix,
+                options,
+                source,
+                backend: _,
+            } => Self::Prefix {
+                backend,
+                prefix,
+                options,
+                source,
+            },
+            Self::Ref {
+                ref_,
+                ref_type,
+                options,
+                source,
+                backend: _,
+            } => Self::Ref {
+                backend,
+                ref_,
+                ref_type,
+                options,
+                source,
+            },
+            Self::Path(_, path, source) => Self::Path(backend, path, source),
+            Self::Sub {
+                sub,
+                orig_version,
+                source,
+                backend: _,
+            } => Self::Sub {
+                backend,
+                sub,
+                orig_version,
+                source,
+            },
+            Self::System(_, source) => Self::System(backend, source),
+        }
+    }
     pub fn source(&self) -> &ToolSource {
         match self {
             Self::Version { source, .. }
