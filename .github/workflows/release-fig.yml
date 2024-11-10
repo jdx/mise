@@ -1,8 +1,8 @@
-name: 'Publish fig-cli version'
+name: 'Publish mise completions version'
 on:
-  push:
-    tags:        
-      - 'v*' ## Only run the action on new versions, this prevents useless runs of the action
+    workflow_call:
+    pull_request:
+    
 
 jobs:
   push-to-fig-autocomplete: 
