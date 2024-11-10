@@ -1,6 +1,7 @@
 ---
 source: src/shell/xonsh.rs
 expression: replace_path(&deactivate)
+snapshot_kind: text
 ---
 import os
 from xonsh.built_ins  import XSH

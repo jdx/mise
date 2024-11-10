@@ -28,7 +28,7 @@ use crate::registry::REGISTRY_BACKEND_MAP;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{is_outdated_version, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, file, lock_file, versions_host};
+use crate::{config, dirs, env, file, lock_file, versions_host};
 
 pub mod asdf;
 pub mod backend_meta;
@@ -137,14 +137,25 @@ pub fn list_backend_types() -> Vec<BackendType> {
 }
 
 pub fn get(fa: &BackendArg) -> ABackend {
-    if let Some(backend) = load_tools().get(&fa.short) {
+    let mut name = fa.short.clone();
+    if config::is_loaded() {
+        if let Some(full) = CONFIG
+            .get_all_aliases()
+            .get(&name)
+            .and_then(|a| a.full.clone())
+        {
+            name = full;
+        }
+    }
+    if let Some(backend) = load_tools().get(&name) {
         backend.clone()
     } else {
         let mut m = TOOLS.lock().unwrap();
         let backends = m.as_mut().unwrap();
-        let fa = fa.clone();
+        let mut fa = fa.clone();
+        fa.full = name.clone();
         backends
-            .entry(fa.short.clone())
+            .entry(name)
             .or_insert_with(|| arg_to_backend(fa))
             .clone()
     }
@@ -289,8 +300,8 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
     }
-    fn is_version_outdated(&self, tv: &ToolVersion, p: &dyn Backend) -> bool {
-        let latest = match tv.latest_version(p) {
+    fn is_version_outdated(&self, tv: &ToolVersion) -> bool {
+        let latest = match tv.latest_version() {
             Ok(latest) => latest,
             Err(e) => {
                 debug!(
@@ -407,7 +418,7 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
 
-    #[requires(ctx.tv.backend.backend_type == self.get_type())]
+    #[requires(ctx.tv.backend().backend_type == self.get_type())]
     fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
         if let Some(plugin) = self.plugin() {
             plugin.is_installed_err()?;
@@ -433,7 +444,7 @@ pub trait Backend: Debug + Send + Sync {
             )));
         }
 
-        BackendMeta::write(&ctx.tv.backend)?;
+        BackendMeta::write(ctx.tv.backend())?;
 
         self.cleanup_install_dirs(&ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env

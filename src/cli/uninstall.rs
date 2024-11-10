@@ -107,15 +107,12 @@ impl Uninstall {
                     .into_iter()
                     .map(|v| {
                         let tvr = ToolRequest::new(tool.fa().clone(), v, ToolSource::Unknown)?;
-                        let tv = ToolVersion::new(tool.as_ref(), tvr, v.into());
+                        let tv = ToolVersion::new(tvr, v.into());
                         Ok((tool.clone(), tv))
                     })
                     .collect::<Result<Vec<_>>>()?;
                 if let Some(tvr) = &a.tvr {
-                    tvs.push((
-                        tool.clone(),
-                        tvr.resolve(tool.as_ref(), &Default::default())?,
-                    ));
+                    tvs.push((tool.clone(), tvr.resolve(&Default::default())?));
                 }
                 if tvs.is_empty() {
                     warn!("no versions found for {}", style(&tool).blue().for_stderr());

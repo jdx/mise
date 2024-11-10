@@ -396,9 +396,15 @@ where
         Ok(self
             .iter()
             .filter(|(k, _)| {
-                let p: PathBuf = k.split(':').collect();
-
-                matcher.is_match(p)
+                let path: PathBuf = k.split(':').collect();
+                if matcher.is_match(&path) {
+                    return true;
+                }
+                if let Some(stem) = path.file_stem() {
+                    let base_path = path.with_file_name(stem);
+                    return matcher.is_match(&base_path);
+                }
+                false
             })
             .map(|(_, t)| t)
             .unique()

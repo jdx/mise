@@ -141,7 +141,7 @@ impl Toolset {
             .into_iter()
             .filter(|(p, tv)| opts.force || !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
-            .filter(|tv| matches!(self.versions[&tv.backend].source, ToolSource::Argument))
+            .filter(|tv| matches!(self.versions[tv.backend()].source, ToolSource::Argument))
             .map(|tv| tv.request)
             .collect_vec();
         let versions = self.install_versions(config, versions, &mpr, opts)?;
@@ -225,7 +225,7 @@ impl Toolset {
                                         sleep(Duration::from_millis(100));
                                     }
                                 }
-                                let tv = tr.resolve(t.as_ref(), &opts.resolve_options)?;
+                                let tv = tr.resolve(&opts.resolve_options)?;
                                 let ctx = InstallContext {
                                     ts,
                                     pr: mpr.add(&tv.style()),
@@ -284,7 +284,7 @@ impl Toolset {
                             Some((p, tv)) => Ok((p.clone(), tv.clone())),
                             None => {
                                 let tv = ToolRequest::new(p.fa().clone(), &v, ToolSource::Unknown)?
-                                    .resolve(p.as_ref(), &Default::default())
+                                    .resolve(&Default::default())
                                     .unwrap();
                                 Ok((p.clone(), tv))
                             }
@@ -333,7 +333,7 @@ impl Toolset {
                                 source: v.request.source().clone(),
                             };
                             let version = format!("ref:{r}");
-                            ToolVersion::new(p.as_ref(), request, version)
+                            ToolVersion::new(request, version)
                         }
                         _ => v.clone(),
                     };
@@ -364,7 +364,7 @@ impl Toolset {
                 let latest_result = if bump {
                     t.latest_version(prefix.clone())
                 } else {
-                    tv.latest_version(t.as_ref()).map(Option::from)
+                    tv.latest_version().map(Option::from)
                 };
                 let mut out = OutdatedInfo::new(tv.clone(), tv.request.source().clone());
                 out.current = if t.is_version_installed(&tv, true) {
@@ -523,7 +523,7 @@ impl Toolset {
             let versions = self
                 .list_missing_versions()
                 .into_iter()
-                .filter(|tv| &tv.backend == plugin.fa())
+                .filter(|tv| tv.backend() == plugin.fa())
                 .map(|tv| tv.request)
                 .collect_vec();
             if !versions.is_empty() {
@@ -731,7 +731,7 @@ pub struct OutdatedInfo {
 impl OutdatedInfo {
     fn new(tv: ToolVersion, source: ToolSource) -> Self {
         Self {
-            name: tv.backend.short.to_string(),
+            name: tv.backend().short.to_string(),
             current: None,
             requested: tv.request.version(),
             tool_request: tv.request.clone(),

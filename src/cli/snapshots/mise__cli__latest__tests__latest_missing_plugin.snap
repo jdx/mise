@@ -1,5 +1,6 @@
 ---
 source: src/cli/latest.rs
 expression: stdout
+snapshot_kind: text
 ---
 No repository found for plugin invalid_plugin

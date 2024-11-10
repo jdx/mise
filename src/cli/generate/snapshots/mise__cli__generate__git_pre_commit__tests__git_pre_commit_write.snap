@@ -1,5 +1,6 @@
 ---
 source: src/cli/generate/git_pre_commit.rs
 expression: output
+snapshot_kind: text
 ---
 Wrote to ~/cwd/.git/hooks/testing123

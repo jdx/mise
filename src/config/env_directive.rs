@@ -262,7 +262,7 @@ impl EnvResults {
                         if ts
                             .list_missing_versions()
                             .iter()
-                            .any(|tv| tv.backend.name == "python")
+                            .any(|tv| tv.backend().name == "python")
                         {
                             debug!("python not installed, skipping venv creation");
                         } else {
@@ -428,7 +428,7 @@ mod tests {
         .unwrap();
         assert_debug_snapshot!(
             results.env_paths.into_iter().map(|p| replace_path(&p.display().to_string())).collect::<Vec<_>>(),
-            @r###"
+            @r#"
         [
             "/path/1",
             "/path/2",
@@ -436,7 +436,7 @@ mod tests {
             "~/cwd/rel/1",
             "~/cwd/rel2/2",
         ]
-        "###
+        "#
         );
     }
 
@@ -467,12 +467,12 @@ mod tests {
         // expect order to be reversed as it processes directives from global to dir specific
         assert_debug_snapshot!(
             results.env_paths.into_iter().map(|p| replace_path(&p.display().to_string())).collect::<Vec<_>>(),
-            @r###"
+            @r#"
         [
             "~/cwd/bin",
             "/bin",
         ]
-        "###
+        "#
         );
     }
 }

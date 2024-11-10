@@ -95,7 +95,7 @@ These can come from user config or from plugins in `bin/list-aliases`.
 
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
-    [alias.node]
+    [alias.node.versions]
     lts = "22.0.0""#
         after_long_help r"Examples:
 
@@ -103,7 +103,7 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
     node  lts-jod      22   
 "
         flag "--no-header" help="Don't show table header"
-        arg "[PLUGIN]" help="Show aliases for <PLUGIN>"
+        arg "[TOOL]" help="Show aliases for <TOOL>"
     }
     cmd "set" help="Add/update an alias for a plugin" {
         alias "add" "create"

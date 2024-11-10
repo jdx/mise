@@ -7,8 +7,8 @@ node = ['18', 'prefix:20', 'ref:master', 'path:~/.nodes/18']
 jq = { prefix = '1.6' }
 shellcheck = { version = '0.9.0' }
 python = [
-  { version = '3.10.0', venv = '.venv' },
-  { version = '3.9.0' },
+    { version = '3.10.0', venv = '.venv' },
+    { version = '3.9.0' },
 ]
 
 [plugins]
@@ -19,5 +19,5 @@ verbose = true
 disable_tools = ['disabled_tool']
 legacy_version_file_disable_tools = ['disabled_tool_from_legacy_file']
 
-[alias.node]
+[alias.node.versions]
 my_custom_node = '18'

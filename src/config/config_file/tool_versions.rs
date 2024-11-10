@@ -270,9 +270,7 @@ pub(crate) mod tests {
         "};
         let path = env::current_dir().unwrap().join(".test-tool-versions");
         let tv = ToolVersions::parse_str(orig, path).unwrap();
-        assert_snapshot!(tv.dump().unwrap(), @r###"
-        ruby 3.0.5
-        "###);
+        assert_snapshot!(tv.dump().unwrap(), @"ruby 3.0.5");
     }
 
     #[test]
@@ -286,10 +284,10 @@ pub(crate) mod tests {
         assert_cli!("trust", path.to_string_lossy());
         let tv = ToolVersions::parse_str(orig, path.clone()).unwrap();
         assert_cli!("trust", "--untrust", path.to_string_lossy());
-        assert_snapshot!(tv.dump().unwrap(), @r###"
+        assert_snapshot!(tv.dump().unwrap(), @r"
         ruby   3.0.5
         python 3.11.0
-        "###);
+        ");
     }
 
     #[test]

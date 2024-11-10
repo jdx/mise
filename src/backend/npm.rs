@@ -16,7 +16,7 @@ pub struct NPMBackend {
     latest_version_cache: CacheManager<Option<String>>,
 }
 
-const PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
+const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
 
 impl Backend for NPMBackend {
     fn get_type(&self) -> BackendType {
@@ -28,13 +28,13 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        Ok(vec!["node".into()])
+        Ok(vec!["node".into(), "bun".into()])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!(PROGRAM, "view", self.name(), "versions", "--json")
+                let raw = cmd!(NPM_PROGRAM, "view", self.name(), "versions", "--json")
                     .full_env(self.dependency_env()?)
                     .read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
@@ -46,7 +46,7 @@ impl Backend for NPMBackend {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!(PROGRAM, "view", self.name(), "dist-tags", "--json")
+                let raw = cmd!(NPM_PROGRAM, "view", self.name(), "dist-tags", "--json")
                     .full_env(self.dependency_env()?)
                     .read()?;
                 let dist_tags: Value = serde_json::from_str(&raw)?;
@@ -62,18 +62,34 @@ impl Backend for NPMBackend {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
 
-        CmdLineRunner::new(PROGRAM)
-            .arg("install")
-            .arg("-g")
-            .arg(format!("{}@{}", self.name(), ctx.tv.version))
-            .arg("--prefix")
-            .arg(ctx.tv.install_path())
-            .with_pr(ctx.pr.as_ref())
-            .envs(ctx.ts.env_with_path(&config)?)
-            .prepend_path(ctx.ts.list_paths())?
-            .prepend_path(self.dependency_toolset()?.list_paths())?
-            .execute()?;
-
+        if SETTINGS.npm.bun {
+            CmdLineRunner::new("bun")
+                .arg("install")
+                .arg(format!("{}@{}", self.name(), ctx.tv.version))
+                .arg("--cwd")
+                .arg(ctx.tv.install_path())
+                .arg("--global")
+                .arg("--trust")
+                .with_pr(ctx.pr.as_ref())
+                .envs(ctx.ts.env_with_path(&config)?)
+                .env("BUN_INSTALL_GLOBAL_DIR", ctx.tv.install_path())
+                .env("BUN_INSTALL_BIN", ctx.tv.install_path().join("bin"))
+                .prepend_path(ctx.ts.list_paths())?
+                .prepend_path(self.dependency_toolset()?.list_paths())?
+                .execute()?;
+        } else {
+            CmdLineRunner::new(NPM_PROGRAM)
+                .arg("install")
+                .arg("-g")
+                .arg(format!("{}@{}", self.name(), ctx.tv.version))
+                .arg("--prefix")
+                .arg(ctx.tv.install_path())
+                .with_pr(ctx.pr.as_ref())
+                .envs(ctx.ts.env_with_path(&config)?)
+                .prepend_path(ctx.ts.list_paths())?
+                .prepend_path(self.dependency_toolset()?.list_paths())?
+                .execute()?;
+        }
         Ok(())
     }
 

@@ -7,7 +7,7 @@ so you can use set it with `node lts-hydrogen` in `.tool-versions`/`mise.toml`.
 User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/mise/config.toml`:
 
 ```toml
-[alias.node]
+[alias.node.versions]
 my_custom_20 = '20'
 ```
 
@@ -32,6 +32,6 @@ plugin currently, but plugin authors can add this script without impacting asdf 
 Alias values can be templates, see [Templates](/templates) for details.
 
 ```toml
-[alias.node]
+[alias.node.versions]
 current = "{{exec(command='node --version')}}"
 ```

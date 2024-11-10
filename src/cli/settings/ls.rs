@@ -93,14 +93,23 @@ mod tests {
         raw = false
         task_timings = false
         trusted_config_paths = []
+        unix_default_file_shell_args = ["sh"]
+        unix_default_inline_shell_args = ["sh", "-c"]
+        use_file_shell_for_executable_tasks = false
         use_versions_host = true
         verbose = true
+        windows_default_file_shell_args = ["cmd", "/c"]
+        windows_default_inline_shell_args = ["cmd", "/c"]
+        windows_executable_extensions = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
         yes = true
 
         [cargo]
         binstall = true
 
         [node]
+
+        [npm]
+        bun = false
 
         [pipx]
         uvx = false
@@ -158,6 +167,8 @@ mod tests {
         lockfile
         node
         not_found_auto_install
+        npm
+        npm.bun
         paranoid
         pin
         pipx
@@ -181,8 +192,14 @@ mod tests {
         status.show_tools
         task_timings
         trusted_config_paths
+        unix_default_file_shell_args
+        unix_default_inline_shell_args
+        use_file_shell_for_executable_tasks
         use_versions_host
         verbose
+        windows_default_file_shell_args
+        windows_default_inline_shell_args
+        windows_executable_extensions
         yes
         ");
     }

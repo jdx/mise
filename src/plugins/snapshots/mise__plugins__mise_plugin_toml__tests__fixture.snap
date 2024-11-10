@@ -1,6 +1,7 @@
 ---
 source: src/plugins/mise_plugin_toml.rs
 expression: cf.exec_env
+snapshot_kind: text
 ---
 MisePluginTomlScriptConfig {
     cache_key: Some(

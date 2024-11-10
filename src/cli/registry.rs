@@ -1,6 +1,8 @@
+use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
 use crate::ui::table;
 use eyre::{bail, Result};
+use itertools::Itertools;
 use tabled::{Table, Tabled};
 
 /// List available tools to install
@@ -18,15 +20,21 @@ pub struct Registry {
 impl Registry {
     pub fn run(self) -> Result<()> {
         if let Some(name) = &self.name {
-            if let Some(full) = REGISTRY.get(name.as_str()).and_then(|r| r.first()) {
-                miseprintln!("{full}");
+            if let Some(fulls) = REGISTRY.get(name.as_str()) {
+                miseprintln!("{}", fulls.join(" "));
             } else {
                 bail!("tool not found in registry: {name}");
             }
         } else {
+            let core = CORE_PLUGINS
+                .keys()
+                .map(|short| Row::from((short.to_string(), format!("core:{short}"))))
+                .collect_vec();
             let data = REGISTRY
                 .iter()
-                .map(|(short, full)| (short.to_string(), full.first().unwrap().to_string()).into())
+                .map(|(short, full)| (short.to_string(), full.join(" ")).into())
+                .chain(core)
+                .sorted_by(|a, b| a.short.cmp(&b.short))
                 .collect::<Vec<Row>>();
             let mut table = Table::new(data);
             table::default_style(&mut table, false);

@@ -67,7 +67,7 @@ impl ConfigGenerate {
 # # note this will only be used if the plugin is not already installed
 # python = 'https://github.com/asdf-community/asdf-python'
 #
-# [alias.node]
+# [alias.node.versions]
 # # setup a custom alias so you can run `mise use -g node@work` for node-16.x
 # work = '16'
 "#

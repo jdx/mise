@@ -1,9 +1,13 @@
 ---
 source: src/config/config_file/mise_toml.rs
 expression: cf.alias
+snapshot_kind: text
 ---
 {
-    BackendArg("node"): {
-        "18": "18.0.0",
+    "node": Alias {
+        full: None,
+        versions: {
+            "18": "18.0.0",
+        },
     },
 }

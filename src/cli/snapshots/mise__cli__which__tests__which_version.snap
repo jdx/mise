@@ -1,5 +1,6 @@
 ---
 source: src/cli/which.rs
 expression: output
+snapshot_kind: text
 ---
 1.0.0

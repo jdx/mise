@@ -1,6 +1,7 @@
 ---
 source: src/shell/xonsh.rs
 expression: "Xonsh::default().set_env(\"FOO\", \"1\")"
+snapshot_kind: text
 ---
 from os               import environ
 from xonsh.built_ins  import XSH

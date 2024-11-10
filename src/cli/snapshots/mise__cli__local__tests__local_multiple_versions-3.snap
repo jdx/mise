@@ -1,6 +1,7 @@
 ---
 source: src/cli/local.rs
 expression: output
+snapshot_kind: text
 ---
 ~/data/installs/tiny/2.1.0/bin
 ~/data/installs/tiny/1.0.1/bin

@@ -31,3 +31,12 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 [tools]
 "npm:prettier" = "latest"
 ```
+
+## Settings
+
+Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="npm" :level="3" />

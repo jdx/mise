@@ -5,7 +5,6 @@ use eyre::{bail, Result};
 use versions::{Chunk, Version};
 use xx::file;
 
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
@@ -121,6 +120,58 @@ impl ToolRequest {
             | Self::System(f, ..) => f,
         }
     }
+    pub fn with_backend(self, backend: BackendArg) -> Self {
+        match self {
+            Self::Version {
+                version,
+                options,
+                source,
+                backend: _,
+            } => Self::Version {
+                backend,
+                version,
+                options,
+                source,
+            },
+            Self::Prefix {
+                prefix,
+                options,
+                source,
+                backend: _,
+            } => Self::Prefix {
+                backend,
+                prefix,
+                options,
+                source,
+            },
+            Self::Ref {
+                ref_,
+                ref_type,
+                options,
+                source,
+                backend: _,
+            } => Self::Ref {
+                backend,
+                ref_,
+                ref_type,
+                options,
+                source,
+            },
+            Self::Path(_, path, source) => Self::Path(backend, path, source),
+            Self::Sub {
+                sub,
+                orig_version,
+                source,
+                backend: _,
+            } => Self::Sub {
+                backend,
+                sub,
+                orig_version,
+                source,
+            },
+            Self::System(_, source) => Self::System(backend, source),
+        }
+    }
     pub fn source(&self) -> &ToolSource {
         match self {
             Self::Version { source, .. }
@@ -161,7 +212,7 @@ impl ToolRequest {
 
     pub fn is_installed(&self) -> bool {
         let backend = backend::get(self.backend());
-        let tv = ToolVersion::new(backend.as_ref(), self.clone(), self.version());
+        let tv = ToolVersion::new(self.clone(), self.version());
 
         backend.is_version_installed(&tv, false)
     }
@@ -226,8 +277,8 @@ impl ToolRequest {
         Ok(None)
     }
 
-    pub fn resolve(&self, plugin: &dyn Backend, opts: &ResolveOptions) -> Result<ToolVersion> {
-        ToolVersion::resolve(plugin, self.clone(), opts)
+    pub fn resolve(&self, opts: &ResolveOptions) -> Result<ToolVersion> {
+        ToolVersion::resolve(self.clone(), opts)
     }
 }
 

@@ -1,6 +1,7 @@
 ---
 source: src/config/mod.rs
 expression: config
+snapshot_kind: text
 ---
 Config {
     Config Files: [
@@ -9,8 +10,11 @@ Config {
         "~/config/config.toml",
     ],
     Aliases: {
-        BackendArg("tiny"): {
-            "my/alias": "3.0",
+        "tiny": Alias {
+            full: None,
+            versions: {
+                "my/alias": "3.0",
+            },
         },
     },
 }

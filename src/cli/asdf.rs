@@ -53,12 +53,12 @@ fn list_versions(config: &Config, args: &[String]) -> Result<()> {
         _ => None,
     };
     if let Some(plugin) = plugin {
-        versions.retain(|(_, v)| &v.backend.to_string() == plugin);
+        versions.retain(|(_, v)| &v.backend().to_string() == plugin);
         for (_, version) in versions {
             miseprintln!("{}", version.version);
         }
     } else {
-        for (plugin, versions) in &versions.into_iter().chunk_by(|(_, v)| v.backend.clone()) {
+        for (plugin, versions) in &versions.into_iter().chunk_by(|(_, v)| v.backend().clone()) {
             miseprintln!("{}", plugin);
             for (_, tv) in versions {
                 miseprintln!("  {}", tv.version);
@@ -81,11 +81,11 @@ mod tests {
         assert_cli!("uninstall", "--all", "tiny");
         assert_cli!("install", "tiny@1", "tiny@2");
         assert_cli!("asdf", "install", "tiny");
-        assert_cli_snapshot!("asdf", "list", "tiny", @r#"
+        assert_cli_snapshot!("asdf", "list", "tiny", @r"
         1.0.1
         2.1.0
         3.1.0
-        "#);
+        ");
     }
 
     #[test]
@@ -93,9 +93,7 @@ mod tests {
         reset();
         assert_cli!("uninstall", "--all", "tiny");
         assert_cli!("install", "tiny@3.1.0");
-        assert_cli_snapshot!("asdf", "current", "tiny", @r###"
-        3.1.0
-        "###);
+        assert_cli_snapshot!("asdf", "current", "tiny", @"3.1.0");
     }
 
     #[test]

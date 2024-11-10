@@ -41,6 +41,15 @@ cat <<'EOF' >.mise/tasks/filetask
 echo "user=$usage_user"
 echo "port=$usage_port"
 EOF
+
+cat <<'EOF' >.mise/tasks/filetask.bat
+#windows filetask
+#USAGE flag "-u --user <user>" help="User to run as"
+#USAGE flag "-p --port <port>" help="Port to run on" default="8080"
+
+echo "user=$usage_user"
+echo "port=$usage_port"
+EOF
 assert "mise run filetask --user=jdx" "user=jdx
 port=8080"
 assert "mise run filetask --port=8081" "user=

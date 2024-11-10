@@ -155,7 +155,7 @@ impl Ls {
                 // only displaying 1 plugin so only show the version
                 miseprintln!("{}", tv.version);
             } else {
-                miseprintln!("{} {}", &tv.backend, tv.version);
+                miseprintln!("{} {}", tv.backend(), tv.version);
             }
         }
         Ok(())
@@ -228,7 +228,7 @@ impl Ls {
             })
             .map(|(k, (p, tv))| {
                 let source = match &active.get(&k) {
-                    Some((_, tv)) => ts.versions.get(&tv.backend).map(|tv| tv.source.clone()),
+                    Some((_, tv)) => ts.versions.get(tv.backend()).map(|tv| tv.source.clone()),
                     None => None,
                 };
                 (self, p, tv, source)
@@ -326,7 +326,7 @@ impl From<(&Ls, &dyn Backend, &ToolVersion, &Option<ToolSource>)> for VersionSta
             let outdated = if ls.offline {
                 false
             } else {
-                p.is_version_outdated(tv, p)
+                p.is_version_outdated(tv)
             };
             VersionStatus::Active(tv.version.clone(), outdated)
         } else {
@@ -415,45 +415,45 @@ mod tests {
         reset();
         let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
-        assert_cli_snapshot!("list", @r###"
+        assert_cli_snapshot!("list", @r"
         dummy  ref:master  ~/.test-tool-versions     ref:master
         tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        "###);
+        ");
 
         assert_cli!("install", "tiny@2.0.0");
-        assert_cli_snapshot!("list", @r###"
+        assert_cli_snapshot!("list", @r"
         dummy  ref:master  ~/.test-tool-versions     ref:master
         tiny   2.0.0                                           
         tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        "###);
+        ");
 
         assert_cli!("uninstall", "tiny@3.1.0");
-        assert_cli_snapshot!("list", @r###"
+        assert_cli_snapshot!("list", @r"
         dummy  ref:master       ~/.test-tool-versions     ref:master
         tiny   2.0.0                                                
         tiny   3.1.0 (missing)  ~/cwd/.test-tool-versions 3
-        "###);
+        ");
 
         assert_cli!("uninstall", "tiny@2.0.0");
-        assert_cli_snapshot!("list", @r###"
+        assert_cli_snapshot!("list", @r"
         dummy  ref:master       ~/.test-tool-versions     ref:master
         tiny   3.1.0 (missing)  ~/cwd/.test-tool-versions 3
-        "###);
+        ");
 
         assert_cli!("install");
-        assert_cli_snapshot!("list", @r###"
+        assert_cli_snapshot!("list", @r"
         dummy  ref:master  ~/.test-tool-versions     ref:master
         tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        "###);
+        ");
     }
 
     #[test]
     fn test_ls_current() {
         reset();
-        assert_cli_snapshot!("ls", "-c", @r###"
+        assert_cli_snapshot!("ls", "-c", @r"
         dummy  ref:master  ~/.test-tool-versions     ref:master
         tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        "###);
+        ");
     }
 
     #[test]
@@ -470,17 +470,17 @@ mod tests {
         reset();
         let _ = remove_all(*dirs::INSTALLS);
         assert_cli!("install");
-        assert_cli_snapshot!("ls", "--parseable", @r###"
+        assert_cli_snapshot!("ls", "--parseable", @r"
         dummy ref:master
         tiny 3.1.0
         mise The parseable output format is deprecated and will be removed in a future release.
         mise Please use the regular output format instead which has been modified to be more easily parseable.
-        "###);
-        assert_cli_snapshot!("ls", "--parseable", "tiny", @r###"
+        ");
+        assert_cli_snapshot!("ls", "--parseable", "tiny", @r"
         3.1.0
         mise The parseable output format is deprecated and will be removed in a future release.
         mise Please use the regular output format instead which has been modified to be more easily parseable.
-        "###);
+        ");
     }
 
     #[test]

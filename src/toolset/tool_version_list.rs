@@ -1,4 +1,3 @@
-use crate::backend;
 use crate::cli::args::BackendArg;
 use crate::errors::Error;
 use crate::toolset::tool_request::ToolRequest;
@@ -25,9 +24,8 @@ impl ToolVersionList {
     }
     pub fn resolve(&mut self, opts: &ResolveOptions) -> eyre::Result<()> {
         self.versions.clear();
-        let plugin = backend::get(&self.backend);
         for tvr in &mut self.requests {
-            match tvr.resolve(plugin.as_ref(), opts) {
+            match tvr.resolve(opts) {
                 Ok(v) => self.versions.push(v),
                 Err(err) => {
                     return Err(Error::FailedToResolveVersion {
@@ -48,7 +46,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::test::reset;
-    use crate::{dirs, env, file};
+    use crate::{backend, dirs, env, file};
 
     use super::*;
 
