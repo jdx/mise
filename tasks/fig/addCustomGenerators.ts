@@ -96,7 +96,7 @@ function transformer<T extends ts.Node>(context: ts.TransformationContext) {
 
 const main = async (fileName: string, outFile?: string) => {
   try {
-    const generatorFileContents = (await fsAsync.readFile('./tasks/fig/generators.ts')).toString();
+    const generatorFileContents = (await fsAsync.readFile(fileName)).toString();
     const contents = (await fsAsync.readFile(fileName)).toString();
     const sourceFile = ts.createSourceFile(
       "example.ts",
