@@ -1,5 +1,6 @@
 ---
 source: src/direnv.rs
 expression: "&output"
+snapshot_kind: text
 ---
 eAGrVipQsqpWSlSyUkpSqtVRygPxkoG8FKXaWgB2AQf9

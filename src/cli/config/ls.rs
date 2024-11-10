@@ -113,11 +113,11 @@ mod tests {
     #[test]
     fn test_config_ls() {
         reset();
-        assert_cli_snapshot!("cfg", "--no-headers", @r###"
+        assert_cli_snapshot!("cfg", "--no-headers", @r"
         ~/cwd/.test-tool-versions tiny       
         ~/.test-tool-versions     tiny, dummy
         ~/config/config.toml      (none)
-        "###);
+        ");
     }
 
     #[test]

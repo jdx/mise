@@ -1,6 +1,7 @@
 ---
 source: src/shell/bash.rs
 expression: "bash.activate(exe, \" --status\".into())"
+snapshot_kind: text
 ---
 export MISE_SHELL=bash
 export __MISE_ORIG_PATH="$PATH"

@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn test_tasks_deps_tree() {
         reset();
-        assert_cli_snapshot!("tasks", "deps", @r#"
+        assert_cli_snapshot!("tasks", "deps", @r"
         configtask
         filetask
         ├── test
@@ -171,20 +171,20 @@ mod tests {
         shell
         shell invalid
         test
-        "#
+        "
         );
     }
 
     #[test]
     fn test_tasks_deps_tree_args() {
         reset();
-        assert_cli_snapshot!("tasks", "deps", "filetask", "lint", "test", @r###"
+        assert_cli_snapshot!("tasks", "deps", "filetask", "lint", "test", @r"
         filetask
         ├── test
         └── lint
         lint
         test
-        "###
+        "
         );
     }
 

@@ -1,6 +1,7 @@
 ---
 source: src/shell/xonsh.rs
 expression: "xonsh.activate(exe, \" --status\".into())"
+snapshot_kind: text
 ---
 from os               import environ
 import subprocess

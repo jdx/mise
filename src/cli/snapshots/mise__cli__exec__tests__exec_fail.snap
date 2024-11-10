@@ -1,5 +1,6 @@
 ---
 source: src/cli/exec.rs
 expression: err
+snapshot_kind: text
 ---
 No such file or directory (os error 2)

@@ -147,6 +147,6 @@ mod tests {
         assert_cli_snapshot!("config", "get", "settings.jobs", @"4");
 
         assert_cli_snapshot!("config", "set", "settings.disable_tools", "--type", "list", "node,rust", @"");
-        assert_cli_snapshot!("config", "get", "settings.disable_tools", @"[\"node\", \"rust\"]");
+        assert_cli_snapshot!("config", "get", "settings.disable_tools", @r#"["node", "rust"]"#);
     }
 }

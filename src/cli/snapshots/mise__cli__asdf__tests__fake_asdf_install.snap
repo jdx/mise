@@ -1,5 +1,6 @@
 ---
 source: src/cli/asdf.rs
 expression: "assert_cli!(\"asdf\", \"install\", \"tiny\")"
+snapshot_kind: text
 ---
 

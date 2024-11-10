@@ -1,6 +1,7 @@
 ---
 source: src/shell/fish.rs
 expression: replace_path(&deactivate)
+snapshot_kind: text
 ---
 functions --erase __mise_env_eval
 functions --erase __mise_env_eval_2

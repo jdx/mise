@@ -1,6 +1,7 @@
 ---
 source: src/env_diff.rs
 expression: ed
+snapshot_kind: text
 ---
 EnvDiff {
     old: [

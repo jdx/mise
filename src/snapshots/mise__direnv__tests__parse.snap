@@ -1,5 +1,6 @@
 ---
 source: src/direnv.rs
 expression: diff
+snapshot_kind: text
 ---
 DirenvDiff { old: ["FOO=orig"], new: ["DIRENV_DIR=-/private/var/folders/0s/l3b8b_fs7fv5wdpr4lh9bd340000gr/T/tmp.prRveAyl", "DIRENV_FILE=/private/var/folders/0s/l3b8b_fs7fv5wdpr4lh9bd340000gr/T/tmp.prRveAyl/.envrc", "DIRENV_WATCHES=eJxszstK9DAUAOB3ybr0JE2aS3f_4l8KIroSkVxObCUzLScxMyK-u7gSxCf4vscPduvbyhYGB23dN4TuCfJeElIFXqHIYMNzrib3-ZIOUmV1IUnFOecvBPfQTsd40F3Hf-8FRjx3imxgN3tq2wnZIrSZhXNOm4H9v261VbY0esPP4Yd-qN_Ya7rCWPboC9TVE0LaCM8dfCn7BaTOUfKsJztbboLwShqXnQhm8koZTF7LKUqtjEWRuJ1zTEEoaTJ3U5D6r5PTv05PXwEAAP__GahVUg==", "FOO=bar"] }

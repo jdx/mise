@@ -1,5 +1,6 @@
 ---
 source: src/shell/nushell.rs
 expression: replace_path(&deactivate)
+snapshot_kind: text
 ---
 hide,MISE_SHELL,

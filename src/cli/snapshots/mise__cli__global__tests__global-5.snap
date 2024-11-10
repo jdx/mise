@@ -1,5 +1,6 @@
 ---
 source: src/cli/global.rs
 expression: output
+snapshot_kind: text
 ---
 2.1.0

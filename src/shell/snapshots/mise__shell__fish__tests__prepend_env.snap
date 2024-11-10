@@ -1,5 +1,6 @@
 ---
 source: src/shell/fish.rs
 expression: "replace_path(&sh.prepend_env(\"PATH\", \"/some/dir:/2/dir\"))"
+snapshot_kind: text
 ---
 set -gx PATH '/some/dir:/2/dir' $PATH

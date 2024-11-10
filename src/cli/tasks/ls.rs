@@ -191,14 +191,14 @@ mod tests {
     #[test]
     fn test_task_ls() {
         reset();
-        assert_cli_snapshot!("t", "--no-headers", @r#"
+        assert_cli_snapshot!("t", "--no-headers", @r"
         configtask                                  ~/config/config.toml
         filetask       This is a test build script  ~/cwd/.mise/tasks/filetask
         lint                                        ~/config/config.toml
         shell                                       ~/config/config.toml
         shell invalid                               ~/config/config.toml
         test                                        ~/config/config.toml
-        "#);
+        ");
     }
 
     #[test]

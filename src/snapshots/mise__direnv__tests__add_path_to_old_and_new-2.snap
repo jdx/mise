@@ -1,5 +1,6 @@
 ---
 source: src/direnv.rs
 expression: "diff.new.get(\"PATH\").unwrap()"
+snapshot_kind: text
 ---
 /tmp:/foo:/bar:/new

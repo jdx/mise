@@ -1,5 +1,6 @@
 ---
 source: src/cli/trust.rs
 expression: output
+snapshot_kind: text
 ---
 mise untrusted ~/cwd/.test-tool-versions

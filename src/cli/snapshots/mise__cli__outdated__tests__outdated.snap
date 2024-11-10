@@ -1,5 +1,6 @@
 ---
 source: src/cli/outdated.rs
 expression: output
+snapshot_kind: text
 ---
 mise All tools are up to date

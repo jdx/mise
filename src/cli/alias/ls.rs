@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn test_alias_ls() {
         reset();
-        assert_cli_snapshot!("aliases", @r#"
+        assert_cli_snapshot!("aliases", @r"
         java  lts          21   
         node  lts          22   
         node  lts-argon    4    
@@ -92,16 +92,16 @@ mod tests {
         tiny  lts          3.1.0
         tiny  lts-prev     2.0.0
         tiny  my/alias     3.0
-        "#);
+        ");
     }
 
     #[test]
     fn test_alias_ls_filter() {
         reset();
-        assert_cli_snapshot!("aliases", "ls", "tiny", @r###"
+        assert_cli_snapshot!("aliases", "ls", "tiny", @r"
         tiny  lts      3.1.0
         tiny  lts-prev 2.0.0
         tiny  my/alias 3.0
-        "###);
+        ");
     }
 }

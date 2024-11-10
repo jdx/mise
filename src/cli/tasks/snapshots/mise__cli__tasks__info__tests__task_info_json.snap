@@ -1,6 +1,7 @@
 ---
 source: src/cli/tasks/info.rs
 expression: output
+snapshot_kind: text
 ---
 {
   "aliases": "ft",

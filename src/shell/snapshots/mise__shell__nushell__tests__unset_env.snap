@@ -1,5 +1,6 @@
 ---
 source: src/shell/nushell.rs
 expression: "Nushell::default().unset_env(\"FOO\")"
+snapshot_kind: text
 ---
 hide,FOO,

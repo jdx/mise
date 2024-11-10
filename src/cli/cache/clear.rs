@@ -63,16 +63,12 @@ mod tests {
     #[test]
     fn test_cache_clear() {
         reset();
-        assert_cli_snapshot!("cache", "clear", @r###"
-        mise cache cleared
-        "###);
+        assert_cli_snapshot!("cache", "clear", @"mise cache cleared");
     }
 
     #[test]
     fn test_cache_clear_plugin() {
         reset();
-        assert_cli_snapshot!("cache", "clear", "tiny", @r###"
-        mise cache cleared for tiny
-        "###);
+        assert_cli_snapshot!("cache", "clear", "tiny", @"mise cache cleared for tiny");
     }
 }

@@ -1,5 +1,6 @@
 ---
 source: src/direnv.rs
 expression: diff
+snapshot_kind: text
 ---
 DirenvDiff { old: ["a=b"], new: ["c=d"] }

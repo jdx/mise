@@ -1,5 +1,6 @@
 ---
 source: src/shell/zsh.rs
 expression: "Zsh::default().unset_env(\"FOO\")"
+snapshot_kind: text
 ---
 unset FOO

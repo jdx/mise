@@ -1,5 +1,6 @@
 ---
 source: src/cli/where.rs
 expression: output
+snapshot_kind: text
 ---
 ~/data/installs/tiny/2.1.0

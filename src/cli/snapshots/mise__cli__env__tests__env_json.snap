@@ -1,6 +1,7 @@
 ---
 source: src/cli/env.rs
 expression: output
+snapshot_kind: text
 ---
 {
   "JDXCODE_TINY": "3.1.0",

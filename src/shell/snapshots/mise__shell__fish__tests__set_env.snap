@@ -1,5 +1,6 @@
 ---
 source: src/shell/fish.rs
 expression: "Fish::default().set_env(\"FOO\", \"1\")"
+snapshot_kind: text
 ---
 set -gx FOO 1

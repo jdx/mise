@@ -275,11 +275,11 @@ mod tests {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_debug_snapshot!(to_remove, @r###"
+        assert_debug_snapshot!(to_remove, @r#"
         [
             "c",
         ]
-        "###);
+        "#);
         let to_add = patches
             .iter()
             .filter_map(|p| match p {
@@ -295,14 +295,14 @@ mod tests {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_debug_snapshot!(to_change, @r###"
+        assert_debug_snapshot!(to_change, @r#"
         [
             (
                 "b",
                 "2",
             ),
         ]
-        "###);
+        "#);
     }
 
     fn new_from_hashmap() -> HashMap<String, String> {

@@ -1,6 +1,7 @@
 ---
 source: src/cli/config/ls.rs
 expression: output
+snapshot_kind: text
 ---
 [
   {

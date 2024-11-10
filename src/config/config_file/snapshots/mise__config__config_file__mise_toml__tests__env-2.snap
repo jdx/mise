@@ -1,6 +1,7 @@
 ---
 source: src/config/config_file/mise_toml.rs
 expression: dump
+snapshot_kind: text
 ---
 min_version = "2024.1.1"
 [env]
