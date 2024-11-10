@@ -1,0 +1,24 @@
+name: 'Publish fig-cli version'
+on:
+  push:
+    tags:        
+      - 'v*' ## Only run the action on new versions, this prevents useless runs of the action
+
+jobs:
+  push-to-fig-autocomplete: 
+    ## if github.repository == 'jdx/mise'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+      - run: mise install
+      - run: mise run render:fig
+      - name: Create Autocomplete PR ## Create the autocomplete PR using this action
+        uses: withfig/push-to-fig-autocomplete-action@v2
+        with:
+          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+          autocomplete-spec-name: mise
+          spec-path: tasks/fig/src/mise.ts
+          pr-body: "[Test] Automated PR for latest mise release by https://github.com/miguelmig/mise"
