@@ -116,7 +116,7 @@ impl Use {
         let mut cf = self.get_config_file()?;
         let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
 
-        for (fa, tvl) in &versions.iter().chunk_by(|tv| &tv.backend) {
+        for (fa, tvl) in &versions.iter().chunk_by(|tv| tv.backend()) {
             let versions: Vec<_> = tvl
                 .into_iter()
                 .map(|tv| {

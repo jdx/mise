@@ -275,17 +275,17 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
     if tvs.is_empty() {
         bail!("{} is not a valid shim", bin_name);
     }
-    let missing_plugins = tvs.iter().map(|tv| &tv.backend).collect::<HashSet<_>>();
+    let missing_plugins = tvs.iter().map(|tv| tv.backend()).collect::<HashSet<_>>();
     let mut missing_tools = ts
         .list_missing_versions()
         .into_iter()
-        .filter(|t| missing_plugins.contains(&t.backend))
+        .filter(|t| missing_plugins.contains(t.backend()))
         .collect_vec();
     if missing_tools.is_empty() {
         let mut msg = format!("No version is set for shim: {}\n", bin_name);
         msg.push_str("Set a global default version with one of the following:\n");
         for tv in tvs {
-            msg.push_str(&format!("mise use -g {}@{}\n", tv.backend, tv.version));
+            msg.push_str(&format!("mise use -g {}@{}\n", tv.backend(), tv.version));
         }
         Err(eyre!(msg.trim().to_string()))
     } else {

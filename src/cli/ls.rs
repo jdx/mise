@@ -155,7 +155,7 @@ impl Ls {
                 // only displaying 1 plugin so only show the version
                 miseprintln!("{}", tv.version);
             } else {
-                miseprintln!("{} {}", &tv.backend, tv.version);
+                miseprintln!("{} {}", tv.backend(), tv.version);
             }
         }
         Ok(())
@@ -228,7 +228,7 @@ impl Ls {
             })
             .map(|(k, (p, tv))| {
                 let source = match &active.get(&k) {
-                    Some((_, tv)) => ts.versions.get(&tv.backend).map(|tv| tv.source.clone()),
+                    Some((_, tv)) => ts.versions.get(tv.backend()).map(|tv| tv.source.clone()),
                     None => None,
                 };
                 (self, p, tv, source)
@@ -326,7 +326,7 @@ impl From<(&Ls, &dyn Backend, &ToolVersion, &Option<ToolSource>)> for VersionSta
             let outdated = if ls.offline {
                 false
             } else {
-                p.is_version_outdated(tv, p)
+                p.is_version_outdated(tv)
             };
             VersionStatus::Active(tv.version.clone(), outdated)
         } else {

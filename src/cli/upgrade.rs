@@ -64,7 +64,7 @@ impl Upgrade {
             outdated.retain(|o| {
                 self.tool
                     .iter()
-                    .any(|t| t.backend == o.tool_version.backend)
+                    .any(|t| &t.backend == o.tool_version.backend())
             });
         }
         if outdated.is_empty() {

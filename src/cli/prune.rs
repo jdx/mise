@@ -72,7 +72,7 @@ impl Prune {
             .collect::<BTreeMap<String, (Arc<dyn Backend>, ToolVersion)>>();
 
         if let Some(backends) = &self.plugin {
-            to_delete.retain(|_, (_, tv)| backends.contains(&tv.backend));
+            to_delete.retain(|_, (_, tv)| backends.contains(tv.backend()));
         }
 
         for cf in config.get_tracked_config_files()?.values() {
