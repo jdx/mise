@@ -26,8 +26,9 @@ impl Usage {
             run: "mise tasks --usage".to_string(),
         });
 
+        let min_version = r#"min_usage_version "1.3""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl");
-        println!("{spec}\n{extra}");
+        println!("{min_version}\n{spec}\n{extra}");
         Ok(())
     }
 }
