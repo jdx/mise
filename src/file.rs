@@ -20,6 +20,8 @@ use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+#[cfg(windows)]
+use crate::config::SETTINGS;
 use crate::{dirs, env};
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
@@ -363,9 +365,19 @@ pub fn is_executable(path: &Path) -> bool {
 
 #[cfg(windows)]
 pub fn is_executable(path: &Path) -> bool {
-    path.extension().map_or(false, |ext| {
-        ext == "exe" || ext == "bat" || ext == "cmd" || ext == "com" || ext == "ps1" || ext == "vbs"
-    })
+    path.extension().map_or(
+        SETTINGS
+            .windows_executable_extensions
+            .contains(&String::from("")),
+        |ext| {
+            if let Some(str_val) = ext.to_str() {
+                return SETTINGS
+                    .windows_executable_extensions
+                    .contains(&str_val.to_string());
+            }
+            false
+        },
+    )
 }
 
 #[cfg(unix)]
@@ -380,6 +392,7 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
 
 #[cfg(windows)]
 pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
+    warn!("make executable is not available on Windows, use windows_executable_extensions settings instead");
     Ok(())
 }
 
