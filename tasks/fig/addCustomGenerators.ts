@@ -1,5 +1,6 @@
 import fsAsync = require("node:fs/promises");
 import * as ts from "typescript";
+import * as path from "path";
 
 type GeneratorIdentifier = {
   identifier: string;
@@ -46,6 +47,10 @@ const customGenerators: GeneratorIdentifier[] = [
   {
     identifier: "env_vars",
     generator_name: "envVarGenerator",
+  },
+    {
+    identifier: "tool@version",
+    generator_name: "toolVersionGenerator",
   },
 ];
 
@@ -94,7 +99,7 @@ function transformer<T extends ts.Node>(context: ts.TransformationContext) {
 
 const main = async (fileName: string, outFile?: string) => {
   try {
-    const generatorFileContents = (await fsAsync.readFile(fileName)).toString();
+    const generatorFileContents = (await fsAsync.readFile(path.join(__dirname, "generators.ts"))).toString();
     const contents = (await fsAsync.readFile(fileName)).toString();
     const sourceFile = ts.createSourceFile(
       "example.ts",
