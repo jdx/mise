@@ -739,7 +739,7 @@ editLink: false
 | tinytex | [asdf:Fbrisset/asdf-tinytex](https://github.com/Fbrisset/asdf-tinytex) |
 | titan | [asdf:gabitchov/asdf-titan](https://github.com/gabitchov/asdf-titan) |
 | tlsg-cli | [asdf:0ghny/asdf-tlsgcli](https://github.com/0ghny/asdf-tlsgcli) |
-| tmux | [asdf:aphecetche/asdf-tmux](https://github.com/aphecetche/asdf-tmux) |
+| tmux | [asdf:Dabolus/asdf-tmux](https://github.com/Dabolus/asdf-tmux) |
 | tokei | [ubi:XAMPPRocky/tokei](https://github.com/XAMPPRocky/tokei) [asdf:gasuketsu/asdf-tokei](https://github.com/gasuketsu/asdf-tokei) |
 | tomcat | [asdf:mbutov/asdf-tomcat](https://github.com/mbutov/asdf-tomcat) |
 | tonnage | [asdf:elementalvoid/asdf-tonnage](https://github.com/elementalvoid/asdf-tonnage) |
