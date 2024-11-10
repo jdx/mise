@@ -18,7 +18,7 @@ use crate::config::config_file::toml::{deserialize_arr, deserialize_path_entry_a
 use crate::config::config_file::{trust_check, ConfigFile, TaskConfig};
 use crate::config::env_directive::{EnvDirective, PathEntry};
 use crate::config::settings::SettingsPartial;
-use crate::config::AliasMap;
+use crate::config::{Alias, AliasMap};
 use crate::file::{create_dir_all, display_path};
 use crate::registry::REGISTRY_BACKEND_MAP;
 use crate::task::Task;
@@ -40,7 +40,7 @@ pub struct MiseToml {
     env: EnvList,
     #[serde(default, deserialize_with = "deserialize_arr")]
     env_path: Vec<PathEntry>,
-    #[serde(default, deserialize_with = "deserialize_alias")]
+    #[serde(default)]
     alias: AliasMap,
     #[serde(skip)]
     doc: OnceCell<DocumentMut>,
@@ -120,8 +120,9 @@ impl MiseToml {
 
     pub fn set_alias(&mut self, fa: &BackendArg, from: &str, to: &str) -> eyre::Result<()> {
         self.alias
-            .entry(fa.clone())
+            .entry(fa.short.to_string())
             .or_default()
+            .versions
             .insert(from.into(), to.into());
         self.doc_mut()?
             .entry("alias")
@@ -129,6 +130,10 @@ impl MiseToml {
             .as_table_like_mut()
             .unwrap()
             .entry(&fa.to_string())
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap()
+            .entry("versions")
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap()
@@ -142,12 +147,17 @@ impl MiseToml {
             .get_mut("alias")
             .and_then(|v| v.as_table_mut())
         {
-            if let Some(plugin_aliases) = aliases
+            if let Some(alias) = aliases
                 .get_mut(&fa.to_string())
                 .and_then(|v| v.as_table_mut())
             {
-                plugin_aliases.remove(from);
-                if plugin_aliases.is_empty() {
+                if let Some(versions) = alias.get_mut("versions").and_then(|v| v.as_table_mut()) {
+                    versions.remove(from);
+                    if versions.is_empty() {
+                        alias.remove("versions");
+                    }
+                }
+                if alias.is_empty() {
                     aliases.remove(&fa.to_string());
                 }
             }
@@ -155,10 +165,10 @@ impl MiseToml {
                 self.doc_mut()?.as_table_mut().remove("alias");
             }
         }
-        if let Some(aliases) = self.alias.get_mut(fa) {
-            aliases.remove(from);
-            if aliases.is_empty() {
-                self.alias.remove(fa);
+        if let Some(aliases) = self.alias.get_mut(&fa.short) {
+            aliases.versions.swap_remove(from);
+            if aliases.versions.is_empty() && aliases.full.is_none() {
+                self.alias.swap_remove(&fa.short);
             }
         }
         Ok(())
@@ -395,16 +405,22 @@ impl ConfigFile for MiseToml {
             .clone()
             .iter()
             .map(|(k, v)| {
-                let k = k.clone();
-                let v: Result<BTreeMap<String, String>, eyre::Error> = v
+                let versions = v
                     .clone()
+                    .versions
                     .into_iter()
                     .map(|(k, v)| {
                         let v = self.parse_template(&v)?;
-                        Ok((k, v))
+                        Ok::<(String, String), eyre::Report>((k, v))
                     })
-                    .collect();
-                v.map(|v| (k, v))
+                    .collect::<eyre::Result<IndexMap<_, _>>>()?;
+                Ok((
+                    k.clone(),
+                    Alias {
+                        full: v.full.clone(),
+                        versions,
+                    },
+                ))
             })
             .collect()
     }
@@ -919,35 +935,55 @@ impl<'de> de::Deserialize<'de> for BackendArg {
     }
 }
 
-fn deserialize_alias<'de, D>(deserializer: D) -> Result<AliasMap, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct AliasMapVisitor;
+impl<'de> de::Deserialize<'de> for Alias {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct AliasVisitor;
 
-    impl<'de> Visitor<'de> for AliasMapVisitor {
-        type Value = AliasMap;
-        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("alias table")
-        }
-
-        fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
-        where
-            M: de::MapAccess<'de>,
-        {
-            let mut aliases = AliasMap::new();
-            while let Some(plugin) = map.next_key::<String>()? {
-                let fa: BackendArg = plugin.as_str().into();
-                let plugin_aliases = aliases.entry(fa).or_default();
-                for (from, to) in map.next_value::<BTreeMap<String, String>>()? {
-                    plugin_aliases.insert(from, to);
-                }
+        impl<'de> Visitor<'de> for AliasVisitor {
+            type Value = Alias;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("alias")
             }
-            Ok(aliases)
-        }
-    }
 
-    deserializer.deserialize_map(AliasMapVisitor)
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Alias {
+                    full: Some(v.to_string()),
+                    ..Default::default()
+                })
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut full = None;
+                let mut versions = IndexMap::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "full" => {
+                            full = Some(map.next_value()?);
+                        }
+                        "versions" => {
+                            versions = map.next_value()?;
+                        }
+                        _ => {
+                            deprecated!("TOOL_VERSION_ALIASES", "tool version aliases should be `alias.<TOOL>.versions.<FROM> = <TO>`, not `alias.<TOOL>.<FROM> = <TO>`");
+                            versions.insert(key, map.next_value()?);
+                        }
+                    }
+                }
+                Ok(Alias { full, versions })
+            }
+        }
+
+        deserializer.deserialize_any(AliasVisitor)
+    }
 }
 
 #[cfg(test)]
@@ -1127,7 +1163,7 @@ mod tests {
         file::write(
             &p,
             formatdoc! {r#"
-            [alias.node]
+            [alias.node.versions]
             16 = "16.0.0"
             18 = "18.0.0"
         "#},
@@ -1153,11 +1189,11 @@ mod tests {
         file::write(
             &p,
             formatdoc! {r#"
-            [alias.node]
+            [alias.node.versions]
             16 = "16.0.0"
             18 = "18.0.0"
 
-            [alias.python]
+            [alias.python.versions]
             "3.10" = "3.10.0"
             "#},
         )

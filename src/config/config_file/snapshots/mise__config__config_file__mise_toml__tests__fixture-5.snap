@@ -12,8 +12,11 @@ MiseToml(~/fixtures/.mise.toml): ToolRequestSet: terraform@1.0.0 node@18 node@pr
         ),
     ],
     alias: {
-        BackendArg("node"): {
-            "my_custom_node": "18",
+        "node": Alias {
+            full: None,
+            versions: {
+                "my_custom_node": "18",
+            },
         },
     },
     plugins: {

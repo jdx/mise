@@ -44,7 +44,7 @@ node = ['16', 'prefix:20', 'ref:master', 'path:~/.nodes/14']
 # note this will only be used if the plugin does not already exist
 python = 'https://github.com/asdf-community/asdf-python'
 
-[alias.node] # project-local aliases
+[alias.node.versions] # project-local aliases
 my_custom_node = '20'
 
 [tasks.build]

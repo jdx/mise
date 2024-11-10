@@ -1,5 +1,8 @@
 #[cfg(feature = "timings")]
 use crate::ui::style;
+use once_cell::sync::Lazy;
+use std::collections::HashSet;
+use std::sync::Mutex;
 
 #[cfg(test)]
 #[macro_export]
@@ -190,6 +193,17 @@ macro_rules! warn {
 macro_rules! error {
     ($($arg:tt)*) => {{
        log::error!($($arg)*);
+    }};
+}
+
+pub static DEPRECATED: Lazy<Mutex<HashSet<&'static str>>> = Lazy::new(Default::default);
+
+#[macro_export]
+macro_rules! deprecated {
+    ($id:tt, $($arg:tt)*) => {{
+        if $crate::output::DEPRECATED.lock().unwrap().insert($id) {
+            warn!("deprecated [{}]: {}", $id, format!($($arg)*));
+        }
     }};
 }
 

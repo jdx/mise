@@ -45,7 +45,7 @@ impl Commands {
 impl Alias {
     pub fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::AliasLs {
-            plugin: self.plugin,
+            tool: self.plugin,
             no_header: self.no_header,
         }));
 

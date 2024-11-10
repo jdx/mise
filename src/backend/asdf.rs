@@ -42,7 +42,11 @@ pub struct AsdfBackend {
 
 impl AsdfBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        let name = ba.short.to_string();
+        let name = ba
+            .full
+            .strip_prefix("asdf:")
+            .unwrap_or(&ba.full)
+            .to_string();
         let plugin_path = dirs::PLUGINS.join(&name);
         let mut toml_path = plugin_path.join("mise.plugin.toml");
         if plugin_path.join("rtx.plugin.toml").exists() {

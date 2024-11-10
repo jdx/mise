@@ -1,6 +1,6 @@
 # `mise alias ls`
 
-- **Usage**: `mise alias ls [--no-header] [PLUGIN]`
+- **Usage**: `mise alias ls [--no-header] [TOOL]`
 - **Aliases**: `list`
 - **Source code**: [`src/cli/alias/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/ls.rs)
 
@@ -10,14 +10,14 @@ These can come from user config or from plugins in `bin/list-aliases`.
 
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
-    [alias.node]
+    [alias.node.versions]
     lts = "22.0.0"
 
 ## Arguments
 
-### `[PLUGIN]`
+### `[TOOL]`
 
-Show aliases for &lt;PLUGIN>
+Show aliases for &lt;TOOL>
 
 ## Flags
 

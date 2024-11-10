@@ -83,7 +83,7 @@ These can come from user config or from plugins in `bin/list-aliases`.
 
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
-  [alias.node]
+  [alias.node.versions]
   lts = "20.0.0""#
         after_long_help r"Examples:
 
