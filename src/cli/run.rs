@@ -358,12 +358,19 @@ impl Run {
             return (display, args.to_vec());
         }
         let default_shell = self.clone_default_file_shell();
-        self.get_cmd_program_and_args(&display, task, args, default_shell)
+        let shell = self.get_shell(task, default_shell);
+        trace!("using shell: {}", shell.join(" "));
+        let mut full_args = shell.clone();
+        full_args.push(display);
+        if !args.is_empty() {
+            full_args.extend(args.iter().cloned());
+        }
+        (shell[0].clone(), full_args[1..].to_vec())
     }
 
     fn get_cmd_program_and_args(
         &self,
-        command: &str,
+        script: &str,
         task: &Task,
         args: &[String],
         default_shell: Vec<String>,
@@ -371,10 +378,18 @@ impl Run {
         let shell = self.get_shell(task, default_shell);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
-        full_args.push(command.to_string());
+        let mut script_and_args = script.to_string();
         if !args.is_empty() {
-            full_args.extend(args.iter().cloned());
+            #[cfg(windows)]
+            {
+                script_and_args = format!("{} {}", script_and_args, args.join(" "));
+            }
+            #[cfg(unix)]
+            {
+                script_and_args = format!("{} {}", script_and_args, shell_words::join(args));
+            }
         }
+        full_args.push(script_and_args);
         (shell[0].clone(), full_args[1..].to_vec())
     }
 

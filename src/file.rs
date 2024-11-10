@@ -365,14 +365,19 @@ pub fn is_executable(path: &Path) -> bool {
 
 #[cfg(windows)]
 pub fn is_executable(path: &Path) -> bool {
-    path.extension().map_or(false, |ext| {
-        if let Some(str_val) = ext.to_str() {
-            return SETTINGS
-                .windows_executable_extensions
-                .contains(&str_val.to_string());
-        }
-        false
-    })
+    path.extension().map_or(
+        SETTINGS
+            .windows_executable_extensions
+            .contains(&String::from("")),
+        |ext| {
+            if let Some(str_val) = ext.to_str() {
+                return SETTINGS
+                    .windows_executable_extensions
+                    .contains(&str_val.to_string());
+            }
+            false
+        },
+    )
 }
 
 #[cfg(unix)]
