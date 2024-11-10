@@ -97,6 +97,7 @@ snapshot_kind: text
       "props": {}
     },
     "disable_help": null,
+    "min_usage_version": null,
     "name": "filetask",
     "source_code_link_template": null,
     "usage": "",
