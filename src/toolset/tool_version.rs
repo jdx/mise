@@ -115,7 +115,7 @@ impl ToolVersion {
     pub fn style(&self) -> String {
         format!(
             "{}{}",
-            style(&self.backend().full).blue().for_stderr(),
+            style(&self.backend().short).blue().for_stderr(),
             style(&format!("@{}", &self.version)).for_stderr()
         )
     }
