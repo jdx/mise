@@ -731,6 +731,28 @@ default = []
 parse_env = "list_by_colon"
 description = "This is a list of config paths that mise will automatically mark as trusted."
 
+[unix_default_file_shell_args]
+env = "MISE_UNIX_DEFAULT_FILE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["sh"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for unix to be used with `file`. For example `sh`."
+
+[unix_default_inline_shell_args]
+env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["sh", "-c"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh."
+
+[use_file_shell_for_executable_tasks]
+env = "MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS"
+type = "Bool"
+default = false
+description = "Determines whether to use a specified shell for executing tasks in the tasks directory. When set to true, the shell defined in the file will be used, or the default shell specified by `windows_default_file_shell_args` or `unix_default_file_shell_args` will be applied. If set to false, tasks will be executed directly as programs."
+
 [use_versions_host]
 env = "MISE_USE_VERSIONS_HOST"
 type = "Bool"
@@ -761,6 +783,30 @@ docs = """
 Use vfox as a default plugin backend. This means running something like `mise use cmake` will
 default to using an vfox plugin for cmake.
 """
+
+[windows_default_file_shell_args]
+env = "MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["cmd", "/c"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe."
+
+[windows_default_inline_shell_args]
+env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["cmd", "/c"]
+parse_env = "list_by_comma"
+description = "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe."
+
+[windows_executable_extensions]
+env = "MISE_WINDOWS_EXECUTABLE_EXTENSIONS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
+parse_env = "list_by_comma"
+description = "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on."
 
 [yes]
 env = "MISE_YES"

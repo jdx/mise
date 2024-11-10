@@ -535,6 +535,27 @@
             "type": "string"
           }
         },
+        "unix_default_file_shell_args": {
+          "default": ["sh"],
+          "description": "List of default shell arguments for unix to be used with `file`. For example `sh`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unix_default_inline_shell_args": {
+          "default": ["sh", "-c"],
+          "description": "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "use_file_shell_for_executable_tasks": {
+          "default": false,
+          "description": "Determines whether to use a specified shell for executing tasks in the tasks directory. When set to true, the shell defined in the file will be used, or the default shell specified by `windows_default_file_shell_args` or `unix_default_file_shell_args` will be applied. If set to false, tasks will be executed directly as programs.",
+          "type": "boolean"
+        },
         "use_versions_host": {
           "default": true,
           "description": "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions.",
@@ -548,6 +569,30 @@
           "description": "Use vfox as a default plugin backend instead of asdf.",
           "deprecated": "Use disable_backends instead.",
           "type": "boolean"
+        },
+        "windows_default_file_shell_args": {
+          "default": ["cmd", "/c"],
+          "description": "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "windows_default_inline_shell_args": {
+          "default": ["cmd", "/c"],
+          "description": "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "windows_executable_extensions": {
+          "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
+          "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
