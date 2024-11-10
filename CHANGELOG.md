@@ -1,5 +1,34 @@
 # Changelog
 
+## [2024.11.6](https://github.com/jdx/mise/compare/v2024.11.5..v2024.11.6) - 2024-11-10
+
+### 🚀 Features
+
+- **(backend)** add a setting to use bun in npm backend by [@risu729](https://github.com/risu729) in [#2899](https://github.com/jdx/mise/pull/2899)
+- **(tasks)** add shell settings for Windows compatibility in tasks by [@rodvieirasilva](https://github.com/rodvieirasilva) in [#2967](https://github.com/jdx/mise/pull/2967)
+
+### 🐛 Bug Fixes
+
+- update tmux plugin by [@drewwells](https://github.com/drewwells) in [#2977](https://github.com/jdx/mise/pull/2977)
+
+### 🚜 Refactor
+
+- remove backend arg from tool-version by [@jdx](https://github.com/jdx) in [#2980](https://github.com/jdx/mise/pull/2980)
+
+### 📚 Documentation
+
+- load core plugins when rendering registry doc by [@jdx](https://github.com/jdx) in [00ef7b4](https://github.com/jdx/mise/commit/00ef7b4d5c59047e795c0fc2476bde386decc363)
+- added core plugins to registry by [@jdx](https://github.com/jdx) in [#2976](https://github.com/jdx/mise/pull/2976)
+
+### 🧪 Testing
+
+- added e2e test with multiple scripts by [@jdx](https://github.com/jdx) in [a89a5ee](https://github.com/jdx/mise/commit/a89a5eec402bf693e274334771d4386c2f752834)
+
+### New Contributors
+
+- @rodvieirasilva made their first contribution in [#2967](https://github.com/jdx/mise/pull/2967)
+- @drewwells made their first contribution in [#2977](https://github.com/jdx/mise/pull/2977)
+
 ## [2024.11.5](https://github.com/jdx/mise/compare/v2024.11.4..v2024.11.5) - 2024-11-09
 
 ### 🚀 Features
