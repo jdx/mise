@@ -1,0 +1,9 @@
+{
+  "extends": "@tsconfig/node18/tsconfig.json",
+  "include": ["**/*"],
+  "exclude": ["node_modules"],
+  "compilerOptions": {
+    "outDir": "./build",
+    "types": ["@withfig/autocomplete-types", "node"]
+  }
+}
