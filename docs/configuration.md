@@ -130,6 +130,8 @@ Define a minimum supported version of mise for the config file. mise will ignore
 
 ```toml
 min_version = '2024.11.1'
+```
+
 ### `mise.toml` schema
 
 - You can find the JSON schema for `.mise.toml` [here](https://github.com/jdx/mise/blob/main/schema/mise.json).
