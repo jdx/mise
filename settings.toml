@@ -367,6 +367,12 @@ enum = [
     ["error"]
 ]
 
+[min_version]
+env = "MISE_MIN_VERSION"
+type = "String"
+optional = true
+description = "Minimal version of mise to use this config."
+
 [node.compile]
 env = "MISE_NODE_COMPILE"
 type = "Bool"
