@@ -265,7 +265,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40723b8fb387abc38f4f4a37c09073622e41dd12327033091ef8950659e6dc0c"
 dependencies = [
  "memchr",
- "regex-automata 0.4.8",
+ "regex-automata 0.4.9",
  "serde",
 ]
 
@@ -1200,7 +1200,7 @@ dependencies = [
  "aho-corasick",
  "bstr",
  "log",
- "regex-automata 0.4.8",
+ "regex-automata 0.4.9",
  "regex-syntax 0.8.5",
 ]
 
@@ -1595,7 +1595,7 @@ dependencies = [
  "globset",
  "log",
  "memchr",
- "regex-automata 0.4.8",
+ "regex-automata 0.4.9",
  "same-file",
  "walkdir",
  "winapi-util",
@@ -2079,7 +2079,7 @@ dependencies = [
  "terminal_size",
  "test-case",
  "test-log",
- "thiserror 1.0.69",
+ "thiserror 2.0.3",
  "tokio",
  "toml",
  "toml_edit",
@@ -2535,9 +2535,9 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 
 [[package]]
 name = "platforms"
-version = "3.2.0"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14e6ab3f592e6fb464fc9712d8d6e6912de6473954635fd76a589d832cffcbb0"
+checksum = "d43467300237085a4f9e864b937cf0bc012cef7740be12be1a48b10d2c8a3701"
 
 [[package]]
 name = "portable-atomic"
@@ -2767,7 +2767,7 @@ checksum = "b544ef1b4eac5dc2db33ea63606ae9ffcfac26c1416a2806ae0bf5f56b201191"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.8",
+ "regex-automata 0.4.9",
  "regex-syntax 0.8.5",
 ]
 
@@ -2782,9 +2782,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.8"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "368758f23274712b504848e9d5a6f010445cc8b87a7cdb4d7cbee666c1288da3"
+checksum = "809e8dc61f6de73b46c85f4c96486310fe304c434cfa43669d7b40f711150908"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -2921,9 +2921,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.39"
+version = "0.38.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "375116bee2be9ed569afe2154ea6a99dfdffd257f533f187498c2a8f5feaf4ee"
+checksum = "99e4ea3e1cdc4b559b8e5650f9c8e5998e3e5c1343b4eaf034565f32318d63c0"
 dependencies = [
  "bitflags",
  "errno 0.3.9",
@@ -3612,11 +3612,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.2"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "037e29b009aa709f293b974da5cd33b15783c049e07f8435778ce8c4871525d8"
+checksum = "c006c85c7651b3cf2ada4584faa36773bd07bac24acfb39f3c431b36d7e667aa"
 dependencies = [
- "thiserror-impl 2.0.2",
+ "thiserror-impl 2.0.3",
 ]
 
 [[package]]
@@ -3632,9 +3632,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.2"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea4778c7e8ff768bdb32a58a2349903859fe719a320300d7d4ce8636f19a1e69"
+checksum = "f077553d607adc1caf65430528a576c757a71ed73944b66ebb58ef2bbd243568"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3887,9 +3887,9 @@ checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
 
 [[package]]
 name = "ubi"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2548274fb2071b9f1f97522c77a433810f7e289b552c3e66d69055e706441457"
+checksum = "142b3c47969de63fa38283962c08273cc06fec0de2e7425da9003d14ed0a05fa"
 dependencies = [
  "anyhow",
  "binstall-tar",
@@ -3907,7 +3907,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "url",
- "which 6.0.3",
+ "which 7.0.0",
  "xz2",
  "zip",
 ]
@@ -4028,7 +4028,7 @@ dependencies = [
  "serde",
  "strum",
  "tera",
- "thiserror 2.0.2",
+ "thiserror 2.0.3",
  "versions",
  "xx",
 ]
@@ -4082,9 +4082,9 @@ dependencies = [
 
 [[package]]
 name = "vfox"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "124e7a9b4bf350dd7824f0b4b345d4266011aab13933f8e34fd25637df86543a"
+checksum = "c36fe3d5b017c69c1f1fbddc0defdf77c358ba5cc00450cca895cf8d4a2664ae"
 dependencies = [
  "homedir",
  "indexmap 2.6.0",
@@ -4095,7 +4095,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.3",
  "tokio",
  "url",
  "xx",
@@ -4517,9 +4517,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "1.1.8"
+version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb963ecf2940991825550e580efaaa1ab882191027f45362c4376de15d09bfe9"
+checksum = "cf77a847b8a88b00563bb61a1041c90a8697bc23f0382eb1ecbe852098df351c"
 dependencies = [
  "bzip2",
  "duct",
@@ -4533,7 +4533,7 @@ dependencies = [
  "reqwest",
  "sha2",
  "tar",
- "thiserror 1.0.69",
+ "thiserror 2.0.3",
  "tokio",
  "xz2",
  "zip",

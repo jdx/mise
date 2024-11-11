@@ -1,9 +1,9 @@
 use crate::{env, plugins};
 use heck::ToKebabCase;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use crate::backend::{ABackend, Backend, BackendList, BackendType};
@@ -22,7 +22,7 @@ pub struct VfoxBackend {
     ba: BackendArg,
     plugin: Box<VfoxPlugin>,
     remote_version_cache: CacheManager<Vec<String>>,
-    exec_env_cache: CacheManager<BTreeMap<String, String>>,
+    exec_env_cache: RwLock<HashMap<String, CacheManager<BTreeMap<String, String>>>>,
     pathname: String,
 }
 
@@ -90,7 +90,11 @@ impl Backend for VfoxBackend {
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        self._exec_env(tv).cloned()
+        Ok(self
+            ._exec_env(tv)?
+            .into_iter()
+            .filter(|(k, _)| k.to_uppercase() != "PATH")
+            .collect())
     }
 
     fn get_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
@@ -130,29 +134,56 @@ impl VfoxBackend {
             .with_fresh_file(plugin_path.to_path_buf())
             .with_fresh_file(ba.installs_path.to_path_buf())
             .build(),
-            exec_env_cache: CacheManagerBuilder::new(ba.cache_path.join("exec_env.msgpack.z"))
-                .with_fresh_file(dirs::DATA.to_path_buf())
-                .with_fresh_file(plugin_path.to_path_buf())
-                .with_fresh_file(ba.installs_path.to_path_buf())
-                .build(),
+            exec_env_cache: Default::default(),
             plugin: Box::new(plugin),
             ba,
             pathname,
         }
     }
 
-    fn _exec_env(&self, tv: &ToolVersion) -> eyre::Result<&BTreeMap<String, String>> {
-        self.exec_env_cache.get_or_try_init(|| {
-            self.ensure_plugin_installed()?;
-            let (vfox, _log_rx) = self.plugin.vfox();
-            Ok(self
-                .plugin
-                .runtime()?
-                .block_on(vfox.env_keys(&self.pathname, &tv.version))?
-                .into_iter()
-                .map(|envkey| (envkey.key, envkey.value))
-                .collect())
-        })
+    fn _exec_env(&self, tv: &ToolVersion) -> eyre::Result<BTreeMap<String, String>> {
+        let key = tv.to_string();
+        if !self.exec_env_cache.read().unwrap().contains_key(&key) {
+            let mut caches = self.exec_env_cache.write().unwrap();
+            caches.insert(
+                key.clone(),
+                CacheManagerBuilder::new(tv.cache_path().join("exec_env.msgpack.z"))
+                    .with_fresh_file(dirs::DATA.to_path_buf())
+                    .with_fresh_file(self.plugin.plugin_path.to_path_buf())
+                    .with_fresh_file(self.fa().installs_path.to_path_buf())
+                    .build(),
+            );
+        }
+        let exec_env_cache = self.exec_env_cache.read().unwrap();
+        let cache = exec_env_cache.get(&key).unwrap();
+        cache
+            .get_or_try_init(|| {
+                self.ensure_plugin_installed()?;
+                let (vfox, _log_rx) = self.plugin.vfox();
+                Ok(self
+                    .plugin
+                    .runtime()?
+                    .block_on(vfox.env_keys(&self.pathname, &tv.version))?
+                    .into_iter()
+                    .fold(BTreeMap::new(), |mut acc, env_key| {
+                        let key = &env_key.key;
+                        if let Some(val) = acc.get(key) {
+                            let mut paths = env::split_paths(val).collect::<Vec<PathBuf>>();
+                            paths.push(PathBuf::from(env_key.value));
+                            acc.insert(
+                                env_key.key,
+                                env::join_paths(paths)
+                                    .unwrap()
+                                    .to_string_lossy()
+                                    .to_string(),
+                            );
+                        } else {
+                            acc.insert(key.clone(), env_key.value);
+                        }
+                        acc
+                    }))
+            })
+            .cloned()
     }
 
     fn ensure_plugin_installed(&self) -> eyre::Result<()> {
