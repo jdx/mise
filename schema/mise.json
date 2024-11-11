@@ -295,10 +295,6 @@
           "type": "string",
           "enum": ["trace", "debug", "info", "warn", "error"]
         },
-        "min_version": {
-          "description": "Minimal version of mise to use this config.",
-          "type": "string"
-        },
         "node": {
           "additionalProperties": false,
           "properties": {
