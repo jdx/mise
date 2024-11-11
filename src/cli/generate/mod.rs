@@ -6,7 +6,7 @@ mod task_docs;
 
 /// [experimental] Generate files for various tools/services
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "g")]
+#[clap(visible_alias = "gen", alias = "g")]
 pub struct Generate {
     #[clap(subcommand)]
     command: Commands,
