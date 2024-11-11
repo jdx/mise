@@ -788,7 +788,7 @@
       ]
     },
     "min_version": {
-      "description": "minimum version of mise required to use this config",
+      "description": "Minimal version of mise to use with this config",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
       "type": "string"
     },
