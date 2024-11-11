@@ -1,5 +1,28 @@
 # Changelog
 
+## [2024.11.7](https://github.com/jdx/mise/compare/v2024.11.6..v2024.11.7) - 2024-11-11
+
+### 🚀 Features
+
+- added backend aliases by [@jdx](https://github.com/jdx) in [#2979](https://github.com/jdx/mise/pull/2979)
+- Add Fig completions by [@miguelmig](https://github.com/miguelmig) in [#2986](https://github.com/jdx/mise/pull/2986)
+- support go core plugin on windows by [@jdx](https://github.com/jdx) in [#2990](https://github.com/jdx/mise/pull/2990)
+- keep order and comments when make any changes in TOML config by [@roele](https://github.com/roele) in [#2992](https://github.com/jdx/mise/pull/2992)
+
+### 🐛 Bug Fixes
+
+- **(windows)** java and python fixes by [@jdx](https://github.com/jdx) in [#2993](https://github.com/jdx/mise/pull/2993)
+- do not add tool options to toml when they are the defaults by [@jdx](https://github.com/jdx) in [#2982](https://github.com/jdx/mise/pull/2982)
+- show warning if using outdated usage version by [@jdx](https://github.com/jdx) in [#2984](https://github.com/jdx/mise/pull/2984)
+
+### 📚 Documentation
+
+- document and enable MISE_MIN_VERSION setting by [@erickguan](https://github.com/erickguan) in [#2989](https://github.com/jdx/mise/pull/2989)
+
+### 🧪 Testing
+
+- updated snapshots by [@jdx](https://github.com/jdx) in [a86e372](https://github.com/jdx/mise/commit/a86e3725479342647310d4e1b3273def71683b5a)
+
 ## [2024.11.6](https://github.com/jdx/mise/compare/v2024.11.5..v2024.11.6) - 2024-11-10
 
 ### 🚀 Features
@@ -183,10 +206,6 @@
 
 - add zstd compression for http requests by [@jdx](https://github.com/jdx) in [612bbd0](https://github.com/jdx/mise/commit/612bbd0374bed208752cda8674ad192b5886fde9)
 - Fix installed_tool@version complete script by [@miguelmig](https://github.com/miguelmig) in [#2859](https://github.com/jdx/mise/pull/2859)
-
-### New Contributors
-
-- @miguelmig made their first contribution in [#2859](https://github.com/jdx/mise/pull/2859)
 
 ## [2024.10.13](https://github.com/jdx/mise/compare/v2024.10.12..v2024.10.13) - 2024-10-28
 
