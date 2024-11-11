@@ -32,7 +32,7 @@ impl GoPlugin {
 
     // Represents go binary path
     fn go_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/go")
+        tv.install_path().join("bin").join("go")
     }
 
     // Represents GOPATH environment variable
@@ -93,7 +93,7 @@ impl GoPlugin {
 
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
         let settings = Settings::get();
-        let filename = format!("go{}.{}-{}.tar.gz", tv.version, platform(), arch());
+        let filename = format!("go{}.{}-{}.{}", tv.version, platform(), arch(), ext());
         let tarball_url = format!("{}/{}", &settings.go_download_mirror, &filename);
         let tarball_path = tv.download_path().join(&filename);
 
@@ -126,7 +126,11 @@ impl GoPlugin {
             .to_string_lossy();
         pr.set_message(format!("installing {}", tarball));
         let tmp_extract_path = tempdir_in(tv.install_path().parent().unwrap())?;
-        file::untar(tarball_path, tmp_extract_path.path())?;
+        if cfg!(windows) {
+            file::unzip(tarball_path, tmp_extract_path.path())?;
+        } else {
+            file::untar(tarball_path, tmp_extract_path.path())?;
+        }
         file::remove_all(tv.install_path())?;
         file::rename(tmp_extract_path.path().join("go"), tv.install_path())?;
         Ok(())
@@ -237,5 +241,13 @@ fn arch() -> &'static str {
         "arm64"
     } else {
         &ARCH
+    }
+}
+
+fn ext() -> &'static str {
+    if cfg!(windows) {
+        "zip"
+    } else {
+        "tar.gz"
     }
 }
