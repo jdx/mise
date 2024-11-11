@@ -1,0 +1,37 @@
+name: "Publish mise completions version"
+on:
+  push:
+    tags:
+      - "v*" ## Only run the action on new versions, this prevents useless runs of the action
+
+jobs:
+  push-to-fig-autocomplete:
+    ## if github.repository == 'jdx/mise'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with: { toolchain: nightly, components: rustfmt }
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: npm i
+      - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.local/share/mise/installs
+            ~/.local/share/mise/plugins
+          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.lock') }}
+          restore-keys: mise-tools-ubuntu-latest
+      - run: mise install
+      - run: mise run render:fig
+      - name: Create Autocomplete PR ## Create the autocomplete PR using this action
+        uses: withfig/push-to-fig-autocomplete-action@v2
+        with:
+          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+          autocomplete-spec-name: mise
+          spec-path: tasks/fig/src/mise.ts
+          pr-body: "Automated PR for latest mise release by https://github.com/jdx/mise"

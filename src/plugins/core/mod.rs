@@ -15,14 +15,10 @@ use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
 #[cfg(unix)]
 use crate::plugins::core::erlang::ErlangPlugin;
-#[cfg(unix)]
 use crate::plugins::core::go::GoPlugin;
 use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
-#[cfg(unix)]
 use crate::plugins::core::ruby::RubyPlugin;
-#[cfg(windows)]
-use crate::plugins::core::ruby_windows::RubyPlugin;
 #[cfg(unix)]
 use crate::plugins::core::zig::ZigPlugin;
 use crate::plugins::{Plugin, PluginList, PluginType};
@@ -35,15 +31,12 @@ mod bun;
 mod deno;
 #[cfg(unix)]
 mod erlang;
-#[cfg(unix)]
 mod go;
 mod java;
 mod node;
 mod python;
-#[cfg(unix)]
+#[cfg_attr(windows, path = "ruby_windows.rs")]
 mod ruby;
-#[cfg(windows)]
-mod ruby_windows;
 #[cfg(unix)]
 mod zig;
 
@@ -64,7 +57,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         // Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         // Arc::new(ErlangPlugin::new()),
-        // Arc::new(GoPlugin::new()),
+        Arc::new(GoPlugin::new()),
         Arc::new(JavaPlugin::new()),
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
