@@ -1,7 +1,7 @@
 # `mise generate`
 
 - **Usage**: `mise generate <SUBCOMMAND>`
-- **Aliases**: `g`
+- **Aliases**: `gen`
 - **Source code**: [`src/cli/generate.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate.rs)
 
 [experimental] Generate files for various tools/services
