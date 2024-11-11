@@ -338,7 +338,7 @@ impl Backend for PythonPlugin {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        if SETTINGS.python.compile == Some(false) {
+        if cfg!(windows) || SETTINGS.python.compile == Some(false) {
             Ok(self
                 .fetch_precompiled_remote_versions()?
                 .iter()
@@ -385,10 +385,10 @@ impl Backend for PythonPlugin {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::get();
-        if cfg!(windows) || SETTINGS.python.compile == Some(true) {
-            self.install_compiled(ctx)?;
-        } else {
+        if cfg!(windows) || SETTINGS.python.compile == Some(false) {
             self.install_precompiled(ctx)?;
+        } else {
+            self.install_compiled(ctx)?;
         }
         self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
         if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {

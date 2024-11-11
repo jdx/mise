@@ -111,7 +111,7 @@ tar = "0.4"
 tempfile = "3"
 tera = "1"
 terminal_size = "0.4"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = [
     "io-std",
     "rt",
