@@ -941,7 +941,7 @@ const completionSpec: Fig.Spec = {
         {
             "name": [
                 "generate",
-                "g"
+                "gen"
             ],
             "description": "[experimental] Generate files for various tools/services",
             "subcommands": [
