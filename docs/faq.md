@@ -77,9 +77,8 @@ and `mise deactivate` to work without wrapping them in `eval "$(mise shell)"`.
 
 ## Windows support?
 
-Very basic support for windows is currently available, however because Windows can't support asdf
-plugins, they must use core and vfox only—which means only a handful of tools are available on
-Windows.
+Very basic support for windows is currently available, however because Windows can't support the asdf
+backend, windows can use core, aqua, or vfox backends though.
 
 As of this writing, env var management and task execution are not yet supported on Windows.
 

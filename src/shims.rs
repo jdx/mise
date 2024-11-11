@@ -238,6 +238,7 @@ fn list_tool_bins(t: Arc<dyn Backend>, tv: &ToolVersion) -> Result<Vec<String>> 
     Ok(t.list_bin_paths(tv)?
         .into_iter()
         .par_bridge()
+        .filter(|p| p.parent().is_some())
         .filter(|path| path.exists())
         .map(|dir| list_executables_in_dir(&dir))
         .collect::<Result<Vec<_>>>()?

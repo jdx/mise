@@ -18,6 +18,7 @@ mod hint;
 #[macro_use]
 mod cmd;
 
+mod aqua;
 mod backend;
 pub(crate) mod build_time;
 mod cache;
@@ -43,6 +44,7 @@ mod install_context;
 mod lock_file;
 mod lockfile;
 pub(crate) mod logger;
+pub(crate) mod maplit;
 mod migrate;
 mod path_env;
 mod plugins;

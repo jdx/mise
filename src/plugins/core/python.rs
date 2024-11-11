@@ -184,7 +184,7 @@ impl PythonPlugin {
         HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))?;
 
         ctx.pr.set_message(format!("installing {filename}"));
-        file::untar(&tarball_path, &download)?;
+        file::untar_gz(&tarball_path, &download)?;
         file::remove_all(&install)?;
         file::rename(download.join("python"), &install)?;
         #[cfg(unix)]
