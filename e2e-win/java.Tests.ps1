@@ -1,6 +1,6 @@
 
 Describe 'java' {
-    It 'executes java' {
-        mise x java@21 -- java --version | Select -First 1 | Should -BeLike 'openjdk 21.*'
+    It 'executes java@temurin-21' {
+        mise x java@temurin-21 -- java --version | Select -Last 1 | Should -BeLike '*Temurin-21.*'
     }
 }
