@@ -124,6 +124,14 @@ note adding an alias will also add a symlink, in this case:
 my_custom_node = '20'
 ```
 
+### Minimum mise version
+
+Define a minimum supported version of mise for the config file. mise will ignore config files that use too new of a version.
+
+```toml
+min_version = '2024.11.1'
+```
+
 ### `mise.toml` schema
 
 - You can find the JSON schema for `.mise.toml` [here](https://github.com/jdx/mise/blob/main/schema/mise.json).
