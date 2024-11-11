@@ -10,7 +10,7 @@ use serde::de::Visitor;
 use serde::{de, Deserializer};
 use serde_derive::Deserialize;
 use tera::Context as TeraContext;
-use toml_edit::{table, value, Array, DocumentMut, InlineTable, Item, Value};
+use toml_edit::{table, value, Array, DocumentMut, InlineTable, Item, Key, Value};
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
@@ -179,9 +179,10 @@ impl MiseToml {
             .doc_mut()?
             .entry("env")
             .or_insert_with(table)
-            .as_table_like_mut()
+            .as_table_mut()
             .unwrap();
-        env_tbl.insert(key, toml_edit::value(value));
+        let key = get_key_with_decor(env_tbl, key);
+        env_tbl.insert_formatted(&key, toml_edit::value(value));
         Ok(())
     }
 
@@ -190,7 +191,7 @@ impl MiseToml {
             .doc_mut()?
             .entry("env")
             .or_insert_with(table)
-            .as_table_like_mut()
+            .as_table_mut()
             .unwrap();
         env_tbl.remove(key);
         Ok(())
@@ -326,19 +327,24 @@ impl ConfigFile for MiseToml {
             .as_table_mut()
             .unwrap();
 
+        // create a key from the short name preserving any decorations like prefix/suffix if the key already exists
+        let key = get_key_with_decor(tools, fa.short.as_str());
+
         // if a short name is used like "node", make sure we remove any long names like "core:node"
-        tools.remove(&fa.full.to_string());
+        if fa.short != fa.full {
+            tools.remove(&fa.full.to_string());
+        }
 
         if versions.len() == 1 {
             if output_empty_opts(&versions[0].1) {
-                tools.insert(&fa.short, value(versions[0].0.clone()));
+                tools.insert_formatted(&key, value(versions[0].0.clone()));
             } else {
                 let mut table = InlineTable::new();
                 table.insert("version", versions[0].0.to_string().into());
                 for (k, v) in &versions[0].1 {
                     table.insert(k, v.clone().into());
                 }
-                tools.insert(&fa.short, table.into());
+                tools.insert_formatted(&key, table.into());
             }
         } else {
             let mut arr = Array::new();
@@ -354,7 +360,7 @@ impl ConfigFile for MiseToml {
                     arr.push(table);
                 }
             }
-            tools.insert(&fa.short, Item::Value(Value::Array(arr)));
+            tools.insert_formatted(&key, Item::Value(Value::Array(arr)));
         }
 
         Ok(())
@@ -432,6 +438,21 @@ impl ConfigFile for MiseToml {
     fn clone_box(&self) -> Box<dyn ConfigFile> {
         Box::new(self.clone())
     }
+}
+
+/// Returns a [`toml_edit::Key`] from the given `key`.
+/// Preserves any surrounding whitespace (e.g. comments) if the key already exists in the provided [`toml_edit::Table`].
+fn get_key_with_decor(table: &toml_edit::Table, key: &str) -> Key {
+    let mut key = Key::from(key);
+    if let Some((k, _)) = table.get_key_value(&key) {
+        if let Some(prefix) = k.leaf_decor().prefix() {
+            key.leaf_decor_mut().set_prefix(prefix.clone());
+        }
+        if let Some(suffix) = k.leaf_decor().suffix() {
+            key.leaf_decor_mut().set_suffix(suffix.clone());
+        }
+    }
+    key
 }
 
 impl Debug for MiseToml {
