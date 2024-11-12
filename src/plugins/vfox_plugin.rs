@@ -5,7 +5,7 @@ use crate::plugins::{Plugin, PluginList, PluginType};
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, plugins, registry};
+use crate::{dirs, plugins, registry};
 use console::style;
 use contracts::requires;
 use eyre::{eyre, Context, Report};
