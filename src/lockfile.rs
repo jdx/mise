@@ -105,7 +105,7 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
                         .collect(),
                 );
                 existing_lockfile.tools.insert(short.to_string(), versions);
-            } else {
+            } else if !tvl.versions.is_empty() {
                 existing_lockfile.tools.insert(
                     short.to_string(),
                     toml::Value::String(tvl.versions[0].version.clone()),

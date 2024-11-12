@@ -1,6 +1,6 @@
 # `mise registry`
 
-- **Usage**: `mise registry [NAME]`
+- **Usage**: `mise registry [-b --backend <BACKEND>] [NAME]`
 - **Source code**: [`src/cli/registry.rs`](https://github.com/jdx/mise/blob/main/src/cli/registry.rs)
 
 List available tools to install
@@ -14,6 +14,12 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 ### `[NAME]`
 
 Show only the specified tool's full name
+
+## Flags
+
+### `-b --backend <BACKEND>`
+
+Show only tools for this backend
 
 Examples:
 

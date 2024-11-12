@@ -849,6 +849,9 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`."
     $ mise registry poetry
     asdf:mise-plugins/mise-poetry
 "
+    flag "-b --backend" help="Show only tools for this backend" {
+        arg "<BACKEND>"
+    }
     arg "[NAME]" help="Show only the specified tool's full name"
 }
 cmd "reshim" help="Creates new shims based on bin paths from currently installed tools." {
