@@ -1,3 +1,4 @@
+use crate::backend::BackendType;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
 use crate::ui::table;
@@ -15,10 +16,25 @@ use tabled::{Table, Tabled};
 pub struct Registry {
     /// Show only the specified tool's full name
     name: Option<String>,
+
+    /// Show only tools for this backend
+    #[clap(short, long)]
+    backend: Option<BackendType>,
 }
 
 impl Registry {
     pub fn run(self) -> Result<()> {
+        let filter_backend = |fulls: &Vec<String>| {
+            if let Some(backend) = self.backend {
+                fulls
+                    .iter()
+                    .filter(|full| full.starts_with(&format!("{backend}:")))
+                    .cloned()
+                    .collect()
+            } else {
+                fulls.clone()
+            }
+        };
         if let Some(name) = &self.name {
             if let Some(fulls) = REGISTRY.get(name.as_str()) {
                 miseprintln!("{}", fulls.join(" "));
@@ -26,17 +42,26 @@ impl Registry {
                 bail!("tool not found in registry: {name}");
             }
         } else {
-            let core = CORE_PLUGINS
-                .keys()
-                .map(|short| Row::from((short.to_string(), format!("core:{short}"))))
-                .collect_vec();
-            let data = REGISTRY
+            let mut data = REGISTRY
                 .iter()
-                .map(|(short, full)| (short.to_string(), full.join(" ")).into())
-                .chain(core)
+                .map(|(short, full)| Row::from((short.to_string(), filter_backend(full).join(" "))))
+                .filter(|row| !row.full.is_empty())
+                .collect_vec();
+            if self
+                .backend
+                .as_ref()
+                .is_some_and(|b| *b == BackendType::Core)
+            {
+                let core = CORE_PLUGINS
+                    .keys()
+                    .map(|short| Row::from((short.to_string(), format!("core:{short}"))));
+                data.extend(core);
+            }
+            let rows = data
+                .into_iter()
                 .sorted_by(|a, b| a.short.cmp(&b.short))
                 .collect::<Vec<Row>>();
-            let mut table = Table::new(data);
+            let mut table = Table::new(rows);
             table::default_style(&mut table, false);
             miseprintln!("{table}");
         }

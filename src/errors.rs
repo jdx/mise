@@ -9,7 +9,7 @@ use crate::toolset::{ToolRequest, ToolSource};
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Failed to resolve {tr} from {ts}: {source:#}")]
+    #[error("[{ts}] {tr}: {source:#}")]
     FailedToResolveVersion {
         tr: ToolRequest,
         ts: ToolSource,
