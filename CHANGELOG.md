@@ -1,5 +1,16 @@
 # Changelog
 
+## [2024.11.8](https://github.com/jdx/mise/compare/v2024.11.7..v2024.11.8) - 2024-11-12
+
+### 🚀 Features
+
+- make zig non-experimental by [@jdx](https://github.com/jdx) in [#2999](https://github.com/jdx/mise/pull/2999)
+- aqua backend by [@jdx](https://github.com/jdx) in [#2995](https://github.com/jdx/mise/pull/2995)
+
+### 🔍 Other Changes
+
+- only release fig autocomplete once per month by [@jdx](https://github.com/jdx) in [b86885a](https://github.com/jdx/mise/commit/b86885ab7855b34a776b3119dcb6526b3d8fd814)
+
 ## [2024.11.7](https://github.com/jdx/mise/compare/v2024.11.6..v2024.11.7) - 2024-11-11
 
 ### 🚀 Features
