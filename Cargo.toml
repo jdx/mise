@@ -98,7 +98,8 @@ rmp-serde = "1"
 serde = "1"
 serde_derive = "1"
 serde_ignored = "0.1"
-serde_json = { version = "1", features = [] }
+serde_json = "1"
+serde_yaml = "0.9"
 sha2 = "0.10.8"
 shell-escape = "0.1"
 shell-words = "1"
@@ -129,6 +130,7 @@ vfox = { version = "0.3", default-features = false }
 walkdir = "2"
 which = "7"
 xx = { version = "1", features = ["glob"] }
+xz2 = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]

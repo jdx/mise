@@ -501,7 +501,8 @@ fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
     })
 }
 
-pub fn untar(archive: &Path, dest: &Path) -> Result<()> {
+pub fn untar_gz(archive: &Path, dest: &Path) -> Result<()> {
+    // TODO: show progress
     debug!("tar -xzf {} -C {}", archive.display(), dest.display());
     let f = File::open(archive)?;
     let tar = GzDecoder::new(f);
@@ -512,7 +513,21 @@ pub fn untar(archive: &Path, dest: &Path) -> Result<()> {
     })
 }
 
+pub fn untar_xz(archive: &Path, dest: &Path) -> Result<()> {
+    // TODO: show progress
+    debug!("tar -xf {} -C {}", archive.display(), dest.display());
+    let f = File::open(archive)?;
+    let tar = xz2::read::XzDecoder::new(f);
+    Archive::new(tar).unpack(dest).wrap_err_with(|| {
+        let archive = display_path(archive);
+        let dest = display_path(dest);
+        format!("failed to extract tar: {archive} to {dest}")
+    })
+}
+
 pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
+    // TODO: show progress
+    debug!("unzip {} -d {}", archive.display(), dest.display());
     ZipArchive::new(File::open(archive)?)
         .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
         .extract(dest)

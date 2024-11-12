@@ -55,6 +55,12 @@ env = "MISE_ALWAYS_KEEP_INSTALL"
 type = "Bool"
 description = "should mise keep install files after installation even if the installation fails"
 
+[aqua_registry_url]
+env = "MISE_AQUA_REGISTRY_URL"
+type = "Url"
+default = "https://github.com/aquaproj/aqua-registry"
+description = "URL to fetch aqua registry from."
+
 [asdf]
 env = "MISE_ASDF"
 type = "Bool"

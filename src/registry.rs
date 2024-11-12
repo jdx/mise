@@ -13,10 +13,11 @@ include!(concat!(env!("OUT_DIR"), "/registry.rs"));
 // a rust representation of registry.toml
 pub static REGISTRY: Lazy<BTreeMap<&str, Vec<String>>> = Lazy::new(|| {
     let backend_types = vec![
-        "core", "ubi", "vfox", "asdf", "cargo", "go", "npm", "pipx", "spm",
+        "core", "ubi", "vfox", "asdf", "aqua", "cargo", "go", "npm", "pipx", "spm",
     ]
     .into_iter()
-    .filter(|b| cfg!(unix) || *b != "asdf")
+    .filter(|b| !(*b == "asdf" && cfg!(windows)))
+    .filter(|b| !(*b == "aqua" && cfg!(unix) && !SETTINGS.experimental))
     .filter(|b| !SETTINGS.disable_backends.contains(&b.to_string()))
     .collect::<HashSet<_>>();
 

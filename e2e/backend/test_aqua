@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+assert_contains "mise x aqua:BurntSushi/ripgrep@14.0.0 -- rg --version" "ripgrep 14.0.0"
+assert "mise x age@1.2.0 -- age --version" "v1.2.0"

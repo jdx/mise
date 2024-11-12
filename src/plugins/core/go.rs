@@ -129,7 +129,7 @@ impl GoPlugin {
         if cfg!(windows) {
             file::unzip(tarball_path, tmp_extract_path.path())?;
         } else {
-            file::untar(tarball_path, tmp_extract_path.path())?;
+            file::untar_gz(tarball_path, tmp_extract_path.path())?;
         }
         file::remove_all(tv.install_path())?;
         file::rename(tmp_extract_path.path().join("go"), tv.install_path())?;
