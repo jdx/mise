@@ -23,7 +23,7 @@ pub struct PluginsLink {
     /// The local path to the plugin
     /// e.g.: ./mise-node
     #[clap(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
-    path: Option<PathBuf>,
+    dir: Option<PathBuf>,
 
     /// Overwrite existing plugin
     #[clap(long, short = 'f')]
@@ -32,7 +32,7 @@ pub struct PluginsLink {
 
 impl PluginsLink {
     pub fn run(self) -> Result<()> {
-        let (name, path) = match self.path {
+        let (name, path) = match self.dir {
             Some(path) => (self.name, path),
             None => {
                 let path = PathBuf::from(PathBuf::from(&self.name).absolutize()?);

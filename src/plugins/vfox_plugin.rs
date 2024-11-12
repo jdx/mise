@@ -102,7 +102,6 @@ impl VfoxPlugin {
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
-        vfox.temp_dir = env::temp_dir().join("mise-vfox");
         let rx = vfox.log_subscribe();
         (vfox, rx)
     }

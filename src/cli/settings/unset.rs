@@ -54,7 +54,6 @@ mod tests {
         all_compile = false
         always_keep_download = true
         always_keep_install = true
-        aqua_registry_url = "https://github.com/aquaproj/aqua-registry"
         asdf_compat = false
         cache_prune_age = "0"
         color = true

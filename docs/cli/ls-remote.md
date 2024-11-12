@@ -11,7 +11,7 @@ Note that the results may be cached, run `mise cache clean` to clear the cache a
 
 ### `[TOOL@VERSION]`
 
-Plugin to get versions for
+Tool to get versions for
 
 ### `[PREFIX]`
 

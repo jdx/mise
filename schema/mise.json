@@ -128,7 +128,6 @@
           "type": "boolean"
         },
         "aqua_registry_url": {
-          "default": "https://github.com/aquaproj/aqua-registry",
           "description": "URL to fetch aqua registry from.",
           "type": "string"
         },

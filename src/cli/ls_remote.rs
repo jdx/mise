@@ -17,7 +17,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
 )]
 pub struct LsRemote {
-    /// Plugin to get versions for
+    /// Tool to get versions for
     #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
     pub plugin: Option<ToolArg>,
 

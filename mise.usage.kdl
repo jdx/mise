@@ -664,7 +664,7 @@ Note that the results may be cached, run `mise cache clean` to clear the cache a
     20.1.0
 "
     flag "--all" help="Show all installed plugins and versions"
-    arg "[TOOL@VERSION]" help="Plugin to get versions for"
+    arg "[TOOL@VERSION]" help="Tool to get versions for"
     arg "[PREFIX]" help="The version prefix to use when querying the latest version\nsame as the first argument after the \"@\""
 }
 cmd "outdated" help="Shows outdated tool versions" {
@@ -749,7 +749,7 @@ This is used for developing a plugin."
 "#
         flag "-f --force" help="Overwrite existing plugin"
         arg "<NAME>" help="The name of the plugin\ne.g.: node, ruby"
-        arg "[PATH]" help="The local path to the plugin\ne.g.: ./mise-node"
+        arg "[DIR]" help="The local path to the plugin\ne.g.: ./mise-node"
     }
     cmd "ls" help="List installed plugins" {
         alias "list"

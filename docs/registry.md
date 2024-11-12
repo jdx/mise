@@ -16,36 +16,34 @@ editLink: false
 | age | [aqua:FiloSottile/age](https://github.com/FiloSottile/age) [asdf:threkk/asdf-age](https://github.com/threkk/asdf-age) |
 | age-plugin-yubikey | [asdf:joke/asdf-age-plugin-yubikey](https://github.com/joke/asdf-age-plugin-yubikey) |
 | agebox | [ubi:slok/agebox](https://github.com/slok/agebox) [asdf:slok/asdf-agebox](https://github.com/slok/asdf-agebox) |
-| air | [asdf:pdemagny/asdf-air](https://github.com/pdemagny/asdf-air) |
-| aks-engine | [asdf:robsonpeixoto/asdf-aks-engine](https://github.com/robsonpeixoto/asdf-aks-engine) |
-| alias | [asdf:andrewthauer/asdf-alias](https://github.com/andrewthauer/asdf-alias) |
+| air | [aqua:air-verse/air](https://github.com/air-verse/air) [asdf:pdemagny/asdf-air](https://github.com/pdemagny/asdf-air) |
+| aks-engine | [aqua:Azure/aks-engine](https://github.com/Azure/aks-engine) [asdf:robsonpeixoto/asdf-aks-engine](https://github.com/robsonpeixoto/asdf-aks-engine) |
 | allure | [asdf:comdotlinux/asdf-allure](https://github.com/comdotlinux/asdf-allure) |
-| alp | [asdf:asdf-community/asdf-alp](https://github.com/asdf-community/asdf-alp) |
+| alp | [aqua:tkuchiki/alp](https://github.com/tkuchiki/alp) [asdf:asdf-community/asdf-alp](https://github.com/asdf-community/asdf-alp) |
 | amass | [asdf:dhoeric/asdf-amass](https://github.com/dhoeric/asdf-amass) |
-| amazon-ecr-credential-helper | [asdf:dex4er/asdf-amazon-ecr-credential-helper](https://github.com/dex4er/asdf-amazon-ecr-credential-helper) |
+| amazon-ecr-credential-helper | [aqua:awslabs/amazon-ecr-credential-helper](https://github.com/awslabs/amazon-ecr-credential-helper) [asdf:dex4er/asdf-amazon-ecr-credential-helper](https://github.com/dex4er/asdf-amazon-ecr-credential-helper) |
 | ambient | [asdf:jtakakura/asdf-ambient](https://github.com/jtakakura/asdf-ambient) |
 | ansible-base | [asdf:amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp) |
 | ant | [asdf:jackboespflug/asdf-ant](https://github.com/jackboespflug/asdf-ant) |
-| apko | [ubi:chainguard-dev/apko](https://github.com/chainguard-dev/apko) [asdf:omissis/asdf-apko](https://github.com/omissis/asdf-apko) |
+| apko | [aqua:chainguard-dev/apko](https://github.com/chainguard-dev/apko) [ubi:chainguard-dev/apko](https://github.com/chainguard-dev/apko) [asdf:omissis/asdf-apko](https://github.com/omissis/asdf-apko) |
 | apollo-ios-cli | [asdf:MacPaw/asdf-apollo-ios-cli](https://github.com/MacPaw/asdf-apollo-ios-cli) |
 | apollo-router | [ubi:apollographql/router](https://github.com/apollographql/router) [asdf:safx/asdf-apollo-router](https://github.com/safx/asdf-apollo-router) |
 | apollo-rover | [ubi:apollographql/rover](https://github.com/apollographql/rover) |
 | arc | [asdf:ORCID/asdf-arc](https://github.com/ORCID/asdf-arc) |
-| arduino-cli | [asdf:egnor/asdf-arduino-cli](https://github.com/egnor/asdf-arduino-cli) |
+| arduino-cli | [aqua:arduino/arduino-cli](https://github.com/arduino/arduino-cli) [asdf:egnor/asdf-arduino-cli](https://github.com/egnor/asdf-arduino-cli) |
 | argc | [ubi:sigoden/argc](https://github.com/sigoden/argc) |
-| argo | [asdf:sudermanjr/asdf-argo](https://github.com/sudermanjr/asdf-argo) |
-| argo-rollouts | [asdf:abatilo/asdf-argo-rollouts](https://github.com/abatilo/asdf-argo-rollouts) |
+| argo | [aqua:argoproj/argo-workflows](https://github.com/argoproj/argo-workflows) [asdf:sudermanjr/asdf-argo](https://github.com/sudermanjr/asdf-argo) |
+| argo-rollouts | [aqua:argoproj/argo-rollouts](https://github.com/argoproj/argo-rollouts) [asdf:abatilo/asdf-argo-rollouts](https://github.com/abatilo/asdf-argo-rollouts) |
 | argocd | [ubi:argoproj/argo-cd](https://github.com/argoproj/argo-cd) [asdf:beardix/asdf-argocd](https://github.com/beardix/asdf-argocd) |
 | aria2 | [asdf:asdf-community/asdf-aria2](https://github.com/asdf-community/asdf-aria2) |
 | asciidoctorj | [asdf:gliwka/asdf-asciidoctorj](https://github.com/gliwka/asdf-asciidoctorj) |
-| asdf-plugin-manager | [asdf:asdf-community/asdf-plugin-manager](https://github.com/asdf-community/asdf-plugin-manager) |
 | assh | [asdf:zekker6/asdf-assh](https://github.com/zekker6/asdf-assh) |
-| atlas | [asdf:komi1230/asdf-atlas](https://github.com/komi1230/asdf-atlas) |
-| atmos | [asdf:cloudposse/asdf-atmos](https://github.com/cloudposse/asdf-atmos) |
+| atlas | [aqua:ariga/atlas](https://github.com/ariga/atlas) [asdf:komi1230/asdf-atlas](https://github.com/komi1230/asdf-atlas) |
+| atmos | [aqua:cloudposse/atmos](https://github.com/cloudposse/atmos) [asdf:cloudposse/asdf-atmos](https://github.com/cloudposse/asdf-atmos) |
 | auto-doc | [asdf:looztra/asdf-auto-doc](https://github.com/looztra/asdf-auto-doc) |
 | aws-amplify-cli | [asdf:LozanoMatheus/asdf-aws-amplify-cli](https://github.com/LozanoMatheus/asdf-aws-amplify-cli) |
-| aws-copilot | [asdf:NeoHsu/asdf-copilot](https://github.com/NeoHsu/asdf-copilot) |
-| aws-iam-authenticator | [asdf:zekker6/asdf-aws-iam-authenticator](https://github.com/zekker6/asdf-aws-iam-authenticator) |
+| aws-copilot | [aqua:aws/copilot-cli](https://github.com/aws/copilot-cli) [asdf:NeoHsu/asdf-copilot](https://github.com/NeoHsu/asdf-copilot) |
+| aws-iam-authenticator | [aqua:kubernetes-sigs/aws-iam-authenticator](https://github.com/kubernetes-sigs/aws-iam-authenticator) [asdf:zekker6/asdf-aws-iam-authenticator](https://github.com/zekker6/asdf-aws-iam-authenticator) |
 | aws-nuke | [asdf:bersalazar/asdf-aws-nuke](https://github.com/bersalazar/asdf-aws-nuke) |
 | aws-sam-cli | [asdf:amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp) |
 | aws-sso-cli | [asdf:adamcrews/asdf-aws-sso-cli](https://github.com/adamcrews/asdf-aws-sso-cli) |
@@ -117,7 +115,7 @@ editLink: false
 | cilium-cli | [ubi:cilium/cilium-cli](https://github.com/cilium/cilium-cli) [asdf:carnei-ro/asdf-cilium-cli](https://github.com/carnei-ro/asdf-cilium-cli) |
 | cilium-hubble | [asdf:NitriKx/asdf-cilium-hubble](https://github.com/NitriKx/asdf-cilium-hubble) |
 | circleci-cli | [ubi:CircleCI-Public/circleci-cli](https://github.com/CircleCI-Public/circleci-cli) [asdf:ucpr/asdf-circleci-cli](https://github.com/ucpr/asdf-circleci-cli) |
-| clang | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) [vfox:version-fox/vfox-clang](https://github.com/version-fox/vfox-clang) |
+| clang | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) [vfox:jdx/vfox-clang](https://github.com/jdx/vfox-clang) |
 | clang-format | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | clangd | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | clarinet | [asdf:alexgo-io/asdf-clarinet](https://github.com/alexgo-io/asdf-clarinet) |
