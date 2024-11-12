@@ -567,6 +567,7 @@ editLink: false
 | poetry | [asdf:mise-plugins/mise-poetry](https://github.com/mise-plugins/mise-poetry) |
 | polaris | [asdf:particledecay/asdf-polaris](https://github.com/particledecay/asdf-polaris) |
 | popeye | [asdf:nlamirault/asdf-popeye](https://github.com/nlamirault/asdf-popeye) |
+| postgis | [asdf:knu/asdf-postgis](https://github.com/knu/asdf-postgis) |
 | postgres | [asdf:smashedtoatoms/asdf-postgres](https://github.com/smashedtoatoms/asdf-postgres) |
 | powerline-go | [asdf:dex4er/asdf-powerline-go](https://github.com/dex4er/asdf-powerline-go) |
 | powerpipe | [asdf:jc00ke/asdf-powerpipe](https://github.com/jc00ke/asdf-powerpipe) |
