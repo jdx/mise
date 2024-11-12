@@ -1683,6 +1683,21 @@ const completionSpec: Fig.Spec = {
                 "registry"
             ],
             "description": "List available tools to install",
+            "options": [
+                {
+                    "name": [
+                        "-b",
+                        "--backend"
+                    ],
+                    "description": "Show only tools for this backend",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "backend",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                }
+            ],
             "args": [
                 {
                     "name": "name",

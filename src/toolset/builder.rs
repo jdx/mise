@@ -41,7 +41,7 @@ impl ToolsetBuilder {
             if Error::is_argument_err(&err) {
                 return Err(err);
             }
-            warn!("failed to resolve toolset: {err:#}");
+            warn!("failed to resolve toolset: {err:?}");
         }
 
         time!("toolset::builder::build");
