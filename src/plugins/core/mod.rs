@@ -42,7 +42,7 @@ mod zig;
 
 pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     #[cfg(unix)]
-    let mut plugins: Vec<Arc<dyn Backend>> = vec![
+    let plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         Arc::new(ErlangPlugin::new()),
@@ -51,6 +51,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
+        Arc::new(ZigPlugin::new()),
     ];
     #[cfg(windows)]
     let plugins: Vec<Arc<dyn Backend>> = vec![
@@ -62,14 +63,8 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(NodePlugin::new()),
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
+        // Arc::new(ZigPlugin::new()),
     ];
-    #[cfg(unix)]
-    {
-        let settings = Settings::get();
-        if settings.experimental {
-            plugins.push(Arc::new(ZigPlugin::new()));
-        }
-    }
     plugins
         .into_iter()
         .map(|p| (p.id().to_string(), p))
