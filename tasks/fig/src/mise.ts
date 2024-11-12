@@ -1345,7 +1345,7 @@ const completionSpec: Fig.Spec = {
             "args": [
                 {
                     "name": "tool@version",
-                    "description": "Plugin to get versions for",
+                    "description": "Tool to get versions for",
                     "isOptional": true,
                     "isVariadic": false,
                     "generators": toolVersionGenerator
@@ -1480,11 +1480,11 @@ const completionSpec: Fig.Spec = {
                             "isVariadic": false
                         },
                         {
-                            "name": "path",
+                            "name": "dir",
                             "description": "The local path to the plugin\ne.g.: ./mise-node",
                             "isOptional": true,
                             "isVariadic": false,
-                            "template": "filepaths"
+                            "template": "folders"
                         }
                     ]
                 },

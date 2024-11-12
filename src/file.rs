@@ -501,6 +501,16 @@ fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
     })
 }
 
+pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {
+    debug!("gunzip {} > {}", input.display(), dest.display());
+    let f = File::open(input)?;
+    let mut dec = GzDecoder::new(f);
+    let mut output = File::create(dest)?;
+    std::io::copy(&mut dec, &mut output)
+        .wrap_err_with(|| format!("failed to un-gzip: {}", display_path(input)))?;
+    Ok(())
+}
+
 pub fn untar_gz(archive: &Path, dest: &Path) -> Result<()> {
     // TODO: show progress
     debug!("tar -xzf {} -C {}", archive.display(), dest.display());

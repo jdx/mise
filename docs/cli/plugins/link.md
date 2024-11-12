@@ -1,6 +1,6 @@
 # `mise plugins link`
 
-- **Usage**: `mise plugins link [-f --force] <NAME> [PATH]`
+- **Usage**: `mise plugins link [-f --force] <NAME> [DIR]`
 - **Aliases**: `ln`
 - **Source code**: [`src/cli/plugins/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/link.rs)
 
@@ -15,7 +15,7 @@ This is used for developing a plugin.
 The name of the plugin
 e.g.: node, ruby
 
-### `[PATH]`
+### `[DIR]`
 
 The local path to the plugin
 e.g.: ./mise-node

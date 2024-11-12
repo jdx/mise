@@ -1,14 +1,18 @@
+use crate::aqua::aqua_template;
 use crate::backend::aqua;
+use crate::backend::aqua::{arch, os};
 use crate::config::SETTINGS;
 use crate::duration::DAILY;
 use crate::git::Git;
-use crate::{dirs, file};
+use crate::{dirs, file, hashmap, http};
 use eyre::Result;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde_derive::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use url::Url;
 
 pub static AQUA_REGISTRY: Lazy<AquaRegistry> = Lazy::new(|| {
     AquaRegistry::standard().unwrap_or_else(|err| {
@@ -21,6 +25,7 @@ static AQUA_REGISTRY_PATH: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("aqua-r
 #[derive(Default)]
 pub struct AquaRegistry {
     path: PathBuf,
+    repo_exists: bool,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -62,7 +67,7 @@ struct AquaOverride {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaFile {
-    // pub name: String,
+    pub name: String,
     pub src: Option<String>,
 }
 
@@ -75,20 +80,25 @@ impl AquaRegistry {
     pub fn standard() -> Result<Self> {
         let path = AQUA_REGISTRY_PATH.clone();
         let repo = Git::new(&path);
-        if repo.exists() {
+        let mut repo_exists = repo.exists();
+        if repo_exists {
             fetch_latest_repo(&repo)?;
-        } else {
+        } else if let Some(aqua_registry_url) = &SETTINGS.aqua_registry_url {
             info!("cloning aqua registry to {path:?}");
-            repo.clone(&SETTINGS.aqua_registry_url)?;
+            repo.clone(aqua_registry_url)?;
+            repo_exists = true;
         }
-        Ok(Self { path })
+        Ok(Self { path, repo_exists })
     }
 
     pub fn package(&self, id: &str) -> Result<Option<AquaPackage>> {
         let path_id = id.split('/').join(std::path::MAIN_SEPARATOR_STR);
-        let path = self.path.join("pkgs").join(path_id).join("registry.yaml");
-        if !path.exists() {
-            return Ok(None);
+        let path = self.path.join("pkgs").join(&path_id).join("registry.yaml");
+        if !self.repo_exists && (!path.exists() || file::modified_duration(&path)? > DAILY) {
+            let url: Url =
+                format!("https://mise-versions.jdx.dev/aqua-registry/{path_id}/registry.yaml")
+                    .parse()?;
+            http::HTTP_FETCH.download_file(url, &path, None)?;
         }
         let f = file::open(&path)?;
         let registry: RegistryYaml = serde_yaml::from_reader(f)?;
@@ -139,6 +149,78 @@ impl AquaPackage {
             .iter()
             // TODO: semver
             .find(|vo| vo.version_constraint == "true")
+    }
+
+    pub fn format(&self, v: &str) -> &str {
+        if self.format.is_empty() {
+            let asset = self.asset(v);
+            if asset.ends_with(".tar.gz") {
+                "tar.gz"
+            } else if asset.ends_with(".tar.xz") {
+                "tar.xz"
+            } else if asset.ends_with(".gz") {
+                "gz"
+            } else if asset.ends_with(".xz") {
+                "xz"
+            } else if asset.ends_with(".zip") {
+                "zip"
+            } else {
+                "raw"
+            }
+        } else {
+            &self.format
+        }
+    }
+
+    pub fn asset(&self, v: &str) -> String {
+        self.parse_aqua_str(&self.asset, v, &Default::default())
+    }
+
+    pub fn asset_strs(&self, v: &str) -> IndexSet<String> {
+        let mut strs = IndexSet::from([self.asset(v)]);
+        if cfg!(macos) {
+            let mut ctx = HashMap::default();
+            ctx.insert("ARCH".to_string(), "arm64".to_string());
+            strs.insert(self.parse_aqua_str(&self.asset, v, &ctx));
+        }
+        strs
+    }
+
+    pub fn url(&self, v: &str) -> String {
+        self.parse_aqua_str(&self.url, v, &Default::default())
+    }
+
+    fn parse_aqua_str(&self, s: &str, v: &str, overrides: &HashMap<String, String>) -> String {
+        let os = os();
+        let mut arch = arch();
+        if os == "darwin" && arch == "arm64" && self.rosetta2 {
+            arch = "amd64";
+        }
+        if os == "windows" && arch == "arm64" && self.windows_arm_emulation {
+            arch = "amd64";
+        }
+        let replace = |s: &str| {
+            self.replacements
+                .get(s)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| s.to_string())
+        };
+        let mut ctx = hashmap! {
+            "Version".to_string() => replace(v),
+            "OS".to_string() => replace(os),
+            "Arch".to_string() => replace(arch),
+            "Format".to_string() => replace(&self.format),
+        };
+        ctx.extend(overrides.clone());
+        aqua_template::render(s, &ctx)
+    }
+}
+
+impl AquaFile {
+    pub fn src(&self, pkg: &AquaPackage, v: &str) -> Option<String> {
+        self.src
+            .as_ref()
+            .map(|src| pkg.parse_aqua_str(src, v, &Default::default()))
     }
 }
 
