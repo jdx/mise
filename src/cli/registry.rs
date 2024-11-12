@@ -47,11 +47,7 @@ impl Registry {
                 .map(|(short, full)| Row::from((short.to_string(), filter_backend(full).join(" "))))
                 .filter(|row| !row.full.is_empty())
                 .collect_vec();
-            if self
-                .backend
-                .as_ref()
-                .is_some_and(|b| *b == BackendType::Core)
-            {
+            if self.backend.is_none() || self.backend == Some(BackendType::Core) {
                 let core = CORE_PLUGINS
                     .keys()
                     .map(|short| Row::from((short.to_string(), format!("core:{short}"))));
