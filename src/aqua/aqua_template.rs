@@ -32,10 +32,15 @@ pub fn render(tmpl: &str, ctx: &Context) -> String {
 }
 
 fn parse(mut code: &str, ctx: &Context) -> String {
-    let mut ops = vec![];
+    type Op = Box<dyn Fn(&str) -> String>;
+    let mut ops: Vec<Op> = Vec::new();
     if code.starts_with("title ") {
         code = &code[6..];
-        ops.push(|s: &str| s.to_title_case());
+        ops.push(Box::new(|s: &str| s.to_title_case()));
+    }
+    if code.starts_with("trimV ") {
+        code = &code[6..];
+        ops.push(Box::new(|s: &str| s.trim_start_matches('v').to_string()));
     }
     let mut val = if let Some(key) = code.strip_prefix(".") {
         ctx.get(key).unwrap().clone()
@@ -84,5 +89,6 @@ mod tests {
         test_parse2: ("\"world\"", "world", hashmap!{}),
         test_parse3: ("XXX", "<ERR>", hashmap!{}),
         test_parse4: (r#"title "world""#, "World", hashmap!{}),
+        test_parse5: (r#"trimV "v1.0.0""#, "1.0.0", hashmap!{}),
     );
 }

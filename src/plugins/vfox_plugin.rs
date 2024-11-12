@@ -5,7 +5,7 @@ use crate::plugins::{Plugin, PluginList, PluginType};
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, plugins, registry};
+use crate::{dirs, plugins, registry};
 use console::style;
 use contracts::requires;
 use eyre::{eyre, Context, Report};
@@ -102,7 +102,6 @@ impl VfoxPlugin {
         vfox.cache_dir = dirs::CACHE.to_path_buf();
         vfox.download_dir = dirs::DOWNLOADS.to_path_buf();
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
-        vfox.temp_dir = env::temp_dir().join("mise-vfox");
         let rx = vfox.log_subscribe();
         (vfox, rx)
     }

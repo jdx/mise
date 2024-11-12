@@ -1,5 +1,4 @@
 use crate::aqua::aqua_registry::{AquaPackage, AquaPackageType, AQUA_REGISTRY};
-use crate::aqua::aqua_template;
 use crate::backend::{Backend, BackendType};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -9,10 +8,10 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
-use crate::{dirs, file, github, hashmap};
+use crate::{dirs, file, github};
 use eyre::{bail, ContextCompat, Result};
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::PathBuf;
 
@@ -68,18 +67,21 @@ impl Backend for AquaBackend {
         if !cfg!(windows) {
             SETTINGS.ensure_experimental("aqua")?;
         }
-        let v = &ctx.tv.version;
+        let mut v = format!("v{}", ctx.tv.version);
         let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, v)?
+            .package_with_version(&self.id, &v)?
             .wrap_err_with(|| format!("no aqua registry found for {}", self.id))?;
-        match pkg.r#type {
-            AquaPackageType::GithubRelease => {
-                Self::install_version_github_release(ctx, v, &pkg)?;
+        validate(&pkg)?;
+        let url = match self.fetch_url(&pkg, &v) {
+            Ok(url) => url,
+            Err(_) => {
+                v = ctx.tv.version.to_string();
+                self.fetch_url(&pkg, &v)?
             }
-            AquaPackageType::Http => {
-                unimplemented!("http aqua packages not yet supported")
-            }
-        }
+        };
+        let filename = url.split('/').last().unwrap();
+        self.download(ctx, &url, filename)?;
+        self.install(ctx, &pkg, &v, filename)?;
 
         Ok(())
     }
@@ -89,24 +91,31 @@ impl Backend for AquaBackend {
             .package_with_version(&self.id, &tv.version)?
             .wrap_err_with(|| format!("no aqua registry found for {}", self.ba))?;
 
-        if pkg.files.is_empty() {
-            return Ok(vec![tv.install_path()]);
-        }
-
-        Ok(pkg
+        let srcs = pkg
             .files
             .iter()
             .flat_map(|f| {
-                f.src
-                    .as_ref()
-                    .map(|s| parse_aqua_str(&pkg, s, &tv.version, &Default::default()))
+                vec![
+                    f.src(&pkg, &tv.version),
+                    f.src(&pkg, &format!("v{}", tv.version)),
+                ]
+                .into_iter()
+                .flatten()
             })
+            .collect_vec();
+        if srcs.is_empty() {
+            return Ok(vec![tv.install_path()]);
+        }
+
+        Ok(srcs
+            .iter()
             .map(|f| {
                 PathBuf::from(f)
                     .parent()
                     .map(|p| tv.install_path().join(p))
                     .unwrap_or_else(|| tv.install_path())
             })
+            .filter(|p| p.exists())
             .unique()
             .collect())
     }
@@ -120,7 +129,8 @@ impl AquaBackend {
                 .get(id)
                 .and_then(|b| b.iter().find_map(|s| s.strip_prefix("aqua:")))
                 .unwrap_or_else(|| {
-                    panic!("invalid aqua tool: {}", id);
+                    warn!("invalid aqua tool: {}", id);
+                    id
                 });
         }
         Self {
@@ -136,22 +146,21 @@ impl AquaBackend {
         }
     }
 
-    fn install_version_github_release(
-        ctx: &InstallContext,
-        v: &str,
-        pkg: &AquaPackage,
-    ) -> Result<()> {
-        validate(pkg)?;
-        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let mut v = format!("v{}", v);
-        let gh_release = match github::get_release(&gh_id, &v) {
-            Ok(r) => r,
-            Err(_) => {
-                v = v.strip_prefix('v').unwrap().to_string();
-                github::get_release(&gh_id, &v)?
+    fn fetch_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        match pkg.r#type {
+            AquaPackageType::GithubRelease => self.github_release_url(pkg, v),
+            AquaPackageType::Http => {
+                let url = pkg.url(v);
+                HTTP.head(&url)?;
+                Ok(url)
             }
-        };
-        let asset_strs = asset_strs(pkg, &v);
+        }
+    }
+
+    fn github_release_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let gh_release = github::get_release(&gh_id, v)?;
+        let asset_strs = pkg.asset_strs(v);
         let asset = gh_release
             .assets
             .iter()
@@ -164,28 +173,49 @@ impl AquaBackend {
                 )
             })?;
 
-        let url = &asset.browser_download_url;
-        let filename = url.split('/').last().unwrap();
+        Ok(asset.browser_download_url.to_string())
+    }
+
+    fn download(&self, ctx: &InstallContext, url: &str, filename: &str) -> Result<()> {
         let tarball_path = ctx.tv.download_path().join(filename);
+        if tarball_path.exists() {
+            return Ok(());
+        }
         ctx.pr.set_message(format!("downloading {filename}"));
         HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))?;
+        Ok(())
+    }
 
+    fn install(
+        &self,
+        ctx: &InstallContext,
+        pkg: &AquaPackage,
+        v: &str,
+        filename: &str,
+    ) -> Result<()> {
+        let tarball_path = ctx.tv.download_path().join(filename);
         ctx.pr.set_message(format!("installing {filename}"));
         let install_path = ctx.tv.install_path();
         file::remove_all(&install_path)?;
-        if pkg.format == "raw" {
+        let format = pkg.format(v);
+        let bin_path =
+            install_path.join(pkg.files.first().map(|f| &f.name).unwrap_or(&pkg.repo_name));
+        if format == "raw" {
             file::create_dir_all(&install_path)?;
-            let bin_path = install_path.join(&pkg.repo_name);
             file::copy(&tarball_path, &bin_path)?;
             file::make_executable(&bin_path)?;
-        } else if pkg.format == "tar.gz" {
+        } else if format == "tar.gz" {
             file::untar_gz(&tarball_path, &install_path)?;
-        } else if pkg.format == "tar.xz" {
+        } else if format == "tar.xz" {
             file::untar_xz(&tarball_path, &install_path)?;
-        } else if pkg.format == "zip" {
+        } else if format == "zip" {
             file::unzip(&tarball_path, &install_path)?;
+        } else if format == "gz" {
+            file::create_dir_all(&install_path)?;
+            file::un_gz(&tarball_path, &bin_path)?;
+            file::make_executable(&bin_path)?;
         } else {
-            bail!("unsupported format: {}", pkg.format);
+            bail!("unsupported format: {}", format);
         }
 
         Ok(())
@@ -224,44 +254,4 @@ pub fn arch() -> &'static str {
     } else {
         &ARCH
     }
-}
-
-fn asset_strs(pkg: &AquaPackage, v: &str) -> HashSet<String> {
-    let mut ctx = Default::default();
-    let mut strs = HashSet::from([parse_aqua_str(pkg, &pkg.asset, v, &ctx)]);
-    if cfg!(macos) {
-        ctx.insert("ARCH".to_string(), "arm64".to_string());
-        strs.insert(parse_aqua_str(pkg, &pkg.asset, v, &ctx));
-    }
-    strs
-}
-
-fn parse_aqua_str(
-    pkg: &AquaPackage,
-    s: &str,
-    v: &str,
-    overrides: &HashMap<String, String>,
-) -> String {
-    let os = os();
-    let mut arch = arch();
-    if os == "darwin" && arch == "arm64" && pkg.rosetta2 {
-        arch = "amd64";
-    }
-    if os == "windows" && arch == "arm64" && pkg.windows_arm_emulation {
-        arch = "amd64";
-    }
-    let replace = |s: &str| {
-        pkg.replacements
-            .get(s)
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| s.to_string())
-    };
-    let mut ctx = hashmap! {
-        "Version".to_string() => replace(v),
-        "OS".to_string() => replace(os),
-        "Arch".to_string() => replace(arch),
-        "Format".to_string() => replace(&pkg.format),
-    };
-    ctx.extend(overrides.clone());
-    aqua_template::render(s, &ctx)
 }

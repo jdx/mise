@@ -203,7 +203,7 @@ impl Toolset {
         };
         let installing: HashSet<String> = HashSet::new();
         let installing = Arc::new(Mutex::new(installing));
-        let installed = thread::scope(|s| {
+        let installed: Vec<ToolVersion> = thread::scope(|s| {
             #[allow(clippy::map_collect_result_unit)]
             (0..jobs)
                 .map(|_| {
@@ -257,6 +257,27 @@ impl Toolset {
         shims::reshim(self, false)?;
         runtime_symlinks::rebuild(config)?;
         trace!("install: done");
+        if log::log_enabled!(log::Level::Debug) {
+            for tv in installed.iter() {
+                let backend = backend::get(tv.backend());
+                let bin_paths = backend
+                    .list_bin_paths(tv)
+                    .map_err(|e| {
+                        warn!("Error listing bin paths for {tv}: {e:#}");
+                    })
+                    .unwrap_or_default();
+                debug!("[{tv}] list_bin_paths: {bin_paths:?}");
+                let env = backend
+                    .exec_env(config, self, tv)
+                    .map_err(|e| {
+                        warn!("Error running exec-env: {e:#}");
+                    })
+                    .unwrap_or_default();
+                if !env.is_empty() {
+                    debug!("[{tv}] exec_env: {env:?}");
+                }
+            }
+        }
         Ok(installed)
     }
 

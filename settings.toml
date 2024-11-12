@@ -58,8 +58,16 @@ description = "should mise keep install files after installation even if the ins
 [aqua_registry_url]
 env = "MISE_AQUA_REGISTRY_URL"
 type = "Url"
-default = "https://github.com/aquaproj/aqua-registry"
+optional = true
 description = "URL to fetch aqua registry from."
+docs = """
+URL to fetch aqua registry from. This is used to install tools from the aqua registry.
+
+By default, the official aqua registry is used: https://github.com/aquaproj/aqua-registry
+
+However when this is not specified, instead of cloning the entire registry each individual tool's metadata is fetched
+via HTTP individually.
+"""
 
 [asdf]
 env = "MISE_ASDF"

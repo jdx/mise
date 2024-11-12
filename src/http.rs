@@ -53,7 +53,7 @@ impl Client {
             .zstd(true)
     }
 
-    async fn get<U: IntoUrl>(&self, url: U) -> Result<Response> {
+    pub async fn get<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let get = |url: Url| async move {
             debug!("GET {}", &url);
             let mut req = self.reqwest.get(url.clone());
@@ -74,6 +74,41 @@ impl Client {
                 // try with https since http may be blocked
                 url.set_scheme("https").unwrap();
                 get(url).await?
+            }
+            Err(err) => return Err(err),
+        };
+
+        resp.error_for_status_ref()?;
+        Ok(resp)
+    }
+
+    pub fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
+        let url = url.into_url().unwrap();
+        let rt = self.runtime()?;
+        rt.block_on(self.head_async(url))
+    }
+
+    pub async fn head_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
+        let head = |url: Url| async move {
+            debug!("HEAD {}", &url);
+            let mut req = self.reqwest.head(url.clone());
+            if url.host_str() == Some("api.github.com") {
+                if let Some(token) = &*env::GITHUB_TOKEN {
+                    req = req.header("authorization", format!("token {}", token));
+                }
+            }
+            let resp = req.send().await?;
+            debug!("HEAD {url} {}", resp.status());
+            resp.error_for_status_ref()?;
+            Ok(resp)
+        };
+        let mut url = url.into_url().unwrap();
+        let resp = match head(url.clone()).await {
+            Ok(resp) => resp,
+            Err(_) if url.scheme() == "http" => {
+                // try with https since http may be blocked
+                url.set_scheme("https").unwrap();
+                head(url).await?
             }
             Err(err) => return Err(err),
         };
