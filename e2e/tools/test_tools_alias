@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 
 cat <<EOF >mise.toml
+tools.node = "100.0.0"
 tools.mytool = "2"
 tools.mytool-lts = "lts"
 
+alias.node = "asdf:tiny"
 alias.mytool = "asdf:tiny"
 [alias.mytool-lts]
-full = "asdf:tiny"
+backend = "asdf:tiny"
 versions = {lts = "1.0.1"}
 EOF
 
+assert_contains "mise x node -- rtx-tiny" "rtx-tiny: v100.0.0"
 assert_contains "mise x mytool -- rtx-tiny" "rtx-tiny: v2.1.0"
 assert_contains "mise x mytool-lts -- rtx-tiny" "rtx-tiny: v1.0.1"
 

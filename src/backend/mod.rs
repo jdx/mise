@@ -22,7 +22,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, lock_file, plugins, versions_host};
 use backend_type::BackendType;
 use console::style;
-use eyre::{bail, eyre, Result, WrapErr};
+use eyre::{bail, eyre, WrapErr};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -99,7 +99,7 @@ pub fn load_tools() {
 
     let tools: BackendMap = tools
         .into_iter()
-        .map(|backend| (backend.id().to_string(), backend))
+        .map(|backend| (backend.ba().short.clone(), backend))
         .collect();
     *memo_tools = Some(tools.clone());
     time!("load_tools done");
@@ -129,6 +129,12 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
     } else {
         None
     }
+}
+
+pub fn remove(short: &str) {
+    let mut m = TOOLS.lock().unwrap();
+    let backends = m.as_mut().unwrap();
+    backends.remove(short);
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
@@ -182,8 +188,8 @@ pub trait Backend: Debug + Send + Sync {
             .collect();
         let dep_backends = deps
             .iter()
-            .map(|ba| ba.backend())
-            .collect::<Result<Vec<ABackend>>>()?;
+            .flat_map(|ba| ba.backend())
+            .collect::<Vec<ABackend>>();
         for dep in dep_backends {
             // TODO: pass the right tvr
             let tvr = ToolRequest::System(dep.id().into(), ToolSource::Unknown);

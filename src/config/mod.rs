@@ -54,7 +54,7 @@ pub struct Config {
 
 #[derive(Debug, Clone, Default)]
 pub struct Alias {
-    pub full: Option<String>,
+    pub backend: Option<String>,
     pub versions: IndexMap<String, String>,
 }
 
@@ -125,6 +125,15 @@ impl Config {
             install_state::add_plugin(plugin, plugin_type)?;
         }
 
+        for (short, _) in config
+            .all_aliases
+            .iter()
+            .filter(|(_, a)| a.backend.is_some())
+        {
+            // we need to remove aliased tools so they get re-added with updated "full" values
+            backend::remove(short);
+        }
+
         Ok(config)
     }
     pub fn env_maybe(&self) -> Option<IndexMap<String, String>> {
@@ -179,7 +188,7 @@ impl Config {
         let plugin_name = self
             .all_aliases
             .get(plugin_name)
-            .and_then(|a| a.full.clone())
+            .and_then(|a| a.backend.clone())
             .unwrap_or(plugin_name.to_string());
         let plugin_name = plugin_name.strip_prefix("asdf:").unwrap_or(&plugin_name);
         let plugin_name = plugin_name.strip_prefix("vfox:").unwrap_or(plugin_name);
@@ -253,8 +262,8 @@ impl Config {
 
         for (short, plugin_aliases) in &self.aliases {
             let alias = aliases.entry(short.clone()).or_default();
-            if let Some(full) = &plugin_aliases.full {
-                alias.full = Some(full.clone());
+            if let Some(full) = &plugin_aliases.backend {
+                alias.backend = Some(full.clone());
             }
             for (from, to) in &plugin_aliases.versions {
                 alias.versions.insert(from.clone(), to.clone());
@@ -770,8 +779,8 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     for config_file in config_files.values() {
         for (plugin, plugin_aliases) in config_file.aliases()? {
             let alias = aliases.entry(plugin.clone()).or_default();
-            if let Some(full) = plugin_aliases.full {
-                alias.full = Some(full);
+            if let Some(full) = plugin_aliases.backend {
+                alias.backend = Some(full);
             }
             for (from, to) in plugin_aliases.versions {
                 alias.versions.insert(from, to);
