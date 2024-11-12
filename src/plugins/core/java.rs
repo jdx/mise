@@ -121,7 +121,7 @@ impl JavaPlugin {
         {
             file::unzip(tarball_path, &tv.download_path())?;
         } else {
-            file::untar(tarball_path, &tv.download_path())?;
+            file::untar_gz(tarball_path, &tv.download_path())?;
         }
         self.move_to_install_path(tv, m)
     }

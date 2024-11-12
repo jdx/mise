@@ -75,6 +75,7 @@ export default defineConfig({
                 link: "/dev-tools/backends/",
                 collapsed: true,
                 items: [
+                  { text: "aqua", link: "/dev-tools/backends/aqua" },
                   { text: "asdf", link: "/dev-tools/backends/asdf" },
                   { text: "cargo", link: "/dev-tools/backends/cargo" },
                   { text: "go", link: "/dev-tools/backends/go" },

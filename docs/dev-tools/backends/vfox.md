@@ -1,9 +1,8 @@
 # Vfox Backend <Badge type="warning" text="experimental" />
 
-[Vfox](https://github.com/version-fox/vfox) plugins may be used in mise as an alternative for asdf
-plugins. On Windows, only vfox plugins are supported since asdf plugins require POSIX compatibility.
+[Vfox](https://github.com/version-fox/vfox) plugins may be used in mise to install tools.
 
-The code for this is inside of the mise repository at [`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
+The code for this is inside the mise repository at [`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
 
 ## Dependencies
 
@@ -12,14 +11,6 @@ No dependencies are required for vfox. Vfox lua code is read via a lua interpret
 ## Usage
 
 The following installs the latest version of cmake and sets it as the active version on PATH:
-
-```sh
-$ mise use -g vfox:cmake
-$ cmake --version
-cmake version 3.21.3
-```
-
-Alternatively, you can specify the GitHub repo:
 
 ```sh
 $ mise use -g vfox:version-fox/vfox-cmake
@@ -31,7 +22,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ```toml
 [tools]
-"vfox:cmake" = "latest"
+"vfox:version-fox/vfox-cmake" = "latest"
 ```
 
 ## Default plugin backend

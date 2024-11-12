@@ -8,12 +8,12 @@ editLink: false
 | ----------- | --------------- |
 | 1password-cli | [asdf:NeoHsu/asdf-1password-cli](https://github.com/NeoHsu/asdf-1password-cli) |
 | aapt2 | [asdf:ronnnnn/asdf-aapt2](https://github.com/ronnnnn/asdf-aapt2) |
-| act | [ubi:nektos/act](https://github.com/nektos/act) [asdf:gr1m0h/asdf-act](https://github.com/gr1m0h/asdf-act) |
-| action-validator | [ubi:mpalmer/action-validator](https://github.com/mpalmer/action-validator) [asdf:mpalmer/action-validator](https://github.com/mpalmer/action-validator) |
+| act | [aqua:nektos/act](https://github.com/nektos/act) [ubi:nektos/act](https://github.com/nektos/act) [asdf:gr1m0h/asdf-act](https://github.com/gr1m0h/asdf-act) |
+| action-validator | [aqua:mpalmer/action-validator](https://github.com/mpalmer/action-validator) [ubi:mpalmer/action-validator](https://github.com/mpalmer/action-validator) [asdf:mpalmer/action-validator](https://github.com/mpalmer/action-validator) |
 | actionlint | [ubi:rhysd/actionlint](https://github.com/rhysd/actionlint) [asdf:crazy-matt/asdf-actionlint](https://github.com/crazy-matt/asdf-actionlint) |
 | adr-tools | [asdf:https://gitlab.com/td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) |
 | ag | [asdf:koketani/asdf-ag](https://github.com/koketani/asdf-ag) |
-| age | [asdf:threkk/asdf-age](https://github.com/threkk/asdf-age) |
+| age | [aqua:FiloSottile/age](https://github.com/FiloSottile/age) [asdf:threkk/asdf-age](https://github.com/threkk/asdf-age) |
 | age-plugin-yubikey | [asdf:joke/asdf-age-plugin-yubikey](https://github.com/joke/asdf-age-plugin-yubikey) |
 | agebox | [ubi:slok/agebox](https://github.com/slok/agebox) [asdf:slok/asdf-agebox](https://github.com/slok/asdf-agebox) |
 | air | [asdf:pdemagny/asdf-air](https://github.com/pdemagny/asdf-air) |
@@ -179,7 +179,7 @@ editLink: false
 | dhall | [asdf:aaaaninja/asdf-dhall](https://github.com/aaaaninja/asdf-dhall) |
 | difftastic | [ubi:wilfred/difftastic](https://github.com/wilfred/difftastic) [asdf:volf52/asdf-difftastic](https://github.com/volf52/asdf-difftastic) |
 | digdag | [asdf:jtakakura/asdf-digdag](https://github.com/jtakakura/asdf-digdag) |
-| direnv | [asdf:asdf-community/asdf-direnv](https://github.com/asdf-community/asdf-direnv) |
+| direnv | [aqua:direnv/direnv](https://github.com/direnv/direnv) [asdf:asdf-community/asdf-direnv](https://github.com/asdf-community/asdf-direnv) |
 | dive | [ubi:wagoodman/dive](https://github.com/wagoodman/dive) [asdf:looztra/asdf-dive](https://github.com/looztra/asdf-dive) |
 | djinni | [asdf:cross-language-cpp/asdf-djinni](https://github.com/cross-language-cpp/asdf-djinni) |
 | dmd | [asdf:sylph01/asdf-dmd](https://github.com/sylph01/asdf-dmd) |
@@ -612,7 +612,7 @@ editLink: false
 | revive | [asdf:bjw-s/asdf-revive](https://github.com/bjw-s/asdf-revive) |
 | richgo | [asdf:paxosglobal/asdf-richgo](https://github.com/paxosglobal/asdf-richgo) |
 | riff | [asdf:abinet/asdf-riff](https://github.com/abinet/asdf-riff) |
-| ripgrep | [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
+| ripgrep | [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [aqua:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
 | rke | [asdf:particledecay/asdf-rke](https://github.com/particledecay/asdf-rke) |
 | rlwrap | [asdf:asdf-community/asdf-rlwrap](https://github.com/asdf-community/asdf-rlwrap) |
 | rome | [asdf:kichiemon/asdf-rome](https://github.com/kichiemon/asdf-rome) |

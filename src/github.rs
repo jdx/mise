@@ -11,6 +11,14 @@ pub struct GithubRelease {
     // pub prerelease: bool,
     // pub created_at: String,
     // pub published_at: Option<String>,
+    pub assets: Vec<GithubAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GithubAsset {
+    pub name: String,
+    // pub size: u64,
+    pub browser_download_url: String,
 }
 
 pub fn list_releases(repo: &str) -> eyre::Result<Vec<GithubRelease>> {

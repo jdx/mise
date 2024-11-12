@@ -3,6 +3,7 @@ source: src/cli/backends/ls.rs
 expression: output
 snapshot_kind: text
 ---
+aqua
 cargo
 core
 go

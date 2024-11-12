@@ -30,6 +30,7 @@ use crate::toolset::{is_outdated_version, ToolRequest, ToolSource, ToolVersion, 
 use crate::ui::progress_report::SingleReport;
 use crate::{config, dirs, env, file, lock_file, versions_host};
 
+pub mod aqua;
 pub mod asdf;
 pub mod backend_meta;
 pub mod cargo;
@@ -61,6 +62,7 @@ pub type VersionCacheManager = CacheManager<Vec<String>>;
 )]
 #[strum(serialize_all = "snake_case")]
 pub enum BackendType {
+    Aqua,
     Asdf,
     Cargo,
     Core,
@@ -163,6 +165,7 @@ pub fn get(fa: &BackendArg) -> ABackend {
 
 pub fn arg_to_backend(ba: BackendArg) -> ABackend {
     match ba.backend_type {
+        BackendType::Aqua => Arc::new(aqua::AquaBackend::from_arg(ba)),
         BackendType::Asdf => Arc::new(asdf::AsdfBackend::from_arg(ba)),
         BackendType::Cargo => Arc::new(cargo::CargoBackend::from_arg(ba)),
         BackendType::Core => Arc::new(asdf::AsdfBackend::from_arg(ba)),
@@ -530,7 +533,10 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn which(&self, tv: &ToolVersion, bin_name: &str) -> eyre::Result<Option<PathBuf>> {
-        let bin_paths = self.list_bin_paths(tv)?;
+        let bin_paths = self
+            .list_bin_paths(tv)?
+            .into_iter()
+            .filter(|p| p.parent().is_some());
         for bin_path in bin_paths {
             let bin_path = bin_path.join(bin_name);
             if bin_path.exists() {

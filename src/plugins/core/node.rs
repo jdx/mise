@@ -52,7 +52,7 @@ impl NodePlugin {
         let tarball_name = &opts.binary_tarball_name;
         ctx.pr.set_message(format!("extracting {tarball_name}"));
         let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
-        file::untar(&opts.binary_tarball_path, tmp_extract_path.path())?;
+        file::untar_gz(&opts.binary_tarball_path, tmp_extract_path.path())?;
         file::remove_all(&opts.install_path)?;
         file::rename(
             tmp_extract_path.path().join(slug(&opts.version)),
@@ -95,7 +95,7 @@ impl NodePlugin {
         )?;
         ctx.pr.set_message(format!("extracting {tarball_name}"));
         file::remove_all(&opts.build_dir)?;
-        file::untar(&opts.source_tarball_path, opts.build_dir.parent().unwrap())?;
+        file::untar_gz(&opts.source_tarball_path, opts.build_dir.parent().unwrap())?;
         self.exec_configure(ctx, opts)?;
         self.exec_make(ctx, opts)?;
         self.exec_make_install(ctx, opts)?;

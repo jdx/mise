@@ -44,6 +44,9 @@ for (const match of stdout.split("\n")) {
         return `[${match[1]}:${match[2]}](https://pkg.go.dev/${match[2]})`;
       } else if (match[1] === "ubi") {
         return `[${match[1]}:${match[2]}](https://github.com/${match[2]})`;
+      } else if (match[1] === "aqua") {
+        // TODO: handle non-github repos
+        return `[${match[1]}:${match[2]}](https://github.com/${match[2]})`;
       } else {
         throw new Error(`Unknown registry: ${full}`);
       }

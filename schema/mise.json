@@ -127,6 +127,11 @@
           "description": "should mise keep install files after installation even if the installation fails",
           "type": "boolean"
         },
+        "aqua_registry_url": {
+          "default": "https://github.com/aquaproj/aqua-registry",
+          "description": "URL to fetch aqua registry from.",
+          "type": "string"
+        },
         "asdf": {
           "description": "use asdf as a default plugin backend",
           "deprecated": "Use disable_backends instead.",

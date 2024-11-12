@@ -493,6 +493,7 @@ impl Toolset {
                     Vec::new()
                 })
             })
+            .filter(|p| p.parent().is_some())
             .collect()
     }
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
