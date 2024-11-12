@@ -391,11 +391,11 @@ pub trait Backend: Debug + Send + Sync {
             trace!("Ensuring dependencies installed for {}", self.id());
             let config = Config::get();
             let ts = config.get_tool_request_set()?.filter_by_tool(&deps);
-            if !ts.missing_tools().is_empty() {
+            let missing = ts.missing_tools();
+            if !missing.is_empty() {
                 bail!(
-                    "Dependency {} not installed for {}",
-                    deps.iter().map(|d| d.to_string()).join(", "),
-                    self.id()
+                    "missing dependency: {}",
+                    missing.iter().map(|d| d.to_string()).join(", "),
                 );
             }
         }

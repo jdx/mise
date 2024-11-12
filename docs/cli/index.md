@@ -71,7 +71,7 @@ Answer yes to all confirmation prompts
 - [`mise plugins uninstall [-p --purge] [-a --all] [PLUGIN]...`](/cli/plugins/uninstall.md)
 - [`mise plugins update [-j --jobs <JOBS>] [PLUGIN]...`](/cli/plugins/update.md)
 - [`mise prune [FLAGS] [PLUGIN]...`](/cli/prune.md)
-- [`mise registry [NAME]`](/cli/registry.md)
+- [`mise registry [-b --backend <BACKEND>] [NAME]`](/cli/registry.md)
 - [`mise reshim [-f --force]`](/cli/reshim.md)
 - [`mise run [FLAGS]`](/cli/run.md)
 - [`mise self-update [FLAGS] [VERSION]`](/cli/self-update.md)
