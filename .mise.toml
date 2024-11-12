@@ -83,7 +83,7 @@ env = { NO_COLOR = "1" }
 run = "mise render-mangen"
 
 [tasks."render:fig"]
-depends = ["build", "render:usage", "render:completions"]
+depends = ["build", "render:usage"]
 run = [
     'usage generate fig --file mise.usage.kdl --out-file tasks/fig/src/mise.ts',
     "tsx tasks/fig/addCustomGenerators.ts tasks/fig/src/mise.ts tasks/fig/src/mise.ts"

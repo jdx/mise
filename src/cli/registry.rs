@@ -1,6 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::registry::REGISTRY;
+use crate::registry::{RegistryTool, REGISTRY};
 use crate::ui::table;
 use eyre::{bail, Result};
 use itertools::Itertools;
@@ -24,27 +24,27 @@ pub struct Registry {
 
 impl Registry {
     pub fn run(self) -> Result<()> {
-        let filter_backend = |fulls: &Vec<String>| {
+        let filter_backend = |rt: &RegistryTool| {
             if let Some(backend) = self.backend {
-                fulls
+                rt.backends
                     .iter()
                     .filter(|full| full.starts_with(&format!("{backend}:")))
                     .cloned()
                     .collect()
             } else {
-                fulls.clone()
+                rt.backends.clone()
             }
         };
         if let Some(name) = &self.name {
-            if let Some(fulls) = REGISTRY.get(name.as_str()) {
-                miseprintln!("{}", fulls.join(" "));
+            if let Some(rt) = REGISTRY.get(name.as_str()) {
+                miseprintln!("{}", rt.backends.join(" "));
             } else {
                 bail!("tool not found in registry: {name}");
             }
         } else {
             let mut data = REGISTRY
                 .iter()
-                .map(|(short, full)| Row::from((short.to_string(), filter_backend(full).join(" "))))
+                .map(|(short, rt)| Row::from((short.to_string(), filter_backend(rt).join(" "))))
                 .filter(|row| !row.full.is_empty())
                 .collect_vec();
             if self.backend.is_none() || self.backend == Some(BackendType::Core) {
