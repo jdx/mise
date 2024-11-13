@@ -141,7 +141,7 @@ impl PythonPlugin {
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
             None => {
-                if cfg!(windows) || SETTINGS.python.compile == Some(false) {
+                if cfg!(windows) || SETTINGS.python.compile != Some(true) {
                     if !cfg!(windows) {
                         hint!(
                             "python_compile",
@@ -338,7 +338,7 @@ impl Backend for PythonPlugin {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        if cfg!(windows) || SETTINGS.python.compile == Some(false) {
+        if cfg!(windows) || SETTINGS.python.compile != Some(true) {
             Ok(self
                 .fetch_precompiled_remote_versions()?
                 .iter()
@@ -367,7 +367,7 @@ impl Backend for PythonPlugin {
             .get_or_init(|| {
                 CacheManagerBuilder::new(self.fa().cache_path.join("remote_versions.msgpack.z"))
                     .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-                    .with_cache_key((SETTINGS.python.compile == Some(false)).to_string())
+                    .with_cache_key((SETTINGS.python.compile != Some(true)).to_string())
                     .build()
                     .into()
             })
