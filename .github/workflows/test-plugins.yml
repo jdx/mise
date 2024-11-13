@@ -164,7 +164,6 @@ jobs:
           - elm
           # TODO: - R install libcurl
           - nim
-          - alias
           - mysql
           - minikube
           - gradle
