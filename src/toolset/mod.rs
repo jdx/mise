@@ -33,6 +33,7 @@ use versions::{Version, Versioning};
 use xx::regex;
 
 mod builder;
+pub(crate) mod install_state;
 pub(crate) mod tool_request;
 mod tool_request_set;
 mod tool_source;
@@ -90,13 +91,13 @@ impl Toolset {
         }
     }
     pub fn add_version(&mut self, tvr: ToolRequest) {
-        let fa = tvr.backend();
+        let fa = tvr.ba();
         if self.is_disabled(fa) {
             return;
         }
         let tvl = self
             .versions
-            .entry(tvr.backend().clone())
+            .entry(tvr.ba().clone())
             .or_insert_with(|| ToolVersionList::new(fa.clone(), self.source.clone().unwrap()));
         tvl.requests.push(tvr);
     }
@@ -141,7 +142,7 @@ impl Toolset {
             .into_iter()
             .filter(|(p, tv)| opts.force || !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
-            .filter(|tv| matches!(self.versions[tv.backend()].source, ToolSource::Argument))
+            .filter(|tv| matches!(self.versions[tv.ba()].source, ToolSource::Argument))
             .map(|tv| tv.request)
             .collect_vec();
         let versions = self.install_versions(config, versions, &mpr, opts)?;
@@ -152,7 +153,7 @@ impl Toolset {
     pub fn list_missing_plugins(&self) -> Vec<String> {
         self.versions
             .keys()
-            .map(backend::get)
+            .flat_map(|ba| ba.backend())
             .filter(|b| b.plugin().is_some_and(|p| !p.is_installed()))
             .map(|p| p.id().into())
             .collect()
@@ -178,10 +179,10 @@ impl Toolset {
         let queue: Vec<_> = versions
             .into_iter()
             .rev()
-            .chunk_by(|v| v.backend().clone())
+            .chunk_by(|v| v.ba().clone())
             .into_iter()
-            .map(|(fa, v)| (backend::get(&fa), v.collect_vec()))
-            .collect();
+            .map(|(ba, v)| Ok((ba.backend()?, v.collect_vec())))
+            .collect::<Result<_>>()?;
         for (backend, _) in &queue {
             if let Some(plugin) = backend.plugin() {
                 if !plugin.is_installed() {
@@ -249,6 +250,9 @@ impl Toolset {
                 .collect::<Result<Vec<Vec<ToolVersion>>>>()
                 .map(|x| x.into_iter().flatten().rev().collect())
         })?;
+
+        install_state::reset();
+
         trace!("install: resolving");
         if let Err(err) = self.resolve() {
             debug!("error resolving versions after install: {err:#}");
@@ -259,7 +263,7 @@ impl Toolset {
         trace!("install: done");
         if log::log_enabled!(log::Level::Debug) {
             for tv in installed.iter() {
-                let backend = backend::get(tv.backend());
+                let backend = tv.backend()?;
                 let bin_paths = backend
                     .list_bin_paths(tv)
                     .map_err(|e| {
@@ -304,7 +308,7 @@ impl Toolset {
                         |v| match current_versions.get(&(p.id().into(), v.clone())) {
                             Some((p, tv)) => Ok((p.clone(), tv.clone())),
                             None => {
-                                let tv = ToolRequest::new(p.fa().clone(), &v, ToolSource::Unknown)?
+                                let tv = ToolRequest::new(p.ba().clone(), &v, ToolSource::Unknown)?
                                     .resolve(&Default::default())
                                     .unwrap();
                                 Ok((p.clone(), tv))
@@ -320,12 +324,6 @@ impl Toolset {
 
         Ok(versions)
     }
-    pub fn list_plugins(&self) -> Vec<Arc<dyn Backend>> {
-        self.list_versions_by_plugin()
-            .into_iter()
-            .map(|(p, _)| p)
-            .collect()
-    }
     pub fn list_current_requests(&self) -> Vec<&ToolRequest> {
         self.versions
             .values()
@@ -335,7 +333,7 @@ impl Toolset {
     pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &Vec<ToolVersion>)> {
         self.versions
             .iter()
-            .map(|(p, v)| (backend::get(p), &v.versions))
+            .flat_map(|(ba, v)| eyre::Ok((ba.backend()?, &v.versions)))
             .collect()
     }
     pub fn list_current_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
@@ -347,7 +345,7 @@ impl Toolset {
                     let tv = match v.version.split_once(':') {
                         Some((ref_type @ ("tag" | "branch" | "rev"), r)) => {
                             let request = ToolRequest::Ref {
-                                backend: p.fa().clone(),
+                                backend: p.ba().clone(),
                                 ref_: r.to_string(),
                                 ref_type: ref_type.to_string(),
                                 options: v.request.options().clone(),
@@ -545,7 +543,7 @@ impl Toolset {
             let versions = self
                 .list_missing_versions()
                 .into_iter()
-                .filter(|tv| tv.backend() == plugin.fa())
+                .filter(|tv| tv.ba() == plugin.ba())
                 .map(|tv| tv.request)
                 .collect_vec();
             if !versions.is_empty() {
@@ -584,9 +582,8 @@ impl Toolset {
                 SettingsStatusMissingTools::Never => false,
                 SettingsStatusMissingTools::Always => true,
                 SettingsStatusMissingTools::IfOtherVersionsInstalled => tv
-                    .get_backend()
-                    .list_installed_versions()
-                    .is_ok_and(|f| !f.is_empty()),
+                    .backend()
+                    .is_ok_and(|b| b.list_installed_versions().is_ok_and(|f| !f.is_empty())),
             })
             .collect_vec();
         if missing.is_empty() || *env::__MISE_SHIM {
@@ -612,7 +609,7 @@ impl Toolset {
 fn show_python_install_hint(versions: &[ToolRequest]) {
     let num_python = versions
         .iter()
-        .filter(|tr| tr.backend().name == "python")
+        .filter(|tr| tr.ba().tool_name == "python")
         .count();
     if num_python != 1 {
         return;
@@ -651,10 +648,7 @@ impl From<ToolRequestSet> for Toolset {
 }
 
 fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequest>> {
-    let versions_hash = requests
-        .iter()
-        .map(|tr| tr.backend())
-        .collect::<HashSet<_>>();
+    let versions_hash = requests.iter().map(|tr| tr.ba()).collect::<HashSet<_>>();
     let leaves = requests
         .iter()
         .map(|tr| {
@@ -753,7 +747,7 @@ pub struct OutdatedInfo {
 impl OutdatedInfo {
     fn new(tv: ToolVersion, source: ToolSource) -> Self {
         Self {
-            name: tv.backend().short.to_string(),
+            name: tv.ba().short.to_string(),
             current: None,
             requested: tv.request.version(),
             tool_request: tv.request.clone(),

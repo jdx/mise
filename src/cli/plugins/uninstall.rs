@@ -1,9 +1,10 @@
 use eyre::Result;
 
 use crate::backend::unalias_backend;
-use crate::plugins;
+use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
+use crate::{backend, plugins};
 
 /// Removes a plugin
 #[derive(Debug, clap::Args)]
@@ -27,10 +28,7 @@ impl PluginsUninstall {
         let mpr = MultiProgressReport::get();
 
         let plugins = match self.all {
-            true => plugins::list()
-                .into_iter()
-                .map(|p| p.id().to_string())
-                .collect(),
+            true => install_state::list_plugins()?.keys().cloned().collect(),
             false => self.plugin.clone(),
         };
 
@@ -42,15 +40,19 @@ impl PluginsUninstall {
     }
 
     fn uninstall_one(&self, plugin_name: &str, mpr: &MultiProgressReport) -> Result<()> {
-        let backend = plugins::get(plugin_name);
-        if let Some(plugin) = backend.plugin() {
-            let prefix = format!("plugin:{}", style::eblue(&backend.name()));
-            let pr = mpr.add(&prefix);
-            plugin.uninstall(pr.as_ref())?;
-            if self.purge {
-                backend.purge(pr.as_ref())?;
+        if let Ok(plugin) = plugins::get(plugin_name) {
+            if plugin.is_installed() {
+                let prefix = format!("plugin:{}", style::eblue(&plugin.name()));
+                let pr = mpr.add(&prefix);
+                plugin.uninstall(pr.as_ref())?;
+                if self.purge {
+                    let backend = backend::get(&plugin_name.into()).unwrap();
+                    backend.purge(pr.as_ref())?;
+                }
+                pr.finish_with_message("uninstalled".into());
+            } else {
+                warn!("{} is not installed", style::eblue(plugin_name));
             }
-            pr.finish_with_message("uninstalled".into());
         } else {
             warn!("{} is not installed", style::eblue(plugin_name));
         }

@@ -4,10 +4,9 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use crate::backend;
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
-use crate::config::{Config, CONFIG};
+use crate::config::Config;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -29,23 +28,14 @@ impl ToolVersion {
         ToolVersion { request, version }
     }
 
-    pub fn resolve(mut request: ToolRequest, opts: &ResolveOptions) -> Result<Self> {
-        if let Some(full) = CONFIG
-            .get_all_aliases()
-            .get(&request.backend().short)
-            .and_then(|a| a.full.clone())
-        {
-            let mut backend = request.backend().clone();
-            backend.full = full;
-            request = request.with_backend(backend);
-        }
+    pub fn resolve(request: ToolRequest, opts: &ResolveOptions) -> Result<Self> {
         if opts.use_locked_version {
             if let Some(v) = request.lockfile_resolve()? {
                 let tv = Self::new(request.clone(), v);
                 return Ok(tv);
             }
         }
-        let backend = backend::get(request.backend());
+        let backend = request.ba().backend()?;
         if let Some(plugin) = backend.plugin() {
             if !plugin.is_installed() {
                 let tv = Self::new(request.clone(), request.version());
@@ -66,12 +56,12 @@ impl ToolVersion {
         Ok(tv)
     }
 
-    pub fn backend(&self) -> &BackendArg {
-        self.request.backend()
+    pub fn ba(&self) -> &BackendArg {
+        self.request.ba()
     }
 
-    pub fn get_backend(&self) -> ABackend {
-        backend::get(self.backend())
+    pub fn backend(&self) -> Result<ABackend> {
+        self.ba().backend()
     }
 
     pub fn install_path(&self) -> PathBuf {
@@ -79,14 +69,14 @@ impl ToolVersion {
             ToolRequest::Path(_, p, ..) => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
-        let path = self.backend().installs_path.join(pathname);
+        let path = self.ba().installs_path.join(pathname);
 
         // handle non-symlinks on windows
         // TODO: make this a utility function in xx
         #[cfg(windows)]
         if path.is_file() {
             if let Ok(p) = file::read_to_string(&path).map(PathBuf::from) {
-                let path = self.backend().installs_path.join(p);
+                let path = self.ba().installs_path.join(p);
                 if path.exists() {
                     return path
                         .absolutize()
@@ -98,13 +88,10 @@ impl ToolVersion {
         path
     }
     pub fn cache_path(&self) -> PathBuf {
-        self.backend().cache_path.join(self.tv_pathname())
+        self.ba().cache_path.join(self.tv_pathname())
     }
     pub fn download_path(&self) -> PathBuf {
-        self.request
-            .backend()
-            .downloads_path
-            .join(self.tv_pathname())
+        self.request.ba().downloads_path.join(self.tv_pathname())
     }
     pub fn latest_version(&self) -> Result<String> {
         let opts = ResolveOptions {
@@ -124,11 +111,11 @@ impl ToolVersion {
     pub fn style(&self) -> String {
         format!(
             "{}{}",
-            style(&self.backend().short).blue().for_stderr(),
+            style(&self.ba().short).blue().for_stderr(),
             style(&format!("@{}", &self.version)).for_stderr()
         )
     }
-    fn tv_pathname(&self) -> String {
+    pub fn tv_pathname(&self) -> String {
         match &self.request {
             ToolRequest::Version { .. } => self.version.to_string(),
             ToolRequest::Prefix { .. } => self.version.to_string(),
@@ -145,7 +132,7 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
         let config = Config::get();
-        let backend = backend::get(request.backend());
+        let backend = request.backend()?;
         let v = config.resolve_alias(&backend, v)?;
         match v.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
@@ -210,7 +197,7 @@ impl ToolVersion {
         v: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
-        let backend = backend::get(request.backend());
+        let backend = request.backend()?;
         let v = match v {
             "latest" => backend.latest_version(None)?.unwrap(),
             _ => Config::get().resolve_alias(&backend, v)?,
@@ -220,8 +207,7 @@ impl ToolVersion {
     }
 
     fn resolve_prefix(request: ToolRequest, prefix: &str) -> Result<Self> {
-        let backend = backend::get(request.backend());
-        let matches = backend.list_versions_matching(prefix)?;
+        let matches = request.backend()?.list_versions_matching(prefix)?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,
@@ -237,7 +223,7 @@ impl ToolVersion {
         tr: &ToolRequest,
     ) -> Self {
         let request = ToolRequest::Ref {
-            backend: tr.backend().clone(),
+            backend: tr.ba().clone(),
             ref_,
             ref_type,
             options: opts.clone(),
@@ -249,7 +235,7 @@ impl ToolVersion {
 
     fn resolve_path(path: PathBuf, tr: &ToolRequest) -> Result<ToolVersion> {
         let path = fs::canonicalize(path)?;
-        let request = ToolRequest::Path(tr.backend().clone(), path, tr.source().clone());
+        let request = ToolRequest::Path(tr.ba().clone(), path, tr.source().clone());
         let version = request.version();
         Ok(Self::new(request, version))
     }
@@ -257,13 +243,13 @@ impl ToolVersion {
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", &self.backend().full, &self.version)
+        write!(f, "{}@{}", &self.ba().full(), &self.version)
     }
 }
 
 impl PartialEq for ToolVersion {
     fn eq(&self, other: &Self) -> bool {
-        self.backend().full == other.backend().full && self.version == other.version
+        self.ba() == other.ba() && self.version == other.version
     }
 }
 
@@ -277,7 +263,7 @@ impl PartialOrd for ToolVersion {
 
 impl Ord for ToolVersion {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.request.backend().full.cmp(&other.backend().full) {
+        match self.request.ba().cmp(other.ba()) {
             Ordering::Equal => self.version.cmp(&other.version),
             o => o,
         }
@@ -286,7 +272,7 @@ impl Ord for ToolVersion {
 
 impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.backend().full.hash(state);
+        self.ba().hash(state);
         self.version.hash(state);
     }
 }

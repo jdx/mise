@@ -22,7 +22,7 @@ use crate::config::tracking::Tracker;
 use crate::file::display_path;
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::task::Task;
-use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder};
+use crate::toolset::{install_state, ToolRequestSet, ToolRequestSetBuilder};
 use crate::ui::style;
 use crate::{backend, dirs, env, file, registry};
 
@@ -31,6 +31,7 @@ mod env_directive;
 pub mod settings;
 pub mod tracking;
 
+use crate::plugins::PluginType;
 pub use settings::SETTINGS;
 
 type AliasMap = IndexMap<String, Alias>;
@@ -41,10 +42,10 @@ type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 pub struct Config {
     pub config_files: ConfigMap,
     pub project_root: Option<PathBuf>,
+    pub all_aliases: AliasMap,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
-    all_aliases: OnceLock<AliasMap>,
     repo_urls: HashMap<String, String>,
     shorthands: OnceLock<Shorthands>,
     tasks: OnceCell<BTreeMap<String, Task>>,
@@ -92,7 +93,7 @@ impl Config {
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
         time!("load config_files");
 
-        let config = Self {
+        let mut config = Self {
             aliases: load_aliases(&config_files)?,
             project_root: get_project_root(&config_files),
             repo_urls: load_plugins(&config_files)?,
@@ -104,6 +105,9 @@ impl Config {
         config.validate()?;
         time!("load validate");
 
+        config.all_aliases = config.load_all_aliases();
+        time!("load all aliases");
+
         if log::log_enabled!(log::Level::Trace) {
             trace!("config: {config:#?}");
         } else if log::log_enabled!(log::Level::Debug) {
@@ -112,6 +116,14 @@ impl Config {
             }
         }
         time!("load done");
+
+        for (plugin, url) in &config.repo_urls {
+            let plugin_type = match url.contains("vfox-") {
+                true => PluginType::Vfox,
+                false => PluginType::Asdf,
+            };
+            install_state::add_plugin(plugin, plugin_type)?;
+        }
 
         Ok(config)
     }
@@ -163,18 +175,28 @@ impl Config {
             .get_or_try_init(|| ToolRequestSetBuilder::new().build())
     }
 
-    pub fn get_repo_url(&self, plugin_name: &String) -> Option<String> {
+    pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
+        let plugin_name = self
+            .all_aliases
+            .get(plugin_name)
+            .and_then(|a| a.full.clone())
+            .unwrap_or(plugin_name.to_string());
+        let plugin_name = plugin_name.strip_prefix("asdf:").unwrap_or(&plugin_name);
+        let plugin_name = plugin_name.strip_prefix("vfox:").unwrap_or(plugin_name);
         match self.repo_urls.get(plugin_name) {
             Some(url) => Some(url.to_string()),
             None => self
                 .get_shorthands()
                 .get(plugin_name)
-                .map(|full| registry::full_to_url(&full[0])),
+                .map(|full| registry::full_to_url(&full[0]))
+                .or_else(|| {
+                    if plugin_name.starts_with("https://") || plugin_name.split('/').count() == 2 {
+                        Some(registry::full_to_url(plugin_name))
+                    } else {
+                        None
+                    }
+                }),
         }
-    }
-
-    pub fn get_all_aliases(&self) -> &AliasMap {
-        self.all_aliases.get_or_init(|| self.load_all_aliases())
     }
 
     pub fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
@@ -196,7 +218,7 @@ impl Config {
     }
 
     pub fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
-        if let Some(plugin_aliases) = self.get_all_aliases().get(&backend.fa().short) {
+        if let Some(plugin_aliases) = self.all_aliases.get(&backend.ba().short) {
             if let Some(alias) = plugin_aliases.versions.get(v) {
                 return Ok(alias.clone());
             }
@@ -216,13 +238,13 @@ impl Config {
                     warn!("get_aliases: {err}");
                     BTreeMap::new()
                 });
-                (backend.fa().clone(), aliases)
+                (backend.ba().clone(), aliases)
             })
             .collect();
-        for (fa, plugin_aliases) in plugin_aliases {
+        for (ba, plugin_aliases) in plugin_aliases {
             for (from, to) in plugin_aliases {
                 aliases
-                    .entry(fa.short.to_string())
+                    .entry(ba.short.to_string())
                     .or_default()
                     .versions
                     .insert(from, to);

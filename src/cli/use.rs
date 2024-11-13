@@ -98,7 +98,7 @@ impl Use {
             .cloned()
             .map(|t| match t.tvr {
                 Some(tvr) => Ok(tvr),
-                None => ToolRequest::new(t.backend, "latest", ToolSource::Argument),
+                None => ToolRequest::new(t.ba, "latest", ToolSource::Argument),
             })
             .collect::<Result<_>>()?;
         let mut versions = ts.install_versions(
@@ -116,7 +116,7 @@ impl Use {
         let mut cf = self.get_config_file()?;
         let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
 
-        for (fa, tvl) in &versions.iter().chunk_by(|tv| tv.backend()) {
+        for (fa, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
             let versions: Vec<_> = tvl
                 .into_iter()
                 .map(|tv| {
@@ -178,13 +178,13 @@ impl Use {
     fn warn_if_hidden(&self, config: &Config, global: &Path) {
         let ts = ToolsetBuilder::new().build(config).unwrap_or_default();
         let warn = |targ: &ToolArg, p| {
-            let plugin = &targ.backend;
+            let plugin = &targ.ba;
             let p = display_path(p);
             let global = display_path(global);
             warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
-            if let Some(tv) = ts.versions.get(&targ.backend) {
+            if let Some(tv) = ts.versions.get(&targ.ba) {
                 if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
                     if !file::same_file(p, global) {
                         warn(targ, p);

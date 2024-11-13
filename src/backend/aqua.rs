@@ -1,5 +1,6 @@
 use crate::aqua::aqua_registry::{AquaPackage, AquaPackageType, AQUA_REGISTRY};
-use crate::backend::{Backend, BackendType};
+use crate::backend::backend_type::BackendType;
+use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
@@ -27,7 +28,7 @@ impl Backend for AquaBackend {
         BackendType::Aqua
     }
 
-    fn fa(&self) -> &BackendArg {
+    fn ba(&self) -> &BackendArg {
         &self.ba
     }
 
@@ -123,7 +124,7 @@ impl Backend for AquaBackend {
 
 impl AquaBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        let mut id = ba.full.strip_prefix("aqua:").unwrap_or(&ba.full);
+        let mut id = ba.tool_name.as_str();
         if !id.contains("/") {
             id = REGISTRY
                 .get(id)

@@ -4,6 +4,7 @@ use rayon::prelude::*;
 
 use crate::config::Settings;
 use crate::plugins;
+use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Updates a plugin to the latest version
@@ -27,17 +28,13 @@ impl Update {
         let plugins: Vec<_> = match self.plugin {
             Some(plugins) => plugins
                 .into_iter()
-                .map(|p| {
-                    let (p, ref_) = match p.split_once('#') {
-                        Some((p, ref_)) => (p, Some(ref_.to_string())),
-                        None => (p.as_str(), None),
-                    };
-                    let plugin = plugins::get(p);
-                    Ok((plugin.clone(), ref_))
+                .map(|p| match p.split_once('#') {
+                    Some((p, ref_)) => (p.to_string(), Some(ref_.to_string())),
+                    None => (p, None),
                 })
-                .collect::<Result<_>>()?,
-            None => plugins::list_external()
-                .into_iter()
+                .collect(),
+            None => install_state::list_plugins()?
+                .into_keys()
                 .map(|p| (p, None))
                 .collect::<Vec<_>>(),
         };
@@ -50,14 +47,13 @@ impl Update {
             .install(|| {
                 plugins
                     .into_par_iter()
-                    .map(|(backend, ref_)| {
-                        let prefix = format!("plugin:{}", style(backend.id()).blue().for_stderr());
+                    .map(|(short, ref_)| {
+                        let plugin = plugins::get(&short)?;
+                        let prefix = format!("plugin:{}", style(plugin.name()).blue().for_stderr());
                         let pr = mpr.add(&prefix);
-                        if let Some(plugin) = backend.plugin() {
-                            plugin
-                                .update(pr.as_ref(), ref_)
-                                .wrap_err_with(|| format!("[{backend}] plugin update"))?;
-                        }
+                        plugin
+                            .update(pr.as_ref(), ref_)
+                            .wrap_err_with(|| format!("[{plugin}] plugin update"))?;
                         Ok(())
                     })
                     .filter_map(|r| r.err())
@@ -84,23 +80,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise plugins update node#beta</bold>  # specify a ref
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use test_log::test;
-
-    use crate::test::reset;
-
-    #[test]
-    fn test_plugin_update() {
-        reset();
-        assert_cli!(
-            "plugin",
-            "install",
-            "tiny",
-            "https://github.com/mise-plugins/rtx-tiny.git"
-        );
-        // assert_cli!("p", "update"); tested in e2e
-        assert_cli!("plugins", "update", "tiny");
-    }
-}

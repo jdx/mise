@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+mise i dummy@1.0.1 dummy@1.0.2 dummy@1.10.0 dummy@2.0.0 dummy@2.1.0
+assert "ls -l $MISE_DATA_DIR/installs/dummy | grep '\->' | awk '{print \$(NF-2),\$(NF)}'" "1 ./1.10.0
+1.0 ./1.0.2
+1.10 ./1.10.0
+2 ./2.1.0
+2.0 ./2.0.0
+2.1 ./2.1.0
+latest ./2.1.0"

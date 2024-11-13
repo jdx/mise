@@ -293,13 +293,13 @@ impl ConfigFile for MiseToml {
 
     fn replace_versions(
         &mut self,
-        fa: &BackendArg,
+        ba: &BackendArg,
         versions: &[(String, ToolVersionOptions)],
     ) -> eyre::Result<()> {
-        let existing = self.tools.entry(fa.clone()).or_default();
+        let existing = self.tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
             if let Some(reg_ba) = REGISTRY_BACKEND_MAP
-                .get(fa.short.as_str())
+                .get(ba.short.as_str())
                 .and_then(|b| b.first())
             {
                 if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
@@ -328,11 +328,11 @@ impl ConfigFile for MiseToml {
             .unwrap();
 
         // create a key from the short name preserving any decorations like prefix/suffix if the key already exists
-        let key = get_key_with_decor(tools, fa.short.as_str());
+        let key = get_key_with_decor(tools, ba.short.as_str());
 
         // if a short name is used like "node", make sure we remove any long names like "core:node"
-        if fa.short != fa.full {
-            tools.remove(&fa.full.to_string());
+        if ba.short != ba.full() {
+            tools.remove(&ba.full());
         }
 
         if versions.len() == 1 {
@@ -433,10 +433,6 @@ impl ConfigFile for MiseToml {
 
     fn task_config(&self) -> &TaskConfig {
         &self.task_config
-    }
-
-    fn clone_box(&self) -> Box<dyn ConfigFile> {
-        Box::new(self.clone())
     }
 }
 

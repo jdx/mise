@@ -5,7 +5,8 @@ use eyre::eyre;
 use serde_json::Deserializer;
 use url::Url;
 
-use crate::backend::{Backend, BackendType};
+use crate::backend::backend_type::BackendType;
+use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -27,13 +28,12 @@ impl Backend for CargoBackend {
         BackendType::Cargo
     }
 
-    fn fa(&self) -> &BackendArg {
+    fn ba(&self) -> &BackendArg {
         &self.ba
     }
 
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
         Ok(vec![
-            "cargo".into(),
             "rust".into(),
             "cargo-binstall".into(),
             "sccache".into(),

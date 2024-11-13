@@ -90,7 +90,6 @@ pub trait ConfigFile: Debug + Send + Sync {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
     }
-    fn clone_box(&self) -> Box<dyn ConfigFile>;
 }
 
 impl dyn ConfigFile {
@@ -102,7 +101,7 @@ impl dyn ConfigFile {
         for ta in tools {
             if let Some(tv) = &ta.tvr {
                 plugins_to_update
-                    .entry(ta.backend.clone())
+                    .entry(ta.ba.clone())
                     .or_insert_with(Vec::new)
                     .push(tv);
             }
@@ -142,7 +141,7 @@ impl dyn ConfigFile {
     pub fn display_runtime(&self, runtimes: &[ToolArg]) -> eyre::Result<bool> {
         // in this situation we just print the current version in the config file
         if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
-            let fa = &runtimes[0].backend;
+            let fa = &runtimes[0].ba;
             let tvl = self
                 .to_toolset()?
                 .versions

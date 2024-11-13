@@ -7,10 +7,9 @@ use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::plugins::core::CorePlugin;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file, hash, http};
+use crate::{env, file, hash, http, plugins};
 use eyre::{bail, ensure, Result};
 use serde_derive::Deserialize;
 use std::collections::BTreeMap;
@@ -22,13 +21,13 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct NodePlugin {
-    core: CorePlugin,
+    ba: BackendArg,
 }
 
 impl NodePlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new(BackendArg::new("node", "node")),
+            ba: plugins::core::new_backend_arg("node"),
         }
     }
 
@@ -198,7 +197,7 @@ impl NodePlugin {
                 .arg("--global")
                 .arg(package)
                 .envs(config.env()?)
-                .env(&*env::PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+                .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
         Ok(())
@@ -217,7 +216,7 @@ impl NodePlugin {
         CmdLineRunner::new(corepack)
             .with_pr(pr)
             .arg("enable")
-            .env(&*env::PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()?;
         Ok(())
     }
@@ -234,7 +233,7 @@ impl NodePlugin {
     fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         pr.set_message("npm -v".into());
         CmdLineRunner::new(self.npm_path(tv))
-            .env(&*env::PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
             .envs(config.env()?)
@@ -253,15 +252,15 @@ impl NodePlugin {
 }
 
 impl Backend for NodePlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
 
     fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
         static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
         CACHE
             .get_or_init(|| {
-                CacheManagerBuilder::new(self.fa().cache_path.join("remote_versions.msgpack.z"))
+                CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
                     .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
                     .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
                     .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())

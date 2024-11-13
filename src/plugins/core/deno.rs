@@ -12,22 +12,22 @@ use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
-use crate::file;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
+use crate::{file, plugins};
 
 #[derive(Debug)]
 pub struct DenoPlugin {
-    core: CorePlugin,
+    ba: BackendArg,
 }
 
 impl DenoPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new(BackendArg::new("deno", "deno"));
-        Self { core }
+        Self {
+            ba: plugins::core::new_backend_arg("deno"),
+        }
     }
 
     fn deno_bin(&self, tv: &ToolVersion) -> PathBuf {
@@ -88,8 +88,8 @@ impl DenoPlugin {
 }
 
 impl Backend for DenoPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {

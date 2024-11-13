@@ -1,6 +1,5 @@
 use eyre::Result;
 
-use crate::backend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
@@ -37,15 +36,15 @@ impl Where {
                 None => {
                     let ts = ToolsetBuilder::new().build(&config)?;
                     ts.versions
-                        .get(&self.tool.backend)
+                        .get(&self.tool.ba)
                         .and_then(|tvr| tvr.requests.first().cloned())
                         .unwrap_or_else(|| self.tool.with_version("latest").tvr.unwrap())
                 }
             },
         };
 
-        let ba = tvr.backend();
-        let backend = backend::get(ba);
+        let ba = tvr.ba();
+        let backend = ba.backend()?;
         let tv = tvr.resolve(&Default::default())?;
 
         if backend.is_version_installed(&tv, true) {

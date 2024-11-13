@@ -11,11 +11,10 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::plugins::core::CorePlugin;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{file, hash};
+use crate::{file, hash, plugins};
 use color_eyre::eyre::{eyre, Result};
 use contracts::requires;
 use indoc::formatdoc;
@@ -28,30 +27,30 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct JavaPlugin {
-    core: CorePlugin,
+    ba: BackendArg,
     java_metadata_ea_cache: CacheManager<HashMap<String, JavaMetadata>>,
     java_metadata_ga_cache: CacheManager<HashMap<String, JavaMetadata>>,
 }
 
 impl JavaPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new(BackendArg::new("java", "java"));
+        let ba = plugins::core::new_backend_arg("java");
         let java_metadata_ga_cache_filename =
             format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch());
         let java_metadata_ea_cache_filename =
             format!("java_metadata_ea_{}_{}.msgpack.z", os(), arch());
         Self {
             java_metadata_ea_cache: CacheManagerBuilder::new(
-                core.fa.cache_path.join(java_metadata_ea_cache_filename),
+                ba.cache_path.join(java_metadata_ea_cache_filename),
             )
             .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .build(),
             java_metadata_ga_cache: CacheManagerBuilder::new(
-                core.fa.cache_path.join(java_metadata_ga_cache_filename),
+                ba.cache_path.join(java_metadata_ga_cache_filename),
             )
             .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .build(),
-            core,
+            ba,
         }
     }
 
@@ -265,8 +264,8 @@ impl JavaPlugin {
 }
 
 impl Backend for JavaPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {

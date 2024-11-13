@@ -56,7 +56,7 @@ impl Shell {
         let shell = get_shell(None).expect("no shell detected");
 
         for (p, tv) in ts.list_current_installed_versions() {
-            let source = &ts.versions.get(p.fa()).unwrap().source;
+            let source = &ts.versions.get(p.ba()).unwrap().source;
             if matches!(source, ToolSource::Argument) {
                 let k = format!("MISE_{}_VERSION", p.id().to_uppercase());
                 let op = if self.unset {

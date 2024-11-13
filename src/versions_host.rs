@@ -3,7 +3,7 @@ use crate::config::SETTINGS;
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
-use crate::{backend, http, registry};
+use crate::{http, registry};
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use url::Url;
@@ -25,7 +25,7 @@ pub fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>> {
         return Ok(None);
     }
     // ensure that we're using a default shorthand plugin
-    if let Some(plugin) = backend::get(ba).plugin() {
+    if let Some(plugin) = ba.backend()?.plugin() {
         if let Ok(Some(remote_url)) = plugin.get_remote_url() {
             let normalized_remote = normalize_remote(&remote_url).unwrap_or("INVALID_URL".into());
             let shorthand_remote = REGISTRY

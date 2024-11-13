@@ -28,7 +28,7 @@ impl LegacyVersionFile {
         for plugin in plugins {
             let version = plugin.parse_legacy_file(&path)?;
             for version in version.split_whitespace() {
-                let tr = ToolRequest::new(plugin.fa().clone(), version, source.clone())?;
+                let tr = ToolRequest::new(plugin.ba().clone(), version, source.clone())?;
                 tools.add_version(tr, &source);
             }
         }
@@ -81,9 +81,5 @@ impl ConfigFile for LegacyVersionFile {
 
     fn to_tool_request_set(&self) -> Result<ToolRequestSet> {
         Ok(self.tools.clone())
-    }
-
-    fn clone_box(&self) -> Box<dyn ConfigFile> {
-        Box::new(self.clone())
     }
 }

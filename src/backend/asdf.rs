@@ -3,18 +3,17 @@ use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use console::style;
 
+use crate::backend::backend_type::BackendType;
 use crate::backend::external_plugin_cache::ExternalPluginCache;
-use crate::backend::{ABackend, Backend, BackendList};
+use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, SETTINGS};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::git::Git;
 use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
 use crate::plugins::asdf_plugin::AsdfPlugin;
@@ -23,7 +22,7 @@ use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, file, plugins};
+use crate::{env, file};
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct AsdfBackend {
@@ -42,12 +41,8 @@ pub struct AsdfBackend {
 
 impl AsdfBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        let name = ba
-            .full
-            .strip_prefix("asdf:")
-            .unwrap_or(&ba.full)
-            .to_string();
-        let plugin_path = dirs::PLUGINS.join(&name);
+        let name = ba.tool_name.clone();
+        let plugin_path = ba.plugin_path.clone();
         let mut toml_path = plugin_path.join("mise.plugin.toml");
         if plugin_path.join("rtx.plugin.toml").exists() {
             toml_path = plugin_path.join("rtx.plugin.toml");
@@ -80,7 +75,13 @@ impl AsdfBackend {
             .with_fresh_file(plugin_path.join("bin/list-legacy-filenames"))
             .build(),
             plugin_path,
-            plugin: Box::new(AsdfPlugin::new(name.clone())),
+            plugin: Box::new(AsdfPlugin::new(
+                ba.plugin_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+            )),
             repo_url: None,
             toml,
             name,
@@ -89,19 +90,6 @@ impl AsdfBackend {
     }
     pub fn plugin(&self) -> &dyn Plugin {
         &*self.plugin
-    }
-
-    pub fn list() -> Result<BackendList> {
-        Ok(plugins::INSTALLED_PLUGINS
-            .iter()
-            // if metadata.lua exists it's a vfox plugin (hopefully)
-            .filter(|(_, pt)| matches!(pt, PluginType::Asdf))
-            .map(|(d, _)| {
-                Arc::new(Self::from_arg(
-                    d.file_name().unwrap().to_string_lossy().into(),
-                )) as ABackend
-            })
-            .collect())
     }
 
     fn fetch_cached_legacy_file(&self, legacy_file: &Path) -> Result<Option<String>> {
@@ -244,16 +232,20 @@ impl Hash for AsdfBackend {
 }
 
 impl Backend for AsdfBackend {
-    fn fa(&self) -> &BackendArg {
+    fn ba(&self) -> &BackendArg {
         &self.ba
     }
 
-    fn get_plugin_type(&self) -> PluginType {
-        PluginType::Asdf
+    fn get_type(&self) -> BackendType {
+        BackendType::Asdf
+    }
+
+    fn get_plugin_type(&self) -> Option<PluginType> {
+        Some(PluginType::Asdf)
     }
 
     fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<BackendArg>> {
-        let out = match tvr.backend().name.as_str() {
+        let out = match tvr.ba().tool_name.as_str() {
             "poetry" | "pipenv" | "pipx" => vec!["python"],
             "elixir" => vec!["erlang"],
             _ => vec![],
@@ -286,11 +278,6 @@ impl Backend for AsdfBackend {
                 )
             })
             .cloned()
-    }
-
-    fn get_remote_url(&self) -> Option<String> {
-        let git = Git::new(&self.plugin_path);
-        git.get_remote_url().or_else(|| self.repo_url.clone())
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {

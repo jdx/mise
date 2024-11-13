@@ -59,7 +59,7 @@ impl Install {
 
     fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
-        let tools: HashSet<BackendArg> = runtimes.iter().map(|ta| ta.backend.clone()).collect();
+        let tools: HashSet<BackendArg> = runtimes.iter().map(|ta| ta.ba.clone()).collect();
         let mut ts = config.get_tool_request_set()?.filter_by_tool(&tools).into();
         let tool_versions = self.get_requested_tool_versions(&ts, runtimes)?;
         if tool_versions.is_empty() {
@@ -93,11 +93,10 @@ impl Install {
         for ta in ToolArg::double_tool_condition(runtimes)? {
             match ta.tvr {
                 // user provided an explicit version
-                // TODO: this should install using options from config if the version matches
                 Some(tv) => requests.push(tv),
                 None => {
                     if ta.tvr.is_none() {
-                        match ts.versions.get(&ta.backend) {
+                        match ts.versions.get(&ta.ba) {
                             // the tool is in config so fetch the params from config
                             // this may match multiple versions of one tool (e.g.: python)
                             Some(tvl) => {
@@ -109,7 +108,7 @@ impl Install {
                             // so we default to @latest with no options
                             None => {
                                 let tvr = ToolRequest::Version {
-                                    backend: ta.backend.clone(),
+                                    backend: ta.ba.clone(),
                                     version: "latest".into(),
                                     options: ta.opts.clone().unwrap_or(Default::default()),
                                     source: ToolSource::Argument,

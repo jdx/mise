@@ -102,7 +102,7 @@ impl ToolVersions {
                 // note that this method will cause the colons to be removed
                 // permanently if saving the file again, but I think that's fine
                 let orig_plugin = plugin.trim_end_matches(':');
-                let fa = orig_plugin.into();
+                let ba = orig_plugin.into();
 
                 let tvp = ToolVersionPlugin {
                     orig_name: orig_plugin.to_string(),
@@ -112,7 +112,7 @@ impl ToolVersions {
                         _ => [" #", post, "\n"].join(""),
                     },
                 };
-                plugins.insert(fa, tvp);
+                plugins.insert(ba, tvp);
             }
         }
         plugins
@@ -126,9 +126,9 @@ impl ToolVersions {
 
     fn populate_toolset(&mut self) -> eyre::Result<()> {
         let source = ToolSource::ToolVersions(self.path.clone());
-        for (plugin, tvp) in &self.plugins {
+        for (ba, tvp) in &self.plugins {
             for version in &tvp.versions {
-                let tvr = ToolRequest::new(plugin.clone(), version, source.clone())?;
+                let tvr = ToolRequest::new(ba.clone(), version, source.clone())?;
                 self.tools.add_version(tvr, &source)
             }
         }
@@ -211,10 +211,6 @@ impl ConfigFile for ToolVersions {
 
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         Ok(self.tools.clone())
-    }
-
-    fn clone_box(&self) -> Box<dyn ConfigFile> {
-        Box::new(self.clone())
     }
 }
 
