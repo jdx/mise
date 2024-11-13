@@ -1,5 +1,13 @@
 # Changelog
 
+## [2024.11.9](https://github.com/jdx/mise/compare/v2024.11.8..v2024.11.9) - 2024-11-13
+
+### 🚀 Features
+
+- add postgis plugin to registry by [@knu](https://github.com/knu) in [#3002](https://github.com/jdx/mise/pull/3002)
+- added --backend arg for registry command by [@jdx](https://github.com/jdx) in [#3004](https://github.com/jdx/mise/pull/3004)
+- support more aqua tools by [@jdx](https://github.com/jdx) in [#3000](https://github.com/jdx/mise/pull/3000)
+
 ## [2024.11.8](https://github.com/jdx/mise/compare/v2024.11.7..v2024.11.8) - 2024-11-12
 
 ### 🚀 Features
