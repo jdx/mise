@@ -385,7 +385,7 @@ impl Backend for PythonPlugin {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::get();
-        if cfg!(windows) || SETTINGS.python.compile == Some(false) {
+        if cfg!(windows) || SETTINGS.python.compile != Some(true) {
             self.install_precompiled(ctx)?;
         } else {
             self.install_compiled(ctx)?;
