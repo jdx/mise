@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.11.11](https://github.com/jdx/mise/compare/v2024.11.10..v2024.11.11) - 2024-11-14
+
+### 🧪 Testing
+
+- added hyperfine test by [@jdx](https://github.com/jdx) in [#3016](https://github.com/jdx/mise/pull/3016)
+
+### 🔍 Other Changes
+
+- Update mise.toml by [@jdx](https://github.com/jdx) in [35c55e0](https://github.com/jdx/mise/commit/35c55e070a20dde64ee9b669c8cad35d33714499)
+- added tasks.toml by [@jdx](https://github.com/jdx) in [8a02900](https://github.com/jdx/mise/commit/8a029005d52ba337a6850ded9ddde3f82903b3c6)
+- reuse CI cache on jobs by [@jdx](https://github.com/jdx) in [#3018](https://github.com/jdx/mise/pull/3018)
+- remove cargo-deny warning by [@jdx](https://github.com/jdx) in [a1479b6](https://github.com/jdx/mise/commit/a1479b63fc478a14add5991657a9c8986e43407c)
+- improve CI caching by [@jdx](https://github.com/jdx) in [0ffe565](https://github.com/jdx/mise/commit/0ffe565227cb68b814f3e1937b347b72de3700a3)
+
 ## [2024.11.10](https://github.com/jdx/mise/compare/v2024.11.9..v2024.11.10) - 2024-11-14
 
 ### 🚀 Features
