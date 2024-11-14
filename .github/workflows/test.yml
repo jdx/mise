@@ -170,6 +170,7 @@ jobs:
       #     command: cargo test
       - run: cargo test
         continue-on-error: true
+      - run: cargo build
   windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 30
