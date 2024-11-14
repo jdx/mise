@@ -18,6 +18,8 @@ concurrency:
 env:
   MISE_EXPERIMENTAL: 1
   NPM_CONFIG_FUND: false
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
 
 jobs:
   release-plz:
