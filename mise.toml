@@ -1,15 +1,10 @@
 #:schema ./schema/mise.json
-
 min_version = "2024.1.1"
+
 [env]
-_.file = [".env"]
 _.path = ["./target/debug", "./node_modules/.bin"]
-FOO = "bar"
-FOO_NUM = 1
-THIS_PROJECT = "{{config_root}}-{{cwd}}"
 
 [tools]
-#node = 'lts'
 shellcheck = "0.10"
 shfmt = "3"
 jq = "latest"
@@ -26,10 +21,6 @@ ripgrep = "latest"
 "pipx:toml-sort" = "latest"
 "cargo:usage-cli" = "1.3"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
-#ruby = "3.1"
-
-[plugins]
-nnnn = 'https://github.com/mise-plugins/rtx-nodejs#main'
 
 [task_config]
 includes = ["tasks"]
@@ -45,8 +36,6 @@ lint = { depends = ["lint:*"] }
 [tasks.build]
 alias = "b"
 run = "cargo build --color always --all-features"
-#sources = ["Cargo.*", "src/**/*.rs"]
-#outputs = ["target/debug/mise"]
 
 [tasks."render:usage"]
 depends = ["build"]
