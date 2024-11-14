@@ -49,9 +49,9 @@ ToolRequestSet {
                 ),
             ),
         ],
-        BackendArg("jq" -> "asdf:mise-plugins/asdf-jq"): [
+        BackendArg("jq" -> "aqua:jqlang/jq"): [
             Prefix {
-                backend: BackendArg("jq" -> "asdf:mise-plugins/asdf-jq"),
+                backend: BackendArg("jq" -> "aqua:jqlang/jq"),
                 prefix: "1.6",
                 options: {},
                 source: MiseToml(
@@ -91,7 +91,7 @@ ToolRequestSet {
         ],
     },
     sources: {
-        BackendArg("jq" -> "asdf:mise-plugins/asdf-jq"): MiseToml(
+        BackendArg("jq" -> "aqua:jqlang/jq"): MiseToml(
             "~/fixtures/.mise.toml",
         ),
         BackendArg("node" -> "core:node"): MiseToml(
