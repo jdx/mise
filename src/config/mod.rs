@@ -359,7 +359,8 @@ impl Config {
     fn load_task_file(&self, path: &Path) -> Result<Vec<Task>> {
         let raw = file::read_to_string(path)?;
         let mut tasks = toml::from_str::<Tasks>(&raw)
-            .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?.0;
+            .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?
+            .0;
         for (name, task) in &mut tasks {
             task.name = name.clone();
             task.config_source = path.to_path_buf();

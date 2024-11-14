@@ -334,6 +334,7 @@ jobs:
     container: ghcr.io/jdx/mise:alpine
     timeout-minutes: 30
     needs: [release]
+    if: startsWith(github.event.ref, 'refs/tags/v') && endsWith(github.event.ref, '.0')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
