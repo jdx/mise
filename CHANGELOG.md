@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.11.12](https://github.com/jdx/mise/compare/v2024.11.11..v2024.11.12) - 2024-11-14
+
+### 🚀 Features
+
+- added more aqua tools by [@jdx](https://github.com/jdx) in [#3021](https://github.com/jdx/mise/pull/3021)
+
+### 🧪 Testing
+
+- build mise for coverage tests by [@jdx](https://github.com/jdx) in [#3020](https://github.com/jdx/mise/pull/3020)
+
+### 🔍 Other Changes
+
+- build during windows-unit by [@jdx](https://github.com/jdx) in [995907f](https://github.com/jdx/mise/commit/995907f43266972292dd32a4751fc3ee3d7677d2)
+- fix lint error by [@jdx](https://github.com/jdx) in [924592a](https://github.com/jdx/mise/commit/924592aeb9732b0064072b601fb2e058610fc6b5)
+
 ## [2024.11.11](https://github.com/jdx/mise/compare/v2024.11.10..v2024.11.11) - 2024-11-14
 
 ### 🧪 Testing
