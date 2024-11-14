@@ -27,9 +27,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
         with:
-          { toolchain: nightly, components: "rustfmt, clippy", rustflags: "" }
+          shared-key: test-ubuntu-latest
+          save-if: false
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
