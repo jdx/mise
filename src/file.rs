@@ -381,6 +381,7 @@ pub fn is_executable(path: &Path) -> bool {
 
 #[cfg(unix)]
 pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
+    trace!("chmod +x {}", display_path(&path));
     let path = path.as_ref();
     let mut perms = path.metadata()?.permissions();
     perms.set_mode(perms.mode() | 0o111);
@@ -390,7 +391,8 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
+pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
+    trace!("chmod +x {}", display_path(&path));
     warn!("make executable is not available on Windows, use windows_executable_extensions settings instead");
     Ok(())
 }

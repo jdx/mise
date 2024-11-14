@@ -175,7 +175,14 @@ impl AquaPackage {
             return "tar.gz";
         }
         if self.format.is_empty() {
-            let asset = self.asset(v);
+            let asset = if !self.asset.is_empty() {
+                self.asset(v)
+            } else if !self.url.is_empty() {
+                self.url.to_string()
+            } else {
+                debug!("no asset or url for {}/{}", self.repo_owner, self.repo_name);
+                "".to_string()
+            };
             if asset.ends_with(".tar.gz") {
                 "tar.gz"
             } else if asset.ends_with(".tar.xz") {

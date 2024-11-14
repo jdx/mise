@@ -97,35 +97,14 @@ impl Backend for AquaBackend {
             .package_with_version(&self.id, &tv.version)?
             .wrap_err_with(|| format!("no aqua registry found for {}", self.ba))?;
 
-        let srcs = pkg
-            .files
-            .iter()
-            .flat_map(|f| {
-                if let Some(prefix) = &pkg.version_prefix {
-                    return vec![f.src(&pkg, &format!("{}{}", prefix, tv.version))]
-                        .into_iter()
-                        .flatten();
-                }
-                vec![
-                    f.src(&pkg, &tv.version),
-                    f.src(&pkg, &format!("v{}", tv.version)),
-                ]
-                .into_iter()
-                .flatten()
-            })
-            .collect_vec();
+        let srcs = self.srcs(&pkg, tv);
         if srcs.is_empty() {
             return Ok(vec![tv.install_path()]);
         }
 
         Ok(srcs
             .iter()
-            .map(|f| {
-                PathBuf::from(f)
-                    .parent()
-                    .map(|p| tv.install_path().join(p))
-                    .unwrap_or_else(|| tv.install_path())
-            })
+            .map(|(_, dst)| dst.parent().unwrap().to_path_buf())
             .filter(|p| p.exists())
             .unique()
             .collect())
@@ -222,7 +201,7 @@ impl AquaBackend {
         let tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
             pr: Some(ctx.pr.as_ref()),
-            ..Default::default()
+            strip_components: 0,
         };
         if pkg.r#type == AquaPackageType::GithubArchive {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
@@ -250,21 +229,40 @@ impl AquaBackend {
             bail!("unsupported format: {}", format);
         }
 
-        for file in &pkg.files {
-            if let Some(src) = file.src(pkg, v) {
-                let src_path = install_path.join(&src);
-                let dest_path = src_path.parent().unwrap().join(file.name.as_str());
-                if src_path != dest_path {
-                    if cfg!(windows) {
-                        file::rename(&src_path, &dest_path)?;
-                    } else {
-                        file::make_symlink(&PathBuf::from(".").join(&src), &dest_path)?;
-                    }
+        for (src, dst) in self.srcs(pkg, &ctx.tv) {
+            if src != dst {
+                if cfg!(windows) {
+                    file::rename(&src, &dst)?;
+                } else {
+                    file::make_symlink(&PathBuf::from(".").join(&src), &dst)?;
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn srcs(&self, pkg: &AquaPackage, tv: &ToolVersion) -> Vec<(PathBuf, PathBuf)> {
+        pkg.files
+            .iter()
+            .flat_map(|f| {
+                let srcs = if let Some(prefix) = &pkg.version_prefix {
+                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version))]
+                } else {
+                    vec![
+                        f.src(pkg, &tv.version),
+                        f.src(pkg, &format!("v{}", tv.version)),
+                    ]
+                };
+                srcs.into_iter()
+                    .flatten()
+                    .map(|src| tv.install_path().join(src))
+                    .map(|src| {
+                        let dst = src.parent().unwrap().join(f.name.as_str());
+                        (src, dst)
+                    })
+            })
+            .collect()
     }
 }
 
