@@ -11,7 +11,7 @@ Config {
     ],
     Aliases: {
         "tiny": Alias {
-            full: None,
+            backend: None,
             versions: {
                 "my/alias": "3.0",
             },

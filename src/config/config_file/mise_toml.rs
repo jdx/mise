@@ -167,7 +167,7 @@ impl MiseToml {
         }
         if let Some(aliases) = self.alias.get_mut(&fa.short) {
             aliases.versions.swap_remove(from);
-            if aliases.versions.is_empty() && aliases.full.is_none() {
+            if aliases.versions.is_empty() && aliases.backend.is_none() {
                 self.alias.swap_remove(&fa.short);
             }
         }
@@ -423,7 +423,7 @@ impl ConfigFile for MiseToml {
                 Ok((
                     k.clone(),
                     Alias {
-                        full: v.full.clone(),
+                        backend: v.backend.clone(),
                         versions,
                     },
                 ))
@@ -970,7 +970,7 @@ impl<'de> de::Deserialize<'de> for Alias {
                 E: de::Error,
             {
                 Ok(Alias {
-                    full: Some(v.to_string()),
+                    backend: Some(v.to_string()),
                     ..Default::default()
                 })
             }
@@ -979,12 +979,12 @@ impl<'de> de::Deserialize<'de> for Alias {
             where
                 M: de::MapAccess<'de>,
             {
-                let mut full = None;
+                let mut backend = None;
                 let mut versions = IndexMap::new();
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "full" => {
-                            full = Some(map.next_value()?);
+                        "backend" => {
+                            backend = Some(map.next_value()?);
                         }
                         "versions" => {
                             versions = map.next_value()?;
@@ -995,7 +995,7 @@ impl<'de> de::Deserialize<'de> for Alias {
                         }
                     }
                 }
-                Ok(Alias { full, versions })
+                Ok(Alias { backend, versions })
             }
         }
 
