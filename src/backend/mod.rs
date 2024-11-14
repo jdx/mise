@@ -92,7 +92,7 @@ pub fn load_tools() {
             })
             .unwrap_or_default()
             .into_values()
-            .map(|ist| arg_to_backend(BackendArg::new(ist.short, Some(ist.full))).unwrap()),
+            .flat_map(|ist| arg_to_backend(BackendArg::new(ist.short, Some(ist.full)))),
     );
     time!("load_tools install_state");
     tools.retain(|backend| !SETTINGS.disable_tools.contains(backend.id()));
@@ -598,7 +598,7 @@ pub trait Backend: Debug + Send + Sync {
     fn write_backend_meta(&self) -> eyre::Result<()> {
         file::write(
             self.ba().installs_path.join(".mise.backend"),
-            self.ba().full(),
+            format!("{}\n{}", self.ba().short, self.ba().full()),
         )
     }
 }
