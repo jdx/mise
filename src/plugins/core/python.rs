@@ -4,7 +4,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
-use crate::file::display_path;
+use crate::file::{display_path, TarFormat, TarOptions};
 use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -183,9 +183,16 @@ impl PythonPlugin {
         HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))?;
 
         ctx.pr.set_message(format!("installing {filename}"));
-        file::untar_gz(&tarball_path, &download)?;
         file::remove_all(&install)?;
-        file::rename(download.join("python"), &install)?;
+        file::untar(
+            &tarball_path,
+            &install,
+            &TarOptions {
+                format: TarFormat::TarGz,
+                strip_components: 1,
+                pr: Some(ctx.pr.as_ref()),
+            },
+        )?;
         #[cfg(unix)]
         file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
         Ok(())

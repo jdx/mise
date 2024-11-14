@@ -9,6 +9,7 @@ use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
+use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
@@ -120,7 +121,15 @@ impl JavaPlugin {
         {
             file::unzip(tarball_path, &tv.download_path())?;
         } else {
-            file::untar_gz(tarball_path, &tv.download_path())?;
+            file::untar(
+                tarball_path,
+                &tv.download_path(),
+                &TarOptions {
+                    format: TarFormat::TarGz,
+                    pr: Some(pr),
+                    ..Default::default()
+                },
+            )?;
         }
         self.move_to_install_path(tv, m)
     }

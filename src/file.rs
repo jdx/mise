@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
+use std::io::{Cursor, Read};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -22,6 +23,7 @@ use zip::ZipArchive;
 
 #[cfg(windows)]
 use crate::config::SETTINGS;
+use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
@@ -508,40 +510,82 @@ pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn untar_gz(archive: &Path, dest: &Path) -> Result<()> {
+pub fn un_xz(input: &Path, dest: &Path) -> Result<()> {
+    debug!("xz -d {} -c > {}", input.display(), dest.display());
+    let f = File::open(input)?;
+    let mut dec = xz2::read::XzDecoder::new(f);
+    let mut output = File::create(dest)?;
+    std::io::copy(&mut dec, &mut output)
+        .wrap_err_with(|| format!("failed to un-xz: {}", display_path(input)))?;
+    Ok(())
+}
+
+pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
+    debug!("bzip2 -d {} -c > {}", input.display(), dest.display());
+    let f = File::open(input)?;
+    let mut dec = bzip2::read::BzDecoder::new(f);
+    let mut output = File::create(dest)?;
+    std::io::copy(&mut dec, &mut output)
+        .wrap_err_with(|| format!("failed to un-bz2: {}", display_path(input)))?;
+    Ok(())
+}
+
+#[derive(Default, Clone, Copy, strum::EnumString, strum::Display)]
+pub enum TarFormat {
+    #[default]
+    #[strum(serialize = "tar.gz")]
+    TarGz,
+    #[strum(serialize = "tar.xz")]
+    TarXz,
+    #[strum(serialize = "tar.bz2")]
+    TarBz2,
+}
+
+#[derive(Default)]
+pub struct TarOptions<'a> {
+    pub format: TarFormat,
+    pub strip_components: usize,
+    pub pr: Option<&'a dyn SingleReport>,
+}
+
+pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     // TODO: show progress
     debug!("tar -xzf {} -C {}", archive.display(), dest.display());
     let f = File::open(archive)?;
-    let tar = GzDecoder::new(f);
-    Archive::new(tar).unpack(dest).wrap_err_with(|| {
+    let mut tar: Box<dyn std::io::Read> = match opts.format {
+        TarFormat::TarGz => Box::new(GzDecoder::new(f)),
+        TarFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
+        TarFormat::TarBz2 => Box::new(bzip2::read::BzDecoder::new(f)),
+    };
+    let err = || {
         let archive = display_path(archive);
         let dest = display_path(dest);
         format!("failed to extract tar: {archive} to {dest}")
-    })
-}
-
-pub fn untar_xz(archive: &Path, dest: &Path) -> Result<()> {
-    // TODO: show progress
-    debug!("tar -xf {} -C {}", archive.display(), dest.display());
-    let f = File::open(archive)?;
-    let tar = xz2::read::XzDecoder::new(f);
-    Archive::new(tar).unpack(dest).wrap_err_with(|| {
-        let archive = display_path(archive);
-        let dest = display_path(dest);
-        format!("failed to extract tar: {archive} to {dest}")
-    })
-}
-
-pub fn untar_bz2(archive: &Path, dest: &Path) -> Result<()> {
-    // TODO: show progress
-    debug!("tar -xf {} -C {}", archive.display(), dest.display());
-    let f = File::open(archive)?;
-    let tar = bzip2::read::BzDecoder::new(f);
-    Archive::new(tar).unpack(dest).wrap_err_with(|| {
-        let archive = display_path(archive);
-        let dest = display_path(dest);
-        format!("failed to extract tar: {archive} to {dest}")
-    })
+    };
+    let mut buf = vec![];
+    let total = tar.read_to_end(&mut buf).wrap_err_with(err)?;
+    if let Some(pr) = &opts.pr {
+        pr.set_length(total as u64);
+    }
+    for entry in Archive::new(Cursor::new(buf))
+        .entries()
+        .wrap_err_with(err)?
+    {
+        let mut entry = entry.wrap_err_with(err)?;
+        let path: PathBuf = entry
+            .path()
+            .wrap_err_with(err)?
+            .components()
+            .skip(opts.strip_components)
+            .collect();
+        let path = dest.join(path);
+        create_dir_all(path.parent().unwrap()).wrap_err_with(err)?;
+        entry.unpack(&path).wrap_err_with(err)?;
+        if let Some(pr) = &opts.pr {
+            pr.inc(entry.size());
+        }
+    }
+    Ok(())
 }
 
 pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {

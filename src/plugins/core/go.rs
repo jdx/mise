@@ -7,6 +7,7 @@ use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SETTINGS};
+use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
@@ -128,7 +129,15 @@ impl GoPlugin {
         if cfg!(windows) {
             file::unzip(tarball_path, tmp_extract_path.path())?;
         } else {
-            file::untar_gz(tarball_path, tmp_extract_path.path())?;
+            file::untar(
+                tarball_path,
+                tmp_extract_path.path(),
+                &TarOptions {
+                    format: TarFormat::TarGz,
+                    pr: Some(pr),
+                    ..Default::default()
+                },
+            )?;
         }
         file::remove_all(tv.install_path())?;
         file::rename(tmp_extract_path.path().join("go"), tv.install_path())?;
