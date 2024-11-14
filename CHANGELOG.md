@@ -1,5 +1,24 @@
 # Changelog
 
+## [2024.11.10](https://github.com/jdx/mise/compare/v2024.11.9..v2024.11.10) - 2024-11-14
+
+### 🚀 Features
+
+- added aliases to registry by [@jdx](https://github.com/jdx) in [#3007](https://github.com/jdx/mise/pull/3007)
+- added more aqua tools by [@jdx](https://github.com/jdx) in [#3008](https://github.com/jdx/mise/pull/3008)
+
+### 🐛 Bug Fixes
+
+- default python to precompiled by [@jdx](https://github.com/jdx) in [dfb13de](https://github.com/jdx/mise/commit/dfb13de8ebc1da2542ab67ba2b81e8b26a085c20)
+
+### 🚜 Refactor
+
+- consolidate tool/plugin loading to install_state.rs by [@jdx](https://github.com/jdx) in [#3015](https://github.com/jdx/mise/pull/3015)
+
+### 🧪 Testing
+
+- remove alias from test-plugins by [@jdx](https://github.com/jdx) in [7d2406b](https://github.com/jdx/mise/commit/7d2406b50e60257937a4476aed4a2a78197771f2)
+
 ## [2024.11.9](https://github.com/jdx/mise/compare/v2024.11.8..v2024.11.9) - 2024-11-13
 
 ### 🚀 Features
