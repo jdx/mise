@@ -45,6 +45,9 @@ node = ['16', 'prefix:20', 'ref:master', 'path:~/.nodes/14']
 python = 'https://github.com/asdf-community/asdf-python'
 
 [alias.node.versions] # project-local aliases
+# use vfox:version-fox/vfox-nodejs when running `mise i node@backend`
+backend = "vfox:version-fox/vfox-nodejs"
+# install node-20.x when running `mise i node@my_custom_node`
 my_custom_node = '20'
 
 [tasks.build]

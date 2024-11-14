@@ -5,7 +5,7 @@ snapshot_kind: text
 ---
 {
     "node": Alias {
-        full: None,
+        backend: None,
         versions: {
             "18": "18.0.0",
         },

@@ -127,17 +127,17 @@ impl BackendArg {
     }
 
     pub fn full(&self) -> String {
-        if let Some(full) = &self.full {
-            return full.clone();
-        }
         if config::is_loaded() {
             if let Some(full) = CONFIG
                 .all_aliases
                 .get(&self.short)
-                .and_then(|a| a.full.clone())
+                .and_then(|a| a.backend.clone())
             {
                 return full;
             }
+        }
+        if let Some(full) = &self.full {
+            return full.clone();
         }
         unalias_backend(&self.short).to_string()
     }
