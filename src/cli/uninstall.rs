@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
+use crate::toolset::{install_state, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file, lockfile, runtime_symlinks, shims};
 
@@ -66,6 +66,7 @@ impl Uninstall {
             }
         }
 
+        install_state::reset();
         file::touch_dir(&dirs::DATA)?;
         lockfile::update_lockfiles(&[]).wrap_err("failed to update lockfiles")?;
         let ts = ToolsetBuilder::new().build(&config)?;
