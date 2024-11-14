@@ -6,11 +6,11 @@ _mise() {
         return 1
     fi
 
-    if [[ -z ${_usage_spec_mise_2024_11_12:-} ]]; then
-        _usage_spec_mise_2024_11_12="$(mise usage)"
+    if [[ -z ${_usage_spec_mise_2024_11_13:-} ]]; then
+        _usage_spec_mise_2024_11_13="$(mise usage)"
     fi
 
-    COMPREPLY=( $(usage complete-word --shell bash -s "${_usage_spec_mise_2024_11_12}" --cword="$COMP_CWORD" -- "${COMP_WORDS[@]}" ) )
+    COMPREPLY=( $(usage complete-word --shell bash -s "${_usage_spec_mise_2024_11_13}" --cword="$COMP_CWORD" -- "${COMP_WORDS[@]}" ) )
     if [[ $? -ne 0 ]]; then
         unset COMPREPLY
     fi
