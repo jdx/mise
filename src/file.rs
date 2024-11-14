@@ -553,7 +553,10 @@ pub struct TarOptions<'a> {
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     debug!("tar -xf {} -C {}", archive.display(), dest.display());
     if let Some(pr) = &opts.pr {
-        pr.set_message(format!("extracting {}", archive.file_name().unwrap().to_string_lossy()));
+        pr.set_message(format!(
+            "extracting {}",
+            archive.file_name().unwrap().to_string_lossy()
+        ));
     }
     let f = File::open(archive)?;
     let mut tar: Box<dyn std::io::Read> = match opts.format {
@@ -580,10 +583,7 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
             pr.set_length(total);
         }
     }
-    for entry in Archive::new(cur)
-        .entries()
-        .wrap_err_with(err)?
-    {
+    for entry in Archive::new(cur).entries().wrap_err_with(err)? {
         let mut entry = entry.wrap_err_with(err)?;
         let path: PathBuf = entry
             .path()
