@@ -111,7 +111,10 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov,mise,usage-cli
+          tool: cargo-llvm-cov
+      - run: cargo build --all-features
+      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: mise install
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
