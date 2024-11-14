@@ -180,7 +180,7 @@ User to run as
 
 ## `render:fig`
 
-- Depends: build, render:usage, render:completions
+- Depends: build, render:usage
 
 - **Usage**: `render:fig`
 

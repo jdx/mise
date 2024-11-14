@@ -20,7 +20,7 @@ fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
     let mut lines = vec![r#"
-const _REGISTRY: &[(&str, &[&str])] = &["#
+const _REGISTRY: &[(&str, &[&str], &[&str])] = &["#
         .to_string()];
 
     let registry: toml::Table = fs::read_to_string("registry.toml")
@@ -31,9 +31,19 @@ const _REGISTRY: &[(&str, &[&str])] = &["#
     let tools = registry.get("tools").unwrap().as_table().unwrap();
     let mut trusted_ids = HashSet::new();
     for (short, info) in tools {
-        let info = info.as_array().unwrap();
+        let info = info.as_table().unwrap();
+        let aliases = info
+            .get("aliases")
+            .cloned()
+            .unwrap_or(toml::Value::Array(vec![]))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        let backends = info.get("backends").unwrap().as_array().unwrap();
         let mut fulls = vec![];
-        for backend in info {
+        for backend in backends {
             match backend {
                 toml::Value::String(backend) => {
                     fulls.push(backend.to_string());
@@ -50,19 +60,14 @@ const _REGISTRY: &[(&str, &[&str])] = &["#
             }
         }
         lines.push(format!(
-            r#"    ("{short}", &["{fulls}"]),"#,
-            fulls = fulls.join("\", \"")
+            r#"    ("{short}", &["{fulls}"], &[{aliases}]),"#,
+            fulls = fulls.join("\", \""),
+            aliases = aliases
+                .iter()
+                .map(|a| format!("\"{a}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
         ));
-    }
-
-    lines.push(
-        r#"];
-
-const _TRUSTED_IDS: &[&str] = &["#
-            .to_string(),
-    );
-    for id in trusted_ids {
-        lines.push(format!(r#"    "{id}","#));
     }
     lines.push(r#"];"#.to_string());
 
