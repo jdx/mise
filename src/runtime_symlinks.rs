@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::backend::{backend_meta, Backend};
+use crate::backend::Backend;
 use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
@@ -15,7 +15,7 @@ use xx::regex;
 pub fn rebuild(config: &Config) -> Result<()> {
     for backend in backend::list() {
         let symlinks = list_symlinks(config, backend.clone())?;
-        let installs_dir = &backend.fa().installs_path;
+        let installs_dir = &backend.ba().installs_path;
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
@@ -30,10 +30,7 @@ pub fn rebuild(config: &Config) -> Result<()> {
         }
         remove_missing_symlinks(backend.clone())?;
         // remove install dir if empty (ignore metadata)
-        file::remove_dir_ignore(
-            installs_dir,
-            vec![backend_meta::FORGE_META_FILENAME.to_string()],
-        )?;
+        file::remove_dir_ignore(installs_dir, vec![".mise.backend.json", ".mise.backend"])?;
     }
     Ok(())
 }
@@ -59,8 +56,8 @@ fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> Result<IndexMap<
         }
         symlinks.insert(format!("{prefix}latest"), rel_path(&v));
         for (from, to) in &config
-            .get_all_aliases()
-            .get(&backend.fa().short)
+            .all_aliases
+            .get(&backend.ba().short)
             .unwrap_or(&Alias::default())
             .versions
         {
@@ -90,7 +87,7 @@ fn installed_versions(backend: &Arc<dyn Backend>) -> Result<Vec<String>> {
 }
 
 fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
-    let installs_dir = &backend.fa().installs_path;
+    let installs_dir = &backend.ba().installs_path;
     if !installs_dir.exists() {
         return Ok(());
     }
@@ -110,25 +107,4 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
         return link.starts_with("./");
     }
     false
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::backend::asdf::AsdfBackend;
-    use insta::assert_debug_snapshot;
-
-    use crate::test::reset;
-
-    use super::*;
-
-    #[test]
-    fn test_list_symlinks() {
-        reset();
-        assert_cli!("install", "tiny@2");
-        let config = Config::load().unwrap();
-        let plugin = AsdfBackend::from_arg("tiny".into());
-        let plugin = Arc::new(plugin);
-        let symlinks = list_symlinks(&config, plugin).unwrap();
-        assert_debug_snapshot!(symlinks);
-    }
 }

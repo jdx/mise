@@ -5,7 +5,7 @@ use itertools::sorted;
 
 use crate::config::Config;
 use crate::env::{NODENV_ROOT, NVM_DIR};
-use crate::{cmd, dirs, file, plugins};
+use crate::{backend, cmd, dirs, file};
 
 /// Symlinks all tool versions from an external tool into mise
 ///
@@ -47,7 +47,7 @@ impl SyncNode {
     }
 
     fn run_brew(self, config: &Config) -> Result<()> {
-        let tool = plugins::get("node");
+        let node = backend::get(&"node".into()).unwrap();
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
         let installed_versions_path = dirs::INSTALLS.join("node");
@@ -60,7 +60,7 @@ impl SyncNode {
                 continue;
             }
             let v = entry.trim_start_matches("node@");
-            tool.create_symlink(v, &brew_prefix.join(&entry))?;
+            node.create_symlink(v, &brew_prefix.join(&entry))?;
             miseprintln!("Synced node@{} from Homebrew", v);
         }
 
@@ -68,7 +68,7 @@ impl SyncNode {
     }
 
     fn run_nvm(self, config: &Config) -> Result<()> {
-        let tool = plugins::get("node");
+        let node = backend::get(&"node".into()).unwrap();
 
         let nvm_versions_path = NVM_DIR.join("versions").join("node");
         let installed_versions_path = dirs::INSTALLS.join("node");
@@ -83,7 +83,7 @@ impl SyncNode {
         let subdirs = file::dir_subdirs(&nvm_versions_path)?;
         for entry in sorted(subdirs) {
             let v = entry.trim_start_matches('v');
-            let symlink = tool.create_symlink(v, &nvm_versions_path.join(&entry))?;
+            let symlink = node.create_symlink(v, &nvm_versions_path.join(&entry))?;
             if let Some(symlink) = symlink {
                 created.push(symlink);
                 miseprintln!("Synced node@{} from nvm", v);
@@ -99,7 +99,7 @@ impl SyncNode {
     }
 
     fn run_nodenv(self, config: &Config) -> Result<()> {
-        let tool = plugins::get("node");
+        let node = backend::get(&"node".into()).unwrap();
 
         let nodenv_versions_path = NODENV_ROOT.join("versions");
         let installed_versions_path = dirs::INSTALLS.join("node");
@@ -108,7 +108,7 @@ impl SyncNode {
 
         let subdirs = file::dir_subdirs(&nodenv_versions_path)?;
         for v in sorted(subdirs) {
-            tool.create_symlink(&v, &nodenv_versions_path.join(&v))?;
+            node.create_symlink(&v, &nodenv_versions_path.join(&v))?;
             miseprintln!("Synced node@{} from nodenv", v);
         }
 

@@ -1,6 +1,6 @@
+use crate::backend::backend_type::BackendType;
 use eyre::Result;
-
-use crate::backend::{self, BackendType};
+use strum::IntoEnumIterator;
 
 /// List built-in backends
 #[derive(Debug, clap::Args)]
@@ -9,8 +9,8 @@ pub struct BackendsLs {}
 
 impl BackendsLs {
     pub fn run(self) -> Result<()> {
-        let mut backends = backend::list_backend_types();
-        backends.retain(|f| *f != BackendType::Asdf);
+        let mut backends = BackendType::iter().collect::<Vec<BackendType>>();
+        backends.retain(|f| !matches!(f, BackendType::Unknown));
 
         for backend in backends {
             miseprintln!("{}", backend);

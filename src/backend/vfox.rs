@@ -1,12 +1,13 @@
-use crate::{env, plugins};
+use crate::env;
 use heck::ToKebabCase;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::thread;
 
-use crate::backend::{ABackend, Backend, BackendList, BackendType};
+use crate::backend::backend_type::BackendType;
+use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, SETTINGS};
@@ -31,11 +32,11 @@ impl Backend for VfoxBackend {
         BackendType::Vfox
     }
 
-    fn get_plugin_type(&self) -> PluginType {
-        PluginType::Vfox
+    fn get_plugin_type(&self) -> Option<PluginType> {
+        Some(PluginType::Vfox)
     }
 
-    fn fa(&self) -> &BackendArg {
+    fn ba(&self) -> &BackendArg {
         &self.ba
     }
 
@@ -98,7 +99,7 @@ impl Backend for VfoxBackend {
     }
 
     fn get_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        let out = match tvr.backend().name.as_str() {
+        let out = match tvr.ba().tool_name.as_str() {
             "poetry" | "pipenv" | "pipx" => vec!["python"],
             "elixir" => vec!["erlang"],
             _ => vec![],
@@ -108,23 +109,11 @@ impl Backend for VfoxBackend {
 }
 
 impl VfoxBackend {
-    pub fn list() -> eyre::Result<BackendList> {
-        Ok(plugins::INSTALLED_PLUGINS
-            .iter()
-            .filter(|(_, pt)| matches!(pt, PluginType::Vfox))
-            .map(|(d, _)| {
-                Arc::new(Self::from_arg(
-                    d.file_name().unwrap().to_string_lossy().into(),
-                )) as ABackend
-            })
-            .collect())
-    }
-
     pub fn from_arg(ba: BackendArg) -> Self {
         let pathname = ba.short.to_kebab_case();
         let plugin_path = dirs::PLUGINS.join(&pathname);
         let mut plugin = VfoxPlugin::new(pathname.clone());
-        plugin.full = Some(ba.full.clone());
+        plugin.full = Some(ba.full());
         Self {
             remote_version_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("remote_versions.msgpack.z"),
@@ -150,7 +139,7 @@ impl VfoxBackend {
                 CacheManagerBuilder::new(tv.cache_path().join("exec_env.msgpack.z"))
                     .with_fresh_file(dirs::DATA.to_path_buf())
                     .with_fresh_file(self.plugin.plugin_path.to_path_buf())
-                    .with_fresh_file(self.fa().installs_path.to_path_buf())
+                    .with_fresh_file(self.ba().installs_path.to_path_buf())
                     .build(),
             );
         }

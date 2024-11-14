@@ -1,18 +1,14 @@
-use crate::backend::{ABackend, BackendList, BackendType};
-use crate::cli::args::BackendArg;
 use crate::errors::Error::PluginNotInstalled;
-use crate::plugins::asdf_plugin::{AsdfPlugin, ASDF_PLUGIN_NAMES};
-use crate::plugins::core::CorePlugin;
-use crate::plugins::vfox_plugin::{VfoxPlugin, VFOX_PLUGIN_NAMES};
+use crate::plugins::asdf_plugin::AsdfPlugin;
+use crate::plugins::vfox_plugin::VfoxPlugin;
+use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend, dirs, file};
 use clap::Command;
-use itertools::Itertools;
+use eyre::{eyre, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
 pub use script_manager::{Script, ScriptManager};
-use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 use std::path::PathBuf;
 use std::vec;
@@ -25,9 +21,25 @@ pub mod vfox_plugin;
 
 #[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
 pub enum PluginType {
-    Core,
     Asdf,
     Vfox,
+}
+
+impl PluginType {
+    pub fn from_full(full: &str) -> eyre::Result<Self> {
+        match full.split(':').next() {
+            Some("asdf") => Ok(Self::Asdf),
+            Some("vfox") => Ok(Self::Vfox),
+            _ => Err(eyre!("unknown plugin type: {full}")),
+        }
+    }
+
+    pub fn plugin(&self, short: String) -> APlugin {
+        match self {
+            PluginType::Asdf => Box::new(AsdfPlugin::new(short)),
+            PluginType::Vfox => Box::new(VfoxPlugin::new(short)),
+        }
+    }
 }
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
@@ -37,79 +49,25 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
         .unwrap()
 });
 
-pub fn get(name: &str) -> ABackend {
-    BackendArg::new(name, name).into()
-}
-
-pub static PLUGIN_NAMES_TO_TYPE: Lazy<BTreeMap<String, PluginType>> = Lazy::new(|| {
-    let vfox = VFOX_PLUGIN_NAMES
-        .iter()
-        .map(|name| (name.clone(), PluginType::Vfox))
-        .collect_vec();
-    let asdf = ASDF_PLUGIN_NAMES
-        .iter()
-        .map(|name| (name.clone(), PluginType::Asdf))
-        .collect_vec();
-    asdf.into_iter().chain(vfox).collect()
-});
-
-pub static INSTALLED_PLUGINS: Lazy<Vec<(PathBuf, PluginType)>> =
-    Lazy::new(|| match file::dir_subdirs(&dirs::PLUGINS) {
-        Ok(dirs) => dirs
-            .into_iter()
-            .map(|d| {
-                let path = dirs::PLUGINS.join(&d);
-                let plugin_type = if path.join("metadata.lua").exists() {
-                    PluginType::Vfox
-                } else {
-                    PluginType::Asdf
-                };
-                (path, plugin_type)
-            })
-            .collect(),
-        Err(e) => {
-            warn!("error reading plugin dirs: {e}");
-            vec![]
-        }
-    });
-
-pub fn list() -> BackendList {
-    // TODO: replace with list2
-    backend::list()
-        .into_iter()
-        .filter(|f| matches!(f.get_type(), BackendType::Asdf | BackendType::Vfox))
-        .collect()
-}
-
-pub fn list2() -> eyre::Result<PluginMap> {
-    let core = CorePlugin::list()
-        .into_iter()
-        .map(|p| (p.name().to_string(), p));
-    let asdf = AsdfPlugin::list()?
-        .into_iter()
-        .map(|p| (p.name().to_string(), p));
-    let vfox = VfoxPlugin::list()?
-        .into_iter()
-        .map(|p| (p.name().to_string(), p));
-    Ok(core.chain(asdf).chain(vfox).collect())
-}
-
-pub fn list_external() -> BackendList {
-    list()
-        .into_iter()
-        .filter(|tool| matches!(tool.get_plugin_type(), PluginType::Asdf | PluginType::Vfox))
-        .collect()
+pub fn get(short: &str) -> Result<APlugin> {
+    let (name, full) = short.split_once(':').unwrap_or((short, short));
+    let plugin_type = if let Some(plugin_type) = install_state::list_plugins()?.remove(short) {
+        plugin_type
+    } else {
+        PluginType::from_full(full)?
+    };
+    Ok(plugin_type.plugin(name.to_string()))
 }
 
 pub type APlugin = Box<dyn Plugin>;
-pub type PluginMap = BTreeMap<String, APlugin>;
-pub type PluginList = Vec<APlugin>;
 
+#[allow(unused_variables)]
 pub trait Plugin: Debug + Send {
     fn name(&self) -> &str;
     fn path(&self) -> PathBuf;
     fn get_plugin_type(&self) -> PluginType;
     fn get_remote_url(&self) -> eyre::Result<Option<String>>;
+    fn set_remote_url(&mut self, url: String) {}
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>>;
     fn current_sha_short(&self) -> eyre::Result<Option<String>>;
     fn is_installed(&self) -> bool {
@@ -178,27 +136,32 @@ mod tests {
 
     use crate::backend::asdf::AsdfBackend;
     use crate::backend::Backend;
+    use crate::cli::args::BackendArg;
     use crate::test::reset;
 
     #[test]
     fn test_exact_match() {
         reset();
         assert_cli!("plugin", "add", "tiny");
-        let plugin = AsdfBackend::from_arg("tiny".into());
-        let version = plugin
+        let ba = BackendArg::from("tiny");
+        assert_str_eq!(ba.short, "tiny");
+        assert_str_eq!(ba.tool_name, "mise-plugins/mise-tiny");
+        assert_str_eq!(ba.full(), "asdf:mise-plugins/mise-tiny");
+        let backend = AsdfBackend::from_arg("tiny".into());
+        let version = backend
             .latest_version(Some("1.0.0".into()))
             .unwrap()
             .unwrap();
         assert_str_eq!(version, "1.0.0");
-        let version = plugin.latest_version(None).unwrap().unwrap();
+        let version = backend.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "3.1.0");
     }
 
     #[test]
     fn test_latest_stable() {
         reset();
-        let plugin = AsdfBackend::from_arg("dummy".into());
-        let version = plugin.latest_version(None).unwrap().unwrap();
+        let backend = AsdfBackend::from_arg("dummy".into());
+        let version = backend.latest_version(None).unwrap().unwrap();
         assert_str_eq!(version, "2.0.0");
     }
 }

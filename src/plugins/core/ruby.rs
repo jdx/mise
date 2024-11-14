@@ -13,31 +13,30 @@ use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file};
+use crate::{cmd, env, file, plugins};
 use contracts::requires;
 use eyre::{Result, WrapErr};
 use xx::regex;
 
 #[derive(Debug)]
 pub struct RubyPlugin {
-    core: CorePlugin,
+    ba: BackendArg,
 }
 
 impl RubyPlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new(BackendArg::new("ruby", "ruby")),
+            ba: plugins::core::new_backend_arg("ruby"),
         }
     }
 
     fn ruby_build_path(&self) -> PathBuf {
-        self.core.fa.cache_path.join("ruby-build")
+        self.ba.cache_path.join("ruby-build")
     }
     fn ruby_install_path(&self) -> PathBuf {
-        self.core.fa.cache_path.join("ruby-install")
+        self.ba.cache_path.join("ruby-install")
     }
 
     fn ruby_build_bin(&self) -> PathBuf {
@@ -144,7 +143,7 @@ impl RubyPlugin {
         }
         debug!("Updating ruby-install in {}", ruby_install_path.display());
 
-        CorePlugin::run_fetch_task_with_timeout(move || {
+        plugins::core::run_fetch_task_with_timeout(move || {
             cmd!(&ruby_install_path, "--update").run()?;
             file::touch_dir(&ruby_install_path)?;
             Ok(())
@@ -189,7 +188,7 @@ impl RubyPlugin {
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
                 None => cmd = cmd.arg(package),
             };
-            cmd.env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+            cmd.env(&*PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
         Ok(())
@@ -210,7 +209,7 @@ impl RubyPlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env()?)
-            .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()
     }
 
@@ -325,15 +324,15 @@ impl RubyPlugin {
 }
 
 impl Backend for RubyPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
         if let Err(err) = self.update_build_tool() {
             warn!("{err}");
         }
         let ruby_build_bin = self.ruby_build_bin();
-        let versions = CorePlugin::run_fetch_task_with_timeout(move || {
+        let versions = plugins::core::run_fetch_task_with_timeout(move || {
             let output = cmd!(ruby_build_bin, "--definitions").read()?;
             let versions = output.split('\n').map(|s| s.to_string()).collect();
             Ok(versions)

@@ -1,11 +1,9 @@
-use std::collections::HashSet;
-
 use console::{measure_text_width, pad_str, Alignment};
 use eyre::Result;
 use itertools::Itertools;
 
 use crate::config::Config;
-use crate::plugins;
+use crate::toolset::install_state;
 
 /// List all available remote plugins
 #[derive(Debug, clap::Args)]
@@ -24,11 +22,7 @@ pub struct PluginsLsRemote {
 
 impl PluginsLsRemote {
     pub fn run(self, config: &Config) -> Result<()> {
-        let installed_plugins = plugins::list()
-            .into_iter()
-            .filter(|b| b.plugin().is_some_and(|p| p.is_installed()))
-            .map(|p| p.id().to_string())
-            .collect::<HashSet<_>>();
+        let installed_plugins = install_state::list_plugins()?;
 
         let shorthands = config.get_shorthands().iter().sorted().collect_vec();
         let max_plugin_len = shorthands
@@ -43,11 +37,12 @@ impl PluginsLsRemote {
 
         for (plugin, backends) in shorthands {
             for repo in backends {
-                let installed = if !self.only_names && installed_plugins.contains(plugin.as_str()) {
-                    "*"
-                } else {
-                    " "
-                };
+                let installed =
+                    if !self.only_names && installed_plugins.contains_key(plugin.as_str()) {
+                        "*"
+                    } else {
+                        " "
+                    };
                 let url = if self.urls { repo } else { "" };
                 let plugin = pad_str(plugin, max_plugin_len, Alignment::Left, None);
                 miseprintln!("{} {}{}", plugin, installed, url);

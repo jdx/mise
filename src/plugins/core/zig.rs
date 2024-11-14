@@ -4,13 +4,12 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::file;
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
+use crate::{file, plugins};
 use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
@@ -19,13 +18,14 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct ZigPlugin {
-    core: CorePlugin,
+    ba: BackendArg,
 }
 
 impl ZigPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new(BackendArg::new("zig", "zig"));
-        Self { core }
+        Self {
+            ba: plugins::core::new_backend_arg("zig"),
+        }
     }
 
     fn zig_bin(&self, tv: &ToolVersion) -> PathBuf {
@@ -117,8 +117,8 @@ impl ZigPlugin {
 }
 
 impl Backend for ZigPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {

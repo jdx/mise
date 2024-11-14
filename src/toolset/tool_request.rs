@@ -5,6 +5,7 @@ use eyre::{bail, Result};
 use versions::{Chunk, Version};
 use xx::file;
 
+use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
@@ -110,7 +111,7 @@ impl ToolRequest {
         }
         self.clone()
     }
-    pub fn backend(&self) -> &BackendArg {
+    pub fn ba(&self) -> &BackendArg {
         match self {
             Self::Version { backend: f, .. }
             | Self::Prefix { backend: f, .. }
@@ -120,57 +121,8 @@ impl ToolRequest {
             | Self::System(f, ..) => f,
         }
     }
-    pub fn with_backend(self, backend: BackendArg) -> Self {
-        match self {
-            Self::Version {
-                version,
-                options,
-                source,
-                backend: _,
-            } => Self::Version {
-                backend,
-                version,
-                options,
-                source,
-            },
-            Self::Prefix {
-                prefix,
-                options,
-                source,
-                backend: _,
-            } => Self::Prefix {
-                backend,
-                prefix,
-                options,
-                source,
-            },
-            Self::Ref {
-                ref_,
-                ref_type,
-                options,
-                source,
-                backend: _,
-            } => Self::Ref {
-                backend,
-                ref_,
-                ref_type,
-                options,
-                source,
-            },
-            Self::Path(_, path, source) => Self::Path(backend, path, source),
-            Self::Sub {
-                sub,
-                orig_version,
-                source,
-                backend: _,
-            } => Self::Sub {
-                backend,
-                sub,
-                orig_version,
-                source,
-            },
-            Self::System(_, source) => Self::System(backend, source),
-        }
+    pub fn backend(&self) -> Result<ABackend> {
+        self.ba().backend()
     }
     pub fn source(&self) -> &ToolSource {
         match self {
@@ -183,7 +135,7 @@ impl ToolRequest {
         }
     }
     pub fn dependencies(&self) -> eyre::Result<Vec<BackendArg>> {
-        let backend = backend::get(self.backend());
+        let backend = self.ba().backend()?;
         backend.get_all_dependencies(self)
     }
     pub fn version(&self) -> String {
@@ -211,10 +163,12 @@ impl ToolRequest {
     }
 
     pub fn is_installed(&self) -> bool {
-        let backend = backend::get(self.backend());
-        let tv = ToolVersion::new(self.clone(), self.version());
-
-        backend.is_version_installed(&tv, false)
+        if let Some(backend) = backend::get(self.ba()) {
+            let tv = ToolVersion::new(self.clone(), self.version());
+            backend.is_version_installed(&tv, false)
+        } else {
+            false
+        }
     }
 
     pub fn install_path(&self) -> Option<PathBuf> {
@@ -257,7 +211,7 @@ impl ToolRequest {
 
     pub fn lockfile_resolve(&self) -> Result<Option<String>> {
         if let Some(path) = self.source().path() {
-            return lockfile::get_locked_version(path, &self.backend().short, &self.version());
+            return lockfile::get_locked_version(path, &self.ba().short, &self.version());
         }
         Ok(None)
     }
@@ -266,13 +220,14 @@ impl ToolRequest {
         if let Some(v) = self.lockfile_resolve()? {
             return Ok(Some(v));
         }
-        let backend = backend::get(self.backend());
-        let matches = backend.list_installed_versions_matching(v)?;
-        if matches.iter().any(|m| m == v) {
-            return Ok(Some(v.to_string()));
-        }
-        if let Some(v) = matches.last() {
-            return Ok(Some(v.to_string()));
+        if let Some(backend) = backend::get(self.ba()) {
+            let matches = backend.list_installed_versions_matching(v)?;
+            if matches.iter().any(|m| m == v) {
+                return Ok(Some(v.to_string()));
+            }
+            if let Some(v) = matches.last() {
+                return Ok(Some(v.to_string()));
+            }
         }
         Ok(None)
     }
@@ -300,7 +255,7 @@ pub fn version_sub(orig: &str, sub: &str) -> String {
 
 impl Display for ToolRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", &self.backend(), self.version())
+        write!(f, "{}@{}", &self.ba(), self.version())
     }
 }
 

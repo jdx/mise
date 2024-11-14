@@ -8,10 +8,9 @@ use crate::file::display_path;
 use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, file};
+use crate::{cmd, file, plugins};
 use eyre::{bail, eyre};
 use itertools::Itertools;
 use std::collections::BTreeMap;
@@ -22,25 +21,25 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct PythonPlugin {
-    core: CorePlugin,
+    ba: BackendArg,
     precompiled_cache: CacheManager<Vec<(String, String, String)>>,
 }
 
 impl PythonPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new(BackendArg::new("python", "python"));
+        let ba = plugins::core::new_backend_arg("python");
         Self {
             precompiled_cache: CacheManagerBuilder::new(
-                core.fa.cache_path.join("precompiled.msgpack.z"),
+                ba.cache_path.join("precompiled.msgpack.z"),
             )
             .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .build(),
-            core,
+            ba,
         }
     }
 
     fn python_build_path(&self) -> PathBuf {
-        self.core.fa.cache_path.join("pyenv")
+        self.ba.cache_path.join("pyenv")
     }
     fn python_build_bin(&self) -> PathBuf {
         self.python_build_path()
@@ -73,7 +72,7 @@ impl PythonPlugin {
             self.python_build_path().display()
         );
         let git = Git::new(self.python_build_path());
-        CorePlugin::run_fetch_task_with_timeout(move || git.update(None))?;
+        plugins::core::run_fetch_task_with_timeout(move || git.update(None))?;
         Ok(())
     }
 
@@ -333,8 +332,8 @@ impl PythonPlugin {
 }
 
 impl Backend for PythonPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
@@ -347,7 +346,7 @@ impl Backend for PythonPlugin {
         } else {
             self.install_or_update_python_build()?;
             let python_build_bin = self.python_build_bin();
-            CorePlugin::run_fetch_task_with_timeout(move || {
+            plugins::core::run_fetch_task_with_timeout(move || {
                 let output = cmd!(python_build_bin, "--definitions").read()?;
                 let versions = output
                     .split('\n')
@@ -365,7 +364,7 @@ impl Backend for PythonPlugin {
         static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
         CACHE
             .get_or_init(|| {
-                CacheManagerBuilder::new(self.fa().cache_path.join("remote_versions.msgpack.z"))
+                CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
                     .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
                     .with_cache_key((SETTINGS.python.compile == Some(false)).to_string())
                     .build()

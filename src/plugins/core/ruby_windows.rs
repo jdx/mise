@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -9,10 +10,9 @@ use crate::env::PATH_KEY;
 use crate::github::GithubRelease;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file, github};
+use crate::{env, file, github, plugins};
 use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
@@ -21,13 +21,13 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct RubyPlugin {
-    core: CorePlugin,
+    ba: BackendArg,
 }
 
 impl RubyPlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new(BackendArg::new("ruby", "ruby")),
+            ba: plugins::core::new_backend_arg("ruby"),
         }
     }
 
@@ -64,7 +64,7 @@ impl RubyPlugin {
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
                 None => cmd = cmd.arg(package),
             };
-            cmd.env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+            cmd.env(&*PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
                 .execute()?;
         }
         Ok(())
@@ -85,7 +85,7 @@ impl RubyPlugin {
             .with_pr(pr)
             .arg("-v")
             .envs(config.env()?)
-            .env(&*PATH_KEY, CorePlugin::path_env_with_tv_path(tv)?)
+            .env(&*PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()
     }
 
@@ -105,7 +105,7 @@ impl RubyPlugin {
         let arch = arch();
         let url = format!(
             "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-{version}-1/rubyinstaller-{version}-1-{arch}.7z",
-            version=tv.version,
+            version = tv.version,
         );
         let filename = url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
@@ -137,8 +137,8 @@ impl RubyPlugin {
 }
 
 impl Backend for RubyPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
         // TODO: use windows set of versions
@@ -182,7 +182,8 @@ impl Backend for RubyPlugin {
         Ok(v)
     }
 
-    #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type")]
+    #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type"
+    )]
     fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
         let config = Config::get();
         let tarball = self.download(&ctx.tv, ctx.pr.as_ref())?;

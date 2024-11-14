@@ -30,7 +30,7 @@ impl AliasLs {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let rows = config
-            .get_all_aliases()
+            .all_aliases
             .iter()
             .filter(|(short, _)| {
                 self.tool.is_none() || self.tool.as_ref().is_some_and(|f| &f.short == *short)

@@ -9,10 +9,9 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SETTINGS};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file, hash};
+use crate::{cmd, env, file, hash, plugins};
 use itertools::Itertools;
 use tempfile::tempdir_in;
 use versions::Versioning;
@@ -20,13 +19,13 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct GoPlugin {
-    core: CorePlugin,
+    ba: BackendArg,
 }
 
 impl GoPlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new(BackendArg::new("go", "go")),
+            ba: plugins::core::new_backend_arg("go"),
         }
     }
 
@@ -170,11 +169,11 @@ impl GoPlugin {
 }
 
 impl Backend for GoPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        CorePlugin::run_fetch_task_with_timeout(move || {
+        plugins::core::run_fetch_task_with_timeout(move || {
             let output = cmd!("git", "ls-remote", "--tags", &SETTINGS.go_repo, "go*").read()?;
             let lines = output.split('\n');
             let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())

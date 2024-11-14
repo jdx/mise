@@ -5,34 +5,32 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use console::style;
-use contracts::requires;
-use eyre::{bail, eyre, WrapErr};
-use indexmap::IndexSet;
-use itertools::Itertools;
-use once_cell::sync::Lazy;
-use regex::Regex;
-use strum::IntoEnumIterator;
-use versions::Versioning;
-
-use self::backend_meta::BackendMeta;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, CONFIG, SETTINGS};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
-use crate::plugins::core::{CorePlugin, CORE_PLUGINS};
+use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
 use crate::registry::REGISTRY_BACKEND_MAP;
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{is_outdated_version, ToolRequest, ToolSource, ToolVersion, Toolset};
+use crate::toolset::{
+    install_state, is_outdated_version, ToolRequest, ToolSource, ToolVersion, Toolset,
+};
 use crate::ui::progress_report::SingleReport;
-use crate::{config, dirs, env, file, lock_file, versions_host};
+use crate::{dirs, env, file, lock_file, plugins, versions_host};
+use backend_type::BackendType;
+use console::style;
+use eyre::{bail, eyre, Result, WrapErr};
+use indexmap::IndexSet;
+use itertools::Itertools;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 pub mod aqua;
 pub mod asdf;
-pub mod backend_meta;
+pub mod backend_type;
 pub mod cargo;
 mod external_plugin_cache;
 pub mod go;
@@ -47,162 +45,121 @@ pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<String>>;
 
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    Clone,
-    Copy,
-    strum::EnumString,
-    strum::EnumIter,
-    strum::AsRefStr,
-    Ord,
-    PartialOrd,
-)]
-#[strum(serialize_all = "snake_case")]
-pub enum BackendType {
-    Aqua,
-    Asdf,
-    Cargo,
-    Core,
-    Go,
-    Npm,
-    Pipx,
-    Spm,
-    Ubi,
-    Vfox,
-}
-
-impl Display for BackendType {
-    fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        write!(formatter, "{}", format!("{:?}", self).to_lowercase())
-    }
-}
-
 static TOOLS: Mutex<Option<BackendMap>> = Mutex::new(None);
 
-fn load_tools() -> BackendMap {
+pub fn load_tools() {
     let mut memo_tools = TOOLS.lock().unwrap();
-    if let Some(backends) = &*memo_tools {
-        return backends.clone();
+    if memo_tools.is_some() {
+        return;
     }
     time!("load_tools start");
-    let core_tools = CORE_PLUGINS
-        .iter()
-        .map(|(_, p)| p.clone())
-        .collect::<Vec<ABackend>>();
-    time!("load_tools core");
-    let mut asdf_tools = Ok(vec![]);
-    let mut vfox_tools = Ok(vec![]);
-    let mut backend_tools = vec![];
-    rayon::scope(|s| {
-        if !SETTINGS.disable_backends.contains(&"asdf".to_string()) {
-            s.spawn(|_| asdf_tools = asdf::AsdfBackend::list());
-        }
-        if !SETTINGS.disable_backends.contains(&"vfox".to_string()) {
-            s.spawn(|_| vfox_tools = vfox::VfoxBackend::list());
-        }
-        backend_tools = INSTALLED_BACKENDS.clone();
-    });
-    time!("load_tools backends");
+    let core_tools = CORE_PLUGINS.values().cloned().collect::<Vec<ABackend>>();
     let mut tools = core_tools;
-    tools.extend(asdf_tools.expect("asdf tools failed to load"));
-    tools.extend(vfox_tools.expect("vfox tools failed to load"));
-    tools.extend(backend_tools);
+    time!("load_tools core");
+    let plugins = install_state::list_plugins()
+        .map_err(|err| {
+            warn!("{err:#}");
+        })
+        .unwrap_or_default();
+    if !SETTINGS.disable_backends.contains(&"asdf".to_string()) {
+        tools.extend(
+            plugins
+                .iter()
+                .filter(|(_, p)| **p == PluginType::Asdf)
+                .map(|(p, _)| {
+                    arg_to_backend(BackendArg::new(p.to_string(), Some(format!("asdf:{p}"))))
+                        .unwrap()
+                }),
+        );
+    }
+    time!("load_tools asdf");
+    if !SETTINGS.disable_backends.contains(&"vfox".to_string()) {
+        tools.extend(
+            plugins
+                .iter()
+                .filter(|(_, p)| **p == PluginType::Vfox)
+                .map(|(p, _)| {
+                    arg_to_backend(BackendArg::new(p.to_string(), Some(format!("vfox:{p}"))))
+                        .unwrap()
+                }),
+        );
+    }
+    time!("load_tools vfox");
+    tools.extend(
+        install_state::list_tools()
+            .map_err(|err| {
+                warn!("{err:#}");
+            })
+            .unwrap_or_default()
+            .into_values()
+            .map(|ist| arg_to_backend(BackendArg::new(ist.short, Some(ist.full))).unwrap()),
+    );
+    time!("load_tools install_state");
     tools.retain(|backend| !SETTINGS.disable_tools.contains(backend.id()));
 
     let tools: BackendMap = tools
         .into_iter()
-        .map(|plugin| (plugin.id().to_string(), plugin))
+        .map(|backend| (backend.id().to_string(), backend))
         .collect();
     *memo_tools = Some(tools.clone());
     time!("load_tools done");
-    tools
 }
-
-pub static INSTALLED_BACKENDS: Lazy<Vec<ABackend>> = Lazy::new(|| {
-    file::dir_subdirs(&dirs::INSTALLS)
-        .unwrap()
-        .into_iter()
-        .map(|dir| arg_to_backend(BackendMeta::read(&dir).into()))
-        .filter(|f| !matches!(f.fa().backend_type, BackendType::Asdf | BackendType::Vfox))
-        .collect()
-});
 
 pub fn list() -> BackendList {
-    load_tools().values().cloned().collect()
+    load_tools();
+    TOOLS
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .values()
+        .cloned()
+        .collect()
 }
 
-pub fn list_backend_types() -> Vec<BackendType> {
-    BackendType::iter().collect()
-}
-
-pub fn get(fa: &BackendArg) -> ABackend {
-    let mut name = fa.short.clone();
-    if config::is_loaded() {
-        if let Some(full) = CONFIG
-            .get_all_aliases()
-            .get(&name)
-            .and_then(|a| a.full.clone())
-        {
-            name = full;
-        }
-    }
-    if let Some(backend) = load_tools().get(&name) {
-        backend.clone()
+pub fn get(ba: &BackendArg) -> Option<ABackend> {
+    load_tools();
+    let mut m = TOOLS.lock().unwrap();
+    let backends = m.as_mut().unwrap();
+    if let Some(backend) = backends.get(&ba.short) {
+        Some(backend.clone())
+    } else if let Some(backend) = arg_to_backend(ba.clone()) {
+        backends.insert(ba.short.clone(), backend.clone());
+        Some(backend)
     } else {
-        let mut m = TOOLS.lock().unwrap();
-        let backends = m.as_mut().unwrap();
-        let mut fa = fa.clone();
-        fa.full = name.clone();
-        backends
-            .entry(name)
-            .or_insert_with(|| arg_to_backend(fa))
-            .clone()
+        None
     }
 }
 
-pub fn arg_to_backend(ba: BackendArg) -> ABackend {
-    match ba.backend_type {
-        BackendType::Aqua => Arc::new(aqua::AquaBackend::from_arg(ba)),
-        BackendType::Asdf => Arc::new(asdf::AsdfBackend::from_arg(ba)),
-        BackendType::Cargo => Arc::new(cargo::CargoBackend::from_arg(ba)),
-        BackendType::Core => Arc::new(asdf::AsdfBackend::from_arg(ba)),
-        BackendType::Npm => Arc::new(npm::NPMBackend::from_arg(ba)),
-        BackendType::Go => Arc::new(go::GoBackend::from_arg(ba)),
-        BackendType::Pipx => Arc::new(pipx::PIPXBackend::from_arg(ba)),
-        BackendType::Spm => Arc::new(spm::SPMBackend::from_arg(ba)),
-        BackendType::Ubi => Arc::new(ubi::UbiBackend::from_arg(ba)),
-        BackendType::Vfox => Arc::new(vfox::VfoxBackend::from_arg(ba)),
-    }
-}
-
-impl From<BackendArg> for ABackend {
-    fn from(fa: BackendArg) -> Self {
-        get(&fa)
-    }
-}
-
-impl From<&BackendArg> for ABackend {
-    fn from(fa: &BackendArg) -> Self {
-        get(fa)
+pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
+    match ba.backend_type() {
+        BackendType::Core => CORE_PLUGINS.get(&ba.short).cloned(),
+        BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
+        BackendType::Asdf => Some(Arc::new(asdf::AsdfBackend::from_arg(ba))),
+        BackendType::Cargo => Some(Arc::new(cargo::CargoBackend::from_arg(ba))),
+        BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
+        BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
+        BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
+        BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
+        BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
+        BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba))),
+        BackendType::Unknown => None,
     }
 }
 
 pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
-        &self.fa().short
+        &self.ba().short
     }
     fn name(&self) -> &str {
-        &self.fa().name
+        &self.ba().tool_name
     }
     fn get_type(&self) -> BackendType {
-        BackendType::Asdf
+        BackendType::Core
     }
-    fn fa(&self) -> &BackendArg;
-    fn get_plugin_type(&self) -> PluginType {
-        PluginType::Core
+    fn ba(&self) -> &BackendArg;
+    fn get_plugin_type(&self) -> Option<PluginType> {
+        None
     }
     /// If any of these tools are installing in parallel, we should wait for them to finish
     /// before installing this tool.
@@ -213,9 +170,9 @@ pub trait Backend: Debug + Send + Sync {
         let mut deps: IndexSet<_> = self
             .get_dependencies(tvr)?
             .into_iter()
-            .flat_map(|fa| {
-                let short = fa.short.clone();
-                [fa].into_iter().chain(
+            .flat_map(|ba| {
+                let short = ba.short.clone();
+                [ba].into_iter().chain(
                     REGISTRY_BACKEND_MAP
                         .get(short.as_str())
                         .cloned()
@@ -223,7 +180,10 @@ pub trait Backend: Debug + Send + Sync {
                 )
             })
             .collect();
-        let dep_backends = deps.iter().map(|fa| fa.into()).collect::<Vec<ABackend>>();
+        let dep_backends = deps
+            .iter()
+            .map(|ba| ba.backend())
+            .collect::<Result<Vec<ABackend>>>()?;
         for dep in dep_backends {
             // TODO: pass the right tvr
             let tvr = ToolRequest::System(dep.id().into(), ToolSource::Unknown);
@@ -236,8 +196,8 @@ pub trait Backend: Debug + Send + Sync {
         self.ensure_dependencies_installed()?;
         self.get_remote_version_cache()
             .get_or_try_init(|| {
-                trace!("Listing remote versions for {}", self.fa().to_string());
-                match versions_host::list_versions(self.fa()) {
+                trace!("Listing remote versions for {}", self.ba().to_string());
+                match versions_host::list_versions(self.ba()) {
                     Ok(Some(versions)) => return Ok(versions),
                     Ok(None) => {}
                     Err(e) => {
@@ -246,7 +206,7 @@ pub trait Backend: Debug + Send + Sync {
                 };
                 trace!(
                     "Calling backend to list remote versions for {}",
-                    self.fa().to_string()
+                    self.ba().to_string()
                 );
                 let versions = self
                     ._list_remote_versions()?
@@ -271,17 +231,7 @@ pub trait Backend: Debug + Send + Sync {
         self.latest_version(Some("latest".into()))
     }
     fn list_installed_versions(&self) -> eyre::Result<Vec<String>> {
-        let installs_path = &self.fa().installs_path;
-        Ok(match installs_path.exists() {
-            true => file::dir_subdirs(installs_path)?
-                .into_iter()
-                .filter(|v| !v.starts_with('.'))
-                .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                .filter(|v| !installs_path.join(v).join("incomplete").exists())
-                .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
-                .collect(),
-            false => vec![],
-        })
+        install_state::list_versions(&self.ba().short)
     }
     fn is_version_installed(&self, tv: &ToolVersion, check_symlink: bool) -> bool {
         match tv.request {
@@ -309,7 +259,7 @@ pub trait Backend: Debug + Send + Sync {
             Err(e) => {
                 debug!(
                     "Error getting latest version for {}: {:#}",
-                    self.fa().to_string(),
+                    self.ba().to_string(),
                     e
                 );
                 return false;
@@ -328,7 +278,7 @@ pub trait Backend: Debug + Send + Sync {
         version: &str,
         target: &Path,
     ) -> eyre::Result<Option<(PathBuf, PathBuf)>> {
-        let link = self.fa().installs_path.join(version);
+        let link = self.ba().installs_path.join(version);
         if link.exists() {
             return Ok(None);
         }
@@ -360,7 +310,7 @@ pub trait Backend: Debug + Send + Sync {
                 Ok(find_match_in_list(&matches, &query))
             }
             None => {
-                let installed_symlink = self.fa().installs_path.join("latest");
+                let installed_symlink = self.ba().installs_path.join("latest");
                 if installed_symlink.exists() {
                     if installed_symlink.is_dir() && !installed_symlink.is_symlink() {
                         return Ok(Some("latest".to_string()));
@@ -379,9 +329,6 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
 
-    fn get_remote_url(&self) -> Option<String> {
-        None
-    }
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
         let deps = self
             .get_all_dependencies(&ToolRequest::System(self.id().into(), ToolSource::Unknown))?
@@ -402,9 +349,9 @@ pub trait Backend: Debug + Send + Sync {
         Ok(())
     }
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
-        rmdir(&self.fa().installs_path, pr)?;
-        rmdir(&self.fa().cache_path, pr)?;
-        rmdir(&self.fa().downloads_path, pr)?;
+        rmdir(&self.ba().installs_path, pr)?;
+        rmdir(&self.ba().cache_path, pr)?;
+        rmdir(&self.ba().downloads_path, pr)?;
         Ok(())
     }
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
@@ -421,7 +368,6 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
 
-    #[requires(ctx.tv.backend().backend_type == self.get_type())]
     fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
         if let Some(plugin) = self.plugin() {
             plugin.is_installed_err()?;
@@ -447,7 +393,7 @@ pub trait Backend: Debug + Send + Sync {
             )));
         }
 
-        BackendMeta::write(ctx.tv.backend())?;
+        self.write_backend_meta()?;
 
         self.cleanup_install_dirs(&ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
@@ -474,7 +420,10 @@ pub trait Backend: Debug + Send + Sync {
 
     fn run_postinstall_hook(&self, ctx: &InstallContext, script: &str) -> eyre::Result<()> {
         CmdLineRunner::new(&*env::SHELL)
-            .env(&*env::PATH_KEY, CorePlugin::path_env_with_tv_path(&ctx.tv)?)
+            .env(
+                &*env::PATH_KEY,
+                plugins::core::path_env_with_tv_path(&ctx.tv)?,
+            )
             .with_pr(ctx.pr.as_ref())
             .arg("-c")
             .arg(script)
@@ -569,7 +518,7 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.cache_path().join("incomplete")
+        install_state::incomplete_file_path(&tv.ba().short, &tv.tv_pathname())
     }
 
     fn dependency_toolset(&self) -> eyre::Result<Toolset> {
@@ -623,10 +572,10 @@ pub trait Backend: Debug + Send + Sync {
         REMOTE_VERSION_CACHE
             .lock()
             .unwrap()
-            .entry(self.fa().full.to_string())
+            .entry(self.ba().full())
             .or_insert_with(|| {
                 let mut cm = CacheManagerBuilder::new(
-                    self.fa().cache_path.join("remote_versions.msgpack.z"),
+                    self.ba().cache_path.join("remote_versions.msgpack.z"),
                 )
                 .with_fresh_duration(SETTINGS.fetch_remote_versions_cache());
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
@@ -638,6 +587,13 @@ pub trait Backend: Debug + Send + Sync {
                 Arc::new(cm.build())
             })
             .clone()
+    }
+
+    fn write_backend_meta(&self) -> eyre::Result<()> {
+        file::write(
+            self.ba().installs_path.join(".mise.backend"),
+            self.ba().full(),
+        )
     }
 }
 

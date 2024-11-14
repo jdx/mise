@@ -9,23 +9,23 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::file;
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::plugins::core::CorePlugin;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
+use crate::{file, plugins};
 
 #[derive(Debug)]
 pub struct BunPlugin {
-    core: CorePlugin,
+    ba: BackendArg,
 }
 
 impl BunPlugin {
     pub fn new() -> Self {
-        let core = CorePlugin::new(BackendArg::new("bun", "bun"));
-        Self { core }
+        Self {
+            ba: plugins::core::new_backend_arg("bun"),
+        }
     }
 
     fn bun_bin(&self, tv: &ToolVersion) -> PathBuf {
@@ -80,8 +80,8 @@ impl BunPlugin {
 }
 
 impl Backend for BunPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {

@@ -5,12 +5,12 @@ snapshot_kind: text
 ---
 Toolset {
     versions: {
-        BackendArg("node"): ToolVersionList {
-            backend: BackendArg("node"),
+        BackendArg("node" -> "core:node"): ToolVersionList {
+            backend: BackendArg("node" -> "core:node"),
             versions: [],
             requests: [
                 Version {
-                    backend: BackendArg("node"),
+                    backend: BackendArg("node" -> "core:node"),
                     version: "16.0.1",
                     options: {},
                     source: MiseToml(
@@ -18,7 +18,7 @@ Toolset {
                     ),
                 },
                 Version {
-                    backend: BackendArg("node"),
+                    backend: BackendArg("node" -> "core:node"),
                     version: "18.0.1",
                     options: {},
                     source: MiseToml(

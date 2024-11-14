@@ -77,10 +77,7 @@ pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     .wrap_err_with(|| format!("failed to remove_dir: {}", display_path(path)))
 }
 
-pub fn remove_dir_ignore<P: AsRef<Path>>(
-    path: P,
-    is_empty_ignore_files: Vec<String>,
-) -> Result<()> {
+pub fn remove_dir_ignore<P: AsRef<Path>>(path: P, is_empty_ignore_files: Vec<&str>) -> Result<()> {
     let path = path.as_ref();
     (|| -> Result<()> {
         if path.exists() && is_empty_dir_ignore(path, is_empty_ignore_files)? {
@@ -412,7 +409,7 @@ fn is_empty_dir(path: &Path) -> Result<bool> {
         .wrap_err_with(|| format!("failed to read_dir: {}", display_path(path)))
 }
 
-fn is_empty_dir_ignore(path: &Path, ignore_files: Vec<String>) -> Result<bool> {
+fn is_empty_dir_ignore(path: &Path, ignore_files: Vec<&str>) -> Result<bool> {
     path.read_dir()
         .map(|mut i| {
             i.all(|entry| match entry {

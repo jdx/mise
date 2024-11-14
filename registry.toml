@@ -510,6 +510,7 @@ newrelic-cli = ["ubi:newrelic/newrelic-cli[exe=newrelic]", "asdf:NeoHsu/asdf-new
 nfpm = ["ubi:goreleaser/nfpm", "asdf:ORCID/asdf-nfpm"]
 nim = ["asdf:asdf-community/asdf-nim"]
 ninja = ["asdf:asdf-community/asdf-ninja"]
+node = ["core:node", "vfox:version-fox/vfox-nodejs"]
 nomad = ["asdf:asdf-community/asdf-hashicorp"]
 nomad-pack = ["asdf:asdf-community/asdf-hashicorp"]
 notation = ["asdf:bodgit/asdf-notation"]

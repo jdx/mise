@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
-use crate::backend::{Backend, BackendType};
+use crate::backend::backend_type::BackendType;
+use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -19,7 +20,7 @@ impl Backend for GoBackend {
         BackendType::Go
     }
 
-    fn fa(&self) -> &BackendArg {
+    fn ba(&self) -> &BackendArg {
         &self.ba
     }
 

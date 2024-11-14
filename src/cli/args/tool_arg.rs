@@ -12,7 +12,7 @@ use xx::regex;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {
     pub short: String,
-    pub backend: BackendArg,
+    pub ba: BackendArg,
     pub version: Option<String>,
     pub version_type: ToolVersionType,
     pub tvr: Option<ToolRequest>,
@@ -57,7 +57,7 @@ impl FromStr for ToolArg {
             tvr,
             version: version.map(|v| v.to_string()),
             version_type,
-            backend,
+            ba: backend,
             opts,
         })
     }
@@ -111,16 +111,16 @@ impl ToolArg {
             let re = regex!(r"^\d+(\.\d+)*$");
             let a = tools[0].clone();
             let b = tools[1].clone();
-            if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.backend.name) {
+            if a.tvr.is_none() && b.tvr.is_none() && re.is_match(&b.ba.tool_name) {
                 tools[1].short = a.short.clone();
                 tools[1].tvr = Some(ToolRequest::new(
-                    a.backend.clone(),
-                    &b.backend.name,
+                    a.ba.clone(),
+                    &b.ba.tool_name,
                     ToolSource::Argument,
                 )?);
-                tools[1].backend = a.backend;
-                tools[1].version_type = b.backend.name.parse()?;
-                tools[1].version = Some(b.backend.name);
+                tools[1].ba = a.ba;
+                tools[1].version_type = b.ba.tool_name.parse()?;
+                tools[1].version = Some(b.ba.tool_name);
                 tools.remove(0);
             }
         }
@@ -129,9 +129,7 @@ impl ToolArg {
 
     pub fn with_version(self, version: &str) -> Self {
         Self {
-            tvr: Some(
-                ToolRequest::new(self.backend.clone(), version, ToolSource::Argument).unwrap(),
-            ),
+            tvr: Some(ToolRequest::new(self.ba.clone(), version, ToolSource::Argument).unwrap()),
             version: Some(version.into()),
             version_type: version.parse().unwrap(),
             ..self
@@ -156,7 +154,7 @@ impl Display for ToolArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.tvr {
             Some(tvr) => write!(f, "{}", tvr),
-            _ => write!(f, "{}", self.backend.name),
+            _ => write!(f, "{}", self.ba.tool_name),
         }
     }
 }
@@ -196,7 +194,7 @@ mod tests {
             tool,
             ToolArg {
                 short: "node".into(),
-                backend: "node".into(),
+                ba: "node".into(),
                 version: None,
                 version_type: ToolVersionType::Version("latest".into()),
                 tvr: None,
@@ -213,7 +211,7 @@ mod tests {
             tool,
             ToolArg {
                 short: "node".into(),
-                backend: "node".into(),
+                ba: "node".into(),
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
                 tvr: Some(ToolRequest::new("node".into(), "20", ToolSource::Argument).unwrap()),
@@ -230,7 +228,7 @@ mod tests {
             tool,
             ToolArg {
                 short: "node".into(),
-                backend: "node".into(),
+                ba: "node".into(),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
                 tvr: Some(ToolRequest::new("node".into(), "lts", ToolSource::Argument).unwrap()),
