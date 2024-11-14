@@ -1,3 +1,4 @@
+name: release-fig
 on:
   push:
     tags:
@@ -19,13 +20,6 @@ jobs:
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: npm i
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
-      - uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.local/share/mise/installs
-            ~/.local/share/mise/plugins
-          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.lock') }}
-          restore-keys: mise-tools-ubuntu-latest
       - run: mise install
       - run: mise run render:fig
       - name: Create Autocomplete PR ## Create the autocomplete PR using this action

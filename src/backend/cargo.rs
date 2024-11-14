@@ -10,12 +10,12 @@ use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::env::GITHUB_TOKEN;
 use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersion};
+use crate::toolset::ToolRequest;
 
 #[derive(Debug)]
 pub struct CargoBackend {
@@ -82,7 +82,7 @@ impl Backend for CargoBackend {
                 ))?;
             }
             cmd
-        } else if self.is_binstall_enabled(&ctx.tv) {
+        } else if self.is_binstall_enabled(ctx) {
             let mut cmd = CmdLineRunner::new("cargo-binstall").arg("-y");
             if let Some(token) = &*GITHUB_TOKEN {
                 cmd = cmd.env("GITHUB_TOKEN", token)
@@ -127,12 +127,18 @@ impl CargoBackend {
         }
     }
 
-    fn is_binstall_enabled(&self, tv: &ToolVersion) -> bool {
-        let settings = Settings::get();
-        if !settings.cargo.binstall || file::which_non_pristine("cargo-binstall").is_none() {
+    fn is_binstall_enabled(&self, ctx: &InstallContext) -> bool {
+        if !SETTINGS.cargo.binstall {
             return false;
         }
-        let opts = tv.request.options();
+        if file::which_non_pristine("cargo-binstall").is_none()
+            && !self
+                .dependency_toolset()
+                .is_ok_and(|ts| ts.which("cargo-binstall").is_some())
+        {
+            return false;
+        }
+        let opts = ctx.tv.request.options();
         if opts.contains_key("features") || opts.contains_key("default-features") {
             info!("not using cargo-binstall because features are specified");
             return false;
