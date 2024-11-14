@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 use crate::backend::ABackend;
 use crate::cli::version;
 use crate::config::config_file::legacy_version::LegacyVersionFile;
-use crate::config::config_file::mise_toml::MiseToml;
+use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::ConfigFile;
 use crate::config::env_directive::EnvResults;
 use crate::config::tracking::Tracker;
@@ -358,8 +358,8 @@ impl Config {
 
     fn load_task_file(&self, path: &Path) -> Result<Vec<Task>> {
         let raw = file::read_to_string(path)?;
-        let mut tasks = toml::from_str::<HashMap<String, Task>>(&raw)
-            .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?;
+        let mut tasks = toml::from_str::<Tasks>(&raw)
+            .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?.0;
         for (name, task) in &mut tasks {
             task.name = name.clone();
             task.config_source = path.to_path_buf();
