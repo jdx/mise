@@ -2,7 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::file::display_path;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
-use crate::{dirs, file, runtime_symlinks};
+use crate::{backend, dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
 use itertools::Itertools;
@@ -229,4 +229,5 @@ static EMPTY_VEC: Vec<&'static str> = vec![];
 pub fn reset() {
     *INSTALL_STATE_PLUGINS.lock().unwrap() = None;
     *INSTALL_STATE_TOOLS.lock().unwrap() = None;
+    backend::reset();
 }

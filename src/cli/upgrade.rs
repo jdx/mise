@@ -1,7 +1,9 @@
 use crate::cli::args::ToolArg;
 use crate::config::{config_file, Config};
 use crate::file::display_path;
-use crate::toolset::{InstallOptions, OutdatedInfo, ResolveOptions, ToolVersion, ToolsetBuilder};
+use crate::toolset::{
+    install_state, InstallOptions, OutdatedInfo, ResolveOptions, ToolVersion, ToolsetBuilder,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{lockfile, runtime_symlinks, shims, ui};
@@ -155,6 +157,7 @@ impl Upgrade {
             self.uninstall_old_version(&o.tool_version, pr.as_ref())?;
         }
 
+        install_state::reset();
         lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
         let ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
         shims::reshim(&ts, false).wrap_err("failed to reshim")?;

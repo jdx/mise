@@ -490,6 +490,7 @@ impl Config {
     }
 
     pub fn rebuild_shims_and_runtime_symlinks(&self) -> Result<()> {
+        install_state::reset();
         let ts = crate::toolset::ToolsetBuilder::new().build(self)?;
         crate::shims::reshim(&ts, false)?;
         crate::runtime_symlinks::rebuild(self)?;
