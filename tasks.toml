@@ -1,0 +1,101 @@
+clean = "cargo clean"
+release = "cargo release"
+signal-test = "node ./test/fixtures/signal-test.js"
+ci = { depends = ["format", "build", "test"] }
+pre-commit = { depends = ["render", "lint"] }
+lint = { depends = ["lint:*"] }
+
+[build]
+alias = "b"
+run = "cargo build --color always --all-features"
+#sources = ["Cargo.*", "src/**/*.rs"]
+#outputs = ["target/debug/mise"]
+
+["render:usage"]
+depends = ["build"]
+env = { CLICOLOR_FORCE = "0" }
+run = [
+    "mise usage > mise.usage.kdl",
+    "mise generate task-docs > tasks.md",
+    "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --html-encode --file mise.usage.kdl",
+    "markdownlint --fix docs/cli",
+]
+
+["render:completions"]
+depends = ["build", "render:usage"]
+env = { NO_COLOR = "1" }
+run = '''
+#!/usr/bin/env bash
+set -xeuo pipefail
+mise completion bash > completions/mise.bash
+mise completion zsh > completions/_mise
+mise completion fish > completions/mise.fish
+'''
+
+["render:registry"]
+depends = ["build"]
+run = "./scripts/render-registry.js"
+
+["render:settings"]
+run = "tsx tasks/render/settings.ts"
+
+["render:mangen"]
+depends = ["build"]
+env = { NO_COLOR = "1" }
+run = "mise render-mangen"
+
+["render:fig"]
+depends = ["build", "render:usage"]
+run = [
+    'usage generate fig --file mise.usage.kdl --out-file tasks/fig/src/mise.ts',
+    "tsx tasks/fig/addCustomGenerators.ts tasks/fig/src/mise.ts tasks/fig/src/mise.ts"
+]
+
+["render:help"]
+depends = ["build"]
+env = { NO_COLOR = "1" }
+run = ["mise render-help", "mise run show-output-on-failure -- mise x node@latest -- npx markdown-magic"]
+sources = ["mise"]
+outputs = ["README.md"]
+
+[render]
+alias = "render"
+depends = ["render:*"]
+
+[snapshots]
+description = "update test snapshots"
+run = "cargo insta test --accept --unreferenced delete"
+
+[test]
+description = "run all tests"
+alias = 't'
+run = ["mise tasks run test:unit", "mise tasks run test:e2e"]
+
+["test:unit"]
+description = "run unit tests"
+run = "cargo test --all-features"
+env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
+
+["docker:image"]
+description = "build docker image from Dockerfile"
+run = 'docker build --build-arg GITHUB_TOKEN=$GITHUB_API_TOKEN $root -f $root/packaging/dev/Dockerfile -t ghcr.io/jdx/mise:dev'
+
+["docker:run"]
+description = "run a command inside of development docker container"
+run = 'docker run -ti --rm -e GITHUB_API_TOKEN -e TEST_ALL -v $root:/mise -v /tmp/mise/target:/tmp/mise/target -v /tmp/mise/registry:/tmp/mise/registry -w /mise ghcr.io/jdx/mise:dev'
+depends = ["docker:image"]
+
+["docker:cargo"]
+description = "run cargo inside of development docker container"
+run = 'mise tasks run docker:run cargo'
+
+["docker:mise"]
+description = "run mise inside of development docker container"
+run = "mise tasks run -- docker:cargo run --"
+
+["docker:e2e"]
+description = "run e2e tests inside of development docker container"
+run = "mise tasks run docker:mise run test:e2e"
+
+["test:shuffle"]
+run = "cargo +nightly test --all-features -- -Z unstable-options --shuffle"
