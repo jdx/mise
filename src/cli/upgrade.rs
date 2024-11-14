@@ -1,7 +1,9 @@
 use crate::cli::args::ToolArg;
 use crate::config::{config_file, Config};
 use crate::file::display_path;
-use crate::toolset::{install_state, InstallOptions, OutdatedInfo, ResolveOptions, ToolVersion, ToolsetBuilder};
+use crate::toolset::{
+    install_state, InstallOptions, OutdatedInfo, ResolveOptions, ToolVersion, ToolsetBuilder,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{lockfile, runtime_symlinks, shims, ui};
