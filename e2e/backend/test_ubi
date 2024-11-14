@@ -1,3 +1,6 @@
 #!/usr/bin/env bash
 
 assert "mise x ubi:goreleaser/goreleaser@v1.25.0 -- goreleaser -v | grep -o 1.25.0" "1.25.0"
+
+mise use ubi:kellyjonbrazil/jc@1.25.3
+assert_contains "$MISE_DATA_DIR/shims/jc --version" "jc version:  1.25.3"
