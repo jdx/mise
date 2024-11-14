@@ -10,9 +10,11 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde_derive::Deserialize;
+use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use url::Url;
+use xx::regex;
 
 pub static AQUA_REGISTRY: Lazy<AquaRegistry> = Lazy::new(|| {
     AquaRegistry::standard().unwrap_or_else(|err| {
@@ -28,11 +30,12 @@ pub struct AquaRegistry {
     repo_exists: bool,
 }
 
-#[derive(Debug, Deserialize, Default, Clone)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaPackageType {
     #[default]
     GithubRelease,
+    GithubArchive,
     Http,
 }
 
@@ -145,14 +148,32 @@ impl AquaPackage {
         self
     }
 
-    fn version_override(&self, _v: &str) -> Option<&AquaPackage> {
-        self.version_overrides
-            .iter()
-            // TODO: semver
-            .find(|vo| vo.version_constraint == "true")
+    fn version_override(&self, v: &str) -> Option<&AquaPackage> {
+        let re = regex!(r#"semver\("(.*)"\)"#);
+        let re_exact = regex!(r#"Version == "(.*)""#);
+        let v = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v)).unwrap();
+        let semver_match = |vc| {
+            if let Some(caps) = re.captures(vc) {
+                let vc = caps.get(1).unwrap().as_str().replace(' ', "");
+                let req = versions::Requirement::new(&vc).unwrap();
+                req.matches(&v)
+            } else if let Some(caps) = re_exact.captures(vc) {
+                let vc = caps.get(1).unwrap().as_str();
+                v.to_string() == vc
+            } else {
+                false
+            }
+        };
+        vec![self]
+            .into_iter()
+            .chain(self.version_overrides.iter())
+            .find(|vo| vo.version_constraint == "true" || semver_match(&vo.version_constraint))
     }
 
     pub fn format(&self, v: &str) -> &str {
+        if self.r#type == AquaPackageType::GithubArchive {
+            return "tar.gz";
+        }
         if self.format.is_empty() {
             let asset = self.asset(v);
             if asset.ends_with(".tar.gz") {
