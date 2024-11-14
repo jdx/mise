@@ -39,8 +39,10 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: stable, components: rustfmt }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-${{ matrix.os }}
+          save-if: ${{ github.ref_name == 'main' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,cargo-deny,cargo-msrv,cargo-machete,usage-cli
@@ -91,7 +93,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
-          save-if: ${{ github.ref_name == 'main' && matrix.tranche == 0 }}
+          save-if: ${{ github.ref_name == 'main' && matrix.tranche == 3 }}
       - name: Install build and test dependencies
         run: |
           sudo apt-get update && sudo apt-get install \
@@ -157,6 +159,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-windows-latest
+          save-if: ${{ github.ref_name == 'main' }}
       # TODO: enable when we can remove continue-on-error:
       # - name: cargo test
       #   uses: nick-fields/retry@v3
@@ -173,6 +178,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-windows-latest
+          save-if: false
       - run: cargo build
       - run: Add-Content $env:GITHUB_PATH "$PWD\target\debug"
       - name: e2e
