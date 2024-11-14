@@ -123,8 +123,13 @@ pub fn short_to_full(short: &str) -> Result<Option<String>> {
         }
     } else if let Some(full) = read_backend_meta(short) {
         Ok(Some(full))
-    } else if let Some(full) = REGISTRY.get(short).unwrap_or(&EMPTY_VEC).first() {
-        Ok(Some(full.clone()))
+    } else if let Some(full) = REGISTRY
+        .get(short)
+        .map(|r| &r.backends)
+        .unwrap_or(&EMPTY_VEC)
+        .first()
+    {
+        Ok(Some(full.to_string()))
     } else {
         Ok(None)
     }
@@ -213,7 +218,7 @@ pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
         .join("incomplete")
 }
 
-static EMPTY_VEC: Vec<String> = vec![];
+static EMPTY_VEC: Vec<&'static str> = vec![];
 
 pub fn reset() {
     *INSTALL_STATE_PLUGINS.lock().unwrap() = None;

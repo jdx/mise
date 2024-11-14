@@ -17,10 +17,11 @@ pub fn get_shorthands(settings: &Settings) -> Shorthands {
         shorthands.extend(
             REGISTRY
                 .iter()
-                .map(|(id, full)| {
+                .map(|(id, rt)| {
                     (
                         id.to_string(),
-                        full.iter()
+                        rt.backends
+                            .iter()
                             .filter(|f| f.starts_with("asdf:") || f.starts_with("vfox:"))
                             .map(|f| f.to_string())
                             .collect_vec(),

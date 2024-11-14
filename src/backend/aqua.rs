@@ -128,7 +128,7 @@ impl AquaBackend {
         if !id.contains("/") {
             id = REGISTRY
                 .get(id)
-                .and_then(|b| b.iter().find_map(|s| s.strip_prefix("aqua:")))
+                .and_then(|t| t.backends.iter().find_map(|s| s.strip_prefix("aqua:")))
                 .unwrap_or_else(|| {
                     warn!("invalid aqua tool: {}", id);
                     id

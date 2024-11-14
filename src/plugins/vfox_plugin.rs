@@ -233,8 +233,9 @@ Plugins could support local directories in the future but for now a symlink is r
 
 fn vfox_to_url(name: &str) -> eyre::Result<Url> {
     let name = name.strip_prefix("vfox:").unwrap_or(name);
-    if let Some(full) = registry::REGISTRY_VFOX.get(name.trim_start_matches("vfox-")) {
+    if let Some(rt) = registry::REGISTRY.get(name.trim_start_matches("vfox-")) {
         // bun -> version-fox/vfox-bun
+        let full = rt.backends.iter().find(|f| f.starts_with("vfox:")).unwrap();
         return vfox_to_url(full.split_once(':').unwrap().1);
     }
     let res = if let Some(caps) = regex!(r#"^([^/]+)/([^/]+)$"#).captures(name) {

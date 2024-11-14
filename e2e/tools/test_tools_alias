@@ -12,3 +12,5 @@ EOF
 
 assert_contains "mise x mytool -- rtx-tiny" "rtx-tiny: v2.1.0"
 assert_contains "mise x mytool-lts -- rtx-tiny" "rtx-tiny: v1.0.1"
+
+assert_contains "mise x rg@14.0.0 -- rg --version" "ripgrep 14.0.0"
