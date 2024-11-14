@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
