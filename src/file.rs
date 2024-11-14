@@ -551,8 +551,10 @@ pub struct TarOptions<'a> {
 }
 
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
-    // TODO: show progress
-    debug!("tar -xzf {} -C {}", archive.display(), dest.display());
+    debug!("tar -xf {} -C {}", archive.display(), dest.display());
+    if let Some(pr) = &opts.pr {
+        pr.set_message(format!("extracting {}", archive.file_name().unwrap().to_string_lossy()));
+    }
     let f = File::open(archive)?;
     let mut tar: Box<dyn std::io::Read> = match opts.format {
         TarFormat::TarGz => Box::new(GzDecoder::new(f)),
@@ -564,12 +566,21 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         let dest = display_path(dest);
         format!("failed to extract tar: {archive} to {dest}")
     };
-    let mut buf = vec![];
-    let total = tar.read_to_end(&mut buf).wrap_err_with(err)?;
-    if let Some(pr) = &opts.pr {
-        pr.set_length(total as u64);
+    let mut cur = Cursor::new(vec![]);
+    let mut total = 0;
+    loop {
+        let mut buf = Cursor::new(vec![0; 1024 * 1024]);
+        let n = tar.read(buf.get_mut()).wrap_err_with(err)?;
+        cur.get_mut().extend_from_slice(&buf.get_ref()[..n]);
+        if n == 0 {
+            break;
+        }
+        if let Some(pr) = &opts.pr {
+            total += n as u64;
+            pr.set_length(total);
+        }
     }
-    for entry in Archive::new(Cursor::new(buf))
+    for entry in Archive::new(cur)
         .entries()
         .wrap_err_with(err)?
     {
@@ -582,10 +593,14 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
             .collect();
         let path = dest.join(path);
         create_dir_all(path.parent().unwrap()).wrap_err_with(err)?;
+        trace!("extracting {}", display_path(&path));
         entry.unpack(&path).wrap_err_with(err)?;
         if let Some(pr) = &opts.pr {
-            pr.inc(entry.size());
+            pr.set_position(entry.raw_file_position());
         }
+    }
+    if let Some(pr) = &opts.pr {
+        pr.set_position(total);
     }
     Ok(())
 }

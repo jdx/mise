@@ -10,6 +10,7 @@ pub trait SingleReport: Send + Sync {
     fn println(&self, _message: String) {}
     fn set_message(&self, _message: String) {}
     fn inc(&self, _delta: u64) {}
+    fn set_position(&self, _delta: u64) {}
     fn set_length(&self, _length: u64) {}
     fn finish(&self) {}
     fn finish_with_message(&self, _message: String) {}
@@ -90,6 +91,13 @@ impl SingleReport for ProgressReport {
     }
     fn inc(&self, delta: u64) {
         self.pb.inc(delta);
+        if Some(self.pb.position()) == self.pb.length() {
+            self.pb.set_style(SPIN_TEMPLATE.clone());
+            self.pb.enable_steady_tick(Duration::from_millis(250));
+        }
+    }
+    fn set_position(&self, pos: u64) {
+        self.pb.set_position(pos);
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
             self.pb.enable_steady_tick(Duration::from_millis(250));
