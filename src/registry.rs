@@ -1,10 +1,11 @@
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
-use crate::plugins::core::CORE_PLUGINS;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::iter::Iterator;
+use strum::IntoEnumIterator;
 use url::Url;
 
 // the registry is generated from registry.toml in the project root
@@ -12,20 +13,23 @@ include!(concat!(env!("OUT_DIR"), "/registry.rs"));
 
 // a rust representation of registry.toml
 pub static REGISTRY: Lazy<BTreeMap<&str, Vec<String>>> = Lazy::new(|| {
-    let backend_types = vec![
-        "core", "ubi", "vfox", "asdf", "aqua", "cargo", "go", "npm", "pipx", "spm",
-    ]
-    .into_iter()
-    .filter(|b| !(*b == "asdf" && cfg!(windows)))
-    .filter(|b| !(*b == "aqua" && cfg!(unix) && !SETTINGS.experimental))
-    .filter(|b| !SETTINGS.disable_backends.contains(&b.to_string()))
-    .collect::<HashSet<_>>();
+    let mut backend_types = BackendType::iter()
+        .map(|b| b.to_string())
+        .collect::<HashSet<_>>();
+    for backend in &SETTINGS.disable_backends {
+        backend_types.remove(backend);
+    }
+    if cfg!(windows) {
+        backend_types.remove("asdf");
+    }
+    if cfg!(unix) && !SETTINGS.experimental {
+        backend_types.remove("aqua");
+    }
 
     _REGISTRY
         .iter()
-        .filter(|(id, _)| !CORE_PLUGINS.contains_key(*id))
-        .map(|(id, fulls)| {
-            let fulls = fulls
+        .map(|(short, backends)| {
+            let backends = backends
                 .iter()
                 .filter(|full| {
                     full.split(':')
@@ -34,9 +38,9 @@ pub static REGISTRY: Lazy<BTreeMap<&str, Vec<String>>> = Lazy::new(|| {
                 })
                 .map(|full| full.to_string())
                 .collect::<Vec<_>>();
-            (*id, fulls)
+            (*short, backends)
         })
-        .filter(|(_, fulls)| !fulls.is_empty())
+        .filter(|(_, backends)| !backends.is_empty())
         .collect()
 });
 
@@ -46,7 +50,9 @@ pub static REGISTRY_BACKEND_MAP: Lazy<HashMap<&'static str, Vec<BackendArg>>> = 
         .map(|(short, full)| {
             (
                 *short,
-                full.iter().map(|f| BackendArg::new(short, f)).collect(),
+                full.iter()
+                    .map(|f| BackendArg::new(short.to_string(), Some(f.to_string())))
+                    .collect(),
             )
         })
         .collect()

@@ -14,10 +14,10 @@ use versions::Versioning;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
+use crate::config;
 use crate::config::Config;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use crate::ui::table;
-use crate::{backend, config};
 
 /// List installed and active tool versions
 ///
@@ -108,10 +108,9 @@ impl Ls {
 
     fn verify_plugin(&self) -> Result<()> {
         if let Some(plugins) = &self.plugin {
-            for fa in plugins {
-                let backend = backend::get(fa);
-                if let Some(plugin) = backend.plugin() {
-                    ensure!(plugin.is_installed(), "{fa} is not installed");
+            for ba in plugins {
+                if let Some(plugin) = ba.backend()?.plugin() {
+                    ensure!(plugin.is_installed(), "{ba} is not installed");
                 }
             }
         }
@@ -123,7 +122,7 @@ impl Ls {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
                 .into_iter()
-                .filter(|(_, p, _, _)| plugins.contains(p.fa()))
+                .filter(|(_, p, _, _)| plugins.contains(p.ba()))
                 .map(|row| row.into())
                 .collect();
             miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
@@ -155,7 +154,7 @@ impl Ls {
                 // only displaying 1 plugin so only show the version
                 miseprintln!("{}", tv.version);
             } else {
-                miseprintln!("{} {}", tv.backend(), tv.version);
+                miseprintln!("{} {}", tv.ba(), tv.version);
             }
         }
         Ok(())
@@ -216,7 +215,7 @@ impl Ls {
         let rvs: Vec<RuntimeRow> = versions
             .into_iter()
             .filter(|(_, (f, _))| match &self.plugin {
-                Some(p) => p.contains(f.fa()),
+                Some(p) => p.contains(f.ba()),
                 None => true,
             })
             .sorted_by_cached_key(|((plugin_name, version), _)| {
@@ -228,7 +227,7 @@ impl Ls {
             })
             .map(|(k, (p, tv))| {
                 let source = match &active.get(&k) {
-                    Some((_, tv)) => ts.versions.get(tv.backend()).map(|tv| tv.source.clone()),
+                    Some((_, tv)) => ts.versions.get(tv.ba()).map(|tv| tv.source.clone()),
                     None => None,
                 };
                 (self, p, tv, source)
@@ -236,7 +235,7 @@ impl Ls {
             // if it isn't installed and it's not specified, don't show it
             .filter(|(_ls, p, tv, source)| source.is_some() || p.is_version_installed(tv, true))
             .filter(|(_ls, p, _, _)| match &self.plugin {
-                Some(backend) => backend.contains(p.fa()),
+                Some(backend) => backend.contains(p.ba()),
                 None => true,
             })
             .collect();
@@ -494,7 +493,10 @@ mod tests {
     fn test_ls_missing_plugin() {
         reset();
         let err = assert_cli_err!("ls", "missing-plugin");
-        assert_str_eq!(err.to_string(), r#"missing-plugin is not installed"#);
+        assert_str_eq!(
+            err.to_string(),
+            r#"missing-plugin not found in mise tool registry"#
+        );
     }
 
     #[test]

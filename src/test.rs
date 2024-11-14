@@ -7,6 +7,7 @@ use indoc::indoc;
 use crate::cli::Cli;
 use crate::config::{config_file, Config};
 use crate::output::tests::{STDERR, STDOUT};
+use crate::toolset::install_state;
 use crate::{backend, cmd, dirs, env, file};
 
 #[macro_export]
@@ -74,6 +75,7 @@ fn init() {
 }
 
 pub fn reset() {
+    install_state::reset();
     Config::reset();
     backend::reset();
     config_file::reset();
@@ -220,6 +222,7 @@ pub fn replace_path(input: &str) -> String {
 }
 
 pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
+    install_state::reset();
     Config::reset();
     backend::reset();
     config_file::reset();

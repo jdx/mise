@@ -1,11 +1,6 @@
 use crate::exit;
 
-use console::{pad_str, style, Alignment};
-use indoc::formatdoc;
-use itertools::Itertools;
-use rayon::prelude::*;
-
-use crate::backend::BackendType;
+use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
 use crate::cli::version;
 use crate::cli::version::VERSION;
@@ -18,6 +13,11 @@ use crate::shell::ShellType;
 use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
 use crate::{backend, cmd, dirs, duration, env, file, shims};
+use console::{pad_str, style, Alignment};
+use indoc::formatdoc;
+use itertools::Itertools;
+use rayon::prelude::*;
+use strum::IntoEnumIterator;
 
 /// Check mise installation for possible problems
 #[derive(Debug, clap::Args)]
@@ -197,7 +197,7 @@ impl Doctor {
             let is_core = CORE_PLUGINS.contains_key(plugin.id());
             let plugin_type = plugin.get_plugin_type();
 
-            if is_core && matches!(plugin_type, PluginType::Asdf | PluginType::Vfox) {
+            if is_core && matches!(plugin_type, Some(PluginType::Asdf | PluginType::Vfox)) {
                 self.warnings
                     .push(format!("plugin {} overrides a core plugin", &plugin.id()));
             }
@@ -251,10 +251,7 @@ fn render_config_files(config: &Config) -> String {
 
 fn render_backends() -> String {
     let mut s = vec![];
-    let backends = backend::list_backend_types()
-        .into_iter()
-        .filter(|f| *f != BackendType::Asdf);
-    for b in backends {
+    for b in BackendType::iter() {
         s.push(format!("{}", b));
     }
     s.join("\n")
@@ -276,11 +273,13 @@ fn render_plugins() -> String {
         .min(40);
     plugins
         .into_par_iter()
+        .filter(|b| b.plugin().is_some())
         .map(|p| {
-            let padded_name = pad_str(p.id(), max_plugin_name_len, Alignment::Left, None);
+            let p = p.plugin().unwrap();
+            let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
             let extra = match p.get_plugin_type() {
                 PluginType::Asdf | PluginType::Vfox => {
-                    let git = Git::new(dirs::PLUGINS.join(p.id()));
+                    let git = Git::new(dirs::PLUGINS.join(p.name()));
                     match git.get_remote_url() {
                         Some(url) => {
                             let sha = git
@@ -290,8 +289,7 @@ fn render_plugins() -> String {
                         }
                         None => "".to_string(),
                     }
-                }
-                PluginType::Core => "(core)".to_string(),
+                } // TODO: PluginType::Core => "(core)".to_string(),
             };
             format!("{padded_name}  {}", style::ndim(extra))
         })

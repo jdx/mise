@@ -1,90 +1,145 @@
-use crate::backend::backend_meta::BackendMeta;
-use crate::backend::{unalias_backend, BackendType};
-use crate::dirs;
-use crate::plugins::{PluginType, PLUGIN_NAMES_TO_TYPE};
+use crate::backend::backend_type::BackendType;
+use crate::backend::{unalias_backend, ABackend};
+use crate::config::CONFIG;
 use crate::registry::REGISTRY_BACKEND_MAP;
-use crate::toolset::{parse_tool_options, ToolVersionOptions};
+use crate::toolset::{install_state, parse_tool_options, ToolVersionOptions};
+use crate::{backend, config, dirs};
+use contracts::requires;
+use eyre::{bail, Result};
 use heck::ToKebabCase;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
 use xx::regex;
 
-#[derive(Clone, PartialOrd, Ord)]
+#[derive(Clone)]
 pub struct BackendArg {
     /// short or full identifier (what the user specified), "node", "prettier", "npm:prettier", "cargo:eza"
     pub short: String,
     /// full identifier, "core:node", "npm:prettier", "cargo:eza", "vfox:version-fox/vfox-nodejs"
-    pub full: String,
+    full: Option<String>,
     /// the name of the tool within the backend, e.g.: "node", "prettier", "eza", "vfox-nodejs"
-    pub name: String,
-    /// type of backend, "asdf", "cargo", "core", "npm", "vfox"
-    pub backend_type: BackendType,
+    pub tool_name: String,
     /// ~/.local/share/mise/cache/<THIS>
     pub cache_path: PathBuf,
     /// ~/.local/share/mise/installs/<THIS>
     pub installs_path: PathBuf,
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
+    /// ~/.local/share/mise/plugins/<THIS>
+    pub plugin_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
+    // TODO: make this not a hash key anymore to use this
+    // backend: OnceCell<ABackend>,
 }
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
         let s = s.as_ref();
-        if let Some(fa) = REGISTRY_BACKEND_MAP.get(s).and_then(|rbm| rbm.first()) {
-            fa.clone()
+        if let Some(ba) = REGISTRY_BACKEND_MAP
+            .get(unalias_backend(s))
+            .and_then(|rbm| rbm.first())
+        {
+            ba.clone()
         } else {
-            Self::new(s, s)
+            Self::new(s.to_string(), None)
         }
-    }
-}
-
-impl From<BackendMeta> for BackendArg {
-    fn from(meta: BackendMeta) -> Self {
-        meta.short.into()
     }
 }
 
 impl BackendArg {
-    pub fn new(short: &str, full: &str) -> Self {
-        let short = unalias_backend(short).to_string();
+    #[requires(!short.is_empty())]
+    pub fn new(short: String, full: Option<String>) -> Self {
+        let short = unalias_backend(&short).to_string();
+        let (_backend, mut tool_name) = full
+            .as_ref()
+            .unwrap_or(&short)
+            .split_once(':')
+            .unwrap_or(("", full.as_ref().unwrap_or(&short)));
         let short = regex!(r#"\[.+\]$"#).replace_all(&short, "").to_string();
 
-        let (backend, mut name) = full.split_once(':').unwrap_or(("", full));
-
         let mut opts = None;
-        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(name) {
-            name = c.get(1).unwrap().as_str();
+        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(tool_name) {
+            tool_name = c.get(1).unwrap().as_str();
             opts = Some(parse_tool_options(c.get(2).unwrap().as_str()));
         }
 
-        let backend = unalias_backend(backend);
+        Self::new_raw(short.clone(), full.clone(), tool_name.to_string(), opts)
+    }
 
-        let backend_type = if let Some(pt) = PLUGIN_NAMES_TO_TYPE.get(&short) {
-            match pt {
-                PluginType::Asdf => BackendType::Asdf,
-                PluginType::Vfox => BackendType::Vfox,
-                PluginType::Core => BackendType::Core,
-            }
-        } else {
-            backend.parse().unwrap_or(BackendType::Asdf)
-        };
-        let full = match backend_type {
-            BackendType::Asdf | BackendType::Core => short.clone(),
-            backend_type => format!("{backend_type}:{name}"),
-        };
+    pub fn new_raw(
+        short: String,
+        full: Option<String>,
+        tool_name: String,
+        opts: Option<ToolVersionOptions>,
+    ) -> Self {
         let pathname = short.to_kebab_case();
         Self {
-            name: name.to_string(),
-            backend_type,
+            tool_name,
             short,
             full,
+            plugin_path: dirs::PLUGINS.join(&pathname),
             cache_path: dirs::CACHE.join(&pathname),
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
             opts,
+            // backend: Default::default(),
         }
+    }
+
+    pub fn backend(&self) -> Result<ABackend> {
+        // TODO: see above about hash key
+        // let backend = self.backend.get_or_try_init(|| {
+        //     if let Some(backend) = backend::get(self) {
+        //         Ok(backend)
+        //     } else {
+        //         bail!("{self} not found in mise tool registry");
+        //     }
+        // })?;
+        // Ok(backend.clone())
+        if let Some(backend) = backend::get(self) {
+            Ok(backend)
+        } else {
+            bail!("{self} not found in mise tool registry");
+        }
+    }
+
+    pub fn backend_type(&self) -> BackendType {
+        if let Ok(Some(backend_type)) = install_state::backend_type(&self.short) {
+            return backend_type;
+        }
+        let full = self.full();
+        let backend = full.split(':').next().unwrap();
+        if let Ok(backend_type) = backend.parse() {
+            return backend_type;
+        }
+        if config::is_loaded() {
+            if let Some(repo_url) = CONFIG.get_repo_url(&self.short) {
+                return if repo_url.contains("vfox-") {
+                    BackendType::Vfox
+                } else {
+                    // TODO: maybe something more intelligent?
+                    BackendType::Asdf
+                };
+            }
+        }
+        BackendType::Unknown
+    }
+
+    pub fn full(&self) -> String {
+        if let Some(full) = &self.full {
+            return full.clone();
+        }
+        if config::is_loaded() {
+            if let Some(full) = CONFIG
+                .all_aliases
+                .get(&self.short)
+                .and_then(|a| a.full.clone())
+            {
+                return full;
+            }
+        }
+        unalias_backend(&self.short).to_string()
     }
 }
 
@@ -96,8 +151,8 @@ impl Display for BackendArg {
 
 impl Debug for BackendArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.short != self.full {
-            write!(f, r#"BackendArg("{}" -> "{}")"#, self.short, self.full)
+        if let Some(full) = &self.full {
+            write!(f, r#"BackendArg("{}" -> "{}")"#, self.short, full)
         } else {
             write!(f, r#"BackendArg("{}")"#, self.short)
         }
@@ -111,6 +166,18 @@ impl PartialEq for BackendArg {
 }
 
 impl Eq for BackendArg {}
+
+impl PartialOrd for BackendArg {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.short.cmp(&other.short))
+    }
+}
+
+impl Ord for BackendArg {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.short.cmp(&other.short)
+    }
+}
 
 impl Hash for BackendArg {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -127,21 +194,24 @@ mod tests {
     #[test]
     fn test_backend_arg() {
         reset();
-        let t = |s: &str, id, name, t| {
+        let t = |s: &str, full, tool_name, t| {
             let fa: BackendArg = s.into();
-            assert_str_eq!(fa.full, id);
-            assert_str_eq!(fa.name, name);
-            assert_eq!(fa.backend_type, t);
+            assert_str_eq!(full, fa.full());
+            assert_str_eq!(tool_name, fa.tool_name);
+            assert_eq!(t, fa.backend_type());
         };
-        let asdf = |s, id, name| t(s, id, name, BackendType::Asdf);
-        let cargo = |s, id, name| t(s, id, name, BackendType::Cargo);
-        // let core = |s, id, name| t(s, id, name, BackendType::Core);
-        let npm = |s, id, name| t(s, id, name, BackendType::Npm);
-        let vfox = |s, id, name| t(s, id, name, BackendType::Vfox);
+        let asdf = |s, full, name| t(s, full, name, BackendType::Asdf);
+        let cargo = |s, full, name| t(s, full, name, BackendType::Cargo);
+        // let core = |s, full, name| t(s, full, name, BackendType::Core);
+        let npm = |s, full, name| t(s, full, name, BackendType::Npm);
+        let vfox = |s, full, name| t(s, full, name, BackendType::Vfox);
 
         asdf("asdf:poetry", "asdf:poetry", "poetry");
-        asdf("poetry", "poetry", "mise-plugins/mise-poetry");
-        asdf("", "", "");
+        asdf(
+            "poetry",
+            "asdf:mise-plugins/mise-poetry",
+            "mise-plugins/mise-poetry",
+        );
         cargo("cargo:eza", "cargo:eza", "eza");
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
@@ -164,7 +234,6 @@ mod tests {
         };
         t("asdf:node", "asdf-node");
         t("node", "node");
-        t("", "");
         t("cargo:eza", "cargo-eza");
         t("npm:@antfu/ni", "npm-antfu-ni");
         t("npm:prettier", "npm-prettier");

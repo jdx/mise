@@ -1,7 +1,6 @@
 use console::style;
 use eyre::{bail, Result};
 
-use crate::backend;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -25,14 +24,13 @@ impl Current {
         let config = Config::try_get()?;
         let ts = ToolsetBuilder::new().build(&config)?;
         match &self.plugin {
-            Some(fa) => {
-                let backend = backend::get(fa);
-                if let Some(plugin) = backend.plugin() {
+            Some(ba) => {
+                if let Some(plugin) = ba.backend()?.plugin() {
                     if !plugin.is_installed() {
-                        bail!("Plugin {fa} is not installed");
+                        bail!("Plugin {ba} is not installed");
                     }
                 }
-                self.one(ts, backend.as_ref())
+                self.one(ts, ba.backend()?.as_ref())
             }
             None => self.all(ts),
         }
@@ -77,10 +75,10 @@ impl Current {
             }
             for tv in versions {
                 if !plugin.is_version_installed(tv, true) {
-                    let source = ts.versions.get(tv.backend()).unwrap().source.clone();
+                    let source = ts.versions.get(tv.ba()).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",
-                        &tv.backend(),
+                        &tv.ba(),
                         &tv.version,
                         &source
                     );

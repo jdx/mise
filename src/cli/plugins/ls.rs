@@ -1,12 +1,12 @@
 use eyre::Result;
 use rayon::prelude::*;
+use std::collections::BTreeMap;
 use tabled::{Table, Tabled};
 
 use crate::config::Config;
-use crate::plugins;
-use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::PluginType;
 use crate::registry::full_to_url;
+use crate::toolset::install_state;
 use crate::ui::table;
 
 /// List installed plugins
@@ -45,25 +45,33 @@ pub struct PluginsLs {
 
 impl PluginsLs {
     pub fn run(self, config: &Config) -> Result<()> {
-        let mut tools = plugins::list2()?;
+        let mut plugins: BTreeMap<_, _> = install_state::list_plugins()?
+            .into_iter()
+            .map(|(k, p)| (k, (p, None)))
+            .collect();
 
         if self.all {
-            for (plugin, backends) in config.get_shorthands() {
+            for (name, backends) in config.get_shorthands() {
                 for full in backends {
-                    let mut ep = AsdfPlugin::new(plugin.to_string());
-                    ep.repo_url = Some(full_to_url(full));
-                    tools.insert(ep.name.clone(), Box::new(ep));
+                    let plugin_type = PluginType::from_full(full)?;
+                    plugins.insert(name.clone(), (plugin_type, Some(full_to_url(full))));
                 }
             }
-        } else if self.user && self.core {
-        } else if self.core {
-            tools.retain(|_, p| matches!(p.get_plugin_type(), PluginType::Core));
-        } else {
-            tools.retain(|_, p| matches!(p.get_plugin_type(), PluginType::Asdf | PluginType::Vfox));
         }
 
+        let plugins = plugins
+            .into_iter()
+            .map(|(short, (pt, url))| {
+                let mut plugin = pt.plugin(short.clone());
+                if let Some(url) = url {
+                    plugin.set_remote_url(url);
+                }
+                (short, plugin)
+            })
+            .collect::<BTreeMap<_, _>>();
+
         if self.urls || self.refs {
-            let data = tools
+            let data = plugins
                 .into_par_iter()
                 .map(|(name, p)| {
                     let remote_url = p.get_remote_url().unwrap_or_else(|e| {
@@ -96,7 +104,7 @@ impl PluginsLs {
             miseprintln!("{table}");
         } else {
             hint!("registry", "see available plugins with", "mise registry");
-            for tool in tools.values() {
+            for tool in plugins.values() {
                 miseprintln!("{tool}");
             }
         }

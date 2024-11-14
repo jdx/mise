@@ -10,7 +10,7 @@ use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{backend, dirs, file, lockfile, runtime_symlinks, shims};
+use crate::{dirs, file, lockfile, runtime_symlinks, shims};
 
 /// Removes installed tool versions
 ///
@@ -41,8 +41,7 @@ impl Uninstall {
         };
         let tool_versions = tool_versions
             .into_iter()
-            .unique()
-            .sorted()
+            .unique_by(|(_, tv)| (tv.request.ba().short.clone(), tv.version.clone()))
             .collect::<Vec<_>>();
         if !self.all && tool_versions.len() > 1 {
             bail!("multiple tools specified, use --all to uninstall all versions");
@@ -91,10 +90,10 @@ impl Uninstall {
         let runtimes = ToolArg::double_tool_condition(&self.installed_tool)?;
         let tool_versions = runtimes
             .into_par_iter()
-            .map(|a| {
-                let tool = backend::get(&a.backend);
-                let query = a.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
-                let installed_versions = tool.list_installed_versions()?;
+            .map(|ta| {
+                let backend = ta.ba.backend()?;
+                let query = ta.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
+                let installed_versions = backend.list_installed_versions()?;
                 let exact_match = installed_versions.iter().find(|v| v == &&query);
                 let matches = match exact_match {
                     Some(m) => vec![m],
@@ -106,16 +105,19 @@ impl Uninstall {
                 let mut tvs = matches
                     .into_iter()
                     .map(|v| {
-                        let tvr = ToolRequest::new(tool.fa().clone(), v, ToolSource::Unknown)?;
+                        let tvr = ToolRequest::new(backend.ba().clone(), v, ToolSource::Unknown)?;
                         let tv = ToolVersion::new(tvr, v.into());
-                        Ok((tool.clone(), tv))
+                        Ok((backend.clone(), tv))
                     })
                     .collect::<Result<Vec<_>>>()?;
-                if let Some(tvr) = &a.tvr {
-                    tvs.push((tool.clone(), tvr.resolve(&Default::default())?));
+                if let Some(tvr) = &ta.tvr {
+                    tvs.push((backend.clone(), tvr.resolve(&Default::default())?));
                 }
                 if tvs.is_empty() {
-                    warn!("no versions found for {}", style(&tool).blue().for_stderr());
+                    warn!(
+                        "no versions found for {}",
+                        style(&backend).blue().for_stderr()
+                    );
                 }
                 Ok(tvs)
             })

@@ -1,17 +1,14 @@
-use crate::config::Settings;
 use crate::file::{display_path, remove_all};
 use crate::git::Git;
-use crate::plugins::{Plugin, PluginList, PluginType};
+use crate::plugins::{Plugin, PluginType};
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, plugins, registry};
+use crate::{dirs, registry};
 use console::style;
 use contracts::requires;
 use eyre::{eyre, Context, Report};
 use indexmap::{indexmap, IndexMap};
-use once_cell::sync::Lazy;
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex, MutexGuard};
 use tokio::runtime::Runtime;
@@ -28,14 +25,6 @@ pub struct VfoxPlugin {
     pub repo_url: Option<String>,
 }
 
-pub static VFOX_PLUGIN_NAMES: Lazy<BTreeSet<String>> = Lazy::new(|| match VfoxPlugin::list() {
-    Ok(plugins) => plugins.into_iter().map(|p| p.name().to_string()).collect(),
-    Err(err) => {
-        warn!("Failed to list vfox plugins: {err}");
-        BTreeSet::new()
-    }
-});
-
 impl VfoxPlugin {
     #[requires(!name.is_empty())]
     pub fn new(name: String) -> Self {
@@ -48,21 +37,6 @@ impl VfoxPlugin {
             repo: Mutex::new(repo),
             plugin_path,
         }
-    }
-
-    pub fn list() -> eyre::Result<PluginList> {
-        let settings = Settings::get();
-        let plugins = plugins::INSTALLED_PLUGINS
-            .iter()
-            .filter(|(_, t)| matches!(t, PluginType::Vfox))
-            .inspect(|(dir, _)| trace!("vfox_plugin: {:?}", dir))
-            .map(|(dir, _)| {
-                let name = dir.file_name().unwrap().to_string_lossy().to_string();
-                Box::new(VfoxPlugin::new(name)) as Box<dyn Plugin>
-            })
-            .filter(|p| !settings.disable_tools.contains(p.name()))
-            .collect();
-        Ok(plugins)
     }
 
     fn repo(&self) -> MutexGuard<Git> {
@@ -131,6 +105,10 @@ impl Plugin for VfoxPlugin {
     fn get_remote_url(&self) -> eyre::Result<Option<String>> {
         let url = self.repo().get_remote_url();
         Ok(url.or(self.repo_url.clone()))
+    }
+
+    fn set_remote_url(&mut self, url: String) {
+        self.repo_url = Some(url);
     }
 
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {

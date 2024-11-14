@@ -3,7 +3,7 @@ use itertools::sorted;
 
 use crate::config::Config;
 use crate::env::PYENV_ROOT;
-use crate::{dirs, file, plugins};
+use crate::{backend, dirs, file};
 
 /// Symlinks all tool versions from an external tool into mise
 ///
@@ -19,7 +19,7 @@ pub struct SyncPython {
 impl SyncPython {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        let python = plugins::get("python");
+        let python = backend::get(&"python".into()).unwrap();
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
         let installed_python_versions_path = dirs::INSTALLS.join("python");

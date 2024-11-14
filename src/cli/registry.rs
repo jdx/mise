@@ -1,4 +1,4 @@
-use crate::backend::BackendType;
+use crate::backend::backend_type::BackendType;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
 use crate::ui::table;

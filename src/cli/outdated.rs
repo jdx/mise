@@ -45,7 +45,7 @@ impl Outdated {
         let tool_set = self
             .tool
             .iter()
-            .map(|t| t.backend.clone())
+            .map(|t| t.ba.clone())
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));

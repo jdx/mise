@@ -21,13 +21,13 @@ pub fn commands() -> Vec<Command> {
         .collect()
 }
 
-pub fn execute(fa: &BackendArg, args: &ArgMatches) -> Result<()> {
+pub fn execute(ba: &BackendArg, args: &ArgMatches) -> Result<()> {
     if let Some(mut cmd) = commands()
         .into_iter()
-        .find(|c| c.get_name() == fa.to_string())
+        .find(|c| c.get_name() == ba.to_string())
     {
         if let Some((subcommand, matches)) = args.subcommand() {
-            let backend = backend::get(fa);
+            let backend = ba.backend()?;
             let args: Vec<String> = matches
                 .get_raw("args")
                 .unwrap_or_default()

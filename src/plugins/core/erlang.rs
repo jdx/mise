@@ -6,15 +6,14 @@ use crate::file::display_path;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::plugins::core::CorePlugin;
 use crate::toolset::ToolRequest;
-use crate::{cmd, file};
+use crate::{cmd, file, plugins};
 use eyre::Result;
 use xx::regex;
 
 #[derive(Debug)]
 pub struct ErlangPlugin {
-    core: CorePlugin,
+    ba: BackendArg,
 }
 
 const KERL_VERSION: &str = "4.1.1";
@@ -22,19 +21,16 @@ const KERL_VERSION: &str = "4.1.1";
 impl ErlangPlugin {
     pub fn new() -> Self {
         Self {
-            core: CorePlugin::new(BackendArg::new("erlang", "erlang")),
+            ba: plugins::core::new_backend_arg("erlang"),
         }
     }
 
     fn kerl_path(&self) -> PathBuf {
-        self.core
-            .fa
-            .cache_path
-            .join(format!("kerl-{}", KERL_VERSION))
+        self.ba.cache_path.join(format!("kerl-{}", KERL_VERSION))
     }
 
     fn kerl_base_dir(&self) -> PathBuf {
-        self.core.fa.cache_path.join("kerl")
+        self.ba.cache_path.join("kerl")
     }
 
     fn lock_build_tool(&self) -> Result<fslock::LockFile> {
@@ -72,14 +68,14 @@ impl ErlangPlugin {
 }
 
 impl Backend for ErlangPlugin {
-    fn fa(&self) -> &BackendArg {
-        &self.core.fa
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.update_kerl()?;
-        let versions = CorePlugin::run_fetch_task_with_timeout(move || {
+        let versions = crate::plugins::core::run_fetch_task_with_timeout(move || {
             let output = cmd!(self.kerl_path(), "list", "releases", "all")
-                .env("KERL_BASE_DIR", self.core.fa.cache_path.join("kerl"))
+                .env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
                 .read()?;
             let versions = output
                 .split('\n')
@@ -107,7 +103,7 @@ impl Backend for ErlangPlugin {
                     &ctx.tv.version,
                     ctx.tv.install_path()
                 )
-                .env("KERL_BASE_DIR", self.core.fa.cache_path.join("kerl"))
+                .env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
                 .run()?;
             }
         }

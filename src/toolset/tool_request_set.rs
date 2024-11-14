@@ -52,11 +52,11 @@ impl ToolRequestSet {
     }
 
     pub fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
-        let fa = tr.backend();
+        let fa = tr.ba();
         if !self.tools.contains_key(fa) {
             self.sources.insert(fa.clone(), source.clone());
         }
-        let list = self.tools.entry(tr.backend().clone()).or_default();
+        let list = self.tools.entry(tr.ba().clone()).or_default();
         list.push(tr);
     }
 
@@ -189,11 +189,7 @@ impl ToolRequestSetBuilder {
     }
 
     fn load_runtime_args(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
-        for (_, args) in self
-            .args
-            .iter()
-            .into_group_map_by(|arg| arg.backend.clone())
-        {
+        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = ToolRequestSet::new();
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
@@ -203,10 +199,9 @@ impl ToolRequestSetBuilder {
                     // should default to installing the "latest" version if no version is specified
                     // in mise.toml
 
-                    if !trs.tools.contains_key(&arg.backend) {
+                    if !trs.tools.contains_key(&arg.ba) {
                         // no active version, so use "latest"
-                        let tr =
-                            ToolRequest::new(arg.backend.clone(), "latest", ToolSource::Argument)?;
+                        let tr = ToolRequest::new(arg.ba.clone(), "latest", ToolSource::Argument)?;
                         arg_ts.add_version(tr, &ToolSource::Argument);
                     }
                 }

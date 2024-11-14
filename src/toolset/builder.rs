@@ -41,7 +41,7 @@ impl ToolsetBuilder {
             if Error::is_argument_err(&err) {
                 return Err(err);
             }
-            warn!("failed to resolve toolset: {err:?}");
+            warn!("failed to resolve toolset: {err}");
         }
 
         time!("toolset::builder::build");
@@ -84,11 +84,7 @@ impl ToolsetBuilder {
     }
 
     fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
-        for (_, args) in self
-            .args
-            .iter()
-            .into_group_map_by(|arg| arg.backend.clone())
-        {
+        for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
@@ -102,19 +98,19 @@ impl ToolsetBuilder {
                     let current_active = ts
                         .list_current_requests()
                         .into_iter()
-                        .find(|tvr| tvr.backend() == &arg.backend);
+                        .find(|tvr| tvr.ba() == &arg.ba);
 
                     if let Some(current_active) = current_active {
                         // active version, so don't set "latest"
                         arg_ts.add_version(ToolRequest::new(
-                            arg.backend.clone(),
+                            arg.ba.clone(),
                             &current_active.version(),
                             ToolSource::Argument,
                         )?);
                     } else {
                         // no active version, so use "latest"
                         arg_ts.add_version(ToolRequest::new(
-                            arg.backend.clone(),
+                            arg.ba.clone(),
                             "latest",
                             ToolSource::Argument,
                         )?);

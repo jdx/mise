@@ -61,11 +61,7 @@ impl Upgrade {
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
         } else if !self.tool.is_empty() {
-            outdated.retain(|o| {
-                self.tool
-                    .iter()
-                    .any(|t| &t.backend == o.tool_version.backend())
-            });
+            outdated.retain(|o| self.tool.iter().any(|t| &t.ba == o.tool_version.ba()));
         }
         if outdated.is_empty() {
             info!("All tools are up to date");
@@ -104,7 +100,7 @@ impl Upgrade {
             })
             .filter(|(o, _bump, cf)| {
                 if let Ok(trs) = cf.to_tool_request_set() {
-                    if let Some(versions) = trs.tools.get(o.tool_request.backend()) {
+                    if let Some(versions) = trs.tools.get(o.tool_request.ba()) {
                         if versions.len() != 1 {
                             warn!("upgrading multiple versions with --bump is not yet supported");
                             return false;
@@ -150,10 +146,7 @@ impl Upgrade {
         let versions = ts.install_versions(config, new_versions, &mpr, &opts)?;
 
         for (o, bump, mut cf) in config_file_updates {
-            cf.replace_versions(
-                o.tool_request.backend(),
-                &[(bump, o.tool_request.options())],
-            )?;
+            cf.replace_versions(o.tool_request.ba(), &[(bump, o.tool_request.options())])?;
             cf.save()?;
         }
 
@@ -170,7 +163,7 @@ impl Upgrade {
     }
 
     fn uninstall_old_version(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
-        tv.get_backend()
+        tv.backend()?
             .uninstall_version(tv, pr, self.dry_run)
             .wrap_err_with(|| format!("failed to uninstall {tv}"))?;
         pr.finish();

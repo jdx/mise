@@ -59,7 +59,7 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
     }
 
     // add versions added within this session such as from `mise use` or `mise up`
-    for (backend, group) in &new_versions.iter().chunk_by(|tv| tv.backend()) {
+    for (backend, group) in &new_versions.iter().chunk_by(|tv| tv.ba()) {
         let tvs = group.cloned().collect_vec();
         let source = tvs[0].request.source().clone();
         let mut tvl = ToolVersionList::new(backend.clone(), source.clone());
