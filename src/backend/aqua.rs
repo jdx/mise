@@ -5,6 +5,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::SETTINGS;
+use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::registry::REGISTRY;
@@ -159,6 +160,7 @@ impl AquaBackend {
     fn fetch_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
         match pkg.r#type {
             AquaPackageType::GithubRelease => self.github_release_url(pkg, v),
+            AquaPackageType::GithubArchive => self.github_archive_url(pkg, v),
             AquaPackageType::Http => {
                 let url = pkg.url(v);
                 HTTP.head(&url)?;
@@ -186,6 +188,13 @@ impl AquaBackend {
         Ok(asset.browser_download_url.to_string())
     }
 
+    fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let url = format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz");
+        HTTP.head(&url)?;
+        Ok(url)
+    }
+
     fn download(&self, ctx: &InstallContext, url: &str, filename: &str) -> Result<()> {
         let tarball_path = ctx.tv.download_path().join(filename);
         if tarball_path.exists() {
@@ -210,24 +219,49 @@ impl AquaBackend {
         let format = pkg.format(v);
         let bin_path =
             install_path.join(pkg.files.first().map(|f| &f.name).unwrap_or(&pkg.repo_name));
-        if format == "raw" {
+        let tar_opts = TarOptions {
+            format: format.parse().unwrap_or_default(),
+            pr: Some(ctx.pr.as_ref()),
+            ..Default::default()
+        };
+        if pkg.r#type == AquaPackageType::GithubArchive {
+            file::untar(&tarball_path, &install_path, &tar_opts)?;
+        } else if format == "raw" {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, &bin_path)?;
             file::make_executable(&bin_path)?;
-        } else if format == "tar.gz" {
-            file::untar_gz(&tarball_path, &install_path)?;
-        } else if format == "tar.xz" {
-            file::untar_xz(&tarball_path, &install_path)?;
-        } else if format == "tar.bz2" {
-            file::untar_bz2(&tarball_path, &install_path)?;
+        } else if format.starts_with("tar") {
+            file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if format == "zip" {
             file::unzip(&tarball_path, &install_path)?;
         } else if format == "gz" {
             file::create_dir_all(&install_path)?;
             file::un_gz(&tarball_path, &bin_path)?;
             file::make_executable(&bin_path)?;
+        } else if format == "xz" {
+            file::create_dir_all(&install_path)?;
+            file::un_xz(&tarball_path, &bin_path)?;
+            file::make_executable(&bin_path)?;
+        } else if format == "bz2" {
+            file::create_dir_all(&install_path)?;
+            file::un_bz2(&tarball_path, &bin_path)?;
+            file::make_executable(&bin_path)?;
         } else {
             bail!("unsupported format: {}", format);
+        }
+
+        for file in &pkg.files {
+            if let Some(src) = file.src(pkg, v) {
+                let src_path = install_path.join(&src);
+                let dest_path = src_path.parent().unwrap().join(file.name.as_str());
+                if src_path != dest_path {
+                    if cfg!(windows) {
+                        file::rename(&src_path, &dest_path)?;
+                    } else {
+                        file::make_symlink(&PathBuf::from(".").join(&src), &dest_path)?;
+                    }
+                }
+            }
         }
 
         Ok(())
