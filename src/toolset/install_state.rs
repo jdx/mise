@@ -17,6 +17,7 @@ type InstallStateTools = BTreeMap<String, InstallStateTool>;
 #[derive(Debug, Clone)]
 pub struct InstallStateTool {
     pub short: String,
+    pub _dir: PathBuf,
     pub full: String,
     pub backend_type: BackendType,
     pub versions: Vec<String>,
@@ -67,6 +68,7 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
         .map(|(short, pt)| {
             let tool = InstallStateTool {
                 short: short.clone(),
+                _dir: dirs::PLUGINS.join(short),
                 backend_type: match pt {
                     PluginType::Asdf => BackendType::Asdf,
                     PluginType::Vfox => BackendType::Vfox,
@@ -83,9 +85,12 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
     let dirs = file::dir_subdirs(&dirs::INSTALLS)?;
     tools.extend(
         dirs.into_iter()
-            .map(|short| {
-                let dir = dirs::INSTALLS.join(&short);
-                let full = if let Some(full) = short_to_full(&short)? {
+            .map(|dir| {
+                let backend_meta = read_backend_meta(&dir).unwrap_or_default();
+                let short = backend_meta.first().unwrap_or(&dir).to_string();
+                let full = backend_meta.get(1).cloned();
+                let dir = dirs::INSTALLS.join(&dir);
+                let full = if let Some(full) = short_to_full(&short, full)? {
                     full
                 } else {
                     return Ok(None);
@@ -104,6 +109,7 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
                     .collect();
                 let tool = InstallStateTool {
                     short: short.clone(),
+                    _dir: dir.clone(),
                     full,
                     backend_type,
                     versions,
@@ -119,7 +125,7 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
     Ok(mu)
 }
 
-pub fn short_to_full(short: &str) -> Result<Option<String>> {
+pub fn short_to_full(short: &str, meta_full: Option<String>) -> Result<Option<String>> {
     let plugins = init_plugins()?;
     let plugins = plugins.as_ref().unwrap();
     if let Some(plugin) = plugins.get(short) {
@@ -127,7 +133,7 @@ pub fn short_to_full(short: &str) -> Result<Option<String>> {
             PluginType::Asdf => Ok(Some(format!("asdf:{short}"))),
             PluginType::Vfox => Ok(Some(format!("vfox:{short}"))),
         }
-    } else if let Some(full) = read_backend_meta(short) {
+    } else if let Some(full) = meta_full {
         Ok(Some(full))
     } else if let Some(full) = REGISTRY
         .get(short)
@@ -183,12 +189,17 @@ fn backend_meta_path(short: &str) -> PathBuf {
     dirs::INSTALLS.join(short).join(".mise.backend")
 }
 
-fn migrate_backend_meta_json(short: &str) {
-    let old = dirs::INSTALLS.join(short).join(".mise.backend.json");
+fn migrate_backend_meta_json(dir: &str) {
+    let old = dirs::INSTALLS.join(dir).join(".mise.backend.json");
     let migrate = || {
         let json: serde_json::Value = serde_json::from_reader(file::open(&old)?)?;
         if let Some(full) = json.get("id").and_then(|id| id.as_str()) {
-            file::write(backend_meta_path(short), full.trim())?;
+            let short = json
+                .get("short")
+                .and_then(|short| short.as_str())
+                .unwrap_or(dir);
+            let doc = format!("{}\n{}", short, full);
+            file::write(backend_meta_path(dir), doc.trim())?;
         }
         Ok(())
     };
@@ -202,7 +213,7 @@ fn migrate_backend_meta_json(short: &str) {
     }
 }
 
-fn read_backend_meta(short: &str) -> Option<String> {
+fn read_backend_meta(short: &str) -> Option<Vec<String>> {
     migrate_backend_meta_json(short);
     let path = backend_meta_path(short);
     if path.exists() {
@@ -211,7 +222,12 @@ fn read_backend_meta(short: &str) -> Option<String> {
                 warn!("{err:?}");
             })
             .unwrap_or_default();
-        Some(body)
+        Some(
+            body.lines()
+                .filter(|f| !f.is_empty())
+                .map(|f| f.to_string())
+                .collect(),
+        )
     } else {
         None
     }
