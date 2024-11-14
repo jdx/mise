@@ -1,5 +1,22 @@
 # Changelog
 
+## [2024.11.13](https://github.com/jdx/mise/compare/v2024.11.12..v2024.11.13) - 2024-11-14
+
+### 🚀 Features
+
+- added more aqua tools by [@jdx](https://github.com/jdx) in [#3023](https://github.com/jdx/mise/pull/3023)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** set default format for http registries by [@jdx](https://github.com/jdx) in [#3028](https://github.com/jdx/mise/pull/3028)
+- **(aqua)** copy multiple bins on windows by [@jdx](https://github.com/jdx) in [ef690e7](https://github.com/jdx/mise/commit/ef690e75f33235a298b6dafb6c49ddc19c6476a0)
+- reset install_state cache in different places by [@jdx](https://github.com/jdx) in [#3026](https://github.com/jdx/mise/pull/3026)
+- incorrectly displaying "cargo-" as tool versions instead of "cargo:" by [@jdx](https://github.com/jdx) in [#3029](https://github.com/jdx/mise/pull/3029)
+
+### 🔍 Other Changes
+
+- remove unused config files by [@jdx](https://github.com/jdx) in [13e1243](https://github.com/jdx/mise/commit/13e12437cc5366f47d34a6cf6bb78a09b27025f2)
+
 ## [2024.11.12](https://github.com/jdx/mise/compare/v2024.11.11..v2024.11.12) - 2024-11-14
 
 ### 🚀 Features
