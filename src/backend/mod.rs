@@ -663,7 +663,6 @@ impl Ord for dyn Backend {
     }
 }
 
-#[cfg(test)]
 pub fn reset() {
     *TOOLS.lock().unwrap() = None;
 }
