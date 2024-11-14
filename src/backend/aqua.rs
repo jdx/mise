@@ -232,7 +232,7 @@ impl AquaBackend {
         for (src, dst) in self.srcs(pkg, &ctx.tv) {
             if src != dst {
                 if cfg!(windows) {
-                    file::rename(&src, &dst)?;
+                    file::copy(&src, &dst)?;
                 } else {
                     file::make_symlink(&PathBuf::from(".").join(&src), &dst)?;
                 }
