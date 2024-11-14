@@ -52,6 +52,7 @@ pub struct AquaPackage {
     pub supported_envs: Vec<String>,
     pub files: Vec<AquaFile>,
     pub replacements: HashMap<String, String>,
+    pub version_prefix: Option<String>,
     overrides: Vec<AquaOverride>,
     version_constraint: String,
     version_overrides: Vec<AquaPackage>,
@@ -158,17 +159,26 @@ impl AquaPackage {
                 "tar.gz"
             } else if asset.ends_with(".tar.xz") {
                 "tar.xz"
+            } else if asset.ends_with(".tar.bz2") {
+                "tar.bz2"
             } else if asset.ends_with(".gz") {
                 "gz"
             } else if asset.ends_with(".xz") {
                 "xz"
+            } else if asset.ends_with(".bz2") {
+                "bz2"
             } else if asset.ends_with(".zip") {
                 "zip"
             } else {
                 "raw"
             }
         } else {
-            &self.format
+            match self.format.as_str() {
+                "tgz" => "tar.gz",
+                "txz" => "tar.xz",
+                "tbz2" => "tar.bz2",
+                format => format,
+            }
         }
     }
 
@@ -208,6 +218,8 @@ impl AquaPackage {
         let mut ctx = hashmap! {
             "Version".to_string() => replace(v),
             "OS".to_string() => replace(os),
+            "GOOS".to_string() => replace(os),
+            "GOARCH".to_string() => replace(arch),
             "Arch".to_string() => replace(arch),
             "Format".to_string() => replace(&self.format),
         };
@@ -218,9 +230,24 @@ impl AquaPackage {
 
 impl AquaFile {
     pub fn src(&self, pkg: &AquaPackage, v: &str) -> Option<String> {
+        let asset = pkg.asset(v);
+        let asset = asset.strip_suffix(".tar.gz").unwrap_or(&asset);
+        let asset = asset.strip_suffix(".tar.xz").unwrap_or(asset);
+        let asset = asset.strip_suffix(".tar.bz2").unwrap_or(asset);
+        let asset = asset.strip_suffix(".gz").unwrap_or(asset);
+        let asset = asset.strip_suffix(".xz").unwrap_or(asset);
+        let asset = asset.strip_suffix(".bz2").unwrap_or(asset);
+        let asset = asset.strip_suffix(".zip").unwrap_or(asset);
+        let asset = asset.strip_suffix(".tar").unwrap_or(asset);
+        let asset = asset.strip_suffix(".tgz").unwrap_or(asset);
+        let asset = asset.strip_suffix(".txz").unwrap_or(asset);
+        let asset = asset.strip_suffix(".tbz2").unwrap_or(asset);
+        let ctx = hashmap! {
+            "AssetWithoutExt".to_string() => asset.to_string(),
+        };
         self.src
             .as_ref()
-            .map(|src| pkg.parse_aqua_str(src, v, &Default::default()))
+            .map(|src| pkg.parse_aqua_str(src, v, &ctx))
     }
 }
 

@@ -2003,6 +2003,7 @@ dependencies = [
  "assert_cmd",
  "base64",
  "built",
+ "bzip2",
  "calm_io",
  "cfg_aliases",
  "chrono",

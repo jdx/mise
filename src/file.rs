@@ -532,6 +532,18 @@ pub fn untar_xz(archive: &Path, dest: &Path) -> Result<()> {
     })
 }
 
+pub fn untar_bz2(archive: &Path, dest: &Path) -> Result<()> {
+    // TODO: show progress
+    debug!("tar -xf {} -C {}", archive.display(), dest.display());
+    let f = File::open(archive)?;
+    let tar = bzip2::read::BzDecoder::new(f);
+    Archive::new(tar).unpack(dest).wrap_err_with(|| {
+        let archive = display_path(archive);
+        let dest = display_path(dest);
+        format!("failed to extract tar: {archive} to {dest}")
+    })
+}
+
 pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
     // TODO: show progress
     debug!("unzip {} -d {}", archive.display(), dest.display());
