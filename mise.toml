@@ -10,7 +10,6 @@ THIS_PROJECT = "{{config_root}}-{{cwd}}"
 
 [tools]
 #node = 'lts'
-python = { version = "latest" }
 shellcheck = "0.10"
 shfmt = "3"
 jq = "latest"
@@ -134,3 +133,6 @@ run = "mise tasks run -- docker:cargo run --"
 [tasks."docker:e2e"]
 description = "run e2e tests inside of development docker container"
 run = "mise tasks run docker:mise run test:e2e"
+
+[tasks."test:shuffle"]
+run = "cargo +nightly test --all-features -- -Z unstable-options --shuffle"

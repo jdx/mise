@@ -6,6 +6,7 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -47,14 +48,6 @@ jobs:
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: npm i
-      - name: cache mise
-        uses: actions/cache@v4
-        with:
-          key: mise-tools-${{ matrix.os }}-${{ hashFiles('.mise.lock') }}
-          restore-keys: mise-tools-${{ matrix.os }}
-          path: |
-            ~/.local/share/mise/installs
-            ~/.local/share/mise/plugins
       - run: mise install
       - run: mise x -- cargo nextest run --all-features
       - run: cargo deny check
@@ -79,14 +72,6 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - name: cache mise
-        uses: actions/cache@v4
-        with:
-          key: mise-tools-ubuntu-latest-${{ hashFiles('.mise.lock') }}
-          restore-keys: mise-tools-ubuntu-latest
-          path: |
-            ~/.local/share/mise/installs
-            ~/.local/share/mise/plugins
       - run: mise install
       - run: mise run test:shuffle
 
@@ -197,3 +182,15 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: pwsh e2e-win\run.ps1
+  hyperfine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: curl https://mise.run | sh
+      - run: cargo build --release
+      - run: echo "$PWD/target/release" >> "$GITHUB_PATH"
+      - run: mise i
+      - run: mise x hyperfine -- hyperfine --warmup 10 --min-runs 200 "$HOME/.local/bin/mise env" "target/release/mise env"
+      - run: mise x hyperfine -- hyperfine --warmup 10 --min-runs 200 "$HOME/.local/bin/mise ls"  "target/release/mise ls"

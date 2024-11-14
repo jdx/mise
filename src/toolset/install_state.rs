@@ -25,6 +25,12 @@ pub struct InstallStateTool {
 static INSTALL_STATE_PLUGINS: Mutex<Option<InstallStatePlugins>> = Mutex::new(None);
 static INSTALL_STATE_TOOLS: Mutex<Option<InstallStateTools>> = Mutex::new(None);
 
+pub fn init() -> Result<()> {
+    drop(init_plugins()?);
+    drop(init_tools()?);
+    Ok(())
+}
+
 fn init_plugins() -> Result<MutexGuard<'static, Option<BTreeMap<String, PluginType>>>> {
     let mut mu = INSTALL_STATE_PLUGINS.lock().unwrap();
     if mu.is_some() {
