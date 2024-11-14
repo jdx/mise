@@ -43,7 +43,12 @@ fn parse(mut code: &str, ctx: &Context) -> String {
         ops.push(Box::new(|s: &str| s.trim_start_matches('v').to_string()));
     }
     let mut val = if let Some(key) = code.strip_prefix(".") {
-        ctx.get(key).unwrap().clone()
+        if let Some(val) = ctx.get(key) {
+            val.to_string()
+        } else {
+            warn!("unable to find key in context: {key}");
+            "<ERR>".to_string()
+        }
     } else if code.starts_with('"') && code.ends_with('"') {
         // TODO: handle quotes in the middle of code
         code[1..code.len() - 1].to_string()

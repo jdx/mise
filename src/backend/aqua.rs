@@ -44,10 +44,11 @@ impl Backend for AquaBackend {
                             ))?
                             .into_iter()
                             .map(|r| {
-                                r.tag_name
-                                    .strip_prefix('v')
-                                    .unwrap_or(&r.tag_name)
-                                    .to_string()
+                                let mut v = r.tag_name.strip_prefix('v').unwrap_or(&r.tag_name);
+                                if let Some(prefix) = &pkg.version_prefix {
+                                    v = v.strip_prefix(prefix).unwrap_or(v);
+                                }
+                                v.to_string()
                             })
                             .rev()
                             .collect_vec(),
@@ -72,12 +73,15 @@ impl Backend for AquaBackend {
         let pkg = AQUA_REGISTRY
             .package_with_version(&self.id, &v)?
             .wrap_err_with(|| format!("no aqua registry found for {}", self.id))?;
+        if let Some(prefix) = &pkg.version_prefix {
+            v = format!("{}{}", prefix, ctx.tv.version);
+        }
         validate(&pkg)?;
         let url = match self.fetch_url(&pkg, &v) {
             Ok(url) => url,
-            Err(_) => {
+            Err(err) => {
                 v = ctx.tv.version.to_string();
-                self.fetch_url(&pkg, &v)?
+                self.fetch_url(&pkg, &v).map_err(|_| err)?
             }
         };
         let filename = url.split('/').last().unwrap();
@@ -96,6 +100,11 @@ impl Backend for AquaBackend {
             .files
             .iter()
             .flat_map(|f| {
+                if let Some(prefix) = &pkg.version_prefix {
+                    return vec![f.src(&pkg, &format!("{}{}", prefix, tv.version))]
+                        .into_iter()
+                        .flatten();
+                }
                 vec![
                     f.src(&pkg, &tv.version),
                     f.src(&pkg, &format!("v{}", tv.version)),
@@ -209,6 +218,8 @@ impl AquaBackend {
             file::untar_gz(&tarball_path, &install_path)?;
         } else if format == "tar.xz" {
             file::untar_xz(&tarball_path, &install_path)?;
+        } else if format == "tar.bz2" {
+            file::untar_bz2(&tarball_path, &install_path)?;
         } else if format == "zip" {
             file::unzip(&tarball_path, &install_path)?;
         } else if format == "gz" {
