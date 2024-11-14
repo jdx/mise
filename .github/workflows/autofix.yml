@@ -15,7 +15,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1
   RUST_BACKTRACE: 1

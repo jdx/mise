@@ -14,7 +14,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1
   RUST_BACKTRACE: 1
@@ -117,7 +116,6 @@ jobs:
         uses: nick-fields/retry@v3
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUST_BACKTRACE: "1"
           MISE_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           MISE_EXPERIMENTAL: "1"
           TEST_TRANCHE: ${{matrix.tranche}}
