@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -30,6 +30,17 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     let path = path.as_ref();
     trace!("open {}", display_path(path));
     File::open(path).wrap_err_with(|| format!("failed open: {}", display_path(path)))
+}
+
+pub fn append<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("append {}", display_path(path));
+    fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)
+        .and_then(|mut f| f.write_all(contents.as_ref()))
+        .wrap_err_with(|| format!("failed append: {}", display_path(path)))
 }
 
 pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {

@@ -113,13 +113,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{matrix.arch}}
-      - name: cache crates
-        id: cache-crates
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/cache
-          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-registry
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
           OS: windows
@@ -169,6 +162,44 @@ jobs:
           timeout_minutes: 20
           max_attempts: 3
           command: ./e2e/run_all_tests
+  e2e-test-tools:
+    name: e2e-test-tools-${{matrix.os}}
+    needs: [build-tarball, build-tarball-windows]
+    runs-on: ${{matrix.os}}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      MISE_EXPERIMENTAL: 1
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{matrix.os == 'windows-latest' && 'tarball-x86_64-pc-windows-msvc' || matrix.os == 'macos-latest' && 'tarball-aarch64-apple-darwin' || 'tarball-x86_64-unknown-linux-gnu'}}
+          path: dist
+      #- if: matrix.os == 'ubuntu-latest'
+      #run: apt-get install automake
+      #- if: matrix.os == 'macos-latest'
+      #run: brew install automake libpcre3-dev
+      - if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+        run: |
+          version=$(./scripts/get-version.sh)
+          tar -C "$HOME" -xvJf "dist/mise-$version-${{matrix.os == 'ubuntu-latest' && 'linux-x64' || 'macos-arm64'}}.tar.xz"
+          echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - if: matrix.os == 'windows-latest'
+        run: |
+          $version = (./scripts/get-version.ps1)
+          echo "$env:USERPROFILE/mise/bin"
+          ls dist
+          unzip -d $env:USERPROFILE dist\mise-v$version-windows-x64.zip
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE/mise/bin"
+      - run: mise install
+        continue-on-error: ${{matrix.os == 'windows-latest' && true || false}}
+      - run: mise test-tool --all
+        continue-on-error: ${{matrix.os == 'windows-latest' && true || false}}
   rpm:
     runs-on: ubuntu-latest
     needs: [build-tarball]
@@ -227,6 +258,7 @@ jobs:
       - rpm
       - deb
       - e2e-linux
+      - e2e-test-tools
       - build-tarball-windows
     steps:
       - uses: actions/checkout@v4

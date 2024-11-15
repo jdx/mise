@@ -1,9 +1,9 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::{unalias_backend, ABackend};
 use crate::config::CONFIG;
-use crate::registry::REGISTRY_BACKEND_MAP;
+use crate::registry::{FULL_REGISTRY, REGISTRY_BACKEND_MAP};
 use crate::toolset::{install_state, parse_tool_options, ToolVersionOptions};
-use crate::{backend, config, dirs};
+use crate::{backend, config, dirs, env};
 use contracts::requires;
 use eyre::{bail, Result};
 use heck::ToKebabCase;
@@ -140,6 +140,20 @@ impl BackendArg {
             return full.clone();
         }
         unalias_backend(&self.short).to_string()
+    }
+
+    pub fn is_os_supported(&self) -> bool {
+        if self.uses_plugin() {
+            return true;
+        }
+        if let Some(rt) = FULL_REGISTRY.get(self.short.as_str()) {
+            return rt.os.is_empty() || rt.os.contains(&env::consts::OS);
+        }
+        true
+    }
+
+    pub fn uses_plugin(&self) -> bool {
+        install_state::get_plugin_type(&self.short).is_ok_and(|pt| pt.is_some())
     }
 }
 

@@ -15,8 +15,24 @@ include!(concat!(env!("OUT_DIR"), "/registry.rs"));
 pub struct RegistryTool {
     pub backends: Vec<&'static str>,
     pub aliases: &'static [&'static str],
+    pub test: &'static Option<(&'static str, &'static str)>,
+    pub os: &'static [&'static str],
 }
 
+pub static FULL_REGISTRY: Lazy<BTreeMap<&str, RegistryTool>> = Lazy::new(|| {
+    _REGISTRY
+        .iter()
+        .map(|(short, backends, aliases, test, os)| {
+            let tool = RegistryTool {
+                backends: backends.to_vec(),
+                aliases,
+                test,
+                os,
+            };
+            (*short, tool)
+        })
+        .collect()
+});
 // a rust representation of registry.toml
 pub static REGISTRY: Lazy<BTreeMap<&str, RegistryTool>> = Lazy::new(|| {
     let mut backend_types = BackendType::iter()
@@ -32,10 +48,12 @@ pub static REGISTRY: Lazy<BTreeMap<&str, RegistryTool>> = Lazy::new(|| {
         backend_types.remove("aqua");
     }
 
-    let mut registry: BTreeMap<&str, RegistryTool> = _REGISTRY
+    let mut registry: BTreeMap<&str, RegistryTool> = FULL_REGISTRY
         .iter()
-        .map(|(short, backends, aliases)| {
-            let backends = backends
+        .map(|(short, tr)| {
+            let mut tr = tr.clone();
+            tr.backends = tr
+                .backends
                 .iter()
                 .filter(|full| {
                     full.split(':')
@@ -44,8 +62,7 @@ pub static REGISTRY: Lazy<BTreeMap<&str, RegistryTool>> = Lazy::new(|| {
                 })
                 .copied()
                 .collect();
-            let tool = RegistryTool { backends, aliases };
-            (*short, tool)
+            (*short, tr)
         })
         .filter(|(_, tool)| !tool.backends.is_empty())
         .collect();

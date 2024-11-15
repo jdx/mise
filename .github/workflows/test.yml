@@ -56,6 +56,7 @@ jobs:
       - run: ./scripts/test-standalone.sh
       - uses: actions-rust-lang/rustfmt@v1
       - run: mise run lint
+      - run: mise test-tool --all
 
   nightly:
     runs-on: ubuntu-latest
@@ -171,6 +172,10 @@ jobs:
           cargo build
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - run: cargo test
+        continue-on-error: true
+      - run: mise install
+        continue-on-error: true
+      - run: mise test-tool --all
         continue-on-error: true
   windows-e2e:
     runs-on: windows-latest

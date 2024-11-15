@@ -1282,6 +1282,19 @@ The name of the script will be the name of the tasks.
         mount run="mise tasks --usage"
     }
 }
+cmd "test-tool" hide=true help="Test a tool installs and executes" {
+    after_long_help r"Examples:
+
+    $ mise test-tool ripgrep
+"
+    flag "-a --all"
+    flag "--include-non-defined" help="Also test tools not defined in registry.toml, guessing how to test it"
+    flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
+        arg "<JOBS>"
+    }
+    flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
+    arg "[TOOL]"
+}
 cmd "trust" help="Marks a config file as trusted" {
     long_help r"Marks a config file as trusted
 

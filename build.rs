@@ -20,7 +20,8 @@ fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
     let mut lines = vec![r#"
-const _REGISTRY: &[(&str, &[&str], &[&str])] = &["#
+#[allow(clippy::type_complexity)]
+const _REGISTRY: &[(&str, &[&str], &[&str], Option<(&str, &str)>, &[&str])] = &["#
         .to_string()];
 
     let registry: toml::Table = fs::read_to_string("registry.toml")
@@ -41,6 +42,13 @@ const _REGISTRY: &[(&str, &[&str], &[&str])] = &["#
             .iter()
             .map(|v| v.as_str().unwrap().to_string())
             .collect::<Vec<_>>();
+        let test = info.get("test").map(|t| {
+            let t = t.as_array().unwrap();
+            (
+                t[0].as_str().unwrap().to_string(),
+                t[1].as_str().unwrap().to_string(),
+            )
+        });
         let backends = info.get("backends").unwrap().as_array().unwrap();
         let mut fulls = vec![];
         for backend in backends {
@@ -59,12 +67,32 @@ const _REGISTRY: &[(&str, &[&str], &[&str])] = &["#
                 _ => panic!("Unknown backend type"),
             }
         }
+        let os = info
+            .get("os")
+            .map(|os| {
+                let os = os.as_array().unwrap();
+                let mut os = os
+                    .iter()
+                    .map(|o| o.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>();
+                os.sort();
+                os
+            })
+            .unwrap_or_default();
         lines.push(format!(
-            r#"    ("{short}", &["{fulls}"], &[{aliases}]),"#,
+            r#"    ("{short}", &["{fulls}"], &[{aliases}], {test}, &[{os}]),"#,
             fulls = fulls.join("\", \""),
             aliases = aliases
                 .iter()
                 .map(|a| format!("\"{a}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            test = test
+                .map(|(t, v)| format!("Some((\"{t}\", \"{v}\"))", t = t, v = v))
+                .unwrap_or("None".to_string()),
+            os = os
+                .iter()
+                .map(|o| format!("\"{o}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
         ));
