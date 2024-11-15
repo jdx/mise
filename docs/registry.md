@@ -47,7 +47,7 @@ editLink: false
 | aws-nuke | [aqua:rebuy-de/aws-nuke](https://github.com/rebuy-de/aws-nuke) [asdf:bersalazar/asdf-aws-nuke](https://github.com/bersalazar/asdf-aws-nuke) |
 | aws-sam-cli | [asdf:amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp) |
 | aws-sso-cli | [aqua:synfinatic/aws-sso-cli](https://github.com/synfinatic/aws-sso-cli) [asdf:adamcrews/asdf-aws-sso-cli](https://github.com/adamcrews/asdf-aws-sso-cli) |
-| aws-vault | [asdf:karancode/asdf-aws-vault](https://github.com/karancode/asdf-aws-vault) |
+| aws-vault | [aqua:99designs/aws-vault](https://github.com/99designs/aws-vault) [asdf:karancode/asdf-aws-vault](https://github.com/karancode/asdf-aws-vault) |
 | awscli | [asdf:MetricMike/asdf-awscli](https://github.com/MetricMike/asdf-awscli) |
 | awscli-local | [asdf:paulo-ferraz-oliveira/asdf-awscli-local](https://github.com/paulo-ferraz-oliveira/asdf-awscli-local) |
 | awsebcli | [asdf:amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp) |
@@ -74,10 +74,10 @@ editLink: false
 | bitwarden | [asdf:vixus0/asdf-bitwarden](https://github.com/vixus0/asdf-bitwarden) |
 | bitwarden-secrets-manager | [asdf:asdf-community/asdf-bitwarden-secrets-manager](https://github.com/asdf-community/asdf-bitwarden-secrets-manager) |
 | bombardier | [aqua:codesenberg/bombardier](https://github.com/codesenberg/bombardier) [asdf:NeoHsu/asdf-bombardier](https://github.com/NeoHsu/asdf-bombardier) |
-| borg | [asdf:lwiechec/asdf-borg](https://github.com/lwiechec/asdf-borg) |
+| borg | [aqua:borgbackup/borg](https://github.com/borgbackup/borg) [asdf:lwiechec/asdf-borg](https://github.com/lwiechec/asdf-borg) |
 | bosh | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
 | bottom | [aqua:aqua:ClementTsang/bottom](https://github.com/aqua:ClementTsang/bottom) [asdf:carbonteq/asdf-btm](https://github.com/carbonteq/asdf-btm) |
-| boundary | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
+| boundary | [aqua:hashicorp/boundary](https://github.com/hashicorp/boundary) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | bpkg | [asdf:bpkg/asdf-bpkg](https://github.com/bpkg/asdf-bpkg) |
 | brig | [asdf:Ibotta/asdf-brig](https://github.com/Ibotta/asdf-brig) |
 | btrace | [asdf:joschi/asdf-btrace](https://github.com/joschi/asdf-btrace) |
@@ -89,7 +89,7 @@ editLink: false
 | cabal | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | caddy | [aqua:caddyserver/caddy](https://github.com/caddyserver/caddy) [asdf:salasrod/asdf-caddy](https://github.com/salasrod/asdf-caddy) |
 | calendarsync | [asdf:FeryET/asdf-calendarsync](https://github.com/FeryET/asdf-calendarsync) |
-| calicoctl | [asdf:TheCubicleJockey/asdf-calicoctl](https://github.com/TheCubicleJockey/asdf-calicoctl) |
+| calicoctl | [aqua:projectcalico/calico/calicoctl](https://github.com/projectcalico/calico/calicoctl) [asdf:TheCubicleJockey/asdf-calicoctl](https://github.com/TheCubicleJockey/asdf-calicoctl) |
 | camunda-modeler | [asdf:barmac/asdf-camunda-modeler](https://github.com/barmac/asdf-camunda-modeler) |
 | cargo-binstall | [ubi:cargo-bins/cargo-binstall](https://github.com/cargo-bins/cargo-binstall) [cargo:cargo-binstall](https://crates.io/crates/cargo-binstall) |
 | cargo-insta | [ubi:mitsuhiko/insta](https://github.com/mitsuhiko/insta) |
@@ -140,7 +140,7 @@ editLink: false
 | conduit | [asdf:gmcabrita/asdf-conduit](https://github.com/gmcabrita/asdf-conduit) |
 | conform | [asdf:skyzyx/asdf-conform](https://github.com/skyzyx/asdf-conform) |
 | conftest | [aqua:open-policy-agent/conftest](https://github.com/open-policy-agent/conftest) [asdf:looztra/asdf-conftest](https://github.com/looztra/asdf-conftest) |
-| consul | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
+| consul | [aqua:hashicorp/consul](https://github.com/hashicorp/consul) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | container-diff | [asdf:cgroschupp/asdf-container-diff](https://github.com/cgroschupp/asdf-container-diff) |
 | container-structure-test | [aqua:GoogleContainerTools/container-structure-test](https://github.com/GoogleContainerTools/container-structure-test) [asdf:FeryET/asdf-container-structure-test](https://github.com/FeryET/asdf-container-structure-test) |
 | cookiecutter | [asdf:shawon-crosen/asdf-cookiecutter](https://github.com/shawon-crosen/asdf-cookiecutter) |
@@ -278,7 +278,7 @@ editLink: false
 | go-containerregistry | [aqua:google/go-containerregistry](https://github.com/google/go-containerregistry) [asdf:dex4er/asdf-go-containerregistry](https://github.com/dex4er/asdf-go-containerregistry) |
 | go-getter | [asdf:ryodocx/asdf-go-getter](https://github.com/ryodocx/asdf-go-getter) |
 | go-jira | [asdf:dguihal/asdf-go-jira](https://github.com/dguihal/asdf-go-jira) |
-| go-jsonnet | [asdf:https://gitlab.com/craigfurman/asdf-go-jsonnet](https://gitlab.com/craigfurman/asdf-go-jsonnet) |
+| go-jsonnet | [aqua:google/go-jsonnet](https://github.com/google/go-jsonnet) [asdf:https://gitlab.com/craigfurman/asdf-go-jsonnet](https://gitlab.com/craigfurman/asdf-go-jsonnet) |
 | go-junit-report | [asdf:jwillker/asdf-go-junit-report](https://github.com/jwillker/asdf-go-junit-report) |
 | go-sdk | [asdf:yacchi/asdf-go-sdk](https://github.com/yacchi/asdf-go-sdk) |
 | go-swagger | [asdf:jfreeland/asdf-go-swagger](https://github.com/jfreeland/asdf-go-swagger) |
@@ -332,7 +332,7 @@ editLink: false
 | hledger-flow | [asdf:airtonix/asdf-hledger-flow](https://github.com/airtonix/asdf-hledger-flow) |
 | hls | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | hostctl | [aqua:guumaster/hostctl](https://github.com/guumaster/hostctl) [asdf:svenluijten/asdf-hostctl](https://github.com/svenluijten/asdf-hostctl) |
-| httpie-go | [asdf:abatilo/asdf-httpie-go](https://github.com/abatilo/asdf-httpie-go) |
+| httpie-go | [aqua:aqua:nojima/httpie-go](https://github.com/aqua:nojima/httpie-go) [asdf:abatilo/asdf-httpie-go](https://github.com/abatilo/asdf-httpie-go) |
 | hub | [aqua:mislav/hub](https://github.com/mislav/hub) [asdf:mise-plugins/asdf-hub](https://github.com/mise-plugins/asdf-hub) |
 | hugo | [aqua:gohugoio/hugo](https://github.com/gohugoio/hugo) [asdf:NeoHsu/asdf-hugo](https://github.com/NeoHsu/asdf-hugo) |
 | hurl | [aqua:Orange-OpenSource/hurl](https://github.com/Orange-OpenSource/hurl) [asdf:raimon49/asdf-hurl](https://github.com/raimon49/asdf-hurl) |
@@ -340,7 +340,7 @@ editLink: false
 | hygen | [asdf:brentjanderson/asdf-hygen](https://github.com/brentjanderson/asdf-hygen) |
 | hyperfine | [ubi:sharkdp/hyperfine](https://github.com/sharkdp/hyperfine) [asdf:volf52/asdf-hyperfine](https://github.com/volf52/asdf-hyperfine) |
 | iam-policy-json-to-terraform | [aqua:flosell/iam-policy-json-to-terraform](https://github.com/flosell/iam-policy-json-to-terraform) [asdf:carlduevel/asdf-iam-policy-json-to-terraform](https://github.com/carlduevel/asdf-iam-policy-json-to-terraform) |
-| iamlive | [asdf:chessmango/asdf-iamlive](https://github.com/chessmango/asdf-iamlive) |
+| iamlive | [aqua:iann0036/iamlive](https://github.com/iann0036/iamlive) [asdf:chessmango/asdf-iamlive](https://github.com/chessmango/asdf-iamlive) |
 | ibmcloud | [asdf:triangletodd/asdf-ibmcloud](https://github.com/triangletodd/asdf-ibmcloud) |
 | idris | [asdf:asdf-community/asdf-idris](https://github.com/asdf-community/asdf-idris) |
 | idris2 | [asdf:asdf-community/asdf-idris2](https://github.com/asdf-community/asdf-idris2) |
@@ -445,7 +445,7 @@ editLink: false
 | lean | [asdf:asdf-community/asdf-lean](https://github.com/asdf-community/asdf-lean) |
 | lefthook | [ubi:evilmartians/lefthook](https://github.com/evilmartians/lefthook) [asdf:jtzero/asdf-lefthook](https://github.com/jtzero/asdf-lefthook) |
 | leiningen | [asdf:miorimmax/asdf-lein](https://github.com/miorimmax/asdf-lein) |
-| levant | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
+| levant | [aqua:hashicorp/levant](https://github.com/hashicorp/levant) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | lfe | [asdf:asdf-community/asdf-lfe](https://github.com/asdf-community/asdf-lfe) |
 | libsql-server | [asdf:jonasb/asdf-libsql-server](https://github.com/jonasb/asdf-libsql-server) |
 | license-plist | [asdf:MacPaw/asdf-license-plist](https://github.com/MacPaw/asdf-license-plist) |
@@ -517,7 +517,7 @@ editLink: false
 | ninja | [aqua:ninja-build/ninja](https://github.com/ninja-build/ninja) [asdf:asdf-community/asdf-ninja](https://github.com/asdf-community/asdf-ninja) |
 | node | [core:node](https://mise.jdx.dev/lang/node.html) [vfox:version-fox/vfox-nodejs](https://github.com/version-fox/vfox-nodejs) |
 | node | [core:node](https://mise.jdx.dev/lang/node.html) |
-| nomad | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
+| nomad | [aqua:hashicorp/levant](https://github.com/hashicorp/levant) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | nomad-pack | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | notation | [aqua:notaryproject/notation](https://github.com/notaryproject/notation) [asdf:bodgit/asdf-notation](https://github.com/bodgit/asdf-notation) |
 | nova | [aqua:FairwindsOps/nova](https://github.com/FairwindsOps/nova) [asdf:elementalvoid/asdf-nova](https://github.com/elementalvoid/asdf-nova) |
@@ -548,7 +548,7 @@ editLink: false
 | osqueryi | [asdf:davidecavestro/asdf-osqueryi](https://github.com/davidecavestro/asdf-osqueryi) |
 | overmind | [ubi:DarthSim/overmind](https://github.com/DarthSim/overmind) [go:github.com/DarthSim/overmind/v2](https://pkg.go.dev/github.com/DarthSim/overmind/v2) |
 | pachctl | [asdf:abatilo/asdf-pachctl](https://github.com/abatilo/asdf-pachctl) |
-| packer | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
+| packer | [aqua:hashicorp/packer](https://github.com/hashicorp/packer) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | pandoc | [asdf:Fbrisset/asdf-pandoc](https://github.com/Fbrisset/asdf-pandoc) |
 | patat | [asdf:airtonix/asdf-patat](https://github.com/airtonix/asdf-patat) |
 | pdm | [asdf:1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm) |
@@ -721,7 +721,7 @@ editLink: false
 | terradozer | [aqua:jckuester/terradozer](https://github.com/jckuester/terradozer) [asdf:chessmango/asdf-terradozer](https://github.com/chessmango/asdf-terradozer) |
 | terraform | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) [vfox:enochchau/vfox-terraform](https://github.com/enochchau/vfox-terraform) |
 | terraform-docs | [aqua:terraform-docs/terraform-docs](https://github.com/terraform-docs/terraform-docs) [asdf:looztra/asdf-terraform-docs](https://github.com/looztra/asdf-terraform-docs) |
-| terraform-ls | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
+| terraform-ls | [aqua:hashicorp/terraform-ls](https://github.com/hashicorp/terraform-ls) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | terraform-lsp | [asdf:bartlomiejdanek/asdf-terraform-lsp](https://github.com/bartlomiejdanek/asdf-terraform-lsp) |
 | terraform-validator | [aqua:thazelart/terraform-validator](https://github.com/thazelart/terraform-validator) [asdf:looztra/asdf-terraform-validator](https://github.com/looztra/asdf-terraform-validator) |
 | terraformer | [aqua:GoogleCloudPlatform/terraformer](https://github.com/GoogleCloudPlatform/terraformer) [asdf:gr1m0h/asdf-terraformer](https://github.com/gr1m0h/asdf-terraformer) |
@@ -774,7 +774,7 @@ editLink: false
 | v | [asdf:jthegedus/asdf-v](https://github.com/jthegedus/asdf-v) |
 | vale | [aqua:errata-ai/vale](https://github.com/errata-ai/vale) [asdf:pdemagny/asdf-vale](https://github.com/pdemagny/asdf-vale) |
 | vals | [aqua:helmfile/vals](https://github.com/helmfile/vals) [asdf:dex4er/asdf-vals](https://github.com/dex4er/asdf-vals) |
-| vault | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
+| vault | [aqua:hashicorp/vault](https://github.com/hashicorp/vault) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | vcluster | [aqua:loft-sh/vcluster](https://github.com/loft-sh/vcluster) [asdf:https://gitlab.com/wt0f/asdf-vcluster](https://gitlab.com/wt0f/asdf-vcluster) |
 | vela | [asdf:pdemagny/asdf-vela](https://github.com/pdemagny/asdf-vela) |
 | velad | [asdf:pdemagny/asdf-velad](https://github.com/pdemagny/asdf-velad) |
@@ -794,7 +794,7 @@ editLink: false
 | wasmer | [aqua:wasmerio/wasmer](https://github.com/wasmerio/wasmer) [asdf:tachyonicbytes/asdf-wasmer](https://github.com/tachyonicbytes/asdf-wasmer) |
 | wasmtime | [aqua:bytecodealliance/wasmtime](https://github.com/bytecodealliance/wasmtime) [asdf:tachyonicbytes/asdf-wasmtime](https://github.com/tachyonicbytes/asdf-wasmtime) |
 | watchexec | [ubi:watchexec/watchexec](https://github.com/watchexec/watchexec) [asdf:nyrst/asdf-watchexec](https://github.com/nyrst/asdf-watchexec) |
-| waypoint | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
+| waypoint | [aqua:hashicorp/waypoint](https://github.com/hashicorp/waypoint) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | weave-gitops | [asdf:deas/asdf-weave-gitops](https://github.com/deas/asdf-weave-gitops) |
 | websocat | [aqua:vi/websocat](https://github.com/vi/websocat) [asdf:bdellegrazie/asdf-websocat](https://github.com/bdellegrazie/asdf-websocat) |
 | wren-cli | [asdf:jtakakura/asdf-wren-cli](https://github.com/jtakakura/asdf-wren-cli) |

@@ -590,6 +590,7 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
             .wrap_err_with(err)?
             .components()
             .skip(opts.strip_components)
+            .filter(|c| c.as_os_str() != ".")
             .collect();
         let path = dest.join(path);
         create_dir_all(path.parent().unwrap()).wrap_err_with(err)?;
@@ -612,6 +613,28 @@ pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
         .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
         .extract(dest)
         .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))
+}
+
+pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
+    debug!(
+        "hdiutil attach -quiet -nobrowse -mountpoint {} {}",
+        dest.display(),
+        archive.display()
+    );
+    let tmp = tempfile::TempDir::new()?;
+    cmd!(
+        "hdiutil",
+        "attach",
+        "-quiet",
+        "-nobrowse",
+        "-mountpoint",
+        tmp.path(),
+        archive.to_path_buf()
+    )
+    .run()?;
+    copy_dir_all(tmp.path(), dest)?;
+    cmd!("hdiutil", "detach", tmp.path()).run()?;
+    Ok(())
 }
 
 #[cfg(windows)]

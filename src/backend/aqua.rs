@@ -225,6 +225,8 @@ impl AquaBackend {
             file::create_dir_all(&install_path)?;
             file::un_bz2(&tarball_path, &bin_path)?;
             file::make_executable(&bin_path)?;
+        } else if format == "dmg" {
+            file::un_dmg(&tarball_path, &install_path)?;
         } else {
             bail!("unsupported format: {}", format);
         }

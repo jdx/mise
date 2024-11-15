@@ -155,8 +155,12 @@ impl AquaPackage {
         let semver_match = |vc| {
             if let Some(caps) = re.captures(vc) {
                 let vc = caps.get(1).unwrap().as_str().replace(' ', "");
-                let req = versions::Requirement::new(&vc).unwrap();
-                req.matches(&v)
+                if let Some(req) = versions::Requirement::new(&vc) {
+                    req.matches(&v)
+                } else {
+                    warn!("invalid semver constraint: {vc}");
+                    false
+                }
             } else if let Some(caps) = re_exact.captures(vc) {
                 let vc = caps.get(1).unwrap().as_str();
                 v.to_string() == vc

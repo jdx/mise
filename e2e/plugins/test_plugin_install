@@ -3,14 +3,14 @@
 cat <<EOF >.tool-versions
 tiny latest
 shfmt latest
-waypoint latest
+zprint latest
 EOF
 
 # install/uninstall multiple
-mise plugin install tiny shfmt waypoint
+mise plugin install tiny shfmt zprint
 assert_contains "mise plugin ls" "tiny"
 assert_contains "mise plugin ls" "shfmt"
-assert_contains "mise plugin ls" "waypoint"
+assert_contains "mise plugin ls" "zprint"
 
 rm -rf "$MISE_DATA_DIR/plugins/tiny"
 mise plugin install https://github.com/mise-plugins/rtx-tiny.git
@@ -22,9 +22,9 @@ rm -rf "$MISE_DATA_DIR/plugins/tiny"
 mise plugin install tiny https://github.com/mise-plugins/rtx-tiny
 assert_contains "mise plugin ls" "tiny"
 
-rm -rf "$MISE_DATA_DIR/plugins/waypoint"
+rm -rf "$MISE_DATA_DIR/plugins/zprint"
 mise plugin install --all
-assert_contains "mise plugin ls" "waypoint"
+assert_contains "mise plugin ls" "zprint"
 
 mise plugin uninstall tiny
 assert_not_contains "mise plugin ls" "tiny"
