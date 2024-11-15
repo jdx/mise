@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use console::style;
 use eyre::{Result, WrapErr};
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
@@ -163,7 +164,7 @@ impl Use {
                 cwd.join(format!("mise.{env}.toml"))
             }
         } else if let Some(p) = &self.path {
-            let from_dir = config_file_from_dir(p);
+            let from_dir = config_file_from_dir(p).absolutize()?.to_path_buf();
             if from_dir.starts_with(&cwd) {
                 from_dir
             } else {
