@@ -35,6 +35,10 @@ dummy = "1.0.0"'
 mise use --rm dummy --path mise.local.toml
 assert "cat mise.local.toml" ""
 
+mise use dummy@1 --path .
+assert "cat mise.toml" '[tools]
+dummy = "1"'
+
 mise use dummy@1
 assert "cat mise.local.toml" '[tools]
 dummy = "1"'
