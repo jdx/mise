@@ -5,7 +5,7 @@
 # or a backend may be disabled via MISE_DISABLE_BACKENDS=ubi
 
 [tools]
-1password-cli.backends = ["asdf:NeoHsu/asdf-1password-cli"]
+1password-cli.backends = ["aqua:1password/cli", "asdf:NeoHsu/asdf-1password-cli"]
 aapt2.backends = ["asdf:ronnnnn/asdf-aapt2"]
 act.backends = ["aqua:nektos/act", "ubi:nektos/act", "asdf:gr1m0h/asdf-act"]
 action-validator.backends = ["aqua:mpalmer/action-validator", "ubi:mpalmer/action-validator", "asdf:mpalmer/action-validator"]

@@ -6,7 +6,7 @@ editLink: false
 
 | Short | Full |
 | ----------- | --------------- |
-| 1password-cli | [asdf:NeoHsu/asdf-1password-cli](https://github.com/NeoHsu/asdf-1password-cli) |
+| 1password-cli | [aqua:1password/cli](https://github.com/1password/cli) [asdf:NeoHsu/asdf-1password-cli](https://github.com/NeoHsu/asdf-1password-cli) |
 | aapt2 | [asdf:ronnnnn/asdf-aapt2](https://github.com/ronnnnn/asdf-aapt2) |
 | act | [aqua:nektos/act](https://github.com/nektos/act) [ubi:nektos/act](https://github.com/nektos/act) [asdf:gr1m0h/asdf-act](https://github.com/gr1m0h/asdf-act) |
 | action-validator | [aqua:mpalmer/action-validator](https://github.com/mpalmer/action-validator) [ubi:mpalmer/action-validator](https://github.com/mpalmer/action-validator) [asdf:mpalmer/action-validator](https://github.com/mpalmer/action-validator) |
