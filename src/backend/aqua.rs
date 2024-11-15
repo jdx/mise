@@ -269,10 +269,12 @@ impl AquaBackend {
 fn validate(pkg: &AquaPackage) -> Result<()> {
     let envs: HashSet<&str> = pkg.supported_envs.iter().map(|s| s.as_str()).collect();
     let os = os();
-    let os_arch = format!("{}-{}", os, arch());
+    let arch = arch();
+    let os_arch = format!("{}-{}", os, arch);
     if !(envs.is_empty()
         || envs.contains("all")
         || envs.contains(os)
+        || envs.contains(arch)
         || envs.contains(os_arch.as_str()))
     {
         bail!("unsupported env: {os_arch}");
