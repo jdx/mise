@@ -101,6 +101,7 @@ impl JavaPlugin {
         pr.set_message(format!("downloading {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr))?;
 
+        pr.set_message(format!("verifying {filename}"));
         hash::ensure_checksum_sha256(&tarball_path, &m.sha256, Some(pr))?;
 
         Ok(tarball_path)
