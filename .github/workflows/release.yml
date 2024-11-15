@@ -296,7 +296,7 @@ jobs:
     if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
       - name: Bump Homebrew formula
-        uses: dawidd6/action-homebrew-bump-formula@v3
+        uses: dawidd6/action-homebrew-bump-formula@v4
         with:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           formula: mise
