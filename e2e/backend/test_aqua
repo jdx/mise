@@ -2,6 +2,11 @@
 
 export MISE_EXPERIMENTAL=1
 
-assert_contains "mise x aqua:BurntSushi/ripgrep@14.0.0 -- rg --version" "ripgrep 14.0.0"
-assert "mise x age@1.2.0 -- age --version" "v1.2.0"
-assert_contains "mise x helm@3.16.3 -- helm version" "v3.16.3"
+test() {
+  assert_contains "mise x $1 -- $2" "$3"
+}
+
+test aqua:BurntSushi/ripgrep@14.0.0 "rg --version" "ripgrep 14.0.0"
+test age@1.2.0 "age --version" "v1.2.0"
+test aqua:helm/helm@3.16.3 "helm version" "v3.16.3"
+test aqua:crate-ci/typos@1.27.3 "typos --version" "typos-cli 1.27.3"
