@@ -41,10 +41,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test-${{ matrix.os }}
-          save-if: ${{ github.ref_name == 'main' }}
       - uses: taiki-e/install-action@v2
         with:
-          tool: nextest,cargo-deny,cargo-msrv,cargo-machete,usage-cli
+          tool: nextest,cargo-deny,cargo-msrv,cargo-machete
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -67,9 +66,10 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: rustup default nightly
+      - uses: Swatinem/rust-cache@v2
         with:
-          { toolchain: nightly, components: "rustfmt, clippy", rustflags: "" }
+          shared-key: nightly
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -92,7 +92,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
-          save-if: ${{ github.ref_name == 'main' && matrix.tranche == 3 }}
+          save-if: ${{ matrix.tranche == 3 }}
       - name: Install build and test dependencies
         run: |
           sudo apt-get update && sudo apt-get install \
@@ -112,9 +112,6 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
-      - run: cargo build --all-features
-      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - run: mise install
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
@@ -128,7 +125,7 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: mise tasks run test:coverage
+          command: ./tasks/test/coverage
       - uses: actions/upload-artifact@v4
         with:
           name: coverage-${{matrix.tranche}}.lcov
@@ -162,7 +159,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test-windows-latest
-          save-if: ${{ github.ref_name == 'main' }}
       # TODO: enable when we can remove continue-on-error:
       # - name: cargo test
       #   uses: nick-fields/retry@v3
@@ -171,9 +167,11 @@ jobs:
       #     retry_wait_seconds: 30
       #     max_attempts: 2
       #     command: cargo test
+      - run: |
+          cargo build
+          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - run: cargo test
         continue-on-error: true
-      - run: cargo build
   windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 30
