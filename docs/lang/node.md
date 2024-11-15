@@ -70,7 +70,7 @@ for an explanation.
 ## Unofficial Builds
 
 Nodejs.org offers a set of [unofficial builds](https://unofficial-builds.nodejs.org/) which are
-compatible with some platforms are not supported by the official binaries. These are a nice alternative to
+compatible with some platforms that are not supported by the official binaries. These are a nice alternative to
 compiling from source for these platforms.
 
 To use, first set the mirror url to point to the unofficial builds:
