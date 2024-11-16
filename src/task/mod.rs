@@ -172,9 +172,9 @@ impl Task {
     pub fn resolve_depends<'a>(
         &self,
         config: &'a Config,
-        tasks_to_run: &[Task],
+        tasks_to_run: &[&Task],
     ) -> Result<Vec<&'a Task>> {
-        let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
+        let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().copied().collect();
         let tasks = config.tasks_with_aliases()?;
         self.wait_for
             .iter()

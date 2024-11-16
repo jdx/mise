@@ -776,6 +776,7 @@ updatecli.backends = ["aqua:updatecli/updatecli", "asdf:updatecli/asdf-updatecli
 upt.backends = ["asdf:ORCID/asdf-upt"]
 upx.backends = ["asdf:jimmidyson/asdf-upx"]
 usage.backends = ["ubi:jdx/usage", "asdf:jdx/mise-usage"]
+usage.os = ["linux", "macos"]
 usql.backends = ["aqua:xo/usql", "asdf:itspngu/asdf-usql"]
 uv.backends = ["aqua:astral-sh/uv", "asdf:asdf-community/asdf-uv"]
 v.backends = ["asdf:jthegedus/asdf-v"]

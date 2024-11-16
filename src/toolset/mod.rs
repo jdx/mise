@@ -152,8 +152,14 @@ impl Toolset {
 
     pub fn list_missing_plugins(&self) -> Vec<String> {
         self.versions
-            .keys()
-            .filter(|ba| ba.is_os_supported())
+            .iter()
+            .filter(|(_, tvl)| {
+                tvl.versions
+                    .first()
+                    .map(|tv| tv.request.is_os_supported())
+                    .unwrap_or_default()
+            })
+            .map(|(ba, _)| ba)
             .flat_map(|ba| ba.backend())
             .filter(|b| b.plugin().is_some_and(|p| !p.is_installed()))
             .map(|p| p.id().into())
@@ -234,7 +240,8 @@ impl Toolset {
                                     tv: tv.clone(),
                                     force: opts.force,
                                 };
-                                t.install_version(ctx)?;
+                                t.install_version(ctx)
+                                    .wrap_err_with(|| format!("failed to install {tv}"))?;
                                 installed.push(tv);
                             }
                             installing.lock().unwrap().remove(t.id());
@@ -289,7 +296,7 @@ impl Toolset {
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
         self.list_current_versions()
             .into_iter()
-            .filter(|(p, tv)| tv.ba().is_os_supported() && !p.is_version_installed(tv, true))
+            .filter(|(p, tv)| tv.request.is_os_supported() && !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
             .collect()
     }
@@ -349,6 +356,7 @@ impl Toolset {
                                 backend: p.ba().clone(),
                                 ref_: r.to_string(),
                                 ref_type: ref_type.to_string(),
+                                os: v.request.os().clone(),
                                 options: v.request.options().clone(),
                                 source: v.request.source().clone(),
                             };
@@ -425,12 +433,14 @@ impl Toolset {
                                     version: _version,
                                     options,
                                     source,
+                                    os,
                                 } => {
                                     out.tool_request = ToolRequest::Version {
                                         backend,
                                         options,
                                         source,
                                         version: out.bump.clone().unwrap(),
+                                        os,
                                     };
                                 }
                                 _ => {
@@ -473,7 +483,7 @@ impl Toolset {
         let entries = self
             .list_current_installed_versions()
             .into_par_iter()
-            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System(..)))
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
             .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
                 Ok(env) => env.into_iter().collect(),
                 Err(e) => {
@@ -506,7 +516,7 @@ impl Toolset {
     pub fn list_paths(&self) -> Vec<PathBuf> {
         self.list_current_installed_versions()
             .into_par_iter()
-            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System(..)))
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
             .flat_map(|(p, tv)| {
                 p.list_bin_paths(&tv).unwrap_or_else(|e| {
                     warn!("Error listing bin paths for {tv}: {e:#}");

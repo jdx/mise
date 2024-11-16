@@ -66,7 +66,7 @@ impl ToolVersion {
 
     pub fn install_path(&self) -> PathBuf {
         let pathname = match &self.request {
-            ToolRequest::Path(_, p, ..) => p.to_string_lossy().to_string(),
+            ToolRequest::Path { path: p, .. } => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
         let path = self.ba().installs_path.join(pathname);
@@ -121,8 +121,8 @@ impl ToolVersion {
             ToolRequest::Prefix { .. } => self.version.to_string(),
             ToolRequest::Sub { .. } => self.version.to_string(),
             ToolRequest::Ref { ref_: r, .. } => format!("ref-{}", r),
-            ToolRequest::Path(_, p, ..) => format!("path-{}", hash_to_str(p)),
-            ToolRequest::System(..) => "system".to_string(),
+            ToolRequest::Path { path: p, .. } => format!("path-{}", hash_to_str(p)),
+            ToolRequest::System { .. } => "system".to_string(),
         }
         .replace([':', '/'], "-")
     }
@@ -226,6 +226,7 @@ impl ToolVersion {
             backend: tr.ba().clone(),
             ref_,
             ref_type,
+            os: None,
             options: opts.clone(),
             source: tr.source().clone(),
         };
@@ -235,7 +236,12 @@ impl ToolVersion {
 
     fn resolve_path(path: PathBuf, tr: &ToolRequest) -> Result<ToolVersion> {
         let path = fs::canonicalize(path)?;
-        let request = ToolRequest::Path(tr.ba().clone(), path, tr.source().clone());
+        let request = ToolRequest::Path {
+            backend: tr.ba().clone(),
+            path,
+            source: tr.source().clone(),
+            os: None,
+        };
         let version = request.version();
         Ok(Self::new(request, version))
     }

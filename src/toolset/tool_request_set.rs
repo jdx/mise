@@ -43,8 +43,7 @@ impl ToolRequestSet {
         self.tools
             .values()
             .flatten()
-            .filter(|tr| tr.ba().is_os_supported())
-            .filter(|tvr| !tvr.is_installed())
+            .filter(|tr| tr.is_os_supported() && !tr.is_installed())
             .collect()
     }
 
