@@ -224,6 +224,11 @@ impl AquaPackage {
             let mut ctx = HashMap::default();
             ctx.insert("ARCH".to_string(), "arm64".to_string());
             strs.insert(self.parse_aqua_str(&self.asset, v, &ctx));
+        } else if cfg!(windows) {
+            strs.insert(format!(
+                "{}.exe",
+                self.parse_aqua_str(&self.asset, v, &Default::default())
+            ));
         }
         strs
     }
