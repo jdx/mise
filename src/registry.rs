@@ -19,20 +19,6 @@ pub struct RegistryTool {
     pub os: &'static [&'static str],
 }
 
-pub static FULL_REGISTRY: Lazy<BTreeMap<&str, RegistryTool>> = Lazy::new(|| {
-    _REGISTRY
-        .iter()
-        .map(|(short, backends, aliases, test, os)| {
-            let tool = RegistryTool {
-                backends: backends.to_vec(),
-                aliases,
-                test,
-                os,
-            };
-            (*short, tool)
-        })
-        .collect()
-});
 // a rust representation of registry.toml
 pub static REGISTRY: Lazy<BTreeMap<&str, RegistryTool>> = Lazy::new(|| {
     let mut backend_types = BackendType::iter()
@@ -64,7 +50,7 @@ pub static REGISTRY: Lazy<BTreeMap<&str, RegistryTool>> = Lazy::new(|| {
                 .collect();
             (*short, tr)
         })
-        .filter(|(_, tool)| !tool.backends.is_empty())
+        .filter(|(_, tr)| !tr.backends.is_empty())
         .collect();
 
     let aliased = registry

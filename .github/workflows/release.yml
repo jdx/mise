@@ -197,9 +197,9 @@ jobs:
           unzip -d $env:USERPROFILE dist\mise-v$version-windows-x64.zip
           Add-Content $env:GITHUB_PATH "$env:USERPROFILE/mise/bin"
       - run: mise install
-        continue-on-error: ${{matrix.os == 'windows-latest' && true || false}}
+        continue-on-error: ${{matrix.os == 'windows-latest' }}
       - run: mise test-tool --all
-        continue-on-error: ${{matrix.os == 'windows-latest' && true || false}}
+        continue-on-error: ${{matrix.os == 'windows-latest' }}
   rpm:
     runs-on: ubuntu-latest
     needs: [build-tarball]

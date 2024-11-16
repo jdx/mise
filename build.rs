@@ -20,8 +20,7 @@ fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
     let mut lines = vec![r#"
-#[allow(clippy::type_complexity)]
-const _REGISTRY: &[(&str, &[&str], &[&str], Option<(&str, &str)>, &[&str])] = &["#
+pub static FULL_REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> = Lazy::new(|| ["#
         .to_string()];
 
     let registry: toml::Table = fs::read_to_string("registry.toml")
@@ -80,8 +79,8 @@ const _REGISTRY: &[(&str, &[&str], &[&str], Option<(&str, &str)>, &[&str])] = &[
             })
             .unwrap_or_default();
         lines.push(format!(
-            r#"    ("{short}", &["{fulls}"], &[{aliases}], {test}, &[{os}]),"#,
-            fulls = fulls.join("\", \""),
+            r#"    ("{short}", RegistryTool{{backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}]}}),"#,
+            backends = fulls.join("\", \""),
             aliases = aliases
                 .iter()
                 .map(|a| format!("\"{a}\""))
@@ -97,7 +96,7 @@ const _REGISTRY: &[(&str, &[&str], &[&str], Option<(&str, &str)>, &[&str])] = &[
                 .join(", "),
         ));
     }
-    lines.push(r#"];"#.to_string());
+    lines.push(r#"].into());"#.to_string());
 
     fs::write(&dest_path, lines.join("\n")).unwrap();
 }
