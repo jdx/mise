@@ -123,7 +123,6 @@ pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
         .or_else(|| current_exe().ok())
         .unwrap_or_else(|| "mise".into())
 });
-#[cfg(feature = "timings")]
 pub static MISE_TIMINGS: Lazy<Option<String>> = Lazy::new(|| var("MISE_TIMINGS").ok());
 pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));

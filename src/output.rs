@@ -1,5 +1,5 @@
-#[cfg(feature = "timings")]
-use crate::ui::style;
+use crate::env;
+use crate::ui::{style, time};
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -98,8 +98,10 @@ macro_rules! info {
     }};
 }
 
-#[cfg(feature = "timings")]
 pub fn get_time_diff(module: &str) -> String {
+    if env::MISE_TIMINGS.is_none() {
+        return "".to_string();
+    }
     static START: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
     static PREV: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
     let now = std::time::Instant::now();
@@ -110,13 +112,12 @@ pub fn get_time_diff(module: &str) -> String {
     let mut prev = PREV.lock().unwrap();
     let diff = now.duration_since(prev.unwrap());
     *prev = Some(now);
-    let diff_str = if crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s == "2") {
-        let relative = crate::ui::time::format_duration(diff);
-        let from_start =
-            crate::ui::time::format_duration(now.duration_since(START.lock().unwrap().unwrap()));
+    let diff_str = if env::MISE_TIMINGS.as_ref().is_some_and(|s| s == "2") {
+        let relative = time::format_duration(diff);
+        let from_start = time::format_duration(now.duration_since(START.lock().unwrap().unwrap()));
         format!("{relative} {from_start}")
     } else {
-        crate::ui::time::format_duration(diff)
+        time::format_duration(diff)
     };
     let thread_id = crate::logger::thread_id();
     let out = format!("[TIME] {thread_id} {module} {diff_str}")
@@ -141,33 +142,23 @@ pub fn get_time_diff(module: &str) -> String {
 }
 
 #[macro_export]
-#[cfg(feature = "timings")]
 macro_rules! time {
-    () => {{
-        if $crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s != "0") {
-            eprintln!("{}", $crate::output::get_time_diff(module_path!()));
-        }
-    }};
     ($fn:expr) => {{
         if $crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s != "0") {
             let module = format!("{}::{}", module_path!(), format!($fn));
             eprintln!("{}", $crate::output::get_time_diff(&module));
+        } else {
+            trace!($fn);
         }
     }};
     ($fn:expr, $($arg:tt)+) => {{
         if $crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s != "0") {
             let module = format!("{}::{}", module_path!(), format!($fn, $($arg)+));
             eprintln!("{}", $crate::output::get_time_diff(&module));
+        } else {
+            trace!($fn, $($arg)+);
         }
     }};
-}
-
-#[macro_export]
-#[cfg(not(feature = "timings"))]
-macro_rules! time {
-    () => {{}};
-    ($fn:expr) => {{}};
-    ($fn:expr, $($arg:tt)+) => {{}};
 }
 
 #[macro_export]

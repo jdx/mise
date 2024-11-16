@@ -64,7 +64,7 @@ depends = ["render:*"]
 
 [snapshots]
 description = "update test snapshots"
-run = "cargo insta test --accept --unreferenced delete"
+run = "cargo insta test --all-features --accept --unreferenced delete"
 
 [test]
 description = "run all tests"
