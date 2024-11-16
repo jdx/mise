@@ -1,5 +1,38 @@
 # Changelog
 
+## [2024.11.14](https://github.com/jdx/mise/compare/v2024.11.13..v2024.11.14) - 2024-11-16
+
+### 🚀 Features
+
+- improve progress bar during tarball extraction by [@jdx](https://github.com/jdx) in [#3030](https://github.com/jdx/mise/pull/3030)
+- added more aqua tools by [@jdx](https://github.com/jdx) in [#3031](https://github.com/jdx/mise/pull/3031)
+- added `wait_for` option for tasks by [@jdx](https://github.com/jdx) in [#3046](https://github.com/jdx/mise/pull/3046)
+- added `os` option to mise.toml by [@jdx](https://github.com/jdx) in [#3047](https://github.com/jdx/mise/pull/3047)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** allow environment validation for arch-only matches by [@risu729](https://github.com/risu729) in [#3037](https://github.com/jdx/mise/pull/3037)
+- **(java)** show verifying message on progress bar by [@jdx](https://github.com/jdx) in [8f8fc64](https://github.com/jdx/mise/commit/8f8fc64e6ca57fd24ac3ee6cd9e4a506eeca51c2)
+- mise use -p . panics by [@roele](https://github.com/roele) in [#3038](https://github.com/jdx/mise/pull/3038)
+- some bugs with aqua by [@jdx](https://github.com/jdx) in [#3041](https://github.com/jdx/mise/pull/3041)
+- sort files returned by ls by [@jdx](https://github.com/jdx) in [#3043](https://github.com/jdx/mise/pull/3043)
+- add os opts to shellcheck by [@jdx](https://github.com/jdx) in [#3045](https://github.com/jdx/mise/pull/3045)
+
+### 🧪 Testing
+
+- improve coverage perf by [@jdx](https://github.com/jdx) in [#3042](https://github.com/jdx/mise/pull/3042)
+- added `mise test-tool` to test tools from registry by [@jdx](https://github.com/jdx) in [#3039](https://github.com/jdx/mise/pull/3039)
+
+### 🔍 Other Changes
+
+- Add missing word to node.md by [@AlecRust](https://github.com/AlecRust) in [#3036](https://github.com/jdx/mise/pull/3036)
+- remove unneeded "timings" feature by [@jdx](https://github.com/jdx) in [#3044](https://github.com/jdx/mise/pull/3044)
+- increase windows-unit timeout by [@jdx](https://github.com/jdx) in [5fa3530](https://github.com/jdx/mise/commit/5fa3530c2bde75a87e9f6c8c5f16ef55f666a1c8)
+
+### 📦️ Dependency Updates
+
+- update dawidd6/action-homebrew-bump-formula action to v4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#3034](https://github.com/jdx/mise/pull/3034)
+
 ## [2024.11.13](https://github.com/jdx/mise/compare/v2024.11.12..v2024.11.13) - 2024-11-14
 
 ### 🚀 Features
