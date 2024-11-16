@@ -5,7 +5,8 @@
 # or a backend may be disabled via MISE_DISABLE_BACKENDS=ubi
 
 [tools]
-1password-cli.backends = ["aqua:1password/cli", "asdf:NeoHsu/asdf-1password-cli"]
+# ls-remote not available for aqua
+1password-cli.backends = ["asdf:NeoHsu/asdf-1password-cli", "aqua:1password/cli"]
 1password-cli.test = ["op --version", "{{version}}"]
 aapt2.backends = ["asdf:ronnnnn/asdf-aapt2"]
 aapt2.test = ["aapt2 version", "Android Asset Packaging Tool (aapt)"]
