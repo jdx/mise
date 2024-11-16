@@ -176,6 +176,7 @@ pub trait Backend: Debug + Send + Sync {
         let mut deps: IndexSet<_> = self
             .get_dependencies(tvr)?
             .into_iter()
+            .filter(|ba| self.ba() != ba) // prevent infinite loop
             .flat_map(|ba| {
                 let short = ba.short.clone();
                 [ba].into_iter().chain(
