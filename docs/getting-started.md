@@ -1,6 +1,6 @@
 # Getting Started
 
-This will show you how to install mise and get started with it. This is a suitatable way when using an interactive shell like `bash`, `zsh`, or `fish`.
+This will show you how to install mise and get started with it. This is a suitable way when using an interactive shell like `bash`, `zsh`, or `fish`.
 
 ## 1. Install `mise` CLI
 
