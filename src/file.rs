@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
@@ -257,8 +257,8 @@ pub fn dir_subdirs(dir: &Path) -> Result<Vec<String>> {
     Ok(output)
 }
 
-pub fn ls(dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut output = vec![];
+pub fn ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
+    let mut output = Default::default();
 
     if !dir.is_dir() {
         return Ok(output);
@@ -266,15 +266,15 @@ pub fn ls(dir: &Path) -> Result<Vec<PathBuf>> {
 
     for entry in dir.read_dir()? {
         let entry = entry?;
-        output.push(entry.path());
+        output.insert(entry.path());
     }
 
     Ok(output)
 }
 
-pub fn recursive_ls(dir: &Path) -> Result<Vec<PathBuf>> {
+pub fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
     if !dir.is_dir() {
-        return Ok(vec![]);
+        return Ok(Default::default());
     }
 
     Ok(WalkDir::new(dir)
