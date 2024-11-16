@@ -62,6 +62,7 @@ pub struct MiseTomlToolList(Vec<MiseTomlTool>);
 #[derive(Debug, Clone)]
 pub struct MiseTomlTool {
     pub tt: ToolVersionType,
+    pub os: Option<Vec<String>>,
     pub options: Option<ToolVersionOptions>,
 }
 
@@ -313,6 +314,7 @@ impl ConfigFile for MiseToml {
             .iter()
             .map(|(v, opts)| MiseTomlTool {
                 tt: ToolVersionType::Version(v.clone()),
+                os: None, // TODO: use existing os
                 options: if !output_empty_opts(opts) {
                     Some(opts.clone())
                 } else {
@@ -391,16 +393,16 @@ impl ConfigFile for MiseToml {
                     trust_check(&self.path)?;
                 }
                 let version = self.parse_template(&tool.tt.to_string())?;
-                if let Some(mut options) = tool.options.clone() {
+                let mut tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.values_mut() {
                         *v = self.parse_template(v)?;
                     }
-                    let tvr = ToolRequest::new_opts(fa.clone(), &version, options, source.clone())?;
-                    trs.add_version(tvr, &source);
+                    ToolRequest::new_opts(fa.clone(), &version, options, source.clone())?
                 } else {
-                    let tvr = ToolRequest::new(fa.clone(), &version, source.clone())?;
-                    trs.add_version(tvr, &source);
-                }
+                    ToolRequest::new(fa.clone(), &version, source.clone())?
+                };
+                tvr = tvr.with_os(tool.os.clone());
+                trs.add_version(tvr, &source);
             }
         }
         Ok(trs)
@@ -759,7 +761,11 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 let tt: ToolVersionType = v
                     .parse()
                     .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
-                Ok(MiseTomlToolList(vec![MiseTomlTool { tt, options: None }]))
+                Ok(MiseTomlToolList(vec![MiseTomlTool {
+                    tt,
+                    os: None,
+                    options: None,
+                }]))
             }
 
             fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
@@ -773,22 +779,44 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 Ok(MiseTomlToolList(tools))
             }
 
-            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
             {
-                let mut options: BTreeMap<String, String> =
-                    de::Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))?;
-                let tt: ToolVersionType = options
-                    .remove("version")
-                    .or_else(|| options.remove("path").map(|p| format!("path:{p}")))
-                    .or_else(|| options.remove("prefix").map(|p| format!("prefix:{p}")))
-                    .or_else(|| options.remove("ref").map(|p| format!("ref:{p}")))
-                    .ok_or_else(|| de::Error::custom("missing version"))?
-                    .parse()
-                    .map_err(de::Error::custom)?;
+                let mut options: BTreeMap<String, String> = Default::default();
+                let mut os: Option<Vec<String>> = None;
+                let mut tt = ToolVersionType::System;
+                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
+                    match k.as_str() {
+                        "version" => {
+                            tt = v.as_str().unwrap().parse().map_err(de::Error::custom)?;
+                        }
+                        "path" | "prefix" | "ref" => {
+                            tt = format!("{k}:{}", v.as_str().unwrap())
+                                .parse()
+                                .map_err(de::Error::custom)?;
+                        }
+                        "os" => match v {
+                            toml::Value::Array(s) => {
+                                os = Some(
+                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
+                                );
+                            }
+                            toml::Value::String(s) => {
+                                options.insert(k, s);
+                            }
+                            _ => {
+                                return Err(de::Error::custom("os must be a string or array"));
+                            }
+                        },
+                        _ => {
+                            options.insert(k, v.as_str().unwrap().to_string());
+                        }
+                    }
+                }
                 Ok(MiseTomlToolList(vec![MiseTomlTool {
                     tt,
+                    os,
                     options: Some(options),
                 }]))
             }
@@ -818,25 +846,51 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 let tt: ToolVersionType = v
                     .parse()
                     .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
-                Ok(MiseTomlTool { tt, options: None })
+                Ok(MiseTomlTool {
+                    tt,
+                    os: None,
+                    options: None,
+                })
             }
 
-            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
             {
-                let mut options: BTreeMap<String, String> =
-                    de::Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))?;
-                let tt: ToolVersionType = options
-                    .remove("version")
-                    .or_else(|| options.remove("path").map(|p| format!("path:{p}")))
-                    .or_else(|| options.remove("prefix").map(|p| format!("prefix:{p}")))
-                    .or_else(|| options.remove("ref").map(|p| format!("ref:{p}")))
-                    .ok_or_else(|| de::Error::custom("missing version"))?
-                    .parse()
-                    .map_err(de::Error::custom)?;
+                let mut options: BTreeMap<String, String> = Default::default();
+                let mut os: Option<Vec<String>> = None;
+                let mut tt = ToolVersionType::System;
+                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
+                    match k.as_str() {
+                        "version" => {
+                            tt = v.as_str().unwrap().parse().map_err(de::Error::custom)?;
+                        }
+                        "path" | "prefix" | "ref" => {
+                            tt = format!("{k}:{}", v.as_str().unwrap())
+                                .parse()
+                                .map_err(de::Error::custom)?;
+                        }
+                        "os" => match v {
+                            toml::Value::Array(s) => {
+                                os = Some(
+                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
+                                );
+                            }
+                            toml::Value::String(s) => {
+                                options.insert(k, s);
+                            }
+                            _ => {
+                                return Err(de::Error::custom("os must be a string or array"));
+                            }
+                        },
+                        _ => {
+                            options.insert(k, v.as_str().unwrap().to_string());
+                        }
+                    }
+                }
                 Ok(MiseTomlTool {
                     tt,
+                    os,
                     options: Some(options),
                 })
             }

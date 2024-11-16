@@ -16,6 +16,7 @@ Toolset {
                     source: MiseToml(
                         "/tmp/.mise.toml",
                     ),
+                    os: None,
                 },
                 Version {
                     backend: BackendArg("node" -> "core:node"),
@@ -24,6 +25,7 @@ Toolset {
                     source: MiseToml(
                         "/tmp/.mise.toml",
                     ),
+                    os: None,
                 },
             ],
             source: MiseToml(

@@ -37,6 +37,4 @@ jobs:
       - run: npm install
       - run: mise run render
       - run: mise run lint-fix
-      - run: mise run snapshots
       - uses: autofix-ci/action@v1.3.1
-        if: ${{ always() }}

@@ -154,13 +154,11 @@ User to run as
 
 ## `render:completions`
 
-- Depends: build, render:usage
+- Depends: build
 
 - **Usage**: `render:completions`
 
 ## `render:fig`
-
-- Depends: build, render:usage
 
 - **Usage**: `render:fig`
 

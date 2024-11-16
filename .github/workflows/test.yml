@@ -174,7 +174,6 @@ jobs:
       - run: cargo test
         continue-on-error: true
       - run: mise install
-        continue-on-error: true
       - run: mise test-tool --all
         continue-on-error: true
   windows-e2e:

@@ -193,7 +193,11 @@ pub trait Backend: Debug + Send + Sync {
             .collect::<Vec<ABackend>>();
         for dep in dep_backends {
             // TODO: pass the right tvr
-            let tvr = ToolRequest::System(dep.id().into(), ToolSource::Unknown);
+            let tvr = ToolRequest::System {
+                backend: dep.id().into(),
+                source: ToolSource::Unknown,
+                os: None,
+            };
             deps.extend(dep.get_all_dependencies(&tvr)?);
         }
         Ok(deps.into_iter().collect())
@@ -242,7 +246,7 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn is_version_installed(&self, tv: &ToolVersion, check_symlink: bool) -> bool {
         match tv.request {
-            ToolRequest::System(..) => true,
+            ToolRequest::System { .. } => true,
             _ => {
                 let check_path = |install_path: &Path| {
                     let is_installed = install_path.exists();
@@ -338,7 +342,11 @@ pub trait Backend: Debug + Send + Sync {
 
     fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
         let deps = self
-            .get_all_dependencies(&ToolRequest::System(self.id().into(), ToolSource::Unknown))?
+            .get_all_dependencies(&ToolRequest::System {
+                backend: self.id().into(),
+                source: ToolSource::Unknown,
+                os: None,
+            })?
             .into_iter()
             .collect::<HashSet<_>>();
         if !deps.is_empty() {
@@ -393,11 +401,7 @@ pub trait Backend: Debug + Send + Sync {
 
         if let Err(e) = self.install_version_impl(&ctx) {
             self.cleanup_install_dirs_on_error(&ctx.tv);
-            return Err(e.wrap_err(format!(
-                "Failed to install {}@{}",
-                self.id(),
-                ctx.tv.version
-            )));
+            return Err(e);
         }
 
         self.write_backend_meta()?;
@@ -474,7 +478,7 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
         match tv.request {
-            ToolRequest::System(..) => Ok(vec![]),
+            ToolRequest::System { .. } => Ok(vec![]),
             _ => Ok(vec![tv.install_path().join("bin")]),
         }
     }
@@ -494,9 +498,21 @@ pub trait Backend: Debug + Send + Sync {
             .into_iter()
             .filter(|p| p.parent().is_some());
         for bin_path in bin_paths {
-            let bin_path = bin_path.join(bin_name);
-            if bin_path.exists() {
-                return Ok(Some(bin_path));
+            let paths_with_ext = if cfg!(windows) {
+                vec![
+                    bin_path.clone(),
+                    bin_path.join(bin_name).with_extension("exe"),
+                    bin_path.join(bin_name).with_extension("cmd"),
+                    bin_path.join(bin_name).with_extension("bat"),
+                    bin_path.join(bin_name).with_extension("ps1"),
+                ]
+            } else {
+                vec![bin_path.join(bin_name)]
+            };
+            for bin_path in paths_with_ext {
+                if bin_path.exists() && file::is_executable(&bin_path) {
+                    return Ok(Some(bin_path));
+                }
             }
         }
         Ok(None)
@@ -531,10 +547,11 @@ pub trait Backend: Debug + Send + Sync {
     fn dependency_toolset(&self) -> eyre::Result<Toolset> {
         let config = Config::get();
         let dependencies = self
-            .get_all_dependencies(&ToolRequest::System(
-                self.name().into(),
-                ToolSource::Unknown,
-            ))?
+            .get_all_dependencies(&ToolRequest::System {
+                backend: self.name().into(),
+                source: ToolSource::Unknown,
+                os: None,
+            })?
             .into_iter()
             .collect();
         let mut ts: Toolset = config
