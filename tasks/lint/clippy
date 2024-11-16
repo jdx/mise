@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cargo clippy -- -Dwarnings
+cargo clippy --all-features -- -Dwarnings

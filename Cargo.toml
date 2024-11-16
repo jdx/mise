@@ -168,7 +168,6 @@ test-log = "0.2"
 
 [features]
 default = ["native-tls", "vfox/vendored-lua"]
-timings = []
 native-tls = ["reqwest/native-tls", "ubi/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls", "ubi/rustls-tls"]
 rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls", "ubi/rustls-tls-native-roots"]
