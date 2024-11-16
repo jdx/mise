@@ -1,5 +1,19 @@
 # Changelog
 
+## [2024.11.15](https://github.com/jdx/mise/compare/v2024.11.14..v2024.11.15) - 2024-11-16
+
+### 🐛 Bug Fixes
+
+- bug with task dependencies by [@jdx](https://github.com/jdx) in [#3049](https://github.com/jdx/mise/pull/3049)
+- bug with task dependencies by [@jdx](https://github.com/jdx) in [235000c](https://github.com/jdx/mise/commit/235000c33298fdfde6125e7f70fba4e7bf01cb4d)
+- disable 1password on non-windows by [@jdx](https://github.com/jdx) in [6c584e0](https://github.com/jdx/mise/commit/6c584e0e9000a104fc040ff5b3565015d9184b28)
+- disable 1password on non-windows by [@jdx](https://github.com/jdx) in [#3051](https://github.com/jdx/mise/pull/3051)
+- disable_backends on windows by [@jdx](https://github.com/jdx) in [#3052](https://github.com/jdx/mise/pull/3052)
+
+### 🔍 Other Changes
+
+- set GITHUB_TOKEN in release-plz by [@jdx](https://github.com/jdx) in [b02c044](https://github.com/jdx/mise/commit/b02c0440aa35d9a43defb540671c21c577f92244)
+
 ## [2024.11.14](https://github.com/jdx/mise/compare/v2024.11.13..v2024.11.14) - 2024-11-16
 
 ### 🚀 Features
@@ -22,6 +36,7 @@
 
 - improve coverage perf by [@jdx](https://github.com/jdx) in [#3042](https://github.com/jdx/mise/pull/3042)
 - added `mise test-tool` to test tools from registry by [@jdx](https://github.com/jdx) in [#3039](https://github.com/jdx/mise/pull/3039)
+- remove extra rustfmt check by [@jdx](https://github.com/jdx) in [d6cfd25](https://github.com/jdx/mise/commit/d6cfd2586cc2eb827bcb85ab354c7047158f0574)
 
 ### 🔍 Other Changes
 
