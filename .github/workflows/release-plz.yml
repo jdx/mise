@@ -20,6 +20,7 @@ env:
   NPM_CONFIG_FUND: false
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
+  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
 
 jobs:
   release-plz:
@@ -46,5 +47,4 @@ jobs:
       - run: mise install
       - run: mise run release-plz
         env:
-          GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
