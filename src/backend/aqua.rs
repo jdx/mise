@@ -272,7 +272,7 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
     let envs: HashSet<&str> = pkg.supported_envs.iter().map(|s| s.as_str()).collect();
     let os = os();
     let arch = arch();
-    let os_arch = format!("{}-{}", os, arch);
+    let os_arch = format!("{}/{}", os, arch);
     if !(envs.is_empty()
         || envs.contains("all")
         || envs.contains(os)
