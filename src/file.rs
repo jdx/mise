@@ -274,7 +274,7 @@ pub fn ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
 
 pub fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
     if !dir.is_dir() {
-        return Ok(Default::default())
+        return Ok(Default::default());
     }
 
     Ok(WalkDir::new(dir)
