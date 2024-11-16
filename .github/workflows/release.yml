@@ -199,6 +199,7 @@ jobs:
       - run: mise install
         continue-on-error: ${{matrix.os == 'windows-latest' }}
       - run: mise test-tool --all
+        env: { MISE_USE_VERSIONS_HOST: 0, MISE_EXPERIMENTAL: 1 }
         continue-on-error: ${{matrix.os == 'windows-latest' }}
   rpm:
     runs-on: ubuntu-latest
