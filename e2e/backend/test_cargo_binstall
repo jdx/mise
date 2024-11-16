@@ -2,6 +2,17 @@
 require_cmd cargo
 
 export MISE_CARGO_BINSTALL=1
+echo "tools.cargo-binstall = 'latest'" >mise.toml
+mise i
 assert "mise x cargo:eza@0.18.24 -- eza -v" "eza - A modern, maintained replacement for ls
 v0.18.24 [+git]
 https://github.com/eza-community/eza"
+
+export MISE_CARGO_BINSTALL_ONLY=1
+cat >mise.toml <<EOF
+tools.cargo-binstall = "latest"
+tools."cargo:cargo-show" = "latest"
+EOF
+
+mise i
+mise uninstall cargo:cargo-show cargo-binstall

@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::thread::sleep;
-use std::time::Duration;
 use std::{panic, thread};
 
 use crate::backend::Backend;
@@ -209,30 +207,17 @@ impl Toolset {
             true => 1,
             false => opts.jobs.unwrap_or(SETTINGS.jobs),
         };
-        let installing: HashSet<String> = HashSet::new();
-        let installing = Arc::new(Mutex::new(installing));
         let installed: Vec<ToolVersion> = thread::scope(|s| {
             #[allow(clippy::map_collect_result_unit)]
             (0..jobs)
                 .map(|_| {
                     let queue = queue.clone();
-                    let installing = installing.clone();
                     let ts = &*self;
                     s.spawn(move || {
                         let next_job = || queue.lock().unwrap().pop();
                         let mut installed = vec![];
                         while let Some((t, versions)) = next_job() {
-                            installing.lock().unwrap().insert(t.id().into());
                             for tr in versions {
-                                // TODO: this logic should be able to be removed now I think
-                                for dep in t.get_all_dependencies(&tr)? {
-                                    while installing.lock().unwrap().contains(&dep.to_string()) {
-                                        trace!(
-                                        "{tr} waiting for dependency {dep} to finish installing"
-                                    );
-                                        sleep(Duration::from_millis(100));
-                                    }
-                                }
                                 let tv = tr.resolve(&opts.resolve_options)?;
                                 let ctx = InstallContext {
                                     ts,
@@ -244,7 +229,6 @@ impl Toolset {
                                     .wrap_err_with(|| format!("failed to install {tv}"))?;
                                 installed.push(tv);
                             }
-                            installing.lock().unwrap().remove(t.id());
                         }
                         Ok(installed)
                     })
@@ -674,18 +658,20 @@ impl From<ToolRequestSet> for Toolset {
 }
 
 fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequest>> {
+    // reverse maps potential shorts like "cargo-binstall" for "cargo:cargo-binstall"
     let versions_hash = requests
         .iter()
-        .map(|tr| tr.ba().short.to_string())
+        .flat_map(|tr| tr.ba().all_fulls())
         .collect::<HashSet<_>>();
     let leaves = requests
         .iter()
         .map(|tr| {
-            match tr
-                .dependencies()?
-                .iter()
-                .all(|dep| !versions_hash.contains(dep))
-            {
+            match tr.dependencies()?.iter().all(|dep| {
+                // dep is a dependency of tr so if it is in versions_hash (meaning it's also being installed) then it is not a leaf node
+                !dep.all_fulls()
+                    .iter()
+                    .any(|full| versions_hash.contains(full))
+            }) {
                 true => Ok(Some(tr)),
                 false => Ok(None),
             }

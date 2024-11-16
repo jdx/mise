@@ -43,7 +43,7 @@ impl Uninstall {
             .into_iter()
             .unique_by(|(_, tv)| (tv.request.ba().short.clone(), tv.version.clone()))
             .collect::<Vec<_>>();
-        if !self.all && tool_versions.len() > 1 {
+        if !self.all && tool_versions.len() > self.installed_tool.len() {
             bail!("multiple tools specified, use --all to uninstall all versions");
         }
 
