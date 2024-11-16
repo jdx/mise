@@ -628,7 +628,7 @@ impl Toolset {
     }
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
-        !ba.is_os_supported() || SETTINGS.disable_tools.contains(&ba.short)
+        !ba.is_os_supported() || SETTINGS.disable_tools().contains(&ba.short)
     }
 }
 

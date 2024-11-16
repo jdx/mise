@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
 
 use indexmap::IndexMap;
@@ -111,14 +111,14 @@ pub struct ToolRequestSetBuilder {
     /// default to latest version if no version is specified (for `mise x`)
     default_to_latest: bool,
     /// tools which will be disabled
-    disable_tools: Vec<BackendArg>,
+    disable_tools: BTreeSet<BackendArg>,
 }
 
 impl ToolRequestSetBuilder {
     pub fn new() -> Self {
         let settings = Settings::get();
         Self {
-            disable_tools: settings.disable_tools.iter().map(|s| s.into()).collect(),
+            disable_tools: settings.disable_tools().iter().map(|s| s.into()).collect(),
             ..Default::default()
         }
     }
@@ -152,8 +152,8 @@ impl ToolRequestSetBuilder {
         Ok(trs)
     }
 
-    fn is_disabled(&self, fa: &BackendArg) -> bool {
-        self.disable_tools.contains(fa)
+    fn is_disabled(&self, ba: &BackendArg) -> bool {
+        !ba.is_os_supported() || self.disable_tools.contains(ba)
     }
 
     fn load_config_files(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
