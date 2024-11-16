@@ -76,11 +76,6 @@ pub struct Ls {
 
 impl Ls {
     pub fn run(mut self) -> Result<()> {
-        dbg!(&*SETTINGS
-            .disable_tools()
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>());
         let config = Config::try_get()?;
         self.plugin = self
             .plugin
