@@ -3,5 +3,5 @@ source: src/cli/upgrade.rs
 expression: output
 snapshot_kind: text
 ---
-mise Would uninstall tiny@3.0.0
-mise Would install tiny@3.1.0
+Would uninstall tiny@3.0.0
+Would install tiny@3.1.0

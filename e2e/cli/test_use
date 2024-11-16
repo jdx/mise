@@ -64,3 +64,11 @@ mise use -g gh@2
 assert "cat ~/.config/mise/config.toml" '[tools]
 gh = "2"'
 rm -f ~/.config/mise/config.toml
+
+mise uninstall dummy --all
+mise use dummy@system
+assert "mise ls dummy" "dummy  system  ~/workdir/mise.toml system"
+
+mkdir -p ~/workdir/mydummy
+mise use "dummy@path:~/workdir/mydummy"
+assert_contains "mise ls dummy" "dummy  path:~/workdir/mydummy  ~/workdir/mise.toml path:~/workdir/mydummy"

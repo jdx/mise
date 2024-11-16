@@ -44,7 +44,7 @@ impl ToolVersion {
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => Self::resolve_version(request, &v, opts)?,
-            ToolRequest::Prefix { prefix, .. } => Self::resolve_prefix(request, &prefix)?,
+            ToolRequest::Prefix { prefix, .. } => Self::resolve_prefix(request, &prefix, opts)?,
             ToolRequest::Sub {
                 sub, orig_version, ..
             } => Self::resolve_sub(request, &sub, &orig_version, opts)?,
@@ -147,7 +147,7 @@ impl ToolVersion {
                 return Self::resolve_path(PathBuf::from(p), &request);
             }
             Some(("prefix", p)) => {
-                return Self::resolve_prefix(request, p);
+                return Self::resolve_prefix(request, p, opts);
             }
             Some((part, v)) if part.starts_with("sub-") => {
                 let sub = part.split_once('-').unwrap().1;
@@ -187,7 +187,7 @@ impl ToolVersion {
         if matches.contains(&v) {
             return build(v);
         }
-        Self::resolve_prefix(request, &v)
+        Self::resolve_prefix(request, &v, opts)
     }
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
@@ -206,8 +206,14 @@ impl ToolVersion {
         Self::resolve_version(request, &v, opts)
     }
 
-    fn resolve_prefix(request: ToolRequest, prefix: &str) -> Result<Self> {
-        let matches = request.backend()?.list_versions_matching(prefix)?;
+    fn resolve_prefix(request: ToolRequest, prefix: &str, opts: &ResolveOptions) -> Result<Self> {
+        let backend = request.backend()?;
+        if !opts.latest_versions {
+            if let Some(v) = backend.list_installed_versions_matching(prefix)?.last() {
+                return Ok(Self::new(request, v.to_string()));
+            }
+        }
+        let matches = backend.list_versions_matching(prefix)?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,

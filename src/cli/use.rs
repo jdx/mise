@@ -117,18 +117,33 @@ impl Use {
         let mut cf = self.get_config_file()?;
         let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
 
-        for (fa, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
+        for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
             let versions: Vec<_> = tvl
                 .into_iter()
                 .map(|tv| {
+                    let mut request = tv.request.clone();
                     if pin {
-                        (tv.version.clone(), tv.request.options())
-                    } else {
-                        (tv.request.version(), tv.request.options())
+                        if let ToolRequest::Version {
+                            version: _version,
+                            source,
+                            os,
+                            options,
+                            backend,
+                        } = request
+                        {
+                            request = ToolRequest::Version {
+                                version: tv.version.clone(),
+                                source,
+                                os,
+                                options,
+                                backend,
+                            };
+                        }
                     }
+                    request
                 })
                 .collect();
-            cf.replace_versions(fa, &versions)?;
+            cf.replace_versions(ba, versions)?;
         }
 
         if self.global {
