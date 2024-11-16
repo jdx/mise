@@ -20,7 +20,7 @@ fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
     let mut lines = vec![r#"
-pub static FULL_REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> = Lazy::new(|| ["#
+pub static REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> = Lazy::new(|| ["#
         .to_string()];
 
     let registry: toml::Table = fs::read_to_string("registry.toml")
@@ -78,8 +78,8 @@ pub static FULL_REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> = Lazy::new
                 os
             })
             .unwrap_or_default();
-        lines.push(format!(
-            r#"    ("{short}", RegistryTool{{backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}]}}),"#,
+        let rt = format!(
+            r#"RegistryTool{{short: "{short}", backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}]}}"#,
             backends = fulls.join("\", \""),
             aliases = aliases
                 .iter()
@@ -94,7 +94,11 @@ pub static FULL_REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> = Lazy::new
                 .map(|o| format!("\"{o}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
-        ));
+        );
+        lines.push(format!(r#"    ("{short}", {rt}),"#));
+        for alias in aliases {
+            lines.push(format!(r#"    ("{alias}", {rt}),"#));
+        }
     }
     lines.push(r#"].into());"#.to_string());
 

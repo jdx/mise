@@ -91,14 +91,14 @@ impl Toolset {
         }
     }
     pub fn add_version(&mut self, tvr: ToolRequest) {
-        let fa = tvr.ba();
-        if self.is_disabled(fa) {
+        let ba = tvr.ba();
+        if self.is_disabled(ba) {
             return;
         }
         let tvl = self
             .versions
             .entry(tvr.ba().clone())
-            .or_insert_with(|| ToolVersionList::new(fa.clone(), self.source.clone().unwrap()));
+            .or_insert_with(|| ToolVersionList::new(ba.clone(), self.source.clone().unwrap()));
         tvl.requests.push(tvr);
     }
     pub fn merge(&mut self, other: Toolset) {
@@ -611,9 +611,8 @@ impl Toolset {
         );
     }
 
-    fn is_disabled(&self, fa: &BackendArg) -> bool {
-        let fa = fa.to_string();
-        SETTINGS.disable_tools.iter().any(|s| s == &fa)
+    fn is_disabled(&self, ba: &BackendArg) -> bool {
+        !ba.is_os_supported() || SETTINGS.disable_tools.contains(&ba.short)
     }
 }
 

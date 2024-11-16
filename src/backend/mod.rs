@@ -13,7 +13,6 @@ use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
-use crate::registry::REGISTRY_BACKEND_MAP;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{
     install_state, is_outdated_version, ToolRequest, ToolSource, ToolVersion, Toolset,
@@ -177,15 +176,6 @@ pub trait Backend: Debug + Send + Sync {
             .get_dependencies(tvr)?
             .into_iter()
             .filter(|ba| self.ba() != ba) // prevent infinite loop
-            .flat_map(|ba| {
-                let short = ba.short.clone();
-                [ba].into_iter().chain(
-                    REGISTRY_BACKEND_MAP
-                        .get(short.as_str())
-                        .cloned()
-                        .unwrap_or_default(),
-                )
-            })
             .collect();
         let dep_backends = deps
             .iter()

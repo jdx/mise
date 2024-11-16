@@ -1,9 +1,9 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::{unalias_backend, ABackend};
 use crate::config::CONFIG;
-use crate::registry::{FULL_REGISTRY, REGISTRY_BACKEND_MAP};
+use crate::registry::REGISTRY;
 use crate::toolset::{install_state, parse_tool_options, ToolVersionOptions};
-use crate::{backend, config, dirs, env};
+use crate::{backend, config, dirs};
 use contracts::requires;
 use eyre::{bail, Result};
 use heck::ToKebabCase;
@@ -36,13 +36,14 @@ pub struct BackendArg {
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
         let s = s.as_ref();
-        if let Some(ba) = REGISTRY_BACKEND_MAP
-            .get(unalias_backend(s))
-            .and_then(|rbm| rbm.first())
+        let short = unalias_backend(s).to_string();
+        if let Some(backend) = REGISTRY
+            .get(&s)
+            .and_then(|rbm| rbm.backends().first().copied())
         {
-            ba.clone()
+            BackendArg::new(short, Some(backend.to_string()))
         } else {
-            Self::new(s.to_string(), None)
+            Self::new(short, None)
         }
     }
 }
@@ -146,8 +147,8 @@ impl BackendArg {
         if self.uses_plugin() {
             return true;
         }
-        if let Some(rt) = FULL_REGISTRY.get(self.short.as_str()) {
-            return rt.os.is_empty() || rt.os.contains(&env::consts::OS);
+        if let Some(rt) = REGISTRY.get(self.short.as_str()) {
+            return rt.is_supported_os();
         }
         true
     }

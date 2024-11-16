@@ -20,7 +20,7 @@ pub fn get_shorthands(settings: &Settings) -> Shorthands {
                 .map(|(id, rt)| {
                     (
                         id.to_string(),
-                        rt.backends
+                        rt.backends()
                             .iter()
                             .filter(|f| f.starts_with("asdf:") || f.starts_with("vfox:"))
                             .map(|f| f.to_string())
