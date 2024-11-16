@@ -21,7 +21,7 @@ env:
   NPM_CONFIG_FUND: false
 
 jobs:
-  nightly:
+  autofix:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

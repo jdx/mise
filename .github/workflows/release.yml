@@ -12,6 +12,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   DRY_RUN: ${{ startsWith(github.event.ref, 'refs/tags/v') && '0' || '1' }}
+  RUST_BACKTRACE: 1
 
 jobs:
   build-tarball:
@@ -57,10 +58,6 @@ jobs:
             name: macos-arm64
             target: aarch64-apple-darwin
             runs-on: macos-14
-    #          - os: windows
-    #            name: windows-x64
-    #            target: x86_64-pc-windows-gnu
-    #            runs-on: ubuntu-latest
     steps:
       - if: matrix.os == 'macos'
         uses: apple-actions/import-codesign-certs@v3
@@ -113,6 +110,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup target add ${{matrix.target}}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{matrix.arch}}
       - name: cache crates
         id: cache-crates
         uses: actions/cache@v4
@@ -162,7 +162,6 @@ jobs:
         uses: nick-fields/retry@v3
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUST_BACKTRACE: 1
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 4
           TEST_ALL: 1
