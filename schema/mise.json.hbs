@@ -152,6 +152,14 @@
             "depends": {
               "description": "other tasks to run before this task",
               "items": {
+              "description": "task to run before this task",
+                  "type": "string"
+              },
+              "type": "array"
+            },
+            "wait_for": {
+              "description": "if these tasks run, wait for them to complete first",
+              "items": {
                 "description": "task to run before this task",
                 "type": "string"
               },

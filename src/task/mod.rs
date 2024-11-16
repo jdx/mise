@@ -16,7 +16,7 @@ use petgraph::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -44,6 +44,8 @@ pub struct Task {
     pub config_root: Option<PathBuf>,
     #[serde(default)]
     pub depends: Vec<String>,
+    #[serde(default)]
+    pub wait_for: Vec<String>,
     #[serde(default)]
     pub env: BTreeMap<String, EitherStringOrBool>,
     #[serde(default)]
@@ -99,12 +101,12 @@ impl Task {
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
-                regex!(r"^(#|//) mise ([a-z]+=.+)$")
+                regex!(r"^(#|//) mise ([a-z_]+=.+)$")
                     .captures(line)
-                    .or(regex!(r"^(#|//)MISE ([a-z]+=.+)$").captures(line))
+                    .or_else(|| regex!(r"^(#|//)MISE ([a-z_]+=.+)$").captures(line))
             })
-            .map(|captures| captures.extract())
-            .flat_map(|(_, [_, toml])| {
+            .map(|captures| captures.extract().1)
+            .flat_map(|[_, toml]| {
                 toml.parse::<toml::Value>()
                     .map_err(|e| debug!("failed to parse toml: {e}"))
             })
@@ -135,6 +137,7 @@ impl Task {
             sources: p.parse_array("sources")?.unwrap_or_default(),
             outputs: p.parse_array("outputs")?.unwrap_or_default(),
             depends: p.parse_array("depends")?.unwrap_or_default(),
+            wait_for: p.parse_array("wait_for")?.unwrap_or_default(),
             dir: p.parse_str("dir")?,
             env: p.parse_env("env")?.unwrap_or_default(),
             file: Some(path.to_path_buf()),
@@ -166,12 +169,24 @@ impl Task {
         format!("[{}]", self.name)
     }
 
-    pub fn resolve_depends<'a>(&self, config: &'a Config) -> Result<Vec<&'a Task>> {
+    pub fn resolve_depends<'a>(
+        &self,
+        config: &'a Config,
+        tasks_to_run: &[Task],
+    ) -> Result<Vec<&'a Task>> {
+        let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
         let tasks = config.tasks_with_aliases()?;
-        self.depends
+        self.wait_for
             .iter()
-            .map(|pat| match_tasks(tasks.clone(), pat))
+            .map(|pat| match_tasks(&tasks, pat))
             .flatten_ok()
+            .filter_ok(|t| tasks_to_run.contains(*t))
+            .chain(
+                self.depends
+                    .iter()
+                    .map(|pat| match_tasks(&tasks, pat))
+                    .flatten_ok(),
+            )
             .filter_ok(|t| t.name != self.name)
             .collect()
     }
@@ -298,7 +313,7 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
         .join(":"))
 }
 
-fn match_tasks<'a>(tasks: BTreeMap<String, &'a Task>, pat: &str) -> Result<Vec<&'a Task>> {
+fn match_tasks<'a>(tasks: &BTreeMap<String, &'a Task>, pat: &str) -> Result<Vec<&'a Task>> {
     let matches = tasks.get_matching(pat)?.into_iter().cloned().collect_vec();
     if matches.is_empty() {
         return Err(eyre!("task not found: {pat}"));
@@ -316,6 +331,7 @@ impl Default for Task {
             config_source: PathBuf::new(),
             config_root: None,
             depends: vec![],
+            wait_for: vec![],
             env: BTreeMap::new(),
             dir: None,
             hide: false,

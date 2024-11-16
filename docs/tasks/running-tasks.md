@@ -84,6 +84,7 @@ run = "eslint ."
 run = "prettier --check ."
 [tasks.lint]
 depends = ["lint:*"]
+wait_for = ["render"] # does not add as a dependency, but if it is already running, wait for it to finish
 ```
 
 ## Running on file changes

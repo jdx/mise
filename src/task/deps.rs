@@ -22,17 +22,17 @@ impl Deps {
 
         // first we add all tasks to the graph, create a stack of work for this function, and
         // store the index of each task in the graph
-        for t in tasks {
+        for t in &tasks {
             stack.push(t.clone());
             indexes
                 .entry(t.name.clone())
-                .or_insert_with(|| graph.add_node(t));
+                .or_insert_with(|| graph.add_node(t.clone()));
         }
         while let Some(a) = stack.pop() {
             let a_idx = *indexes
                 .entry(a.name.clone())
                 .or_insert_with(|| graph.add_node(a.clone()));
-            for b in a.resolve_depends(&CONFIG)? {
+            for b in a.resolve_depends(&CONFIG, &tasks)? {
                 let b_idx = *indexes
                     .entry(b.name.clone())
                     .or_insert_with(|| graph.add_node(b.clone()));
