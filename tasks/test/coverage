@@ -14,7 +14,10 @@ export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
 echo "::group::Build w/ coverage"
 cargo build -q --all-features
 echo "::endgroup::"
-./e2e/run_all_tests
+echo "::group::mise install"
+mise install
+echo "::endgroup::"
+mise x -- ./e2e/run_all_tests
 if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
   echo "::group::Implode"
   mise implode
