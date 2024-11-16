@@ -250,6 +250,9 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  "test-tool": {
+    hide: true,
+  },
   trust: {
     hide: false,
   },
