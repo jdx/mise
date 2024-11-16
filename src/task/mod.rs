@@ -170,14 +170,13 @@ impl Task {
     }
 
     pub fn all_depends<'a>(&self, config: &'a Config) -> Result<Vec<&'a Task>> {
+        let tasks = config.tasks_with_aliases()?;
         let mut depends: Vec<&Task> = self
             .depends
             .iter()
-            .flat_map(|pat| {
-                match_tasks(&config.tasks_with_aliases().unwrap_or_default(), pat)
-                    .unwrap_or_default()
-            })
-            .collect();
+            .map(|pat| match_tasks(&tasks, pat))
+            .flatten_ok()
+            .collect::<Result<Vec<_>>>()?;
         for dep in depends.clone() {
             depends.extend(dep.all_depends(config)?);
         }
