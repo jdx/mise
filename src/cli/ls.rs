@@ -15,7 +15,7 @@ use versions::Versioning;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config;
-use crate::config::{Config, SETTINGS};
+use crate::config::Config;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use crate::ui::table;
 
