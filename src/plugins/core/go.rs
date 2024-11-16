@@ -215,7 +215,7 @@ impl Backend for GoPlugin {
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
-        if let ToolRequest::System(..) = tv.request {
+        if let ToolRequest::System { .. } = tv.request {
             return Ok(vec![]);
         }
         // goroot/bin must always be included, irrespective of MISE_GO_SET_GOROOT

@@ -28,11 +28,18 @@ impl Deps {
                 .entry(t.name.clone())
                 .or_insert_with(|| graph.add_node(t.clone()));
         }
+        let all_tasks_to_run = tasks
+            .iter()
+            .flat_map(|t| {
+                [t].into_iter()
+                    .chain(t.resolve_depends(&CONFIG, &[]).unwrap_or_default())
+            })
+            .collect_vec();
         while let Some(a) = stack.pop() {
             let a_idx = *indexes
                 .entry(a.name.clone())
                 .or_insert_with(|| graph.add_node(a.clone()));
-            for b in a.resolve_depends(&CONFIG, &tasks)? {
+            for b in a.resolve_depends(&CONFIG, &all_tasks_to_run)? {
                 let b_idx = *indexes
                     .entry(b.name.clone())
                     .or_insert_with(|| graph.add_node(b.clone()));

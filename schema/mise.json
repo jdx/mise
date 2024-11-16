@@ -763,16 +763,35 @@
             "version": {
               "description": "version of the tool to install",
               "type": "string"
+            },
+            "os": {
+              "oneOf": [
+                {
+                  "description": "operating system to install on",
+                  "type": "array"
+                },
+                {
+                  "description": "option to pass to tool",
+                  "type": "string"
+                }
+              ]
             }
           },
           "required": ["version"],
-          "type": "object"
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              }
+            ]
+          }
         }
       ]
     }
   },
   "additionalProperties": false,
-  "description": "config file for mise version manager (.mise.toml)",
+  "description": "config file for mise version manager (mise.toml)",
   "properties": {
     "alias": {
       "additionalProperties": {

@@ -7,7 +7,7 @@ lint = { depends = ["lint:*"] }
 
 [build]
 alias = "b"
-run = "cargo build --color always --all-features"
+run = "cargo build --all-features"
 #sources = ["Cargo.*", "src/**/*.rs"]
 #outputs = ["target/debug/mise"]
 
@@ -22,7 +22,8 @@ run = [
 ]
 
 ["render:completions"]
-depends = ["build", "render:usage"]
+depends = ["build"]
+wait_for = ["render:usage"]
 env = { NO_COLOR = "1" }
 run = '''
 #!/usr/bin/env bash
@@ -45,7 +46,6 @@ env = { NO_COLOR = "1" }
 run = "mise render-mangen"
 
 ["render:fig"]
-depends = ["build", "render:usage"]
 wait_for = ["render:completions"]
 run = [
     "usage generate fig --file mise.usage.kdl --out-file tasks/fig/src/mise.ts",

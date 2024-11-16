@@ -13,6 +13,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                os: None,
             },
         ],
         BackendArg("node" -> "core:node"): [
@@ -23,6 +24,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                os: None,
             },
             Prefix {
                 backend: BackendArg("node" -> "core:node"),
@@ -31,6 +33,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                os: None,
             },
             Ref {
                 backend: BackendArg("node" -> "core:node"),
@@ -40,14 +43,16 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                os: None,
             },
-            Path(
-                BackendArg("node" -> "core:node"),
-                "~/.nodes/18",
-                MiseToml(
+            Path {
+                backend: BackendArg("node" -> "core:node"),
+                path: "~/.nodes/18",
+                source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-            ),
+                os: None,
+            },
         ],
         BackendArg("jq" -> "aqua:jqlang/jq"): [
             Prefix {
@@ -57,6 +62,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                os: None,
             },
         ],
         BackendArg("shellcheck" -> "ubi:koalaman/shellcheck"): [
@@ -67,6 +73,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                os: None,
             },
         ],
         BackendArg("python" -> "core:python"): [
@@ -79,6 +86,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                os: None,
             },
             Version {
                 backend: BackendArg("python" -> "core:python"),
@@ -87,6 +95,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                os: None,
             },
         ],
     },
