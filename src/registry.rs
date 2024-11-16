@@ -4,6 +4,7 @@ use crate::config::SETTINGS;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::env::consts::OS;
 use std::iter::Iterator;
 use strum::IntoEnumIterator;
 use url::Url;
@@ -36,6 +37,7 @@ pub static REGISTRY: Lazy<BTreeMap<&str, RegistryTool>> = Lazy::new(|| {
 
     let mut registry: BTreeMap<&str, RegistryTool> = FULL_REGISTRY
         .iter()
+        .filter(|(_, tr)| tr.os.is_empty() || tr.os.contains(&OS))
         .map(|(short, tr)| {
             let mut tr = tr.clone();
             tr.backends = tr
