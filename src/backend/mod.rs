@@ -94,7 +94,7 @@ pub fn load_tools() {
             .flat_map(|ist| arg_to_backend(BackendArg::new(ist.short, Some(ist.full)))),
     );
     time!("load_tools install_state");
-    tools.retain(|backend| !SETTINGS.disable_tools.contains(backend.id()));
+    tools.retain(|backend| !SETTINGS.disable_tools().contains(backend.id()));
 
     let tools: BackendMap = tools
         .into_iter()

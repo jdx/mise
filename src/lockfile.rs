@@ -94,7 +94,7 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
         // * tools inside a parent config but are overridden by a child config (we just keep what was in the lockfile before, if anything)
         existing_lockfile
             .tools
-            .retain(|k, _| all_tool_names.contains(k) || SETTINGS.disable_tools.contains(k));
+            .retain(|k, _| all_tool_names.contains(k) || SETTINGS.disable_tools().contains(k));
 
         for (short, tvl) in tools {
             if tvl.versions.len() > 1 {
