@@ -34,10 +34,7 @@ impl Backend for SPMBackend {
         &self.ba
     }
 
-    fn get_dependencies(
-        &self,
-        _tvr: &crate::toolset::ToolRequest,
-    ) -> eyre::Result<Vec<BackendArg>> {
+    fn get_dependencies(&self, _tvr: &crate::toolset::ToolRequest) -> eyre::Result<Vec<String>> {
         // TODO: swift as dependencies (wait for swift core plugin: https://github.com/jdx/mise/pull/1708)
         Ok(vec![])
     }

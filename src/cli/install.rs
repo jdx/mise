@@ -1,4 +1,4 @@
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::lockfile;
 use crate::toolset::{
@@ -7,7 +7,6 @@ use crate::toolset::{
 use crate::ui::multi_progress_report::MultiProgressReport;
 use eyre::{Result, WrapErr};
 use itertools::Itertools;
-use std::collections::HashSet;
 
 /// Install a tool version
 ///
@@ -59,8 +58,8 @@ impl Install {
 
     fn install_runtimes(&self, config: &Config, runtimes: &[ToolArg]) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
-        let tools: HashSet<BackendArg> = runtimes.iter().map(|ta| ta.ba.clone()).collect();
-        let mut ts = config.get_tool_request_set()?.filter_by_tool(&tools).into();
+        let tools = runtimes.iter().map(|ta| ta.ba.short.clone()).collect();
+        let mut ts = config.get_tool_request_set()?.filter_by_tool(tools).into();
         let tool_versions = self.get_requested_tool_versions(&ts, runtimes)?;
         if tool_versions.is_empty() {
             warn!("no runtimes to install");
