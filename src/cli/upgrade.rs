@@ -88,9 +88,9 @@ impl Upgrade {
         let config_file_updates = outdated
             .iter()
             .filter_map(|o| {
-                if let (Some(path), Some(bump)) = (o.source.path(), &o.bump) {
+                if let (Some(path), Some(_bump)) = (o.source.path(), &o.bump) {
                     match config_file::parse(path) {
-                        Ok(cf) => Some((o, bump.clone(), cf)),
+                        Ok(cf) => Some((o, cf)),
                         Err(e) => {
                             warn!("failed to parse {}: {e}", display_path(path));
                             None
@@ -100,7 +100,7 @@ impl Upgrade {
                     None
                 }
             })
-            .filter(|(o, _bump, cf)| {
+            .filter(|(o, cf)| {
                 if let Ok(trs) = cf.to_tool_request_set() {
                     if let Some(versions) = trs.tools.get(o.tool_request.ba()) {
                         if versions.len() != 1 {
@@ -120,16 +120,16 @@ impl Upgrade {
 
         if self.dry_run {
             for (o, current) in &to_remove {
-                info!("Would uninstall {}@{}", o.name, current);
+                miseprintln!("Would uninstall {}@{}", o.name, current);
             }
             for o in &outdated {
-                info!("Would install {}@{}", o.name, o.latest);
+                miseprintln!("Would install {}@{}", o.name, o.latest);
             }
-            for (o, bump, cf) in &config_file_updates {
-                info!(
+            for (o, cf) in &config_file_updates {
+                miseprintln!(
                     "Would bump {}@{} in {}",
                     o.name,
-                    bump,
+                    o.tool_request.version(),
                     display_path(cf.get_path())
                 );
             }
@@ -147,8 +147,8 @@ impl Upgrade {
         let new_versions = outdated.iter().map(|o| o.tool_request.clone()).collect();
         let versions = ts.install_versions(config, new_versions, &mpr, &opts)?;
 
-        for (o, bump, mut cf) in config_file_updates {
-            cf.replace_versions(o.tool_request.ba(), &[(bump, o.tool_request.options())])?;
+        for (o, mut cf) in config_file_updates {
+            cf.replace_versions(o.tool_request.ba(), vec![o.tool_request.clone()])?;
             cf.save()?;
         }
 

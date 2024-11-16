@@ -2,12 +2,13 @@
 
 cat <<EOF >mise.toml
 tasks.a.run = "echo a"
-tasks.b.run = "echo b"
-tasks.c.run = "echo c"
-tasks.c.depends = ["a"]
 tasks.b.depends = ["a"]
-tasks.d.run = "echo d"
+tasks.b.run = "echo b"
+tasks.c.depends = ["a"]
+tasks.c.run = "echo c"
+tasks.c.wait_for = ["b"]
 tasks.d.depends = ["c"]
+tasks.d.run = "echo d"
 tasks.d.wait_for = ["b"]
 EOF
 

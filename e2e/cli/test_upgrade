@@ -24,3 +24,26 @@ bazelbuild_latest=$(mise latest ubi:bazelbuild/buildtools)
 mise up --bump ubi:bazelbuild/buildtools
 assert "cat mise.toml" "[tools]
 \"ubi:bazelbuild/buildtools\" = { version = \"$bazelbuild_latest\", exe = \"buildifier\", matching = \"buildifier\" }"
+
+rm -f .tool-versions
+echo "tools.dummy = 'prefix:1'" >mise.toml
+mise uninstall dummy --all
+mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0.0"
+assert "mise ls dummy" "dummy  1.0.0 (outdated)  ~/workdir/mise.toml prefix:1"
+assert "mise up -n" "Would uninstall dummy@1.0.0
+Would install dummy@1.1.0"
+mise up
+assert "mise ls dummy" "dummy  1.1.0  ~/workdir/mise.toml prefix:1"
+assert "mise up dummy -n --bump" "Would uninstall dummy@1.1.0
+Would install dummy@2.0.0
+Would bump dummy@prefix:2 in ~/workdir/mise.toml"
+mise up dummy --bump
+assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml prefix:2"
+echo "tools.dummy = 'prefix:1'" >mise.toml
+mise uninstall dummy --all
+mise i dummy@1.0.0
+assert "mise up dummy -n --bump" "Would uninstall dummy@1.0.0
+Would install dummy@2.0.0
+Would bump dummy@prefix:2 in ~/workdir/mise.toml"
+mise up dummy --bump
+assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml prefix:2"

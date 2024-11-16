@@ -426,11 +426,10 @@ impl Toolset {
                     let new = out.latest.strip_prefix(&prefix).unwrap_or_default();
                     if let Some(bumped_version) = check_semver_bump(old, new) {
                         if bumped_version != tv.request.version() {
-                            out.bump = Some(format!("{prefix}{bumped_version}"));
-                            match out.tool_request.clone() {
+                            out.bump = match out.tool_request.clone() {
                                 ToolRequest::Version {
-                                    backend,
                                     version: _version,
+                                    backend,
                                     options,
                                     source,
                                     os,
@@ -439,13 +438,30 @@ impl Toolset {
                                         backend,
                                         options,
                                         source,
-                                        version: out.bump.clone().unwrap(),
+                                        version: format!("{prefix}{bumped_version}"),
                                         os,
                                     };
+                                    Some(out.tool_request.version())
+                                }
+                                ToolRequest::Prefix {
+                                    prefix: _prefix,
+                                    backend,
+                                    options,
+                                    source,
+                                    os,
+                                } => {
+                                    out.tool_request = ToolRequest::Prefix {
+                                        backend,
+                                        options,
+                                        source,
+                                        prefix: format!("{prefix}{bumped_version}"),
+                                        os,
+                                    };
+                                    Some(out.tool_request.version())
                                 }
                                 _ => {
                                     warn!("upgrading non-version tool requests");
-                                    out.bump = None;
+                                    None
                                 }
                             }
                         }

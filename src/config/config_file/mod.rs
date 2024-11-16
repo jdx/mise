@@ -21,7 +21,7 @@ use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::{file_hash_sha256, hash_to_str};
 use crate::task::Task;
-use crate::toolset::{ToolRequestSet, ToolSource, ToolVersionList, ToolVersionOptions, Toolset};
+use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
 use crate::{backend, dirs, env, file};
 
@@ -71,11 +71,8 @@ pub trait ConfigFile: Debug + Send + Sync {
         Default::default()
     }
     fn remove_plugin(&mut self, _fa: &BackendArg) -> eyre::Result<()>;
-    fn replace_versions(
-        &mut self,
-        fa: &BackendArg,
-        versions: &[(String, ToolVersionOptions)],
-    ) -> eyre::Result<()>;
+    fn replace_versions(&mut self, fa: &BackendArg, versions: Vec<ToolRequest>)
+        -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
     fn dump(&self) -> eyre::Result<String>;
     fn source(&self) -> ToolSource;
@@ -117,19 +114,34 @@ impl dyn ConfigFile {
             ts.versions.insert(fa.clone(), tvl);
         }
         ts.resolve()?;
-        for (fa, versions) in plugins_to_update {
+        for (ba, versions) in plugins_to_update {
             let versions = versions
                 .into_iter()
-                .map(|tvr| {
+                .map(|tr| {
+                    let mut tr = tr.clone();
                     if pin {
-                        let tv = tvr.resolve(&Default::default())?;
-                        Ok((tv.version, tv.request.options()))
-                    } else {
-                        Ok((tvr.version(), tvr.options()))
+                        let tv = tr.resolve(&Default::default())?;
+                        if let ToolRequest::Version {
+                            version: _version,
+                            source,
+                            os,
+                            options,
+                            backend,
+                        } = tr
+                        {
+                            tr = ToolRequest::Version {
+                                version: tv.version,
+                                source,
+                                os,
+                                options,
+                                backend,
+                            };
+                        }
                     }
+                    Ok(tr)
                 })
                 .collect::<eyre::Result<Vec<_>>>()?;
-            self.replace_versions(&fa, &versions)?;
+            self.replace_versions(&ba, versions)?;
         }
 
         Ok(())
