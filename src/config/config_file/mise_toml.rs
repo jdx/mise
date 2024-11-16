@@ -20,7 +20,7 @@ use crate::config::env_directive::{EnvDirective, PathEntry};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap};
 use crate::file::{create_dir_all, display_path};
-use crate::registry::REGISTRY_BACKEND_MAP;
+use crate::registry::REGISTRY;
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -299,10 +299,7 @@ impl ConfigFile for MiseToml {
     ) -> eyre::Result<()> {
         let existing = self.tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
-            if let Some(reg_ba) = REGISTRY_BACKEND_MAP
-                .get(ba.short.as_str())
-                .and_then(|b| b.first())
-            {
+            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
                 if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
                     // in this case the options specified are the same as in the registry so output no options and rely on the defaults
                     return true;
