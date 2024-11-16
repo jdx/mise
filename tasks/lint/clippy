@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE wait_for=["build"]
 set -euo pipefail
 
 cargo clippy --all-features -- -Dwarnings

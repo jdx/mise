@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE alias=["format"]
-#MISE wait_for=["render:settings"]
+#MISE wait_for=["build", "render:settings"]
 set -euxo pipefail
 
 # Used for shellcheck which needs explicit args

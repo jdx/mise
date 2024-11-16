@@ -28,13 +28,17 @@ impl Deps {
                 .entry(t.name.clone())
                 .or_insert_with(|| graph.add_node(t.clone()));
         }
-        let all_tasks_to_run = tasks
+        let all_tasks_to_run: Vec<&Task> = tasks
             .iter()
-            .flat_map(|t| {
-                [t].into_iter()
-                    .chain(t.resolve_depends(&CONFIG, &[]).unwrap_or_default())
+            .map(|t| {
+                eyre::Ok(
+                    [t].into_iter()
+                        .chain(t.all_depends(&CONFIG)?)
+                        .collect::<Vec<_>>(),
+                )
             })
-            .collect_vec();
+            .flatten_ok()
+            .collect::<eyre::Result<Vec<_>>>()?;
         while let Some(a) = stack.pop() {
             let a_idx = *indexes
                 .entry(a.name.clone())
