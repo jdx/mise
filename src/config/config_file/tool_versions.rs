@@ -13,7 +13,7 @@ use crate::config::config_file::ConfigFile;
 use crate::file;
 use crate::file::display_path;
 use crate::tera::{get_tera, BASE_CONTEXT};
-use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 // python 3.11.0 3.10.0
 // shellcheck 0.9.0
@@ -118,10 +118,8 @@ impl ToolVersions {
         plugins
     }
 
-    fn add_version(&mut self, fa: &BackendArg, version: &str) {
-        self.get_or_create_plugin(fa)
-            .versions
-            .push(version.to_string());
+    fn add_version(&mut self, fa: &BackendArg, version: String) {
+        self.get_or_create_plugin(fa).versions.push(version);
     }
 
     fn populate_toolset(&mut self) -> eyre::Result<()> {
@@ -165,14 +163,14 @@ impl ConfigFile for ToolVersions {
     fn replace_versions(
         &mut self,
         fa: &BackendArg,
-        versions: &[(String, ToolVersionOptions)],
+        versions: Vec<ToolRequest>,
     ) -> eyre::Result<()> {
         self.get_or_create_plugin(fa).versions.clear();
-        for (version, opts) in versions {
-            if !opts.is_empty() {
+        for tr in versions {
+            if !tr.options().is_empty() {
                 warn!("tool options are not supported in .tool-versions files");
             }
-            self.add_version(fa, version);
+            self.add_version(fa, tr.version());
         }
         Ok(())
     }

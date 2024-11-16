@@ -187,3 +187,6 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ 
 
 [package.metadata.cargo-machete]
 ignored = ["built", "openssl", "cfg_aliases"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }

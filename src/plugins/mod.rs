@@ -95,6 +95,7 @@ pub trait Plugin: Debug + Send {
     fn external_commands(&self) -> eyre::Result<Vec<Command>> {
         Ok(vec![])
     }
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn execute_external_command(&self, _command: &str, _args: Vec<String>) -> eyre::Result<()> {
         unimplemented!(
             "execute_external_command not implemented for {}",

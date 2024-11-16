@@ -295,7 +295,7 @@ impl ConfigFile for MiseToml {
     fn replace_versions(
         &mut self,
         ba: &BackendArg,
-        versions: &[(String, ToolVersionOptions)],
+        versions: Vec<ToolRequest>,
     ) -> eyre::Result<()> {
         let existing = self.tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
@@ -309,15 +309,7 @@ impl ConfigFile for MiseToml {
         };
         existing.0 = versions
             .iter()
-            .map(|(v, opts)| MiseTomlTool {
-                tt: ToolVersionType::Version(v.clone()),
-                os: None, // TODO: use existing os
-                options: if !output_empty_opts(opts) {
-                    Some(opts.clone())
-                } else {
-                    None
-                },
-            })
+            .map(|tr| MiseTomlTool::from(tr.clone()))
             .collect();
         let tools = self
             .doc_mut()?
@@ -335,25 +327,26 @@ impl ConfigFile for MiseToml {
         }
 
         if versions.len() == 1 {
-            if output_empty_opts(&versions[0].1) {
-                tools.insert_formatted(&key, value(versions[0].0.clone()));
+            if output_empty_opts(&versions[0].options()) {
+                tools.insert_formatted(&key, value(versions[0].version()));
             } else {
                 let mut table = InlineTable::new();
-                table.insert("version", versions[0].0.to_string().into());
-                for (k, v) in &versions[0].1 {
-                    table.insert(k, v.clone().into());
+                table.insert("version", versions[0].version().into());
+                for (k, v) in versions[0].options() {
+                    table.insert(k, v.into());
                 }
                 tools.insert_formatted(&key, table.into());
             }
         } else {
             let mut arr = Array::new();
-            for (v, opts) in versions {
-                if output_empty_opts(opts) {
+            for tr in versions {
+                let v = tr.version();
+                if output_empty_opts(&tr.options()) {
                     arr.push(v.to_string());
                 } else {
                     let mut table = InlineTable::new();
                     table.insert("version", v.to_string().into());
-                    for (k, v) in opts {
+                    for (k, v) in tr.options() {
                         table.insert(k, v.clone().into());
                     }
                     arr.push(table);
@@ -495,6 +488,89 @@ impl Clone for MiseToml {
             tasks: self.tasks.clone(),
             task_config: self.task_config.clone(),
             settings: self.settings.clone(),
+        }
+    }
+}
+
+impl From<ToolRequest> for MiseTomlTool {
+    fn from(tr: ToolRequest) -> Self {
+        match tr {
+            ToolRequest::Version {
+                version,
+                os,
+                options,
+                backend: _backend,
+                source: _source,
+            } => Self {
+                tt: ToolVersionType::Version(version),
+                os,
+                options: if options.is_empty() {
+                    None
+                } else {
+                    Some(options)
+                },
+            },
+            ToolRequest::Path {
+                path,
+                os,
+                backend: _backend,
+                source: _source,
+            } => Self {
+                tt: ToolVersionType::Path(path),
+                os,
+                options: None,
+            },
+            ToolRequest::Prefix {
+                prefix,
+                os,
+                options,
+                backend: _backend,
+                source: _source,
+            } => Self {
+                tt: ToolVersionType::Prefix(prefix),
+                os,
+                options: if options.is_empty() {
+                    None
+                } else {
+                    Some(options)
+                },
+            },
+            ToolRequest::Ref {
+                ref_,
+                ref_type,
+                os,
+                options,
+                backend: _backend,
+                source: _source,
+            } => Self {
+                tt: ToolVersionType::Ref(ref_, ref_type),
+                os,
+                options: if options.is_empty() {
+                    None
+                } else {
+                    Some(options)
+                },
+            },
+            ToolRequest::Sub {
+                sub,
+                os,
+                orig_version,
+                backend: _backend,
+                source: _source,
+            } => Self {
+                tt: ToolVersionType::Sub { sub, orig_version },
+                os,
+                options: None,
+            },
+            ToolRequest::System {
+                os,
+                backend: _backend,
+                source: _source,
+            } => Self {
+                tt: ToolVersionType::System,
+                os,
+                options: None,
+            },
         }
     }
 }
@@ -1062,6 +1138,7 @@ mod tests {
 
     use crate::dirs::CWD;
     use crate::test::{replace_path, reset};
+    use crate::toolset::ToolRequest;
 
     use super::*;
 
@@ -1296,9 +1373,9 @@ mod tests {
         let node = "node".into();
         cf.replace_versions(
             &node,
-            &[
-                ("16.0.1".into(), Default::default()),
-                ("18.0.1".into(), Default::default()),
+            vec![
+                ToolRequest::new("node".into(), "16.0.1", ToolSource::Unknown).unwrap(),
+                ToolRequest::new("node".into(), "18.0.1", ToolSource::Unknown).unwrap(),
             ],
         )
         .unwrap();

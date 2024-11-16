@@ -235,16 +235,26 @@ pub trait Backend: Debug + Send + Sync {
         install_state::list_versions(&self.ba().short)
     }
     fn is_version_installed(&self, tv: &ToolVersion, check_symlink: bool) -> bool {
+        let check_path = |install_path: &Path| {
+            let is_installed = install_path.exists();
+            let is_not_incomplete = !self.incomplete_file_path(tv).exists();
+            let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
+
+            is_installed && is_not_incomplete && is_valid_symlink
+        };
         match tv.request {
             ToolRequest::System { .. } => true,
+            ToolRequest::Prefix { .. } => {
+                // can't use tv.request.install_path() in this case since it may point to a version
+                // that matches the prefix but is not the correct one. For example, in the following
+                // scenario this would not upgrade tiny because "prefix:1" would still match and
+                // `mise up` would think it is installed
+                //     mise install tiny@1.0.0
+                //     mise use tiny@prefix:1
+                //     mise up tiny
+                check_path(&tv.install_path())
+            }
             _ => {
-                let check_path = |install_path: &Path| {
-                    let is_installed = install_path.exists();
-                    let is_not_incomplete = !self.incomplete_file_path(tv).exists();
-                    let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
-
-                    is_installed && is_not_incomplete && is_valid_symlink
-                };
                 if let Some(install_path) = tv.request.install_path() {
                     if check_path(&install_path) {
                         return true;

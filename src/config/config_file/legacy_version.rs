@@ -5,7 +5,7 @@ use eyre::Result;
 use crate::backend::{self, BackendList};
 use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
-use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 #[derive(Debug, Clone)]
 pub struct LegacyVersionFile {
@@ -55,22 +55,26 @@ impl ConfigFile for LegacyVersionFile {
         self.path.as_path()
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn remove_plugin(&mut self, _fa: &BackendArg) -> Result<()> {
         unimplemented!()
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn replace_versions(
         &mut self,
         _plugin_name: &BackendArg,
-        _versions: &[(String, ToolVersionOptions)],
+        _versions: Vec<ToolRequest>,
     ) -> Result<()> {
         unimplemented!()
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn save(&self) -> Result<()> {
         unimplemented!()
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn dump(&self) -> Result<String> {
         unimplemented!()
     }
