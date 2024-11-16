@@ -66,10 +66,10 @@ mod versions_host;
 pub use crate::exit::exit;
 
 fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
     output::get_time_diff(""); // throwaway call to initialize the timer
     eager::early_init();
     let args = env::args().collect_vec();
-    color_eyre::install()?;
     time!("main start");
 
     match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {

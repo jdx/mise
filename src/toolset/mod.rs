@@ -153,6 +153,7 @@ impl Toolset {
     pub fn list_missing_plugins(&self) -> Vec<String> {
         self.versions
             .keys()
+            .filter(|ba| ba.is_os_supported())
             .flat_map(|ba| ba.backend())
             .filter(|b| b.plugin().is_some_and(|p| !p.is_installed()))
             .map(|p| p.id().into())
@@ -288,7 +289,7 @@ impl Toolset {
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
         self.list_current_versions()
             .into_iter()
-            .filter(|(p, tv)| !p.is_version_installed(tv, true))
+            .filter(|(p, tv)| tv.ba().is_os_supported() && !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
             .collect()
     }
@@ -635,13 +636,13 @@ impl Display for Toolset {
 impl From<ToolRequestSet> for Toolset {
     fn from(trs: ToolRequestSet) -> Self {
         let mut ts = Toolset::default();
-        for (fa, versions, source) in trs.into_iter() {
+        for (ba, versions, source) in trs.into_iter() {
             ts.source = Some(source.clone());
-            let mut tvl = ToolVersionList::new(fa.clone(), source);
+            let mut tvl = ToolVersionList::new(ba.clone(), source);
             for tr in versions {
                 tvl.requests.push(tr);
             }
-            ts.versions.insert(fa, tvl);
+            ts.versions.insert(ba, tvl);
         }
         ts
     }
