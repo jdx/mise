@@ -105,10 +105,19 @@ impl TestTool {
         };
         ts.install_arg_versions(&CONFIG, &opts)?;
         ts.notify_if_versions_missing();
-        let tv = &ts.versions.get(&tool.ba).unwrap().versions[0];
+        let tv = if let Some(tv) = ts
+            .versions
+            .get(&tool.ba)
+            .and_then(|tvl| tvl.versions.first())
+        {
+            tv.clone()
+        } else {
+            warn!("no versions found for {tool}");
+            return Ok(());
+        };
         let backend = tv.backend()?;
         let env = ts.env_with_path(&CONFIG)?;
-        let which_cmd = backend.which(tv, cmd.split_whitespace().next().unwrap())?;
+        let which_cmd = backend.which(&tv, cmd.split_whitespace().next().unwrap())?;
         info!(
             "$ {which_cmd} {rest}",
             which_cmd = display_path(which_cmd.unwrap_or_default()),
@@ -128,7 +137,7 @@ impl TestTool {
             Some(0) => {}
             Some(code) => {
                 if code == 127 {
-                    let bin_dirs = backend.list_bin_paths(tv)?;
+                    let bin_dirs = backend.list_bin_paths(&tv)?;
                     for bin_dir in &bin_dirs {
                         let bins = file::ls(bin_dir)?
                             .into_iter()

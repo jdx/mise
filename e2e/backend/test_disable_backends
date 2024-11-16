@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+export MISE_EXPERIMENTAL=1
+
+assert "mise registry age" "aqua:FiloSottile/age asdf:threkk/asdf-age"
+
+mise install age
+assert_fail "ls $MISE_DATA_DIR/plugins/age"
+mise uninstall age
+
+MISE_DISABLE_BACKENDS=aqua mise install age
+ls "$MISE_DATA_DIR/plugins/age"
+mise uninstall age

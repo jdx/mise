@@ -173,7 +173,10 @@ jobs:
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - run: mise install
       - run: mise test-tool --all
-        env: { MISE_USE_VERSIONS_HOST: 0, MISE_EXPERIMENTAL: 1 }
+        env:
+          MISE_USE_VERSIONS_HOST: 0
+          MISE_EXPERIMENTAL: 1
+          MISE_DISABLE_TOOLS: 1password-cli
         continue-on-error: true
       - run: cargo test
         continue-on-error: true

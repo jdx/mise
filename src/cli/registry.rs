@@ -26,7 +26,7 @@ impl Registry {
     pub fn run(self) -> Result<()> {
         let filter_backend = |rt: &RegistryTool| {
             if let Some(backend) = self.backend {
-                rt.backends
+                rt.backends()
                     .iter()
                     .filter(|full| full.starts_with(&format!("{backend}:")))
                     .cloned()
@@ -37,7 +37,7 @@ impl Registry {
         };
         if let Some(name) = &self.name {
             if let Some(rt) = REGISTRY.get(name.as_str()) {
-                miseprintln!("{}", rt.backends.join(" "));
+                miseprintln!("{}", rt.backends().join(" "));
             } else {
                 bail!("tool not found in registry: {name}");
             }

@@ -137,8 +137,8 @@ pub fn short_to_full(short: &str, meta_full: Option<String>) -> Result<Option<St
         Ok(Some(full))
     } else if let Some(full) = REGISTRY
         .get(short)
-        .map(|r| &r.backends)
-        .unwrap_or(&EMPTY_VEC)
+        .map(|r| r.backends())
+        .unwrap_or_default()
         .first()
     {
         Ok(Some(full.to_string()))
@@ -244,8 +244,6 @@ pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
         .join(v)
         .join("incomplete")
 }
-
-static EMPTY_VEC: Vec<&'static str> = vec![];
 
 pub fn reset() {
     *INSTALL_STATE_PLUGINS.lock().unwrap() = None;

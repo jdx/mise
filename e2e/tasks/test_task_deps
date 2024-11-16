@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+tasks.a.run = "echo a"
+tasks.b.run = "echo b"
+tasks.c.run = "echo c"
+tasks.c.depends = ["a"]
+tasks.b.depends = ["a"]
+tasks.d.run = "echo d"
+tasks.d.depends = ["c"]
+tasks.d.wait_for = ["b"]
+EOF
+
+assert "mise run d" "a
+c
+d"
+
+assert "mise run d ::: b" "[a] a
+[b] b
+[c] c
+[d] d"
