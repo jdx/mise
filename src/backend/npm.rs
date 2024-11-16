@@ -28,7 +28,7 @@ impl Backend for NPMBackend {
         &self.ba
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
         Ok(vec!["node".into(), "bun".into()])
     }
 

@@ -98,7 +98,7 @@ impl Backend for VfoxBackend {
             .collect())
     }
 
-    fn get_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
+    fn get_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
         let out = match tvr.ba().tool_name.as_str() {
             "poetry" | "pipenv" | "pipx" => vec!["python"],
             "elixir" => vec!["erlang"],

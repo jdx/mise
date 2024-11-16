@@ -31,7 +31,7 @@ impl Backend for PIPXBackend {
         &self.ba
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
         Ok(vec!["pipx".into(), "uv".into()])
     }
 

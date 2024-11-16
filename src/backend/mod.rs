@@ -168,18 +168,18 @@ pub trait Backend: Debug + Send + Sync {
     }
     /// If any of these tools are installing in parallel, we should wait for them to finish
     /// before installing this tool.
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
         Ok(vec![])
     }
-    fn get_all_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
+    fn get_all_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
         let mut deps: IndexSet<_> = self
             .get_dependencies(tvr)?
             .into_iter()
-            .filter(|ba| self.ba() != ba) // prevent infinite loop
+            .filter(|short| self.ba().short != *short) // prevent infinite loop
             .collect();
         let dep_backends = deps
             .iter()
-            .flat_map(|ba| ba.backend())
+            .flat_map(|short| get(&short.into()))
             .collect::<Vec<ABackend>>();
         for dep in dep_backends {
             // TODO: pass the right tvr
@@ -244,16 +244,6 @@ pub trait Backend: Debug + Send + Sync {
         };
         match tv.request {
             ToolRequest::System { .. } => true,
-            ToolRequest::Prefix { .. } => {
-                // can't use tv.request.install_path() in this case since it may point to a version
-                // that matches the prefix but is not the correct one. For example, in the following
-                // scenario this would not upgrade tiny because "prefix:1" would still match and
-                // `mise up` would think it is installed
-                //     mise install tiny@1.0.0
-                //     mise use tiny@prefix:1
-                //     mise up tiny
-                check_path(&tv.install_path())
-            }
             _ => {
                 if let Some(install_path) = tv.request.install_path() {
                     if check_path(&install_path) {
@@ -352,7 +342,7 @@ pub trait Backend: Debug + Send + Sync {
         if !deps.is_empty() {
             trace!("Ensuring dependencies installed for {}", self.id());
             let config = Config::get();
-            let ts = config.get_tool_request_set()?.filter_by_tool(&deps);
+            let ts = config.get_tool_request_set()?.filter_by_tool(deps);
             let missing = ts.missing_tools();
             if !missing.is_empty() {
                 bail!(
@@ -556,7 +546,7 @@ pub trait Backend: Debug + Send + Sync {
             .collect();
         let mut ts: Toolset = config
             .get_tool_request_set()?
-            .filter_by_tool(&dependencies)
+            .filter_by_tool(dependencies)
             .into();
         ts.resolve()?;
         Ok(ts)
