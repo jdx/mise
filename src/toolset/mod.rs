@@ -674,7 +674,10 @@ impl From<ToolRequestSet> for Toolset {
 }
 
 fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequest>> {
-    let versions_hash = requests.iter().map(|tr| tr.ba()).collect::<HashSet<_>>();
+    let versions_hash = requests
+        .iter()
+        .map(|tr| tr.ba().short.to_string())
+        .collect::<HashSet<_>>();
     let leaves = requests
         .iter()
         .map(|tr| {

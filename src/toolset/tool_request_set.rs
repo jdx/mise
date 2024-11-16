@@ -7,6 +7,7 @@ use itertools::Itertools;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::env;
+use crate::registry::REGISTRY;
 use crate::toolset::{ToolRequest, ToolSource};
 
 #[derive(Debug, Default, Clone)]
@@ -73,9 +74,15 @@ impl ToolRequestSet {
         })
     }
 
-    pub fn filter_by_tool(&self, tools: &HashSet<BackendArg>) -> Self {
+    pub fn filter_by_tool(&self, mut tools: HashSet<String>) -> ToolRequestSet {
+        // add in the full names so something like cargo:cargo-binstall can be used in place of cargo-binstall
+        for short in tools.clone().iter() {
+            if let Some(rt) = REGISTRY.get(short.as_str()) {
+                tools.extend(rt.backends().iter().map(|s| s.to_string()));
+            }
+        }
         self.iter()
-            .filter(|(fa, ..)| tools.contains(fa))
+            .filter(|(ba, ..)| tools.contains(&ba.short))
             .map(|(fa, trl, ts)| (fa.clone(), trl.clone(), ts.clone()))
             .collect::<ToolRequestSet>()
     }

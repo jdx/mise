@@ -24,7 +24,7 @@ impl Backend for GoBackend {
         &self.ba
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
+    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
         Ok(vec!["go".into()])
     }
 

@@ -7,7 +7,6 @@ use crate::env::GITHUB_TOKEN;
 use crate::github;
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
-use crate::toolset::ToolRequest;
 use eyre::bail;
 use regex::Regex;
 use std::fmt::Debug;
@@ -29,10 +28,6 @@ impl Backend for UbiBackend {
 
     fn ba(&self) -> &BackendArg {
         &self.ba
-    }
-
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        Ok(vec![])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {

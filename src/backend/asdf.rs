@@ -244,7 +244,7 @@ impl Backend for AsdfBackend {
         Some(PluginType::Asdf)
     }
 
-    fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<BackendArg>> {
+    fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<String>> {
         let out = match tvr.ba().tool_name.as_str() {
             "poetry" | "pipenv" | "pipx" => vec!["python"],
             "elixir" => vec!["erlang"],

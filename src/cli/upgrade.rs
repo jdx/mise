@@ -136,7 +136,8 @@ impl Upgrade {
             return Ok(());
         }
         let opts = InstallOptions {
-            force: false,
+            // TODO: can we remove this without breaking e2e/cli/test_upgrade? it may be causing tools to re-install
+            force: true,
             jobs: self.jobs,
             raw: self.raw,
             resolve_options: ResolveOptions {
