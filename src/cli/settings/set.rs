@@ -73,11 +73,11 @@ pub fn set(mut key: &str, value: &str, add: bool) -> Result<()> {
 }
 
 fn parse_list_by_comma(value: &str) -> Result<toml_edit::Value> {
-    Ok(value.split(',').map(|s| s.to_string()).collect())
+    Ok(value.split(',').map(|s| s.trim().to_string()).collect())
 }
 
 fn parse_list_by_colon(value: &str) -> Result<toml_edit::Value> {
-    Ok(value.split(':').map(|s| s.to_string()).collect())
+    Ok(value.split(':').map(|s| s.trim().to_string()).collect())
 }
 
 fn parse_bool(value: &str) -> Result<toml_edit::Value> {

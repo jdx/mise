@@ -393,6 +393,13 @@ impl Settings {
     pub fn log_level(&self) -> log::LevelFilter {
         self.log_level.parse().unwrap_or(log::LevelFilter::Info)
     }
+
+    pub fn disable_tools(&self) -> BTreeSet<String> {
+        self.disable_tools
+            .iter()
+            .map(|t| t.trim().to_string())
+            .collect()
+    }
 }
 
 impl Display for Settings {

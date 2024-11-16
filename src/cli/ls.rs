@@ -15,7 +15,7 @@ use versions::Versioning;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config;
-use crate::config::Config;
+use crate::config::{Config, SETTINGS};
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use crate::ui::table;
 
@@ -76,6 +76,11 @@ pub struct Ls {
 
 impl Ls {
     pub fn run(mut self) -> Result<()> {
+        dbg!(&*SETTINGS
+            .disable_tools()
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>());
         let config = Config::try_get()?;
         self.plugin = self
             .plugin

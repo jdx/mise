@@ -7,7 +7,7 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
 use eyre::{eyre, Result};
-use itertools::Itertools;
+use std::path::PathBuf;
 
 /// Test a tool installs and executes
 #[derive(Debug, clap::Args)]
@@ -32,7 +32,7 @@ pub struct TestTool {
 
 impl TestTool {
     pub fn run(self) -> Result<()> {
-        let mut errored = false;
+        let mut errored = vec![];
         self.github_summary(vec![
             "Tool".to_string(),
             "Duration".to_string(),
@@ -50,6 +50,10 @@ impl TestTool {
                     continue;
                 }
                 tool = t.clone();
+            }
+            if self.all && rt.short != *short {
+                // means this is an alias
+                continue;
             }
             let (cmd, expected) = if let Some(test) = &rt.test {
                 (test.0.to_string(), test.1)
@@ -70,7 +74,7 @@ impl TestTool {
                 }
                 Err(err) => {
                     error!("{}: {:?}", tool.short, err);
-                    errored = true;
+                    errored.push(tool.short.clone());
                     self.github_summary(vec![
                         tool.short.clone(),
                         time::format_duration(start.elapsed()).to_string(),
@@ -79,8 +83,8 @@ impl TestTool {
                 }
             };
         }
-        if errored {
-            return Err(eyre!("some tests failed"));
+        if !errored.is_empty() {
+            return Err(eyre!("tools failed: {}", errored.join(", ")));
         }
         Ok(())
     }
@@ -117,12 +121,16 @@ impl TestTool {
         };
         let backend = tv.backend()?;
         let env = ts.env_with_path(&CONFIG)?;
-        let which_cmd = backend.which(&tv, cmd.split_whitespace().next().unwrap())?;
-        info!(
-            "$ {which_cmd} {rest}",
-            which_cmd = display_path(which_cmd.unwrap_or_default()),
-            rest = cmd.split_whitespace().skip(1).join(" ")
-        );
+        let mut which_parts = cmd.split_whitespace().collect::<Vec<_>>();
+        let cmd = which_parts.remove(0);
+        let mut which_cmd = backend
+            .which(&tv, &cmd)?
+            .unwrap_or(PathBuf::from(cmd));
+        if cfg!(windows) && which_cmd == PathBuf::from("which") {
+            which_cmd = PathBuf::from("where");
+        }
+        let cmd = format!("{} {}", which_cmd.display(), which_parts.join(" "));
+        info!("$ {cmd}");
         let mut cmd = if cfg!(windows) {
             cmd!("cmd", "/C", cmd)
         } else {
