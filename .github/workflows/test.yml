@@ -54,7 +54,6 @@ jobs:
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
-      - uses: actions-rust-lang/rustfmt@v1
       - run: mise run lint
       - run: mise test-tool --all
 
