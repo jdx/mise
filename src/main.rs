@@ -66,7 +66,6 @@ mod versions_host;
 pub use crate::exit::exit;
 
 fn main() -> eyre::Result<()> {
-    #[cfg(feature = "timings")]
     output::get_time_diff(""); // throwaway call to initialize the timer
     eager::early_init();
     let args = env::args().collect_vec();

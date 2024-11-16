@@ -6,13 +6,13 @@ set -euxo pipefail
 scripts=("$PWD"/scripts/*.sh "$PWD"/e2e/{test_,run_}* "$PWD"/e2e/*.sh)
 # Used for shfmt which will run only on files it can
 scripts_dirs=("$PWD"/scripts "$PWD"/e2e)
-cargo clippy --fix --allow-staged --allow-dirty -- -Dwarnings
+cargo clippy --all-features --fix --allow-staged --allow-dirty -- -Dwarnings
 shellcheck -x "${scripts[@]}"
 shfmt -w  -i 2 -ci -bn "${scripts_dirs[@]}"
 prettier -w $(git ls-files '*.yml' '*.yaml')
 prettier -w .
 markdownlint --fix .
-actionlint
+actionlint -shellcheck ""
 toml-sort -i settings.toml --spaces-indent-inline-array 4
 toml-sort -i registry.toml --spaces-indent-inline-array 4
 
