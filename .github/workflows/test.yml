@@ -207,8 +207,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - run: curl https://mise.run | sh
-      - run: cargo build --release
+      - run: cargo build --profile serious
       - run: echo "$PWD/target/release" >> "$GITHUB_PATH"
       - run: mise i
-      - run: mise x hyperfine -- hyperfine --warmup 10 --min-runs 200 "$HOME/.local/bin/mise env" "target/release/mise env"
-      - run: mise x hyperfine -- hyperfine --warmup 10 --min-runs 200 "$HOME/.local/bin/mise ls"  "target/release/mise ls"
+      - run: |
+          CMDS=(
+            "mise x -- echo"
+            "mise env"
+            "mise hook-env"
+            "mise ls"
+          )
+          echo "# Hyperfine Performance" >> comment.md
+          for cmd in "${CMDS[@]}"; do
+            mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "$HOME/.local/bin/$cmd" "target/serious/$cmd"
+            echo "### \`$cmd\`" >> comment.md
+            cat out.md >> comment.md
+          done
+          cat comment.md >> $GITHUB_STEP_SUMMARY
+        env:
+          SHELL: zsh
+      - name: Comment on PR
+        uses: thollander/actions-comment-pull-request@v3
+        if: "startsWith(github.event.pull_request.title, 'perf:') || startsWith(github.event.pull_request.title, 'chore: release')"
+        with:
+          file-path: comment.md
+          comment-tag: hyperfine
