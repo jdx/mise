@@ -1497,21 +1497,6 @@ const completionSpec: Fig.Spec = {
                     "options": [
                         {
                             "name": [
-                                "-c",
-                                "--core"
-                            ],
-                            "description": "The built-in plugins only\nNormally these are not shown",
-                            "isRepeatable": false
-                        },
-                        {
-                            "name": [
-                                "--user"
-                            ],
-                            "description": "List installed plugins",
-                            "isRepeatable": false
-                        },
-                        {
-                            "name": [
                                 "-u",
                                 "--urls"
                             ],

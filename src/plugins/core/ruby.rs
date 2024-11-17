@@ -18,6 +18,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, plugins};
 use contracts::requires;
 use eyre::{Result, WrapErr};
+use itertools::Itertools;
 use xx::regex;
 
 #[derive(Debug)]
@@ -334,7 +335,11 @@ impl Backend for RubyPlugin {
         let ruby_build_bin = self.ruby_build_bin();
         let versions = plugins::core::run_fetch_task_with_timeout(move || {
             let output = cmd!(ruby_build_bin, "--definitions").read()?;
-            let versions = output.split('\n').map(|s| s.to_string()).collect();
+            let versions = output
+                .split('\n')
+                .sorted_by_cached_key(|s| regex!(r#"^\d"#).is_match(s)) // show matz ruby first
+                .map(|s| s.to_string())
+                .collect();
             Ok(versions)
         })?;
         Ok(versions)
