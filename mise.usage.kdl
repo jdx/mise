@@ -767,10 +767,8 @@ Can also show remotely available plugins to install."
     ruby    https://github.com/asdf-vm/asdf-ruby.git
 "
         flag "-a --all" help="List all available remote plugins\nSame as `mise plugins ls-remote`" hide=true
-        flag "-c --core" help="The built-in plugins only\nNormally these are not shown"
-        flag "--user" help="List installed plugins" {
-            long_help "List installed plugins\n\nThis is the default behavior but can be used with --core\nto show core and user plugins"
-        }
+        flag "-c --core" help="The built-in plugins only\nNormally these are not shown" hide=true
+        flag "--user" help="List installed plugins" hide=true
         flag "-u --urls" help="Show the git url for each plugin\ne.g.: https://github.com/asdf-vm/asdf-nodejs.git"
         flag "--refs" help="Show the git refs for each plugin\ne.g.: main 1234abc" hide=true
     }

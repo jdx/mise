@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+export MISE_USE_VERSIONS_HOST=1
 
 # verify that cache is reused for `mise ls`
 # see https://github.com/jdx/mise/issues/2961

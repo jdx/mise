@@ -1,10 +1,10 @@
 use crate::backend::backend_type::BackendType;
-use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::{RegistryTool, REGISTRY};
 use crate::ui::table;
 use eyre::{bail, Result};
 use itertools::Itertools;
 use tabled::{Table, Tabled};
+use crate::config::SETTINGS;
 
 /// List available tools to install
 ///
@@ -32,7 +32,7 @@ impl Registry {
                     .cloned()
                     .collect()
             } else {
-                rt.backends.clone()
+                rt.backends()
             }
         };
         if let Some(name) = &self.name {
@@ -42,22 +42,13 @@ impl Registry {
                 bail!("tool not found in registry: {name}");
             }
         } else {
-            let mut data = REGISTRY
+            let data = REGISTRY
                 .iter()
+                .filter(|(short, _)| !SETTINGS.disable_tools.contains(**short))
                 .map(|(short, rt)| Row::from((short.to_string(), filter_backend(rt).join(" "))))
-                .filter(|row| !row.full.is_empty())
-                .collect_vec();
-            if self.backend.is_none() || self.backend == Some(BackendType::Core) {
-                let core = CORE_PLUGINS
-                    .keys()
-                    .map(|short| Row::from((short.to_string(), format!("core:{short}"))));
-                data.extend(core);
-            }
-            let rows = data
-                .into_iter()
-                .sorted_by(|a, b| a.short.cmp(&b.short))
-                .collect::<Vec<Row>>();
-            let mut table = Table::new(rows);
+                .filter(|row| !row.backends.is_empty())
+                .sorted_by(|a, b| a.short.cmp(&b.short));
+            let mut table = Table::new(data);
             table::default_style(&mut table, false);
             miseprintln!("{table}");
         }
@@ -69,12 +60,12 @@ impl Registry {
 #[tabled(rename_all = "PascalCase")]
 struct Row {
     short: String,
-    full: String,
+    backends: String,
 }
 
 impl From<(String, String)> for Row {
-    fn from((short, full): (String, String)) -> Self {
-        Self { short, full }
+    fn from((short, backends): (String, String)) -> Self {
+        Self { short, backends }
     }
 }
 

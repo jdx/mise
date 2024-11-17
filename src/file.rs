@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::{Cursor, Read, Write};
+use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -570,7 +570,7 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         ));
     }
     let f = File::open(archive)?;
-    let mut tar: Box<dyn std::io::Read> = match opts.format {
+    let tar: Box<dyn std::io::Read> = match opts.format {
         TarFormat::TarGz => Box::new(GzDecoder::new(f)),
         TarFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
         TarFormat::TarBz2 => Box::new(bzip2::read::BzDecoder::new(f)),
@@ -580,21 +580,22 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         let dest = display_path(dest);
         format!("failed to extract tar: {archive} to {dest}")
     };
-    let mut cur = Cursor::new(vec![]);
-    let mut total = 0;
-    loop {
-        let mut buf = Cursor::new(vec![0; 1024 * 1024]);
-        let n = tar.read(buf.get_mut()).wrap_err_with(err)?;
-        cur.get_mut().extend_from_slice(&buf.get_ref()[..n]);
-        if n == 0 {
-            break;
-        }
-        if let Some(pr) = &opts.pr {
-            total += n as u64;
-            pr.set_length(total);
-        }
-    }
-    for entry in Archive::new(cur).entries().wrap_err_with(err)? {
+    // TODO: put this back in when we can read+write in parallel
+    // let mut cur = Cursor::new(vec![]);
+    // let mut total = 0;
+    // loop {
+    //     let mut buf = Cursor::new(vec![0; 1024 * 1024]);
+    //     let n = tar.read(buf.get_mut()).wrap_err_with(err)?;
+    //     cur.get_mut().extend_from_slice(&buf.get_ref()[..n]);
+    //     if n == 0 {
+    //         break;
+    //     }
+    //     if let Some(pr) = &opts.pr {
+    //         total += n as u64;
+    //         pr.set_length(total);
+    //     }
+    // }
+    for entry in Archive::new(tar).entries().wrap_err_with(err)? {
         let mut entry = entry.wrap_err_with(err)?;
         let path: PathBuf = entry
             .path()
@@ -608,12 +609,12 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         trace!("extracting {}", display_path(&path));
         entry.unpack(&path).wrap_err_with(err)?;
         if let Some(pr) = &opts.pr {
-            pr.set_position(entry.raw_file_position());
+            pr.set_length(entry.raw_file_position());
         }
     }
-    if let Some(pr) = &opts.pr {
-        pr.set_position(total);
-    }
+    // if let Some(pr) = &opts.pr {
+    //     pr.set_position(total);
+    // }
     Ok(())
 }
 
