@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use tabled::{Table, Tabled};
 
 use crate::config::Config;
+use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
 use crate::registry::full_to_url;
 use crate::toolset::install_state;
@@ -22,14 +23,11 @@ pub struct PluginsLs {
 
     /// The built-in plugins only
     /// Normally these are not shown
-    #[clap(short, long, verbatim_doc_comment, conflicts_with = "all")]
+    #[clap(short, long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
     pub core: bool,
 
     /// List installed plugins
-    ///
-    /// This is the default behavior but can be used with --core
-    /// to show core and user plugins
-    #[clap(long, verbatim_doc_comment, conflicts_with = "all")]
+    #[clap(long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
     pub user: bool,
 
     /// Show the git url for each plugin
@@ -49,6 +47,13 @@ impl PluginsLs {
             .into_iter()
             .map(|(k, p)| (k, (p, None)))
             .collect();
+
+        if self.core {
+            for p in CORE_PLUGINS.keys() {
+                miseprintln!("{p}");
+            }
+            return Ok(());
+        }
 
         if self.all {
             for (name, backends) in config.get_shorthands() {
