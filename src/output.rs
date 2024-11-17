@@ -99,7 +99,7 @@ macro_rules! info {
 }
 
 pub fn get_time_diff(module: &str) -> String {
-    if env::MISE_TIMINGS.is_none() {
+    if *env::MISE_TIMINGS == 0 {
         return "".to_string();
     }
     static START: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
@@ -112,7 +112,7 @@ pub fn get_time_diff(module: &str) -> String {
     let mut prev = PREV.lock().unwrap();
     let diff = now.duration_since(prev.unwrap());
     *prev = Some(now);
-    let diff_str = if env::MISE_TIMINGS.as_ref().is_some_and(|s| s == "2") {
+    let diff_str = if *env::MISE_TIMINGS == 2 {
         let relative = time::format_duration(diff);
         let from_start = time::format_duration(now.duration_since(START.lock().unwrap().unwrap()));
         format!("{relative} {from_start}")
@@ -144,7 +144,7 @@ pub fn get_time_diff(module: &str) -> String {
 #[macro_export]
 macro_rules! time {
     ($fn:expr) => {{
-        if $crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s != "0") {
+        if *$crate::env::MISE_TIMINGS > 0 {
             let module = format!("{}::{}", module_path!(), format!($fn));
             eprintln!("{}", $crate::output::get_time_diff(&module));
         } else {
@@ -152,7 +152,7 @@ macro_rules! time {
         }
     }};
     ($fn:expr, $($arg:tt)+) => {{
-        if $crate::env::MISE_TIMINGS.as_ref().is_some_and(|s| s != "0") {
+        if *$crate::env::MISE_TIMINGS > 0 {
             let module = format!("{}::{}", module_path!(), format!($fn, $($arg)+));
             eprintln!("{}", $crate::output::get_time_diff(&module));
         } else {

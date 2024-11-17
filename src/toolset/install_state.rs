@@ -6,6 +6,7 @@ use crate::{backend, dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
 use itertools::Itertools;
+use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
@@ -26,21 +27,17 @@ pub struct InstallStateTool {
 static INSTALL_STATE_PLUGINS: Mutex<Option<InstallStatePlugins>> = Mutex::new(None);
 static INSTALL_STATE_TOOLS: Mutex<Option<InstallStateTools>> = Mutex::new(None);
 
-pub fn init() -> Result<()> {
-    drop(init_plugins()?);
-    drop(init_tools()?);
-    Ok(())
-}
-
 fn init_plugins() -> Result<MutexGuard<'static, Option<BTreeMap<String, PluginType>>>> {
     let mut mu = INSTALL_STATE_PLUGINS.lock().unwrap();
     if mu.is_some() {
         return Ok(mu);
     }
+    time!("init_plugins start");
     let dirs = file::dir_subdirs(&dirs::PLUGINS)?;
     let plugins = dirs
         .into_iter()
         .filter_map(|d| {
+            time!("init_plugins {d}");
             let path = dirs::PLUGINS.join(&d);
             if path.join("metadata.lua").exists() {
                 Some((d, PluginType::Vfox))
@@ -51,7 +48,7 @@ fn init_plugins() -> Result<MutexGuard<'static, Option<BTreeMap<String, PluginTy
             }
         })
         .collect();
-    time!("init_install_state plugins");
+    time!("init_plugins done");
     *mu = Some(plugins);
     Ok(mu)
 }
@@ -61,6 +58,46 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
     if mu.is_some() {
         return Ok(mu);
     }
+    time!("init_tools start");
+    let tool_tools = file::dir_subdirs(&dirs::INSTALLS)?
+        .into_par_iter()
+        .map(|dir| {
+            let backend_meta = read_backend_meta(&dir).unwrap_or_default();
+            let short = backend_meta.first().unwrap_or(&dir).to_string();
+            let full = backend_meta.get(1).cloned();
+            let dir = dirs::INSTALLS.join(&dir);
+            let full = if let Some(full) = short_to_full(&short, full)? {
+                full
+            } else {
+                return Ok(None);
+            };
+            let backend_type = BackendType::guess(&full);
+            let versions = file::dir_subdirs(&dir)
+                .unwrap_or_else(|err| {
+                    warn!("reading versions in {} failed: {err:?}", display_path(&dir));
+                    Default::default()
+                })
+                .into_iter()
+                .filter(|v| !v.starts_with('.'))
+                .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
+                .filter(|v| !dir.join(v).join("incomplete").exists())
+                .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+                .collect();
+            let tool = InstallStateTool {
+                short: short.clone(),
+                _dir: dir.clone(),
+                full,
+                backend_type,
+                versions,
+            };
+            time!("init_tools {short}");
+            Ok(Some((short, tool)))
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect_vec();
+    time!("init_tools tool_tools");
     let mut tools: InstallStateTools = init_plugins()?
         .as_ref()
         .unwrap()
@@ -82,45 +119,9 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
             (short.clone(), tool)
         })
         .collect();
-    let dirs = file::dir_subdirs(&dirs::INSTALLS)?;
-    tools.extend(
-        dirs.into_iter()
-            .map(|dir| {
-                let backend_meta = read_backend_meta(&dir).unwrap_or_default();
-                let short = backend_meta.first().unwrap_or(&dir).to_string();
-                let full = backend_meta.get(1).cloned();
-                let dir = dirs::INSTALLS.join(&dir);
-                let full = if let Some(full) = short_to_full(&short, full)? {
-                    full
-                } else {
-                    return Ok(None);
-                };
-                let backend_type = BackendType::guess(&full);
-                let versions = file::dir_subdirs(&dir)
-                    .unwrap_or_else(|err| {
-                        warn!("reading versions in {} failed: {err:?}", display_path(&dir));
-                        Default::default()
-                    })
-                    .into_iter()
-                    .filter(|v| !v.starts_with('.'))
-                    .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
-                    .filter(|v| !dir.join(v).join("incomplete").exists())
-                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
-                    .collect();
-                let tool = InstallStateTool {
-                    short: short.clone(),
-                    _dir: dir.clone(),
-                    full,
-                    backend_type,
-                    versions,
-                };
-                Ok(Some((short, tool)))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten(),
-    );
-    time!("init_install_state tools");
+    time!("init_tools plugins");
+    tools.extend(tool_tools);
+    time!("init_tools done");
     *mu = Some(tools);
     Ok(mu)
 }

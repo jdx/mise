@@ -35,9 +35,11 @@ impl HookEnv {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let watch_files = config.watch_files()?;
+        time!("hook-env");
         if hook_env::should_exit_early(&watch_files) {
             return Ok(());
         }
+        time!("should_exit_early");
         let ts = ToolsetBuilder::new().build(&config)?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;

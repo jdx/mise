@@ -144,7 +144,9 @@ impl Toolset {
             .map(|tv| tv.request)
             .collect_vec();
         let versions = self.install_versions(config, versions, &mpr, opts)?;
-        lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
+        if !versions.is_empty() {
+            lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
+        }
         Ok(versions)
     }
 

@@ -30,7 +30,7 @@ for index in "${!FILES[@]}"; do
 
   # Skip slow tests unless TEST_ALL == 1
   if [[ ${TEST_ALL:-0} != 1 && $TEST_NAME = *_slow ]]; then
-    title="E2E test $TEST_NAME skipped" file="e2e/$TEST_NAME" warn "slow tests are disabled"
+    #    title="E2E test $TEST_NAME skipped" file="e2e/$TEST_NAME" warn "slow tests are disabled"
     skipped_count=$((skipped_count + 1))
     summary "$TEST_NAME" "-" ":zap:"
     continue

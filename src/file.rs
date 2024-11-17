@@ -250,8 +250,8 @@ pub fn find_up<FN: AsRef<str>>(from: &Path, filenames: &[FN]) -> Option<PathBuf>
     }
 }
 
-pub fn dir_subdirs(dir: &Path) -> Result<Vec<String>> {
-    let mut output = vec![];
+pub fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
+    let mut output = Default::default();
 
     if !dir.exists() {
         return Ok(output);
@@ -261,7 +261,7 @@ pub fn dir_subdirs(dir: &Path) -> Result<Vec<String>> {
         let entry = entry?;
         let ft = entry.file_type()?;
         if ft.is_dir() || (ft.is_symlink() && entry.path().read_link()?.is_dir()) {
-            output.push(entry.file_name().into_string().unwrap());
+            output.insert(entry.file_name().into_string().unwrap());
         }
     }
 
