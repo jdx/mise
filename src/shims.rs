@@ -38,6 +38,7 @@ pub fn handle_shim() -> Result<()> {
         jobs: None,
         raw: false,
     };
+    time!("shim exec");
     exec.run()?;
     exit(0);
 }

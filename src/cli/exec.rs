@@ -11,7 +11,7 @@ use eyre::{eyre, Result};
 use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
-use crate::config::Config;
+use crate::config::CONFIG;
 use crate::env;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
@@ -53,23 +53,23 @@ pub struct Exec {
 
 impl Exec {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_default_to_latest(true)
-            .build(&config)?;
+            .build(&CONFIG)?;
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
             resolve_options: Default::default(),
         };
-        ts.install_arg_versions(&config, &opts)?;
+        ts.install_arg_versions(&CONFIG, &opts)?;
         ts.notify_if_versions_missing();
 
         let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = ts.env_with_path(&config)?;
+        let env = ts.env_with_path(&CONFIG)?;
 
+        time!("exec");
         self.exec(program, args, env)
     }
 

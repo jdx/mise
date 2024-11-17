@@ -1,6 +1,6 @@
 use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
 use crate::file::FindUp;
-use crate::{config, dirs, eager, env, file};
+use crate::{config, dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
@@ -85,6 +85,7 @@ impl Settings {
         if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
         }
+        time!("try_get");
 
         // Initial pass to obtain cd option
         let mut sb = Self::builder()
@@ -153,6 +154,7 @@ impl Settings {
         settings.set_hidden_configs();
         let settings = Arc::new(settings);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
+        time!("try_get done");
         trace!("Settings: {:#?}", settings);
         Ok(settings)
     }
@@ -268,9 +270,6 @@ impl Settings {
     fn parse_settings_file(path: &PathBuf) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
         let settings_file: SettingsFile = toml::from_str(&raw)?;
-
-        // eagerly parse the file as a config file in the background for later
-        eager::CONFIG_FILES.lock().unwrap().push(path.clone());
 
         Ok(settings_file.settings)
     }
