@@ -1,10 +1,10 @@
 use crate::backend::backend_type::BackendType;
+use crate::config::SETTINGS;
 use crate::registry::{RegistryTool, REGISTRY};
 use crate::ui::table;
 use eyre::{bail, Result};
 use itertools::Itertools;
 use tabled::{Table, Tabled};
-use crate::config::SETTINGS;
 
 /// List available tools to install
 ///
