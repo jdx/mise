@@ -129,6 +129,7 @@ impl RubyPlugin {
         cmd!("make", "install")
             .env("PREFIX", self.ruby_install_path())
             .dir(&tmp)
+            .stdout_to_stderr()
             .run()?;
         file::remove_all(&tmp)?;
         Ok(())
@@ -145,7 +146,7 @@ impl RubyPlugin {
         debug!("Updating ruby-install in {}", ruby_install_path.display());
 
         plugins::core::run_fetch_task_with_timeout(move || {
-            cmd!(&ruby_install_path, "--update").run()?;
+            cmd!(&ruby_install_path, "--update").stdout_to_stderr().run()?;
             file::touch_dir(&ruby_install_path)?;
             Ok(())
         })
