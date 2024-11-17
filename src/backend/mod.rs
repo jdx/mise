@@ -171,24 +171,23 @@ pub trait Backend: Debug + Send + Sync {
     fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
         Ok(vec![])
     }
-    fn get_all_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
+    fn get_all_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
         let mut deps: IndexSet<_> = self
             .get_dependencies(tvr)?
             .into_iter()
-            .filter(|short| self.ba().short != *short) // prevent infinite loop
+            .map(BackendArg::from)
+            .filter(|ba| !self.ba().all_fulls().contains(&ba.full()))
             .collect();
-        let dep_backends = deps
-            .iter()
-            .flat_map(|short| get(&short.into()))
-            .collect::<Vec<ABackend>>();
-        for dep in dep_backends {
+        for ba in deps.clone() {
             // TODO: pass the right tvr
             let tvr = ToolRequest::System {
-                backend: dep.id().into(),
+                backend: ba.clone(),
                 source: ToolSource::Unknown,
                 os: None,
             };
-            deps.extend(dep.get_all_dependencies(&tvr)?);
+            if let Ok(backend) = ba.backend() {
+                deps.extend(backend.get_all_dependencies(&tvr)?);
+            }
         }
         Ok(deps.into_iter().collect())
     }
@@ -338,6 +337,8 @@ pub trait Backend: Debug + Send + Sync {
                 os: None,
             })?
             .into_iter()
+            .filter(|ba| self.ba() != ba)
+            .map(|ba| ba.short)
             .collect::<HashSet<_>>();
         if !deps.is_empty() {
             trace!("Ensuring dependencies installed for {}", self.id());
@@ -543,6 +544,7 @@ pub trait Backend: Debug + Send + Sync {
                 os: None,
             })?
             .into_iter()
+            .map(|ba| ba.short)
             .collect();
         let mut ts: Toolset = config
             .get_tool_request_set()?

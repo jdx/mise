@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use color_eyre::Section;
-use eyre::eyre;
+use eyre::{bail, eyre};
 use serde_json::Deserializer;
 use url::Url;
 
@@ -12,10 +12,10 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::env::GITHUB_TOKEN;
-use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolRequest;
+use crate::{env, file};
 
 #[derive(Debug)]
 pub struct CargoBackend {
@@ -88,6 +88,8 @@ impl Backend for CargoBackend {
                 cmd = cmd.env("GITHUB_TOKEN", token)
             }
             cmd.arg(install_arg)
+        } else if env::var("MISE_CARGO_BINSTALL_ONLY").is_ok_and(|v| v == "1") {
+            bail!("cargo-binstall is not available, but MISE_CARGO_BINSTALL_ONLY is set");
         } else {
             cmd.arg(install_arg)
         };

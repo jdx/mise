@@ -181,7 +181,7 @@ impl ToolRequest {
         }
         self
     }
-    pub fn dependencies(&self) -> eyre::Result<Vec<String>> {
+    pub fn dependencies(&self) -> eyre::Result<Vec<BackendArg>> {
         let backend = self.ba().backend()?;
         backend.get_all_dependencies(self)
     }
