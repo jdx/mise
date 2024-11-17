@@ -146,7 +146,9 @@ impl RubyPlugin {
         debug!("Updating ruby-install in {}", ruby_install_path.display());
 
         plugins::core::run_fetch_task_with_timeout(move || {
-            cmd!(&ruby_install_path, "--update").stdout_to_stderr().run()?;
+            cmd!(&ruby_install_path, "--update")
+                .stdout_to_stderr()
+                .run()?;
             file::touch_dir(&ruby_install_path)?;
             Ok(())
         })
