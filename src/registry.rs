@@ -2,7 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use once_cell::sync::Lazy;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env::consts::OS;
 use std::iter::Iterator;
 use strum::IntoEnumIterator;
@@ -59,6 +59,20 @@ impl RegistryTool {
             .first()
             .map(|f| BackendArg::new(self.short.to_string(), Some(f.to_string())))
     }
+}
+
+pub fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
+    static EMPTY: Vec<&'static str> = vec![];
+    static FULL_TO_SHORT: Lazy<HashMap<&'static str, Vec<&'static str>>> = Lazy::new(|| {
+        let mut map: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
+        for (short, rt) in REGISTRY.iter() {
+            for full in rt.backends() {
+                map.entry(full).or_default().push(short);
+            }
+        }
+        map
+    });
+    FULL_TO_SHORT.get(full).unwrap_or(&EMPTY)
 }
 
 pub fn is_trusted_plugin(name: &str, remote: &str) -> bool {

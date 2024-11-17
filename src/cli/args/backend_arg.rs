@@ -3,10 +3,11 @@ use crate::backend::{unalias_backend, ABackend};
 use crate::config::CONFIG;
 use crate::registry::REGISTRY;
 use crate::toolset::{install_state, parse_tool_options, ToolVersionOptions};
-use crate::{backend, config, dirs};
+use crate::{backend, config, dirs, registry};
 use contracts::requires;
 use eyre::{bail, Result};
 use heck::ToKebabCase;
+use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
@@ -141,6 +142,23 @@ impl BackendArg {
             return full.clone();
         }
         unalias_backend(&self.short).to_string()
+    }
+
+    /// maps something like cargo:cargo-binstall to cargo-binstall and ubi:cargo-binstall, etc
+    pub fn all_fulls(&self) -> HashSet<String> {
+        let full = self.full();
+        let mut all = HashSet::new();
+        for short in registry::shorts_for_full(&full) {
+            let rt = REGISTRY.get(short).unwrap();
+            let backends = rt.backends();
+            if backends.contains(&full.as_str()) {
+                all.insert(rt.short.to_string());
+                all.extend(backends.into_iter().map(|s| s.to_string()));
+            }
+        }
+        all.insert(full);
+        all.insert(self.short.to_string());
+        all
     }
 
     pub fn is_os_supported(&self) -> bool {
