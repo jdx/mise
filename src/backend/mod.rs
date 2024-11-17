@@ -64,6 +64,7 @@ pub fn load_tools() {
             })
             .unwrap_or_default()
             .into_values()
+            .filter(|ist| ist.full.is_some())
             .flat_map(|ist| arg_to_backend(ist.into())),
     );
     time!("load_tools install_state");

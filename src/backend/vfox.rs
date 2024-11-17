@@ -110,7 +110,7 @@ impl VfoxBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         let pathname = ba.short.to_kebab_case();
         let plugin_path = dirs::PLUGINS.join(&pathname);
-        let mut plugin = VfoxPlugin::new(pathname.clone());
+        let mut plugin = VfoxPlugin::new(pathname.clone(), plugin_path.clone());
         plugin.full = Some(ba.full());
         Self {
             remote_version_cache: CacheManagerBuilder::new(

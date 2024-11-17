@@ -1,3 +1,4 @@
+use crate::dirs;
 use crate::errors::Error::PluginNotInstalled;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
@@ -6,6 +7,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use clap::Command;
 use eyre::{eyre, Result};
+use heck::ToKebabCase;
 use once_cell::sync::Lazy;
 use regex::Regex;
 pub use script_manager::{Script, ScriptManager};
@@ -35,9 +37,10 @@ impl PluginType {
     }
 
     pub fn plugin(&self, short: String) -> APlugin {
+        let path = dirs::PLUGINS.join(short.to_kebab_case());
         match self {
-            PluginType::Asdf => Box::new(AsdfPlugin::new(short)),
-            PluginType::Vfox => Box::new(VfoxPlugin::new(short)),
+            PluginType::Asdf => Box::new(AsdfPlugin::new(short, path)),
+            PluginType::Vfox => Box::new(VfoxPlugin::new(short, path)),
         }
     }
 }

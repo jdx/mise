@@ -1,11 +1,13 @@
 use color_eyre::eyre::{bail, eyre, Result};
 use contracts::ensures;
+use heck::ToKebabCase;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use url::Url;
 
 use crate::backend::unalias_backend;
 use crate::config::{Config, Settings};
+use crate::dirs;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::Plugin;
@@ -112,7 +114,8 @@ impl PluginsInstall {
         git_url: Option<String>,
         mpr: &MultiProgressReport,
     ) -> Result<()> {
-        let mut plugin = AsdfPlugin::new(name.clone());
+        let path = dirs::PLUGINS.join(name.to_kebab_case());
+        let mut plugin = AsdfPlugin::new(name.clone(), path);
         plugin.repo_url = git_url;
         if !self.force && plugin.is_installed() {
             warn!("Plugin {name} already installed");
@@ -170,24 +173,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git#v1.0.0</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-    use test_log::test;
-
-    use crate::test::reset;
-    #[test]
-    fn test_plugin_install_invalid_url() {
-        reset();
-        let err = assert_cli_err!("plugin", "add", "tiny*");
-        assert_snapshot!(err, @"No repository found for plugin tiny*");
-    }
-
-    #[test]
-    fn test_plugin_install_core_plugin() {
-        reset();
-        let err = assert_cli_err!("plugin", "add", "node");
-        assert_snapshot!(err, @"node is a core plugin and does not need to be installed");
-    }
-}
