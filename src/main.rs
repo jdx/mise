@@ -27,7 +27,6 @@ mod config;
 mod direnv;
 mod dirs;
 pub(crate) mod duration;
-pub(crate) mod eager;
 mod env;
 mod env_diff;
 mod errors;
@@ -68,7 +67,6 @@ pub use crate::exit::exit;
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
     output::get_time_diff(""); // throwaway call to initialize the timer
-    eager::early_init();
     let args = env::args().collect_vec();
     time!("main start");
 

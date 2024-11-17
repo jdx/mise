@@ -752,8 +752,6 @@ fn load_all_config_files(
             }
             Ok((f.clone(), cf))
         })
-        .collect::<Vec<Result<_>>>()
-        .into_iter()
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .collect())

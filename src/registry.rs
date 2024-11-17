@@ -28,9 +28,11 @@ impl RegistryTool {
             let mut backend_types = BackendType::iter()
                 .map(|b| b.to_string())
                 .collect::<HashSet<_>>();
+            time!("disable_backends");
             for backend in &SETTINGS.disable_backends {
                 backend_types.remove(backend);
             }
+            time!("disable_backends");
             if cfg!(windows) {
                 backend_types.remove("asdf");
             }

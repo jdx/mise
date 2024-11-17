@@ -1,6 +1,6 @@
 use crate::config::Settings;
 use crate::ui::ctrlc;
-use crate::{eager, logger, migrate, shims};
+use crate::{logger, migrate, shims};
 use clap::{FromArgMatches, Subcommand};
 use color_eyre::Result;
 use indoc::indoc;
@@ -63,7 +63,8 @@ mod r#which;
 
 pub struct Cli {}
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Subcommand, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub enum Commands {
     Activate(activate::Activate),
     Alias(alias::Alias),
@@ -123,6 +124,7 @@ pub enum Commands {
 
 impl Commands {
     pub fn run(self) -> Result<()> {
+        time!("run {self}");
         match self {
             Self::Activate(cmd) => cmd.run(),
             Self::Alias(cmd) => cmd.run(),
@@ -211,8 +213,10 @@ impl Cli {
         time!("run handle_shim");
         ctrlc::init();
         version::print_version_if_requested(args)?;
+        time!("run print_version_if_requested");
 
         let matches = CLI.clone().try_get_matches_from(args).unwrap_or_else(|_| {
+            time!("run get_matches_from fallback");
             CLI.clone()
                 .subcommands(external::commands())
                 .get_matches_from(args)
@@ -223,13 +227,11 @@ impl Cli {
         logger::init();
         time!("run logger init");
         migrate::run();
-        eager::post_settings();
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
         }
 
         debug!("ARGS: {}", &args.join(" "));
-        time!("run");
         match Commands::from_arg_matches(&matches) {
             Ok(cmd) => cmd.run(),
             Err(err) => matches
