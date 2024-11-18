@@ -139,7 +139,9 @@ impl AquaBackend {
     fn fetch_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
         match pkg.r#type {
             AquaPackageType::GithubRelease => self.github_release_url(pkg, v),
-            AquaPackageType::GithubArchive | AquaPackageType::GithubContent => self.github_archive_url(pkg, v),
+            AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
+                self.github_archive_url(pkg, v)
+            }
             AquaPackageType::Http => {
                 let url = pkg.url(v);
                 HTTP.head(&url)?;

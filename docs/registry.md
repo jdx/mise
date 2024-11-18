@@ -127,7 +127,7 @@ editLink: false
 | clusterawsadm | [asdf:kahun/asdf-clusterawsadm](https://github.com/kahun/asdf-clusterawsadm) |
 | clusterctl | [asdf:pfnet-research/asdf-clusterctl](https://github.com/pfnet-research/asdf-clusterctl) |
 | cmake | [asdf:asdf-community/asdf-cmake](https://github.com/asdf-community/asdf-cmake) [vfox:version-fox/vfox-cmake](https://github.com/version-fox/vfox-cmake) |
-| cmctl | [asdf:asdf-community/asdf-cmctl](https://github.com/asdf-community/asdf-cmctl) |
+| cmctl | [aqua:cert-manager/cmctl](https://github.com/cert-manager/cmctl) [asdf:asdf-community/asdf-cmctl](https://github.com/asdf-community/asdf-cmctl) |
 | cockroach | [asdf:salasrod/asdf-cockroach](https://github.com/salasrod/asdf-cockroach) |
 | cocoapods | [asdf:ronnnnn/asdf-cocoapods](https://github.com/ronnnnn/asdf-cocoapods) |
 | codefresh | [asdf:gurukulkarni/asdf-codefresh](https://github.com/gurukulkarni/asdf-codefresh) |
@@ -171,7 +171,7 @@ editLink: false
 | deno | [core:deno](https://mise.jdx.dev/lang/deno.html) [vfox:version-fox/vfox-deno](https://github.com/version-fox/vfox-deno) |
 | dep | [asdf:paxosglobal/asdf-dep](https://github.com/paxosglobal/asdf-dep) |
 | depot | [asdf:depot/asdf-depot](https://github.com/depot/asdf-depot) |
-| desk | [asdf:endorama/asdf-desk](https://github.com/endorama/asdf-desk) |
+| desk | [aqua:jamesob/desk](https://github.com/jamesob/desk) [asdf:endorama/asdf-desk](https://github.com/endorama/asdf-desk) |
 | devspace | [aqua:devspace-sh/devspace](https://github.com/devspace-sh/devspace) [asdf:NeoHsu/asdf-devspace](https://github.com/NeoHsu/asdf-devspace) |
 | dhall | [asdf:aaaaninja/asdf-dhall](https://github.com/aaaaninja/asdf-dhall) |
 | difftastic | [ubi:wilfred/difftastic](https://github.com/wilfred/difftastic) [asdf:volf52/asdf-difftastic](https://github.com/volf52/asdf-difftastic) |
@@ -205,7 +205,7 @@ editLink: false
 | dynatrace-monaco | [asdf:nsaputro/asdf-monaco](https://github.com/nsaputro/asdf-monaco) |
 | earthly | [aqua:earthly/earthly](https://github.com/earthly/earthly) [asdf:YR-ZR0/asdf-earthly](https://github.com/YR-ZR0/asdf-earthly) |
 | ecspresso | [aqua:kayac/ecspresso](https://github.com/kayac/ecspresso) [asdf:kayac/asdf-ecspresso](https://github.com/kayac/asdf-ecspresso) |
-| editorconfig-checker | [asdf:gabitchov/asdf-editorconfig-checker](https://github.com/gabitchov/asdf-editorconfig-checker) |
+| editorconfig-checker | [aqua:editorconfig-checker/editorconfig-checker](https://github.com/editorconfig-checker/editorconfig-checker) [asdf:gabitchov/asdf-editorconfig-checker](https://github.com/gabitchov/asdf-editorconfig-checker) |
 | ejson | [aqua:Shopify/ejson](https://github.com/Shopify/ejson) [asdf:cipherstash/asdf-ejson](https://github.com/cipherstash/asdf-ejson) |
 | eksctl | [aqua:eksctl-io/eksctl](https://github.com/eksctl-io/eksctl) [asdf:elementalvoid/asdf-eksctl](https://github.com/elementalvoid/asdf-eksctl) |
 | elasticsearch | [asdf:asdf-community/asdf-elasticsearch](https://github.com/asdf-community/asdf-elasticsearch) |
@@ -234,7 +234,7 @@ editLink: false
 | flatc | [asdf:TheOpenDictionary/asdf-flatc](https://github.com/TheOpenDictionary/asdf-flatc) |
 | flutter | [asdf:oae/asdf-flutter](https://github.com/oae/asdf-flutter) [vfox:version-fox/vfox-flutter](https://github.com/version-fox/vfox-flutter) |
 | fluttergen | [asdf:FlutterGen/asdf-fluttergen](https://github.com/FlutterGen/asdf-fluttergen) |
-| flux2 | [asdf:tablexi/asdf-flux2](https://github.com/tablexi/asdf-flux2) |
+| flux2 | [aqua:fluxcd/flux2](https://github.com/fluxcd/flux2) [asdf:tablexi/asdf-flux2](https://github.com/tablexi/asdf-flux2) |
 | fluxctl | [asdf:stefansedich/asdf-fluxctl](https://github.com/stefansedich/asdf-fluxctl) |
 | fly | [aqua:concourse/concourse/fly](https://github.com/concourse/concourse/fly) [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
 | flyctl | [ubi:superfly/flyctl](https://github.com/superfly/flyctl) [asdf:chessmango/asdf-flyctl](https://github.com/chessmango/asdf-flyctl) |
@@ -262,7 +262,7 @@ editLink: false
 | github-cli | [ubi:cli/cli](https://github.com/cli/cli) [asdf:bartlomiejdanek/asdf-github-cli](https://github.com/bartlomiejdanek/asdf-github-cli) |
 | github-markdown-toc | [aqua:ekalinin/github-markdown-toc](https://github.com/ekalinin/github-markdown-toc) [asdf:skyzyx/asdf-github-markdown-toc](https://github.com/skyzyx/asdf-github-markdown-toc) |
 | gitleaks | [aqua:aqua:gitleaks/gitleaks](https://github.com/aqua:gitleaks/gitleaks) [asdf:jmcvetta/asdf-gitleaks](https://github.com/jmcvetta/asdf-gitleaks) |
-| gitsign | [asdf:spencergilbert/asdf-gitsign](https://github.com/spencergilbert/asdf-gitsign) |
+| gitsign | [aqua:sigstore/gitsign](https://github.com/sigstore/gitsign) [asdf:spencergilbert/asdf-gitsign](https://github.com/spencergilbert/asdf-gitsign) |
 | gitu | [ubi:altsem/gitu](https://github.com/altsem/gitu) [cargo:gitu](https://crates.io/crates/gitu) |
 | gitui | [aqua:extrawurst/gitui](https://github.com/extrawurst/gitui) [asdf:looztra/asdf-gitui](https://github.com/looztra/asdf-gitui) |
 | glab | [asdf:particledecay/asdf-glab](https://github.com/particledecay/asdf-glab) |
@@ -277,7 +277,7 @@ editLink: false
 | go-jsonnet | [aqua:google/go-jsonnet](https://github.com/google/go-jsonnet) [asdf:https://gitlab.com/craigfurman/asdf-go-jsonnet](https://gitlab.com/craigfurman/asdf-go-jsonnet) |
 | go-junit-report | [asdf:jwillker/asdf-go-junit-report](https://github.com/jwillker/asdf-go-junit-report) |
 | go-sdk | [asdf:yacchi/asdf-go-sdk](https://github.com/yacchi/asdf-go-sdk) |
-| go-swagger | [asdf:jfreeland/asdf-go-swagger](https://github.com/jfreeland/asdf-go-swagger) |
+| go-swagger | [aqua:go-swagger/go-swagger](https://github.com/go-swagger/go-swagger) [asdf:jfreeland/asdf-go-swagger](https://github.com/jfreeland/asdf-go-swagger) |
 | goconvey | [asdf:therounds-contrib/asdf-goconvey](https://github.com/therounds-contrib/asdf-goconvey) |
 | gofumpt | [ubi:mvdan/gofumpt](https://github.com/mvdan/gofumpt) [asdf:looztra/asdf-gofumpt](https://github.com/looztra/asdf-gofumpt) |
 | gohugo | [ubi:gohugoio/hugo](https://github.com/gohugoio/hugo) [asdf:nklmilojevic/asdf-hugo](https://github.com/nklmilojevic/asdf-hugo) |
@@ -299,7 +299,7 @@ editLink: false
 | granted | [aqua:common-fate/granted](https://github.com/common-fate/granted) [asdf:dex4er/asdf-granted](https://github.com/dex4er/asdf-granted) |
 | grex | [asdf:ouest/asdf-grex](https://github.com/ouest/asdf-grex) |
 | groovy | [asdf:weibemoura/asdf-groovy](https://github.com/weibemoura/asdf-groovy) [vfox:version-fox/vfox-groovy](https://github.com/version-fox/vfox-groovy) |
-| grpc-health-probe | [asdf:zufardhiyaulhaq/asdf-grpc-health-probe](https://github.com/zufardhiyaulhaq/asdf-grpc-health-probe) |
+| grpc-health-probe | [aqua:grpc-ecosystem/grpc-health-probe](https://github.com/grpc-ecosystem/grpc-health-probe) [asdf:zufardhiyaulhaq/asdf-grpc-health-probe](https://github.com/zufardhiyaulhaq/asdf-grpc-health-probe) |
 | grpcurl | [aqua:fullstorydev/grpcurl](https://github.com/fullstorydev/grpcurl) [asdf:asdf-community/asdf-grpcurl](https://github.com/asdf-community/asdf-grpcurl) |
 | grype | [ubi:anchore/grype](https://github.com/anchore/grype) [asdf:poikilotherm/asdf-grype](https://github.com/poikilotherm/asdf-grype) |
 | guile | [asdf:indiebrain/asdf-guile](https://github.com/indiebrain/asdf-guile) |
@@ -307,7 +307,7 @@ editLink: false
 | gwvault | [aqua:GoodwayGroup/gwvault](https://github.com/GoodwayGroup/gwvault) [asdf:GoodwayGroup/asdf-gwvault](https://github.com/GoodwayGroup/asdf-gwvault) |
 | hadolint | [ubi:hadolint/hadolint](https://github.com/hadolint/hadolint) [asdf:devlincashman/asdf-hadolint](https://github.com/devlincashman/asdf-hadolint) |
 | hamler | [asdf:scudelletti/asdf-hamler](https://github.com/scudelletti/asdf-hamler) |
-| has | [asdf:sylvainmetayer/asdf-has](https://github.com/sylvainmetayer/asdf-has) |
+| has | [aqua:kdabir/has](https://github.com/kdabir/has) [asdf:sylvainmetayer/asdf-has](https://github.com/sylvainmetayer/asdf-has) |
 | haskell | [asdf:asdf-community/asdf-haskell](https://github.com/asdf-community/asdf-haskell) |
 | hasura-cli | [asdf:gurukulkarni/asdf-hasura](https://github.com/gurukulkarni/asdf-hasura) |
 | haxe | [asdf:asdf-community/asdf-haxe](https://github.com/asdf-community/asdf-haxe) |
@@ -345,7 +345,7 @@ editLink: false
 | infracost | [aqua:infracost/infracost](https://github.com/infracost/infracost) [asdf:dex4er/asdf-infracost](https://github.com/dex4er/asdf-infracost) |
 | inlets | [asdf:nlamirault/asdf-inlets](https://github.com/nlamirault/asdf-inlets) |
 | io | [asdf:mracos/asdf-io](https://github.com/mracos/asdf-io) |
-| istioctl | [asdf:virtualstaticvoid/asdf-istioctl](https://github.com/virtualstaticvoid/asdf-istioctl) |
+| istioctl | [aqua:istio/istio/istioctl](https://github.com/istio/istio/istioctl) [asdf:virtualstaticvoid/asdf-istioctl](https://github.com/virtualstaticvoid/asdf-istioctl) |
 | janet | [asdf:Jakski/asdf-janet](https://github.com/Jakski/asdf-janet) |
 | java | [core:java](https://mise.jdx.dev/lang/java.html) [vfox:version-fox/vfox-java](https://github.com/version-fox/vfox-java) |
 | jb | [asdf:beardix/asdf-jb](https://github.com/beardix/asdf-jb) |
@@ -472,7 +472,7 @@ editLink: false
 | mc | [asdf:penpyt/asdf-mc](https://github.com/penpyt/asdf-mc) |
 | mdbook | [asdf:cipherstash/asdf-mdbook](https://github.com/cipherstash/asdf-mdbook) |
 | mdbook-linkcheck | [asdf:cipherstash/asdf-mdbook-linkcheck](https://github.com/cipherstash/asdf-mdbook-linkcheck) |
-| melange | [asdf:omissis/asdf-melange](https://github.com/omissis/asdf-melange) |
+| melange | [aqua:chainguard-dev/melange](https://github.com/chainguard-dev/melange) [asdf:omissis/asdf-melange](https://github.com/omissis/asdf-melange) |
 | melt | [asdf:chessmango/asdf-melt](https://github.com/chessmango/asdf-melt) |
 | memcached | [asdf:furkanural/asdf-memcached](https://github.com/furkanural/asdf-memcached) |
 | mercury | [asdf:susurri/asdf-mercury](https://github.com/susurri/asdf-mercury) |
