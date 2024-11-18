@@ -66,6 +66,7 @@ jobs:
           SHELL: zsh
       - name: Comment on PR
         uses: thollander/actions-comment-pull-request@v3
+        if: github.event_name == 'pull_request'
         #if: "startsWith(github.event.pull_request.title, 'perf:') || startsWith(github.event.pull_request.title, 'chore: release')"
         with:
           file-path: comment.md
