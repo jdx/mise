@@ -33,3 +33,6 @@ mise plugin uninstall tiny
 mise plugin update
 mise plugin update shfmt
 mise i
+
+assert_contains "mise plugin install mise-x 2>&1 || true" "No repository found for plugin mise-x"
+assert_contains "mise plugin add node 2>&1 || true" "node is a core plugin and does not need to be installed"

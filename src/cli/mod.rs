@@ -124,7 +124,6 @@ pub enum Commands {
 
 impl Commands {
     pub fn run(self) -> Result<()> {
-        time!("run {self}");
         match self {
             Self::Activate(cmd) => cmd.run(),
             Self::Alias(cmd) => cmd.run(),
@@ -208,37 +207,50 @@ pub static CLI: Lazy<clap::Command> = Lazy::new(|| {
 impl Cli {
     pub fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
-        time!("run init");
-        shims::handle_shim()?;
-        time!("run handle_shim");
+        measure!("hande_shim", { shims::handle_shim() })?;
         ctrlc::init();
         version::print_version_if_requested(args)?;
-        time!("run print_version_if_requested");
 
-        let matches = CLI.clone().try_get_matches_from(args).unwrap_or_else(|_| {
-            time!("run get_matches_from fallback");
-            CLI.clone()
-                .subcommands(external::commands())
-                .get_matches_from(args)
+        let matches = measure!("pre_settings", { Self::pre_settings(args) })?;
+        measure!("add_cli_matches", { Settings::add_cli_matches(&matches) });
+        measure!("settings", {
+            let _ = Settings::try_get();
         });
-        time!("run get_matches_from");
-        Settings::add_cli_matches(&matches);
-        time!("run add_cli_matches");
-        logger::init();
-        time!("run logger init");
-        migrate::run();
+        measure!("logger", { logger::init() });
+        measure!("migrate", { migrate::run() });
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
         }
 
         debug!("ARGS: {}", &args.join(" "));
         match Commands::from_arg_matches(&matches) {
-            Ok(cmd) => cmd.run(),
+            Ok(cmd) => measure!("run {cmd}", { cmd.run() }),
             Err(err) => matches
                 .subcommand()
                 .ok_or(err)
                 .map(|(command, sub_m)| external::execute(&command.into(), sub_m))?,
         }
+    }
+
+    fn pre_settings(args: &Vec<String>) -> Result<clap::ArgMatches> {
+        let mut results = vec![];
+        let mut matches = None;
+        rayon::scope(|r| {
+            r.spawn(|_| {
+                measure!("install_state", {
+                    results.push(crate::install_state::init())
+                });
+            });
+            measure!("get_matches_from", {
+                matches = Some(CLI.clone().try_get_matches_from(args).unwrap_or_else(|_| {
+                    CLI.clone()
+                        .subcommands(external::commands())
+                        .get_matches_from(args)
+                }));
+            });
+        });
+        results.into_iter().try_for_each(|r| r)?;
+        Ok(matches.unwrap())
     }
 }
 

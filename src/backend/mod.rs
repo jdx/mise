@@ -55,35 +55,6 @@ pub fn load_tools() {
     let core_tools = CORE_PLUGINS.values().cloned().collect::<Vec<ABackend>>();
     let mut tools = core_tools;
     time!("load_tools core");
-    let plugins = install_state::list_plugins()
-        .map_err(|err| {
-            warn!("{err:#}");
-        })
-        .unwrap_or_default();
-    if !SETTINGS.disable_backends.contains(&"asdf".to_string()) {
-        tools.extend(
-            plugins
-                .iter()
-                .filter(|(_, p)| **p == PluginType::Asdf)
-                .map(|(p, _)| {
-                    arg_to_backend(BackendArg::new(p.to_string(), Some(format!("asdf:{p}"))))
-                        .unwrap()
-                }),
-        );
-    }
-    time!("load_tools asdf");
-    if !SETTINGS.disable_backends.contains(&"vfox".to_string()) {
-        tools.extend(
-            plugins
-                .iter()
-                .filter(|(_, p)| **p == PluginType::Vfox)
-                .map(|(p, _)| {
-                    arg_to_backend(BackendArg::new(p.to_string(), Some(format!("vfox:{p}"))))
-                        .unwrap()
-                }),
-        );
-    }
-    time!("load_tools vfox");
     tools.extend(
         install_state::list_tools()
             .map_err(|err| {
@@ -91,10 +62,15 @@ pub fn load_tools() {
             })
             .unwrap_or_default()
             .into_values()
-            .flat_map(|ist| arg_to_backend(BackendArg::new(ist.short, Some(ist.full)))),
+            .flat_map(|ist| arg_to_backend(ist.into())),
     );
     time!("load_tools install_state");
     tools.retain(|backend| !SETTINGS.disable_tools().contains(backend.id()));
+    tools.retain(|backend| {
+        !SETTINGS
+            .disable_backends
+            .contains(&backend.get_type().to_string())
+    });
 
     let tools: BackendMap = tools
         .into_iter()
@@ -395,7 +371,7 @@ pub trait Backend: Debug + Send + Sync {
             return Err(e);
         }
 
-        self.write_backend_meta()?;
+        install_state::write_backend_meta(self.ba())?;
 
         self.cleanup_install_dirs(&ctx.tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
@@ -603,13 +579,6 @@ pub trait Backend: Debug + Send + Sync {
                 Arc::new(cm.build())
             })
             .clone()
-    }
-
-    fn write_backend_meta(&self) -> eyre::Result<()> {
-        file::write(
-            self.ba().installs_path.join(".mise.backend"),
-            format!("{}\n{}", self.ba().short, self.ba().full()),
-        )
     }
 }
 
