@@ -166,16 +166,39 @@ impl Toolset {
             .collect()
     }
 
+    /// sets the options on incoming requests to install to whatever is already in the toolset
+    /// this handles the use-case where you run `mise use ubi:cilium/cilium-cli` (without CLi options)
+    /// but this tool has options inside mise.toml
+    fn init_request_options(&self, requests: &mut Vec<ToolRequest>) {
+        for tr in requests {
+            // TODO: tr.options() probably should be Option<ToolVersionOptions>
+            // to differentiate between no options and empty options
+            // without that it might not be possible to unset the options if they are set
+            if !tr.options().is_empty() {
+                continue;
+            }
+            if let Some(tvl) = self.versions.get(tr.ba()) {
+                if tvl.requests.len() != 1 {
+                    // TODO: handle this case with multiple versions
+                    continue;
+                }
+                let options = tvl.requests[0].options();
+                tr.set_options(options);
+            }
+        }
+    }
+
     pub fn install_versions(
         &mut self,
         config: &Config,
-        versions: Vec<ToolRequest>,
+        mut versions: Vec<ToolRequest>,
         mpr: &MultiProgressReport,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
         if versions.is_empty() {
             return Ok(vec![]);
         }
+        self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
         let leaf_deps = get_leaf_dependencies(&versions)?;
         if leaf_deps.len() < versions.len() {

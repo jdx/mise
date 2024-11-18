@@ -60,6 +60,7 @@ mod shorthands;
 pub(crate) mod task;
 pub(crate) mod tera;
 pub(crate) mod timeout;
+mod tokio;
 mod toml;
 mod toolset;
 mod ui;

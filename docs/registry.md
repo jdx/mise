@@ -608,10 +608,10 @@ editLink: false
 | restic | [asdf:xataz/asdf-restic](https://github.com/xataz/asdf-restic) |
 | restish | [ubi:danielgtaylor/restish](https://github.com/danielgtaylor/restish) [go:github.com/danielgtaylor/restish](https://pkg.go.dev/github.com/danielgtaylor/restish) |
 | revive | [aqua:mgechev/revive](https://github.com/mgechev/revive) [asdf:bjw-s/asdf-revive](https://github.com/bjw-s/asdf-revive) |
-| rg | [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [aqua:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
+| rg | [aqua:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
 | richgo | [aqua:kyoh86/richgo](https://github.com/kyoh86/richgo) [asdf:paxosglobal/asdf-richgo](https://github.com/paxosglobal/asdf-richgo) |
 | riff | [asdf:abinet/asdf-riff](https://github.com/abinet/asdf-riff) |
-| ripgrep | [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [aqua:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
+| ripgrep | [aqua:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
 | rke | [aqua:rancher/rke](https://github.com/rancher/rke) [asdf:particledecay/asdf-rke](https://github.com/particledecay/asdf-rke) |
 | rlwrap | [asdf:asdf-community/asdf-rlwrap](https://github.com/asdf-community/asdf-rlwrap) |
 | rome | [asdf:kichiemon/asdf-rome](https://github.com/kichiemon/asdf-rome) |
@@ -682,7 +682,7 @@ editLink: false
 | step | [asdf:log2/asdf-step](https://github.com/log2/asdf-step) |
 | stern | [aqua:stern/stern](https://github.com/stern/stern) [asdf:looztra/asdf-stern](https://github.com/looztra/asdf-stern) |
 | stripe-cli | [aqua:stripe/stripe-cli](https://github.com/stripe/stripe-cli) [asdf:offbyone/asdf-stripe](https://github.com/offbyone/asdf-stripe) |
-| stylua | [asdf:jc00ke/asdf-stylua](https://github.com/jc00ke/asdf-stylua) |
+| stylua | [aqua:JohnnyMorganz/StyLua](https://github.com/JohnnyMorganz/StyLua) [asdf:jc00ke/asdf-stylua](https://github.com/jc00ke/asdf-stylua) |
 | sui | [asdf:placeholder-soft/asdf-sui](https://github.com/placeholder-soft/asdf-sui) |
 | sver | [aqua:mitoma/sver](https://github.com/mitoma/sver) [asdf:robzr/asdf-sver](https://github.com/robzr/asdf-sver) |
 | svu | [aqua:caarlos0/svu](https://github.com/caarlos0/svu) [asdf:asdf-community/asdf-svu](https://github.com/asdf-community/asdf-svu) |

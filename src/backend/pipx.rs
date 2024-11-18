@@ -41,7 +41,7 @@ impl Backend for PIPXBackend {
      */
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
-            .get_or_try_init(|| match self.name().parse()? {
+            .get_or_try_init(|| match self.tool_name().parse()? {
                 PipxRequest::Pypi(package) => {
                     let url = format!("https://pypi.org/pypi/{}/json", package);
                     let data: PypiPackage = HTTP_FETCH.json(url)?;
@@ -65,7 +65,7 @@ impl Backend for PIPXBackend {
 
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
-            .get_or_try_init(|| match self.name().parse()? {
+            .get_or_try_init(|| match self.tool_name().parse()? {
                 PipxRequest::Pypi(package) => {
                     let url = format!("https://pypi.org/pypi/{}/json", package);
                     let pkg: PypiPackage = HTTP_FETCH.json(url)?;
@@ -80,7 +80,7 @@ impl Backend for PIPXBackend {
         let config = Config::try_get()?;
         SETTINGS.ensure_experimental("pipx backend")?;
         let pipx_request = self
-            .name()
+            .tool_name()
             .parse::<PipxRequest>()?
             .pipx_request(&ctx.tv.version, &ctx.tv.request.options());
 

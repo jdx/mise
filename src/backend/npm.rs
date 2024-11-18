@@ -35,7 +35,7 @@ impl Backend for NPMBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!(NPM_PROGRAM, "view", self.name(), "versions", "--json")
+                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
                     .full_env(self.dependency_env()?)
                     .read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
@@ -47,7 +47,7 @@ impl Backend for NPMBackend {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| {
-                let raw = cmd!(NPM_PROGRAM, "view", self.name(), "dist-tags", "--json")
+                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "dist-tags", "--json")
                     .full_env(self.dependency_env()?)
                     .read()?;
                 let dist_tags: Value = serde_json::from_str(&raw)?;
@@ -66,7 +66,7 @@ impl Backend for NPMBackend {
         if SETTINGS.npm.bun {
             CmdLineRunner::new("bun")
                 .arg("install")
-                .arg(format!("{}@{}", self.name(), ctx.tv.version))
+                .arg(format!("{}@{}", self.tool_name(), ctx.tv.version))
                 .arg("--cwd")
                 .arg(ctx.tv.install_path())
                 .arg("--global")
@@ -82,7 +82,7 @@ impl Backend for NPMBackend {
             CmdLineRunner::new(NPM_PROGRAM)
                 .arg("install")
                 .arg("-g")
-                .arg(format!("{}@{}", self.name(), ctx.tv.version))
+                .arg(format!("{}@{}", self.tool_name(), ctx.tv.version))
                 .arg("--prefix")
                 .arg(ctx.tv.install_path())
                 .with_pr(ctx.pr.as_ref())
