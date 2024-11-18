@@ -5,6 +5,12 @@ e.g.: `mise i ripgrep` will use [asdf](https://gitlab.com/wt0f/asdf-ripgrep) but
 will use the [cargo](./cargo) backend. You can explicitly specify the asdf backend with `mise i asdf:ripgrep`.
 If you wish.
 
+If choosing a backend to integrate a tool into mise, it's discouraged to use the asdf backend. ubi
+would be the ideal choice if it can work as a single binary, otherwise aqua would be the next best choice
+since it requires minimal configuration and doesn't require executing code in a plugin. Generally
+vfox plugins can handle anything an asdf plugin might need to do while also being potentially able
+to support windows.
+
 There are [hundreds of plugins](https://github.com/mise-plugins/registry) available in the
 [mise registry](https://github.com/mise-plugins) and you can also install plugins from git
 repos or local directories.
