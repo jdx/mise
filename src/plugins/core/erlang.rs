@@ -51,6 +51,7 @@ impl ErlangPlugin {
         self.install_kerl()?;
         cmd!(self.kerl_path(), "update", "releases")
             .env("KERL_BASE_DIR", self.kerl_base_dir())
+            .stdout_to_stderr()
             .run()?;
         Ok(())
     }
@@ -104,6 +105,7 @@ impl Backend for ErlangPlugin {
                     ctx.tv.install_path()
                 )
                 .env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
+                .stdout_to_stderr()
                 .run()?;
             }
         }

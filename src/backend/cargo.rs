@@ -47,7 +47,7 @@ impl Backend for CargoBackend {
         }
         self.remote_version_cache
             .get_or_try_init(|| {
-                let raw = HTTP_FETCH.get_text(get_crate_url(self.name())?)?;
+                let raw = HTTP_FETCH.get_text(get_crate_url(&self.tool_name())?)?;
                 let stream = Deserializer::from_str(&raw).into_iter::<CrateVersion>();
                 let mut versions = vec![];
                 for v in stream {
@@ -63,7 +63,7 @@ impl Backend for CargoBackend {
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let config = Config::try_get()?;
-        let install_arg = format!("{}@{}", self.name(), ctx.tv.version);
+        let install_arg = format!("{}@{}", self.tool_name(), ctx.tv.version);
 
         let cmd = CmdLineRunner::new("cargo").arg("install");
         let mut cmd = if let Some(url) = self.git_url() {
@@ -150,9 +150,9 @@ impl CargoBackend {
 
     /// if the name is a git repo, return the git url
     fn git_url(&self) -> Option<Url> {
-        if let Ok(url) = Url::parse(self.name()) {
+        if let Ok(url) = Url::parse(&self.tool_name()) {
             Some(url)
-        } else if let Some((user, repo)) = self.name().split_once('/') {
+        } else if let Some((user, repo)) = self.tool_name().split_once('/') {
             format!("https://github.com/{user}/{repo}.git").parse().ok()
         } else {
             None

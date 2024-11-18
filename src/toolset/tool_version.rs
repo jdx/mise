@@ -247,6 +247,7 @@ impl ToolVersion {
             path,
             source: tr.source().clone(),
             os: None,
+            options: tr.options().clone(),
         };
         let version = request.version();
         Ok(Self::new(request, version))
