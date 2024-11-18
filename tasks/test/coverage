@@ -32,6 +32,9 @@ elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
     y=$((y - 1))
   fi
   mise self-update -fy "$y.$m.0" || true
+elif [[ "${TEST_TRANCHE:-}" == 2 ]]; then
+  echo "::group::mist test-tool"
+  mise test-tool --all
 elif [[ "${TEST_TRANCHE:-}" == 3 ]]; then
   echo "::group::Unit tests"
   cargo test --all-features
