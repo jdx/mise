@@ -12,8 +12,18 @@ run = "cargo build --all-features"
 #outputs = ["target/debug/mise"]
 
 [docs]
+depends = ["docs:setup"]
 dir = "docs"
-run = "npm run docs:dev"
+run = "bun run docs:dev"
+
+["docs:setup"]
+dir = "docs"
+run = "bun i"
+
+["docs:build"]
+depends = ["docs:setup"]
+dir = "docs"
+run = "bun run docs:build"
 
 ["render:usage"]
 depends = ["build"]

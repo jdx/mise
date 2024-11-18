@@ -30,14 +30,10 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           install_args: bun
-          working_directory: docs
-      - run: bun install
-        working-directory: docs
-      - run: bun run docs:build
-        working-directory: docs
+          cache: false
+      - run: mise run docs:build
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: mise run release-docs
-        working-directory: docs
+        run: mise run docs:release
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}

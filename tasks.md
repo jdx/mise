@@ -47,7 +47,25 @@ run a command inside of development docker container
 
 ## `docs`
 
+- Depends: docs:setup
+
 - **Usage**: `docs`
+
+## `docs:build`
+
+- Depends: docs:setup
+
+- **Usage**: `docs:build`
+
+## `docs:release`
+
+- Depends: docs:build
+
+- **Usage**: `docs:release`
+
+## `docs:setup`
+
+- **Usage**: `docs:setup`
 
 ## `filetask`
 
@@ -140,10 +158,6 @@ User to run as
 ## `release`
 
 - **Usage**: `release`
-
-## `release-docs`
-
-- **Usage**: `release-docs`
 
 ## `release-plz`
 
