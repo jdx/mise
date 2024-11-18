@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::plugins::PluginType;
 use crate::{backend, dirs, file, runtime_symlinks};
@@ -71,7 +72,7 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
     if mu.is_some() {
         return Ok(mu);
     }
-    let tool_tools = file::dir_subdirs(&dirs::INSTALLS)?
+    let mut tools = file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
         .map(|dir| {
             let backend_meta = read_backend_meta(&dir).unwrap_or_default();
@@ -100,24 +101,21 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .flatten()
-        .collect_vec();
-    let mut tools: InstallStateTools = init_plugins()?
-        .as_ref()
-        .unwrap()
-        .iter()
-        .map(|(short, pt)| {
-            let tool = InstallStateTool {
+        .collect::<BTreeMap<_, _>>();
+    for (short, pt) in init_plugins()?.as_ref().unwrap() {
+        let full = match pt {
+            PluginType::Asdf => format!("asdf:{short}"),
+            PluginType::Vfox => format!("vfox:{short}"),
+        };
+        let tool = tools
+            .entry(short.clone())
+            .or_insert_with(|| InstallStateTool {
                 short: short.clone(),
-                full: Some(match pt {
-                    PluginType::Asdf => format!("asdf:{short}"),
-                    PluginType::Vfox => format!("vfox:{short}"),
-                }),
+                full: Some(full.clone()),
                 versions: Default::default(),
-            };
-            (short.clone(), tool)
-        })
-        .collect();
-    tools.extend(tool_tools);
+            });
+        tool.full = Some(full);
+    }
     *mu = Some(tools);
     Ok(mu)
 }
@@ -139,7 +137,10 @@ pub fn list_tools() -> Result<BTreeMap<String, InstallStateTool>> {
 
 pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
     let tools = init_tools()?;
-    let backend_type = tools.as_ref().unwrap().get(short)
+    let backend_type = tools
+        .as_ref()
+        .unwrap()
+        .get(short)
         .and_then(|ist| ist.full.as_ref())
         .map(|full| BackendType::guess(full));
     Ok(backend_type)
@@ -165,7 +166,9 @@ pub fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
 }
 
 fn backend_meta_path(short: &str) -> PathBuf {
-    dirs::INSTALLS.join(short).join(".mise.backend")
+    dirs::INSTALLS
+        .join(short.to_kebab_case())
+        .join(".mise.backend")
 }
 
 fn migrate_backend_meta_json(dir: &str) {
@@ -210,6 +213,12 @@ fn read_backend_meta(short: &str) -> Option<Vec<String>> {
     } else {
         None
     }
+}
+
+pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
+    let doc = format!("{}\n{}", ba.short, ba.full());
+    file::write(backend_meta_path(&ba.short), doc.trim())?;
+    Ok(())
 }
 
 pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
