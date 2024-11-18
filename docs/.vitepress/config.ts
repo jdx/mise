@@ -188,8 +188,8 @@ export default defineConfig({
     [
       "script",
       {
-        data: { goatcounter: "https://jdx.goatcounter.com/count" },
-        async: true,
+        "data-goatcounter": "https://jdx.goatcounter.com/count",
+        async: "",
         src: "//gc.zgo.at/count.js",
       },
     ],
