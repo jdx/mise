@@ -16,6 +16,7 @@ cargo build -q --all-features
 echo "::endgroup::"
 echo "::group::mise install"
 mise install
+mise x -- bun i
 echo "::endgroup::"
 mise x -- ./e2e/run_all_tests
 if [[ "${TEST_TRANCHE:-}" == 0 ]]; then

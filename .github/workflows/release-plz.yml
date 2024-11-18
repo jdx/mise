@@ -42,9 +42,9 @@ jobs:
           shared-key: test-ubuntu-latest
           save-if: false
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
-      - run: npm i
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - run: mise install
+      - run: mise x -- bun i
       - run: mise run release-plz
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
