@@ -7,6 +7,7 @@ use crate::env::GITHUB_TOKEN;
 use crate::github;
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
+use crate::tokio::RUNTIME;
 use eyre::bail;
 use regex::Regex;
 use std::fmt::Debug;
@@ -31,14 +32,14 @@ impl Backend for UbiBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        if name_is_url(self.name()) {
+        if name_is_url(&self.tool_name()) {
             Ok(vec!["latest".to_string()])
         } else {
             self.remote_version_cache
                 .get_or_try_init(|| {
                     let opts = self.ba.opts.clone().unwrap_or_default();
                     let tag_regex = OnceLock::new();
-                    Ok(github::list_releases(self.name())?
+                    Ok(github::list_releases(&self.tool_name())?
                         .into_iter()
                         .map(|r| r.tag_name)
                         // trim 'v' prefixes if they exist
@@ -64,7 +65,7 @@ impl Backend for UbiBackend {
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
         let mut v = ctx.tv.version.to_string();
 
-        if let Err(err) = github::get_release(self.name(), &ctx.tv.version) {
+        if let Err(err) = github::get_release(&self.tool_name(), &ctx.tv.version) {
             // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
             // if http::error_code(&err) == Some(404) {
             debug!(
@@ -79,10 +80,9 @@ impl Backend for UbiBackend {
             let opts = ctx.tv.request.options();
             // Workaround because of not knowing how to pull out the value correctly without quoting
             let path_with_bin = ctx.tv.install_path().join("bin");
+            let name = self.tool_name();
 
-            let mut builder = UbiBuilder::new()
-                .project(self.name())
-                .install_dir(path_with_bin);
+            let mut builder = UbiBuilder::new().project(&name).install_dir(path_with_bin);
 
             if let Some(token) = &*GITHUB_TOKEN {
                 builder = builder.github_token(token);
@@ -101,12 +101,7 @@ impl Backend for UbiBackend {
 
             let mut ubi = builder.build()?;
 
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_io()
-                .enable_time()
-                .build()?;
-
-            rt.block_on(ubi.install_binary())
+            RUNTIME.block_on(ubi.install_binary())
         };
 
         if let Err(err) = install(&v) {

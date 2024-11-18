@@ -2,16 +2,16 @@ use crate::file::{display_path, remove_all};
 use crate::git::Git;
 use crate::plugins::{Plugin, PluginType};
 use crate::result::Result;
+use crate::tokio::RUNTIME;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, registry};
 use console::style;
 use contracts::requires;
-use eyre::{eyre, Context, Report};
+use eyre::{eyre, Context};
 use indexmap::{indexmap, IndexMap};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex, MutexGuard};
-use tokio::runtime::Runtime;
 use url::Url;
 use vfox::Vfox;
 use xx::regex;
@@ -53,7 +53,7 @@ impl VfoxPlugin {
     pub fn mise_env(&self, opts: &toml::Value) -> Result<Option<IndexMap<String, String>>> {
         let (vfox, _) = self.vfox();
         let mut out = indexmap!();
-        let results = self.runtime()?.block_on(vfox.mise_env(&self.name, opts))?;
+        let results = RUNTIME.block_on(vfox.mise_env(&self.name, opts))?;
         for env in results {
             out.insert(env.key, env.value);
         }
@@ -63,7 +63,7 @@ impl VfoxPlugin {
     pub fn mise_path(&self, opts: &toml::Value) -> Result<Option<Vec<String>>> {
         let (vfox, _) = self.vfox();
         let mut out = vec![];
-        let results = self.runtime()?.block_on(vfox.mise_path(&self.name, opts))?;
+        let results = RUNTIME.block_on(vfox.mise_path(&self.name, opts))?;
         for env in results {
             out.push(env);
         }
@@ -78,14 +78,6 @@ impl VfoxPlugin {
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
         let rx = vfox.log_subscribe();
         (vfox, rx)
-    }
-
-    pub fn runtime(&self) -> eyre::Result<Runtime, Report> {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .enable_io()
-            .build()?;
-        Ok(rt)
     }
 }
 

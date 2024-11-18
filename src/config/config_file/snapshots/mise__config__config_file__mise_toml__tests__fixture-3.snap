@@ -48,6 +48,7 @@ ToolRequestSet {
             Path {
                 backend: BackendArg("node" -> "core:node"),
                 path: "~/.nodes/18",
+                options: {},
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),

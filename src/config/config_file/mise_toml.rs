@@ -513,12 +513,17 @@ impl From<ToolRequest> for MiseTomlTool {
             ToolRequest::Path {
                 path,
                 os,
+                options,
                 backend: _backend,
                 source: _source,
             } => Self {
                 tt: ToolVersionType::Path(path),
                 os,
-                options: None,
+                options: if options.is_empty() {
+                    None
+                } else {
+                    Some(options)
+                },
             },
             ToolRequest::Prefix {
                 prefix,
@@ -554,22 +559,32 @@ impl From<ToolRequest> for MiseTomlTool {
             ToolRequest::Sub {
                 sub,
                 os,
+                options,
                 orig_version,
                 backend: _backend,
                 source: _source,
             } => Self {
                 tt: ToolVersionType::Sub { sub, orig_version },
                 os,
-                options: None,
+                options: if options.is_empty() {
+                    None
+                } else {
+                    Some(options)
+                },
             },
             ToolRequest::System {
                 os,
+                options,
                 backend: _backend,
                 source: _source,
             } => Self {
                 tt: ToolVersionType::System,
                 os,
-                options: None,
+                options: if options.is_empty() {
+                    None
+                } else {
+                    Some(options)
+                },
             },
         }
     }
@@ -858,16 +873,18 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
             {
                 let mut options: BTreeMap<String, String> = Default::default();
                 let mut os: Option<Vec<String>> = None;
-                let mut tt = ToolVersionType::System;
+                let mut tt: Option<ToolVersionType> = None;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
                     match k.as_str() {
                         "version" => {
-                            tt = v.as_str().unwrap().parse().map_err(de::Error::custom)?;
+                            tt = Some(v.as_str().unwrap().parse().map_err(de::Error::custom)?);
                         }
                         "path" | "prefix" | "ref" => {
-                            tt = format!("{k}:{}", v.as_str().unwrap())
-                                .parse()
-                                .map_err(de::Error::custom)?;
+                            tt = Some(
+                                format!("{k}:{}", v.as_str().unwrap())
+                                    .parse()
+                                    .map_err(de::Error::custom)?,
+                            );
                         }
                         "os" => match v {
                             toml::Value::Array(s) => {
@@ -887,11 +904,15 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                         }
                     }
                 }
-                Ok(MiseTomlToolList(vec![MiseTomlTool {
-                    tt,
-                    os,
-                    options: Some(options),
-                }]))
+                if let Some(tt) = tt {
+                    Ok(MiseTomlToolList(vec![MiseTomlTool {
+                        tt,
+                        os,
+                        options: Some(options),
+                    }]))
+                } else {
+                    Err(de::Error::custom("missing version"))
+                }
             }
         }
 

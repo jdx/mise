@@ -40,7 +40,7 @@ impl Backend for SPMBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        let repo = SwiftPackageRepo::new(self.name())?;
+        let repo = SwiftPackageRepo::new(&self.tool_name())?;
         self.remote_version_cache
             .get_or_try_init(|| {
                 Ok(github::list_releases(repo.shorthand.as_str())?
@@ -56,7 +56,7 @@ impl Backend for SPMBackend {
         let settings = Settings::get();
         settings.ensure_experimental("spm backend")?;
 
-        let repo = SwiftPackageRepo::new(self.name())?;
+        let repo = SwiftPackageRepo::new(&self.tool_name())?;
         let revision = if ctx.tv.version == "latest" {
             self.latest_stable_version()?
                 .ok_or_else(|| eyre::eyre!("No stable versions found"))?

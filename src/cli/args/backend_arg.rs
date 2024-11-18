@@ -151,6 +151,13 @@ impl BackendArg {
         unalias_backend(&self.short).to_string()
     }
 
+    pub fn tool_name(&self) -> String {
+        let full = self.full();
+        let (_backend, tool_name) = full.split_once(':').unwrap_or(("", &full));
+        let tool_name = regex!(r#"\[.+\]$"#).replace_all(tool_name, "").to_string();
+        tool_name.to_string()
+    }
+
     /// maps something like cargo:cargo-binstall to cargo-binstall and ubi:cargo-binstall, etc
     pub fn all_fulls(&self) -> HashSet<String> {
         let full = self.full();

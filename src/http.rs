@@ -7,12 +7,12 @@ use eyre::{bail, Report, Result};
 use once_cell::sync::Lazy;
 use reqwest::header::HeaderMap;
 use reqwest::{ClientBuilder, IntoUrl, Response};
-use tokio::runtime::Runtime;
 use url::Url;
 
 use crate::cli::version;
 use crate::config::SETTINGS;
 use crate::file::display_path;
+use crate::tokio::RUNTIME;
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file};
 
@@ -84,8 +84,7 @@ impl Client {
 
     pub fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let url = url.into_url().unwrap();
-        let rt = self.runtime()?;
-        rt.block_on(self.head_async(url))
+        RUNTIME.block_on(self.head_async(url))
     }
 
     pub async fn head_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
@@ -119,8 +118,7 @@ impl Client {
 
     pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         let mut url = url.into_url().unwrap();
-        let rt = self.runtime()?;
-        let text = rt.block_on(async {
+        let text = RUNTIME.block_on(async {
             let resp = self.get(url.clone()).await?;
             Ok::<String, eyre::Error>(resp.text().await?)
         })?;
@@ -140,8 +138,7 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url().unwrap();
-        let rt = self.runtime()?;
-        let (json, headers) = rt.block_on(async {
+        let (json, headers) = RUNTIME.block_on(async {
             let resp = self.get(url).await?;
             let headers = resp.headers().clone();
             Ok::<(T, HeaderMap), eyre::Error>((resp.json().await?, headers))
@@ -165,8 +162,7 @@ impl Client {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
 
-        let rt = self.runtime()?;
-        rt.block_on(async {
+        RUNTIME.block_on(async {
             let mut resp = self.get(url).await?;
             if let Some(length) = resp.content_length() {
                 if let Some(pr) = pr {
@@ -185,14 +181,6 @@ impl Client {
             Ok::<(), eyre::Error>(())
         })?;
         Ok(())
-    }
-
-    fn runtime(&self) -> Result<Runtime, Report> {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .enable_io()
-            .build()?;
-        Ok(rt)
     }
 }
 

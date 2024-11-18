@@ -15,6 +15,7 @@ use crate::dirs;
 use crate::install_context::InstallContext;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::plugins::{Plugin, PluginType};
+use crate::tokio::RUNTIME;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
@@ -45,10 +46,7 @@ impl Backend for VfoxBackend {
             .get_or_try_init(|| {
                 let (vfox, _log_rx) = self.plugin.vfox();
                 self.ensure_plugin_installed()?;
-                let versions = self
-                    .plugin
-                    .runtime()?
-                    .block_on(vfox.list_available_versions(&self.pathname))?;
+                let versions = RUNTIME.block_on(vfox.list_available_versions(&self.pathname))?;
                 Ok(versions
                     .into_iter()
                     .rev()
@@ -67,11 +65,7 @@ impl Backend for VfoxBackend {
                 info!("{}", line);
             }
         });
-        self.plugin.runtime()?.block_on(vfox.install(
-            &self.pathname,
-            &ctx.tv.version,
-            ctx.tv.install_path(),
-        ))?;
+        RUNTIME.block_on(vfox.install(&self.pathname, &ctx.tv.version, ctx.tv.install_path()))?;
         Ok(())
     }
 
@@ -149,9 +143,7 @@ impl VfoxBackend {
             .get_or_try_init(|| {
                 self.ensure_plugin_installed()?;
                 let (vfox, _log_rx) = self.plugin.vfox();
-                Ok(self
-                    .plugin
-                    .runtime()?
+                Ok(RUNTIME
                     .block_on(vfox.env_keys(&self.pathname, &tv.version))?
                     .into_iter()
                     .fold(BTreeMap::new(), |mut acc, env_key| {

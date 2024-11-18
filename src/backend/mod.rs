@@ -132,8 +132,8 @@ pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
         &self.ba().short
     }
-    fn name(&self) -> &str {
-        &self.ba().tool_name
+    fn tool_name(&self) -> String {
+        self.ba().tool_name()
     }
     fn get_type(&self) -> BackendType {
         BackendType::Core
@@ -159,6 +159,7 @@ pub trait Backend: Debug + Send + Sync {
             let tvr = ToolRequest::System {
                 backend: ba.clone(),
                 source: ToolSource::Unknown,
+                options: Default::default(),
                 os: None,
             };
             if let Ok(backend) = ba.backend() {
@@ -310,6 +311,7 @@ pub trait Backend: Debug + Send + Sync {
             .get_all_dependencies(&ToolRequest::System {
                 backend: self.id().into(),
                 source: ToolSource::Unknown,
+                options: Default::default(),
                 os: None,
             })?
             .into_iter()
@@ -515,8 +517,9 @@ pub trait Backend: Debug + Send + Sync {
         let config = Config::get();
         let dependencies = self
             .get_all_dependencies(&ToolRequest::System {
-                backend: self.name().into(),
+                backend: self.tool_name().into(),
                 source: ToolSource::Unknown,
+                options: Default::default(),
                 os: None,
             })?
             .into_iter()

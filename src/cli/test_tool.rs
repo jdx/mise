@@ -57,7 +57,7 @@ impl TestTool {
             }
             let (cmd, expected) = if let Some(test) = &rt.test {
                 (test.0.to_string(), test.1)
-            } else if self.include_non_defined {
+            } else if self.include_non_defined || self.tool.is_some() {
                 (format!("{} --version", tool.short), "__TODO__")
             } else {
                 continue;
