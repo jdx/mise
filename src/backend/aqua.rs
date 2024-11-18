@@ -82,7 +82,7 @@ impl Backend for AquaBackend {
             Ok(url) => url,
             Err(err) => {
                 v = ctx.tv.version.to_string();
-                self.fetch_url(&pkg, &v).map_err(|_| err)?
+                self.fetch_url(&pkg, &v).map_err(|e| err.wrap_err(e))?
             }
         };
         let filename = url.split('/').last().unwrap();
@@ -139,7 +139,7 @@ impl AquaBackend {
     fn fetch_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
         match pkg.r#type {
             AquaPackageType::GithubRelease => self.github_release_url(pkg, v),
-            AquaPackageType::GithubArchive => self.github_archive_url(pkg, v),
+            AquaPackageType::GithubArchive | AquaPackageType::GithubContent => self.github_archive_url(pkg, v),
             AquaPackageType::Http => {
                 let url = pkg.url(v);
                 HTTP.head(&url)?;
@@ -198,12 +198,15 @@ impl AquaBackend {
         let format = pkg.format(v);
         let bin_path =
             install_path.join(pkg.files.first().map(|f| &f.name).unwrap_or(&pkg.repo_name));
-        let tar_opts = TarOptions {
+        let mut tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
             pr: Some(ctx.pr.as_ref()),
             strip_components: 0,
         };
-        if pkg.r#type == AquaPackageType::GithubArchive {
+        if let AquaPackageType::GithubArchive = pkg.r#type {
+            file::untar(&tarball_path, &install_path, &tar_opts)?;
+        } else if let AquaPackageType::GithubContent = pkg.r#type {
+            tar_opts.strip_components = 1;
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if format == "raw" {
             file::create_dir_all(&install_path)?;
