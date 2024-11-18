@@ -9,12 +9,11 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::github::GithubRelease;
-use crate::http::{HTTP, HTTP_FETCH};
+use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
-use crate::{file, plugins};
+use crate::{file, github, plugins};
 
 #[derive(Debug)]
 pub struct BunPlugin {
@@ -29,7 +28,7 @@ impl BunPlugin {
     }
 
     fn bun_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/bun")
+        tv.install_path().join("bin").join(bun_bin_name())
     }
 
     fn test_bun(&self, ctx: &InstallContext) -> Result<()> {
@@ -66,11 +65,13 @@ impl BunPlugin {
             ctx.tv
                 .download_path()
                 .join(format!("bun-{}-{}", os(), arch()))
-                .join("bun"),
+                .join(bun_bin_name()),
             self.bun_bin(&ctx.tv),
         )?;
-        file::make_executable(self.bun_bin(&ctx.tv))?;
-        file::make_symlink(Path::new("./bun"), &ctx.tv.install_path().join("bin/bunx"))?;
+        if cfg!(unix) {
+            file::make_executable(self.bun_bin(&ctx.tv))?;
+            file::make_symlink(Path::new("./bun"), &ctx.tv.install_path().join("bin/bunx"))?;
+        }
         Ok(())
     }
 
@@ -85,9 +86,7 @@ impl Backend for BunPlugin {
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        let releases: Vec<GithubRelease> =
-            HTTP_FETCH.json("https://api.github.com/repos/oven-sh/bun/releases?per_page=100")?;
-        let versions = releases
+        let versions = github::list_releases("oven-sh/bun")?
             .into_iter()
             .map(|r| r.tag_name)
             .filter_map(|v| v.strip_prefix("bun-v").map(|v| v.to_string()))
@@ -129,8 +128,20 @@ fn arch() -> &'static str {
             "x64-baseline"
         }
     } else if cfg!(target_arch = "aarch64") {
-        "aarch64"
+        if cfg!(windows) {
+            "x64"
+        } else {
+            "aarch64"
+        }
     } else {
         &ARCH
+    }
+}
+
+fn bun_bin_name() -> &'static str {
+    if cfg!(windows) {
+        "bun.exe"
+    } else {
+        "bun"
     }
 }

@@ -10,7 +10,6 @@ use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::env;
 use crate::env::PATH_KEY;
-#[cfg(unix)]
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
 #[cfg(unix)]
@@ -24,7 +23,6 @@ use crate::plugins::core::zig::ZigPlugin;
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 
-#[cfg(unix)]
 mod bun;
 mod deno;
 #[cfg(unix)]
@@ -53,7 +51,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     ];
     #[cfg(windows)]
     let plugins: Vec<Arc<dyn Backend>> = vec![
-        // Arc::new(BunPlugin::new()),
+        Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         // Arc::new(ErlangPlugin::new()),
         Arc::new(GoPlugin::new()),
