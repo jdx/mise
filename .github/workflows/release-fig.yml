@@ -19,9 +19,9 @@ jobs:
           shared-key: test-ubuntu-latest
           save-if: false
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
-      - run: npm i
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - run: mise install
+      - run: mise x -- bun i
       - run: mise run render:fig
       - name: Create Autocomplete PR ## Create the autocomplete PR using this action
         uses: withfig/push-to-fig-autocomplete-action@v2

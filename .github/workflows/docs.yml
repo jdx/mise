@@ -4,20 +4,19 @@ on:
   push:
     paths:
       - "docs/**"
+      - "tasks/docs/**"
     branches:
       - main
   pull_request:
     paths:
       - "docs/**"
+      - "tasks/docs/**"
     branches:
       - main
 
 concurrency:
   group: docs-${{ github.head_ref }}
   cancel-in-progress: true
-
-env:
-  MISE_EXPERIMENTAL: 1
 
 jobs:
   docs:
@@ -31,9 +30,9 @@ jobs:
         with:
           install_args: bun
           cache: false
-      - run: mise run docs:build
-      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: mise run docs:release
+      - run: bun i
+      - run: mise run docs:release
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+          DRY_RUN: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}

@@ -1,0 +1,72 @@
+name: hyperfine
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  GITHUB_TOKEN: ${{ secrets.RTX_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+  MISE_EXPERIMENTAL: 1
+
+permissions:
+  pull-requests: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@v2
+      - run: curl https://mise.run | MISE_INSTALL_PATH="$HOME/bin/mise-release" sh
+      - run: echo "$HOME/bin" >> "$GITHUB_PATH"
+      - id: versions
+        run: |
+          echo "main=$(git rev-parse --short origin/main)" >> $GITHUB_OUTPUT
+          echo "release=$(mise-release v | awk '{print $1}')" >> $GITHUB_OUTPUT
+      - uses: actions/cache@v4
+        with:
+          path: $HOME/bin/mise-${{ steps.versions.outputs.main }}
+          key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}
+      - name: build main
+        run: |
+          if [ ! -f "$HOME/bin/mise-${{ steps.versions.outputs.main }}" ]; then
+            git checkout main
+            cargo build --profile serious && mv target/serious/mise $HOME/bin/mise-${{ steps.versions.outputs.main }}
+            git checkout -
+          fi
+      - run: mv $HOME/bin/mise-release $HOME/bin/mise-${{ steps.versions.outputs.release }}
+      - run: cp $HOME/bin/mise-${{ steps.versions.outputs.main }} $HOME/bin/mise-main
+      - run: cargo build --profile serious && mv target/serious/mise $HOME/bin
+      - run: mise i
+      - run: |
+          CMDS=(
+            "x -- echo"
+            "env"
+            "hook-env"
+            "ls"
+          )
+          echo "# Hyperfine Performance" >> comment.md
+          for cmd in "${CMDS[@]}"; do
+            mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-main $cmd" "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
+            echo "### \`mise $cmd\`" >> comment.md
+            cat out.md >> comment.md
+          done
+          cat comment.md >> $GITHUB_STEP_SUMMARY
+        env:
+          SHELL: zsh
+      - name: Comment on PR
+        uses: thollander/actions-comment-pull-request@v3
+        #if: "startsWith(github.event.pull_request.title, 'perf:') || startsWith(github.event.pull_request.title, 'chore: release')"
+        with:
+          file-path: comment.md
+          comment-tag: hyperfine

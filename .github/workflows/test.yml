@@ -18,7 +18,6 @@ env:
   MISE_EXPERIMENTAL: 1
   RUST_BACKTRACE: 1
   GITHUB_TOKEN: ${{ secrets.RTX_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
-  NPM_CONFIG_FUND: false
 
 permissions:
   pull-requests: write
@@ -47,8 +46,8 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - run: npm i
       - run: mise install
+      - run: mise x -- bun i
       - run: mise x -- cargo nextest run --all-features
       - run: cargo deny check
       - run: cargo msrv verify
@@ -105,7 +104,6 @@ jobs:
             pipx \
             python3-venv \
             zsh
-      - run: npm i
       - run: |
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
@@ -200,35 +198,3 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: pwsh e2e-win\run.ps1
-  hyperfine:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - run: curl https://mise.run | sh
-      - run: cargo build --profile serious
-      - run: echo "$PWD/target/release" >> "$GITHUB_PATH"
-      - run: mise i
-      - run: |
-          CMDS=(
-            "mise x -- echo"
-            "mise env"
-            "mise hook-env"
-            "mise ls"
-          )
-          echo "# Hyperfine Performance" >> comment.md
-          for cmd in "${CMDS[@]}"; do
-            mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "$HOME/.local/bin/$cmd" "target/serious/$cmd"
-            echo "### \`$cmd\`" >> comment.md
-            cat out.md >> comment.md
-          done
-          cat comment.md >> $GITHUB_STEP_SUMMARY
-        env:
-          SHELL: zsh
-      - name: Comment on PR
-        uses: thollander/actions-comment-pull-request@v3
-        if: "startsWith(github.event.pull_request.title, 'perf:') || startsWith(github.event.pull_request.title, 'chore: release')"
-        with:
-          file-path: comment.md
-          comment-tag: hyperfine
