@@ -719,7 +719,7 @@ mod tests {
     fn test_dir_subdirs() {
         reset();
         let subdirs = dir_subdirs(&dirs::HOME).unwrap();
-        assert!(subdirs.contains(&"cwd".to_string()));
+        assert!(subdirs.contains("cwd"));
     }
 
     #[test]
