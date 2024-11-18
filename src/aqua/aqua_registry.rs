@@ -33,9 +33,10 @@ pub struct AquaRegistry {
 #[derive(Debug, Deserialize, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaPackageType {
+    GithubArchive,
+    GithubContent,
     #[default]
     GithubRelease,
-    GithubArchive,
     Http,
 }
 
