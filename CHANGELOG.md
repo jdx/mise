@@ -1,5 +1,36 @@
 # Changelog
 
+## [2024.11.16](https://github.com/jdx/mise/compare/v2024.11.15..v2024.11.16) - 2024-11-18
+
+### 🐛 Bug Fixes
+
+- **(ruby)** send ruby-install output to stderr by [@jdx](https://github.com/jdx) in [c2918dc](https://github.com/jdx/mise/commit/c2918dc7e6131286442f637fcbd1e60325e727b5)
+- bugs with `mise up` and prefix: versions by [@jdx](https://github.com/jdx) in [#3054](https://github.com/jdx/mise/pull/3054)
+- prefix: on tool dependencies by [@jdx](https://github.com/jdx) in [#3058](https://github.com/jdx/mise/pull/3058)
+- use cargo:cargo-binstall as dependency for cargo-binstall by [@jdx](https://github.com/jdx) in [#3059](https://github.com/jdx/mise/pull/3059)
+- show MRI ruby versions last by [@jdx](https://github.com/jdx) in [#3060](https://github.com/jdx/mise/pull/3060)
+
+### 📚 Documentation
+
+- typo fix in getting-started.md by [@Guria](https://github.com/Guria) in [#3057](https://github.com/jdx/mise/pull/3057)
+- document advantages/disadvantages of aqua/ubi/asdf by [@jdx](https://github.com/jdx) in [09698e7](https://github.com/jdx/mise/commit/09698e74542d3a5f28414b1d2086f22728d711aa)
+
+### ⚡ Performance
+
+- improve init performance by [@jdx](https://github.com/jdx) in [#3065](https://github.com/jdx/mise/pull/3065)
+
+### 🧪 Testing
+
+- improving test-tool on windows by [@jdx](https://github.com/jdx) in [#3056](https://github.com/jdx/mise/pull/3056)
+
+### 🔍 Other Changes
+
+- improve hyperfine PR summary by [@jdx](https://github.com/jdx) in [#3066](https://github.com/jdx/mise/pull/3066)
+
+### New Contributors
+
+- @Guria made their first contribution in [#3057](https://github.com/jdx/mise/pull/3057)
+
 ## [2024.11.15](https://github.com/jdx/mise/compare/v2024.11.14..v2024.11.15) - 2024-11-16
 
 ### 🐛 Bug Fixes
