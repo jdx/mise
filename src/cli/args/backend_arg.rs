@@ -2,6 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::{unalias_backend, ABackend};
 use crate::config::CONFIG;
 use crate::registry::REGISTRY;
+use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{install_state, parse_tool_options, ToolVersionOptions};
 use crate::{backend, config, dirs, registry};
 use contracts::requires;
@@ -46,6 +47,12 @@ impl<A: AsRef<str>> From<A> for BackendArg {
         } else {
             Self::new(short, None)
         }
+    }
+}
+
+impl From<InstallStateTool> for BackendArg {
+    fn from(ist: InstallStateTool) -> Self {
+        Self::new(ist.short, ist.full)
     }
 }
 
