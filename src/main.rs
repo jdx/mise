@@ -16,6 +16,9 @@ mod output;
 mod hint;
 
 #[macro_use]
+mod timings;
+
+#[macro_use]
 mod cmd;
 
 mod aqua;
@@ -62,19 +65,18 @@ mod toolset;
 mod ui;
 mod versions_host;
 
-pub use crate::exit::exit;
+pub(crate) use crate::exit::exit;
+pub(crate) use crate::toolset::install_state;
 
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
-    output::get_time_diff(""); // throwaway call to initialize the timer
-    let args = env::args().collect_vec();
-    time!("main start");
-
-    match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
-        Ok(()) => Ok(()),
-        Err(err) => handle_err(err),
-    }?;
-    time!("main done");
+    measure!("main", {
+        let args = env::args().collect_vec();
+        match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
+            Ok(()) => Ok(()),
+            Err(err) => handle_err(err),
+        }?;
+    });
     Ok(())
 }
 

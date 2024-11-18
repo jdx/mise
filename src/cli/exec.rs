@@ -53,21 +53,27 @@ pub struct Exec {
 
 impl Exec {
     pub fn run(self) -> Result<()> {
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .with_default_to_latest(true)
-            .build(&CONFIG)?;
+        let mut ts = measure!("toolset", {
+            ToolsetBuilder::new()
+                .with_args(&self.tool)
+                .with_default_to_latest(true)
+                .build(&CONFIG)?
+        });
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
             resolve_options: Default::default(),
         };
-        ts.install_arg_versions(&CONFIG, &opts)?;
-        ts.notify_if_versions_missing();
+        measure!("install_arg_versions", {
+            ts.install_arg_versions(&CONFIG, &opts)?
+        });
+        measure!("notify_if_versions_missing", {
+            ts.notify_if_versions_missing()
+        });
 
         let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = ts.env_with_path(&CONFIG)?;
+        let env = measure!("env_with_path", { ts.env_with_path(&CONFIG)? });
 
         time!("exec");
         self.exec(program, args, env)

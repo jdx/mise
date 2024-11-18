@@ -1,7 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::file::display_path;
 use crate::plugins::PluginType;
-use crate::registry::REGISTRY;
 use crate::{backend, dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
@@ -18,21 +17,36 @@ type InstallStateTools = BTreeMap<String, InstallStateTool>;
 #[derive(Debug, Clone)]
 pub struct InstallStateTool {
     pub short: String,
-    pub _dir: PathBuf,
-    pub full: String,
-    pub backend_type: BackendType,
+    pub full: Option<String>,
     pub versions: Vec<String>,
 }
 
 static INSTALL_STATE_PLUGINS: Mutex<Option<InstallStatePlugins>> = Mutex::new(None);
 static INSTALL_STATE_TOOLS: Mutex<Option<InstallStateTools>> = Mutex::new(None);
 
+pub(crate) fn init() -> Result<()> {
+    let (plugins, tools) = rayon::join(
+        || {
+            measure!("init_plugins", { drop(init_plugins()?) });
+            Ok(())
+        },
+        || {
+            measure!("init_tools", {
+                drop(init_tools()?);
+            });
+            Ok(())
+        },
+    );
+    plugins?;
+    tools?;
+    Ok(())
+}
+
 fn init_plugins() -> Result<MutexGuard<'static, Option<BTreeMap<String, PluginType>>>> {
     let mut mu = INSTALL_STATE_PLUGINS.lock().unwrap();
     if mu.is_some() {
         return Ok(mu);
     }
-    time!("init_plugins start");
     let dirs = file::dir_subdirs(&dirs::PLUGINS)?;
     let plugins = dirs
         .into_iter()
@@ -48,7 +62,6 @@ fn init_plugins() -> Result<MutexGuard<'static, Option<BTreeMap<String, PluginTy
             }
         })
         .collect();
-    time!("init_plugins done");
     *mu = Some(plugins);
     Ok(mu)
 }
@@ -58,7 +71,6 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
     if mu.is_some() {
         return Ok(mu);
     }
-    time!("init_tools start");
     let tool_tools = file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
         .map(|dir| {
@@ -66,12 +78,6 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
             let short = backend_meta.first().unwrap_or(&dir).to_string();
             let full = backend_meta.get(1).cloned();
             let dir = dirs::INSTALLS.join(&dir);
-            let full = if let Some(full) = short_to_full(&short, full)? {
-                full
-            } else {
-                return Ok(None);
-            };
-            let backend_type = BackendType::guess(&full);
             let versions = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
                     warn!("reading versions in {} failed: {err:?}", display_path(&dir));
@@ -85,9 +91,7 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
                 .collect();
             let tool = InstallStateTool {
                 short: short.clone(),
-                _dir: dir.clone(),
                 full,
-                backend_type,
                 versions,
             };
             time!("init_tools {short}");
@@ -97,7 +101,6 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
         .into_iter()
         .flatten()
         .collect_vec();
-    time!("init_tools tool_tools");
     let mut tools: InstallStateTools = init_plugins()?
         .as_ref()
         .unwrap()
@@ -105,47 +108,18 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
         .map(|(short, pt)| {
             let tool = InstallStateTool {
                 short: short.clone(),
-                _dir: dirs::PLUGINS.join(short),
-                backend_type: match pt {
-                    PluginType::Asdf => BackendType::Asdf,
-                    PluginType::Vfox => BackendType::Vfox,
-                },
-                full: match pt {
+                full: Some(match pt {
                     PluginType::Asdf => format!("asdf:{short}"),
                     PluginType::Vfox => format!("vfox:{short}"),
-                },
+                }),
                 versions: Default::default(),
             };
             (short.clone(), tool)
         })
         .collect();
-    time!("init_tools plugins");
     tools.extend(tool_tools);
-    time!("init_tools done");
     *mu = Some(tools);
     Ok(mu)
-}
-
-pub fn short_to_full(short: &str, meta_full: Option<String>) -> Result<Option<String>> {
-    let plugins = init_plugins()?;
-    let plugins = plugins.as_ref().unwrap();
-    if let Some(plugin) = plugins.get(short) {
-        match plugin {
-            PluginType::Asdf => Ok(Some(format!("asdf:{short}"))),
-            PluginType::Vfox => Ok(Some(format!("vfox:{short}"))),
-        }
-    } else if let Some(full) = meta_full {
-        Ok(Some(full))
-    } else if let Some(full) = REGISTRY
-        .get(short)
-        .map(|r| r.backends())
-        .unwrap_or_default()
-        .first()
-    {
-        Ok(Some(full.to_string()))
-    } else {
-        Ok(None)
-    }
 }
 
 pub fn list_plugins() -> Result<BTreeMap<String, PluginType>> {
@@ -165,11 +139,10 @@ pub fn list_tools() -> Result<BTreeMap<String, InstallStateTool>> {
 
 pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
     let tools = init_tools()?;
-    Ok(tools
-        .as_ref()
-        .unwrap()
-        .get(short)
-        .map(|tool| tool.backend_type))
+    let backend_type = tools.as_ref().unwrap().get(short)
+        .and_then(|ist| ist.full.as_ref())
+        .map(|full| BackendType::guess(full));
+    Ok(backend_type)
 }
 
 pub fn list_versions(short: &str) -> Result<Vec<String>> {
