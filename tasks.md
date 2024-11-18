@@ -45,6 +45,10 @@ run mise inside of development docker container
 
 run a command inside of development docker container
 
+## `docs`
+
+- **Usage**: `docs`
+
 ## `filetask`
 
 - **Usage**: `filetask [-f --force] [-u --user <user>] <file> <arg_with_default>`

@@ -185,6 +185,14 @@ export default defineConfig({
       gtag('js', new Date());
       gtag('config', 'G-B69G389C8T');`,
     ],
+    [
+      "script",
+      {
+        data: { goatcounter: "https://jdx.goatcounter.com/count" },
+        async: true,
+        src: "//gc.zgo.at/count.js",
+      },
+    ],
   ],
   transformPageData(pageData) {
     const canonicalUrl = `https://mise.jdx.dev/${pageData.relativePath}`

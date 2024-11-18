@@ -11,6 +11,10 @@ run = "cargo build --all-features"
 #sources = ["Cargo.*", "src/**/*.rs"]
 #outputs = ["target/debug/mise"]
 
+[docs]
+dir = "docs"
+run = "npm run docs:dev"
+
 ["render:usage"]
 depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }
