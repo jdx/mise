@@ -72,3 +72,6 @@ assert "mise ls dummy" "dummy  system  ~/workdir/mise.toml system"
 mkdir -p ~/workdir/mydummy
 mise use "dummy@path:~/workdir/mydummy"
 assert_contains "mise ls dummy" "dummy  path:~/workdir/mydummy  ~/workdir/mise.toml path:~/workdir/mydummy"
+
+cd "$HOME" || exit 1
+assert_contains "mise use dummy@system" "mise ~/.config/mise/config.toml tools: dummy@system"
