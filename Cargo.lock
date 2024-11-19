@@ -1219,9 +1219,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.6"
+version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "524e8ac6999421f49a846c2d4411f337e53497d8ec55d67753beffa43c5d9205"
+checksum = "ccae279728d634d083c00f6099cb58f01cc99c145b84b8be2f6c74618d79922e"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1998,7 +1998,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.11.17"
+version = "2024.11.18"
 dependencies = [
  "assert_cmd",
  "base64",
