@@ -698,7 +698,7 @@ editLink: false
 | talhelper | [aqua:budimanjojo/talhelper](https://github.com/budimanjojo/talhelper) [asdf:bjw-s/asdf-talhelper](https://github.com/bjw-s/asdf-talhelper) |
 | talos | [ubi:siderolabs/talos](https://github.com/siderolabs/talos) [asdf:particledecay/asdf-talos](https://github.com/particledecay/asdf-talos) |
 | talosctl | [ubi:siderolabs/talos](https://github.com/siderolabs/talos) [asdf:bjw-s/asdf-talosctl](https://github.com/bjw-s/asdf-talosctl) |
-| tanka | [asdf:trotttrotttrott/asdf-tanka](https://github.com/trotttrotttrott/asdf-tanka) |
+| tanka | [aqua:grafana/tanka](https://github.com/grafana/tanka) [asdf:trotttrotttrott/asdf-tanka](https://github.com/trotttrotttrott/asdf-tanka) |
 | tanzu | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
 | taplo | [ubi:tamasfe/taplo](https://github.com/tamasfe/taplo) [cargo:taplo-cli](https://crates.io/crates/taplo-cli) |
 | task | [ubi:go-task/task](https://github.com/go-task/task) [asdf:particledecay/asdf-task](https://github.com/particledecay/asdf-task) |
@@ -708,13 +708,13 @@ editLink: false
 | teleport-ent | [asdf:highb/asdf-teleport-ent](https://github.com/highb/asdf-teleport-ent) |
 | telepresence | [aqua:telepresenceio/telepresence](https://github.com/telepresenceio/telepresence) [asdf:pirackr/asdf-telepresence](https://github.com/pirackr/asdf-telepresence) |
 | teller | [aqua:tellerops/teller](https://github.com/tellerops/teller) [asdf:pdemagny/asdf-teller](https://github.com/pdemagny/asdf-teller) |
-| temporal | [asdf:asdf-community/asdf-temporal](https://github.com/asdf-community/asdf-temporal) |
+| temporal | [aqua:temporalio/temporal](https://github.com/temporalio/temporal) [asdf:asdf-community/asdf-temporal](https://github.com/asdf-community/asdf-temporal) |
 | temporalite | [asdf:eko/asdf-temporalite](https://github.com/eko/asdf-temporalite) |
 | terradozer | [aqua:jckuester/terradozer](https://github.com/jckuester/terradozer) [asdf:chessmango/asdf-terradozer](https://github.com/chessmango/asdf-terradozer) |
 | terraform | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) [vfox:enochchau/vfox-terraform](https://github.com/enochchau/vfox-terraform) |
 | terraform-docs | [aqua:terraform-docs/terraform-docs](https://github.com/terraform-docs/terraform-docs) [asdf:looztra/asdf-terraform-docs](https://github.com/looztra/asdf-terraform-docs) |
 | terraform-ls | [aqua:hashicorp/terraform-ls](https://github.com/hashicorp/terraform-ls) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
-| terraform-lsp | [asdf:bartlomiejdanek/asdf-terraform-lsp](https://github.com/bartlomiejdanek/asdf-terraform-lsp) |
+| terraform-lsp | [aqua:juliosueiras/terraform-lsp](https://github.com/juliosueiras/terraform-lsp) [asdf:bartlomiejdanek/asdf-terraform-lsp](https://github.com/bartlomiejdanek/asdf-terraform-lsp) |
 | terraform-validator | [aqua:thazelart/terraform-validator](https://github.com/thazelart/terraform-validator) [asdf:looztra/asdf-terraform-validator](https://github.com/looztra/asdf-terraform-validator) |
 | terraformer | [aqua:GoogleCloudPlatform/terraformer](https://github.com/GoogleCloudPlatform/terraformer) [asdf:gr1m0h/asdf-terraformer](https://github.com/gr1m0h/asdf-terraformer) |
 | terragrunt | [aqua:gruntwork-io/terragrunt](https://github.com/gruntwork-io/terragrunt) [asdf:ohmer/asdf-terragrunt](https://github.com/ohmer/asdf-terragrunt) |
@@ -722,7 +722,7 @@ editLink: false
 | terrascan | [aqua:tenable/terrascan](https://github.com/tenable/terrascan) [asdf:hpdobrica/asdf-terrascan](https://github.com/hpdobrica/asdf-terrascan) |
 | tf-summarize | [aqua:dineshba/tf-summarize](https://github.com/dineshba/tf-summarize) [asdf:adamcrews/asdf-tf-summarize](https://github.com/adamcrews/asdf-tf-summarize) |
 | tfc-agent | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
-| tfctl | [asdf:deas/asdf-tfctl](https://github.com/deas/asdf-tfctl) |
+| tfctl | [aqua:flux-iac/tofu-controller/tfctl](https://github.com/flux-iac/tofu-controller/tfctl) [asdf:deas/asdf-tfctl](https://github.com/deas/asdf-tfctl) |
 | tfenv | [aqua:tfutils/tfenv](https://github.com/tfutils/tfenv) [asdf:carlduevel/asdf-tfenv](https://github.com/carlduevel/asdf-tfenv) |
 | tflint | [ubi:terraform-linters/tflint](https://github.com/terraform-linters/tflint) [asdf:skyzyx/asdf-tflint](https://github.com/skyzyx/asdf-tflint) |
 | tfmigrate | [aqua:minamijoyo/tfmigrate](https://github.com/minamijoyo/tfmigrate) [asdf:dex4er/asdf-tfmigrate](https://github.com/dex4er/asdf-tfmigrate) |
