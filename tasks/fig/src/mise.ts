@@ -1934,10 +1934,18 @@ const completionSpec: Fig.Spec = {
                     "options": [
                         {
                             "name": [
-                                "--keys"
+                                "--names"
                             ],
                             "description": "Only display key names for each setting",
                             "isRepeatable": false
+                        }
+                    ],
+                    "args": [
+                        {
+                            "name": "key",
+                            "description": "List keys under this key",
+                            "isOptional": true,
+                            "isVariadic": false
                         }
                     ]
                 },
@@ -1986,7 +1994,7 @@ const completionSpec: Fig.Spec = {
             "options": [
                 {
                     "name": [
-                        "--keys"
+                        "--names"
                     ],
                     "description": "Only display key names for each setting",
                     "isRepeatable": false

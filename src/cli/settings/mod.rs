@@ -14,8 +14,8 @@ pub struct Settings {
     command: Option<Commands>,
 
     /// Only display key names for each setting
-    #[clap(long, verbatim_doc_comment)]
-    keys: bool,
+    #[clap(long, verbatim_doc_comment, alias = "keys")]
+    names: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -41,9 +41,10 @@ impl Commands {
 
 impl Settings {
     pub fn run(self) -> Result<()> {
-        let cmd = self
-            .command
-            .unwrap_or(Commands::Ls(ls::SettingsLs { keys: self.keys }));
+        let cmd = self.command.unwrap_or(Commands::Ls(ls::SettingsLs {
+            key: None,
+            names: self.names,
+        }));
 
         cmd.run()
     }
