@@ -610,6 +610,7 @@ editLink: false
 | richgo | [aqua:kyoh86/richgo](https://github.com/kyoh86/richgo) [asdf:paxosglobal/asdf-richgo](https://github.com/paxosglobal/asdf-richgo) |
 | riff | [asdf:abinet/asdf-riff](https://github.com/abinet/asdf-riff) |
 | ripgrep | [aqua:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
+| ripgrep-all | [aqua:phiresky/ripgrep-all](https://github.com/phiresky/ripgrep-all) |
 | rke | [aqua:rancher/rke](https://github.com/rancher/rke) [asdf:particledecay/asdf-rke](https://github.com/particledecay/asdf-rke) |
 | rlwrap | [asdf:asdf-community/asdf-rlwrap](https://github.com/asdf-community/asdf-rlwrap) |
 | rome | [asdf:kichiemon/asdf-rome](https://github.com/kichiemon/asdf-rome) |
