@@ -670,7 +670,7 @@ editLink: false
 | sqldef | [asdf:cometkim/asdf-sqldef](https://github.com/cometkim/asdf-sqldef) |
 | sqlite | [asdf:cLupus/asdf-sqlite](https://github.com/cLupus/asdf-sqlite) |
 | sshuttle | [asdf:xanmanning/asdf-sshuttle](https://github.com/xanmanning/asdf-sshuttle) |
-| stack | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
+| stack | [aqua:commercialhaskell/stack](https://github.com/commercialhaskell/stack) [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | starboard | [aqua:aquasecurity/starboard](https://github.com/aquasecurity/starboard) [asdf:zufardhiyaulhaq/asdf-starboard](https://github.com/zufardhiyaulhaq/asdf-starboard) |
 | starknet-foundry | [asdf:foundry-rs/asdf-starknet-foundry](https://github.com/foundry-rs/asdf-starknet-foundry) |
 | starport | [asdf:nikever/asdf-starport](https://github.com/nikever/asdf-starport) |
