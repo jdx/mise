@@ -76,7 +76,7 @@ editLink: false
 | bombardier | [aqua:codesenberg/bombardier](https://github.com/codesenberg/bombardier) [asdf:NeoHsu/asdf-bombardier](https://github.com/NeoHsu/asdf-bombardier) |
 | borg | [aqua:borgbackup/borg](https://github.com/borgbackup/borg) [asdf:lwiechec/asdf-borg](https://github.com/lwiechec/asdf-borg) |
 | bosh | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
-| bottom | [aqua:aqua:ClementTsang/bottom](https://github.com/aqua:ClementTsang/bottom) [asdf:carbonteq/asdf-btm](https://github.com/carbonteq/asdf-btm) |
+| bottom | [aqua:ClementTsang/bottom](https://github.com/ClementTsang/bottom) [asdf:carbonteq/asdf-btm](https://github.com/carbonteq/asdf-btm) |
 | boundary | [aqua:hashicorp/boundary](https://github.com/hashicorp/boundary) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | bpkg | [asdf:bpkg/asdf-bpkg](https://github.com/bpkg/asdf-bpkg) |
 | brig | [asdf:Ibotta/asdf-brig](https://github.com/Ibotta/asdf-brig) |
@@ -260,7 +260,7 @@ editLink: false
 | gitconfig | [asdf:0ghny/asdf-gitconfig](https://github.com/0ghny/asdf-gitconfig) |
 | github-cli | [ubi:cli/cli](https://github.com/cli/cli) [asdf:bartlomiejdanek/asdf-github-cli](https://github.com/bartlomiejdanek/asdf-github-cli) |
 | github-markdown-toc | [aqua:ekalinin/github-markdown-toc](https://github.com/ekalinin/github-markdown-toc) [asdf:skyzyx/asdf-github-markdown-toc](https://github.com/skyzyx/asdf-github-markdown-toc) |
-| gitleaks | [aqua:aqua:gitleaks/gitleaks](https://github.com/aqua:gitleaks/gitleaks) [asdf:jmcvetta/asdf-gitleaks](https://github.com/jmcvetta/asdf-gitleaks) |
+| gitleaks | [aqua:gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) [asdf:jmcvetta/asdf-gitleaks](https://github.com/jmcvetta/asdf-gitleaks) |
 | gitsign | [aqua:sigstore/gitsign](https://github.com/sigstore/gitsign) [asdf:spencergilbert/asdf-gitsign](https://github.com/spencergilbert/asdf-gitsign) |
 | gitu | [ubi:altsem/gitu](https://github.com/altsem/gitu) [cargo:gitu](https://crates.io/crates/gitu) |
 | gitui | [aqua:extrawurst/gitui](https://github.com/extrawurst/gitui) [asdf:looztra/asdf-gitui](https://github.com/looztra/asdf-gitui) |
@@ -327,7 +327,7 @@ editLink: false
 | hledger-flow | [asdf:airtonix/asdf-hledger-flow](https://github.com/airtonix/asdf-hledger-flow) |
 | hls | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | hostctl | [aqua:guumaster/hostctl](https://github.com/guumaster/hostctl) [asdf:svenluijten/asdf-hostctl](https://github.com/svenluijten/asdf-hostctl) |
-| httpie-go | [aqua:aqua:nojima/httpie-go](https://github.com/aqua:nojima/httpie-go) [asdf:abatilo/asdf-httpie-go](https://github.com/abatilo/asdf-httpie-go) |
+| httpie-go | [aqua:nojima/httpie-go](https://github.com/nojima/httpie-go) [asdf:abatilo/asdf-httpie-go](https://github.com/abatilo/asdf-httpie-go) |
 | hub | [aqua:mislav/hub](https://github.com/mislav/hub) [asdf:mise-plugins/asdf-hub](https://github.com/mise-plugins/asdf-hub) |
 | hugo | [aqua:gohugoio/hugo](https://github.com/gohugoio/hugo) [asdf:NeoHsu/asdf-hugo](https://github.com/NeoHsu/asdf-hugo) |
 | hurl | [aqua:Orange-OpenSource/hurl](https://github.com/Orange-OpenSource/hurl) [asdf:raimon49/asdf-hurl](https://github.com/raimon49/asdf-hurl) |
