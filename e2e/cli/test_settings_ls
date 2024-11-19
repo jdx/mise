@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+assert_contains "mise settings" "all_compile = false"
+assert_contains "mise settings ls" "all_compile = false"
+assert_contains "mise settings --names" "all_compile"
+assert_contains "mise settings ls python" "venv_auto_create = false"
