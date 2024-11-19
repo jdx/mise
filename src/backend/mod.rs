@@ -152,6 +152,7 @@ pub trait Backend: Debug + Send + Sync {
             .get_dependencies(tvr)?
             .into_iter()
             .map(BackendArg::from)
+            .filter(|ba| self.ba() != ba)
             .filter(|ba| !self.ba().all_fulls().contains(&ba.full()))
             .collect();
         for ba in deps.clone() {
