@@ -776,6 +776,7 @@ editLink: false
 | viddy | [aqua:sachaos/viddy](https://github.com/sachaos/viddy) [asdf:ryodocx/asdf-viddy](https://github.com/ryodocx/asdf-viddy) |
 | vim | [asdf:tsuyoshicho/asdf-vim](https://github.com/tsuyoshicho/asdf-vim) |
 | virtualos | [asdf:tuist/asdf-virtualos](https://github.com/tuist/asdf-virtualos) |
+| vivid | [ubi:sharkdp/vivid](https://github.com/sharkdp/vivid) |
 | vlang | [vfox:ahai-code/vfox-vlang](https://github.com/ahai-code/vfox-vlang) |
 | vlt | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | vultr-cli | [asdf:ikuradon/asdf-vultr-cli](https://github.com/ikuradon/asdf-vultr-cli) |
