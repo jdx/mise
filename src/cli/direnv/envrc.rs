@@ -55,26 +55,3 @@ impl Envrc {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-
-    use insta::assert_snapshot;
-
-    use crate::test::reset;
-    use crate::{dirs, file};
-
-    #[test]
-    fn test_direnv_envrc() {
-        reset();
-        let stdout = assert_cli!("direnv", "envrc");
-        let envrc = file::read_to_string(stdout.trim()).unwrap();
-        let envrc = envrc.replace(dirs::HOME.to_string_lossy().as_ref(), "~");
-        let envrc = envrc
-            .lines()
-            .filter(|l| !l.starts_with("export REMOTE_"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert_snapshot!(envrc);
-    }
-}

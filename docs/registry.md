@@ -250,7 +250,6 @@ editLink: false
 | gcc-arm-none-eabi | [asdf:dlech/asdf-gcc-arm-none-eabi](https://github.com/dlech/asdf-gcc-arm-none-eabi) |
 | gcloud | [asdf:jthegedus/asdf-gcloud](https://github.com/jthegedus/asdf-gcloud) |
 | getenvoy | [asdf:asdf-community/asdf-getenvoy](https://github.com/asdf-community/asdf-getenvoy) |
-| gh | [ubi:cli/cli](https://github.com/cli/cli) [asdf:bartlomiejdanek/asdf-github-cli](https://github.com/bartlomiejdanek/asdf-github-cli) |
 | ghc | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | ghidra | [asdf:Honeypot95/asdf-ghidra](https://github.com/Honeypot95/asdf-ghidra) |
 | ghorg | [aqua:gabrie30/ghorg](https://github.com/gabrie30/ghorg) [asdf:gbloquel/asdf-ghorg](https://github.com/gbloquel/asdf-ghorg) |
@@ -352,7 +351,7 @@ editLink: false
 | jbang | [asdf:jbangdev/jbang-asdf](https://github.com/jbangdev/jbang-asdf) |
 | jfrog-cli | [asdf:LozanoMatheus/asdf-jfrog-cli](https://github.com/LozanoMatheus/asdf-jfrog-cli) |
 | jib | [asdf:joschi/asdf-jib](https://github.com/joschi/asdf-jib) |
-| jiq | [asdf:chessmango/asdf-jiq](https://github.com/chessmango/asdf-jiq) |
+| jiq | [aqua:fiatjaf/jiq](https://github.com/fiatjaf/jiq) [asdf:chessmango/asdf-jiq](https://github.com/chessmango/asdf-jiq) |
 | jless | [aqua:PaulJuliusMartinez/jless](https://github.com/PaulJuliusMartinez/jless) [asdf:jc00ke/asdf-jless](https://github.com/jc00ke/asdf-jless) |
 | jmespath | [asdf:skyzyx/asdf-jmespath](https://github.com/skyzyx/asdf-jmespath) |
 | jmeter | [asdf:comdotlinux/asdf-jmeter](https://github.com/comdotlinux/asdf-jmeter) |
@@ -405,7 +404,7 @@ editLink: false
 | kube-capacity | [aqua:robscott/kube-capacity](https://github.com/robscott/kube-capacity) [asdf:looztra/asdf-kube-capacity](https://github.com/looztra/asdf-kube-capacity) |
 | kube-code-generator | [asdf:jimmidyson/asdf-kube-code-generator](https://github.com/jimmidyson/asdf-kube-code-generator) |
 | kube-controller-tools | [asdf:jimmidyson/asdf-kube-controller-tools](https://github.com/jimmidyson/asdf-kube-controller-tools) |
-| kube-credential-cache | [asdf:ryodocx/kube-credential-cache](https://github.com/ryodocx/kube-credential-cache) |
+| kube-credential-cache | [aqua:ryodocx/kube-credential-cache](https://github.com/ryodocx/kube-credential-cache) [asdf:ryodocx/kube-credential-cache](https://github.com/ryodocx/kube-credential-cache) |
 | kube-linter | [aqua:stackrox/kube-linter](https://github.com/stackrox/kube-linter) [asdf:devlincashman/asdf-kube-linter](https://github.com/devlincashman/asdf-kube-linter) |
 | kube-score | [aqua:zegl/kube-score](https://github.com/zegl/kube-score) [asdf:bageljp/asdf-kube-score](https://github.com/bageljp/asdf-kube-score) |
 | kubebuilder | [aqua:kubernetes-sigs/kubebuilder](https://github.com/kubernetes-sigs/kubebuilder) [asdf:virtualstaticvoid/asdf-kubebuilder](https://github.com/virtualstaticvoid/asdf-kubebuilder) |
@@ -417,6 +416,7 @@ editLink: false
 | kubectl-buildkit | [asdf:ezcater/asdf-kubectl-buildkit](https://github.com/ezcater/asdf-kubectl-buildkit) |
 | kubectl-convert | [aqua:kubernetes/kubectl-convert](https://github.com/kubernetes/kubectl-convert) [asdf:iul1an/asdf-kubectl-convert](https://github.com/iul1an/asdf-kubectl-convert) |
 | kubectl-kots | [asdf:ganta/asdf-kubectl-kots](https://github.com/ganta/asdf-kubectl-kots) |
+| kubectl-kuttl | [aqua:kudobuilder/kuttl](https://github.com/kudobuilder/kuttl) [asdf:jimmidyson/asdf-kuttl](https://github.com/jimmidyson/asdf-kuttl) |
 | kubectx | [aqua:ahmetb/kubectx](https://github.com/ahmetb/kubectx) [asdf:https://gitlab.com/wt0f/asdf-kubectx](https://gitlab.com/wt0f/asdf-kubectx) |
 | kubefedctl | [asdf:kvokka/asdf-kubefedctl](https://github.com/kvokka/asdf-kubefedctl) |
 | kubefirst | [asdf:Claywd/asdf-kubefirst](https://github.com/Claywd/asdf-kubefirst) |
@@ -429,10 +429,9 @@ editLink: false
 | kubeshark | [aqua:kubeshark/kubeshark](https://github.com/kubeshark/kubeshark) [asdf:carnei-ro/asdf-kubeshark](https://github.com/carnei-ro/asdf-kubeshark) |
 | kubespy | [aqua:pulumi/kubespy](https://github.com/pulumi/kubespy) [asdf:jfreeland/asdf-kubespy](https://github.com/jfreeland/asdf-kubespy) |
 | kubeval | [aqua:instrumenta/kubeval](https://github.com/instrumenta/kubeval) [asdf:stefansedich/asdf-kubeval](https://github.com/stefansedich/asdf-kubeval) |
-| kubevela | [asdf:gustavclausen/asdf-kubevela](https://github.com/gustavclausen/asdf-kubevela) |
+| kubevela | [aqua:kubevela/kubevela](https://github.com/kubevela/kubevela) [asdf:gustavclausen/asdf-kubevela](https://github.com/gustavclausen/asdf-kubevela) |
 | kubie | [aqua:sbstp/kubie](https://github.com/sbstp/kubie) [asdf:johnhamelink/asdf-kubie](https://github.com/johnhamelink/asdf-kubie) |
-| kustomize | [asdf:Banno/asdf-kustomize](https://github.com/Banno/asdf-kustomize) |
-| kuttl | [asdf:jimmidyson/asdf-kuttl](https://github.com/jimmidyson/asdf-kuttl) |
+| kustomize | [aqua:kubernetes-sigs/kustomize](https://github.com/kubernetes-sigs/kustomize) [asdf:Banno/asdf-kustomize](https://github.com/Banno/asdf-kustomize) |
 | kwt | [aqua:carvel-dev/kwt](https://github.com/carvel-dev/kwt) [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
 | lab | [aqua:zaquestion/lab](https://github.com/zaquestion/lab) [asdf:particledecay/asdf-lab](https://github.com/particledecay/asdf-lab) |
 | lane | [asdf:CodeReaper/asdf-lane](https://github.com/CodeReaper/asdf-lane) |
@@ -467,7 +466,7 @@ editLink: false
 | mark | [asdf:jfreeland/asdf-mark](https://github.com/jfreeland/asdf-mark) |
 | markdownlint-cli2 | [npm:markdownlint-cli2](https://www.npmjs.com/package/markdownlint-cli2) [asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2](https://github.com/paulo-ferraz-oliveira/asdf-markdownlint-cli2) |
 | marp-cli | [aqua:marp-team/marp-cli](https://github.com/marp-team/marp-cli) [asdf:xataz/asdf-marp-cli](https://github.com/xataz/asdf-marp-cli) |
-| mask | [asdf:aaaaninja/asdf-mask](https://github.com/aaaaninja/asdf-mask) |
+| mask | [aqua:jacobdeichert/mask](https://github.com/jacobdeichert/mask) [asdf:aaaaninja/asdf-mask](https://github.com/aaaaninja/asdf-mask) |
 | maven | [asdf:mise-plugins/asdf-maven](https://github.com/mise-plugins/asdf-maven) [vfox:version-fox/vfox-maven](https://github.com/version-fox/vfox-maven) |
 | mc | [asdf:penpyt/asdf-mc](https://github.com/penpyt/asdf-mc) |
 | mdbook | [asdf:cipherstash/asdf-mdbook](https://github.com/cipherstash/asdf-mdbook) |
@@ -479,7 +478,7 @@ editLink: false
 | meson | [asdf:asdf-community/asdf-meson](https://github.com/asdf-community/asdf-meson) |
 | micronaut | [asdf:weibemoura/asdf-micronaut](https://github.com/weibemoura/asdf-micronaut) |
 | mill | [asdf:asdf-community/asdf-mill](https://github.com/asdf-community/asdf-mill) |
-| mimirtool | [asdf:asdf-community/asdf-mimirtool](https://github.com/asdf-community/asdf-mimirtool) |
+| mimirtool | [aqua:grafana/mimir/mimirtool](https://github.com/grafana/mimir/mimirtool) [asdf:asdf-community/asdf-mimirtool](https://github.com/asdf-community/asdf-mimirtool) |
 | minify | [aqua:tdewolff/minify](https://github.com/tdewolff/minify) [asdf:axilleas/asdf-minify](https://github.com/axilleas/asdf-minify) |
 | minikube | [aqua:kubernetes/minikube](https://github.com/kubernetes/minikube) [asdf:alvarobp/asdf-minikube](https://github.com/alvarobp/asdf-minikube) |
 | minio | [asdf:aeons/asdf-minio](https://github.com/aeons/asdf-minio) |
@@ -551,7 +550,7 @@ editLink: false
 | perl | [asdf:ouest/asdf-perl](https://github.com/ouest/asdf-perl) |
 | php | [asdf:asdf-community/asdf-php](https://github.com/asdf-community/asdf-php) [vfox:version-fox/vfox-php](https://github.com/version-fox/vfox-php) |
 | pint | [aqua:cloudflare/pint](https://github.com/cloudflare/pint) [asdf:sam-burrell/asdf-pint](https://github.com/sam-burrell/asdf-pint) |
-| pipectl | [asdf:pipe-cd/asdf-pipectl](https://github.com/pipe-cd/asdf-pipectl) |
+| pipectl | [aqua:pipe-cd/pipecd/pipectl](https://github.com/pipe-cd/pipecd/pipectl) [asdf:pipe-cd/asdf-pipectl](https://github.com/pipe-cd/asdf-pipectl) |
 | pipelight | [asdf:kogeletey/asdf-pipelight](https://github.com/kogeletey/asdf-pipelight) |
 | pipenv | [asdf:mise-plugins/mise-pipenv](https://github.com/mise-plugins/mise-pipenv) |
 | pipx | [asdf:yozachar/asdf-pipx](https://github.com/yozachar/asdf-pipx) |
@@ -608,7 +607,6 @@ editLink: false
 | restic | [asdf:xataz/asdf-restic](https://github.com/xataz/asdf-restic) |
 | restish | [ubi:danielgtaylor/restish](https://github.com/danielgtaylor/restish) [go:github.com/danielgtaylor/restish](https://pkg.go.dev/github.com/danielgtaylor/restish) |
 | revive | [aqua:mgechev/revive](https://github.com/mgechev/revive) [asdf:bjw-s/asdf-revive](https://github.com/bjw-s/asdf-revive) |
-| rg | [aqua:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
 | richgo | [aqua:kyoh86/richgo](https://github.com/kyoh86/richgo) [asdf:paxosglobal/asdf-richgo](https://github.com/paxosglobal/asdf-richgo) |
 | riff | [asdf:abinet/asdf-riff](https://github.com/abinet/asdf-riff) |
 | ripgrep | [aqua:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
@@ -672,7 +670,7 @@ editLink: false
 | sqldef | [asdf:cometkim/asdf-sqldef](https://github.com/cometkim/asdf-sqldef) |
 | sqlite | [asdf:cLupus/asdf-sqlite](https://github.com/cLupus/asdf-sqlite) |
 | sshuttle | [asdf:xanmanning/asdf-sshuttle](https://github.com/xanmanning/asdf-sshuttle) |
-| stack | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
+| stack | [aqua:commercialhaskell/stack](https://github.com/commercialhaskell/stack) [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | starboard | [aqua:aquasecurity/starboard](https://github.com/aquasecurity/starboard) [asdf:zufardhiyaulhaq/asdf-starboard](https://github.com/zufardhiyaulhaq/asdf-starboard) |
 | starknet-foundry | [asdf:foundry-rs/asdf-starknet-foundry](https://github.com/foundry-rs/asdf-starknet-foundry) |
 | starport | [asdf:nikever/asdf-starport](https://github.com/nikever/asdf-starport) |

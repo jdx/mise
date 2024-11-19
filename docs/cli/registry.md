@@ -1,6 +1,6 @@
 # `mise registry`
 
-- **Usage**: `mise registry [-b --backend <BACKEND>] [NAME]`
+- **Usage**: `mise registry [-b --backend <BACKEND>] [--hide-aliased] [NAME]`
 - **Source code**: [`src/cli/registry.rs`](https://github.com/jdx/mise/blob/main/src/cli/registry.rs)
 
 List available tools to install
@@ -20,6 +20,10 @@ Show only the specified tool's full name
 ### `-b --backend <BACKEND>`
 
 Show only tools for this backend
+
+### `--hide-aliased`
+
+Hide aliased tools
 
 Examples:
 
