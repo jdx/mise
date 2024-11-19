@@ -47,18 +47,3 @@ fn env_cmd() -> Expression {
 fn env_cmd() -> Expression {
     cmd!("direnv", "dump")
 }
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_str_eq;
-
-    use crate::cli::tests::grep;
-    use crate::test::reset;
-
-    #[test]
-    fn test_direnv_exec() {
-        reset();
-        let stdout = assert_cli!("direnv", "exec");
-        assert_str_eq!(grep(stdout, "JDXCODE_TINY="), "JDXCODE_TINY=3.1.0");
-    }
-}

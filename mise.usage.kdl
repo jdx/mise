@@ -850,6 +850,7 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`."
     flag "-b --backend" help="Show only tools for this backend" {
         arg "<BACKEND>"
     }
+    flag "--hide-aliased" help="Hide aliased tools"
     arg "[NAME]" help="Show only the specified tool's full name"
 }
 cmd "reshim" help="Creates new shims based on bin paths from currently installed tools." {
@@ -987,7 +988,7 @@ By default, this command modifies `mise.toml` in the current directory."
     arg "[ENV_VARS]..." help="Environment variable(s) to set\ne.g.: NODE_ENV=production" var=true
 }
 cmd "settings" help="Manage settings" {
-    flag "--keys" help="Only display key names for each setting"
+    flag "--names" help="Only display key names for each setting"
     cmd "add" help="Adds a setting to the configuration file" {
         long_help r"Adds a setting to the configuration file
 
@@ -1022,12 +1023,18 @@ This is the contents of ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
 but managed separately with `mise aliases`"
-        after_long_help r"Examples:
+        after_long_help r#"Examples:
 
-    $ mise settings
+    $ mise settings ls
     legacy_version_file = false
-"
-        flag "--keys" help="Only display key names for each setting"
+    ...
+
+    $ mise settings ls python
+    default_packages_file = "~/.default-python-packages"
+    ...
+"#
+        flag "--names" help="Only display key names for each setting"
+        arg "[KEY]" help="List keys under this key"
     }
     cmd "set" help="Add/update a setting" {
         alias "create"

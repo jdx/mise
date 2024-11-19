@@ -159,7 +159,7 @@ impl AquaPackage {
                 if let Some(req) = versions::Requirement::new(&vc) {
                     req.matches(&v)
                 } else {
-                    warn!("invalid semver constraint: {vc}");
+                    debug!("invalid semver constraint: {vc}");
                     false
                 }
             } else if let Some(caps) = re_exact.captures(vc) {
@@ -175,13 +175,13 @@ impl AquaPackage {
             .find(|vo| vo.version_constraint == "true" || semver_match(&vo.version_constraint))
     }
 
-    pub fn format(&self, v: &str) -> &str {
+    pub fn format(&self, v: &str) -> Result<&str> {
         if self.r#type == AquaPackageType::GithubArchive {
-            return "tar.gz";
+            return Ok("tar.gz");
         }
-        if self.format.is_empty() {
+        let format = if self.format.is_empty() {
             let asset = if !self.asset.is_empty() {
-                self.asset(v)
+                self.asset(v)?
             } else if !self.url.is_empty() {
                 self.url.to_string()
             } else {
@@ -212,33 +212,39 @@ impl AquaPackage {
                 "tbz2" => "tar.bz2",
                 format => format,
             }
-        }
+        };
+        Ok(format)
     }
 
-    pub fn asset(&self, v: &str) -> String {
+    pub fn asset(&self, v: &str) -> Result<String> {
         self.parse_aqua_str(&self.asset, v, &Default::default())
     }
 
-    pub fn asset_strs(&self, v: &str) -> IndexSet<String> {
-        let mut strs = IndexSet::from([self.asset(v)]);
+    pub fn asset_strs(&self, v: &str) -> Result<IndexSet<String>> {
+        let mut strs = IndexSet::from([self.asset(v)?]);
         if cfg!(macos) {
             let mut ctx = HashMap::default();
             ctx.insert("ARCH".to_string(), "arm64".to_string());
-            strs.insert(self.parse_aqua_str(&self.asset, v, &ctx));
+            strs.insert(self.parse_aqua_str(&self.asset, v, &ctx)?);
         } else if cfg!(windows) {
             strs.insert(format!(
                 "{}.exe",
-                self.parse_aqua_str(&self.asset, v, &Default::default())
+                self.parse_aqua_str(&self.asset, v, &Default::default())?
             ));
         }
-        strs
+        Ok(strs)
     }
 
-    pub fn url(&self, v: &str) -> String {
+    pub fn url(&self, v: &str) -> Result<String> {
         self.parse_aqua_str(&self.url, v, &Default::default())
     }
 
-    fn parse_aqua_str(&self, s: &str, v: &str, overrides: &HashMap<String, String>) -> String {
+    fn parse_aqua_str(
+        &self,
+        s: &str,
+        v: &str,
+        overrides: &HashMap<String, String>,
+    ) -> Result<String> {
         let os = os();
         let mut arch = arch();
         if os == "darwin" && arch == "arm64" && self.rosetta2 {
@@ -253,8 +259,14 @@ impl AquaPackage {
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| s.to_string())
         };
+        let semver = if let Some(prefix) = &self.version_prefix {
+            v.strip_prefix(prefix).unwrap_or(v)
+        } else {
+            v
+        };
         let mut ctx = hashmap! {
             "Version".to_string() => replace(v),
+            "SemVer".to_string() => replace(semver),
             "OS".to_string() => replace(os),
             "GOOS".to_string() => replace(os),
             "GOARCH".to_string() => replace(arch),
@@ -267,8 +279,8 @@ impl AquaPackage {
 }
 
 impl AquaFile {
-    pub fn src(&self, pkg: &AquaPackage, v: &str) -> Option<String> {
-        let asset = pkg.asset(v);
+    pub fn src(&self, pkg: &AquaPackage, v: &str) -> Result<Option<String>> {
+        let asset = pkg.asset(v)?;
         let asset = asset.strip_suffix(".tar.gz").unwrap_or(&asset);
         let asset = asset.strip_suffix(".tar.xz").unwrap_or(asset);
         let asset = asset.strip_suffix(".tar.bz2").unwrap_or(asset);
@@ -286,6 +298,7 @@ impl AquaFile {
         self.src
             .as_ref()
             .map(|src| pkg.parse_aqua_str(src, v, &ctx))
+            .transpose()
     }
 }
 

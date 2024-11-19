@@ -1,4 +1,4 @@
-# Aqua Backend <Badge type="warning" text="experimental" />
+# Aqua Backend
 
 [Aqua](https://aquaproj.github.io/) tools may be used natively in mise. Aqua is encouraged as a backend for new tools if they
 cannot be used with ubi as aqua tools directly fetch tarballs from the vendor without requiring unsafe
