@@ -9,7 +9,8 @@ use strum::IntoEnumIterator;
 use url::Url;
 
 // the registry is generated from registry.toml in the project root
-include!(concat!(env!("OUT_DIR"), "/registry.rs"));
+pub static REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> =
+    Lazy::new(|| include!(concat!(env!("OUT_DIR"), "/registry.rs")));
 
 #[derive(Debug, Clone)]
 pub struct RegistryTool {

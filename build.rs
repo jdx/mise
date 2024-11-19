@@ -19,9 +19,7 @@ fn main() {
 fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
-    let mut lines = vec![r#"
-pub static REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> = Lazy::new(|| ["#
-        .to_string()];
+    let mut lines = vec!["[".to_string()];
 
     let registry: toml::Table = fs::read_to_string("registry.toml")
         .unwrap()
@@ -100,7 +98,7 @@ pub static REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> = Lazy::new(|| [
             lines.push(format!(r#"    ("{alias}", {rt}),"#));
         }
     }
-    lines.push(r#"].into());"#.to_string());
+    lines.push(r#"].into()"#.to_string());
 
     fs::write(&dest_path, lines.join("\n")).unwrap();
 }
