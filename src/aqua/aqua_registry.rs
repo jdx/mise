@@ -159,7 +159,7 @@ impl AquaPackage {
                 if let Some(req) = versions::Requirement::new(&vc) {
                     req.matches(&v)
                 } else {
-                    warn!("invalid semver constraint: {vc}");
+                    debug!("invalid semver constraint: {vc}");
                     false
                 }
             } else if let Some(caps) = re_exact.captures(vc) {
