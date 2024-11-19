@@ -3,6 +3,7 @@
 In addition to asdf plugins, you can also directly install CLIs with some package managers.
 
 - [asdf](/dev-tools/backends/asdf)
+- [aqua](/dev-tools/backends/aqua)
 - [Cargo](/dev-tools/backends/cargo)
 - [Go](/dev-tools/backends/go) <Badge type="warning" text="experimental" />
 - [NPM](/dev-tools/backends/npm)

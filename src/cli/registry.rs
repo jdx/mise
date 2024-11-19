@@ -20,6 +20,10 @@ pub struct Registry {
     /// Show only tools for this backend
     #[clap(short, long)]
     backend: Option<BackendType>,
+
+    /// Hide aliased tools
+    #[clap(long)]
+    hide_aliased: bool,
 }
 
 impl Registry {
@@ -45,6 +49,7 @@ impl Registry {
             let data = REGISTRY
                 .iter()
                 .filter(|(short, _)| !SETTINGS.disable_tools.contains(**short))
+                .filter(|(short, rt)| !self.hide_aliased || **short == rt.short)
                 .map(|(short, rt)| Row::from((short.to_string(), filter_backend(rt).join(" "))))
                 .filter(|row| !row.backends.is_empty())
                 .sorted_by(|a, b| a.short.cmp(&b.short));

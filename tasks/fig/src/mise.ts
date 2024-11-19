@@ -1681,6 +1681,13 @@ const completionSpec: Fig.Spec = {
                         "isOptional": false,
                         "isVariadic": false
                     }
+                },
+                {
+                    "name": [
+                        "--hide-aliased"
+                    ],
+                    "description": "Hide aliased tools",
+                    "isRepeatable": false
                 }
             ],
             "args": [

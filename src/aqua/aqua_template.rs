@@ -31,37 +31,41 @@ pub fn render(tmpl: &str, ctx: &Context) -> String {
     result
 }
 
-fn parse(mut code: &str, ctx: &Context) -> String {
-    type Op = Box<dyn Fn(&str) -> String>;
-    let mut ops: Vec<Op> = Vec::new();
-    if code.starts_with("title ") {
-        code = &code[6..];
-        ops.push(Box::new(|s: &str| s.to_title_case()));
-    }
-    if code.starts_with("trimV ") {
-        code = &code[6..];
-        ops.push(Box::new(|s: &str| s.trim_start_matches('v').to_string()));
-    }
-    let mut val = if let Some(key) = code.strip_prefix(".") {
+fn parse(code: &str, ctx: &Context) -> String {
+    if let Some(key) = code.strip_prefix(".") {
         if let Some(val) = ctx.get(key) {
             val.to_string()
         } else {
             warn!("unable to find key in context: {key}");
             "<ERR>".to_string()
         }
-    } else if code.starts_with('"') && code.ends_with('"') {
-        // TODO: handle quotes in the middle of code
-        code[1..code.len() - 1].to_string()
+    } else if let Some(code) = code.strip_prefix('"') {
+        for (end, _) in code.match_indices('"') {
+            if end > 0 && code.chars().nth(end - 1) != Some('\\') {
+                return code[..end].to_string();
+            }
+        }
+        warn!("unterminated string: {code}");
+        "<ERR>".to_string()
+    } else if let Some(code) = code.strip_prefix("title ") {
+        let code = parse(code, ctx);
+        code.to_title_case()
+    } else if let Some(code) = code.strip_prefix("trimV ") {
+        let code = parse(code, ctx);
+        code.trim_start_matches('v').to_string()
+    } else if let Some(code) = code.strip_prefix("trimPrefix ") {
+        // TODO: this would break on spaces, though spaces are probably unlikely for the sort of strings we're working with
+        let prefix = parse(code.split_whitespace().next().unwrap(), ctx);
+        let s = parse(code.split_whitespace().nth(1).unwrap(), ctx);
+        if s.starts_with(&prefix) {
+            s[prefix.len()..].to_string()
+        } else {
+            s.to_string()
+        }
     } else {
         warn!("unable to parse aqua template: {code}");
         "<ERR>".to_string()
-    };
-
-    for op in ops.into_iter().rev() {
-        val = op(&val);
     }
-
-    val
 }
 
 #[cfg(test)]
@@ -90,10 +94,12 @@ mod tests {
     }}
 
     parse_tests!(
-        test_parse1: (".OS", "world", hashmap!{"OS" => "world"}),
-        test_parse2: ("\"world\"", "world", hashmap!{}),
+        test_parse_key: (".OS", "world", hashmap!{"OS" => "world"}),
+        test_parse_string: ("\"world\"", "world", hashmap!{}),
         test_parse3: ("XXX", "<ERR>", hashmap!{}),
         test_parse4: (r#"title "world""#, "World", hashmap!{}),
         test_parse5: (r#"trimV "v1.0.0""#, "1.0.0", hashmap!{}),
+        test_parse6: (r#"trimPrefix "v" "v1.0.0""#, "1.0.0", hashmap!{}),
+        test_parse7: (r#"trimPrefix "v" "1.0.0""#, "1.0.0", hashmap!{}),
     );
 }

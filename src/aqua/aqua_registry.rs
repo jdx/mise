@@ -253,8 +253,14 @@ impl AquaPackage {
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| s.to_string())
         };
+        let semver = if let Some(prefix) = &self.version_prefix {
+            v.strip_prefix(prefix).unwrap_or(v)
+        } else {
+            v
+        };
         let mut ctx = hashmap! {
             "Version".to_string() => replace(v),
+            "SemVer".to_string() => replace(semver),
             "OS".to_string() => replace(os),
             "GOOS".to_string() => replace(os),
             "GOARCH".to_string() => replace(arch),

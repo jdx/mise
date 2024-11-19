@@ -7,7 +7,7 @@ process.env.MISE_ASDF = 1;
 process.env.MISE_VFOX = 1;
 process.env.MISE_EXPERIMENTAL = 1;
 
-const stdout = execSync("mise registry", { encoding: "utf-8" });
+const stdout = execSync("mise registry --hide-aliased", { encoding: "utf-8" });
 
 const output = [
   `---

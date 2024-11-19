@@ -44,12 +44,17 @@ impl Backend for AquaBackend {
                                 pkg.repo_owner, pkg.repo_name
                             ))?
                             .into_iter()
-                            .map(|r| {
-                                let mut v = r.tag_name.strip_prefix('v').unwrap_or(&r.tag_name);
+                            .filter_map(|r| {
+                                let mut v = r.tag_name.as_str();
                                 if let Some(prefix) = &pkg.version_prefix {
-                                    v = v.strip_prefix(prefix).unwrap_or(v);
+                                    if let Some(_v) = v.strip_prefix(prefix) {
+                                        v = _v
+                                    } else {
+                                        return None;
+                                    }
                                 }
-                                v.to_string()
+                                v = v.strip_prefix('v').unwrap_or(v);
+                                Some(v.to_string())
                             })
                             .rev()
                             .collect_vec(),
@@ -67,21 +72,22 @@ impl Backend for AquaBackend {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        if !cfg!(windows) {
-            SETTINGS.ensure_experimental("aqua")?;
-        }
         let mut v = format!("v{}", ctx.tv.version);
         let pkg = AQUA_REGISTRY
             .package_with_version(&self.id, &v)?
             .wrap_err_with(|| format!("no aqua registry found for {}", self.id))?;
         if let Some(prefix) = &pkg.version_prefix {
-            v = format!("{}{}", prefix, ctx.tv.version);
+            v = format!("{}{}", prefix, v);
         }
         validate(&pkg)?;
         let url = match self.fetch_url(&pkg, &v) {
             Ok(url) => url,
             Err(err) => {
-                v = ctx.tv.version.to_string();
+                if let Some(prefix) = &pkg.version_prefix {
+                    v = format!("{}{}", prefix, ctx.tv.version);
+                } else {
+                    v = ctx.tv.version.to_string();
+                }
                 self.fetch_url(&pkg, &v).map_err(|e| err.wrap_err(e))?
             }
         };
