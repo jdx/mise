@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-assert "mise registry gh" "ubi:cli/cli[exe=gh] asdf:bartlomiejdanek/asdf-github-cli"
+assert "mise registry gh" "aqua:cli/cli ubi:cli/cli[exe=gh] asdf:bartlomiejdanek/asdf-github-cli"
 assert_contains "mise registry" "gh                           ubi:cli/cli[exe=gh] asdf:bartlomiejdanek/asdf-github-cli"
