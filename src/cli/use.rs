@@ -169,7 +169,7 @@ impl Use {
         let cwd = env::current_dir()?;
         let path = if let Some(env) = &*env::MISE_PROFILE {
             config_file_from_dir(&cwd.join(format!("mise.{env}.toml")))
-        } else if self.global {
+        } else if self.global || env::in_home_dir() {
             MISE_GLOBAL_CONFIG_FILE.clone()
         } else if let Some(env) = &self.env {
             let p = cwd.join(format!(".mise.{env}.toml"));
