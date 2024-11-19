@@ -44,12 +44,17 @@ impl Backend for AquaBackend {
                                 pkg.repo_owner, pkg.repo_name
                             ))?
                             .into_iter()
-                            .map(|r| {
-                                let mut v = r.tag_name.strip_prefix('v').unwrap_or(&r.tag_name);
+                            .filter_map(|r| {
+                                let mut v = r.tag_name.as_str();
                                 if let Some(prefix) = &pkg.version_prefix {
-                                    v = v.strip_prefix(prefix).unwrap_or(v);
+                                    if let Some(_v) = v.strip_prefix(prefix) {
+                                        v = _v
+                                    } else {
+                                        return None;
+                                    }
                                 }
-                                v.to_string()
+                                v = v.strip_prefix('v').unwrap_or(v);
+                                Some(v.to_string())
                             })
                             .rev()
                             .collect_vec(),
@@ -67,21 +72,22 @@ impl Backend for AquaBackend {
     }
 
     fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        if !cfg!(windows) {
-            SETTINGS.ensure_experimental("aqua")?;
-        }
         let mut v = format!("v{}", ctx.tv.version);
         let pkg = AQUA_REGISTRY
             .package_with_version(&self.id, &v)?
             .wrap_err_with(|| format!("no aqua registry found for {}", self.id))?;
         if let Some(prefix) = &pkg.version_prefix {
-            v = format!("{}{}", prefix, ctx.tv.version);
+            v = format!("{}{}", prefix, v);
         }
         validate(&pkg)?;
         let url = match self.fetch_url(&pkg, &v) {
             Ok(url) => url,
             Err(err) => {
-                v = ctx.tv.version.to_string();
+                if let Some(prefix) = &pkg.version_prefix {
+                    v = format!("{}{}", prefix, ctx.tv.version);
+                } else {
+                    v = ctx.tv.version.to_string();
+                }
                 self.fetch_url(&pkg, &v).map_err(|e| err.wrap_err(e))?
             }
         };
@@ -97,7 +103,7 @@ impl Backend for AquaBackend {
             .package_with_version(&self.id, &tv.version)?
             .wrap_err_with(|| format!("no aqua registry found for {}", self.ba))?;
 
-        let srcs = self.srcs(&pkg, tv);
+        let srcs = self.srcs(&pkg, tv)?;
         if srcs.is_empty() {
             return Ok(vec![tv.install_path()]);
         }
@@ -143,7 +149,7 @@ impl AquaBackend {
                 self.github_archive_url(pkg, v)
             }
             AquaPackageType::Http => {
-                let url = pkg.url(v);
+                let url = pkg.url(v)?;
                 HTTP.head(&url)?;
                 Ok(url)
             }
@@ -153,7 +159,7 @@ impl AquaBackend {
     fn github_release_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let gh_release = github::get_release(&gh_id, v)?;
-        let asset_strs = pkg.asset_strs(v);
+        let asset_strs = pkg.asset_strs(v)?;
         let asset = gh_release
             .assets
             .iter()
@@ -197,7 +203,7 @@ impl AquaBackend {
         ctx.pr.set_message(format!("installing {filename}"));
         let install_path = ctx.tv.install_path();
         file::remove_all(&install_path)?;
-        let format = pkg.format(v);
+        let format = pkg.format(v)?;
         let bin_path =
             install_path.join(pkg.files.first().map(|f| &f.name).unwrap_or(&pkg.repo_name));
         let mut tar_opts = TarOptions {
@@ -236,7 +242,7 @@ impl AquaBackend {
             bail!("unsupported format: {}", format);
         }
 
-        for (src, dst) in self.srcs(pkg, &ctx.tv) {
+        for (src, dst) in self.srcs(pkg, &ctx.tv)? {
             if src != dst {
                 if cfg!(windows) {
                     file::copy(&src, &dst)?;
@@ -249,26 +255,28 @@ impl AquaBackend {
         Ok(())
     }
 
-    fn srcs(&self, pkg: &AquaPackage, tv: &ToolVersion) -> Vec<(PathBuf, PathBuf)> {
+    fn srcs(&self, pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<(PathBuf, PathBuf)>> {
         pkg.files
             .iter()
-            .flat_map(|f| {
+            .map(|f| {
                 let srcs = if let Some(prefix) = &pkg.version_prefix {
-                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version))]
+                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version))?]
                 } else {
                     vec![
-                        f.src(pkg, &tv.version),
-                        f.src(pkg, &format!("v{}", tv.version)),
+                        f.src(pkg, &tv.version)?,
+                        f.src(pkg, &format!("v{}", tv.version))?,
                     ]
                 };
-                srcs.into_iter()
+                Ok(srcs
+                    .into_iter()
                     .flatten()
                     .map(|src| tv.install_path().join(src))
                     .map(|src| {
                         let dst = src.parent().unwrap().join(f.name.as_str());
                         (src, dst)
-                    })
+                    }))
             })
+            .flatten_ok()
             .collect()
     }
 }

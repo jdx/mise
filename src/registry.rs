@@ -36,9 +36,6 @@ impl RegistryTool {
             if cfg!(windows) {
                 backend_types.remove("asdf");
             }
-            if cfg!(unix) && !SETTINGS.experimental {
-                backend_types.remove("aqua");
-            }
             backend_types
         });
         self.backends
