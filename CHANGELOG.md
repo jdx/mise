@@ -1,5 +1,27 @@
 # Changelog
 
+## [2024.11.18](https://github.com/jdx/mise/compare/v2024.11.17..v2024.11.18) - 2024-11-19
+
+### 🚀 Features
+
+- add ripgrep-all by [@yodatak](https://github.com/yodatak) in [#3083](https://github.com/jdx/mise/pull/3083)
+- add vivid by [@swfz](https://github.com/swfz) in [#3089](https://github.com/jdx/mise/pull/3089)
+
+### 🐛 Bug Fixes
+
+- use global mise when running `mise use` in home dir by [@jdx](https://github.com/jdx) in [#3085](https://github.com/jdx/mise/pull/3085)
+- prevent infinite recursion listing dependencies by [@jdx](https://github.com/jdx) in [#3091](https://github.com/jdx/mise/pull/3091)
+- removed duplicate backend specifier from some registry tools by [@syhol](https://github.com/syhol) in [#3090](https://github.com/jdx/mise/pull/3090)
+
+### 🚜 Refactor
+
+- define registry outside of build.rs by [@jdx](https://github.com/jdx) in [e4366ff](https://github.com/jdx/mise/commit/e4366ffc7f8526d57c097dc61387b793b6f7ba3a)
+
+### New Contributors
+
+- @syhol made their first contribution in [#3090](https://github.com/jdx/mise/pull/3090)
+- @swfz made their first contribution in [#3089](https://github.com/jdx/mise/pull/3089)
+
 ## [2024.11.17](https://github.com/jdx/mise/compare/v2024.11.16..v2024.11.17) - 2024-11-19
 
 ### 🚀 Features
