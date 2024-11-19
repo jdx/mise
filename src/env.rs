@@ -282,6 +282,10 @@ fn var_option_bool(key: &str) -> Option<bool> {
     }
 }
 
+pub fn in_home_dir() -> bool {
+    current_dir().is_ok_and(|d| d == *HOME)
+}
+
 pub fn var_path(key: &str) -> Option<PathBuf> {
     var_os(key).map(PathBuf::from).map(replace_path)
 }
