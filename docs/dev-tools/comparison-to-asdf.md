@@ -11,7 +11,6 @@ Make sure you have a look at [environments](/environments.html) and [tasks](/tas
 are major portions of mise that have no asdf equivalent.
 :::
 
-
 ## Migrate from asdf to mise
 
 If you're moving from asdf to mise, please review [#how-do-i-migrate-from-asdf](/faq.html#how-do-i-migrate-from-asdf) for guidance.
