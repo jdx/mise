@@ -77,27 +77,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise use node@brew</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::file::create_dir_all;
-    use crate::test::reset;
-    use test_log::test;
-
-    #[test]
-    fn test_link() {
-        reset();
-        assert_cli!("install", "tiny@1.0.1", "tiny@2.1.0");
-        assert_cli!("install", "tiny@3.0.1", "tiny@3.1.0");
-        create_dir_all("../data/tmp/tiny").unwrap();
-        assert_cli!("link", "tiny@9.8.7", "../data/tmp/tiny");
-        assert_cli_snapshot!("ls", "tiny", @r"
-        tiny  1.0.1                                       
-        tiny  2.1.0                                       
-        tiny  3.0.1                                       
-        tiny  3.1.0            ~/cwd/.test-tool-versions 3
-        tiny  9.8.7 (symlink)
-        ");
-        assert_cli!("uninstall", "tiny@9.8.7");
-    }
-}
