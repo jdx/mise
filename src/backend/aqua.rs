@@ -221,8 +221,8 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
-        if tv.checksum.is_none() {
-            tv.checksum = if let Some(checksum) = &pkg.checksum {
+        if !tv.checksums.contains_key(filename) {
+            if let Some(checksum) = &pkg.checksum {
                 if checksum.enabled() {
                     let url = match checksum._type() {
                         AquaChecksumType::GithubRelease => {
@@ -278,13 +278,10 @@ impl AquaBackend {
                         .find(|(_, f)| f == filename)
                         .map(|(c, _)| c)
                         .unwrap_or(checksum_file);
-                    Some(format!("{}:{}", checksum.algorithm(), checksum_str.trim()))
-                } else {
-                    None
+                    let checksum = format!("{}:{}", checksum.algorithm(), checksum_str.trim());
+                    tv.checksums.insert(filename.to_string(), checksum);
                 }
-            } else {
-                None
-            };
+            }
         }
         let tarball_path = tv.download_path().join(filename);
         self.verify_checksum(ctx, tv, &tarball_path)?;

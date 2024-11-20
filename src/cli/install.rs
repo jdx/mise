@@ -126,13 +126,14 @@ impl Install {
     fn install_missing_runtimes(&self, config: &Config) -> eyre::Result<Vec<ToolVersion>> {
         let trs = config.get_tool_request_set()?;
         let versions = trs.missing_tools().into_iter().cloned().collect_vec();
-        if versions.is_empty() {
+        let versions = if versions.is_empty() {
             info!("all runtimes are installed");
-            return Ok(vec![]);
-        }
-        let mpr = MultiProgressReport::get();
-        let mut ts = Toolset::from(trs.clone());
-        let versions = ts.install_versions(config, versions, &mpr, &self.install_opts())?;
+            vec![]
+        } else {
+            let mpr = MultiProgressReport::get();
+            let mut ts = Toolset::from(trs.clone());
+            ts.install_versions(config, versions, &mpr, &self.install_opts())?
+        };
         lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
         Ok(versions)
     }

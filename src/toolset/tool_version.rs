@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -21,7 +22,7 @@ use path_absolutize::Absolutize;
 pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
-    pub checksum: Option<String>,
+    pub checksums: BTreeMap<String, String>,
 }
 
 impl ToolVersion {
@@ -29,7 +30,7 @@ impl ToolVersion {
         ToolVersion {
             request,
             version,
-            checksum: None,
+            checksums: Default::default(),
         }
     }
 
@@ -37,7 +38,7 @@ impl ToolVersion {
         if opts.use_locked_version {
             if let Some(lt) = request.lockfile_resolve()? {
                 let mut tv = Self::new(request.clone(), lt.version);
-                tv.checksum = lt.checksum;
+                tv.checksums = lt.checksums;
                 return Ok(tv);
             }
         }

@@ -105,9 +105,9 @@ impl GoPlugin {
             pr.set_message(format!("downloading {filename}"));
             HTTP.download_file(&tarball_url, &tarball_path, Some(pr))?;
 
-            if !settings.go_skip_checksum && tv.checksum.is_none() {
+            if !settings.go_skip_checksum && !tv.checksums.contains_key(&filename) {
                 let checksum = checksum_handle.join().unwrap()?;
-                tv.checksum = Some(format!("sha256:{checksum}"));
+                tv.checksums.insert(filename, format!("sha256:{checksum}"));
             }
             Ok(tarball_path)
         })

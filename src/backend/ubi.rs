@@ -8,10 +8,13 @@ use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::tokio::RUNTIME;
 use crate::toolset::ToolVersion;
-use crate::{file, github};
+use crate::{file, github, hash};
 use eyre::bail;
 use regex::Regex;
+use sha2::Sha256;
+use std::env;
 use std::fmt::Debug;
+use std::path::Path;
 use std::sync::OnceLock;
 use ubi::UbiBuilder;
 use xx::regex;
@@ -174,6 +177,36 @@ impl Backend for UbiBackend {
             })
             .collect();
         Ok(versions)
+    }
+
+    fn verify_checksum(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        file: &Path,
+    ) -> eyre::Result<()> {
+        let mut checksum_key = file.file_name().unwrap().to_string_lossy().to_string();
+        if let Some(exe) = tv.request.options().get("exe") {
+            checksum_key = format!("{}-{}", checksum_key, exe);
+        }
+        if let Some(matching) = tv.request.options().get("matching") {
+            checksum_key = format!("{}-{}", checksum_key, matching);
+        }
+        checksum_key = format!("{}-{}-{}", checksum_key, env::consts::OS, env::consts::ARCH);
+        if let Some(checksum) = &tv.checksums.get(&checksum_key) {
+            ctx.pr.set_message(format!("checksum {checksum_key}"));
+            if let Some((algo, check)) = checksum.split_once(':') {
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
+            } else {
+                bail!("Invalid checksum: {checksum_key}");
+            }
+        } else if SETTINGS.lockfile && SETTINGS.experimental {
+            ctx.pr
+                .set_message(format!("generating checksum {checksum_key}"));
+            let hash = hash::file_hash_prog::<Sha256>(file, Some(ctx.pr.as_ref()))?;
+            tv.checksums.insert(checksum_key, format!("sha256:{hash}"));
+        }
+        Ok(())
     }
 }
 
