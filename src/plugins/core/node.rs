@@ -291,20 +291,6 @@ impl Backend for NodePlugin {
         &self.ba
     }
 
-    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
-        static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
-        CACHE
-            .get_or_init(|| {
-                CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
-                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-                    .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
-                    .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())
-                    .build()
-                    .into()
-            })
-            .clone()
-    }
-
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
         let base = SETTINGS.node.mirror_url();
         let versions = HTTP_FETCH
@@ -414,6 +400,20 @@ impl Backend for NodePlugin {
     #[cfg(windows)]
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
         Ok(vec![tv.install_path()])
+    }
+
+    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
+        static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
+                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
+                    .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())
+                    .build()
+                    .into()
+            })
+            .clone()
     }
 }
 

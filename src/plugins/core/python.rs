@@ -367,24 +367,6 @@ impl Backend for PythonPlugin {
         }
     }
 
-    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
-        static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
-        CACHE
-            .get_or_init(|| {
-                CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
-                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-                    .with_cache_key((SETTINGS.python.compile == Some(false)).to_string())
-                    .build()
-                    .into()
-            })
-            .clone()
-    }
-
-    #[cfg(windows)]
-    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
-        Ok(vec![tv.install_path()])
-    }
-
     fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".python-version".to_string()])
     }
@@ -414,6 +396,11 @@ impl Backend for PythonPlugin {
         Ok(tv)
     }
 
+    #[cfg(windows)]
+    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+        Ok(vec![tv.install_path()])
+    }
+
     fn exec_env(
         &self,
         config: &Config,
@@ -431,6 +418,19 @@ impl Backend for PythonPlugin {
             Ok(None) => {}
         };
         Ok(hm)
+    }
+
+    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
+        static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
+                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .with_cache_key((SETTINGS.python.compile == Some(false)).to_string())
+                    .build()
+                    .into()
+            })
+            .clone()
     }
 }
 
