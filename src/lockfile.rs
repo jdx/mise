@@ -2,7 +2,7 @@ use crate::config::{Config, SETTINGS};
 use crate::file;
 use crate::file::display_path;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolsetBuilder};
-use eyre::{Report, Result};
+use eyre::{bail, Report, Result};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
@@ -13,13 +13,36 @@ use std::sync::Mutex;
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lockfile {
-    tools: BTreeMap<String, toml::Value>,
+    #[serde(skip)]
+    tools: BTreeMap<String, Vec<LockfileTool>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LockfileTool {
+    version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checksum: Option<String>,
 }
 
 impl Lockfile {
     pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = file::read_to_string(path)?;
-        let lockfile: Lockfile = toml::from_str(&content)?;
+        let mut table: toml::Table = toml::from_str(&content)?;
+        let tools: toml::Table = table
+            .remove("tools")
+            .unwrap_or(toml::Table::new().into())
+            .try_into()?;
+        let mut lockfile = Lockfile::default();
+        for (short, value) in tools {
+            let versions = match value {
+                toml::Value::Array(arr) => arr
+                    .into_iter()
+                    .map(LockfileTool::try_from)
+                    .collect::<Result<Vec<_>>>()?,
+                _ => vec![LockfileTool::try_from(value)?],
+            };
+            lockfile.tools.insert(short, versions);
+        }
         Ok(lockfile)
     }
 
@@ -28,7 +51,23 @@ impl Lockfile {
         if self.is_empty() {
             let _ = file::remove_file(path);
         } else {
-            let content = toml::to_string_pretty(self)?;
+            let mut tools = toml::Table::new();
+            for (short, versions) in &self.tools {
+                let value: toml::Value = if versions.len() == 1 {
+                    versions[0].clone().into_toml_value()
+                } else {
+                    versions
+                        .iter()
+                        .cloned()
+                        .map(|version| version.into_toml_value())
+                        .collect::<Vec<toml::Value>>()
+                        .into()
+                };
+                tools.insert(short.clone(), value);
+            }
+            let mut lockfile = toml::Table::new();
+            lockfile.insert("tools".to_string(), tools.into());
+            let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
             file::write(path, content)?;
         }
         Ok(())
@@ -97,20 +136,9 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
             .retain(|k, _| all_tool_names.contains(k) || SETTINGS.disable_tools().contains(k));
 
         for (short, tvl) in tools {
-            if tvl.versions.len() > 1 {
-                let versions = toml::Value::Array(
-                    tvl.versions
-                        .iter()
-                        .map(|tv| tv.version.clone().into())
-                        .collect(),
-                );
-                existing_lockfile.tools.insert(short.to_string(), versions);
-            } else if !tvl.versions.is_empty() {
-                existing_lockfile.tools.insert(
-                    short.to_string(),
-                    toml::Value::String(tvl.versions[0].version.clone()),
-                );
-            }
+            existing_lockfile
+                .tools
+                .insert(short.to_string(), tvl.clone().into());
         }
 
         existing_lockfile.save(&lockfile_path)?;
@@ -135,21 +163,11 @@ pub fn get_locked_version(path: &Path, short: &str, prefix: &str) -> Result<Opti
     });
 
     if let Some(tool) = lockfile.tools.get(short) {
-        // TODO: handle something like `mise use python@3 python@3.1`
-        match tool {
-            toml::Value::String(v) => {
-                if v.starts_with(prefix) {
-                    Ok(Some(v.clone()))
-                } else {
-                    Ok(None)
-                }
-            }
-            toml::Value::Array(v) => Ok(v
-                .iter()
-                .map(|v| v.as_str().unwrap().to_string())
-                .find(|v| v.starts_with(prefix))),
-            _ => unimplemented!("unsupported lockfile format"),
-        }
+        Ok(tool
+            .iter()
+            // TODO: this likely won't work right when using `python@latest python@3.12`
+            .find(|v| prefix == "latest" || v.version.starts_with(prefix))
+            .map(|v| v.version.clone()))
     } else {
         Ok(None)
     }
@@ -165,4 +183,47 @@ fn handle_missing_lockfile(err: Report, lockfile_path: &Path) -> Lockfile {
         }
     }
     Lockfile::default()
+}
+
+impl TryFrom<toml::Value> for LockfileTool {
+    type Error = Report;
+    fn try_from(value: toml::Value) -> Result<Self> {
+        let tool = match value {
+            toml::Value::String(v) => LockfileTool {
+                version: v,
+                checksum: None,
+            },
+            toml::Value::Table(t) => LockfileTool {
+                version: t.get("version").unwrap().as_str().unwrap().to_string(),
+                checksum: t.get("checksum").map(|v| v.as_str().unwrap().to_string()),
+            },
+            _ => bail!("unsupported lockfile format {}", value),
+        };
+        Ok(tool)
+    }
+}
+
+impl LockfileTool {
+    fn into_toml_value(self) -> toml::Value {
+        if let Some(checksum) = self.checksum {
+            let mut table = toml::Table::new();
+            table.insert("version".to_string(), self.version.into());
+            table.insert("checksum".to_string(), checksum.into());
+            table.into()
+        } else {
+            self.version.into()
+        }
+    }
+}
+
+impl From<ToolVersionList> for Vec<LockfileTool> {
+    fn from(tvl: ToolVersionList) -> Self {
+        tvl.versions
+            .iter()
+            .map(|tv| LockfileTool {
+                version: tv.version.clone(),
+                checksum: tv.checksum.clone(),
+            })
+            .collect()
+    }
 }
