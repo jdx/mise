@@ -33,12 +33,21 @@ impl Backend for VfoxBackend {
         BackendType::Vfox
     }
 
+    fn ba(&self) -> &BackendArg {
+        &self.ba
+    }
+
     fn get_plugin_type(&self) -> Option<PluginType> {
         Some(PluginType::Vfox)
     }
 
-    fn ba(&self) -> &BackendArg {
-        &self.ba
+    fn get_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
+        let out = match tvr.ba().tool_name.as_str() {
+            "poetry" | "pipenv" | "pipx" => vec!["python"],
+            "elixir" => vec!["erlang"],
+            _ => vec![],
+        };
+        Ok(out.into_iter().map(|s| s.into()).collect())
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
@@ -94,15 +103,6 @@ impl Backend for VfoxBackend {
             .into_iter()
             .filter(|(k, _)| k.to_uppercase() != "PATH")
             .collect())
-    }
-
-    fn get_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
-        let out = match tvr.ba().tool_name.as_str() {
-            "poetry" | "pipenv" | "pipx" => vec!["python"],
-            "elixir" => vec!["erlang"],
-            _ => vec![],
-        };
-        Ok(out.into_iter().map(|s| s.into()).collect())
     }
 }
 

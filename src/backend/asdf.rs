@@ -227,12 +227,12 @@ impl Hash for AsdfBackend {
 }
 
 impl Backend for AsdfBackend {
-    fn ba(&self) -> &BackendArg {
-        &self.ba
-    }
-
     fn get_type(&self) -> BackendType {
         BackendType::Asdf
+    }
+
+    fn ba(&self) -> &BackendArg {
+        &self.ba
     }
 
     fn get_plugin_type(&self) -> Option<PluginType> {
