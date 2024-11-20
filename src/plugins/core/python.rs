@@ -131,12 +131,12 @@ impl PythonPlugin {
         })
     }
 
-    fn install_precompiled(&self, ctx: &InstallContext) -> eyre::Result<()> {
+    fn install_precompiled(&self, ctx: &InstallContext, tv: &ToolVersion) -> eyre::Result<()> {
         let precompiled_versions = self.fetch_precompiled_remote_versions()?;
         let precompile_info = precompiled_versions
             .iter()
             .rev()
-            .find(|(v, _, _)| &ctx.tv.version == v);
+            .find(|(v, _, _)| &tv.version == v);
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
             None => {
@@ -152,13 +152,13 @@ impl PythonPlugin {
                     let os = python_os();
                     bail!(
                         "no precompiled python found for {} on {arch}-{os}",
-                        ctx.tv.version
+                        tv.version
                     );
                 }
-                debug!("no precompiled python found for {}", ctx.tv.version);
+                debug!("no precompiled python found for {}", tv.version);
                 let mut available = precompiled_versions.iter().map(|(v, _, _)| v);
                 trace!("available precompiled versions: {}", available.join(", "));
-                return self.install_compiled(ctx);
+                return self.install_compiled(ctx, tv);
             }
         };
 
@@ -175,8 +175,8 @@ impl PythonPlugin {
             "https://github.com/indygreg/python-build-standalone/releases/download/{tag}/{filename}"
         );
         let filename = url.split('/').last().unwrap();
-        let install = ctx.tv.install_path();
-        let download = ctx.tv.download_path();
+        let install = tv.install_path();
+        let download = tv.download_path();
         let tarball_path = download.join(filename);
 
         ctx.pr.set_message(format!("downloading {filename}"));
@@ -198,17 +198,17 @@ impl PythonPlugin {
         Ok(())
     }
 
-    fn install_compiled(&self, ctx: &InstallContext) -> eyre::Result<()> {
+    fn install_compiled(&self, ctx: &InstallContext, tv: &ToolVersion) -> eyre::Result<()> {
         let config = Config::get();
         self.install_or_update_python_build()?;
-        if matches!(&ctx.tv.request, ToolRequest::Ref { .. }) {
+        if matches!(&tv.request, ToolRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
         }
         ctx.pr.set_message("Running python-build".into());
         let mut cmd = CmdLineRunner::new(self.python_build_bin())
             .with_pr(ctx.pr.as_ref())
-            .arg(ctx.tv.version.as_str())
-            .arg(ctx.tv.install_path())
+            .arg(tv.version.as_str())
+            .arg(tv.install_path())
             .env("PIP_REQUIRE_VIRTUALENV", "false")
             .envs(config.env()?);
         if SETTINGS.verbose {
@@ -221,7 +221,7 @@ impl PythonPlugin {
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
         if let Some(patches_dir) = &SETTINGS.python.patches_directory {
-            let patch_file = patches_dir.join(format!("{}.patch", &ctx.tv.version));
+            let patch_file = patches_dir.join(format!("{}.patch", &tv.version));
             if patch_file.exists() {
                 ctx.pr
                     .set_message(format!("with patch file: {}", patch_file.display()));
@@ -389,25 +389,29 @@ impl Backend for PythonPlugin {
         Ok(vec![".python-version".to_string()])
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         let config = Config::get();
         if cfg!(windows) || SETTINGS.python.compile != Some(true) {
-            self.install_precompiled(ctx)?;
+            self.install_precompiled(ctx, &tv)?;
         } else {
-            self.install_compiled(ctx)?;
+            self.install_compiled(ctx, &tv)?;
         }
-        self.test_python(&config, &ctx.tv, ctx.pr.as_ref())?;
-        if let Err(e) = self.get_virtualenv(&config, &ctx.tv, Some(ctx.pr.as_ref())) {
+        self.test_python(&config, &tv, ctx.pr.as_ref())?;
+        if let Err(e) = self.get_virtualenv(&config, &tv, Some(ctx.pr.as_ref())) {
             warn!("failed to get virtualenv: {e:#}");
         }
         if let Some(default_file) = &SETTINGS.python.default_packages_file {
             if let Err(err) =
-                self.install_default_packages(&config, default_file, &ctx.tv, ctx.pr.as_ref())
+                self.install_default_packages(&config, default_file, &tv, ctx.pr.as_ref())
             {
                 warn!("failed to install default python packages: {err:#}");
             }
         }
-        Ok(())
+        Ok(tv)
     }
 
     fn exec_env(

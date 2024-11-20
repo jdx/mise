@@ -18,14 +18,16 @@ use crate::toolset::{
     install_state, is_outdated_version, ToolRequest, ToolSource, ToolVersion, Toolset,
 };
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env, file, lock_file, plugins, versions_host};
+use crate::{dirs, env, file, hash, lock_file, plugins, versions_host};
 use backend_type::BackendType;
 use console::style;
+use eyre::Result;
 use eyre::{bail, eyre, WrapErr};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use sha2::Sha256;
 
 pub mod aqua;
 pub mod asdf;
@@ -353,30 +355,34 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
 
-    fn install_version(&self, ctx: InstallContext) -> eyre::Result<()> {
+    fn install_version(&self, ctx: InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
         if let Some(plugin) = self.plugin() {
             plugin.is_installed_err()?;
         }
         let config = Config::get();
-        if self.is_version_installed(&ctx.tv, true) {
+        if self.is_version_installed(&tv, true) {
             if ctx.force {
-                self.uninstall_version(&ctx.tv, ctx.pr.as_ref(), false)?;
+                self.uninstall_version(&tv, ctx.pr.as_ref(), false)?;
             } else {
-                return Ok(());
+                return Ok(tv);
             }
         }
         ctx.pr.set_message("installing".into());
-        let _lock = lock_file::get(&ctx.tv.install_path(), ctx.force)?;
-        self.create_install_dirs(&ctx.tv)?;
+        let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
+        self.create_install_dirs(&tv)?;
 
-        if let Err(e) = self.install_version_impl(&ctx) {
-            self.cleanup_install_dirs_on_error(&ctx.tv);
-            return Err(e);
-        }
+        let old_tv = tv.clone();
+        let tv = match self.install_version_impl(&ctx, tv) {
+            Ok(tv) => tv,
+            Err(e) => {
+                self.cleanup_install_dirs_on_error(&old_tv);
+                return Err(e);
+            }
+        };
 
         install_state::write_backend_meta(self.ba())?;
 
-        self.cleanup_install_dirs(&ctx.tv);
+        self.cleanup_install_dirs(&tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
         touch_dirs.extend(config.config_files.keys().cloned());
@@ -386,33 +392,39 @@ pub trait Backend: Debug + Send + Sync {
                 debug!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        if let Err(err) = file::remove_file(self.incomplete_file_path(&ctx.tv)) {
+        if let Err(err) = file::remove_file(self.incomplete_file_path(&tv)) {
             debug!("error removing incomplete file: {:?}", err);
         }
-        if let Some(script) = ctx.tv.request.options().get("postinstall") {
+        if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
                 .finish_with_message("running custom postinstall hook".to_string());
-            self.run_postinstall_hook(&ctx, script)?;
+            self.run_postinstall_hook(&ctx, &tv, script)?;
         }
         ctx.pr.finish_with_message("installed".to_string());
 
-        Ok(())
+        Ok(tv)
     }
 
-    fn run_postinstall_hook(&self, ctx: &InstallContext, script: &str) -> eyre::Result<()> {
+    fn run_postinstall_hook(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        script: &str,
+    ) -> eyre::Result<()> {
         CmdLineRunner::new(&*env::SHELL)
-            .env(
-                &*env::PATH_KEY,
-                plugins::core::path_env_with_tv_path(&ctx.tv)?,
-            )
+            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .with_pr(ctx.pr.as_ref())
             .arg("-c")
             .arg(script)
-            .envs(self.exec_env(&CONFIG, ctx.ts, &ctx.tv)?)
+            .envs(self.exec_env(&CONFIG, ctx.ts, tv)?)
             .execute()?;
         Ok(())
     }
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()>;
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion>;
     fn uninstall_version(
         &self,
         tv: &ToolVersion,
@@ -583,6 +595,30 @@ pub trait Backend: Debug + Send + Sync {
                 Arc::new(cm.build())
             })
             .clone()
+    }
+
+    fn verify_checksum(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        file: &Path,
+    ) -> Result<()> {
+        let filename = file.file_name().unwrap().to_string_lossy();
+        if let Some(checksum) = &tv.checksum {
+            ctx.pr.set_message(format!("verifying checksum {filename}"));
+            if let Some((algo, check)) = checksum.split_once(':') {
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
+                tv.checksum = Some(checksum.to_string());
+            } else {
+                bail!("Invalid checksum: {checksum}");
+            }
+        } else if SETTINGS.lockfile && SETTINGS.experimental {
+            ctx.pr
+                .set_message(format!("generating checksum {filename}"));
+            let hash = hash::file_hash_prog::<Sha256>(file, Some(ctx.pr.as_ref()))?;
+            tv.checksum = Some(format!("sha256:{hash}"));
+        }
+        Ok(())
     }
 }
 

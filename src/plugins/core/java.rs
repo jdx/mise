@@ -13,11 +13,10 @@ use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{file, hash, plugins};
+use crate::{file, plugins};
 use color_eyre::eyre::{eyre, Result};
-use contracts::requires;
 use indoc::formatdoc;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -91,7 +90,8 @@ impl JavaPlugin {
 
     fn download(
         &self,
-        tv: &ToolVersion,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
         pr: &dyn SingleReport,
         m: &JavaMetadata,
     ) -> Result<PathBuf> {
@@ -101,8 +101,10 @@ impl JavaPlugin {
         pr.set_message(format!("downloading {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr))?;
 
-        pr.set_message(format!("verifying {filename}"));
-        hash::ensure_checksum_sha256(&tarball_path, &m.sha256, Some(pr))?;
+        if tv.checksum.is_none() {
+            tv.checksum = Some(format!("sha256:{}", m.sha256));
+        }
+        self.verify_checksum(ctx, tv, &tarball_path)?;
 
         Ok(tarball_path)
     }
@@ -370,14 +372,17 @@ impl Backend for JavaPlugin {
         }
     }
 
-    #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type")]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let metadata = self.tv_to_metadata(&ctx.tv)?;
-        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref(), metadata)?;
-        self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
-        self.verify(&ctx.tv, ctx.pr.as_ref())?;
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
+        let metadata = self.tv_to_metadata(&tv)?;
+        let tarball_path = self.download(ctx, &mut tv, ctx.pr.as_ref(), metadata)?;
+        self.install(&tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
+        self.verify(&tv, ctx.pr.as_ref())?;
 
-        Ok(())
+        Ok(tv)
     }
 
     fn exec_env(

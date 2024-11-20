@@ -247,11 +247,12 @@ impl Toolset {
                                 let ctx = InstallContext {
                                     ts,
                                     pr: mpr.add(&tv.style()),
-                                    tv: tv.clone(),
                                     force: opts.force,
                                 };
-                                t.install_version(ctx)
-                                    .wrap_err_with(|| format!("failed to install {tv}"))?;
+                                let old_tv = tv.clone();
+                                let tv = t
+                                    .install_version(ctx, tv)
+                                    .wrap_err_with(|| format!("failed to install {old_tv}"))?;
                                 installed.push(tv);
                             }
                         }

@@ -7,7 +7,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Settings, SETTINGS};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolRequest;
+use crate::toolset::{ToolRequest, ToolVersion};
 
 #[derive(Debug)]
 pub struct GoBackend {
@@ -58,15 +58,19 @@ impl Backend for GoBackend {
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         let settings = Settings::get();
         settings.ensure_experimental("go backend")?;
 
-        let version = if ctx.tv.version.starts_with("v") {
+        let version = if tv.version.starts_with("v") {
             warn!("usage of a 'v' prefix in the version is discouraged");
-            ctx.tv.version.to_string().replacen("v", "", 1)
+            tv.version.to_string().replacen("v", "", 1)
         } else {
-            ctx.tv.version.to_string()
+            tv.version.to_string()
         };
 
         let install = |v| {
@@ -75,7 +79,7 @@ impl Backend for GoBackend {
                 .arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(ctx.pr.as_ref())
                 .envs(self.dependency_env()?)
-                .env("GOBIN", ctx.tv.install_path().join("bin"))
+                .env("GOBIN", tv.install_path().join("bin"))
                 .execute()
         };
 
@@ -84,7 +88,7 @@ impl Backend for GoBackend {
             install(version)?;
         }
 
-        Ok(())
+        Ok(tv)
     }
 }
 

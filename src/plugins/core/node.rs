@@ -32,9 +32,16 @@ impl NodePlugin {
         }
     }
 
-    fn install_precompiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
+    fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        opts: &BuildOpts,
+    ) -> Result<()> {
         let settings = Settings::get();
         match self.fetch_tarball(
+            ctx,
+            tv,
             ctx.pr.as_ref(),
             &opts.binary_tarball_url,
             &opts.binary_tarball_path,
@@ -45,7 +52,7 @@ impl NodePlugin {
                     && matches!(http::error_code(&e), Some(404)) =>
             {
                 debug!("precompiled node not found");
-                return self.install_compiled(ctx, opts);
+                return self.install_compiled(ctx, tv, opts);
             }
             e => e,
         }?;
@@ -64,8 +71,15 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn install_windows(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
+    fn install_windows(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        opts: &BuildOpts,
+    ) -> Result<()> {
         match self.fetch_tarball(
+            ctx,
+            tv,
             ctx.pr.as_ref(),
             &opts.binary_tarball_url,
             &opts.binary_tarball_path,
@@ -88,9 +102,16 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn install_compiled(&self, ctx: &InstallContext, opts: &BuildOpts) -> Result<()> {
+    fn install_compiled(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        opts: &BuildOpts,
+    ) -> Result<()> {
         let tarball_name = &opts.source_tarball_name;
         self.fetch_tarball(
+            ctx,
+            tv,
             ctx.pr.as_ref(),
             &opts.source_tarball_url,
             &opts.source_tarball_path,
@@ -115,6 +136,8 @@ impl NodePlugin {
 
     fn fetch_tarball(
         &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
         pr: &dyn SingleReport,
         url: &Url,
         local: &Path,
@@ -127,10 +150,10 @@ impl NodePlugin {
             pr.set_message(format!("downloading {tarball_name}"));
             HTTP.download_file(url.clone(), local, Some(pr))?;
         }
-        if *env::MISE_NODE_VERIFY {
-            pr.set_message(format!("verifying {tarball_name}"));
-            self.verify(local, version, pr)?;
+        if tv.checksum.is_none() && *env::MISE_NODE_VERIFY {
+            tv.checksum = Some(self.get_checksum(local, version)?);
         }
+        self.verify_checksum(ctx, tv, local)?;
         Ok(())
     }
 
@@ -156,13 +179,13 @@ impl NodePlugin {
         self.sh(ctx, opts)?.arg(&opts.make_install_cmd).execute()
     }
 
-    fn verify(&self, tarball: &Path, version: &str, pr: &dyn SingleReport) -> Result<()> {
+    fn get_checksum(&self, tarball: &Path, version: &str) -> Result<String> {
         let tarball_name = tarball.file_name().unwrap().to_string_lossy().to_string();
         // TODO: verify gpg signature
         let shasums = HTTP.get_text(self.shasums_url(version)?)?;
         let shasums = hash::parse_shasums(&shasums);
         let shasum = shasums.get(&tarball_name).unwrap();
-        hash::ensure_checksum_sha256(tarball, shasum, Some(pr))
+        Ok(format!("sha256:{shasum}"))
     }
 
     fn node_path(&self, tv: &ToolVersion) -> PathBuf {
@@ -353,35 +376,39 @@ impl Backend for NodePlugin {
         Ok(body)
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         ensure!(
-            ctx.tv.version != "latest",
+            tv.version != "latest",
             "version should not be 'latest' for node, something is wrong"
         );
         let config = Config::get();
         let settings = Settings::get();
-        let opts = BuildOpts::new(ctx)?;
+        let opts = BuildOpts::new(ctx, &tv)?;
         trace!("node build opts: {:#?}", opts);
         if cfg!(windows) {
-            self.install_windows(ctx, &opts)?;
+            self.install_windows(ctx, &mut tv, &opts)?;
         } else if settings.node.compile == Some(true) {
-            self.install_compiled(ctx, &opts)?;
+            self.install_compiled(ctx, &mut tv, &opts)?;
         } else {
-            self.install_precompiled(ctx, &opts)?;
+            self.install_precompiled(ctx, &mut tv, &opts)?;
         }
-        self.test_node(&config, &ctx.tv, ctx.pr.as_ref())?;
+        self.test_node(&config, &tv, ctx.pr.as_ref())?;
         if !cfg!(windows) {
-            self.install_npm_shim(&ctx.tv)?;
+            self.install_npm_shim(&tv)?;
         }
-        self.test_npm(&config, &ctx.tv, ctx.pr.as_ref())?;
-        if let Err(err) = self.install_default_packages(&config, &ctx.tv, ctx.pr.as_ref()) {
+        self.test_npm(&config, &tv, ctx.pr.as_ref())?;
+        if let Err(err) = self.install_default_packages(&config, &tv, ctx.pr.as_ref()) {
             warn!("failed to install default npm packages: {err:#}");
         }
-        if *env::MISE_NODE_COREPACK && self.corepack_path(&ctx.tv).exists() {
-            self.enable_default_corepack_shims(&ctx.tv, ctx.pr.as_ref())?;
+        if *env::MISE_NODE_COREPACK && self.corepack_path(&tv).exists() {
+            self.enable_default_corepack_shims(&tv, ctx.pr.as_ref())?;
         }
 
-        Ok(())
+        Ok(tv)
     }
 
     #[cfg(windows)]
@@ -408,9 +435,9 @@ struct BuildOpts {
 }
 
 impl BuildOpts {
-    fn new(ctx: &InstallContext) -> Result<Self> {
-        let v = &ctx.tv.version;
-        let install_path = ctx.tv.install_path();
+    fn new(ctx: &InstallContext, tv: &ToolVersion) -> Result<Self> {
+        let v = &tv.version;
+        let install_path = tv.install_path();
         let source_tarball_name = format!("node-v{v}.tar.gz");
 
         let slug = slug(v);
@@ -426,13 +453,13 @@ impl BuildOpts {
             configure_cmd: configure_cmd(&install_path),
             make_cmd: make_cmd(),
             make_install_cmd: make_install_cmd(),
-            source_tarball_path: ctx.tv.download_path().join(&source_tarball_name),
+            source_tarball_path: tv.download_path().join(&source_tarball_name),
             source_tarball_url: SETTINGS
                 .node
                 .mirror_url()
                 .join(&format!("v{v}/{source_tarball_name}"))?,
             source_tarball_name,
-            binary_tarball_path: ctx.tv.download_path().join(&binary_tarball_name),
+            binary_tarball_path: tv.download_path().join(&binary_tarball_name),
             binary_tarball_url: SETTINGS
                 .node
                 .mirror_url()

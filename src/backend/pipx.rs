@@ -7,7 +7,7 @@ use crate::config::{Config, SETTINGS};
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use std::fmt::Debug;
@@ -76,13 +76,17 @@ impl Backend for PIPXBackend {
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         let config = Config::try_get()?;
         SETTINGS.ensure_experimental("pipx backend")?;
         let pipx_request = self
             .tool_name()
             .parse::<PipxRequest>()?
-            .pipx_request(&ctx.tv.version, &ctx.tv.request.options());
+            .pipx_request(&tv.version, &tv.request.options());
 
         if SETTINGS.pipx.uvx {
             let mut cmd = CmdLineRunner::new("uv")
@@ -90,14 +94,14 @@ impl Backend for PIPXBackend {
                 .arg("install")
                 .arg(pipx_request)
                 .with_pr(ctx.pr.as_ref())
-                .env("UV_TOOL_DIR", ctx.tv.install_path())
-                .env("UV_TOOL_BIN_DIR", ctx.tv.install_path().join("bin"))
+                .env("UV_TOOL_DIR", tv.install_path())
+                .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
                 .envs(ctx.ts.env_with_path(&config)?)
                 .prepend_path(ctx.ts.list_paths())?
                 // Prepend install path so pipx doesn't issue a warning about missing path
-                .prepend_path(vec![ctx.tv.install_path().join("bin")])?
+                .prepend_path(vec![tv.install_path().join("bin")])?
                 .prepend_path(self.dependency_toolset()?.list_paths())?;
-            if let Some(args) = ctx.tv.request.options().get("uvx_args") {
+            if let Some(args) = tv.request.options().get("uvx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
             cmd.execute()?;
@@ -106,19 +110,19 @@ impl Backend for PIPXBackend {
                 .arg("install")
                 .arg(pipx_request)
                 .with_pr(ctx.pr.as_ref())
-                .env("PIPX_HOME", ctx.tv.install_path())
-                .env("PIPX_BIN_DIR", ctx.tv.install_path().join("bin"))
+                .env("PIPX_HOME", tv.install_path())
+                .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
                 .envs(ctx.ts.env_with_path(&config)?)
                 .prepend_path(ctx.ts.list_paths())?
                 // Prepend install path so pipx doesn't issue a warning about missing path
-                .prepend_path(vec![ctx.tv.install_path().join("bin")])?
+                .prepend_path(vec![tv.install_path().join("bin")])?
                 .prepend_path(self.dependency_toolset()?.list_paths())?;
-            if let Some(args) = ctx.tv.request.options().get("pipx_args") {
+            if let Some(args) = tv.request.options().get("pipx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
             cmd.execute()?;
         }
-        Ok(())
+        Ok(tv)
     }
 }
 

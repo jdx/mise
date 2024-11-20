@@ -341,8 +341,8 @@ impl Backend for AsdfBackend {
         Some(self.plugin())
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let mut sm = self.script_man_for_tv(&ctx.tv)?;
+    fn install_version_impl(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let mut sm = self.script_man_for_tv(&tv)?;
 
         for p in ctx.ts.list_paths() {
             sm.prepend_path(p);
@@ -358,7 +358,7 @@ impl Backend for AsdfBackend {
         run_script(&Install)?;
         file::remove_dir(&self.ba.downloads_path)?;
 
-        Ok(())
+        Ok(tv)
     }
 
     fn uninstall_version_impl(&self, pr: &dyn SingleReport, tv: &ToolVersion) -> Result<()> {

@@ -55,7 +55,10 @@ jobs:
       - run: ./scripts/test-standalone.sh
       - run: mise run lint
       - run: mise test-tool --all
-        env: { MISE_USE_VERSIONS_HOST: 0, MISE_EXPERIMENTAL: 1 }
+        env:
+          MISE_USE_VERSIONS_HOST: 0
+          MISE_EXPERIMENTAL: 1
+          MISE_LOCKFILE: 1
 
   nightly:
     runs-on: ubuntu-latest
@@ -175,6 +178,7 @@ jobs:
         env:
           MISE_USE_VERSIONS_HOST: 0
           MISE_EXPERIMENTAL: 1
+          MISE_LOCKFILE: 1
           MISE_DISABLE_TOOLS: |
             1password-cli,
             adr-tools

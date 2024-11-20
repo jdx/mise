@@ -13,10 +13,9 @@ use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, plugins};
-use contracts::requires;
 use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use xx::regex;
@@ -367,23 +366,25 @@ impl Backend for RubyPlugin {
         Ok(v)
     }
 
-    #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type")]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         if let Err(err) = self.update_build_tool() {
             warn!("ruby build tool update error: {err:#}");
         }
         ctx.pr.set_message("running ruby-build".into());
         let config = Config::get();
-        self.install_cmd(&config, &ctx.tv, ctx.pr.as_ref())?
-            .execute()?;
+        self.install_cmd(&config, &tv, ctx.pr.as_ref())?.execute()?;
 
-        self.test_ruby(&config, &ctx.tv, ctx.pr.as_ref())?;
-        self.install_rubygems_hook(&ctx.tv)?;
-        self.test_gem(&config, &ctx.tv, ctx.pr.as_ref())?;
-        if let Err(err) = self.install_default_gems(&config, &ctx.tv, ctx.pr.as_ref()) {
+        self.test_ruby(&config, &tv, ctx.pr.as_ref())?;
+        self.install_rubygems_hook(&tv)?;
+        self.test_gem(&config, &tv, ctx.pr.as_ref())?;
+        if let Err(err) = self.install_default_gems(&config, &tv, ctx.pr.as_ref()) {
             warn!("failed to install default ruby gems {err:#}");
         }
-        Ok(())
+        Ok(tv)
     }
 
     fn exec_env(

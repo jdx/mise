@@ -6,9 +6,12 @@ use std::path::Path;
 use crate::file;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
-use eyre::{ensure, Result};
+use digest::Digest;
+use eyre::{bail, Result};
+use md5::Md5;
 use rayon::prelude::*;
-use sha2::{Digest, Sha256};
+use sha1::Sha1;
+use sha2::{Sha256, Sha512};
 use siphasher::sip::SipHasher;
 
 pub fn hash_to_str<T: Hash>(t: &T) -> String {
@@ -24,15 +27,20 @@ pub fn hash_sha256_to_str(s: &str) -> String {
 }
 
 pub fn file_hash_sha256(path: &Path) -> Result<String> {
-    file_hash_sha256_prog(path, None)
+    file_hash_prog::<Sha256>(path, None)
 }
 
-pub fn file_hash_sha256_prog(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
+pub fn file_hash_prog<D>(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String>
+where
+    D: Digest + Write,
+    D::OutputSize: std::ops::Add,
+    <D::OutputSize as std::ops::Add>::Output: digest::generic_array::ArrayLength<u8>,
+{
     let mut file = file::open(path)?;
     if let Some(pr) = pr {
         pr.set_length(file.metadata()?.len());
     }
-    let mut hasher = Sha256::new();
+    let mut hasher = D::new();
     let mut buf = [0; 32 * 1024];
     loop {
         let n = file.read(&mut buf)?;
@@ -49,17 +57,23 @@ pub fn file_hash_sha256_prog(path: &Path, pr: Option<&dyn SingleReport>) -> Resu
     Ok(format!("{hash:x}"))
 }
 
-pub fn ensure_checksum_sha256(
+pub fn ensure_checksum(
     path: &Path,
     checksum: &str,
     pr: Option<&dyn SingleReport>,
+    algo: &str,
 ) -> Result<()> {
-    let actual = file_hash_sha256_prog(path, pr)?;
-    ensure!(
-        actual == checksum,
-        "Checksum mismatch for file {}:\nExpected: {checksum}\nActual:   {actual}",
-        display_path(path),
-    );
+    let actual = match algo {
+        "sha512" => file_hash_prog::<Sha512>(path, pr)?,
+        "sha256" => file_hash_prog::<Sha256>(path, pr)?,
+        "sha1" => file_hash_prog::<Sha1>(path, pr)?,
+        "md5" => file_hash_prog::<Md5>(path, pr)?,
+        _ => bail!("Unknown checksum algorithm: {}", algo),
+    };
+    if actual != checksum {
+        bail!("Checksum mismatch for file {}:\nExpected: {algo}:{checksum}\nActual:   {algo}:{actual}",
+        display_path(path));
+    }
     Ok(())
 }
 

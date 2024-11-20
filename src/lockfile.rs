@@ -19,9 +19,9 @@ pub struct Lockfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockfileTool {
-    version: String,
+    pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    checksum: Option<String>,
+    pub checksum: Option<String>,
 }
 
 impl Lockfile {
@@ -147,7 +147,7 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
     Ok(())
 }
 
-pub fn get_locked_version(path: &Path, short: &str, prefix: &str) -> Result<Option<String>> {
+pub fn get_locked_version(path: &Path, short: &str, prefix: &str) -> Result<Option<LockfileTool>> {
     static CACHE: Lazy<Mutex<HashMap<PathBuf, Lockfile>>> = Lazy::new(Default::default);
 
     if !SETTINGS.lockfile {
@@ -167,7 +167,7 @@ pub fn get_locked_version(path: &Path, short: &str, prefix: &str) -> Result<Opti
             .iter()
             // TODO: this likely won't work right when using `python@latest python@3.12`
             .find(|v| prefix == "latest" || v.version.starts_with(prefix))
-            .map(|v| v.version.clone()))
+            .cloned())
     } else {
         Ok(None)
     }

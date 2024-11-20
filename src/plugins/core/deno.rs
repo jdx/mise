@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
 use serde::Deserialize;
@@ -109,13 +108,17 @@ impl Backend for DenoPlugin {
         Ok(vec![".deno-version".into()])
     }
 
-    #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type")]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
-        self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path)?;
-        self.verify(&ctx.tv, ctx.pr.as_ref())?;
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
+        let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
+        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        self.install(&tv, ctx.pr.as_ref(), &tarball_path)?;
+        self.verify(&tv, ctx.pr.as_ref())?;
 
-        Ok(())
+        Ok(tv)
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
