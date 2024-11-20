@@ -1,4 +1,4 @@
-use crate::aqua::aqua_registry::{AquaPackage, AquaPackageType, AQUA_REGISTRY};
+use crate::aqua::aqua_registry::{AquaChecksumType, AquaPackage, AquaPackageType, AQUA_REGISTRY};
 use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -12,6 +12,7 @@ use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{dirs, file, github};
 use eyre::{bail, ContextCompat, Result};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -71,8 +72,12 @@ impl Backend for AquaBackend {
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let mut v = format!("v{}", ctx.tv.version);
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
+        let mut v = format!("v{}", tv.version);
         let pkg = AQUA_REGISTRY
             .package_with_version(&self.id, &v)?
             .wrap_err_with(|| format!("no aqua registry found for {}", self.id))?;
@@ -84,18 +89,19 @@ impl Backend for AquaBackend {
             Ok(url) => url,
             Err(err) => {
                 if let Some(prefix) = &pkg.version_prefix {
-                    v = format!("{}{}", prefix, ctx.tv.version);
+                    v = format!("{}{}", prefix, tv.version);
                 } else {
-                    v = ctx.tv.version.to_string();
+                    v = tv.version.to_string();
                 }
                 self.fetch_url(&pkg, &v).map_err(|e| err.wrap_err(e))?
             }
         };
         let filename = url.split('/').last().unwrap();
-        self.download(ctx, &url, filename)?;
-        self.install(ctx, &pkg, &v, filename)?;
+        self.download(ctx, &tv, &url, filename)?;
+        self.verify(ctx, &mut tv, &pkg, &v, filename)?;
+        self.install(ctx, &tv, &pkg, &v, filename)?;
 
-        Ok(())
+        Ok(tv)
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
@@ -157,9 +163,18 @@ impl AquaBackend {
     }
 
     fn github_release_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        let asset_strs = pkg.asset_strs(v)?;
+        self.github_release_asset(pkg, v, asset_strs)
+    }
+
+    fn github_release_asset(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        asset_strs: IndexSet<String>,
+    ) -> Result<String> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let gh_release = github::get_release(&gh_id, v)?;
-        let asset_strs = pkg.asset_strs(v)?;
         let asset = gh_release
             .assets
             .iter()
@@ -182,8 +197,14 @@ impl AquaBackend {
         Ok(url)
     }
 
-    fn download(&self, ctx: &InstallContext, url: &str, filename: &str) -> Result<()> {
-        let tarball_path = ctx.tv.download_path().join(filename);
+    fn download(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        url: &str,
+        filename: &str,
+    ) -> Result<()> {
+        let tarball_path = tv.download_path().join(filename);
         if tarball_path.exists() {
             return Ok(());
         }
@@ -192,16 +213,94 @@ impl AquaBackend {
         Ok(())
     }
 
-    fn install(
+    fn verify(
         &self,
         ctx: &InstallContext,
+        tv: &mut ToolVersion,
         pkg: &AquaPackage,
         v: &str,
         filename: &str,
     ) -> Result<()> {
-        let tarball_path = ctx.tv.download_path().join(filename);
+        if tv.checksum.is_none() {
+            tv.checksum = if let Some(checksum) = &pkg.checksum {
+                if checksum.enabled() {
+                    let url = match checksum._type() {
+                        AquaChecksumType::GithubRelease => {
+                            let asset_strs = checksum.asset_strs(pkg, v)?;
+                            self.github_release_asset(pkg, v, asset_strs)?
+                        }
+                        AquaChecksumType::Http => checksum.url(pkg, v)?,
+                    };
+                    let mut checksum_file = HTTP.get_text(&url)?;
+                    if checksum.file_format() == "regexp" {
+                        let pattern = checksum.pattern();
+                        if let Some(file) = &pattern.file {
+                            let re = regex::Regex::new(file.as_str())?;
+                            if let Some(line) = checksum_file.lines().find(|l| {
+                                re.captures(l).is_some_and(|c| c[1].to_string() == filename)
+                            }) {
+                                checksum_file = line.to_string();
+                            } else {
+                                debug!(
+                                    "no line found matching {} in {} for {}",
+                                    file, checksum_file, filename
+                                );
+                            }
+                        }
+                        let re = regex::Regex::new(pattern.checksum.as_str())?;
+                        if let Some(caps) = re.captures(checksum_file.as_str()) {
+                            checksum_file = caps[1].to_string();
+                        } else {
+                            debug!(
+                                "no checksum found matching {} in {}",
+                                pattern.checksum, checksum_file
+                            );
+                        }
+                    }
+                    let checksum_str = checksum_file
+                        .lines()
+                        .filter_map(|l| {
+                            let split = l.split_whitespace().collect_vec();
+                            if split.len() == 2 {
+                                Some((
+                                    split[0].to_string(),
+                                    split[1]
+                                        .rsplit_once('/')
+                                        .map(|(_, f)| f)
+                                        .unwrap_or(split[1])
+                                        .to_string(),
+                                ))
+                            } else {
+                                None
+                            }
+                        })
+                        .find(|(_, f)| f == filename)
+                        .map(|(c, _)| c)
+                        .unwrap_or(checksum_file);
+                    Some(format!("{}:{}", checksum.algorithm(), checksum_str.trim()))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+        }
+        let tarball_path = tv.download_path().join(filename);
+        self.verify_checksum(ctx, tv, &tarball_path)?;
+        Ok(())
+    }
+
+    fn install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        pkg: &AquaPackage,
+        v: &str,
+        filename: &str,
+    ) -> Result<()> {
+        let tarball_path = tv.download_path().join(filename);
         ctx.pr.set_message(format!("installing {filename}"));
-        let install_path = ctx.tv.install_path();
+        let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         let format = pkg.format(v)?;
         let bin_path =
@@ -242,7 +341,7 @@ impl AquaBackend {
             bail!("unsupported format: {}", format);
         }
 
-        for (src, dst) in self.srcs(pkg, &ctx.tv)? {
+        for (src, dst) in self.srcs(pkg, tv)? {
             if src != dst {
                 if cfg!(windows) {
                     file::copy(&src, &dst)?;

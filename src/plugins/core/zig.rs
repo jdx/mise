@@ -32,9 +32,9 @@ impl ZigPlugin {
         tv.install_path().join("zig")
     }
 
-    fn test_zig(&self, ctx: &InstallContext) -> Result<()> {
+    fn test_zig(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("zig version".into());
-        CmdLineRunner::new(self.zig_bin(&ctx.tv))
+        CmdLineRunner::new(self.zig_bin(tv))
             .with_pr(ctx.pr.as_ref())
             .arg("version")
             .execute()
@@ -74,35 +74,35 @@ impl ZigPlugin {
         Ok(tarball_path)
     }
 
-    fn install(&self, ctx: &InstallContext, tarball_path: &Path) -> Result<()> {
+    fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("installing {filename}"));
-        file::remove_all(ctx.tv.install_path())?;
-        untar_xy(tarball_path, &ctx.tv.download_path())?;
+        file::remove_all(tv.install_path())?;
+        untar_xy(tarball_path, &tv.download_path())?;
         file::rename(
-            ctx.tv.download_path().join(format!(
+            tv.download_path().join(format!(
                 "zig-{}-{}-{}",
                 os(),
                 arch(),
-                if ctx.tv.version == "ref:master" {
+                if tv.version == "ref:master" {
                     self.get_master_version()?
                 } else {
-                    ctx.tv.version.clone()
+                    tv.version.clone()
                 }
             )),
-            ctx.tv.install_path(),
+            tv.install_path(),
         )?;
-        file::create_dir_all(ctx.tv.install_path().join("bin"))?;
+        file::create_dir_all(tv.install_path().join("bin"))?;
         file::make_symlink(
-            self.zig_bin(&ctx.tv).as_path(),
-            &ctx.tv.install_path().join("bin/zig"),
+            self.zig_bin(tv).as_path(),
+            &tv.install_path().join("bin/zig"),
         )?;
 
         Ok(())
     }
 
-    fn verify(&self, ctx: &InstallContext) -> Result<()> {
-        self.test_zig(ctx)
+    fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        self.test_zig(ctx, tv)
     }
 
     fn get_master_version(&self) -> Result<String> {
@@ -137,12 +137,17 @@ impl Backend for ZigPlugin {
         Ok(vec![".zig-version".into()])
     }
 
-    #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
-        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
-        self.install(ctx, &tarball_path)?;
-        self.verify(ctx)?;
-        Ok(())
+    #[requires(matches!(tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
+        let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
+        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        self.install(ctx, &tv, &tarball_path)?;
+        self.verify(ctx, &tv)?;
+        Ok(tv)
     }
 }
 

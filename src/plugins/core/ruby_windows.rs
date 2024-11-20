@@ -9,10 +9,9 @@ use crate::env::PATH_KEY;
 use crate::github::GithubRelease;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, github, plugins};
-use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -115,23 +114,22 @@ impl RubyPlugin {
         Ok(tarball_path)
     }
 
-    fn install(&self, ctx: &InstallContext, tarball_path: &Path) -> Result<()> {
+    fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
         let arch = arch();
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("installing {filename}"));
-        file::remove_all(ctx.tv.install_path())?;
-        file::un7z(tarball_path, &ctx.tv.download_path())?;
+        file::remove_all(tv.install_path())?;
+        file::un7z(tarball_path, &tv.download_path())?;
         file::rename(
-            ctx.tv
-                .download_path()
-                .join(format!("rubyinstaller-{}-1-{arch}", ctx.tv.version)),
-            ctx.tv.install_path(),
+            tv.download_path()
+                .join(format!("rubyinstaller-{}-1-{arch}", tv.version)),
+            tv.install_path(),
         )?;
         Ok(())
     }
 
-    fn verify(&self, ctx: &InstallContext) -> Result<()> {
-        self.test_ruby(&ctx.tv, ctx.pr.as_ref())
+    fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        self.test_ruby(&tv, ctx.pr.as_ref())
     }
 }
 
@@ -181,19 +179,22 @@ impl Backend for RubyPlugin {
         Ok(v)
     }
 
-    #[requires(matches!(ctx.tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. }), "unsupported tool version request type"
-    )]
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         let config = Config::get();
-        let tarball = self.download(&ctx.tv, ctx.pr.as_ref())?;
-        self.install(ctx, &tarball)?;
-        self.verify(ctx)?;
-        self.install_rubygems_hook(&ctx.tv)?;
-        self.test_gem(&config, &ctx.tv, ctx.pr.as_ref())?;
-        if let Err(err) = self.install_default_gems(&config, &ctx.tv, ctx.pr.as_ref()) {
+        let tarball = self.download(&tv, ctx.pr.as_ref())?;
+        self.verify_checksum(ctx, &mut tv, &tarball)?;
+        self.install(ctx, &tv, &tarball)?;
+        self.verify(ctx, &tv)?;
+        self.install_rubygems_hook(&tv)?;
+        self.test_gem(&config, &tv, ctx.pr.as_ref())?;
+        if let Err(err) = self.install_default_gems(&config, &tv, ctx.pr.as_ref()) {
             warn!("failed to install default ruby gems {err:#}");
         }
-        Ok(())
+        Ok(tv)
     }
 
     fn exec_env(

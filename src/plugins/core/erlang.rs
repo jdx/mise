@@ -6,7 +6,7 @@ use crate::file::display_path;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::toolset::ToolRequest;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{cmd, file, plugins};
 use eyre::Result;
 use xx::regex;
@@ -88,11 +88,15 @@ impl Backend for ErlangPlugin {
         Ok(versions)
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> Result<()> {
+    fn install_version_impl(
+        &self,
+        _ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         self.update_kerl()?;
 
-        file::remove_all(ctx.tv.install_path())?;
-        match &ctx.tv.request {
+        file::remove_all(tv.install_path())?;
+        match &tv.request {
             ToolRequest::Ref { .. } => {
                 unimplemented!("erlang does not yet support refs");
             }
@@ -100,9 +104,9 @@ impl Backend for ErlangPlugin {
                 cmd!(
                     self.kerl_path(),
                     "build-install",
-                    &ctx.tv.version,
-                    &ctx.tv.version,
-                    ctx.tv.install_path()
+                    &tv.version,
+                    &tv.version,
+                    tv.install_path()
                 )
                 .env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
                 .stdout_to_stderr()
@@ -110,6 +114,6 @@ impl Backend for ErlangPlugin {
             }
         }
 
-        Ok(())
+        Ok(tv)
     }
 }

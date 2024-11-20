@@ -4,10 +4,11 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::env::GITHUB_TOKEN;
-use crate::github;
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::tokio::RUNTIME;
+use crate::toolset::ToolVersion;
+use crate::{file, github};
 use eyre::bail;
 use regex::Regex;
 use std::fmt::Debug;
@@ -62,27 +63,33 @@ impl Backend for UbiBackend {
         }
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let mut v = ctx.tv.version.to_string();
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
+        let mut v = tv.version.to_string();
 
-        if let Err(err) = github::get_release(&self.tool_name(), &ctx.tv.version) {
+        if let Err(err) = github::get_release(&self.tool_name(), &tv.version) {
             // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
             // if http::error_code(&err) == Some(404) {
             debug!(
                 "Failed to get release for {}, trying with 'v' prefix: {}",
-                ctx.tv, err
+                tv, err
             );
             v = format!("v{v}");
             // }
         }
 
         let install = |v: &str| {
-            let opts = ctx.tv.request.options();
+            let opts = tv.request.options();
             // Workaround because of not knowing how to pull out the value correctly without quoting
-            let path_with_bin = ctx.tv.install_path().join("bin");
+            let path_with_bin = tv.install_path().join("bin");
             let name = self.tool_name();
 
-            let mut builder = UbiBuilder::new().project(&name).install_dir(path_with_bin);
+            let mut builder = UbiBuilder::new()
+                .project(&name)
+                .install_dir(path_with_bin.clone());
 
             if let Some(token) = &*GITHUB_TOKEN {
                 builder = builder.github_token(token);
@@ -99,24 +106,51 @@ impl Backend for UbiBackend {
                 builder = builder.matching(matching);
             }
 
-            let mut ubi = builder.build()?;
+            let mut ubi = builder.build().map_err(|e| eyre::eyre!(e))?;
 
-            RUNTIME.block_on(ubi.install_binary())
+            RUNTIME
+                .block_on(ubi.install_binary())
+                .map_err(|e| eyre::eyre!(e))
         };
 
-        if let Err(err) = install(&v) {
-            if v != ctx.tv.version {
-                debug!(
-                    "Failed to install with ubi version '{}': {}, trying with '{}'",
-                    v, err, ctx.tv
-                );
-                if let Err(_err2) = install(&ctx.tv.version) {
-                    bail!("Failed to install with ubi '{}': {}", ctx.tv, err);
-                }
-            }
-        }
+        install(&v).or_else(|err: eyre::Error| {
+            debug!(
+                "Failed to install with ubi version '{}': {}, trying with '{}'",
+                v, err, tv
+            );
+            install(&tv.version).or_else(|_| {
+                bail!("Failed to install with ubi '{}': {}", tv, err);
+            })
+        })?;
 
-        Ok(())
+        let bin_dir = tv.install_path().join("bin");
+        let mut possible_exes = vec![tv
+            .request
+            .options()
+            .get("exe")
+            .cloned()
+            .unwrap_or(tv.ba().short.to_string())];
+        if cfg!(windows) {
+            possible_exes.push(format!("{}.exe", possible_exes[0]));
+        }
+        let full_binary_path = if let Some(bin_file) = possible_exes
+            .into_iter()
+            .map(|e| bin_dir.join(e))
+            .find(|f| f.exists())
+        {
+            bin_file
+        } else {
+            file::ls(&bin_dir)?
+                .into_iter()
+                .find(|f| {
+                    !f.file_name()
+                        .is_some_and(|f| f.to_string_lossy().starts_with("."))
+                })
+                .unwrap()
+        };
+        self.verify_checksum(ctx, &mut tv, &full_binary_path)?;
+
+        Ok(tv)
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {

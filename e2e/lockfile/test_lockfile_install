@@ -13,3 +13,14 @@ rm -rf "$MISE_DATA_DIR/installs/tiny"
 mise install
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "latest"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
+
+# validates checksum
+mise use gh@2.62.0
+cat mise.lock
+assert_contains "cat mise.lock | grep -C1 'checksum'" "[tools.gh]"
+cat <<EOF >mise.lock
+[tools.gh]
+version = "2.62.0"
+checksum = "sha512:1234567890"
+EOF
+assert_fail "mise i gh -f"

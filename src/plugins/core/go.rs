@@ -12,7 +12,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file, hash, plugins};
+use crate::{cmd, env, file, plugins};
 use itertools::Itertools;
 use tempfile::tempdir_in;
 use versions::Versioning;
@@ -91,7 +91,7 @@ impl GoPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
+    fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
         let settings = Settings::get();
         let filename = format!("go{}.{}-{}.{}", tv.version, platform(), arch(), ext());
         let tarball_url = format!("{}/{}", &settings.go_download_mirror, &filename);
@@ -105,10 +105,9 @@ impl GoPlugin {
             pr.set_message(format!("downloading {filename}"));
             HTTP.download_file(&tarball_url, &tarball_path, Some(pr))?;
 
-            if !settings.go_skip_checksum {
-                pr.set_message(format!("verifying {filename}"));
+            if !settings.go_skip_checksum && tv.checksum.is_none() {
                 let checksum = checksum_handle.join().unwrap()?;
-                hash::ensure_checksum_sha256(&tarball_path, &checksum, Some(pr))?;
+                tv.checksum = Some(format!("sha256:{checksum}"));
             }
             Ok(tarball_path)
         })
@@ -198,12 +197,17 @@ impl Backend for GoPlugin {
         Ok(vec![".go-version".into()])
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
-        let tarball_path = self.download(&ctx.tv, ctx.pr.as_ref())?;
-        self.install(&ctx.tv, ctx.pr.as_ref(), &tarball_path)?;
-        self.verify(&ctx.tv, ctx.pr.as_ref())?;
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
+        let tarball_path = self.download(&mut tv, ctx.pr.as_ref())?;
+        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        self.install(&tv, ctx.pr.as_ref(), &tarball_path)?;
+        self.verify(&tv, ctx.pr.as_ref())?;
 
-        Ok(())
+        Ok(tv)
     }
 
     fn uninstall_version_impl(&self, _pr: &dyn SingleReport, tv: &ToolVersion) -> eyre::Result<()> {

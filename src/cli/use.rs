@@ -93,13 +93,18 @@ impl Use {
         let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new().build(&config)?;
         let mpr = MultiProgressReport::get();
+        let mut cf = self.get_config_file()?;
         let versions: Vec<_> = self
             .tool
             .iter()
             .cloned()
             .map(|t| match t.tvr {
                 Some(tvr) => Ok(tvr),
-                None => ToolRequest::new(t.ba, "latest", ToolSource::Argument),
+                None => ToolRequest::new(
+                    t.ba,
+                    "latest",
+                    ToolSource::MiseToml(cf.get_path().to_path_buf()),
+                ),
             })
             .collect::<Result<_>>()?;
         let mut versions = ts.install_versions(
@@ -114,7 +119,6 @@ impl Use {
             },
         )?;
 
-        let mut cf = self.get_config_file()?;
         let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
 
         for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
