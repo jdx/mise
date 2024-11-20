@@ -1,5 +1,18 @@
 # Aliases
 
+## Aliased Backends
+
+Tools can be aliased so that something like `node` which normally maps to `core:node` can be changed
+to something like `asdf:company/our-custom-node` instead.
+
+```toml
+[alias]
+node = 'asdf:company/our-custom-node' # shorthand for https://github.com/company/our-custom-node
+erlang = 'asdf:https://github.com/company/our-custom-erlang'
+```
+
+## Aliased Versions
+
 mise supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
 versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for <node@20.x>
 so you can use set it with `node lts-hydrogen` in `.tool-versions`/`mise.toml`.

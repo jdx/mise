@@ -31,8 +31,7 @@ pub struct AsdfPlugin {
 
 impl AsdfPlugin {
     #[requires(!name.is_empty())]
-    pub fn new(name: String) -> Self {
-        let plugin_path = dirs::PLUGINS.join(&name);
+    pub fn new(name: String, plugin_path: PathBuf) -> Self {
         let repo = Git::new(&plugin_path);
         Self {
             script_man: build_script_man(&name, &plugin_path),

@@ -95,10 +95,21 @@ fn normalize_remote(remote: &str) -> eyre::Result<String> {
 }
 
 pub fn full_to_url(full: &str) -> String {
+    if url_like(full) {
+        return full.to_string();
+    }
     let (_backend, url) = full.split_once(':').unwrap_or(("", full));
-    if url.starts_with("https://") {
+    if url_like(url) {
         url.to_string()
     } else {
         format!("https://github.com/{url}.git")
     }
+}
+
+fn url_like(s: &str) -> bool {
+    s.starts_with("https://")
+        || s.starts_with("http://")
+        || s.starts_with("git@")
+        || s.starts_with("ssh://")
+        || s.starts_with("git://")
 }

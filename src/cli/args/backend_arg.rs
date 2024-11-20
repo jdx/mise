@@ -28,8 +28,6 @@ pub struct BackendArg {
     pub installs_path: PathBuf,
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
-    /// ~/.local/share/mise/plugins/<THIS>
-    pub plugin_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
@@ -87,7 +85,6 @@ impl BackendArg {
             tool_name,
             short,
             full,
-            plugin_path: dirs::PLUGINS.join(&pathname),
             cache_path: dirs::CACHE.join(&pathname),
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
@@ -143,6 +140,10 @@ impl BackendArg {
                 .and_then(|a| a.backend.clone())
             {
                 return full;
+            }
+            if let Some(url) = CONFIG.repo_urls.get(&self.short) {
+                deprecated!("config_plugins", "[plugins] section of mise.toml is deprecated. Use [alias] instead. https://mise.jdx.dev/dev-tools/aliases.html");
+                return format!("asdf:{url}");
             }
         }
         if let Some(full) = &self.full {
