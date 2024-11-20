@@ -1,5 +1,27 @@
 # Changelog
 
+## [2024.11.19](https://github.com/jdx/mise/compare/v2024.11.18..v2024.11.19) - 2024-11-20
+
+### 🚀 Features
+
+- checksums in lockfile by [@jdx](https://github.com/jdx) in [#3096](https://github.com/jdx/mise/pull/3096)
+- allow specifying asdf plugins with full urls by [@jdx](https://github.com/jdx) in [#3067](https://github.com/jdx/mise/pull/3067)
+- use aqua for etcd by [@jdx](https://github.com/jdx) in [#3101](https://github.com/jdx/mise/pull/3101)
+
+### 🐛 Bug Fixes
+
+- sort some information in `mise dr` by [@jdx](https://github.com/jdx) in [#3093](https://github.com/jdx/mise/pull/3093)
+- lockfile with "latest" versions by [@jdx](https://github.com/jdx) in [#3088](https://github.com/jdx/mise/pull/3088)
+- allow tasks to depend on themselves by [@jdx](https://github.com/jdx) in [#3100](https://github.com/jdx/mise/pull/3100)
+
+### 📚 Documentation
+
+- update comparison-to-asdf.md - add link to faq: migration from asdf by [@muescha](https://github.com/muescha) in [#3095](https://github.com/jdx/mise/pull/3095)
+
+### 🧪 Testing
+
+- remove unnecessary link test by [@jdx](https://github.com/jdx) in [164b5e8](https://github.com/jdx/mise/commit/164b5e84a81c6729b7fdc790cab83263d85193a0)
+
 ## [2024.11.18](https://github.com/jdx/mise/compare/v2024.11.17..v2024.11.18) - 2024-11-19
 
 ### 🚀 Features
@@ -401,6 +423,7 @@
 
 ### New Contributors
 
+- @hverlin made their first contribution in [#2891](https://github.com/jdx/mise/pull/2891)
 - @liskin made their first contribution in [#2892](https://github.com/jdx/mise/pull/2892)
 - @SolitudeSF made their first contribution in [#2857](https://github.com/jdx/mise/pull/2857)
 - @glasser made their first contribution in [#2872](https://github.com/jdx/mise/pull/2872)
@@ -420,6 +443,10 @@
 
 - add zstd compression for http requests by [@jdx](https://github.com/jdx) in [612bbd0](https://github.com/jdx/mise/commit/612bbd0374bed208752cda8674ad192b5886fde9)
 - Fix installed_tool@version complete script by [@miguelmig](https://github.com/miguelmig) in [#2859](https://github.com/jdx/mise/pull/2859)
+
+### New Contributors
+
+- @miguelmig made their first contribution in [#2859](https://github.com/jdx/mise/pull/2859)
 
 ## [2024.10.13](https://github.com/jdx/mise/compare/v2024.10.12..v2024.10.13) - 2024-10-28
 
@@ -560,6 +587,8 @@
 
 ### New Contributors
 
+- @yodatak made their first contribution in [#2792](https://github.com/jdx/mise/pull/2792)
+- @BurnerWah made their first contribution in [#2794](https://github.com/jdx/mise/pull/2794)
 - @rgeraskin made their first contribution in [#2790](https://github.com/jdx/mise/pull/2790)
 
 ## [2024.10.8](https://github.com/jdx/mise/compare/v2024.10.7..v2024.10.8) - 2024-10-22
@@ -726,6 +755,10 @@
 
 - move /.mise/tasks to /tasks by [@jdx](https://github.com/jdx) in [#2728](https://github.com/jdx/mise/pull/2728)
 
+### New Contributors
+
+- @risu729 made their first contribution in [#2729](https://github.com/jdx/mise/pull/2729)
+
 ## [2024.10.1](https://github.com/jdx/mise/compare/v2024.10.0..v2024.10.1) - 2024-10-07
 
 ### 🚀 Features
@@ -745,6 +778,10 @@
 
 - fix snapshots by [@jdx](https://github.com/jdx) in [e1bc269](https://github.com/jdx/mise/commit/e1bc269b2d40bac21208969f8fb2c744586d8ed1)
 - reset test by [@jdx](https://github.com/jdx) in [b06878d](https://github.com/jdx/mise/commit/b06878dcadfd8a0edc80ea39381f534435f24736)
+
+### New Contributors
+
+- @finalchild made their first contribution in [#2711](https://github.com/jdx/mise/pull/2711)
 
 ## [2024.10.0](https://github.com/jdx/mise/compare/v2024.9.13..v2024.10.0) - 2024-10-03
 
@@ -798,6 +835,10 @@
 
 - updated usage by [@jdx](https://github.com/jdx) in [1764c8b](https://github.com/jdx/mise/commit/1764c8bba912b59d61f87bd0f10e488a918e12ca)
 - updated usage by [@jdx](https://github.com/jdx) in [9c18637](https://github.com/jdx/mise/commit/9c18637c52cbdabd81ab84167f94d4578662a995)
+
+### New Contributors
+
+- @TobiX made their first contribution in [#2684](https://github.com/jdx/mise/pull/2684)
 
 ## [2024.9.12](https://github.com/jdx/mise/compare/v2024.9.11..v2024.9.12) - 2024-09-29
 
@@ -1095,6 +1136,7 @@
 
 ### New Contributors
 
+- @Shobhit0109 made their first contribution in [#2542](https://github.com/jdx/mise/pull/2542)
 - @xavdid made their first contribution in [#2532](https://github.com/jdx/mise/pull/2532)
 - @stanhu made their first contribution in [#2524](https://github.com/jdx/mise/pull/2524)
 
@@ -1155,6 +1197,7 @@
 ### New Contributors
 
 - @mcallaway made their first contribution in [#2511](https://github.com/jdx/mise/pull/2511)
+- @antoniomdk made their first contribution in [#2509](https://github.com/jdx/mise/pull/2509)
 
 ## [2024.8.13](https://github.com/jdx/mise/compare/v2024.8.12..v2024.8.13) - 2024-08-26
 
@@ -1426,6 +1469,10 @@
 - Use correct capitalization of GitHub by [@jahands](https://github.com/jahands) in [#2372](https://github.com/jdx/mise/pull/2372)
 - loosen git2 requirements by [@jdx](https://github.com/jdx) in [#2374](https://github.com/jdx/mise/pull/2374)
 
+### New Contributors
+
+- @jahands made their first contribution in [#2372](https://github.com/jdx/mise/pull/2372)
+
 ## [2024.7.2](https://github.com/jdx/mise/compare/v2024.7.1..v2024.7.2) - 2024-07-13
 
 ### 🚀 Features
@@ -1482,6 +1529,10 @@
 ### 🔍 Other Changes
 
 - Fixes nix flake by [@laozc](https://github.com/laozc) in [#2305](https://github.com/jdx/mise/pull/2305)
+
+### New Contributors
+
+- @laozc made their first contribution in [#2305](https://github.com/jdx/mise/pull/2305)
 
 ## [2024.6.4](https://github.com/jdx/mise/compare/v2024.6.3..v2024.6.4) - 2024-06-15
 
@@ -1547,6 +1598,7 @@
 ### New Contributors
 
 - @chrmod made their first contribution in [#2248](https://github.com/jdx/mise/pull/2248)
+- @kattouf made their first contribution in [#2241](https://github.com/jdx/mise/pull/2241)
 
 ## [2024.6.0](https://github.com/jdx/mise/compare/v2024.5.28..v2024.6.0) - 2024-06-01
 
@@ -1782,6 +1834,10 @@
 ### 🔍 Other Changes
 
 - add rustfmt to release-plz by [@jdx](https://github.com/jdx) in [2d530f6](https://github.com/jdx/mise/commit/2d530f645b6263c6162380684ab7914efc3dce39)
+
+### New Contributors
+
+- @vrslev made their first contribution in [#2116](https://github.com/jdx/mise/pull/2116)
 
 ## [2024.5.15](https://github.com/jdx/mise/compare/v2024.5.14..v2024.5.15) - 2024-05-14
 
