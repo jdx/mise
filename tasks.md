@@ -1,27 +1,7 @@
-## `a1`
-
-- **Usage**: `a1`
-
-## `a2`
-
-- **Usage**: `a2`
-
-## `b1`
-
-- Depends: a1, a2
-
-- **Usage**: `b1`
-
 ## `build`
 
 - **Usage**: `build`
 - **Aliases**: `b`
-
-## `c1`
-
-- Depends: b1
-
-- **Usage**: `c1`
 
 ## `ci`
 
@@ -263,10 +243,6 @@ run all tests with coverage report
 - **Aliases**: `e`
 
 run end-to-end tests
-
-## `test:shuffle`
-
-- **Usage**: `test:shuffle`
 
 ## `test:shuffle`
 
