@@ -187,26 +187,24 @@ impl Config {
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
-        let url = self
+        let plugin_name = self
             .all_aliases
             .get(plugin_name)
             .and_then(|a| a.backend.clone())
             .or_else(|| self.repo_urls.get(plugin_name).cloned())
-            .or_else(|| {
-                self.get_shorthands()
-                    .get(plugin_name)
-                    .and_then(|full| full.first().cloned())
-            })
             .unwrap_or(plugin_name.to_string());
-        let url = url.strip_prefix("asdf:").unwrap_or(&url);
-        let url = url.strip_prefix("vfox:").unwrap_or(url);
-        if registry::url_like(url) {
-            Some(url.to_string())
-        } else if url.split('/').count() == 2 {
-            Some(format!("https://github.com/{url}.git"))
-        } else {
-            None
-        }
+        let plugin_name = plugin_name.strip_prefix("asdf:").unwrap_or(&plugin_name);
+        let plugin_name = plugin_name.strip_prefix("vfox:").unwrap_or(plugin_name);
+        self.get_shorthands()
+            .get(plugin_name)
+            .map(|full| registry::full_to_url(&full[0]))
+            .or_else(|| {
+                if plugin_name.starts_with("https://") || plugin_name.split('/').count() == 2 {
+                    Some(registry::full_to_url(plugin_name))
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn tasks(&self) -> Result<&BTreeMap<String, Task>> {

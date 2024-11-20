@@ -106,7 +106,7 @@ pub fn full_to_url(full: &str) -> String {
     }
 }
 
-pub fn url_like(s: &str) -> bool {
+fn url_like(s: &str) -> bool {
     s.starts_with("https://")
         || s.starts_with("http://")
         || s.starts_with("git@")
