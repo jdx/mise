@@ -20,3 +20,19 @@ assert "mise run d ::: b" "[a] a
 [b] b
 [c] c
 [d] d"
+
+cat <<EOF >mise.toml
+[tasks."hello:1"]
+description = "Hello from 1"
+run = "echo Hello from 1"
+
+[tasks."hello:2"]
+description = "Hello from 2"
+run = "echo Hello from 2"
+
+[tasks."hello:all"]
+description = "Hello from all"
+depends = ["hello:*"]
+EOF
+assert "mise run hello:all" "[hello:1] Hello from 1
+[hello:2] Hello from 2"

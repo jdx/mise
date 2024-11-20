@@ -176,6 +176,7 @@ impl Task {
             .iter()
             .map(|pat| match_tasks(&tasks, pat))
             .flatten_ok()
+            .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
         for dep in depends.clone() {
             depends.extend(dep.all_depends(config)?);
