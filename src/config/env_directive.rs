@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use eyre::{eyre, Context};
+use heck::ToKebabCase;
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
 
@@ -302,7 +303,8 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Module(name, value) => {
-                    let plugin = VfoxPlugin::new(name);
+                    let path = dirs::PLUGINS.join(name.to_kebab_case());
+                    let plugin = VfoxPlugin::new(name, path);
                     if let Some(env) = plugin.mise_env(&value)? {
                         for (k, v) in env {
                             r.env.insert(k, (v, source.clone()));

@@ -4,9 +4,6 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::{eyre, Result, WrapErr};
-use console::style;
-
 use crate::backend::backend_type::BackendType;
 use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::Backend;
@@ -22,7 +19,10 @@ use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file};
+use crate::{dirs, env, file};
+use color_eyre::eyre::{eyre, Result, WrapErr};
+use console::style;
+use heck::ToKebabCase;
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub struct AsdfBackend {
@@ -42,7 +42,8 @@ pub struct AsdfBackend {
 impl AsdfBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         let name = ba.tool_name.clone();
-        let plugin_path = ba.plugin_path.clone();
+        let plugin_path = dirs::PLUGINS.join(ba.short.to_kebab_case());
+        let plugin = AsdfPlugin::new(name.clone(), plugin_path.clone());
         let mut toml_path = plugin_path.join("mise.plugin.toml");
         if plugin_path.join("rtx.plugin.toml").exists() {
             toml_path = plugin_path.join("rtx.plugin.toml");
@@ -75,13 +76,7 @@ impl AsdfBackend {
             .with_fresh_file(plugin_path.join("bin/list-legacy-filenames"))
             .build(),
             plugin_path,
-            plugin: Box::new(AsdfPlugin::new(
-                ba.plugin_path
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string(),
-            )),
+            plugin: Box::new(plugin),
             repo_url: None,
             toml,
             name,
@@ -258,7 +253,7 @@ impl Backend for AsdfBackend {
             .get_or_try_init(|| self.plugin.fetch_remote_versions())
             .wrap_err_with(|| {
                 eyre!(
-                    "Failed listing remote versions for plugin {}",
+                    "Failed listing remote versions for asdf tool {}",
                     style(&self.name).blue().for_stderr(),
                 )
             })

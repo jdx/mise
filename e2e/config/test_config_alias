@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 
 cat <<EOF >mise.toml
-tools.node = "100.0.0"
+tools.erlang = "1.0.0-erlang"
+tools.node = "1.0.0-node"
+tools.python = "1.0.0-python"
 tools.mytool = "2"
 tools.mytool-lts = "lts"
 
-alias.node = "asdf:tiny"
-alias.mytool = "asdf:tiny"
+[alias]
+erlang = 'asdf:https://github.com/jdx/mise-tiny'
+node = "asdf:tiny"
+python = 'asdf:jdx/mise-tiny'
+mytool = "asdf:tiny"
 [alias.mytool-lts]
 backend = "asdf:tiny"
 versions = {lts = "1.0.1"}
 EOF
 
-assert_contains "mise x node -- rtx-tiny" "rtx-tiny: v100.0.0"
+assert_contains "mise x erlang -- mise-tiny" "mise-tiny: v1.0.0-erlang"
+assert_contains "mise x node -- rtx-tiny" "rtx-tiny: v1.0.0-node"
+assert_contains "mise x python -- mise-tiny" "mise-tiny: v1.0.0-python"
 assert_contains "mise x mytool -- rtx-tiny" "rtx-tiny: v2.1.0"
 assert_contains "mise x mytool-lts -- rtx-tiny" "rtx-tiny: v1.0.1"
 

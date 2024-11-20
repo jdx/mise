@@ -39,11 +39,6 @@ erlang = ['23.3', '24.0']
 # supports everything you can do with .tool-versions currently
 node = ['16', 'prefix:20', 'ref:master', 'path:~/.nodes/14']
 
-[plugins]
-# specify a custom repo url
-# note this will only be used if the plugin does not already exist
-python = 'https://github.com/asdf-community/asdf-python'
-
 [alias.node.versions] # project-local aliases
 # use vfox:version-fox/vfox-nodejs when running `mise i node@backend`
 backend = "vfox:version-fox/vfox-nodejs"
@@ -52,6 +47,12 @@ my_custom_node = '20'
 
 [tasks.build]
 run = 'echo "running build tasks"'
+
+[plugins]
+# DEPRECATED: use `alias.<PLUGIN>` instead
+# specify a custom repo url
+# note this will only be used if the plugin does not already exist
+python = 'https://github.com/asdf-community/asdf-python'
 ```
 
 `mise.toml` files are hierarchical. The configuration in a file in the current directory will

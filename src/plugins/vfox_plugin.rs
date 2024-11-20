@@ -27,8 +27,7 @@ pub struct VfoxPlugin {
 
 impl VfoxPlugin {
     #[requires(!name.is_empty())]
-    pub fn new(name: String) -> Self {
-        let plugin_path = dirs::PLUGINS.join(&name);
+    pub fn new(name: String, plugin_path: PathBuf) -> Self {
         let repo = Git::new(&plugin_path);
         Self {
             name,

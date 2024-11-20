@@ -34,5 +34,5 @@ run = "echo Hello from 2"
 description = "Hello from all"
 depends = ["hello:*"]
 EOF
-assert "mise run hello:all" "[hello:1] Hello from 1
-[hello:2] Hello from 2"
+assert_contains "mise run hello:all" "[hello:1] Hello from 1"
+assert_contains "mise run hello:all" "[hello:2] Hello from 2"

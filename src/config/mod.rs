@@ -43,10 +43,10 @@ pub struct Config {
     pub config_files: ConfigMap,
     pub project_root: Option<PathBuf>,
     pub all_aliases: AliasMap,
+    pub repo_urls: HashMap<String, String>,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
-    repo_urls: HashMap<String, String>,
     shorthands: OnceLock<Shorthands>,
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
@@ -125,10 +125,12 @@ impl Config {
             install_state::add_plugin(plugin, plugin_type)?;
         }
 
-        for (short, _) in config
+        for short in config
             .all_aliases
             .iter()
             .filter(|(_, a)| a.backend.is_some())
+            .map(|(s, _)| s)
+            .chain(config.repo_urls.keys())
         {
             // we need to remove aliased tools so they get re-added with updated "full" values
             backend::remove(short);
@@ -189,23 +191,20 @@ impl Config {
             .all_aliases
             .get(plugin_name)
             .and_then(|a| a.backend.clone())
+            .or_else(|| self.repo_urls.get(plugin_name).cloned())
             .unwrap_or(plugin_name.to_string());
         let plugin_name = plugin_name.strip_prefix("asdf:").unwrap_or(&plugin_name);
         let plugin_name = plugin_name.strip_prefix("vfox:").unwrap_or(plugin_name);
-        match self.repo_urls.get(plugin_name) {
-            Some(url) => Some(url.to_string()),
-            None => self
-                .get_shorthands()
-                .get(plugin_name)
-                .map(|full| registry::full_to_url(&full[0]))
-                .or_else(|| {
-                    if plugin_name.starts_with("https://") || plugin_name.split('/').count() == 2 {
-                        Some(registry::full_to_url(plugin_name))
-                    } else {
-                        None
-                    }
-                }),
-        }
+        self.get_shorthands()
+            .get(plugin_name)
+            .map(|full| registry::full_to_url(&full[0]))
+            .or_else(|| {
+                if plugin_name.starts_with("https://") || plugin_name.split('/').count() == 2 {
+                    Some(registry::full_to_url(plugin_name))
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
