@@ -220,7 +220,7 @@ editLink: false
 | erlang | [core:erlang](https://mise.jdx.dev/lang/erlang.html) |
 | esc | [asdf:fxsalazar/asdf-esc](https://github.com/fxsalazar/asdf-esc) |
 | esy | [asdf:asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy) |
-| etcd | [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) [vfox:version-fox/vfox-etcd](https://github.com/version-fox/vfox-etcd) |
+| etcd | [aqua:etcd-io/etcd](https://github.com/etcd-io/etcd) [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) [vfox:version-fox/vfox-etcd](https://github.com/version-fox/vfox-etcd) |
 | evans | [aqua:ktr0731/evans](https://github.com/ktr0731/evans) [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
 | eza | [asdf:lwiechec/asdf-eza](https://github.com/lwiechec/asdf-eza) |
 | fd | [ubi:sharkdp/fd](https://github.com/sharkdp/fd) [asdf:https://gitlab.com/wt0f/asdf-fd](https://gitlab.com/wt0f/asdf-fd) |

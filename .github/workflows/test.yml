@@ -16,6 +16,7 @@ env:
   CARGO_TERM_COLOR: always
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1
+  MISE_LOCKFILE: 1
   RUST_BACKTRACE: 1
   GITHUB_TOKEN: ${{ secrets.RTX_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
 
@@ -58,7 +59,6 @@ jobs:
         env:
           MISE_USE_VERSIONS_HOST: 0
           MISE_EXPERIMENTAL: 1
-          MISE_LOCKFILE: 1
 
   nightly:
     runs-on: ubuntu-latest
