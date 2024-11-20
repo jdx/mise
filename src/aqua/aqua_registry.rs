@@ -57,6 +57,7 @@ pub struct AquaPackage {
     pub files: Vec<AquaFile>,
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
+    pub checksum: Option<AquaChecksum>,
     overrides: Vec<AquaOverride>,
     version_constraint: String,
     version_overrides: Vec<AquaPackage>,
@@ -74,6 +75,40 @@ struct AquaOverride {
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, strum::AsRefStr, strum::Display)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum AquaChecksumAlgorithm {
+    Sha1,
+    Sha256,
+    Sha512,
+    Md5,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum AquaChecksumType {
+    GithubRelease,
+    Http,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AquaChecksum {
+    pub r#type: Option<AquaChecksumType>,
+    pub algorithm: Option<AquaChecksumAlgorithm>,
+    pub pattern: Option<AquaChecksumPattern>,
+    file_format: Option<String>,
+    enabled: Option<bool>,
+    asset: Option<String>,
+    url: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AquaChecksumPattern {
+    pub checksum: String,
+    pub file: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -338,5 +373,63 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         orig.overrides = avo.overrides.clone();
     }
 
+    if let Some(avo_checksum) = avo.checksum.clone() {
+        let mut checksum = orig.checksum.unwrap_or_else(|| avo_checksum.clone());
+        if let Some(avo_checksum_type) = avo_checksum.r#type {
+            checksum.r#type = Some(avo_checksum_type);
+        }
+        if let Some(avo_checksum_pattern) = avo_checksum.pattern {
+            checksum.pattern = Some(avo_checksum_pattern);
+        }
+        if let Some(avo_checksum_enabled) = avo_checksum.enabled {
+            checksum.enabled = Some(avo_checksum_enabled);
+        }
+        if let Some(avo_checksum_asset) = avo_checksum.asset {
+            checksum.asset = Some(avo_checksum_asset);
+        }
+        if let Some(avo_checksum_algorithm) = avo_checksum.algorithm {
+            checksum.algorithm = Some(avo_checksum_algorithm);
+        }
+        if let Some(avo_checksum_file_format) = avo_checksum.file_format {
+            checksum.file_format = Some(avo_checksum_file_format);
+        }
+        if let Some(avo_checksum_url) = avo_checksum.url {
+            checksum.url = Some(avo_checksum_url);
+        }
+        orig.checksum = Some(checksum);
+    }
+
     orig
+}
+
+impl AquaChecksum {
+    pub fn _type(&self) -> &AquaChecksumType {
+        self.r#type.as_ref().unwrap()
+    }
+    pub fn algorithm(&self) -> &AquaChecksumAlgorithm {
+        self.algorithm.as_ref().unwrap()
+    }
+    pub fn asset_strs(&self, pkg: &AquaPackage, v: &str) -> Result<IndexSet<String>> {
+        let mut asset_strs = IndexSet::new();
+        for asset in pkg.asset_strs(v)? {
+            let checksum_asset = self.asset.as_ref().unwrap();
+            let ctx = hashmap! {
+                "Asset".to_string() => asset.to_string(),
+            };
+            asset_strs.insert(pkg.parse_aqua_str(checksum_asset, v, &ctx)?);
+        }
+        Ok(asset_strs)
+    }
+    pub fn pattern(&self) -> &AquaChecksumPattern {
+        self.pattern.as_ref().unwrap()
+    }
+    pub fn enabled(&self) -> bool {
+        self.enabled.unwrap_or(true)
+    }
+    pub fn file_format(&self) -> &str {
+        self.file_format.as_deref().unwrap_or("raw")
+    }
+    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
+    }
 }

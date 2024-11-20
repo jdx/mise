@@ -7,6 +7,7 @@ use xx::file;
 
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
+use crate::lockfile::LockfileTool;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
@@ -275,7 +276,7 @@ impl ToolRequest {
         }
     }
 
-    pub fn lockfile_resolve(&self) -> Result<Option<String>> {
+    pub fn lockfile_resolve(&self) -> Result<Option<LockfileTool>> {
         if let Some(path) = self.source().path() {
             return lockfile::get_locked_version(path, &self.ba().short, &self.version());
         }
@@ -283,8 +284,8 @@ impl ToolRequest {
     }
 
     pub fn local_resolve(&self, v: &str) -> eyre::Result<Option<String>> {
-        if let Some(v) = self.lockfile_resolve()? {
-            return Ok(Some(v));
+        if let Some(lt) = self.lockfile_resolve()? {
+            return Ok(Some(lt.version));
         }
         if let Some(backend) = backend::get(self.ba()) {
             let matches = backend.list_installed_versions_matching(v)?;

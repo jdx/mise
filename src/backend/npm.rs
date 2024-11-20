@@ -8,7 +8,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolRequest;
+use crate::toolset::{ToolRequest, ToolVersion};
 
 #[derive(Debug)]
 pub struct NPMBackend {
@@ -60,21 +60,25 @@ impl Backend for NPMBackend {
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
+    fn install_version_impl(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         let config = Config::try_get()?;
 
         if SETTINGS.npm.bun {
             CmdLineRunner::new("bun")
                 .arg("install")
-                .arg(format!("{}@{}", self.tool_name(), ctx.tv.version))
+                .arg(format!("{}@{}", self.tool_name(), tv.version))
                 .arg("--cwd")
-                .arg(ctx.tv.install_path())
+                .arg(tv.install_path())
                 .arg("--global")
                 .arg("--trust")
                 .with_pr(ctx.pr.as_ref())
                 .envs(ctx.ts.env_with_path(&config)?)
-                .env("BUN_INSTALL_GLOBAL_DIR", ctx.tv.install_path())
-                .env("BUN_INSTALL_BIN", ctx.tv.install_path().join("bin"))
+                .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
+                .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
                 .prepend_path(ctx.ts.list_paths())?
                 .prepend_path(self.dependency_toolset()?.list_paths())?
                 .execute()?;
@@ -82,16 +86,16 @@ impl Backend for NPMBackend {
             CmdLineRunner::new(NPM_PROGRAM)
                 .arg("install")
                 .arg("-g")
-                .arg(format!("{}@{}", self.tool_name(), ctx.tv.version))
+                .arg(format!("{}@{}", self.tool_name(), tv.version))
                 .arg("--prefix")
-                .arg(ctx.tv.install_path())
+                .arg(tv.install_path())
                 .with_pr(ctx.pr.as_ref())
                 .envs(ctx.ts.env_with_path(&config)?)
                 .prepend_path(ctx.ts.list_paths())?
                 .prepend_path(self.dependency_toolset()?.list_paths())?
                 .execute()?;
         }
-        Ok(())
+        Ok(tv)
     }
 
     #[cfg(windows)]

@@ -56,7 +56,11 @@ impl Backend for VfoxBackend {
             .cloned()
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext) -> eyre::Result<()> {
+    fn install_version_impl(
+        &self,
+        _ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         self.ensure_plugin_installed()?;
         let (vfox, log_rx) = self.plugin.vfox();
         thread::spawn(|| {
@@ -65,8 +69,8 @@ impl Backend for VfoxBackend {
                 info!("{}", line);
             }
         });
-        RUNTIME.block_on(vfox.install(&self.pathname, &ctx.tv.version, ctx.tv.install_path()))?;
-        Ok(())
+        RUNTIME.block_on(vfox.install(&self.pathname, &tv.version, tv.install_path()))?;
+        Ok(tv)
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {

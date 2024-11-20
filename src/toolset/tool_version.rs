@@ -35,8 +35,9 @@ impl ToolVersion {
 
     pub fn resolve(request: ToolRequest, opts: &ResolveOptions) -> Result<Self> {
         if opts.use_locked_version {
-            if let Some(v) = request.lockfile_resolve()? {
-                let tv = Self::new(request.clone(), v);
+            if let Some(lt) = request.lockfile_resolve()? {
+                let mut tv = Self::new(request.clone(), lt.version);
+                tv.checksum = lt.checksum;
                 return Ok(tv);
             }
         }
