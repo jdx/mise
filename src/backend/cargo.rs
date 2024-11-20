@@ -14,7 +14,7 @@ use crate::config::{Config, SETTINGS};
 use crate::env::GITHUB_TOKEN;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersion};
+use crate::toolset::ToolVersion;
 use crate::{env, file};
 
 #[derive(Debug)]
@@ -32,12 +32,12 @@ impl Backend for CargoBackend {
         &self.ba
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
-        Ok(vec![
-            "rust".into(),
-            "cargo-binstall".into(),
-            "sccache".into(),
-        ])
+    fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
+        Ok(vec!["rust"])
+    }
+
+    fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {
+        Ok(vec!["cargo-binstall", "sccache"])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {

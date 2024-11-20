@@ -173,7 +173,7 @@ jobs:
       - run: |
           cargo build
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
-      - run: mise install
+      - run: mise install --trace
       - run: mise test-tool --all
         env:
           MISE_USE_VERSIONS_HOST: 0

@@ -76,8 +76,20 @@ fn codegen_registry() {
                 os
             })
             .unwrap_or_default();
+        let depends = info
+            .get("depends")
+            .map(|depends| {
+                let depends = depends.as_array().unwrap();
+                let mut depends = depends
+                    .iter()
+                    .map(|d| d.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>();
+                depends.sort();
+                depends
+            })
+            .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}]}}"#,
+            r#"RegistryTool{{short: "{short}", backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}]}}"#,
             backends = fulls.join("\", \""),
             aliases = aliases
                 .iter()
@@ -90,6 +102,11 @@ fn codegen_registry() {
             os = os
                 .iter()
                 .map(|o| format!("\"{o}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            depends = depends
+                .iter()
+                .map(|d| format!("\"{d}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
         );

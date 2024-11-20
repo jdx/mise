@@ -16,7 +16,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::plugins::{Plugin, PluginType};
 use crate::tokio::RUNTIME;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset};
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
@@ -39,15 +39,6 @@ impl Backend for VfoxBackend {
 
     fn get_plugin_type(&self) -> Option<PluginType> {
         Some(PluginType::Vfox)
-    }
-
-    fn get_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
-        let out = match tvr.ba().tool_name.as_str() {
-            "poetry" | "pipenv" | "pipx" => vec!["python"],
-            "elixir" => vec!["erlang"],
-            _ => vec![],
-        };
-        Ok(out.into_iter().map(|s| s.into()).collect())
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
