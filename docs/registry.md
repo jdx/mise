@@ -258,7 +258,7 @@ editLink: false
 | git-chglog | [aqua:git-chglog/git-chglog](https://github.com/git-chglog/git-chglog) [asdf:GoodwayGroup/asdf-git-chglog](https://github.com/GoodwayGroup/asdf-git-chglog) |
 | git-cliff | [aqua:orhub/git-cliff](https://github.com/orhub/git-cliff) [asdf:jylenhof/asdf-git-cliff](https://github.com/jylenhof/asdf-git-cliff) |
 | gitconfig | [asdf:0ghny/asdf-gitconfig](https://github.com/0ghny/asdf-gitconfig) |
-| github-cli | [ubi:cli/cli](https://github.com/cli/cli) [asdf:bartlomiejdanek/asdf-github-cli](https://github.com/bartlomiejdanek/asdf-github-cli) |
+| github-cli | [aqua:cli/cli](https://github.com/cli/cli) [ubi:cli/cli](https://github.com/cli/cli) [asdf:bartlomiejdanek/asdf-github-cli](https://github.com/bartlomiejdanek/asdf-github-cli) |
 | github-markdown-toc | [aqua:ekalinin/github-markdown-toc](https://github.com/ekalinin/github-markdown-toc) [asdf:skyzyx/asdf-github-markdown-toc](https://github.com/skyzyx/asdf-github-markdown-toc) |
 | gitleaks | [aqua:gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) [asdf:jmcvetta/asdf-gitleaks](https://github.com/jmcvetta/asdf-gitleaks) |
 | gitsign | [aqua:sigstore/gitsign](https://github.com/sigstore/gitsign) [asdf:spencergilbert/asdf-gitsign](https://github.com/spencergilbert/asdf-gitsign) |

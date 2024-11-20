@@ -21,11 +21,16 @@ use path_absolutize::Absolutize;
 pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
+    pub checksum: Option<String>,
 }
 
 impl ToolVersion {
     pub fn new(request: ToolRequest, version: String) -> Self {
-        ToolVersion { request, version }
+        ToolVersion {
+            request,
+            version,
+            checksum: None,
+        }
     }
 
     pub fn resolve(request: ToolRequest, opts: &ResolveOptions) -> Result<Self> {
