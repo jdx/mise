@@ -146,7 +146,7 @@ impl Upgrade {
             },
         };
         let new_versions = outdated.iter().map(|o| o.tool_request.clone()).collect();
-        let versions = ts.install_versions(config, new_versions, &mpr, &opts)?;
+        let versions = ts.install_all_versions(config, new_versions, &mpr, &opts)?;
 
         for (o, mut cf) in config_file_updates {
             cf.replace_versions(o.tool_request.ba(), vec![o.tool_request.clone()])?;
