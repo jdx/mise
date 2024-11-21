@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 require_cmd python3
 
+# use python3.12 if available since 3.13 has issues with harlequin
+if command -v python3.12 &>/dev/null; then
+  ln -s "$(which python3.12)" "$HOME/bin/python3"
+fi
+
 # Create a system pipx that always fail and push it to the front of PATH
 cat >"$HOME/bin/pipx" <<'EOF'
 #!/usr/bin/env bash
