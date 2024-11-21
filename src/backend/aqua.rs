@@ -268,6 +268,7 @@ impl AquaBackend {
                                         .rsplit_once('/')
                                         .map(|(_, f)| f)
                                         .unwrap_or(split[1])
+                                        .trim_matches('*')
                                         .to_string(),
                                 ))
                             } else {
