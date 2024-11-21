@@ -107,7 +107,7 @@ impl Use {
                 ),
             })
             .collect::<Result<_>>()?;
-        let mut versions = ts.install_versions(
+        let mut versions = ts.install_all_versions(
             &config,
             versions.clone(),
             &mpr,

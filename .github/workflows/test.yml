@@ -112,7 +112,6 @@ jobs:
         with:
           name: mise-${{ matrix.os }}
           path: target/debug
-      - run: ls -R target
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - run: mise install
       - run: mise x -- bun i
@@ -291,7 +290,6 @@ jobs:
         with:
           name: mise-${{ matrix.os }}
           path: target/debug
-      - run: ls -R target
       - if: ${{ matrix.os != 'windows-latest' }}
         run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - if: ${{ matrix.os == 'windows-latest' }}

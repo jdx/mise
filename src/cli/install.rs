@@ -66,7 +66,8 @@ impl Install {
             warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
             return Ok(vec![]);
         }
-        let versions = ts.install_versions(config, tool_versions, &mpr, &self.install_opts())?;
+        let versions =
+            ts.install_all_versions(config, tool_versions, &mpr, &self.install_opts())?;
         lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
         Ok(versions)
     }
@@ -132,7 +133,7 @@ impl Install {
         } else {
             let mpr = MultiProgressReport::get();
             let mut ts = Toolset::from(trs.clone());
-            ts.install_versions(config, versions, &mpr, &self.install_opts())?
+            ts.install_all_versions(config, versions, &mpr, &self.install_opts())?
         };
         lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
         Ok(versions)

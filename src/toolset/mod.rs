@@ -143,7 +143,7 @@ impl Toolset {
             .filter(|tv| matches!(self.versions[tv.ba()].source, ToolSource::Argument))
             .map(|tv| tv.request)
             .collect_vec();
-        let versions = self.install_versions(config, versions, &mpr, opts)?;
+        let versions = self.install_all_versions(config, versions, &mpr, opts)?;
         if !versions.is_empty() {
             lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
         }
@@ -188,7 +188,7 @@ impl Toolset {
         }
     }
 
-    pub fn install_versions(
+    pub fn install_all_versions(
         &mut self,
         config: &Config,
         mut versions: Vec<ToolRequest>,
@@ -202,13 +202,58 @@ impl Toolset {
         show_python_install_hint(&versions);
         let mut installed = vec![];
         let mut leaf_deps = get_leaf_dependencies(&versions)?;
-        while leaf_deps.len() < versions.len() && !leaf_deps.is_empty() {
-            debug!("installing {} leaf tools first", leaf_deps.len());
+        while !leaf_deps.is_empty() {
+            if leaf_deps.len() < versions.len() {
+                debug!("installing {} leaf tools first", leaf_deps.len());
+            }
             versions.retain(|tr| !leaf_deps.contains(tr));
-            installed.extend(self.install_versions(config, leaf_deps, mpr, opts)?);
+            installed.extend(self.install_some_versions(leaf_deps, mpr, opts)?);
             leaf_deps = get_leaf_dependencies(&versions)?;
         }
-        debug!("install_versions: {}", versions.iter().join(" "));
+
+        trace!("install_state::reset()");
+        install_state::reset();
+
+        trace!("install: resolving");
+        if let Err(err) = self.resolve() {
+            debug!("error resolving versions after install: {err:#}");
+        }
+        trace!("install: reshimming");
+        shims::reshim(self, false)?;
+        trace!("install: rebuilding runtime symlinks");
+        runtime_symlinks::rebuild(config)?;
+        trace!("install: done");
+        if log::log_enabled!(log::Level::Debug) {
+            for tv in installed.iter() {
+                let backend = tv.backend()?;
+                let bin_paths = backend
+                    .list_bin_paths(tv)
+                    .map_err(|e| {
+                        warn!("Error listing bin paths for {tv}: {e:#}");
+                    })
+                    .unwrap_or_default();
+                debug!("[{tv}] list_bin_paths: {bin_paths:?}");
+                let env = backend
+                    .exec_env(config, self, tv)
+                    .map_err(|e| {
+                        warn!("Error running exec-env: {e:#}");
+                    })
+                    .unwrap_or_default();
+                if !env.is_empty() {
+                    debug!("[{tv}] exec_env: {env:?}");
+                }
+            }
+        }
+        Ok(installed)
+    }
+
+    fn install_some_versions(
+        &mut self,
+        versions: Vec<ToolRequest>,
+        mpr: &MultiProgressReport,
+        opts: &InstallOptions,
+    ) -> Result<Vec<ToolVersion>> {
+        debug!("install_some_versions: {}", versions.iter().join(" "));
         let queue: Vec<_> = versions
             .into_iter()
             .rev()
@@ -235,7 +280,7 @@ impl Toolset {
             true => 1,
             false => opts.jobs.unwrap_or(SETTINGS.jobs),
         };
-        let _installed: Vec<ToolVersion> = thread::scope(|s| {
+        thread::scope(|s| {
             #[allow(clippy::map_collect_result_unit)]
             (0..jobs)
                 .map(|_| {
@@ -270,42 +315,7 @@ impl Toolset {
                 })
                 .collect::<Result<Vec<Vec<ToolVersion>>>>()
                 .map(|x| x.into_iter().flatten().rev().collect())
-        })?;
-        installed.extend(_installed);
-
-        install_state::reset();
-
-        trace!("install: resolving");
-        if let Err(err) = self.resolve() {
-            debug!("error resolving versions after install: {err:#}");
-        }
-        trace!("install: reshimming");
-        shims::reshim(self, false)?;
-        trace!("install: rebuilding runtime symlinks");
-        runtime_symlinks::rebuild(config)?;
-        trace!("install: done");
-        if log::log_enabled!(log::Level::Debug) {
-            for tv in installed.iter() {
-                let backend = tv.backend()?;
-                let bin_paths = backend
-                    .list_bin_paths(tv)
-                    .map_err(|e| {
-                        warn!("Error listing bin paths for {tv}: {e:#}");
-                    })
-                    .unwrap_or_default();
-                debug!("[{tv}] list_bin_paths: {bin_paths:?}");
-                let env = backend
-                    .exec_env(config, self, tv)
-                    .map_err(|e| {
-                        warn!("Error running exec-env: {e:#}");
-                    })
-                    .unwrap_or_default();
-                if !env.is_empty() {
-                    debug!("[{tv}] exec_env: {env:?}");
-                }
-            }
-        }
-        Ok(installed)
+        })
     }
 
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
@@ -590,8 +600,12 @@ impl Toolset {
                 .collect_vec();
             if !versions.is_empty() {
                 let mpr = MultiProgressReport::get();
-                let versions =
-                    self.install_versions(&config, versions.clone(), &mpr, &InstallOptions::new())?;
+                let versions = self.install_all_versions(
+                    &config,
+                    versions.clone(),
+                    &mpr,
+                    &InstallOptions::new(),
+                )?;
                 lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
                 return Ok(Some(versions));
             }
