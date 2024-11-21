@@ -154,7 +154,7 @@ impl Plugin for VfoxPlugin {
             );
             return Ok(());
         }
-        pr.set_message("updating git repo".into());
+        pr.set_message("update git repo".into());
         git.update(gitref)?;
         let sha = git.current_sha_short()?;
         let repo_url = self.get_remote_url()?.unwrap_or_default();
@@ -169,13 +169,13 @@ impl Plugin for VfoxPlugin {
         if !self.is_installed() {
             return Ok(());
         }
-        pr.set_message("uninstalling".into());
+        pr.set_message("uninstall".into());
 
         let rmdir = |dir: &Path| {
             if !dir.exists() {
                 return Ok(());
             }
-            pr.set_message(format!("removing {}", display_path(dir)));
+            pr.set_message(format!("remove {}", display_path(dir)));
             remove_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
@@ -206,10 +206,10 @@ Plugins could support local directories in the future but for now a symlink is r
             ))?;
         }
         let git = Git::new(&self.plugin_path);
-        pr.set_message(format!("cloning {repo_url}"));
+        pr.set_message(format!("clone {repo_url}"));
         git.clone(&repo_url)?;
         if let Some(ref_) = &repo_ref {
-            pr.set_message(format!("checking out {ref_}"));
+            pr.set_message(format!("git update {ref_}"));
             git.update(Some(ref_.to_string()))?;
         }
 

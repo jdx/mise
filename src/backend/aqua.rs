@@ -208,7 +208,7 @@ impl AquaBackend {
         if tarball_path.exists() {
             return Ok(());
         }
-        ctx.pr.set_message(format!("downloading {filename}"));
+        ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))?;
         Ok(())
     }
@@ -297,7 +297,7 @@ impl AquaBackend {
         filename: &str,
     ) -> Result<()> {
         let tarball_path = tv.download_path().join(filename);
-        ctx.pr.set_message(format!("installing {filename}"));
+        ctx.pr.set_message(format!("extract {filename}"));
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         let format = pkg.format(v)?;

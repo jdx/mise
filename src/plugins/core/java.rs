@@ -98,7 +98,7 @@ impl JavaPlugin {
         let filename = m.url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
-        pr.set_message(format!("downloading {filename}"));
+        pr.set_message(format!("download {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr))?;
 
         if !tv.checksums.contains_key(filename) {
@@ -118,7 +118,7 @@ impl JavaPlugin {
         m: &JavaMetadata,
     ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
-        pr.set_message(format!("installing {filename}"));
+        pr.set_message(format!("extract {filename}"));
         if m.file_type
             .as_ref()
             .is_some_and(|file_type| file_type == "zip")

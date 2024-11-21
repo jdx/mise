@@ -194,7 +194,8 @@ impl Backend for UbiBackend {
         }
         checksum_key = format!("{}-{}-{}", checksum_key, env::consts::OS, env::consts::ARCH);
         if let Some(checksum) = &tv.checksums.get(&checksum_key) {
-            ctx.pr.set_message(format!("checksum {checksum_key}"));
+            ctx.pr
+                .set_message(format!("checksum verify {checksum_key}"));
             if let Some((algo, check)) = checksum.split_once(':') {
                 hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
             } else {
@@ -202,7 +203,7 @@ impl Backend for UbiBackend {
             }
         } else if SETTINGS.lockfile && SETTINGS.experimental {
             ctx.pr
-                .set_message(format!("generating checksum {checksum_key}"));
+                .set_message(format!("checksum generate {checksum_key}"));
             let hash = hash::file_hash_prog::<Sha256>(file, Some(ctx.pr.as_ref()))?;
             tv.checksums.insert(checksum_key, format!("sha256:{hash}"));
         }
