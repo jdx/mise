@@ -20,8 +20,8 @@ pub struct Lockfile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockfileTool {
     pub version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub checksum: Option<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub checksums: BTreeMap<String, String>,
 }
 
 impl Lockfile {
@@ -191,12 +191,25 @@ impl TryFrom<toml::Value> for LockfileTool {
         let tool = match value {
             toml::Value::String(v) => LockfileTool {
                 version: v,
-                checksum: None,
+                checksums: Default::default(),
             },
-            toml::Value::Table(t) => LockfileTool {
-                version: t.get("version").unwrap().as_str().unwrap().to_string(),
-                checksum: t.get("checksum").map(|v| v.as_str().unwrap().to_string()),
-            },
+            toml::Value::Table(mut t) => {
+                let mut checksums = BTreeMap::new();
+                if let Some(checksums_table) = t.remove("checksums") {
+                    let checksums_table: toml::Table = checksums_table.try_into()?;
+                    for (filename, checksum) in checksums_table {
+                        checksums.insert(filename, checksum.try_into()?);
+                    }
+                }
+                LockfileTool {
+                    version: t
+                        .remove("version")
+                        .map(|v| v.try_into())
+                        .transpose()?
+                        .unwrap_or_default(),
+                    checksums,
+                }
+            }
             _ => bail!("unsupported lockfile format {}", value),
         };
         Ok(tool)
@@ -205,14 +218,12 @@ impl TryFrom<toml::Value> for LockfileTool {
 
 impl LockfileTool {
     fn into_toml_value(self) -> toml::Value {
-        if let Some(checksum) = self.checksum {
-            let mut table = toml::Table::new();
-            table.insert("version".to_string(), self.version.into());
-            table.insert("checksum".to_string(), checksum.into());
-            table.into()
-        } else {
-            self.version.into()
+        let mut table = toml::Table::new();
+        table.insert("version".to_string(), self.version.into());
+        if !self.checksums.is_empty() {
+            table.insert("checksums".to_string(), self.checksums.into());
         }
+        table.into()
     }
 }
 
@@ -222,7 +233,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
             .iter()
             .map(|tv| LockfileTool {
                 version: tv.version.clone(),
-                checksum: tv.checksum.clone(),
+                checksums: tv.checksums.clone(),
             })
             .collect()
     }

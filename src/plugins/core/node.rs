@@ -150,8 +150,9 @@ impl NodePlugin {
             pr.set_message(format!("downloading {tarball_name}"));
             HTTP.download_file(url.clone(), local, Some(pr))?;
         }
-        if tv.checksum.is_none() && *env::MISE_NODE_VERIFY {
-            tv.checksum = Some(self.get_checksum(local, version)?);
+        if *env::MISE_NODE_VERIFY && !tv.checksums.contains_key(&tarball_name) {
+            tv.checksums
+                .insert(tarball_name, self.get_checksum(local, version)?);
         }
         self.verify_checksum(ctx, tv, local)?;
         Ok(())
