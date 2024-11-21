@@ -154,7 +154,7 @@ impl Upgrade {
         }
 
         for (o, tv) in to_remove {
-            let pr = mpr.add(&format!("Uninstalling {}@{}", o.name, tv));
+            let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
             self.uninstall_old_version(&o.tool_version, pr.as_ref())?;
         }
 

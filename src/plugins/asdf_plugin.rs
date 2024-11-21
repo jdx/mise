@@ -88,7 +88,7 @@ impl AsdfPlugin {
         let mut sm = self.script_man.clone();
         sm.env.extend(env);
         if sm.script_exists(&script) {
-            pr.set_message(format!("executing {hook} hook"));
+            pr.set_message(format!("bin/{hook}"));
             sm.run_by_line(&script, pr)?;
         }
         Ok(())
@@ -276,7 +276,7 @@ impl Plugin for AsdfPlugin {
             );
             return Ok(());
         }
-        pr.set_message("updating git repo".into());
+        pr.set_message("update git repo".into());
         let (pre, post) = git.update(gitref)?;
         let sha = git.current_sha_short()?;
         let repo_url = self.get_remote_url()?.unwrap_or_default();
@@ -293,13 +293,13 @@ impl Plugin for AsdfPlugin {
             return Ok(());
         }
         self.exec_hook(pr, "pre-plugin-remove")?;
-        pr.set_message("uninstalling".into());
+        pr.set_message("uninstall".into());
 
         let rmdir = |dir: &Path| {
             if !dir.exists() {
                 return Ok(());
             }
-            pr.set_message(format!("removing {}", display_path(dir)));
+            pr.set_message(format!("remove {}", display_path(dir)));
             remove_all(dir).wrap_err_with(|| {
                 format!(
                     "Failed to remove directory {}",
@@ -331,10 +331,10 @@ Plugins could support local directories in the future but for now a symlink is r
             ))?;
         }
         let git = Git::new(&self.plugin_path);
-        pr.set_message(format!("cloning {repo_url}"));
+        pr.set_message(format!("clone {repo_url}"));
         git.clone(&repo_url)?;
         if let Some(ref_) = &repo_ref {
-            pr.set_message(format!("checking out {ref_}"));
+            pr.set_message(format!("check out {ref_}"));
             git.update(Some(ref_.to_string()))?;
         }
         self.exec_hook(pr, "post-plugin-add")?;

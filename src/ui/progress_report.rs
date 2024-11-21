@@ -1,3 +1,4 @@
+use std::sync::Mutex;
 use std::time::Duration;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -135,6 +136,7 @@ impl SingleReport for QuietReport {}
 
 pub struct VerboseReport {
     prefix: String,
+    prev_message: Mutex<String>,
     pad: usize,
 }
 
@@ -142,6 +144,7 @@ impl VerboseReport {
     pub fn new(prefix: String) -> VerboseReport {
         VerboseReport {
             prefix,
+            prev_message: Mutex::new("".to_string()),
             pad: *LONGEST_PLUGIN_NAME,
         }
     }
@@ -152,8 +155,13 @@ impl SingleReport for VerboseReport {
         eprintln!("{message}");
     }
     fn set_message(&self, message: String) {
+        let mut prev_message = self.prev_message.lock().unwrap();
+        if *prev_message == message {
+            return;
+        }
         let prefix = pad_prefix(self.pad, &self.prefix);
         log::info!("{prefix} {message}");
+        *prev_message = message.clone();
     }
     fn finish(&self) {
         self.finish_with_message(style::egreen("done").to_string());

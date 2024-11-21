@@ -58,7 +58,6 @@ jobs:
       - run: mise test-tool --all
         env:
           MISE_USE_VERSIONS_HOST: 0
-          MISE_EXPERIMENTAL: 1
 
   nightly:
     runs-on: ubuntu-latest
@@ -119,7 +118,6 @@ jobs:
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MISE_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
-          MISE_EXPERIMENTAL: 1
           MISE_USE_VERSIONS_HOST: 0
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 4
@@ -177,8 +175,6 @@ jobs:
       - run: mise test-tool --all
         env:
           MISE_USE_VERSIONS_HOST: 0
-          MISE_EXPERIMENTAL: 1
-          MISE_LOCKFILE: 1
           MISE_DISABLE_TOOLS: |
             1password-cli,
             adr-tools

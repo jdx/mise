@@ -180,7 +180,7 @@ impl RubyPlugin {
             if package.is_empty() {
                 continue;
             }
-            pr.set_message(format!("installing default gem: {}", package));
+            pr.set_message(format!("install default gem: {}", package));
             let gem = self.gem_path(tv);
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
@@ -374,7 +374,7 @@ impl Backend for RubyPlugin {
         if let Err(err) = self.update_build_tool() {
             warn!("ruby build tool update error: {err:#}");
         }
-        ctx.pr.set_message("running ruby-build".into());
+        ctx.pr.set_message("ruby-build".into());
         let config = Config::get();
         self.install_cmd(&config, &tv, ctx.pr.as_ref())?.execute()?;
 

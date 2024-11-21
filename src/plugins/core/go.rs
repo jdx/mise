@@ -67,7 +67,7 @@ impl GoPlugin {
             if package.is_empty() {
                 continue;
             }
-            pr.set_message(format!("installing default package: {}", package));
+            pr.set_message(format!("install default package: {}", package));
             let package = if package.contains('@') {
                 package.to_string()
             } else {
@@ -102,7 +102,7 @@ impl GoPlugin {
                 let checksum_url = format!("{}.sha256", &tarball_url);
                 HTTP.get_text(checksum_url)
             });
-            pr.set_message(format!("downloading {filename}"));
+            pr.set_message(format!("download {filename}"));
             HTTP.download_file(&tarball_url, &tarball_path, Some(pr))?;
 
             if !settings.go_skip_checksum && !tv.checksums.contains_key(&filename) {
@@ -123,7 +123,7 @@ impl GoPlugin {
             .file_name()
             .unwrap_or_default()
             .to_string_lossy();
-        pr.set_message(format!("installing {}", tarball));
+        pr.set_message(format!("extract {}", tarball));
         let tmp_extract_path = tempdir_in(tv.install_path().parent().unwrap())?;
         if cfg!(windows) {
             file::unzip(tarball_path, tmp_extract_path.path())?;

@@ -337,10 +337,10 @@ impl Backend for AsdfBackend {
         let run_script = |script| sm.run_by_line(script, ctx.pr.as_ref());
 
         if sm.script_exists(&Download) {
-            ctx.pr.set_message("downloading".into());
+            ctx.pr.set_message("bin/download".into());
             run_script(&Download)?;
         }
-        ctx.pr.set_message("installing".into());
+        ctx.pr.set_message("bin/install".into());
         run_script(&Install)?;
         file::remove_dir(&self.ba.downloads_path)?;
 

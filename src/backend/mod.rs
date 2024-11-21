@@ -369,7 +369,7 @@ pub trait Backend: Debug + Send + Sync {
                 return Ok(tv);
             }
         }
-        ctx.pr.set_message("installing".into());
+        ctx.pr.set_message("install".into());
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
         self.create_install_dirs(&tv)?;
 
@@ -442,7 +442,7 @@ pub trait Backend: Debug + Send + Sync {
             if !dir.exists() {
                 return Ok(());
             }
-            pr.set_message(format!("removing {}", display_path(dir)));
+            pr.set_message(format!("remove {}", display_path(dir)));
             if dryrun {
                 return Ok(());
             }
@@ -609,8 +609,7 @@ pub trait Backend: Debug + Send + Sync {
                 bail!("Invalid checksum: {checksum}");
             }
         } else if SETTINGS.lockfile && SETTINGS.experimental {
-            ctx.pr
-                .set_message(format!("generating checksum {filename}"));
+            ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_prog::<Sha256>(file, Some(ctx.pr.as_ref()))?;
             tv.checksums.insert(filename, format!("sha256:{hash}"));
         }
@@ -629,7 +628,7 @@ fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
     if !dir.exists() {
         return Ok(());
     }
-    pr.set_message(format!("removing {}", &dir.to_string_lossy()));
+    pr.set_message(format!("remove {}", &dir.to_string_lossy()));
     remove_all(dir).wrap_err_with(|| {
         format!(
             "Failed to remove directory {}",
