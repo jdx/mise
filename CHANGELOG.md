@@ -1,5 +1,31 @@
 # Changelog
 
+## [2024.11.21](https://github.com/jdx/mise/compare/v2024.11.20..v2024.11.21) - 2024-11-21
+
+### 🐛 Bug Fixes
+
+- **(vfox)** handle bug when plugin is removed from registry by [@jdx](https://github.com/jdx) in [#3111](https://github.com/jdx/mise/pull/3111)
+- gleam checksum by [@jdx](https://github.com/jdx) in [#3107](https://github.com/jdx/mise/pull/3107)
+- split checksums out by artifact by [@jdx](https://github.com/jdx) in [#3105](https://github.com/jdx/mise/pull/3105)
+- use consistent verb tense for progress bars by [@jdx](https://github.com/jdx) in [#3109](https://github.com/jdx/mise/pull/3109)
+- unset GITHUB_TOKEN if empty for ubi + plugins by [@jdx](https://github.com/jdx) in [#3114](https://github.com/jdx/mise/pull/3114)
+- git-cliff typo in registry by [@jdx](https://github.com/jdx) in [#3117](https://github.com/jdx/mise/pull/3117)
+- some bugs with lockfiles by [@jdx](https://github.com/jdx) in [#3113](https://github.com/jdx/mise/pull/3113)
+
+### 🚜 Refactor
+
+- break up install_versions method by [@jdx](https://github.com/jdx) in [#3121](https://github.com/jdx/mise/pull/3121)
+
+### 🧪 Testing
+
+- added e2e test for `mise prune` by [@jdx](https://github.com/jdx) in [#3119](https://github.com/jdx/mise/pull/3119)
+
+### 🔍 Other Changes
+
+- added pre-commit back in by [@jdx](https://github.com/jdx) in [#3115](https://github.com/jdx/mise/pull/3115)
+- use mold linker by [@jdx](https://github.com/jdx) in [#3118](https://github.com/jdx/mise/pull/3118)
+- share builds across gha by [@jdx](https://github.com/jdx) in [#3120](https://github.com/jdx/mise/pull/3120)
+
 ## [2024.11.20](https://github.com/jdx/mise/compare/v2024.11.19..v2024.11.20) - 2024-11-21
 
 ### 🚀 Features
