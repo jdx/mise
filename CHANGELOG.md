@@ -1,5 +1,15 @@
 # Changelog
 
+## [2024.11.20](https://github.com/jdx/mise/compare/v2024.11.19..v2024.11.20) - 2024-11-21
+
+### 🚀 Features
+
+- optional dependencies by [@jdx](https://github.com/jdx) in [#3104](https://github.com/jdx/mise/pull/3104)
+
+### 🚜 Refactor
+
+- reorder methods by [@jdx](https://github.com/jdx) in [aef623e](https://github.com/jdx/mise/commit/aef623eff21b42635128d34fd26a2e0e9d8f9eed)
+
 ## [2024.11.19](https://github.com/jdx/mise/compare/v2024.11.18..v2024.11.19) - 2024-11-20
 
 ### 🚀 Features
