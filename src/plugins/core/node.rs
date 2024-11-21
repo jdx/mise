@@ -57,7 +57,7 @@ impl NodePlugin {
             e => e,
         }?;
         let tarball_name = &opts.binary_tarball_name;
-        ctx.pr.set_message(format!("extracting {tarball_name}"));
+        ctx.pr.set_message(format!("extract {tarball_name}"));
         file::remove_all(&opts.install_path)?;
         file::untar(
             &opts.binary_tarball_path,
@@ -91,7 +91,7 @@ impl NodePlugin {
             e => e,
         }?;
         let tarball_name = &opts.binary_tarball_name;
-        ctx.pr.set_message(format!("extracting {tarball_name}"));
+        ctx.pr.set_message(format!("extract {tarball_name}"));
         let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
         file::unzip(&opts.binary_tarball_path, tmp_extract_path.path())?;
         file::remove_all(&opts.install_path)?;
@@ -117,7 +117,7 @@ impl NodePlugin {
             &opts.source_tarball_path,
             &opts.version,
         )?;
-        ctx.pr.set_message(format!("extracting {tarball_name}"));
+        ctx.pr.set_message(format!("extract {tarball_name}"));
         file::remove_all(&opts.build_dir)?;
         file::untar(
             &opts.source_tarball_path,
@@ -147,7 +147,7 @@ impl NodePlugin {
         if local.exists() {
             pr.set_message(format!("using previously downloaded {tarball_name}"));
         } else {
-            pr.set_message(format!("downloading {tarball_name}"));
+            pr.set_message(format!("download {tarball_name}"));
             HTTP.download_file(url.clone(), local, Some(pr))?;
         }
         if *env::MISE_NODE_VERIFY && !tv.checksums.contains_key(&tarball_name) {
@@ -225,7 +225,7 @@ impl NodePlugin {
             if package.is_empty() {
                 continue;
             }
-            pr.set_message(format!("installing default package: {}", package));
+            pr.set_message(format!("install default package: {}", package));
             let npm = self.npm_path(tv);
             CmdLineRunner::new(npm)
                 .with_pr(pr)
@@ -247,7 +247,7 @@ impl NodePlugin {
     }
 
     fn enable_default_corepack_shims(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
-        pr.set_message("enabling corepack shims".into());
+        pr.set_message("enable corepack shims".into());
         let corepack = self.corepack_path(tv);
         CmdLineRunner::new(corepack)
             .with_pr(pr)

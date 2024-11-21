@@ -565,7 +565,7 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     debug!("tar -xf {} -C {}", archive.display(), dest.display());
     if let Some(pr) = &opts.pr {
         pr.set_message(format!(
-            "extracting {}",
+            "extract {}",
             archive.file_name().unwrap().to_string_lossy()
         ));
     }

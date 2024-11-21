@@ -179,10 +179,9 @@ impl PythonPlugin {
         let download = tv.download_path();
         let tarball_path = download.join(filename);
 
-        ctx.pr.set_message(format!("downloading {filename}"));
+        ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))?;
 
-        ctx.pr.set_message(format!("installing {filename}"));
         file::remove_all(&install)?;
         file::untar(
             &tarball_path,
@@ -204,7 +203,7 @@ impl PythonPlugin {
         if matches!(&tv.request, ToolRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
         }
-        ctx.pr.set_message("Running python-build".into());
+        ctx.pr.set_message("python-build".into());
         let mut cmd = CmdLineRunner::new(self.python_build_bin())
             .with_pr(ctx.pr.as_ref())
             .arg(tv.version.as_str())
@@ -245,7 +244,7 @@ impl PythonPlugin {
         if !packages_file.exists() {
             return Ok(());
         }
-        pr.set_message("installing default packages".into());
+        pr.set_message("install default packages".into());
         CmdLineRunner::new(tv.install_path().join("bin/python"))
             .with_pr(pr)
             .arg("-m")

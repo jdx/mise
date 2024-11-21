@@ -68,7 +68,7 @@ impl ZigPlugin {
         let filename = url.split('/').last().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
-        pr.set_message(format!("downloading {filename}"));
+        pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &tarball_path, Some(pr))?;
 
         Ok(tarball_path)
@@ -76,7 +76,7 @@ impl ZigPlugin {
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
-        ctx.pr.set_message(format!("installing {filename}"));
+        ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
         untar_xy(tarball_path, &tv.download_path())?;
         file::rename(

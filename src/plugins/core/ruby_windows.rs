@@ -51,7 +51,7 @@ impl RubyPlugin {
             if package.is_empty() {
                 continue;
             }
-            pr.set_message(format!("installing default gem: {}", package));
+            pr.set_message(format!("install default gem: {}", package));
             let gem = self.gem_path(tv);
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
@@ -117,7 +117,7 @@ impl RubyPlugin {
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
         let arch = arch();
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
-        ctx.pr.set_message(format!("installing {filename}"));
+        ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
         file::un7z(tarball_path, &tv.download_path())?;
         file::rename(
