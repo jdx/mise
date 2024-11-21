@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.11.22"
+version = "2024.11.23"
 dependencies = [
  "assert_cmd",
  "base64",
