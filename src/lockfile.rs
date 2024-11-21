@@ -25,7 +25,7 @@ pub struct LockfileTool {
 }
 
 impl Lockfile {
-    pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
+    fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
         trace!("reading lockfile {}", display_path(&path));
         let content = file::read_to_string(path)?;
         let mut table: toml::Table = toml::from_str(&content)?;
@@ -47,8 +47,7 @@ impl Lockfile {
         Ok(lockfile)
     }
 
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        SETTINGS.ensure_experimental("lockfile")?;
+    fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         if self.is_empty() {
             let _ = file::remove_file(path);
         } else {
@@ -74,7 +73,7 @@ impl Lockfile {
         Ok(())
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.tools.is_empty()
     }
 }
@@ -83,7 +82,6 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
     if !SETTINGS.lockfile || !SETTINGS.experimental {
         return Ok(());
     }
-    SETTINGS.ensure_experimental("lockfile")?;
     let config = Config::load()?;
     let ts = ToolsetBuilder::new().build(&config)?;
     let mut all_tool_names = HashSet::new();
@@ -185,10 +183,9 @@ pub fn get_locked_version(
     short: &str,
     prefix: &str,
 ) -> Result<Option<LockfileTool>> {
-    if !SETTINGS.lockfile {
+    if !SETTINGS.lockfile || !SETTINGS.experimental {
         return Ok(None);
     }
-    SETTINGS.ensure_experimental("lockfile")?;
 
     let lockfile = match path {
         Some(path) => {
