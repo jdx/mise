@@ -10,7 +10,7 @@ shfmt = "3"
 jq = "latest"
 cargo-binstall = "latest"
 "cargo:cargo-edit" = "latest"
-"cargo:cargo-show" = {version = "latest", os = ["linux", "macos"]}
+"cargo:cargo-show" = { version = "latest", os = ["linux", "macos"] }
 "cargo:cargo-insta" = "latest"
 "cargo:git-cliff" = "latest"
 "npm:markdownlint-cli" = "latest"
@@ -18,7 +18,7 @@ cargo-binstall = "latest"
 actionlint = "latest"
 ripgrep = "latest"
 "pipx:toml-sort" = "latest"
-"cargo:usage-cli" = {version = "1.3", os = ["linux", "macos"]}
+"cargo:usage-cli" = { version = "1.3", os = ["linux", "macos"] }
 bun = "latest"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 
