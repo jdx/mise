@@ -1,4 +1,4 @@
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, CONFIG, SETTINGS};
 use crate::file;
 use crate::file::display_path;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolsetBuilder};
@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lockfile {
     #[serde(skip)]
@@ -26,6 +26,7 @@ pub struct LockfileTool {
 
 impl Lockfile {
     pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
+        trace!("reading lockfile {}", display_path(&path));
         let content = file::read_to_string(path)?;
         let mut table: toml::Table = toml::from_str(&content)?;
         let tools: toml::Table = table
@@ -147,26 +148,68 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
     Ok(())
 }
 
-pub fn get_locked_version(path: &Path, short: &str, prefix: &str) -> Result<Option<LockfileTool>> {
-    static CACHE: Lazy<Mutex<HashMap<PathBuf, Lockfile>>> = Lazy::new(Default::default);
+fn read_all_lockfiles() -> Lockfile {
+    CONFIG
+        .config_files
+        .keys()
+        .rev()
+        .map(|cf| read_lockfile_for(cf))
+        .filter_map(|l| match l {
+            Ok(l) => Some(l),
+            Err(err) => {
+                warn!("failed to read lockfile: {err}");
+                None
+            }
+        })
+        .fold(Lockfile::default(), |mut acc, l| {
+            for (short, tvl) in l.tools {
+                acc.tools.insert(short, tvl);
+            }
+            acc
+        })
+}
 
+fn read_lockfile_for(path: &Path) -> Result<Lockfile> {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, Lockfile>>> = Lazy::new(Default::default);
+    let mut cache = CACHE.lock().unwrap();
+    cache.entry(path.to_path_buf()).or_insert_with(|| {
+        Lockfile::read(path.with_extension("lock"))
+            .unwrap_or_else(|err| handle_missing_lockfile(err, &path.with_extension("lock")))
+    });
+    let lockfile = cache.get(path).unwrap().clone();
+    Ok(lockfile)
+}
+
+pub fn get_locked_version(
+    path: Option<&Path>,
+    short: &str,
+    prefix: &str,
+) -> Result<Option<LockfileTool>> {
     if !SETTINGS.lockfile {
         return Ok(None);
     }
     SETTINGS.ensure_experimental("lockfile")?;
 
-    let mut cache = CACHE.lock().unwrap();
-    let lockfile = cache.entry(path.to_path_buf()).or_insert_with(|| {
-        let lockfile_path = path.with_extension("lock");
-        Lockfile::read(&lockfile_path)
-            .unwrap_or_else(|err| handle_missing_lockfile(err, &lockfile_path))
-    });
+    let lockfile = match path {
+        Some(path) => {
+            trace!(
+                "[{short}@{prefix}] reading lockfile for {}",
+                display_path(path)
+            );
+            read_lockfile_for(path)?
+        }
+        None => {
+            trace!("[{short}@{prefix}] reading all lockfiles");
+            read_all_lockfiles()
+        }
+    };
 
     if let Some(tool) = lockfile.tools.get(short) {
         Ok(tool
             .iter()
             // TODO: this likely won't work right when using `python@latest python@3.12`
             .find(|v| prefix == "latest" || v.version.starts_with(prefix))
+            .inspect(|v| trace!("[{short}@{prefix}] found {} in lockfile", v.version))
             .cloned())
     } else {
         Ok(None)

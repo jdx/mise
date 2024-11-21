@@ -35,6 +35,7 @@ impl ToolVersion {
     }
 
     pub fn resolve(request: ToolRequest, opts: &ResolveOptions) -> Result<Self> {
+        trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version {
             if let Some(lt) = request.lockfile_resolve()? {
                 let mut tv = Self::new(request.clone(), lt.version);
@@ -309,5 +310,18 @@ impl Default for ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
         }
+    }
+}
+
+impl Display for ResolveOptions {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        let mut opts = vec![];
+        if self.latest_versions {
+            opts.push("latest_versions");
+        }
+        if self.use_locked_version {
+            opts.push("use_locked_version");
+        }
+        write!(f, "({})", opts.join(", "))
     }
 }

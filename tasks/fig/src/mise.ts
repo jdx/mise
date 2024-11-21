@@ -1804,9 +1804,9 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
-                        "--timings"
+                        "--no-timings"
                     ],
-                    "description": "Shows elapsed time after each task completes",
+                    "description": "Hides elapsed time after each task completes",
                     "isRepeatable": false
                 }
             ],
@@ -2354,9 +2354,9 @@ const completionSpec: Fig.Spec = {
                         },
                         {
                             "name": [
-                                "--timings"
+                                "--no-timings"
                             ],
-                            "description": "Shows elapsed time after each task completes",
+                            "description": "Hides elapsed time after each task completes",
                             "isRepeatable": false
                         }
                     ],

@@ -6,7 +6,7 @@ set -euxo pipefail
 # shellcheck disable=SC1090
 source <(cargo llvm-cov show-env --export-prefix)
 cargo llvm-cov clean --workspace
-if [[ -n "${MISE_GITHUB_BOT_TOKEN:-}" ]]; then
+if [[ -n ${MISE_GITHUB_BOT_TOKEN:-} ]]; then
   export GITHUB_API_TOKEN="$MISE_GITHUB_BOT_TOKEN"
 fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
@@ -19,11 +19,10 @@ echo "::group::mise install"
 mise install
 mise x -- bun i
 echo "::endgroup::"
-mise x -- ./e2e/run_all_tests
-if [[ "${TEST_TRANCHE:-}" == 0 ]]; then
-  echo "::group::Implode"
-  mise implode
-elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
+if [[ ${TEST_TRANCHE:-} == 8 ]]; then
+  cp target/debug/{mise,mise-backup}
+  echo "::group::Unit tests"
+  cargo test --all-features
   echo "::group::Self update"
   # pick a version from the previous month because the current release might not have been published yet
   y=$(date +%Y)
@@ -33,12 +32,14 @@ elif [[ "${TEST_TRANCHE:-}" == 1 ]]; then
     y=$((y - 1))
   fi
   mise self-update -fy "$y.$m.0" || true
-elif [[ "${TEST_TRANCHE:-}" == 2 ]]; then
+  cp target/debug/{mise-backup,mise}
+  echo "::group::Implode"
+  mise implode
+  cp target/debug/{mise-backup,mise}
+else
+  mise x -- ./e2e/run_all_tests
   echo "::group::mist test-tool"
   mise test-tool --all
-elif [[ "${TEST_TRANCHE:-}" == 3 ]]; then
-  echo "::group::Unit tests"
-  cargo test --all-features
 fi
 echo "::group::Render lcov report"
 cargo llvm-cov report --lcov --output-path "coverage-${TEST_TRANCHE:-}.lcov"

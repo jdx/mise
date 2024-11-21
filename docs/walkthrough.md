@@ -79,7 +79,7 @@ mise use cargo:starship
 ## Upgrading Dev Tools
 
 Upgrading tool versions can be done with [`mise upgrade|up`](/cli/upgrade). By default, it will respect
-the version prefix in `mise.toml`. If [lockfile](/configuration/settings#lockfile) is enabled,
+the version prefix in `mise.toml`. If a [lockfile](/configuration/settings#lockfile) exists,
 mise will update `mise.lock` to the latest version of the tool with the prefix from `mise.toml`.
 
 So if you have `node = "22"` in `mise.toml`, then `mise upgrade node` will upgrade to the latest version of `node 22`.

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.shell-invalid]
+shell = 'invalid_shell'
+run = 'echo "invalid shell"'
+[tasks.shell]
+shell = 'bash -c'
+run = 'echo "using shell $0"'
+EOF
+
+assert "mise run shell" "using shell bash"
+assert_fail "mise run shell-invalid" "invalid shell"

@@ -281,6 +281,7 @@ impl Toolset {
         }
         trace!("install: reshimming");
         shims::reshim(self, false)?;
+        trace!("install: rebuilding runtime symlinks");
         runtime_symlinks::rebuild(config)?;
         trace!("install: done");
         if log::log_enabled!(log::Level::Debug) {

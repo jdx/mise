@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+
+assert "mise use dummy@3.1.0"
+assert "mise where dummy" "$MISE_DATA_DIR/installs/dummy/3.1.0"
+assert "mise install dummy@2"
+assert "mise where dummy@2" "$MISE_DATA_DIR/installs/dummy/2.0.0"
+assert "mise where dummy@3" "$MISE_DATA_DIR/installs/dummy/3.1.0"
+assert "mise alias set dummy my/dummy 3"
+assert "mise install dummy@my/dummy"
+assert "mise where dummy@my/dummy" "$MISE_DATA_DIR/installs/dummy/3" # TODO: this should probably return 3.1.0
+assert "mise uninstall dummy@my/dummy"
+assert_fail "mise where dummy@1111" "dummy@1111 not installed"
+
+echo 'tools.dummy = "latest"' >mise.toml
+echo 'tools.dummy = "3.0.0"' >mise.lock
+assert "mise i"
+assert "mise where dummy" "$MISE_DATA_DIR/installs/dummy/3.0.0"

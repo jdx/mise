@@ -289,7 +289,7 @@
           "type": "boolean"
         },
         "lockfile": {
-          "default": false,
+          "default": true,
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
         },
@@ -524,7 +524,7 @@
           "enum": ["prefix", "interleave"]
         },
         "task_timings": {
-          "description": "Show completion message with elapsed time for each task on `mise run`.",
+          "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
           "type": "boolean"
         },
         "trace": {

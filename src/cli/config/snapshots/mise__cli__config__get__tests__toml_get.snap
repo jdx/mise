@@ -22,17 +22,5 @@ run = 'echo "configtask:"'
 [tasks.lint]
 run = 'echo "linting!"'
 
-[tasks.shell]
-run = '''
-#MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
-cd "$MISE_PROJECT_ROOT" || exit 1
-echo "using shell $0" > test-build-output.txt
-'''
-shell = "bash -c"
-
-[tasks."shell invalid"]
-run = 'echo "invalid shell"'
-shell = " "
-
 [tasks.test]
 run = 'echo "testing!"'
