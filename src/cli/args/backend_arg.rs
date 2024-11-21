@@ -1,6 +1,7 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::{unalias_backend, ABackend};
 use crate::config::CONFIG;
+use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{install_state, parse_tool_options, ToolVersionOptions};
@@ -13,7 +14,6 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
 use xx::regex;
-use crate::plugins::PluginType;
 
 #[derive(Clone)]
 pub struct BackendArg {
