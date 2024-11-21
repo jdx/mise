@@ -14,6 +14,8 @@ env:
   CARGO_TERM_COLOR: always
   GITHUB_TOKEN: ${{ secrets.RTX_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
   MISE_EXPERIMENTAL: 1
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
 
 permissions:
   pull-requests: write
@@ -36,7 +38,7 @@ jobs:
           echo "release=$(mise-release v | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
-          path: $HOME/bin/mise-${{ steps.versions.outputs.main }}
+          path: ~/bin/mise-${{ steps.versions.outputs.main }}
           key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}
       - name: build main
         run: |
