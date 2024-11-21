@@ -75,10 +75,6 @@ fn init() {
 }
 
 pub fn reset() {
-    install_state::reset();
-    Config::reset();
-    backend::reset();
-    config_file::reset();
     file::remove_all(&*env::HOME.join("cwd")).unwrap();
     file::create_dir_all(&*env::HOME.join("cwd")).unwrap();
     env::set_current_dir(env::HOME.join("cwd")).unwrap();
@@ -111,7 +107,7 @@ pub fn reset() {
         #MISE sources=[".test-tool-versions"]
         #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
         #MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID", BOOLEAN_VAR = true}
-        
+
         #USAGE flag "--user <user>" help="The user to run as"
 
         set -exo pipefail
@@ -170,8 +166,6 @@ pub fn reset() {
             "#},
     )
     .unwrap();
-    let _ = file::remove_file(".test.mise.toml");
-    assert_cli!("prune");
     assert_cli!("install");
 }
 
