@@ -149,8 +149,8 @@ mod tests {
         assert_cli!("plugin", "add", "tiny");
         let ba = BackendArg::from("tiny");
         assert_str_eq!(ba.short, "tiny");
-        assert_str_eq!(ba.tool_name, "mise-plugins/mise-tiny");
-        assert_str_eq!(ba.full(), "asdf:mise-plugins/mise-tiny");
+        assert_str_eq!(ba.tool_name, "tiny");
+        assert_str_eq!(ba.full(), "asdf:tiny");
         let backend = AsdfBackend::from_arg("tiny".into());
         let version = backend
             .latest_version(Some("1.0.0".into()))

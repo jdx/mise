@@ -568,10 +568,12 @@ impl Config {
 }
 
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
-    config_files
+    let project_root = config_files
         .values()
         .find_map(|cf| cf.project_root())
-        .map(|pr| pr.to_path_buf())
+        .map(|pr| pr.to_path_buf());
+    trace!("project_root: {project_root:?}");
+    project_root
 }
 
 fn load_legacy_files() -> BTreeMap<String, Vec<String>> {
@@ -762,6 +764,7 @@ fn parse_config_file(
 ) -> Result<Box<dyn ConfigFile>> {
     match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
         Some(plugin) => {
+            trace!("legacy version file: {}", display_path(f));
             let tools = backend::list()
                 .into_iter()
                 .filter(|f| plugin.contains(&f.to_string()))
@@ -786,6 +789,7 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
             }
         }
     }
+    trace!("load_aliases: {}", aliases.len());
 
     Ok(aliases)
 }
@@ -797,6 +801,7 @@ fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
             plugins.insert(plugin.clone(), url.clone());
         }
     }
+    trace!("load_plugins: {}", plugins.len());
     Ok(plugins)
 }
 

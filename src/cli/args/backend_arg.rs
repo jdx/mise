@@ -1,6 +1,7 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::{unalias_backend, ABackend};
 use crate::config::CONFIG;
+use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{install_state, parse_tool_options, ToolVersionOptions};
@@ -35,16 +36,8 @@ pub struct BackendArg {
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let s = s.as_ref();
-        let short = unalias_backend(s).to_string();
-        if let Some(backend) = REGISTRY
-            .get(&s)
-            .and_then(|rbm| rbm.backends().first().copied())
-        {
-            BackendArg::new(short, Some(backend.to_string()))
-        } else {
-            Self::new(short, None)
-        }
+        let short = unalias_backend(s.as_ref()).to_string();
+        Self::new(short, None)
     }
 }
 
@@ -133,23 +126,35 @@ impl BackendArg {
     }
 
     pub fn full(&self) -> String {
+        let short = unalias_backend(&self.short);
         if config::is_loaded() {
             if let Some(full) = CONFIG
                 .all_aliases
-                .get(&self.short)
+                .get(short)
                 .and_then(|a| a.backend.clone())
             {
                 return full;
             }
-            if let Some(url) = CONFIG.repo_urls.get(&self.short) {
+            if let Some(url) = CONFIG.repo_urls.get(short) {
                 deprecated!("config_plugins", "[plugins] section of mise.toml is deprecated. Use [alias] instead. https://mise.jdx.dev/dev-tools/aliases.html");
                 return format!("asdf:{url}");
             }
         }
         if let Some(full) = &self.full {
-            return full.clone();
+            full.clone()
+        } else if let Some(pt) = install_state::get_plugin_type(short).unwrap_or_default() {
+            match pt {
+                PluginType::Asdf => format!("asdf:{short}"),
+                PluginType::Vfox => format!("vfox:{short}"),
+            }
+        } else if let Some(full) = REGISTRY
+            .get(short)
+            .and_then(|rt| rt.backends().first().cloned())
+        {
+            full.to_string()
+        } else {
+            short.to_string()
         }
-        unalias_backend(&self.short).to_string()
     }
 
     pub fn tool_name(&self) -> String {
@@ -200,9 +205,9 @@ impl Display for BackendArg {
 impl Debug for BackendArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(full) = &self.full {
-            write!(f, r#"BackendArg("{}" -> "{}")"#, self.short, full)
+            write!(f, r#"BackendArg({} -> {})"#, self.short, full)
         } else {
-            write!(f, r#"BackendArg("{}")"#, self.short)
+            write!(f, r#"BackendArg({})"#, self.short)
         }
     }
 }
@@ -255,11 +260,7 @@ mod tests {
         let vfox = |s, full, name| t(s, full, name, BackendType::Vfox);
 
         asdf("asdf:poetry", "asdf:poetry", "poetry");
-        asdf(
-            "poetry",
-            "asdf:mise-plugins/mise-poetry",
-            "mise-plugins/mise-poetry",
-        );
+        asdf("poetry", "asdf:mise-plugins/mise-poetry", "poetry");
         cargo("cargo:eza", "cargo:eza", "eza");
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");

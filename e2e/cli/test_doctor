@@ -3,4 +3,6 @@
 mise use dummy@latest
 
 eval "$(mise activate bash)" && _mise_hook
-mise doctor
+mise p add uv
+mise use uv
+assert_contains "mise doctor" "asdf:uv@"

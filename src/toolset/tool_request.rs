@@ -199,10 +199,6 @@ impl ToolRequest {
         }
         self
     }
-    pub fn dependencies(&self) -> eyre::Result<Vec<BackendArg>> {
-        let backend = self.ba().backend()?;
-        backend.get_all_dependencies(self)
-    }
     pub fn version(&self) -> String {
         match self {
             Self::Version { version: v, .. } => v.clone(),
