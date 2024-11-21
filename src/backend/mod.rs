@@ -600,12 +600,11 @@ pub trait Backend: Debug + Send + Sync {
         tv: &mut ToolVersion,
         file: &Path,
     ) -> Result<()> {
-        let filename = file.file_name().unwrap().to_string_lossy();
-        if let Some(checksum) = &tv.checksum {
-            ctx.pr.set_message(format!("verifying checksum {filename}"));
+        let filename = file.file_name().unwrap().to_string_lossy().to_string();
+        if let Some(checksum) = &tv.checksums.get(&filename) {
+            ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
                 hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
-                tv.checksum = Some(checksum.to_string());
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
@@ -613,7 +612,7 @@ pub trait Backend: Debug + Send + Sync {
             ctx.pr
                 .set_message(format!("generating checksum {filename}"));
             let hash = hash::file_hash_prog::<Sha256>(file, Some(ctx.pr.as_ref()))?;
-            tv.checksum = Some(format!("sha256:{hash}"));
+            tv.checksums.insert(filename, format!("sha256:{hash}"));
         }
         Ok(())
     }

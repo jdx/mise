@@ -101,8 +101,9 @@ impl JavaPlugin {
         pr.set_message(format!("downloading {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr))?;
 
-        if tv.checksum.is_none() {
-            tv.checksum = Some(format!("sha256:{}", m.sha256));
+        if !tv.checksums.contains_key(filename) {
+            tv.checksums
+                .insert(filename.to_string(), format!("sha256:{}", m.sha256));
         }
         self.verify_checksum(ctx, tv, &tarball_path)?;
 
