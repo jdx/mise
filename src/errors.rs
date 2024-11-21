@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::process::ExitStatus;
 
-use eyre::Report;
-use thiserror::Error;
-
+use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::toolset::{ToolRequest, ToolSource};
+use eyre::Report;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -18,7 +18,7 @@ pub enum Error {
     #[error("[{0}] plugin not installed")]
     PluginNotInstalled(String),
     #[error("{0}@{1} not installed")]
-    VersionNotInstalled(String, String),
+    VersionNotInstalled(BackendArg, String),
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
     #[error(

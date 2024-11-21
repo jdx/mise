@@ -168,8 +168,6 @@ mod tests {
         ├── test
         └── lint
         lint
-        shell
-        shell invalid
         test
         "
         );
@@ -196,11 +194,9 @@ mod tests {
             0 [ label = "configtask"]
             1 [ label = "filetask"]
             2 [ label = "lint"]
-            3 [ label = "shell"]
-            4 [ label = "shell invalid"]
-            5 [ label = "test"]
+            3 [ label = "test"]
             1 -> 2 [ ]
-            1 -> 5 [ ]
+            1 -> 3 [ ]
         }
         "#
         );

@@ -56,6 +56,8 @@ pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
+/// always display "friendly" errors even in debug mode
+pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FRIENDLY_ERROR"));
 pub static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
 pub static MISE_CONFIG_DIR: Lazy<PathBuf> =
@@ -175,6 +177,9 @@ pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
 
     token
 });
+
+pub static TEST_TRANCHE: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE") as usize);
+pub static TEST_TRANCHE_COUNT: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE_COUNT") as usize);
 
 pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
     if var("CLICOLOR_FORCE").is_ok_and(|v| v != "0") {

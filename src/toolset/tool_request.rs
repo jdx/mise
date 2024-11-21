@@ -227,8 +227,13 @@ impl ToolRequest {
 
     pub fn is_installed(&self) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
-            let tv = ToolVersion::new(self.clone(), self.version());
-            backend.is_version_installed(&tv, false)
+            match self.resolve(&Default::default()) {
+                Ok(tv) => backend.is_version_installed(&tv, false),
+                Err(e) => {
+                    debug!("ToolRequest.is_installed: {e:#}");
+                    false
+                }
+            }
         } else {
             false
         }
@@ -273,10 +278,12 @@ impl ToolRequest {
     }
 
     pub fn lockfile_resolve(&self) -> Result<Option<LockfileTool>> {
-        if let Some(path) = self.source().path() {
-            return lockfile::get_locked_version(path, &self.ba().short, &self.version());
+        match self.source() {
+            ToolSource::MiseToml(path) => {
+                lockfile::get_locked_version(Some(path), &self.ba().short, &self.version())
+            }
+            _ => lockfile::get_locked_version(None, &self.ba().short, &self.version()),
         }
-        Ok(None)
     }
 
     pub fn local_resolve(&self, v: &str) -> eyre::Result<Option<String>> {

@@ -88,7 +88,9 @@ fn handle_err(err: Report) -> eyre::Result<()> {
         }
     }
     show_github_rate_limit_err(&err);
-    if cfg!(not(debug_assertions)) && log::max_level() < log::LevelFilter::Debug {
+    if *env::MISE_FRIENDLY_ERROR
+        || (!cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug)
+    {
         display_friendly_err(&err);
         exit(1);
     }

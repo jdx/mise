@@ -21,16 +21,6 @@ snapshot_kind: text
   },
   {
     "description": "",
-    "name": "shell",
-    "source": "~/config/config.toml"
-  },
-  {
-    "description": "",
-    "name": "shell invalid",
-    "source": "~/config/config.toml"
-  },
-  {
-    "description": "",
     "name": "test",
     "source": "~/config/config.toml"
   }

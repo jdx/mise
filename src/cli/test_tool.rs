@@ -43,7 +43,11 @@ impl TestTool {
             "---".to_string(),
             "---".to_string(),
         ])?;
-        for (short, rt) in REGISTRY.iter() {
+        for (i, (short, rt)) in REGISTRY.iter().enumerate() {
+            if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
+            {
+                continue;
+            }
             let mut tool: ToolArg = short.parse()?;
             if let Some(t) = &self.tool {
                 if t.short != tool.short {

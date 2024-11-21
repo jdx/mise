@@ -221,22 +221,40 @@ pub trait Backend: Debug + Send + Sync {
         install_state::list_versions(&self.ba().short)
     }
     fn is_version_installed(&self, tv: &ToolVersion, check_symlink: bool) -> bool {
-        let check_path = |install_path: &Path| {
+        let check_path = |install_path: &Path, check_symlink: bool| {
             let is_installed = install_path.exists();
             let is_not_incomplete = !self.incomplete_file_path(tv).exists();
             let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
 
-            is_installed && is_not_incomplete && is_valid_symlink
+            let installed = is_installed && is_not_incomplete && is_valid_symlink;
+            if log::log_enabled!(log::Level::Trace) && !installed {
+                let mut msg = format!(
+                    "{} is not installed, path: {}",
+                    self.ba(),
+                    display_path(install_path)
+                );
+                if !is_installed {
+                    msg += " (not installed)";
+                }
+                if !is_not_incomplete {
+                    msg += " (incomplete)";
+                }
+                if !is_valid_symlink {
+                    msg += " (runtime symlink)";
+                }
+                trace!("{}", msg);
+            }
+            installed
         };
         match tv.request {
             ToolRequest::System { .. } => true,
             _ => {
                 if let Some(install_path) = tv.request.install_path() {
-                    if check_path(&install_path) {
+                    if check_path(&install_path, true) {
                         return true;
                     }
                 }
-                check_path(&tv.install_path())
+                check_path(&tv.install_path(), check_symlink)
             }
         }
     }
