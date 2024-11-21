@@ -190,6 +190,7 @@ jobs:
           tar -C "$HOME" -xvJf "dist/mise-$version-${{matrix.os == 'ubuntu-latest' && 'linux-x64' || 'macos-arm64'}}.tar.xz"
           echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
           $version = (./scripts/get-version.ps1)
           echo "$env:USERPROFILE/mise/bin"

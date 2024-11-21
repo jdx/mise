@@ -31,8 +31,8 @@ jobs:
       - run: echo "$HOME/bin" >> "$GITHUB_PATH"
       - id: versions
         run: |
-          echo "main=$(git rev-parse --short origin/main)" >> $GITHUB_OUTPUT
-          echo "release=$(mise-release v | awk '{print $1}')" >> $GITHUB_OUTPUT
+          echo "main=$(git rev-parse --short origin/main)" >> "$GITHUB_OUTPUT"
+          echo "release=$(mise-release v | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: $HOME/bin/mise-${{ steps.versions.outputs.main }}
@@ -41,12 +41,12 @@ jobs:
         run: |
           if [ ! -f "$HOME/bin/mise-${{ steps.versions.outputs.main }}" ]; then
             git checkout main
-            cargo build --profile serious && mv target/serious/mise $HOME/bin/mise-${{ steps.versions.outputs.main }}
+            cargo build --profile serious && mv target/serious/mise "$HOME/bin/mise-${{ steps.versions.outputs.main }}"
             git checkout -
           fi
-      - run: mv $HOME/bin/mise-release $HOME/bin/mise-${{ steps.versions.outputs.release }}
-      - run: cp $HOME/bin/mise-${{ steps.versions.outputs.main }} $HOME/bin/mise-main
-      - run: cargo build --profile serious && mv target/serious/mise $HOME/bin
+      - run: mv "$HOME/bin/mise-release" "$HOME/bin/mise-${{ steps.versions.outputs.release }}"
+      - run: cp "$HOME/bin/mise-${{ steps.versions.outputs.main }}" "$HOME/bin/mise-main"
+      - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
       - run: mise i
       - run: |
           CMDS=(
@@ -61,7 +61,7 @@ jobs:
             echo "### \`mise $cmd\`" >> comment.md
             cat out.md >> comment.md
           done
-          cat comment.md >> $GITHUB_STEP_SUMMARY
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
         env:
           SHELL: zsh
       - name: Comment on PR
