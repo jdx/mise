@@ -10,10 +10,11 @@ scripts_dirs=("$PWD"/scripts "$PWD"/e2e)
 cargo clippy --all-features --fix --allow-staged --allow-dirty -- -Dwarnings
 shellcheck -x "${scripts[@]}"
 shfmt -w  -i 2 -ci -bn "${scripts_dirs[@]}"
+# shellcheck disable=SC2046
 prettier -w $(git ls-files '*.yml' '*.yaml')
 prettier -w .
 markdownlint --fix .
-actionlint -shellcheck ""
+actionlint
 toml-sort -i settings.toml --spaces-indent-inline-array 4
 toml-sort -i registry.toml --spaces-indent-inline-array 4
 
