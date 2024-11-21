@@ -13,6 +13,7 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
 use xx::regex;
+use crate::plugins::PluginType;
 
 #[derive(Clone)]
 pub struct BackendArg {
@@ -35,16 +36,8 @@ pub struct BackendArg {
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let s = s.as_ref();
-        let short = unalias_backend(s).to_string();
-        if let Some(backend) = REGISTRY
-            .get(&s)
-            .and_then(|rbm| rbm.backends().first().copied())
-        {
-            BackendArg::new(short, Some(backend.to_string()))
-        } else {
-            Self::new(short, None)
-        }
+        let short = unalias_backend(s.as_ref()).to_string();
+        Self::new(short, None)
     }
 }
 
@@ -133,15 +126,16 @@ impl BackendArg {
     }
 
     pub fn full(&self) -> String {
+        let short = unalias_backend(&self.short);
         if config::is_loaded() {
             if let Some(full) = CONFIG
                 .all_aliases
-                .get(&self.short)
+                .get(short)
                 .and_then(|a| a.backend.clone())
             {
                 return full;
             }
-            if let Some(url) = CONFIG.repo_urls.get(&self.short) {
+            if let Some(url) = CONFIG.repo_urls.get(short) {
                 deprecated!("config_plugins", "[plugins] section of mise.toml is deprecated. Use [alias] instead. https://mise.jdx.dev/dev-tools/aliases.html");
                 return format!("asdf:{url}");
             }
@@ -149,7 +143,18 @@ impl BackendArg {
         if let Some(full) = &self.full {
             return full.clone();
         }
-        unalias_backend(&self.short).to_string()
+        if let Some(pt) = install_state::get_plugin_type(short).unwrap_or_default() {
+            return match pt {
+                PluginType::Asdf => format!("asdf:{short}"),
+                PluginType::Vfox => format!("vfox:{short}"),
+            };
+        }
+        if let Some(rt) = REGISTRY.get(short) {
+            if let Some(full) = rt.backends().first() {
+                return full.to_string();
+            }
+        }
+        short.to_string()
     }
 
     pub fn tool_name(&self) -> String {
