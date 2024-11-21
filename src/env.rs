@@ -156,11 +156,24 @@ pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var(&*PATH
 });
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
 pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
-    var("MISE_GITHUB_TOKEN")
+    let token = var("MISE_GITHUB_TOKEN")
         .or_else(|_| var("GITHUB_API_TOKEN"))
         .or_else(|_| var("GITHUB_TOKEN"))
         .ok()
-        .and_then(|v| if v.is_empty() { None } else { Some(v) })
+        .and_then(|v| if v.is_empty() { None } else { Some(v) });
+
+    // set or unset the token for plugins+ubi
+    if let Some(token) = token.as_ref() {
+        set_var("MISE_GITHUB_TOKEN", token);
+        set_var("GITHUB_TOKEN", token);
+        set_var("GITHUB_API_TOKEN", token);
+    } else {
+        remove_var("MISE_GITHUB_TOKEN");
+        remove_var("GITHUB_TOKEN");
+        remove_var("GITHUB_API_TOKEN");
+    }
+
+    token
 });
 
 pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
