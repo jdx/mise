@@ -154,7 +154,6 @@ pub trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
     fn get_all_dependencies(&self, optional: bool) -> Result<IndexSet<BackendArg>> {
-        dbg!(self.ba());
         let all_fulls = self.ba().all_fulls();
         if all_fulls.is_empty() {
             // this can happen on windows where we won't be able to install this os/arch so

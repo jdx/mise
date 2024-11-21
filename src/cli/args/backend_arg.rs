@@ -147,7 +147,10 @@ impl BackendArg {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
             }
-        } else if let Some(full) = REGISTRY.get(short).and_then(|rt| rt.backends().first().cloned()) {
+        } else if let Some(full) = REGISTRY
+            .get(short)
+            .and_then(|rt| rt.backends().first().cloned())
+        {
             full.to_string()
         } else {
             short.to_string()
@@ -257,11 +260,7 @@ mod tests {
         let vfox = |s, full, name| t(s, full, name, BackendType::Vfox);
 
         asdf("asdf:poetry", "asdf:poetry", "poetry");
-        asdf(
-            "poetry",
-            "asdf:mise-plugins/mise-poetry",
-            "poetry",
-        );
+        asdf("poetry", "asdf:mise-plugins/mise-poetry", "poetry");
         cargo("cargo:eza", "cargo:eza", "eza");
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");

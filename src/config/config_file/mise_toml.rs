@@ -103,7 +103,7 @@ impl MiseToml {
             task.config_source.clone_from(&rf.path);
             task.config_root = project_root.clone();
         }
-        trace!("{}", rf.dump()?);
+        // trace!("{}", rf.dump()?);
         Ok(rf)
     }
 
