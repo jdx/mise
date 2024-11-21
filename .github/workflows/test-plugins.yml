@@ -29,8 +29,9 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "build-linux-x86_64-unknown-linux-gnu"
+          shared-key: test-ubuntu-latest
           save-if: false
+      - uses: rui314/setup-mold@v1
       - run: scripts/build-tarball.sh x86_64-unknown-linux-gnu
       - uses: actions/upload-artifact@v4
         with:
