@@ -5,41 +5,19 @@ echo "::group::Setup"
 set -euxo pipefail
 # shellcheck disable=SC1090
 source <(cargo llvm-cov show-env --export-prefix)
-cargo llvm-cov clean --workspace
 if [[ -n ${MISE_GITHUB_BOT_TOKEN:-} ]]; then
   export GITHUB_API_TOKEN="$MISE_GITHUB_BOT_TOKEN"
 fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 export PATH="${CARGO_TARGET_DIR}/debug:$PATH"
 
-echo "::group::Build w/ coverage"
-cargo build -q --all-features
 echo "::endgroup::"
 echo "::group::mise install"
 mise install
 mise x -- bun i
 echo "::endgroup::"
-if [[ ${TEST_TRANCHE:-} == 8 ]]; then
-  cp target/debug/{mise,mise-backup}
-  echo "::group::Unit tests"
-  cargo test --all-features
-  echo "::group::Self update"
-  # pick a version from the previous month because the current release might not have been published yet
-  y=$(date +%Y)
-  m=$(($(date +%m) - 1))
-  if [[ $m -eq 0 ]]; then
-    m=12
-    y=$((y - 1))
-  fi
-  mise self-update -fy "$y.$m.0" || true
-  cp target/debug/{mise-backup,mise}
-  echo "::group::Implode"
-  mise implode
-  cp target/debug/{mise-backup,mise}
-else
-  mise x -- ./e2e/run_all_tests
-  echo "::group::mist test-tool"
-  mise test-tool --all
-fi
+mise x -- ./e2e/run_all_tests
+echo "::group::mise test-tool"
+mise test-tool --all
 echo "::group::Render lcov report"
 cargo llvm-cov report --lcov --output-path "coverage-${TEST_TRANCHE:-}.lcov"

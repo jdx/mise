@@ -14,7 +14,7 @@ shfmt -w  -i 2 -ci -bn "${scripts_dirs[@]}"
 prettier -w $(git ls-files '*.yml' '*.yaml')
 prettier -w .
 markdownlint --fix .
-actionlint
+SHELLCHECK_OPTS="--exclude=SC1090" actionlint
 toml-sort -i settings.toml --spaces-indent-inline-array 4
 toml-sort -i registry.toml --spaces-indent-inline-array 4
 

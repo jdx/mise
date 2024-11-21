@@ -18,6 +18,7 @@ repos:
     rev: v1.7.4
     hooks:
       - id: actionlint
+        args: ["-shellcheck", ""]
   - repo: https://github.com/kykosic/pre-commit-rust
     rev: 0.4.0
     hooks:
