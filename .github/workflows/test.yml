@@ -38,6 +38,8 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
+      - uses: rui314/setup-mold@v1
+        if: ${{ matrix.os == 'ubuntu-latest' }}
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test-${{ matrix.os }}
@@ -55,14 +57,12 @@ jobs:
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
       - run: mise run lint
-      - run: mise test-tool --all
-        env:
-          MISE_USE_VERSIONS_HOST: 0
 
   nightly:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: rui314/setup-mold@v1
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -91,6 +91,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
@@ -116,8 +117,6 @@ jobs:
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
-          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MISE_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           MISE_USE_VERSIONS_HOST: 0
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
@@ -172,12 +171,6 @@ jobs:
           cargo build
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - run: mise install
-      - run: mise test-tool --all
-        env:
-          MISE_USE_VERSIONS_HOST: 0
-          MISE_DISABLE_TOOLS: |
-            1password-cli,
-            adr-tools
       - run: cargo test
         continue-on-error: true
   windows-e2e:
@@ -199,3 +192,36 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: pwsh e2e-win\run.ps1
+  tools:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        tranche: [0, 1, 2, 3]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TEST_TRANCHE: ${{matrix.tranche}}
+      TEST_TRANCHE_COUNT: 4
+      TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
+      MISE_USE_VERSIONS_HOST: 0
+      MISE_DISABLE_TOOLS: |
+        1password-cli,
+        adr-tools
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-${{ matrix.os }}
+          save-if: false
+      - if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          cargo build
+          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+      - run: mise test-tool --all
