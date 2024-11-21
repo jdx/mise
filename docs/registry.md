@@ -256,7 +256,7 @@ editLink: false
 | ghq | [aqua:x-motemen/ghq](https://github.com/x-motemen/ghq) [asdf:kajisha/asdf-ghq](https://github.com/kajisha/asdf-ghq) |
 | ginkgo | [asdf:jimmidyson/asdf-ginkgo](https://github.com/jimmidyson/asdf-ginkgo) |
 | git-chglog | [aqua:git-chglog/git-chglog](https://github.com/git-chglog/git-chglog) [asdf:GoodwayGroup/asdf-git-chglog](https://github.com/GoodwayGroup/asdf-git-chglog) |
-| git-cliff | [aqua:orhub/git-cliff](https://github.com/orhub/git-cliff) [asdf:jylenhof/asdf-git-cliff](https://github.com/jylenhof/asdf-git-cliff) |
+| git-cliff | [aqua:orhun/git-cliff](https://github.com/orhun/git-cliff) [asdf:jylenhof/asdf-git-cliff](https://github.com/jylenhof/asdf-git-cliff) |
 | gitconfig | [asdf:0ghny/asdf-gitconfig](https://github.com/0ghny/asdf-gitconfig) |
 | github-cli | [aqua:cli/cli](https://github.com/cli/cli) [ubi:cli/cli](https://github.com/cli/cli) [asdf:bartlomiejdanek/asdf-github-cli](https://github.com/bartlomiejdanek/asdf-github-cli) |
 | github-markdown-toc | [aqua:ekalinin/github-markdown-toc](https://github.com/ekalinin/github-markdown-toc) [asdf:skyzyx/asdf-github-markdown-toc](https://github.com/skyzyx/asdf-github-markdown-toc) |
