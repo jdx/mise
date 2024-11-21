@@ -1,5 +1,15 @@
 # Changelog
 
+## [2024.11.22](https://github.com/jdx/mise/compare/v2024.11.21..v2024.11.22) - 2024-11-21
+
+### 🧪 Testing
+
+- fix windows-unit job by [@jdx](https://github.com/jdx) in [#3123](https://github.com/jdx/mise/pull/3123)
+
+### 🔍 Other Changes
+
+- Update lockfile.rs by [@jdx](https://github.com/jdx) in [3184c40](https://github.com/jdx/mise/commit/3184c40ee8f3f5acf4ebda2f0781c81cd1e2f56d)
+
 ## [2024.11.21](https://github.com/jdx/mise/compare/v2024.11.20..v2024.11.21) - 2024-11-21
 
 ### 🐛 Bug Fixes
