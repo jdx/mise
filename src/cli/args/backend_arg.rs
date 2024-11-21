@@ -141,20 +141,17 @@ impl BackendArg {
             }
         }
         if let Some(full) = &self.full {
-            return full.clone();
-        }
-        if let Some(pt) = install_state::get_plugin_type(short).unwrap_or_default() {
-            return match pt {
+            full.clone()
+        } else if let Some(pt) = install_state::get_plugin_type(short).unwrap_or_default() {
+            match pt {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
-            };
-        }
-        if let Some(rt) = REGISTRY.get(short) {
-            if let Some(full) = rt.backends().first() {
-                return full.to_string();
             }
+        } else if let Some(full) = REGISTRY.get(short).and_then(|rt| rt.backends().first().cloned()) {
+            full.to_string()
+        } else {
+            short.to_string()
         }
-        short.to_string()
     }
 
     pub fn tool_name(&self) -> String {
@@ -205,9 +202,9 @@ impl Display for BackendArg {
 impl Debug for BackendArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(full) = &self.full {
-            write!(f, r#"BackendArg("{}" -> "{}")"#, self.short, full)
+            write!(f, r#"BackendArg({} -> {})"#, self.short, full)
         } else {
-            write!(f, r#"BackendArg("{}")"#, self.short)
+            write!(f, r#"BackendArg({})"#, self.short)
         }
     }
 }
@@ -263,7 +260,7 @@ mod tests {
         asdf(
             "poetry",
             "asdf:mise-plugins/mise-poetry",
-            "mise-plugins/mise-poetry",
+            "poetry",
         );
         cargo("cargo:eza", "cargo:eza", "eza");
         // core("node", "node", "node");

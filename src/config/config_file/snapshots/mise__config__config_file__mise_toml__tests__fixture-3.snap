@@ -5,9 +5,9 @@ snapshot_kind: text
 ---
 ToolRequestSet {
     tools: {
-        BackendArg("terraform" -> "asdf:asdf-community/asdf-hashicorp"): [
+        BackendArg(terraform): [
             Version {
-                backend: BackendArg("terraform" -> "asdf:asdf-community/asdf-hashicorp"),
+                backend: BackendArg(terraform),
                 version: "1.0.0",
                 options: {},
                 source: MiseToml(
@@ -16,9 +16,9 @@ ToolRequestSet {
                 os: None,
             },
         ],
-        BackendArg("node" -> "core:node"): [
+        BackendArg(node): [
             Version {
-                backend: BackendArg("node" -> "core:node"),
+                backend: BackendArg(node),
                 version: "18",
                 options: {},
                 source: MiseToml(
@@ -27,7 +27,7 @@ ToolRequestSet {
                 os: None,
             },
             Prefix {
-                backend: BackendArg("node" -> "core:node"),
+                backend: BackendArg(node),
                 prefix: "20",
                 options: {},
                 source: MiseToml(
@@ -36,7 +36,7 @@ ToolRequestSet {
                 os: None,
             },
             Ref {
-                backend: BackendArg("node" -> "core:node"),
+                backend: BackendArg(node),
                 ref_: "master",
                 ref_type: "ref",
                 options: {},
@@ -46,7 +46,7 @@ ToolRequestSet {
                 os: None,
             },
             Path {
-                backend: BackendArg("node" -> "core:node"),
+                backend: BackendArg(node),
                 path: "~/.nodes/18",
                 options: {},
                 source: MiseToml(
@@ -55,9 +55,9 @@ ToolRequestSet {
                 os: None,
             },
         ],
-        BackendArg("jq" -> "aqua:jqlang/jq"): [
+        BackendArg(jq): [
             Prefix {
-                backend: BackendArg("jq" -> "aqua:jqlang/jq"),
+                backend: BackendArg(jq),
                 prefix: "1.6",
                 options: {},
                 source: MiseToml(
@@ -66,9 +66,9 @@ ToolRequestSet {
                 os: None,
             },
         ],
-        BackendArg("shellcheck" -> "ubi:koalaman/shellcheck"): [
+        BackendArg(shellcheck): [
             Version {
-                backend: BackendArg("shellcheck" -> "ubi:koalaman/shellcheck"),
+                backend: BackendArg(shellcheck),
                 version: "0.9.0",
                 options: {},
                 source: MiseToml(
@@ -77,9 +77,9 @@ ToolRequestSet {
                 os: None,
             },
         ],
-        BackendArg("python" -> "core:python"): [
+        BackendArg(python): [
             Version {
-                backend: BackendArg("python" -> "core:python"),
+                backend: BackendArg(python),
                 version: "3.10.0",
                 options: {
                     "venv": ".venv",
@@ -90,7 +90,7 @@ ToolRequestSet {
                 os: None,
             },
             Version {
-                backend: BackendArg("python" -> "core:python"),
+                backend: BackendArg(python),
                 version: "3.9.0",
                 options: {},
                 source: MiseToml(
@@ -101,19 +101,19 @@ ToolRequestSet {
         ],
     },
     sources: {
-        BackendArg("jq" -> "aqua:jqlang/jq"): MiseToml(
+        BackendArg(jq): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        BackendArg("node" -> "core:node"): MiseToml(
+        BackendArg(node): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        BackendArg("python" -> "core:python"): MiseToml(
+        BackendArg(python): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        BackendArg("shellcheck" -> "ubi:koalaman/shellcheck"): MiseToml(
+        BackendArg(shellcheck): MiseToml(
             "~/fixtures/.mise.toml",
         ),
-        BackendArg("terraform" -> "asdf:asdf-community/asdf-hashicorp"): MiseToml(
+        BackendArg(terraform): MiseToml(
             "~/fixtures/.mise.toml",
         ),
     },
