@@ -226,8 +226,9 @@ fn vfox_to_url(name: &str) -> eyre::Result<Url> {
     let name = name.strip_prefix("vfox:").unwrap_or(name);
     if let Some(rt) = registry::REGISTRY.get(name.trim_start_matches("vfox-")) {
         // bun -> version-fox/vfox-bun
-        let full = rt.backends.iter().find(|f| f.starts_with("vfox:")).unwrap();
-        return vfox_to_url(full.split_once(':').unwrap().1);
+        if let Some(full) = rt.backends.iter().find(|f| f.starts_with("vfox:")) {
+            return vfox_to_url(full.split_once(':').unwrap().1);
+        }
     }
     let res = if let Some(caps) = regex!(r#"^([^/]+)/([^/]+)$"#).captures(name) {
         let user = caps.get(1).unwrap().as_str();
