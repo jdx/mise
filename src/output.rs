@@ -114,6 +114,16 @@ macro_rules! warn {
     }};
 }
 
+pub static WARNED_ONCE: Lazy<Mutex<HashSet<String>>> = Lazy::new(Default::default);
+macro_rules! warn_once {
+    ($($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        if $crate::output::WARNED_ONCE.lock().unwrap().insert(msg.clone()) {
+            warn!("{}", msg);
+        }
+    }};
+}
+
 #[cfg(not(test))]
 #[macro_export]
 macro_rules! error {

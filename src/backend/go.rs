@@ -7,7 +7,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Settings, SETTINGS};
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersion};
+use crate::toolset::ToolVersion;
 
 #[derive(Debug)]
 pub struct GoBackend {
@@ -24,8 +24,8 @@ impl Backend for GoBackend {
         &self.ba
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
-        Ok(vec!["go".into()])
+    fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
+        Ok(vec!["go"])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {

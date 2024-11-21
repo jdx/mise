@@ -7,7 +7,7 @@ use crate::config::{Config, SETTINGS};
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolVersion, ToolVersionOptions};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use std::fmt::Debug;
@@ -31,8 +31,12 @@ impl Backend for PIPXBackend {
         &self.ba
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
-        Ok(vec!["pipx".into(), "uv".into()])
+    fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
+        Ok(vec!["pipx"])
+    }
+
+    fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {
+        Ok(vec!["uv"])
     }
 
     /*

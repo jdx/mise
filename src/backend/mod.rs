@@ -13,10 +13,9 @@ use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
+use crate::registry::REGISTRY;
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{
-    install_state, is_outdated_version, ToolRequest, ToolSource, ToolVersion, Toolset,
-};
+use crate::toolset::{install_state, is_outdated_version, ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash, lock_file, plugins, versions_host};
 use backend_type::BackendType;
@@ -147,34 +146,41 @@ pub trait Backend: Debug + Send + Sync {
     }
     /// If any of these tools are installing in parallel, we should wait for them to finish
     /// before installing this tool.
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
+    fn get_dependencies(&self) -> Result<Vec<&str>> {
         Ok(vec![])
     }
-    fn get_all_dependencies(&self, tvr: &ToolRequest) -> eyre::Result<Vec<BackendArg>> {
-        let mut deps: IndexSet<_> = self
-            .get_dependencies(tvr)?
-            .into_iter()
-            .map(BackendArg::from)
-            .filter(|ba| self.ba() != ba)
-            .filter(|ba| !self.ba().all_fulls().contains(&ba.full()))
-            .collect();
+    /// dependencies which wait for install but do not warn, like cargo-binstall
+    fn get_optional_dependencies(&self) -> Result<Vec<&str>> {
+        Ok(vec![])
+    }
+    fn get_all_dependencies(&self, optional: bool) -> Result<IndexSet<BackendArg>> {
+        let all_fulls = self.ba().all_fulls();
+        if all_fulls.is_empty() {
+            // this can happen on windows where we won't be able to install this os/arch so
+            // the fact there might be dependencies is meaningless
+            return Ok(Default::default());
+        }
+        let mut deps: Vec<&str> = self.get_dependencies()?;
+        if optional {
+            deps.extend(self.get_optional_dependencies()?);
+        }
+        let mut deps: IndexSet<_> = deps.into_iter().map(BackendArg::from).collect();
+        if let Some(rt) = REGISTRY.get(self.ba().short.as_str()) {
+            // add dependencies from registry.toml
+            deps.extend(rt.depends.iter().map(BackendArg::from));
+        }
+        deps.retain(|ba| self.ba() != ba);
+        deps.retain(|ba| !all_fulls.contains(&ba.full()));
         for ba in deps.clone() {
-            // TODO: pass the right tvr
-            let tvr = ToolRequest::System {
-                backend: ba.clone(),
-                source: ToolSource::Unknown,
-                options: Default::default(),
-                os: None,
-            };
             if let Ok(backend) = ba.backend() {
-                deps.extend(backend.get_all_dependencies(&tvr)?);
+                deps.extend(backend.get_all_dependencies(optional)?);
             }
         }
-        Ok(deps.into_iter().collect())
+        Ok(deps)
     }
 
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.ensure_dependencies_installed()?;
+        self.warn_if_dependencies_missing()?;
         self.get_remote_version_cache()
             .get_or_try_init(|| {
                 trace!("Listing remote versions for {}", self.ba().to_string());
@@ -310,14 +316,9 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
 
-    fn ensure_dependencies_installed(&self) -> eyre::Result<()> {
+    fn warn_if_dependencies_missing(&self) -> eyre::Result<()> {
         let deps = self
-            .get_all_dependencies(&ToolRequest::System {
-                backend: self.id().into(),
-                source: ToolSource::Unknown,
-                options: Default::default(),
-                os: None,
-            })?
+            .get_all_dependencies(false)?
             .into_iter()
             .filter(|ba| self.ba() != ba)
             .map(|ba| ba.short)
@@ -328,7 +329,7 @@ pub trait Backend: Debug + Send + Sync {
             let ts = config.get_tool_request_set()?.filter_by_tool(deps);
             let missing = ts.missing_tools();
             if !missing.is_empty() {
-                bail!(
+                warn_once!(
                     "missing dependency: {}",
                     missing.iter().map(|d| d.to_string()).join(", "),
                 );
@@ -530,12 +531,7 @@ pub trait Backend: Debug + Send + Sync {
     fn dependency_toolset(&self) -> eyre::Result<Toolset> {
         let config = Config::get();
         let dependencies = self
-            .get_all_dependencies(&ToolRequest::System {
-                backend: self.tool_name().into(),
-                source: ToolSource::Unknown,
-                options: Default::default(),
-                os: None,
-            })?
+            .get_all_dependencies(true)?
             .into_iter()
             .map(|ba| ba.short)
             .collect();

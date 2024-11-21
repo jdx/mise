@@ -200,10 +200,13 @@ impl Toolset {
         }
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
-        let leaf_deps = get_leaf_dependencies(&versions)?;
-        if leaf_deps.len() < versions.len() {
+        let mut installed = vec![];
+        let mut leaf_deps = get_leaf_dependencies(&versions)?;
+        while leaf_deps.len() < versions.len() && !leaf_deps.is_empty() {
             debug!("installing {} leaf tools first", leaf_deps.len());
-            self.install_versions(config, leaf_deps.into_iter().cloned().collect(), mpr, opts)?;
+            versions.retain(|tr| !leaf_deps.contains(tr));
+            installed.extend(self.install_versions(config, leaf_deps, mpr, opts)?);
+            leaf_deps = get_leaf_dependencies(&versions)?;
         }
         debug!("install_versions: {}", versions.iter().join(" "));
         let queue: Vec<_> = versions
@@ -232,7 +235,7 @@ impl Toolset {
             true => 1,
             false => opts.jobs.unwrap_or(SETTINGS.jobs),
         };
-        let installed: Vec<ToolVersion> = thread::scope(|s| {
+        let _installed: Vec<ToolVersion> = thread::scope(|s| {
             #[allow(clippy::map_collect_result_unit)]
             (0..jobs)
                 .map(|_| {
@@ -268,6 +271,7 @@ impl Toolset {
                 .collect::<Result<Vec<Vec<ToolVersion>>>>()
                 .map(|x| x.into_iter().flatten().rev().collect())
         })?;
+        installed.extend(_installed);
 
         install_state::reset();
 
@@ -683,7 +687,7 @@ impl From<ToolRequestSet> for Toolset {
     }
 }
 
-fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequest>> {
+fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<ToolRequest>> {
     // reverse maps potential shorts like "cargo-binstall" for "cargo:cargo-binstall"
     let versions_hash = requests
         .iter()
@@ -692,7 +696,7 @@ fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequ
     let leaves = requests
         .iter()
         .map(|tr| {
-            match tr.dependencies()?.iter().all(|dep| {
+            match tr.backend()?.get_all_dependencies(true)?.iter().all(|dep| {
                 // dep is a dependency of tr so if it is in versions_hash (meaning it's also being installed) then it is not a leaf node
                 !dep.all_fulls()
                     .iter()
@@ -703,6 +707,7 @@ fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<&ToolRequ
             }
         })
         .flatten_ok()
+        .map_ok(|tr| tr.clone())
         .collect::<Result<Vec<_>>>()?;
     Ok(leaves)
 }

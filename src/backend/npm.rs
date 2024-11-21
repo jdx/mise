@@ -8,7 +8,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersion};
+use crate::toolset::ToolVersion;
 
 #[derive(Debug)]
 pub struct NPMBackend {
@@ -28,8 +28,8 @@ impl Backend for NPMBackend {
         &self.ba
     }
 
-    fn get_dependencies(&self, _tvr: &ToolRequest) -> eyre::Result<Vec<String>> {
-        Ok(vec!["node".into(), "bun".into()])
+    fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
+        Ok(vec!["node", "bun"])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
