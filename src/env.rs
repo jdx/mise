@@ -3,7 +3,7 @@ pub use std::env::*;
 use std::path::PathBuf;
 use std::string::ToString;
 use std::sync::RwLock;
-use std::{env, path, process};
+use std::{path, process};
 
 use crate::cli::args::PROFILE_ARG;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
