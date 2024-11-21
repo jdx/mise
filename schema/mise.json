@@ -265,6 +265,14 @@
           "description": "Timeout in seconds for all HTTP requests in mise.",
           "type": "string"
         },
+        "ignored_config_paths": {
+          "default": [],
+          "description": "This is a list of config paths that mise will ignore. This only works as an env var.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "jobs": {
           "default": 4,
           "description": "How many jobs to run concurrently such as tool installs.",
@@ -533,7 +541,7 @@
         },
         "trusted_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will automatically mark as trusted.",
+          "description": "This is a list of config paths that mise will automatically mark as trusted. This only works as an env var.",
           "type": "array",
           "items": {
             "type": "string"

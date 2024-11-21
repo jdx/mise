@@ -26,9 +26,13 @@ The config file to trust
 
 Trust all config files in the current directory and its parents
 
+### `--ignore`
+
+Do not trust this config and ignore it in the future
+
 ### `--untrust`
 
-No longer trust this config
+No longer trust this config, will prompt in the future
 
 ### `--show`
 

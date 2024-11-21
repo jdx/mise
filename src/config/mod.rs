@@ -87,7 +87,7 @@ impl Config {
             .cloned()
             .collect_vec();
         time!("load config_filenames");
-        let config_paths = load_config_paths(&config_filenames);
+        let config_paths = load_config_paths(&config_filenames, false);
         time!("load config_paths");
         trace!("config_paths: {config_paths:?}");
         let config_files = load_all_config_files(&config_paths, &legacy_files)?;
@@ -662,7 +662,7 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     filenames
 });
 
-pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
+pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> Vec<PathBuf> {
     let mut config_files = Vec::new();
 
     // The current directory is not always available, e.g.
@@ -677,6 +677,7 @@ pub fn load_config_paths(config_filenames: &[String]) -> Vec<PathBuf> {
     config_files
         .into_iter()
         .unique_by(|p| file::desymlink_path(p))
+        .filter(|p| include_ignored || !config_file::is_ignored(p))
         .collect()
 }
 

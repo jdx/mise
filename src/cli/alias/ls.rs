@@ -67,6 +67,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise aliases</bold>
-    node  lts-jod      22   
+    node  lts-jod      22
 "#
 );

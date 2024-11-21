@@ -27,8 +27,8 @@ impl Usage {
         });
 
         let min_version = r#"min_usage_version "1.3""#;
-        let extra = include_str!("../assets/mise-extra.usage.kdl");
-        println!("{min_version}\n{spec}\n{extra}");
+        let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
+        println!("{min_version}\n{}\n{extra}", spec.to_string().trim());
         Ok(())
     }
 }
