@@ -1,5 +1,11 @@
 # Changelog
 
+## [2024.11.23](https://github.com/jdx/mise/compare/v2024.11.22..v2024.11.23) - 2024-11-21
+
+### 🐛 Bug Fixes
+
+- skip lockfile methods when experimental is disabled by [@jdx](https://github.com/jdx) in [91c30da](https://github.com/jdx/mise/commit/91c30da1575ba05166a097b3aede3b622d17e90e)
+
 ## [2024.11.22](https://github.com/jdx/mise/compare/v2024.11.21..v2024.11.22) - 2024-11-21
 
 ### 🧪 Testing
