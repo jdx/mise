@@ -67,6 +67,7 @@ impl FromStr for ToolVersionType {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        trace!("parsing ToolVersionType from: {}", s);
         Ok(match s.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
                 Self::Ref(ref_type.to_string(), r.to_string())

@@ -90,7 +90,11 @@ macro_rules! measure {
             end();
             result
         } else {
-            $block
+            let msg = format!($fmt);
+            trace!("{msg} start");
+            let result = $block;
+            trace!("{msg} done");
+            result
         }
     }};
 }

@@ -239,15 +239,6 @@ impl Backend for AsdfBackend {
         Some(PluginType::Asdf)
     }
 
-    fn get_dependencies(&self, tvr: &ToolRequest) -> Result<Vec<String>> {
-        let out = match tvr.ba().tool_name.as_str() {
-            "poetry" | "pipenv" | "pipx" => vec!["python"],
-            "elixir" => vec!["erlang"],
-            _ => vec![],
-        };
-        Ok(out.into_iter().map(|s| s.into()).collect())
-    }
-
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| self.plugin.fetch_remote_versions())

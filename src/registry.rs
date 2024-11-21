@@ -14,13 +14,13 @@ pub static REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> =
 
 #[derive(Debug, Clone)]
 pub struct RegistryTool {
-    #[allow(unused)]
     pub short: &'static str,
     pub backends: Vec<&'static str>,
     #[allow(unused)]
     pub aliases: &'static [&'static str],
     pub test: &'static Option<(&'static str, &'static str)>,
     pub os: &'static [&'static str],
+    pub depends: &'static [&'static str],
 }
 
 impl RegistryTool {
