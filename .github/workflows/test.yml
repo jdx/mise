@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tranche: [0, 1, 2, 3]
+        tranche: [0, 1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,10 +94,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
-          save-if: ${{ matrix.tranche == 3 }}
+          save-if: ${{ matrix.tranche == 4 }}
       - name: Install build and test dependencies
         run: |
-          sudo apt-get update && sudo apt-get install \
+          sudo apt-get install \
             bison \
             build-essential \
             direnv \
@@ -120,7 +120,7 @@ jobs:
           MISE_GITHUB_BOT_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           MISE_USE_VERSIONS_HOST: 0
           TEST_TRANCHE: ${{matrix.tranche}}
-          TEST_TRANCHE_COUNT: 4
+          TEST_TRANCHE_COUNT: 8
           TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
         with:
           timeout_minutes: 30

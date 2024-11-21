@@ -19,6 +19,14 @@ quiet_assert_succeed() {
     fail "[$1] command failed with status $status"
   fi
 }
+quiet_assert_fail() {
+  local status=0
+  debug "$ $1"
+  MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 bash -c "$1 2>&1" || status=$?
+  if [[ $status -eq 0 ]]; then
+    fail "[$1] command succeeded but was expected to fail"
+  fi
+}
 
 assert_succeed() {
   if quiet_assert_succeed "$1"; then
@@ -27,18 +35,23 @@ assert_succeed() {
 }
 
 assert_fail() {
-  debug "$ $1"
-  if ! bash -c "$1" 2>&1; then
+  local actual
+  actual="$(quiet_assert_fail "$1")"
+  if [[ -z "${2:-}" ]]; then
     ok "[$1] expected failure"
+  elif [[ $actual == *"$2"* ]]; then
+    ok "[$1] output is equal to '$2'"
   else
-    fail "[$1] expected failure but succeeded"
+    fail "[$1] expected '$2' but got '$actual'"
   fi
 }
 
 assert() {
   local actual
   actual="$(quiet_assert_succeed "$1")"
-  if [[ $actual == "$2" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    ok "[$1]"
+  elif [[ $actual == "$2" ]]; then
     ok "[$1] output is equal to '$2'"
   else
     fail "[$1] expected '$2' but got '$actual'"

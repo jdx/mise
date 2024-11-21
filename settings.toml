@@ -340,7 +340,7 @@ system's libgit2 is not the same version as the one used by mise.
 [lockfile]
 env = "MISE_LOCKFILE"
 type = "Bool"
-default = false
+default = true
 description = "Create and read lockfiles for tool versions."
 docs = """
 Read/update lockfiles for tool versions. This is useful when you'd like to have loose versions in mise.toml like this:
@@ -729,7 +729,8 @@ Change output style when executing tasks. This controls the output of `mise run`
 [task_timings]
 env = "MISE_TASK_TIMINGS"
 type = "Bool"
-description = "Show completion message with elapsed time for each task on `mise run`."
+optional = true
+description = "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`."
 
 [trace]
 env = "MISE_TRACE"

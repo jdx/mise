@@ -85,11 +85,11 @@ Configure with `jobs` config or `MISE_JOBS` env var
 Read/write directly to stdin/stdout/stderr instead of by line
 Configure with `raw` config or `MISE_RAW` env var
 
-### `--timings`
+### `--no-timings`
 
-Shows elapsed time after each task completes
+Hides elapsed time after each task completes
 
-Default to always show with `MISE_TASK_TIMINGS=1`
+Default to always hide with `MISE_TASK_TIMINGS=0`
 
 Examples:
 

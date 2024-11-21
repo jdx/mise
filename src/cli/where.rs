@@ -1,7 +1,7 @@
 use eyre::Result;
 
 use crate::cli::args::ToolArg;
-use crate::config::Config;
+use crate::config::CONFIG;
 use crate::errors::Error::VersionNotInstalled;
 use crate::toolset::ToolsetBuilder;
 
@@ -28,13 +28,12 @@ pub struct Where {
 
 impl Where {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
         let tvr = match self.tool.tvr {
             Some(tvr) => tvr,
             None => match self.asdf_version {
                 Some(version) => self.tool.with_version(&version).tvr.unwrap(),
                 None => {
-                    let ts = ToolsetBuilder::new().build(&config)?;
+                    let ts = ToolsetBuilder::new().build(&CONFIG)?;
                     ts.versions
                         .get(&self.tool.ba)
                         .and_then(|tvr| tvr.requests.first().cloned())
@@ -43,15 +42,13 @@ impl Where {
             },
         };
 
-        let ba = tvr.ba();
-        let backend = ba.backend()?;
         let tv = tvr.resolve(&Default::default())?;
 
-        if backend.is_version_installed(&tv, true) {
+        if tv.backend()?.is_version_installed(&tv, true) {
             miseprintln!("{}", tv.install_path().to_string_lossy());
             Ok(())
         } else {
-            Err(VersionNotInstalled(ba.to_string(), tvr.version()))?
+            Err(VersionNotInstalled(tv.ba().clone(), tv.version))?
         }
     }
 }
@@ -70,51 +67,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     /home/jdx/.local/share/mise/installs/node/20.0.0
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-    use pretty_assertions::assert_str_eq;
-    use test_log::test;
-
-    use crate::dirs;
-    use crate::test::reset;
-
-    #[test]
-    fn test_where() {
-        reset();
-        assert_cli!("install");
-        let stdout = assert_cli!("where", "tiny");
-        assert_str_eq!(
-            stdout.trim(),
-            dirs::DATA.join("installs/tiny/3.1.0").to_string_lossy()
-        );
-    }
-
-    #[test]
-    fn test_where_asdf_style() {
-        reset();
-        assert_cli!("install", "tiny@2", "tiny@3");
-        assert_cli_snapshot!("where", "tiny", "2");
-        assert_cli_snapshot!("where", "tiny", "3");
-    }
-
-    #[test]
-    fn test_where_alias() {
-        reset();
-        assert_cli!("install", "tiny@my/alias");
-        let stdout = assert_cli!("where", "tiny@my/alias");
-        assert_str_eq!(
-            stdout.trim(),
-            dirs::DATA.join("installs/tiny/3.0.1").to_string_lossy()
-        );
-        assert_cli!("uninstall", "tiny@my/alias");
-    }
-
-    #[test]
-    fn test_where_not_found() {
-        reset();
-        let err = assert_cli_err!("where", "tiny@1111");
-        assert_snapshot!(err, @"tiny@1111 not installed");
-    }
-}
