@@ -1,3 +1,5 @@
+#!/usr/bin/env fish
+
 cargo b
 alias m target/debug/mise
 m registry | grep -v '(core|ubi|aqua|vfox):' | awk '{print $1}'> tmp/missing_asdf_tools

@@ -3,6 +3,7 @@
 
 echo "::group::Setup"
 set -euxo pipefail
+# shellcheck disable=SC1090
 source <(cargo llvm-cov show-env --export-prefix)
 cargo llvm-cov clean --workspace
 if [[ -n "${MISE_GITHUB_BOT_TOKEN:-}" ]]; then
