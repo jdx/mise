@@ -228,14 +228,15 @@ jobs:
     needs: [build-windows]
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: unit
       - uses: actions/download-artifact@v4
         with:
           name: mise-windows-latest
           path: target/debug
-      - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: unit
+      - run: Add-Content "$env:GITHUB_PATH" "$env:GITHUB_WORKSPACE/target/debug"
+      - run: mise -v
       # TODO: enable when we can remove continue-on-error:
       # - name: cargo test
       #   uses: nick-fields/retry@v3
