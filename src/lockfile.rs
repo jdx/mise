@@ -80,7 +80,7 @@ impl Lockfile {
 }
 
 pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
-    if !SETTINGS.lockfile {
+    if !SETTINGS.lockfile || !SETTINGS.experimental {
         return Ok(());
     }
     SETTINGS.ensure_experimental("lockfile")?;
