@@ -289,6 +289,10 @@ impl Run {
 
     fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
+        if SETTINGS.task_skip.contains(&task.name) {
+            eprintln!("{prefix} skipping task");
+            return Ok(());
+        }
         if !self.force && self.sources_are_fresh(task)? {
             eprintln!("{prefix} sources up-to-date, skipping");
             return Ok(());
