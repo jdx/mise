@@ -72,8 +72,8 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_plugin(&mut self, _fa: &BackendArg) -> eyre::Result<()>;
-    fn replace_versions(&mut self, fa: &BackendArg, versions: Vec<ToolRequest>)
+    fn remove_plugin(&mut self, ba: &BackendArg) -> eyre::Result<()>;
+    fn replace_versions(&mut self, ba: &BackendArg, versions: Vec<ToolRequest>)
         -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
     fn dump(&self) -> eyre::Result<String>;
