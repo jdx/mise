@@ -438,8 +438,11 @@ impl AquaBackend {
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         let format = pkg.format(v)?;
-        let bin_path =
+        let mut bin_path =
             install_path.join(pkg.files.first().map(|f| &f.name).unwrap_or(&pkg.repo_name));
+        if cfg!(windows) && bin_path.extension().is_none() {
+            bin_path = bin_path.with_extension("exe");
+        }
         let mut tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
             pr: Some(ctx.pr.as_ref()),
@@ -520,12 +523,13 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
     let os = os();
     let arch = arch();
     let os_arch = format!("{}/{}", os, arch);
-    if !(envs.is_empty()
-        || envs.contains("all")
-        || envs.contains(os)
-        || envs.contains(arch)
-        || envs.contains(os_arch.as_str()))
-    {
+    let mut myself: HashSet<&str> = ["all", &os, &arch, os_arch.as_str()].into();
+    if os == "windows" && arch == "arm64" {
+        // assume windows/arm64 is supported
+        myself.insert("windows/amd64");
+        myself.insert("amd64");
+    }
+    if !envs.is_empty() && envs.is_disjoint(&myself) {
         bail!("unsupported env: {os_arch}");
     }
     Ok(())

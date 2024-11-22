@@ -289,13 +289,21 @@ impl AquaPackage {
         let mut strs = IndexSet::from([self.asset(v)?]);
         if cfg!(macos) {
             let mut ctx = HashMap::default();
-            ctx.insert("ARCH".to_string(), "arm64".to_string());
+            ctx.insert("Arch".to_string(), "universal".to_string());
             strs.insert(self.parse_aqua_str(&self.asset, v, &ctx)?);
         } else if cfg!(windows) {
-            strs.insert(format!(
-                "{}.exe",
-                self.parse_aqua_str(&self.asset, v, &Default::default())?
-            ));
+            let mut ctx = HashMap::default();
+            let with_exe = format!("{}.exe", self.parse_aqua_str(&self.asset, v, &ctx)?);
+            strs.insert(with_exe);
+            if cfg!(target_arch = "aarch64") {
+                // assume windows arm64 emulation is supported
+                ctx.insert("Arch".to_string(), "amd64".to_string());
+                strs.insert(self.parse_aqua_str(&self.asset, v, &ctx)?);
+                strs.insert(format!(
+                    "{}.exe",
+                    self.parse_aqua_str(&self.asset, v, &ctx)?
+                ));
+            }
         }
         Ok(strs)
     }
