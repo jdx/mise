@@ -50,7 +50,13 @@ jobs:
       - run: mv "$HOME/bin/mise-release" "$HOME/bin/mise-${{ steps.versions.outputs.release }}"
       - run: cp "$HOME/bin/mise-${{ steps.versions.outputs.main }}" "$HOME/bin/mise-main"
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
-      - run: mise i
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise install
       - run: |
           CMDS=(
             "x -- echo"
