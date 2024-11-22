@@ -13,6 +13,7 @@ pub trait SingleReport: Send + Sync {
     fn inc(&self, _delta: u64) {}
     fn set_position(&self, _delta: u64) {}
     fn set_length(&self, _length: u64) {}
+    fn abandon(&self) {}
     fn finish(&self) {}
     fn finish_with_message(&self, _message: String) {}
 }
@@ -109,6 +110,9 @@ impl SingleReport for ProgressReport {
         self.pb.set_style(PROG_TEMPLATE.clone());
         self.pb.disable_steady_tick();
         self.pb.set_length(length);
+    }
+    fn abandon(&self) {
+        self.pb.abandon();
     }
     fn finish(&self) {
         self.pb.set_style(SUCCESS_TEMPLATE.clone());
