@@ -72,7 +72,7 @@ within_isolated_env() {
     MISE_TMP_DIR="$TEST_TMPDIR" \
     MISE_TRACE="${MISE_TRACE:-0}" \
     MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
-    MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-0}" \
+    MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
     MISE_YES=1 \
     PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" \
     ROOT="$ROOT" \
