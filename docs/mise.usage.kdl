@@ -972,7 +972,7 @@ cmd "tasks" help="[experimental] Manage tasks" {
     alias "t"
     alias "task" hide=true
     after_long_help r"Examples:
-    
+
     $ mise tasks ls
 "
     flag "--no-header" help="Do not print table header"
@@ -1022,7 +1022,7 @@ So if you have global tasks in ~/.config/mise/tasks/* and project-specific tasks
 ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 tasks will override the global ones if they have the same name."
         after_long_help r"Examples:
-    
+
     $ mise tasks ls
 "
         flag "--no-header" help="Do not print table header"

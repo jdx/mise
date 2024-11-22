@@ -3,4 +3,3 @@ source: src/config/config_file/mise_toml.rs
 expression: cf.dump().unwrap()
 snapshot_kind: text
 ---
-

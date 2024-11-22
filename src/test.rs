@@ -111,7 +111,7 @@ pub fn reset() {
         #MISE sources=[".test-tool-versions"]
         #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
         #MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID", BOOLEAN_VAR = true}
-        
+
         #USAGE flag "--user <user>" help="The user to run as"
 
         set -exo pipefail

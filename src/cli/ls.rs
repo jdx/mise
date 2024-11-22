@@ -53,12 +53,8 @@ pub struct Ls {
     #[clap(long, short)]
     offline: bool,
 
-    /// Output in an easily parseable format
-    #[clap(long, hide = true, conflicts_with = "json")]
-    parseable: bool,
-
     /// Output in JSON format
-    #[clap(long, short = 'J', overrides_with = "parseable")]
+    #[clap(long, short = 'J')]
     json: bool,
 
     /// Display missing tool versions
@@ -70,7 +66,7 @@ pub struct Ls {
     prefix: Option<String>,
 
     /// Don't display headers
-    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = & ["json", "parseable"])]
+    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = & ["json"])]
     no_header: bool,
 }
 
@@ -99,8 +95,6 @@ impl Ls {
         }
         if self.json {
             self.display_json(runtimes)
-        } else if self.parseable {
-            self.display_parseable(runtimes)
         } else {
             self.display_user(runtimes)
         }
@@ -138,25 +132,6 @@ impl Ls {
             plugins.insert(plugin_name.clone(), runtimes);
         }
         miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
-        Ok(())
-    }
-
-    fn display_parseable(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        warn!("The parseable output format is deprecated and will be removed in a future release.");
-        warn!("Please use the regular output format instead which has been modified to be more easily parseable.");
-        let tvs = runtimes
-            .into_iter()
-            .map(|(_, p, tv, _)| (p, tv))
-            .filter(|(p, tv)| p.is_version_installed(tv, true))
-            .map(|(_, tv)| tv);
-        for tv in tvs {
-            if self.plugin.is_some() {
-                // only displaying 1 plugin so only show the version
-                miseprintln!("{}", tv.version);
-            } else {
-                miseprintln!("{} {}", tv.ba(), tv.version);
-            }
-        }
         Ok(())
     }
 
@@ -462,24 +437,6 @@ mod tests {
         assert_cli!("install");
         assert_cli_snapshot!("ls", "--json");
         assert_cli_snapshot!("ls", "--json", "tiny");
-    }
-
-    #[test]
-    fn test_ls_parseable() {
-        reset();
-        let _ = remove_all(*dirs::INSTALLS);
-        assert_cli!("install");
-        assert_cli_snapshot!("ls", "--parseable", @r"
-        dummy ref:master
-        tiny 3.1.0
-        mise The parseable output format is deprecated and will be removed in a future release.
-        mise Please use the regular output format instead which has been modified to be more easily parseable.
-        ");
-        assert_cli_snapshot!("ls", "--parseable", "tiny", @r"
-        3.1.0
-        mise The parseable output format is deprecated and will be removed in a future release.
-        mise Please use the regular output format instead which has been modified to be more easily parseable.
-        ");
     }
 
     #[test]
