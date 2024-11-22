@@ -108,7 +108,13 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
             .insert(backend.short.to_string(), tvl);
     }
 
-    let lockfiles = config.config_files.keys().rev().collect_vec();
+    let lockfiles = config
+        .config_files
+        .iter()
+        .rev()
+        .filter(|(_, cf)| cf.source().is_mise_toml())
+        .map(|(p, _)| p)
+        .collect_vec();
     debug!("updating {} lockfiles", lockfiles.len());
 
     let empty = HashMap::new();
@@ -149,9 +155,10 @@ pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
 fn read_all_lockfiles() -> Lockfile {
     CONFIG
         .config_files
-        .keys()
+        .iter()
         .rev()
-        .map(|cf| read_lockfile_for(cf))
+        .filter(|(_, cf)| cf.source().is_mise_toml())
+        .map(|(p, _)| read_lockfile_for(p))
         .filter_map(|l| match l {
             Ok(l) => Some(l),
             Err(err) => {
