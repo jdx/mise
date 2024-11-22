@@ -113,6 +113,12 @@ jobs:
           name: mise-${{ matrix.os }}
           path: target/debug
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
       - run: mise install
       - run: mise x -- bun i
       - run: |
@@ -146,6 +152,12 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
       - run: mise install
       - run: mise run test:shuffle
 
@@ -244,6 +256,12 @@ jobs:
       #     retry_wait_seconds: 30
       #     max_attempts: 2
       #     command: cargo test
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
       - run: mise install
       - run: cargo test
         continue-on-error: true
@@ -259,6 +277,12 @@ jobs:
           path: target/debug
       - run: ls target\debug
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
       - run: mise install
       - name: e2e
         uses: nick-fields/retry@v3
