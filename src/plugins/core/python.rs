@@ -45,15 +45,15 @@ impl PythonPlugin {
         self.python_build_path()
             .join("plugins/python-build/bin/python-build")
     }
-    fn install_or_update_python_build(&self) -> eyre::Result<()> {
+    fn install_or_update_python_build(&self, ctx: Option<&InstallContext>) -> eyre::Result<()> {
         ensure_not_windows()?;
         if self.python_build_bin().exists() {
             self.update_python_build()
         } else {
-            self.install_python_build()
+            self.install_python_build(ctx)
         }
     }
-    fn install_python_build(&self) -> eyre::Result<()> {
+    fn install_python_build(&self, ctx: Option<&InstallContext>) -> eyre::Result<()> {
         if self.python_build_bin().exists() {
             return Ok(());
         }
@@ -62,7 +62,8 @@ impl PythonPlugin {
         file::remove_all(&python_build_path)?;
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
-        git.clone(&SETTINGS.python.pyenv_repo)?;
+        let pr = ctx.map(|ctx| ctx.pr.as_ref());
+        git.clone(&SETTINGS.python.pyenv_repo, pr)?;
         Ok(())
     }
     fn update_python_build(&self) -> eyre::Result<()> {
@@ -199,7 +200,7 @@ impl PythonPlugin {
 
     fn install_compiled(&self, ctx: &InstallContext, tv: &ToolVersion) -> eyre::Result<()> {
         let config = Config::get();
-        self.install_or_update_python_build()?;
+        self.install_or_update_python_build(Some(ctx))?;
         if matches!(&tv.request, ToolRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
         }
@@ -350,7 +351,7 @@ impl Backend for PythonPlugin {
                 .map(|(v, _, _)| v.clone())
                 .collect())
         } else {
-            self.install_or_update_python_build()?;
+            self.install_or_update_python_build(None)?;
             let python_build_bin = self.python_build_bin();
             plugins::core::run_fetch_task_with_timeout(move || {
                 let output = cmd!(python_build_bin, "--definitions").read()?;

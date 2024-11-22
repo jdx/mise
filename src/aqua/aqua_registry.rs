@@ -125,7 +125,7 @@ impl AquaRegistry {
             fetch_latest_repo(&repo)?;
         } else if let Some(aqua_registry_url) = &SETTINGS.aqua_registry_url {
             info!("cloning aqua registry to {path:?}");
-            repo.clone(aqua_registry_url)?;
+            repo.clone(aqua_registry_url, None)?;
             repo_exists = true;
         }
         Ok(Self { path, repo_exists })

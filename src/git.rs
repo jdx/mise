@@ -9,8 +9,10 @@ use once_cell::sync::OnceCell;
 use xx::file;
 
 use crate::cmd;
-use crate::config::Settings;
+use crate::cmd::CmdLineRunner;
+use crate::config::SETTINGS;
 use crate::file::touch_dir;
+use crate::ui::progress_report::SingleReport;
 
 pub struct Git {
     pub dir: PathBuf,
@@ -47,10 +49,10 @@ impl Git {
 
     pub fn repo(&self) -> Result<&git2::Repository> {
         self.repo.get_or_try_init(|| {
-            if !Settings::get().libgit2 {
-                trace!("libgit2 is disabled");
-                return Err(eyre!("libgit2 is disabled"));
-            }
+            // if !SETTINGS.libgit2 {
+            //     trace!("libgit2 is disabled");
+            //     return Err(eyre!("libgit2 is disabled"));
+            // }
             trace!("opening git repository via libgit2 at {:?}", self.dir);
             git2::Repository::open(&self.dir)
                 .wrap_err_with(|| format!("failed to open git repository at {:?}", self.dir))
@@ -104,18 +106,20 @@ impl Git {
         Ok((prev_rev, post_rev))
     }
 
-    pub fn clone(&self, url: &str) -> Result<()> {
+    pub fn clone(&self, url: &str, pr: Option<&dyn SingleReport>) -> Result<()> {
         debug!("cloning {} to {}", url, self.dir.display());
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
-        if let Err(err) = git2::build::RepoBuilder::new()
-            .fetch_options(get_fetch_options()?)
-            .clone(url, &self.dir)
-        {
-            warn!("git clone failed: {err:#}");
-        } else {
-            return Ok(());
+        if SETTINGS.libgit2 {
+            if let Err(err) = git2::build::RepoBuilder::new()
+                .fetch_options(get_fetch_options()?)
+                .clone(url, &self.dir)
+            {
+                warn!("git clone failed: {err:#}");
+            } else {
+                return Ok(());
+            }
         }
         match get_git_version() {
             Ok(version) => trace!("git version: {}", version),
@@ -124,7 +128,18 @@ impl Git {
                 err
             ),
         }
-        cmd!("git", "clone", "-q", "--depth", "1", url, &self.dir).run()?;
+        if let Some(pr) = pr {
+            // in order to prevent hiding potential password prompt, just disable the progress bar
+            pr.abandon();
+        }
+        CmdLineRunner::new("git")
+            .arg("clone")
+            .arg("-q")
+            .arg("--depth")
+            .arg("1")
+            .arg(url)
+            .arg(&self.dir)
+            .execute()?;
         Ok(())
     }
 
