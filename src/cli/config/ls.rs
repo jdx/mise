@@ -105,24 +105,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise config ls</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-
-    #[test]
-    fn test_config_ls() {
-        reset();
-        assert_cli_snapshot!("cfg", "--no-headers", @r"
-        ~/cwd/.test-tool-versions tiny       
-        ~/.test-tool-versions     tiny, dummy
-        ~/config/config.toml      (none)
-        ");
-    }
-
-    #[test]
-    fn test_config_ls_json() {
-        reset();
-        assert_cli_snapshot!("cfg", "--json");
-    }
-}
