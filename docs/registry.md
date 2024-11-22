@@ -651,6 +651,7 @@ editLink: false
 | skaffold | [aqua:GoogleContainerTools/skaffold](https://github.com/GoogleContainerTools/skaffold) [asdf:nklmilojevic/asdf-skaffold](https://github.com/nklmilojevic/asdf-skaffold) |
 | skate | [aqua:charmbracelet/skate](https://github.com/charmbracelet/skate) [asdf:chessmango/asdf-skate](https://github.com/chessmango/asdf-skate) |
 | sloth | [aqua:slok/sloth](https://github.com/slok/sloth) [asdf:slok/asdf-sloth](https://github.com/slok/asdf-sloth) |
+| slsa-verifier | [ubi:slsa-framework/slsa-verifier](https://github.com/slsa-framework/slsa-verifier) |
 | smithy | [asdf:aws/asdf-smithy](https://github.com/aws/asdf-smithy) |
 | smlnj | [asdf:samontea/asdf-smlnj](https://github.com/samontea/asdf-smlnj) |
 | snyk | [asdf:nirfuchs/asdf-snyk](https://github.com/nirfuchs/asdf-snyk) |
@@ -723,7 +724,7 @@ editLink: false
 | tfc-agent | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | tfctl | [aqua:flux-iac/tofu-controller/tfctl](https://github.com/flux-iac/tofu-controller/tfctl) [asdf:deas/asdf-tfctl](https://github.com/deas/asdf-tfctl) |
 | tfenv | [aqua:tfutils/tfenv](https://github.com/tfutils/tfenv) [asdf:carlduevel/asdf-tfenv](https://github.com/carlduevel/asdf-tfenv) |
-| tflint | [ubi:terraform-linters/tflint](https://github.com/terraform-linters/tflint) [asdf:skyzyx/asdf-tflint](https://github.com/skyzyx/asdf-tflint) |
+| tflint | [aqua:terraform-linters/tflint](https://github.com/terraform-linters/tflint) [ubi:terraform-linters/tflint](https://github.com/terraform-linters/tflint) [asdf:skyzyx/asdf-tflint](https://github.com/skyzyx/asdf-tflint) |
 | tfmigrate | [aqua:minamijoyo/tfmigrate](https://github.com/minamijoyo/tfmigrate) [asdf:dex4er/asdf-tfmigrate](https://github.com/dex4er/asdf-tfmigrate) |
 | tfnotify | [aqua:mercari/tfnotify](https://github.com/mercari/tfnotify) [asdf:jnavarrof/asdf-tfnotify](https://github.com/jnavarrof/asdf-tfnotify) |
 | tfsec | [aqua:aquasecurity/tfsec](https://github.com/aquasecurity/tfsec) [asdf:woneill/asdf-tfsec](https://github.com/woneill/asdf-tfsec) |
