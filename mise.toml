@@ -18,7 +18,7 @@ cargo-binstall = "latest"
 actionlint = "latest"
 ripgrep = "latest"
 "pipx:toml-sort" = "latest"
-"cargo:usage-cli" = { version = "1.3", os = ["linux", "macos"] }
+"cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
 bun = "latest"
 #python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 
