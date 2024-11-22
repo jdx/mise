@@ -901,7 +901,7 @@ but managed separately with `mise aliases`"
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise settings set legacy_version_file true
+    $ mise settings legacy_version_file=true
 "
         arg "<SETTING>" help="The setting to set"
         arg "<VALUE>" help="The value to set"

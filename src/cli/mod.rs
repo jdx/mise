@@ -291,7 +291,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise watch build</bold>               Run `build` tasks repeatedly when files change
 
     $ <bold>mise settings</bold>                  Show settings in use
-    $ <bold>mise settings set color 0</bold>      Disable color by modifying global config file
+    $ <bold>mise settings color=0</bold>          Disable color by modifying global config file
 "#
 );
 

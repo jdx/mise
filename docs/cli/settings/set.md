@@ -20,4 +20,4 @@ The value to set
 
 Examples:
 
-    mise settings set legacy_version_file true
+    mise settings legacy_version_file=true

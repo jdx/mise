@@ -8,7 +8,7 @@ restrictive for the benefits.
 Paranoid mode can be enabled with either `MISE_PARANOID=1` or a setting:
 
 ```sh
-mise settings set paranoid 1
+mise settings paranoid=1
 ```
 
 ## Config files
