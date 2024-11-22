@@ -4,9 +4,8 @@ set -euxo pipefail
 git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
-released_versions="$(cargo show mise --json | jq -r '.versions.[].num')"
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
-if ! echo "$released_versions" | grep -q "^$cur_version$"; then
+if ! cargo show mise --json | jq -r '.versions.[].num' | grep -q "^$cur_version$"; then
   echo "Releasing $cur_version"
   cargo publish
   changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
