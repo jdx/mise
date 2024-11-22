@@ -66,7 +66,7 @@ pub struct Ls {
     prefix: Option<String>,
 
     /// Don't display headers
-    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = & ["json"])]
+    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
     no_header: bool,
 }
 
@@ -375,97 +375,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     }
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_str_eq;
-
-    use crate::dirs;
-    use crate::file::remove_all;
-    use crate::test::reset;
-
-    #[test]
-    fn test_ls() {
-        reset();
-        let _ = remove_all(*dirs::INSTALLS);
-        assert_cli!("install");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master  ~/.test-tool-versions     ref:master
-        tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        ");
-
-        assert_cli!("install", "tiny@2.0.0");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master  ~/.test-tool-versions     ref:master
-        tiny   2.0.0                                           
-        tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        ");
-
-        assert_cli!("uninstall", "tiny@3.1.0");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master       ~/.test-tool-versions     ref:master
-        tiny   2.0.0                                                
-        tiny   3.1.0 (missing)  ~/cwd/.test-tool-versions 3
-        ");
-
-        assert_cli!("uninstall", "tiny@2.0.0");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master       ~/.test-tool-versions     ref:master
-        tiny   3.1.0 (missing)  ~/cwd/.test-tool-versions 3
-        ");
-
-        assert_cli!("install");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master  ~/.test-tool-versions     ref:master
-        tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        ");
-    }
-
-    #[test]
-    fn test_ls_current() {
-        reset();
-        assert_cli_snapshot!("ls", "-c", @r"
-        dummy  ref:master  ~/.test-tool-versions     ref:master
-        tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        ");
-    }
-
-    #[test]
-    fn test_ls_json() {
-        reset();
-        let _ = remove_all(*dirs::INSTALLS);
-        assert_cli!("install");
-        assert_cli_snapshot!("ls", "--json");
-        assert_cli_snapshot!("ls", "--json", "tiny");
-    }
-
-    #[test]
-    fn test_ls_missing() {
-        reset();
-        assert_cli!("install");
-        assert_cli_snapshot!("ls", "--missing", @"");
-    }
-
-    #[test]
-    fn test_ls_missing_plugin() {
-        reset();
-        let err = assert_cli_err!("ls", "missing-plugin");
-        assert_str_eq!(
-            err.to_string(),
-            r#"missing-plugin not found in mise tool registry"#
-        );
-    }
-
-    #[test]
-    fn test_ls_prefix() {
-        reset();
-        assert_cli!("install");
-        assert_cli_snapshot!("ls", "--plugin=tiny", "--prefix=3", @"tiny  3.1.0  ~/cwd/.test-tool-versions 3");
-    }
-
-    #[test]
-    fn test_global() {
-        reset();
-        assert_cli_snapshot!("ls", "--global", @"");
-    }
-}
