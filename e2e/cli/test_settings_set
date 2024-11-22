@@ -5,10 +5,11 @@ assert "mise settings get legacy_version_file" "false"
 mise settings set always_keep_download y
 assert "mise settings get always_keep_download" "true"
 mise settings set status.missing_tools never
-assert "mise settings get status.missing_tools" '"never"'
+assert "mise settings get status.missing_tools" 'never'
 mise settings set plugin_autoupdate_last_check_duration 1
-assert "mise settings get plugin_autoupdate_last_check_duration" '"1"'
+assert "mise settings get plugin_autoupdate_last_check_duration" '1'
 mise settings set all_compile 1
 assert_contains "mise settings" "all_compile = true"
 mise settings unset all_compile
 assert "mise settings get all_compile" "false"
+assert_fail "mise settings get abcdefg" "mise ERROR Unknown setting: abcdefg"

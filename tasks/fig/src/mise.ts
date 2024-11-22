@@ -2462,9 +2462,16 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
+                        "--ignore"
+                    ],
+                    "description": "Do not trust this config and ignore it in the future",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
                         "--untrust"
                     ],
-                    "description": "No longer trust this config",
+                    "description": "No longer trust this config, will prompt in the future",
                     "isRepeatable": false
                 },
                 {

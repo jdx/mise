@@ -64,7 +64,7 @@ pub static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
 });
 
 fn top_toml_config() -> Option<PathBuf> {
-    load_config_paths(&TOML_CONFIG_FILENAMES)
+    load_config_paths(&TOML_CONFIG_FILENAMES, false)
         .iter()
         .find(|p| p.to_string_lossy().ends_with(".toml"))
         .map(|p| p.to_path_buf())
