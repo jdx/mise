@@ -1,5 +1,7 @@
+use crate::config::CONFIG;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use eyre::Result;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -259,6 +261,12 @@ impl TaskScriptParser {
         });
         let mut ctx = BASE_CONTEXT.clone();
         ctx.insert("config_root", config_root);
+        let mut vars = IndexMap::new();
+        ctx.insert("vars", &vars);
+        for (k, v) in &CONFIG.vars {
+            vars.insert(k.clone(), tera.render_str(v, &ctx).unwrap());
+            ctx.insert("vars", &vars);
+        }
         let scripts = scripts
             .iter()
             .map(|s| tera.render_str(s, &ctx).unwrap())

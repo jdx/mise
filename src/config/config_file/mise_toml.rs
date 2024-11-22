@@ -53,6 +53,8 @@ pub struct MiseToml {
     #[serde(default)]
     tasks: Tasks,
     #[serde(default)]
+    vars: IndexMap<String, String>,
+    #[serde(default)]
     settings: SettingsPartial,
 }
 
@@ -420,6 +422,10 @@ impl ConfigFile for MiseToml {
     fn task_config(&self) -> &TaskConfig {
         &self.task_config
     }
+
+    fn vars(&self) -> eyre::Result<&IndexMap<String, String>> {
+        Ok(&self.vars)
+    }
 }
 
 /// Returns a [`toml_edit::Key`] from the given `key`.
@@ -482,6 +488,7 @@ impl Clone for MiseToml {
             tasks: self.tasks.clone(),
             task_config: self.task_config.clone(),
             settings: self.settings.clone(),
+            vars: self.vars.clone(),
         }
     }
 }
