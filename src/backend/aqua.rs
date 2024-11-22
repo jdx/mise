@@ -4,6 +4,7 @@ use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
+use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
 use crate::file::TarOptions;
 use crate::http::HTTP;
@@ -16,7 +17,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct AquaBackend {
@@ -32,6 +33,10 @@ impl Backend for AquaBackend {
 
     fn ba(&self) -> &BackendArg {
         &self.ba
+    }
+
+    fn get_optional_dependencies(&self) -> Result<Vec<&str>> {
+        Ok(vec!["cosign", "slsa-verifier"])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
@@ -221,6 +226,7 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
+        self.verify_slsa(ctx, tv, pkg, v, filename)?;
         if !tv.checksums.contains_key(filename) {
             if let Some(checksum) = &pkg.checksum {
                 if checksum.enabled() {
@@ -231,7 +237,10 @@ impl AquaBackend {
                         }
                         AquaChecksumType::Http => checksum.url(pkg, v)?,
                     };
-                    let mut checksum_file = HTTP.get_text(&url)?;
+                    let checksum_path = tv.download_path().join(format!("{}.checksum", filename));
+                    HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))?;
+                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path)?;
+                    let mut checksum_file = file::read_to_string(&checksum_path)?;
                     if checksum.file_format() == "regexp" {
                         let pattern = checksum.pattern();
                         if let Some(file) = &pattern.file {
@@ -285,6 +294,134 @@ impl AquaBackend {
         }
         let tarball_path = tv.download_path().join(filename);
         self.verify_checksum(ctx, tv, &tarball_path)?;
+        Ok(())
+    }
+
+    fn verify_slsa(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        pkg: &AquaPackage,
+        v: &str,
+        filename: &str,
+    ) -> Result<()> {
+        if !SETTINGS.aqua.slsa {
+            return Ok(());
+        }
+        if let Some(slsa) = &pkg.slsa_provenance {
+            if slsa.enabled == Some(false) {
+                debug!("slsa is disabled for {tv}");
+                return Ok(());
+            }
+            if let Some(slsa_bin) = self.dependency_which("slsa-verifier") {
+                ctx.pr.set_message("verify slsa".to_string());
+                let repo_owner = slsa
+                    .repo_owner
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_owner.clone());
+                let repo_name = slsa
+                    .repo_name
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_name.clone());
+                let repo = format!("{repo_owner}/{repo_name}");
+                let provenance_path = match slsa.r#type.as_deref().unwrap_or_default() {
+                    "github_release" => {
+                        let asset = slsa.asset(pkg, v)?;
+                        let url = github::get_release(&repo, v)?
+                            .assets
+                            .into_iter()
+                            .find(|a| a.name == asset)
+                            .map(|a| a.browser_download_url);
+                        if let Some(url) = url {
+                            let path = tv.download_path().join(asset);
+                            HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))?;
+                            path.to_string_lossy().to_string()
+                        } else {
+                            warn!("no asset found for slsa verification of {tv}: {asset}");
+                            return Ok(());
+                        }
+                    }
+                    "http" => {
+                        let url = slsa.url(pkg, v)?;
+                        let path = tv.download_path().join(filename);
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))?;
+                        path.to_string_lossy().to_string()
+                    }
+                    t => {
+                        warn!("unsupported slsa type: {t}");
+                        return Ok(());
+                    }
+                };
+                let mut cmd = CmdLineRunner::new(slsa_bin)
+                    .arg("verify-artifact")
+                    .arg(tv.download_path().join(filename))
+                    .arg("--provenance-repository")
+                    .arg(&repo)
+                    .arg("--source-uri")
+                    .arg(format!("github.com/{repo}"))
+                    .arg("--provenance-path")
+                    .arg(provenance_path);
+                cmd = cmd.with_pr(ctx.pr.as_ref());
+                cmd.execute()?;
+            } else {
+                warn!("{tv} can be verified with slsa-verifier but slsa-verifier is not installed");
+            }
+        }
+        Ok(())
+    }
+
+    fn cosign_checksums(
+        &self,
+        ctx: &InstallContext,
+        pkg: &AquaPackage,
+        v: &str,
+        tv: &ToolVersion,
+        checksum_path: &Path,
+    ) -> Result<()> {
+        if !SETTINGS.aqua.cosign {
+            return Ok(());
+        }
+        if let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref()) {
+            if cosign.enabled == Some(false) {
+                debug!("cosign is disabled for {tv}");
+                return Ok(());
+            }
+            if let Some(cosign_bin) = self.dependency_which("cosign") {
+                ctx.pr
+                    .set_message("verify checksums with cosign".to_string());
+                let mut cmd = CmdLineRunner::new(cosign_bin)
+                    .arg("verify-blob")
+                    .arg(checksum_path);
+                if cosign.experimental == Some(true) {
+                    cmd = cmd.env("COSIGN_EXPERIMENTAL", "1");
+                }
+                if let Some(signature) = &cosign.signature {
+                    let arg = signature.arg(pkg, v)?;
+                    if !arg.is_empty() {
+                        cmd = cmd.arg("--signature").arg(arg);
+                    }
+                }
+                if let Some(key) = &cosign.key {
+                    let arg = key.arg(pkg, v)?;
+                    if !arg.is_empty() {
+                        cmd = cmd.arg("--key").arg(arg);
+                    }
+                }
+                if let Some(certificate) = &cosign.certificate {
+                    let arg = certificate.arg(pkg, v)?;
+                    if !arg.is_empty() {
+                        cmd = cmd.arg("--certificate").arg(arg);
+                    }
+                }
+                for opt in cosign.opts(pkg, v)? {
+                    cmd = cmd.arg(opt);
+                }
+                cmd = cmd.with_pr(ctx.pr.as_ref());
+                cmd.execute()?;
+            } else {
+                warn!("{tv} can be verified with cosign but cosign is not installed");
+            }
+        }
         Ok(())
     }
 

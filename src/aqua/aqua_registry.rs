@@ -58,6 +58,7 @@ pub struct AquaPackage {
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
     pub checksum: Option<AquaChecksum>,
+    pub slsa_provenance: Option<AquaSlsaProvenance>,
     overrides: Vec<AquaOverride>,
     version_constraint: String,
     version_overrides: Vec<AquaPackage>,
@@ -95,10 +96,39 @@ pub enum AquaChecksumType {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct AquaCosignSignature {
+    pub r#type: Option<String>,
+    pub repo_owner: Option<String>,
+    pub repo_name: Option<String>,
+    pub url: Option<String>,
+    pub asset: Option<String>,
+}
+#[derive(Debug, Deserialize, Clone)]
+pub struct AquaCosign {
+    pub enabled: Option<bool>,
+    pub experimental: Option<bool>,
+    pub signature: Option<AquaCosignSignature>,
+    pub key: Option<AquaCosignSignature>,
+    pub certificate: Option<AquaCosignSignature>,
+    opts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AquaSlsaProvenance {
+    pub enabled: Option<bool>,
+    pub r#type: Option<String>,
+    pub repo_owner: Option<String>,
+    pub repo_name: Option<String>,
+    pub url: Option<String>,
+    pub asset: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaChecksum {
     pub r#type: Option<AquaChecksumType>,
     pub algorithm: Option<AquaChecksumAlgorithm>,
     pub pattern: Option<AquaChecksumPattern>,
+    pub cosign: Option<AquaCosign>,
     file_format: Option<String>,
     enabled: Option<bool>,
     asset: Option<String>,
@@ -123,7 +153,7 @@ impl AquaRegistry {
         let mut repo_exists = repo.exists();
         if repo_exists {
             fetch_latest_repo(&repo)?;
-        } else if let Some(aqua_registry_url) = &SETTINGS.aqua_registry_url {
+        } else if let Some(aqua_registry_url) = &SETTINGS.aqua.registry_url {
             info!("cloning aqua registry to {path:?}");
             repo.clone(aqua_registry_url, None)?;
             repo_exists = true;
@@ -375,30 +405,17 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
 
     if let Some(avo_checksum) = avo.checksum.clone() {
         let mut checksum = orig.checksum.unwrap_or_else(|| avo_checksum.clone());
-        if let Some(avo_checksum_type) = avo_checksum.r#type {
-            checksum.r#type = Some(avo_checksum_type);
-        }
-        if let Some(avo_checksum_pattern) = avo_checksum.pattern {
-            checksum.pattern = Some(avo_checksum_pattern);
-        }
-        if let Some(avo_checksum_enabled) = avo_checksum.enabled {
-            checksum.enabled = Some(avo_checksum_enabled);
-        }
-        if let Some(avo_checksum_asset) = avo_checksum.asset {
-            checksum.asset = Some(avo_checksum_asset);
-        }
-        if let Some(avo_checksum_algorithm) = avo_checksum.algorithm {
-            checksum.algorithm = Some(avo_checksum_algorithm);
-        }
-        if let Some(avo_checksum_file_format) = avo_checksum.file_format {
-            checksum.file_format = Some(avo_checksum_file_format);
-        }
-        if let Some(avo_checksum_url) = avo_checksum.url {
-            checksum.url = Some(avo_checksum_url);
-        }
+        checksum.merge(avo_checksum);
         orig.checksum = Some(checksum);
     }
 
+    if let Some(avo_slsa_provenance) = avo.slsa_provenance.clone() {
+        let mut slsa_provenance = orig
+            .slsa_provenance
+            .unwrap_or_else(|| avo_slsa_provenance.clone());
+        slsa_provenance.merge(avo_slsa_provenance);
+        orig.slsa_provenance = Some(slsa_provenance);
+    }
     orig
 }
 
@@ -431,5 +448,158 @@ impl AquaChecksum {
     }
     pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
         pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
+    }
+
+    fn merge(&mut self, other: Self) {
+        if let Some(r#type) = other.r#type {
+            self.r#type = Some(r#type);
+        }
+        if let Some(algorithm) = other.algorithm {
+            self.algorithm = Some(algorithm);
+        }
+        if let Some(pattern) = other.pattern {
+            self.pattern = Some(pattern);
+        }
+        if let Some(enabled) = other.enabled {
+            self.enabled = Some(enabled);
+        }
+        if let Some(asset) = other.asset {
+            self.asset = Some(asset);
+        }
+        if let Some(url) = other.url {
+            self.url = Some(url);
+        }
+        if let Some(file_format) = other.file_format {
+            self.file_format = Some(file_format);
+        }
+        if let Some(cosign) = other.cosign {
+            if self.cosign.is_none() {
+                self.cosign = Some(cosign.clone());
+            }
+            self.cosign.as_mut().unwrap().merge(cosign);
+        }
+    }
+}
+
+impl AquaCosign {
+    pub fn opts(&self, pkg: &AquaPackage, v: &str) -> Result<Vec<String>> {
+        self.opts
+            .iter()
+            .map(|opt| pkg.parse_aqua_str(opt, v, &Default::default()))
+            .collect()
+    }
+
+    fn merge(&mut self, other: Self) {
+        if let Some(enabled) = other.enabled {
+            self.enabled = Some(enabled);
+        }
+        if let Some(experimental) = other.experimental {
+            self.experimental = Some(experimental);
+        }
+        if let Some(signature) = other.signature.clone() {
+            if self.signature.is_none() {
+                self.signature = Some(signature.clone());
+            }
+            self.signature.as_mut().unwrap().merge(signature);
+        }
+        if let Some(key) = other.key.clone() {
+            if self.key.is_none() {
+                self.key = Some(key.clone());
+            }
+            self.key.as_mut().unwrap().merge(key);
+        }
+        if let Some(certificate) = other.certificate.clone() {
+            if self.certificate.is_none() {
+                self.certificate = Some(certificate.clone());
+            }
+            self.certificate.as_mut().unwrap().merge(certificate);
+        }
+        if !other.opts.is_empty() {
+            self.opts = other.opts.clone();
+        }
+    }
+}
+
+impl AquaCosignSignature {
+    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
+    }
+    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &Default::default())
+    }
+    pub fn arg(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        match self.r#type.as_deref().unwrap_or_default() {
+            "github_release" => {
+                let asset = self.asset(pkg, v)?;
+                let repo_owner = self
+                    .repo_owner
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_owner.clone());
+                let repo_name = self
+                    .repo_name
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_name.clone());
+                let repo = format!("{repo_owner}/{repo_name}");
+                Ok(format!(
+                    "https://github.com/{repo}/releases/download/{v}/{asset}"
+                ))
+            }
+            "http" => self.url(pkg, v),
+            t => {
+                warn!(
+                    "unsupported cosign signature type for {}/{}: {t}",
+                    pkg.repo_owner, pkg.repo_name
+                );
+                Ok("".to_string())
+            }
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        if let Some(r#type) = other.r#type {
+            self.r#type = Some(r#type);
+        }
+        if let Some(repo_owner) = other.repo_owner {
+            self.repo_owner = Some(repo_owner);
+        }
+        if let Some(repo_name) = other.repo_name {
+            self.repo_name = Some(repo_name);
+        }
+        if let Some(url) = other.url {
+            self.url = Some(url);
+        }
+        if let Some(asset) = other.asset {
+            self.asset = Some(asset);
+        }
+    }
+}
+
+impl AquaSlsaProvenance {
+    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &Default::default())
+    }
+    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
+    }
+
+    fn merge(&mut self, other: Self) {
+        if let Some(enabled) = other.enabled {
+            self.enabled = Some(enabled);
+        }
+        if let Some(r#type) = other.r#type {
+            self.r#type = Some(r#type);
+        }
+        if let Some(repo_owner) = other.repo_owner {
+            self.repo_owner = Some(repo_owner);
+        }
+        if let Some(repo_name) = other.repo_name {
+            self.repo_name = Some(repo_name);
+        }
+        if let Some(url) = other.url {
+            self.url = Some(url);
+        }
+        if let Some(asset) = other.asset {
+            self.asset = Some(asset);
+        }
     }
 }

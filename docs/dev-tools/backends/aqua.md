@@ -25,3 +25,10 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 Some tools will default to use aqua if they're specified in [registry.toml](https://github.com/jdx/mise/blob/main/registry.toml)
 to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
+
+## Settings
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="aqua" :level="3" />

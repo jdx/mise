@@ -34,6 +34,13 @@ version = "2.7.0"
 [tools."cargo:usage-cli"]
 version = "1.3.3"
 
+[tools.cosign]
+version = "2.4.1"
+
+[tools.cosign.checksums]
+cosign-darwin-arm64 = "sha256:13343856b69f70388c4fe0b986a31dde5958e444b41be22d785d3dc5e1a9cc62"
+cosign-linux-amd64 = "sha256:8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b"
+
 [tools.jq]
 version = "1.7.1"
 
@@ -66,3 +73,10 @@ shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f
 
 [tools.shfmt]
 version = "3.10.0"
+
+[tools.slsa-verifier]
+version = "2.6.0"
+
+[tools.slsa-verifier.checksums]
+slsa-verifier-linux-x86_64 = "sha256:1c9c0d6a272063f3def6d233fa3372adbaff1f5a3480611a07c744e73246b62d"
+slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff545460add0cb4a087aec056189c"

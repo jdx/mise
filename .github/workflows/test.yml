@@ -195,6 +195,12 @@ jobs:
         with:
           name: mise-ubuntu-latest
           path: target/debug
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
@@ -237,6 +243,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     needs: [build-windows]
+    env:
+      MISE_DATA_DIR: ~/.local/share/mise
+      MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
@@ -269,6 +278,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     needs: [build-windows]
+    env:
+      MISE_DATA_DIR: ~/.local/share/mise
+      MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -304,6 +316,8 @@ jobs:
       TEST_TRANCHE: ${{matrix.tranche}}
       TEST_TRANCHE_COUNT: 4
       TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
+      MISE_DATA_DIR: ~/.local/share/mise
+      MISE_CACHE_DIR: ~/.cache/mise
       MISE_USE_VERSIONS_HOST: 1
       MISE_DISABLE_TOOLS: |
         1password-cli,
@@ -319,4 +333,11 @@ jobs:
       - if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+      - uses: actions/cache/restore@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise install
       - run: mise test-tool --all

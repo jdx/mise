@@ -561,6 +561,16 @@ pub trait Backend: Debug + Send + Sync {
         Ok(ts)
     }
 
+    fn dependency_which(&self, bin: &str) -> Option<PathBuf> {
+        file::which_non_pristine(bin).or_else(|| {
+            self.dependency_toolset()
+                .ok()
+                .and_then(|ts| ts.which(bin))
+                .and_then(|(b, tv)| b.which(&tv, bin).ok())
+                .flatten()
+        })
+    }
+
     fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
         self.dependency_toolset()?.full_env()
     }

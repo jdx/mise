@@ -13,6 +13,7 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 "cargo:cargo-show" = { version = "latest", os = ["linux", "macos"] }
 "cargo:git-cliff" = "latest"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
+cosign = "latest"
 "jq" = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
@@ -21,6 +22,7 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 "ripgrep" = "latest"
 "shellcheck" = "0.10"
 "shfmt" = "3"
+slsa-verifier = "latest"
 
 [task_config]
 includes = ["tasks.toml", "tasks"]

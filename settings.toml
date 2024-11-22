@@ -55,7 +55,13 @@ env = "MISE_ALWAYS_KEEP_INSTALL"
 type = "Bool"
 description = "should mise keep install files after installation even if the installation fails"
 
-[aqua_registry_url]
+[aqua.cosign]
+env = "MISE_AQUA_COSIGN"
+type = "Bool"
+default = true
+description = "Use cosign to verify aqua tool signatures."
+
+[aqua.registry_url]
 env = "MISE_AQUA_REGISTRY_URL"
 type = "Url"
 optional = true
@@ -68,6 +74,12 @@ By default, the official aqua registry is used: https://github.com/aquaproj/aqua
 However when this is not specified, instead of cloning the entire registry each individual tool's metadata is fetched
 via HTTP individually.
 """
+
+[aqua.slsa]
+env = "MISE_AQUA_SLSA"
+type = "Bool"
+default = true
+description = "Use SLSA to verify aqua tool signatures."
 
 [asdf]
 env = "MISE_ASDF"
