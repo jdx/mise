@@ -7,7 +7,7 @@ use indexmap::{indexmap, IndexMap};
 use crate::file::display_path;
 
 /// where a tool version came from (e.g.: .tool-versions)
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, strum::EnumIs)]
 pub enum ToolSource {
     ToolVersions(PathBuf),
     MiseToml(PathBuf),
