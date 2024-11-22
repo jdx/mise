@@ -128,11 +128,12 @@ impl Plugin for VfoxPlugin {
             .wrap_err("run with --yes to install plugin automatically"))
     }
 
-    fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> Result<()> {
+    fn ensure_installed(&self, mpr: &MultiProgressReport, _force: bool) -> Result<()> {
         if !self.plugin_path.exists() {
             let url = self.get_repo_url()?;
             trace!("Cloning vfox plugin: {url}");
-            self.repo().clone(url.as_str())?;
+            let pr = mpr.add(&format!("clone vfox plugin {}", url));
+            self.repo().clone(url.as_str(), Some(pr.as_ref()))?;
         }
         Ok(())
     }
@@ -207,7 +208,7 @@ Plugins could support local directories in the future but for now a symlink is r
         }
         let git = Git::new(&self.plugin_path);
         pr.set_message(format!("clone {repo_url}"));
-        git.clone(&repo_url)?;
+        git.clone(&repo_url, Some(pr))?;
         if let Some(ref_) = &repo_ref {
             pr.set_message(format!("git update {ref_}"));
             git.update(Some(ref_.to_string()))?;

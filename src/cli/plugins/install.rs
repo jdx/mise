@@ -143,17 +143,23 @@ fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Opt
 }
 
 fn get_name_from_url(url: &str) -> Result<String> {
-    if let Ok(url) = Url::parse(url.trim_end_matches('/')) {
-        if let Some(segments) = url.path_segments() {
-            let last = segments.last().unwrap_or_default();
-            let name = last.strip_prefix("asdf-").unwrap_or(last);
-            let name = name.strip_prefix("rtx-").unwrap_or(name);
-            let name = name.strip_prefix("mise-").unwrap_or(name);
-            let name = name.strip_suffix(".git").unwrap_or(name);
-            return Ok(unalias_backend(name).to_string());
-        }
-    }
-    Err(eyre!("could not infer plugin name from url: {}", url))
+    let url = url.strip_prefix("git@").unwrap_or(url);
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    let url = url.strip_suffix("/").unwrap_or(url);
+    let name = if let Ok(Some(name)) = Url::parse(url).map(|u| {
+        u.path_segments()
+            .and_then(|s| s.last().map(|s| s.to_string()))
+    }) {
+        name
+    } else if let Some(name) = url.split('/').last().map(|s| s.to_string()) {
+        name
+    } else {
+        return Err(eyre!("could not infer plugin name from url: {}", url));
+    };
+    let name = name.strip_prefix("asdf-").unwrap_or(&name);
+    let name = name.strip_prefix("rtx-").unwrap_or(name);
+    let name = name.strip_prefix("mise-").unwrap_or(name);
+    Ok(unalias_backend(name).to_string())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -173,3 +179,31 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git#v1.0.0</bold>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_str_eq;
+
+    #[test]
+    fn test_get_name_from_url() {
+        let get_name = |url| get_name_from_url(url).unwrap();
+        assert_str_eq!(get_name("nodejs"), "node");
+        assert_str_eq!(
+            get_name("https://github.com/mise-plugins/mise-nodejs.git"),
+            "node"
+        );
+        assert_str_eq!(
+            get_name("https://github.com/mise-plugins/asdf-nodejs.git"),
+            "node"
+        );
+        assert_str_eq!(
+            get_name("https://github.com/mise-plugins/asdf-nodejs/"),
+            "node"
+        );
+        assert_str_eq!(
+            get_name("git@github.com:mise-plugins/asdf-nodejs.git"),
+            "node"
+        );
+    }
+}
