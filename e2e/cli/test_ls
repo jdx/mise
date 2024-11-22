@@ -1,5 +1,35 @@
 #!/usr/bin/env bash
 
+assert "mise use -g dummy@ref:master"
+assert "mise use tiny@3"
+assert_contains "mise ls" "dummy  ref:master  ~/.config/mise/config.toml ref:master"
+assert_contains "mise ls tiny" "tiny  3.1.0  ~/workdir/mise.toml 3"
+assert "mise i tiny@2.0.0"
+assert_contains "mise ls" "tiny   2.0.0"
+assert_not_contains "mise ls -c" "tiny   2.0.0"
+assert_contains "mise ls --prefix=3 tiny" "3.1.0"
+assert_not_contains "mise ls --prefix=2 tiny" "3.1.0"
+assert_contains "mise ls --global" "dummy"
+assert_not_contains "mise ls --global" "tiny"
+
+mise ls tiny --json > json
+assert "cat json | jq -r '.[0].installed'" "true"
+assert "cat json | jq -r '.[0].active'" "false"
+assert "cat json | jq -r '.[0].version'" "2.0.0"
+assert "cat json | jq -r '.[0].install_path'" "$MISE_DATA_DIR/installs/tiny/2.0.0"
+mise ls --json > json
+assert "cat json | jq -r '.tiny.[1].installed'" "true"
+assert "cat json | jq -r '.tiny.[1].active'" "true"
+assert "cat json | jq -r '.tiny.[1].version'" "3.1.0"
+assert "cat json | jq -r '.tiny.[1].install_path'" "$MISE_DATA_DIR/installs/tiny/3.1.0"
+
+assert "mise rm tiny@3.1.0"
+assert_contains "mise ls tiny" "tiny  3.1.0 (missing)  ~/workdir/mise.toml 3"
+assert_contains "mise ls --missing tiny" "tiny  3.1.0 (missing)  ~/workdir/mise.toml 3"
+assert_not_contains "mise ls --missing tiny" "2.0.0"
+
+assert_fail "mise ls missing-tool" "missing-tool not found in mise tool registry"
+
 mise use cargo-binstall
 mise i cargo:usage-cli
 assert_contains "mise ls" "cargo:usage-cli"

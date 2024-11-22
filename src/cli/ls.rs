@@ -53,12 +53,8 @@ pub struct Ls {
     #[clap(long, short)]
     offline: bool,
 
-    /// Output in an easily parseable format
-    #[clap(long, hide = true, conflicts_with = "json")]
-    parseable: bool,
-
     /// Output in JSON format
-    #[clap(long, short = 'J', overrides_with = "parseable")]
+    #[clap(long, short = 'J')]
     json: bool,
 
     /// Display missing tool versions
@@ -70,7 +66,7 @@ pub struct Ls {
     prefix: Option<String>,
 
     /// Don't display headers
-    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = & ["json", "parseable"])]
+    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
     no_header: bool,
 }
 
@@ -99,8 +95,6 @@ impl Ls {
         }
         if self.json {
             self.display_json(runtimes)
-        } else if self.parseable {
-            self.display_parseable(runtimes)
         } else {
             self.display_user(runtimes)
         }
@@ -138,25 +132,6 @@ impl Ls {
             plugins.insert(plugin_name.clone(), runtimes);
         }
         miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
-        Ok(())
-    }
-
-    fn display_parseable(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        warn!("The parseable output format is deprecated and will be removed in a future release.");
-        warn!("Please use the regular output format instead which has been modified to be more easily parseable.");
-        let tvs = runtimes
-            .into_iter()
-            .map(|(_, p, tv, _)| (p, tv))
-            .filter(|(p, tv)| p.is_version_installed(tv, true))
-            .map(|(_, tv)| tv);
-        for tv in tvs {
-            if self.plugin.is_some() {
-                // only displaying 1 plugin so only show the version
-                miseprintln!("{}", tv.version);
-            } else {
-                miseprintln!("{} {}", tv.ba(), tv.version);
-            }
-        }
         Ok(())
     }
 
@@ -400,115 +375,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     }
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_str_eq;
-
-    use crate::dirs;
-    use crate::file::remove_all;
-    use crate::test::reset;
-
-    #[test]
-    fn test_ls() {
-        reset();
-        let _ = remove_all(*dirs::INSTALLS);
-        assert_cli!("install");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master  ~/.test-tool-versions     ref:master
-        tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        ");
-
-        assert_cli!("install", "tiny@2.0.0");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master  ~/.test-tool-versions     ref:master
-        tiny   2.0.0                                           
-        tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        ");
-
-        assert_cli!("uninstall", "tiny@3.1.0");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master       ~/.test-tool-versions     ref:master
-        tiny   2.0.0                                                
-        tiny   3.1.0 (missing)  ~/cwd/.test-tool-versions 3
-        ");
-
-        assert_cli!("uninstall", "tiny@2.0.0");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master       ~/.test-tool-versions     ref:master
-        tiny   3.1.0 (missing)  ~/cwd/.test-tool-versions 3
-        ");
-
-        assert_cli!("install");
-        assert_cli_snapshot!("list", @r"
-        dummy  ref:master  ~/.test-tool-versions     ref:master
-        tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        ");
-    }
-
-    #[test]
-    fn test_ls_current() {
-        reset();
-        assert_cli_snapshot!("ls", "-c", @r"
-        dummy  ref:master  ~/.test-tool-versions     ref:master
-        tiny   3.1.0       ~/cwd/.test-tool-versions 3
-        ");
-    }
-
-    #[test]
-    fn test_ls_json() {
-        reset();
-        let _ = remove_all(*dirs::INSTALLS);
-        assert_cli!("install");
-        assert_cli_snapshot!("ls", "--json");
-        assert_cli_snapshot!("ls", "--json", "tiny");
-    }
-
-    #[test]
-    fn test_ls_parseable() {
-        reset();
-        let _ = remove_all(*dirs::INSTALLS);
-        assert_cli!("install");
-        assert_cli_snapshot!("ls", "--parseable", @r"
-        dummy ref:master
-        tiny 3.1.0
-        mise The parseable output format is deprecated and will be removed in a future release.
-        mise Please use the regular output format instead which has been modified to be more easily parseable.
-        ");
-        assert_cli_snapshot!("ls", "--parseable", "tiny", @r"
-        3.1.0
-        mise The parseable output format is deprecated and will be removed in a future release.
-        mise Please use the regular output format instead which has been modified to be more easily parseable.
-        ");
-    }
-
-    #[test]
-    fn test_ls_missing() {
-        reset();
-        assert_cli!("install");
-        assert_cli_snapshot!("ls", "--missing", @"");
-    }
-
-    #[test]
-    fn test_ls_missing_plugin() {
-        reset();
-        let err = assert_cli_err!("ls", "missing-plugin");
-        assert_str_eq!(
-            err.to_string(),
-            r#"missing-plugin not found in mise tool registry"#
-        );
-    }
-
-    #[test]
-    fn test_ls_prefix() {
-        reset();
-        assert_cli!("install");
-        assert_cli_snapshot!("ls", "--plugin=tiny", "--prefix=3", @"tiny  3.1.0  ~/cwd/.test-tool-versions 3");
-    }
-
-    #[test]
-    fn test_global() {
-        reset();
-        assert_cli_snapshot!("ls", "--global", @"");
-    }
-}
