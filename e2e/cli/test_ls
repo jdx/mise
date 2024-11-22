@@ -12,16 +12,16 @@ assert_not_contains "mise ls --prefix=2 tiny" "3.1.0"
 assert_contains "mise ls --global" "dummy"
 assert_not_contains "mise ls --global" "tiny"
 
-mise ls tiny --json > json
+mise ls tiny --json >json
 assert "cat json | jq -r '.[0].installed'" "true"
 assert "cat json | jq -r '.[0].active'" "false"
 assert "cat json | jq -r '.[0].version'" "2.0.0"
 assert "cat json | jq -r '.[0].install_path'" "$MISE_DATA_DIR/installs/tiny/2.0.0"
-mise ls --json > json
-assert "cat json | jq -r '.tiny.[1].installed'" "true"
-assert "cat json | jq -r '.tiny.[1].active'" "true"
-assert "cat json | jq -r '.tiny.[1].version'" "3.1.0"
-assert "cat json | jq -r '.tiny.[1].install_path'" "$MISE_DATA_DIR/installs/tiny/3.1.0"
+mise ls --json >json
+assert "cat json | jq -r '.tiny[1].installed'" "true"
+assert "cat json | jq -r '.tiny[1].active'" "true"
+assert "cat json | jq -r '.tiny[1].version'" "3.1.0"
+assert "cat json | jq -r '.tiny[1].install_path'" "$MISE_DATA_DIR/installs/tiny/3.1.0"
 
 assert "mise rm tiny@3.1.0"
 assert_contains "mise ls tiny" "tiny  3.1.0 (missing)  ~/workdir/mise.toml 3"
