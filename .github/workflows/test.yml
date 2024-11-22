@@ -187,7 +187,6 @@ jobs:
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
-          MISE_USE_VERSIONS_HOST: 0
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
           TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
