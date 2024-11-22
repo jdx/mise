@@ -44,6 +44,7 @@ pub struct Config {
     pub project_root: Option<PathBuf>,
     pub all_aliases: AliasMap,
     pub repo_urls: HashMap<String, String>,
+    pub vars: IndexMap<String, String>,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
@@ -97,6 +98,7 @@ impl Config {
             aliases: load_aliases(&config_files)?,
             project_root: get_project_root(&config_files),
             repo_urls: load_plugins(&config_files)?,
+            vars: load_vars(&config_files)?,
             config_files,
             ..Default::default()
         };
@@ -804,6 +806,17 @@ fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
     }
     trace!("load_plugins: {}", plugins.len());
     Ok(plugins)
+}
+
+fn load_vars(config_files: &ConfigMap) -> Result<IndexMap<String, String>> {
+    let mut vars = IndexMap::new();
+    for config_file in config_files.values() {
+        for (k, v) in config_file.vars()?.clone() {
+            vars.insert(k, v);
+        }
+    }
+    trace!("load_vars: {}", vars.len());
+    Ok(vars)
 }
 
 impl Debug for Config {

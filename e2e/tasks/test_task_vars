@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+tasks.a.run = "echo foo: {{vars.foo}}"
+vars.foo = "bar"
+EOF
+
+assert "mise run a" "foo: bar"

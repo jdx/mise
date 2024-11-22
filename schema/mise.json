@@ -745,6 +745,14 @@
         }
       ]
     },
+    "vars": {
+      "description": "variables to set",
+      "type": "object",
+      "additionalProperties": {
+        "description": "value of variable",
+        "type": "string"
+      }
+    },
     "task_config": {
       "description": "configration for task execution/management",
       "type": "object",

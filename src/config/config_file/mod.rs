@@ -7,6 +7,7 @@ use std::sync::{Mutex, Once};
 
 use eyre::eyre;
 use eyre::Result;
+use indexmap::IndexMap;
 use legacy_version::LegacyVersionFile;
 use once_cell::sync::Lazy;
 use serde_derive::Deserialize;
@@ -87,6 +88,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn task_config(&self) -> &TaskConfig {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
+    }
+    fn vars(&self) -> Result<&IndexMap<String, String>> {
+        static DEFAULT_VARS: Lazy<IndexMap<String, String>> = Lazy::new(IndexMap::new);
+        Ok(&DEFAULT_VARS)
     }
 }
 
