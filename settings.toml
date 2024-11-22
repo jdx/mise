@@ -746,6 +746,14 @@ docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 """
 
+[task_skip]
+env = "MISE_TASK_SKIP"
+type = "ListString"
+rust_type = "BTreeSet<String>"
+default = []
+parse_env = "list_by_comma"
+description = "Tasks to skip when running `mise run`."
+
 [task_timings]
 env = "MISE_TASK_TIMINGS"
 type = "Bool"

@@ -15,7 +15,11 @@ impl RenderHelp {
         xx::file::mkdirp("docs/.vitepress")?;
 
         file::write("docs/.vitepress/cli_commands.ts", render_command_ts())?;
-        cmd!("prettier", "--write", "docs/.vitepress/cli_commands.ts").run()?;
+        if cfg!(windows) {
+            cmd!("prettier.cmd", "--write", "docs/.vitepress/cli_commands.ts").run()?;
+        } else {
+            cmd!("prettier", "--write", "docs/.vitepress/cli_commands.ts").run()?;
+        }
         Ok(())
     }
 }
