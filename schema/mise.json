@@ -127,9 +127,24 @@
           "description": "should mise keep install files after installation even if the installation fails",
           "type": "boolean"
         },
-        "aqua_registry_url": {
-          "description": "URL to fetch aqua registry from.",
-          "type": "string"
+        "aqua": {
+          "additionalProperties": false,
+          "properties": {
+            "cosign": {
+              "default": true,
+              "description": "Use cosign to verify aqua tool signatures.",
+              "type": "boolean"
+            },
+            "registry_url": {
+              "description": "URL to fetch aqua registry from.",
+              "type": "string"
+            },
+            "slsa": {
+              "default": true,
+              "description": "Use SLSA to verify aqua tool signatures.",
+              "type": "boolean"
+            }
+          }
         },
         "asdf": {
           "description": "use asdf as a default plugin backend",
