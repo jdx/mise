@@ -44,21 +44,6 @@ description = 'Cut a new release'
 file = 'scripts/release.sh' # execute an external script
 ```
 
-## Vars
-
-Vars are variables that can be shared between tasks like environment variables but they are not
-passed
-as environment variables to the scripts. They are defined in the `vars` section of the `mise.toml`
-file.
-
-```toml
-[vars]
-e2e_args = '--headless'
-
-[tasks.test]
-run = './scripts/test-e2e.sh {{vars.e2e_args}}'
-```
-
 ## Arguments
 
 By default, arguments are passed to the last script in the `run` array. So if a task was defined as:
