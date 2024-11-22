@@ -523,7 +523,7 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
     let os = os();
     let arch = arch();
     let os_arch = format!("{}/{}", os, arch);
-    let mut myself: HashSet<&str> = ["all", &os, &arch, os_arch.as_str()].into();
+    let mut myself: HashSet<&str> = ["all", os, arch, os_arch.as_str()].into();
     if os == "windows" && arch == "arm64" {
         // assume windows/arm64 is supported
         myself.insert("windows/amd64");
