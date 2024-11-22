@@ -2,6 +2,7 @@
 version = "1.7.4"
 
 [tools.actionlint.checksums]
+actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
 actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5ccd2564bf86192c1b661"
 
 [tools.bun]
@@ -9,11 +10,13 @@ version = "1.1.36"
 
 [tools.bun.checksums]
 "bun-darwin-aarch64.zip" = "sha256:f299aaf467ec8e610bbefef8b91664ab3b199a174ceb2f5a97d624c96dfde068"
+"bun-linux-x64-baseline.zip" = "sha256:515666143dbda58ed0b90cf3ae0ade7178b0d705d7576f62bedf66c709740eb3"
 
 [tools.cargo-binstall]
 version = "1.10.13"
 
 [tools.cargo-binstall.checksums]
+cargo-binstall-linux-x86_64 = "sha256:53a7157f56e1698d42d3cd50b1d08f02159638e3a73edf362e14215337942e86"
 cargo-binstall-macos-aarch64 = "sha256:f67dd4fc8ea01b4c55fe041a0fbd6d81a361947f1dbf2bd226490c641cc167b3"
 
 [tools."cargo:cargo-edit"]
@@ -36,11 +39,13 @@ version = "2.4.1"
 
 [tools.cosign.checksums]
 cosign-darwin-arm64 = "sha256:13343856b69f70388c4fe0b986a31dde5958e444b41be22d785d3dc5e1a9cc62"
+cosign-linux-amd64 = "sha256:8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b"
 
 [tools.jq]
 version = "1.7.1"
 
 [tools.jq.checksums]
+jq-linux-amd64 = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5"
 jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
 
 [tools."npm:markdownlint-cli"]
@@ -57,11 +62,13 @@ version = "14.1.1"
 
 [tools.ripgrep.checksums]
 "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz" = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
+"ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz" = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
 
 [tools.shellcheck]
 version = "0.10.0"
 
 [tools.shellcheck.checksums]
+shellcheck-linux-x86_64 = "sha256:f35ae15a4677945428bdfe61ccc297490d89dd1e544cc06317102637638c6deb"
 shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f8b02ea4811cd4cc1109"
 
 [tools.shfmt]
@@ -71,4 +78,5 @@ version = "3.10.0"
 version = "2.6.0"
 
 [tools.slsa-verifier.checksums]
+slsa-verifier-linux-x86_64 = "sha256:1c9c0d6a272063f3def6d233fa3372adbaff1f5a3480611a07c744e73246b62d"
 slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff545460add0cb4a087aec056189c"
