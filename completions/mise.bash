@@ -10,6 +10,7 @@ _mise() {
         _usage_spec_mise_2024_11_23="$(mise usage)"
     fi
 
+    # shellcheck disable=SC2207
     COMPREPLY=( $(usage complete-word --shell bash -s "${_usage_spec_mise_2024_11_23}" --cword="$COMP_CWORD" -- "${COMP_WORDS[@]}" ) )
     if [[ $? -ne 0 ]]; then
         unset COMPREPLY
