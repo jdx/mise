@@ -8,6 +8,7 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-toml
+      - id: check-json
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
     hooks:
