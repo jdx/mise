@@ -89,6 +89,7 @@ impl MiseToml {
     }
 
     pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
+        trust_check(path)?;
         trace!("parsing: {}", display_path(path));
         let des = toml::Deserializer::new(body);
         let mut rf: MiseToml = serde_ignored::deserialize(des, |p| {
@@ -202,7 +203,6 @@ impl MiseToml {
         if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
             return Ok(input.to_string());
         }
-        trust_check(&self.path)?;
         let dir = self.path.parent();
         let output = get_tera(dir)
             .render_str(input, &self.context)
@@ -268,9 +268,6 @@ impl ConfigFile for MiseToml {
             .chain(env_files)
             .chain(env_entries)
             .collect::<Vec<_>>();
-        if !all.is_empty() {
-            trust_check(&self.path)?;
-        }
         Ok(all)
     }
 
@@ -379,9 +376,6 @@ impl ConfigFile for MiseToml {
         let mut trs = ToolRequestSet::new();
         for (fa, tvp) in &self.tools {
             for tool in &tvp.0 {
-                if let ToolVersionType::Path(_) = &tool.tt {
-                    trust_check(&self.path)?;
-                }
                 let version = self.parse_template(&tool.tt.to_string())?;
                 let mut tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.values_mut() {

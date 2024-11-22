@@ -101,7 +101,7 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
         after_long_help r"Examples:
 
     $ mise aliases
-    node  lts-jod      22   
+    node  lts-jod      22
 "
         flag "--no-header" help="Don't show table header"
         arg "[TOOL]" help="Show aliases for <TOOL>"
@@ -260,7 +260,7 @@ cmd "current" hide=true help="Shows current active and installed runtime version
 This is similar to `mise ls --current`, but this only shows the runtime
 and/or version. It's designed to fit into scripts more easily."
     after_long_help r"Examples:
-    
+
     # outputs `.tool-versions` compatible format
     $ mise current
     python 3.11.0 3.10.0
@@ -543,7 +543,7 @@ cmd "link" help="Symlinks a tool version into mise" {
 
 Use this for adding installs either custom compiled outside mise or built with a different tool."
     after_long_help r"Examples:
-    
+
     # build node-20.0.0 with node-build and link it into mise
     $ node-build 20.0.0 ~/.nodes/20.0.0
     $ mise link node@20.0.0 ~/.nodes/20.0.0
@@ -1325,7 +1325,8 @@ This includes:
     $ mise trust
 "
     flag "-a --all" help="Trust all config files in the current directory and its parents"
-    flag "--untrust" help="No longer trust this config"
+    flag "--ignore" help="Do not trust this config and ignore it in the future"
+    flag "--untrust" help="No longer trust this config, will prompt in the future"
     flag "--show" help="Show the trusted status of config files from the current directory and its parents.\nDoes not trust or untrust any files."
     arg "[CONFIG_FILE]" help="The config file to trust"
 }
@@ -1483,7 +1484,7 @@ cmd "watch" help="Run task(s) and watch for changes to rerun it" {
 This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
 It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`."
     after_long_help r#"Examples:
-    
+
     $ mise watch -t build
     Runs the "build" tasks. Will re-run the tasks when any of its sources change.
     Uses "sources" from the tasks definition to determine which files to watch.
@@ -1546,7 +1547,6 @@ Use this to figure out what version of a tool is currently active."
 }
 cmd "render-help" hide=true help="internal command to generate markdown from help"
 cmd "render-mangen" hide=true help="internal command to generate markdown from help"
-
 source_code_link_template "https://github.com/jdx/mise/blob/main/src/cli/{{path}}.rs"
 
 complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
@@ -1603,4 +1603,3 @@ case $cur in
     ;;
 esac
 "#
-

@@ -279,7 +279,7 @@ impl Settings {
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
-        config::load_config_paths(&DEFAULT_CONFIG_FILENAMES)
+        config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
             .iter()
             .filter(|p| {
                 let filename = p.file_name().unwrap_or_default().to_string_lossy();
@@ -335,7 +335,10 @@ impl Settings {
     }
 
     pub fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
-        self.trusted_config_paths.iter().map(file::replace_path)
+        self.trusted_config_paths
+            .iter()
+            .filter(|p| !p.to_string_lossy().is_empty())
+            .map(file::replace_path)
     }
 
     pub fn global_tools_file(&self) -> PathBuf {

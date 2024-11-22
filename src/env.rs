@@ -244,6 +244,18 @@ pub static MISE_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
         HOME.join(".default-npm-packages")
     })
 });
+pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    var("MISE_IGNORED_CONFIG_PATHS")
+        .ok()
+        .map(|v| {
+            v.split(':')
+                .filter(|p| !p.is_empty())
+                .map(PathBuf::from)
+                .map(replace_path)
+                .collect()
+        })
+        .unwrap_or_default()
+});
 pub static MISE_NODE_COREPACK: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NODE_COREPACK"));
 pub static NVM_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("NVM_DIR").unwrap_or_else(|| HOME.join(".nvm")));

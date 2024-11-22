@@ -66,7 +66,7 @@ impl Link {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
-    
+
     # build node-20.0.0 with node-build and link it into mise
     $ <bold>node-build 20.0.0 ~/.nodes/20.0.0</bold>
     $ <bold>mise link node@20.0.0 ~/.nodes/20.0.0</bold>
