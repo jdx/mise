@@ -303,7 +303,7 @@ type = "ListPath"
 rust_type = "BTreeSet<PathBuf>"
 default = []
 parse_env = "list_by_colon"
-description = "This is a list of config paths that mise will ignore. This only works as an env var."
+description = "This is a list of config paths that mise will ignore."
 
 [jobs]
 env = "MISE_JOBS"
@@ -381,13 +381,7 @@ type = "String"
 default = "info"
 hide = true
 description = "Show more/less output."
-enum = [
-    ["trace"],
-    ["debug"],
-    ["info"],
-    ["warn"],
-    ["error"]
-]
+enum = [["trace"], ["debug"], ["info"], ["warn"], ["error"]]
 
 [node.compile]
 env = "MISE_NODE_COMPILE"
@@ -727,8 +721,14 @@ type = "String"
 optional = true
 description = "Change output style when executing tasks."
 enum = [
-    ["prefix", "(default if jobs > 1) print by line with the prefix of the task name"],
-    ["interleave", "(default if jobs > 1) print by line with the prefix of the task name"]
+    [
+        "prefix",
+        "(default if jobs > 1) print by line with the prefix of the task name"
+    ],
+    [
+        "interleave",
+        "(default if jobs > 1) print by line with the prefix of the task name"
+    ]
 ]
 docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
@@ -752,7 +752,7 @@ type = "ListPath"
 rust_type = "BTreeSet<PathBuf>"
 default = []
 parse_env = "list_by_colon"
-description = "This is a list of config paths that mise will automatically mark as trusted. This only works as an env var."
+description = "This is a list of config paths that mise will automatically mark as trusted."
 
 [unix_default_file_shell_args]
 env = "MISE_UNIX_DEFAULT_FILE_SHELL_ARGS"

@@ -267,7 +267,7 @@
         },
         "ignored_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will ignore. This only works as an env var.",
+          "description": "This is a list of config paths that mise will ignore.",
           "type": "array",
           "items": {
             "type": "string"
@@ -541,7 +541,7 @@
         },
         "trusted_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will automatically mark as trusted. This only works as an env var.",
+          "description": "This is a list of config paths that mise will automatically mark as trusted.",
           "type": "array",
           "items": {
             "type": "string"
