@@ -1,15 +1,18 @@
 # Tasks
 
-You can define tasks in `mise.toml` files or as standalone shell scripts. These are useful for things like
-running linters, tests, builders, servers, and other tasks that are specific to a project. Of course,
-tasks launched with mise will include the mise environment—your tools and env vars defined in `mise.toml`.
+You can define tasks in `mise.toml` files or as standalone shell scripts. These are useful for
+things like running linters, tests, builders, servers, and other tasks that are specific to a
+project. Of
+course, tasks launched with mise will include the mise environment—your tools and env vars defined
+in `mise.toml`.
 
 Here's my favorite features about mise's task runner:
 
 - building dependencies in parallel—by default with no configuration required
 - last-modified checking to avoid rebuilding when there are no changes—requires minimal config
 - `mise watch` to automatically rebuild on changes—no configuration required, but it helps
-- ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack syntax highlighting and linting/checking support
+- ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack
+  syntax highlighting and linting/checking support
 
 ## Task Environment Variables
 
@@ -29,8 +32,8 @@ includes = [
 ]
 ```
 
-If using a toml file for tasks, the file should be the same format as the `[tasks]` section of `mise.toml`
-but without the `[task]` prefix:
+If using a toml file for tasks, the file should be the same format as the `[tasks]` section of
+`mise.toml` but without the `[task]` prefix:
 
 ```toml
 task1 = "echo task1"
@@ -40,3 +43,25 @@ task3 = "echo task3"
 [task4]
 run = "echo task4"
 ```
+
+## Vars
+
+Vars are variables that can be shared between tasks like environment variables but they are not
+passed as environment variables to the scripts. They are defined in the `vars` section of the
+`mise.toml` file.
+
+```toml
+[vars]
+e2e_args = '--headless'
+
+[tasks.test]
+run = './scripts/test-e2e.sh {{vars.e2e_args}}'
+```
+
+Like most configuration in mise, vars can be defined across several files. So for example, you could
+put some vars in your global mise config `~/.config/mise/config.toml`, use them in a task at
+`~/src/work/myproject/mise.toml`. You can also override those vars in "later" config files such
+as `~/src/work/myproject/mise.local.toml` and they will be used inside tasks of any config file.
+
+As of this writing vars are only supported in TOML tasks. I want to add support for file tasks, but
+I don't want to turn all file tasks into tera templates just for this feature.
