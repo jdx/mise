@@ -99,17 +99,28 @@ impl Backend for CargoBackend {
         };
 
         let opts = tv.request.options();
+        if let Some(bin) = opts.get("bin") {
+            cmd = cmd.arg(format!("--bin={bin}"));
+        }
+        if !opts
+            .get("locked")
+            .is_some_and(|v| v.to_lowercase() == "false")
+        {
+            cmd = cmd.arg("--locked");
+        }
         if let Some(features) = opts.get("features") {
-            cmd = cmd.arg(format!("--features={}", features));
+            cmd = cmd.arg(format!("--features={features}"));
         }
         if let Some(default_features) = opts.get("default-features") {
             if default_features.to_lowercase() == "false" {
                 cmd = cmd.arg("--no-default-features");
             }
         }
+        if let Some(c) = opts.get("crate") {
+            cmd = cmd.arg(c);
+        }
 
-        cmd.arg("--locked")
-            .arg("--root")
+        cmd.arg("--root")
             .arg(tv.install_path())
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path(&config)?)

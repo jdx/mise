@@ -3,7 +3,7 @@
 You may install packages directly from [Cargo Crates](https://crates.io/) even if there
 isn't an asdf plugin for it.
 
-The code for this is inside of the mise repository at [`./src/backend/cargo.rs`](https://github.com/jdx/mise/blob/main/src/backend/cargo.rs).
+The code for this is inside the mise repository at [`./src/backend/cargo.rs`](https://github.com/jdx/mise/blob/main/src/backend/cargo.rs).
 
 ## Dependencies
 
@@ -74,18 +74,47 @@ go in `[tools]` in `mise.toml`.
 
 ### `features`
 
-Install additional components:
+Install additional components (passed as `cargo install --features`):
 
 ```toml
 [tools]
-"cargo:cargo-edit" = { features = "add" }
+"cargo:cargo-edit" = { version = "latest", features = "add" }
 ```
 
 ### `default-features`
 
-Disable default features:
+Disable default features (passed as `cargo install --no-default-features`):
 
 ```toml
 [tools]
-"cargo:cargo-edit" = { default-features = false }
+"cargo:cargo-edit" = { version = "latest", default-features = false }
+```
+
+### `bin`
+
+Select the CLI bin name to install when multiple are available (passed as `cargo install --bin`):
+
+```toml
+[tools]
+"cargo:github.com/username/demo" = { version = "tag:v1.0.0", bin = "demo" }
+```
+
+### `crate`
+
+Select the crate name to install when multiple are available (passed as
+`cargo install --git=<repo> <crate>`):
+
+```toml
+[tools]
+"cargo:github.com/username/demo" = { version = "tag:v1.0.0", crate = "demo" }
+```
+
+### `locked`
+
+Use Cargo.lock (passes `cargo install --locked`) when building CLI. This is the default behavior,
+pass `false` to disable:
+
+```toml
+[tools]
+"cargo:github.com/username/demo" = { version = "latest", locked = false }
 ```
