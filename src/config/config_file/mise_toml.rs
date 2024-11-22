@@ -296,6 +296,7 @@ impl ConfigFile for MiseToml {
         ba: &BackendArg,
         versions: Vec<ToolRequest>,
     ) -> eyre::Result<()> {
+        let is_tools_sorted = is_tools_sorted(&self.tools); // was it previously sorted (if so we'll keep it sorted)
         let existing = self.tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
             if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
@@ -354,6 +355,10 @@ impl ConfigFile for MiseToml {
             tools.insert_formatted(&key, Item::Value(Value::Array(arr)));
         }
 
+        if is_tools_sorted {
+            tools.sort_values();
+        }
+
         Ok(())
     }
 
@@ -376,16 +381,16 @@ impl ConfigFile for MiseToml {
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
-        for (fa, tvp) in &self.tools {
+        for (ba, tvp) in &self.tools {
             for tool in &tvp.0 {
                 let version = self.parse_template(&tool.tt.to_string())?;
                 let mut tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.values_mut() {
                         *v = self.parse_template(v)?;
                     }
-                    ToolRequest::new_opts(fa.clone(), &version, options, source.clone())?
+                    ToolRequest::new_opts(ba.clone(), &version, options, source.clone())?
                 } else {
-                    ToolRequest::new(fa.clone(), &version, source.clone())?
+                    ToolRequest::new(ba.clone(), &version, source.clone())?
                 };
                 tvr = tvr.with_os(tool.os.clone());
                 trs.add_version(tvr, &source);
@@ -1150,6 +1155,19 @@ impl<'de> de::Deserialize<'de> for Alias {
 
         deserializer.deserialize_any(AliasVisitor)
     }
+}
+
+fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
+    let mut last = None;
+    for k in tools.keys() {
+        if let Some(last) = last {
+            if k < last {
+                return false;
+            }
+        }
+        last = Some(k);
+    }
+    true
 }
 
 #[cfg(test)]

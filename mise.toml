@@ -5,22 +5,22 @@ min_version = "2024.1.1"
 _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
-shellcheck = "0.10"
-shfmt = "3"
-jq = "latest"
-cargo-binstall = "latest"
+"actionlint" = "latest"
+"bun" = "latest"
+"cargo-binstall" = "latest"
 "cargo:cargo-edit" = "latest"
-"cargo:cargo-show" = { version = "latest", os = ["linux", "macos"] }
 "cargo:cargo-insta" = "latest"
+"cargo:cargo-show" = { version = "latest", os = ["linux", "macos"] }
 "cargo:git-cliff" = "latest"
+"cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
+"jq" = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
-actionlint = "latest"
-ripgrep = "latest"
 "pipx:toml-sort" = "latest"
-"cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
-bun = "latest"
-#python = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
+#"python" = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
+"ripgrep" = "latest"
+"shellcheck" = "0.10"
+"shfmt" = "3"
 
 [task_config]
 includes = ["tasks.toml", "tasks"]
