@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -436,6 +436,13 @@ impl<'a> CmdLineRunner<'a> {
 }
 
 impl Display for CmdLineRunner<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let args = self.get_args().join(" ");
+        write!(f, "{} {args}", self.get_program())
+    }
+}
+
+impl Debug for CmdLineRunner<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let args = self.get_args().join(" ");
         write!(f, "{} {args}", self.get_program())
