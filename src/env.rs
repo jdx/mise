@@ -1,10 +1,3 @@
-use std::collections::{HashMap, HashSet};
-pub use std::env::*;
-use std::path::PathBuf;
-use std::string::ToString;
-use std::sync::RwLock;
-use std::{path, process};
-
 use crate::cli::args::PROFILE_ARG;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
@@ -12,6 +5,12 @@ use crate::hook_env::{deserialize_watches, HookEnvWatches};
 use itertools::Itertools;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
+use std::collections::{HashMap, HashSet};
+pub use std::env::*;
+use std::path::PathBuf;
+use std::string::ToString;
+use std::sync::RwLock;
+use std::{path, process};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 #[cfg(unix)]
@@ -37,7 +36,7 @@ pub static XDG_CACHE_HOME: Lazy<PathBuf> =
 pub static XDG_CACHE_HOME: Lazy<PathBuf> = Lazy::new(|| {
     var_path("XDG_CACHE_HOME")
         .or_else(|| var_path("TEMP"))
-        .unwrap_or_else(|| temp_dir())
+        .unwrap_or_else(temp_dir)
 });
 #[cfg(all(not(windows), not(macos)))]
 pub static XDG_CACHE_HOME: Lazy<PathBuf> =

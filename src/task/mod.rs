@@ -65,6 +65,9 @@ pub struct Task {
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub run: Vec<String>,
 
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    pub run_windows: Vec<String>,
+
     // command type
     // pub command: Option<String>,
     #[serde(default)]
@@ -103,7 +106,7 @@ impl Task {
             .filter_map(|line| {
                 regex!(r"^(#|//) mise ([a-z_]+=.+)$")
                     .captures(line)
-                    .or_else(|| regex!(r"^(#|//)MISE ([a-z_]+=.+)$").captures(line))
+                    .or_else(|| regex!(r"^(#|//|::)MISE ([a-z_]+=.+)$").captures(line))
             })
             .map(|captures| captures.extract().1)
             .flat_map(|[_, toml]| {
@@ -169,6 +172,14 @@ impl Task {
         format!("[{}]", self.name)
     }
 
+    pub fn run(&self) -> &Vec<String> {
+        if cfg!(windows) && !self.run_windows.is_empty() {
+            &self.run_windows
+        } else {
+            &self.run
+        }
+    }
+
     pub fn all_depends<'a>(&self, config: &'a Config) -> Result<Vec<&'a Task>> {
         let tasks = config.tasks_with_aliases()?;
         let mut depends: Vec<&Task> = self
@@ -215,7 +226,7 @@ impl Task {
             (spec, vec![])
         } else {
             let (scripts, spec) =
-                TaskScriptParser::new(cwd).parse_run_scripts(&self.config_root, &self.run)?;
+                TaskScriptParser::new(cwd).parse_run_scripts(&self.config_root, self.run())?;
             (spec, scripts)
         };
         spec.name = self.name.clone();
@@ -254,7 +265,7 @@ impl Task {
                 .enumerate()
                 .map(|(i, script)| {
                     // only pass args to the last script if no formal args are defined
-                    match i == self.run.len() - 1 {
+                    match i == self.run().len() - 1 {
                         true => (script.clone(), args.iter().cloned().collect_vec()),
                         false => (script.clone(), vec![]),
                     }
@@ -355,6 +366,7 @@ impl Default for Task {
             outputs: vec![],
             shell: None,
             run: vec![],
+            run_windows: vec![],
             args: vec![],
             file: None,
         }
@@ -363,7 +375,7 @@ impl Default for Task {
 
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let cmd = if let Some(command) = self.run.first() {
+        let cmd = if let Some(command) = self.run().first() {
             Some(command.to_string())
         } else {
             self.file.as_ref().map(display_path)

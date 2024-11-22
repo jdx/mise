@@ -377,6 +377,13 @@ impl Run {
     ) -> (String, Vec<String>) {
         let display = file.display().to_string();
         if file::is_executable(file) && !SETTINGS.use_file_shell_for_executable_tasks {
+            if cfg!(windows) && file.extension().map_or(false, |e| e == "ps1") {
+                let args = vec!["-File".to_string(), display]
+                    .into_iter()
+                    .chain(args.iter().cloned())
+                    .collect_vec();
+                return ("pwsh".to_string(), args);
+            }
             return (display, args.to_vec());
         }
         let default_shell = self.clone_default_file_shell();
@@ -666,17 +673,19 @@ impl Run {
                 .map(|d| d.join(name))
                 .find(|d| d.is_file() && !file::is_executable(d));
             if let Some(path) = path {
-                warn!(
-                    "no task {} found, but a non-executable file exists at {}",
-                    style::ered(name),
-                    display_path(&path)
-                );
-                let yn = prompt::confirm(
-                    "Mark this file as executable to allow it to be run as a task?",
-                )?;
-                if yn {
-                    file::make_executable(&path)?;
-                    info!("marked as executable, try running this task again");
+                if !cfg!(windows) {
+                    warn!(
+                        "no task {} found, but a non-executable file exists at {}",
+                        style::ered(name),
+                        display_path(&path)
+                    );
+                    let yn = prompt::confirm(
+                        "Mark this file as executable to allow it to be run as a task?",
+                    )?;
+                    if yn {
+                        file::make_executable(&path)?;
+                        info!("marked as executable, try running this task again");
+                    }
                 }
             }
         }

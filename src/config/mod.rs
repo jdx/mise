@@ -854,11 +854,11 @@ impl Debug for Config {
 
 fn default_task_includes() -> Vec<PathBuf> {
     vec![
-        "mise-tasks".into(),
-        ".mise-tasks".into(),
-        ".mise/tasks".into(),
-        ".config/mise/tasks".into(),
-        "mise/tasks".into(),
+        PathBuf::from("mise-tasks"),
+        PathBuf::from(".mise-tasks"),
+        PathBuf::from(".mise").join("tasks"),
+        PathBuf::from(".config").join("mise").join("tasks"),
+        PathBuf::from("mise").join("tasks"),
     ]
 }
 
