@@ -91,7 +91,11 @@ impl ToolRequestSet {
 impl Display for ToolRequestSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let versions = self.tools.values().flatten().join(" ");
-        writeln!(f, "ToolRequestSet: {}", versions)?;
+        if versions.is_empty() {
+            write!(f, "ToolRequestSet: <empty>")?;
+        } else {
+            write!(f, "ToolRequestSet: {}", versions)?;
+        }
         Ok(())
     }
 }
