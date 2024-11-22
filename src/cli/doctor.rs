@@ -237,6 +237,7 @@ fn mise_dirs() -> String {
 fn mise_env_vars() -> String {
     let vars = env::vars()
         .filter(|(k, _)| k.starts_with("MISE_"))
+        .filter(|(k, _)| k == "MISE_GITHUB_TOKEN")
         .collect::<Vec<(String, String)>>();
     if vars.is_empty() {
         return "(none)".to_string();
