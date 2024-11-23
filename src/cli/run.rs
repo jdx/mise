@@ -202,7 +202,7 @@ impl Run {
 
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&CONFIG)?;
 
-        ts.install_arg_versions(&CONFIG, &InstallOptions::new())?;
+        ts.install_arg_versions(&InstallOptions::new())?;
         ts.notify_if_versions_missing();
         let mut env = ts.env_with_path(&CONFIG)?;
         if let Some(root) = &CONFIG.project_root {

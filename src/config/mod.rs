@@ -22,9 +22,11 @@ use crate::config::tracking::Tracker;
 use crate::file::display_path;
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::task::Task;
-use crate::toolset::{install_state, ToolRequestSet, ToolRequestSetBuilder};
+use crate::toolset::{
+    install_state, ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolsetBuilder,
+};
 use crate::ui::style;
-use crate::{backend, dirs, env, file, registry};
+use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims};
 
 pub mod config_file;
 pub mod env_directive;
@@ -490,14 +492,6 @@ impl Config {
         Ok(config_files)
     }
 
-    pub fn rebuild_shims_and_runtime_symlinks(&self) -> Result<()> {
-        install_state::reset();
-        let ts = crate::toolset::ToolsetBuilder::new().build(self)?;
-        crate::shims::reshim(&ts, false)?;
-        crate::runtime_symlinks::rebuild(self)?;
-        Ok(())
-    }
-
     pub fn global_config(&self) -> Result<MiseToml> {
         let settings_path = env::MISE_GLOBAL_CONFIG_FILE.to_path_buf();
         match settings_path.exists() {
@@ -906,6 +900,20 @@ fn default_task_includes() -> Vec<PathBuf> {
         PathBuf::from(".config").join("mise").join("tasks"),
         PathBuf::from("mise").join("tasks"),
     ]
+}
+
+pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Result<()> {
+    let config = Config::load()?;
+    let ts = ToolsetBuilder::new().build(&config)?;
+    install_state::reset();
+    trace!("rebuilding shims");
+    shims::reshim(&ts, false).wrap_err("failed to rebuild shims")?;
+    trace!("rebuilding runtime symlinks");
+    runtime_symlinks::rebuild(&config).wrap_err("failed to rebuild runtime symlinks")?;
+    trace!("updating lockfiles");
+    lockfile::update_lockfiles(&config, &ts, new_versions)
+        .wrap_err("failed to update lockfiles")?;
+    Ok(())
 }
 
 #[cfg(test)]

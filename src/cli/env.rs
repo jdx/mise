@@ -29,7 +29,7 @@ impl Env {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
-        ts.install_arg_versions(&config, &InstallOptions::new())?;
+        ts.install_arg_versions(&InstallOptions::new())?;
         ts.notify_if_versions_missing();
 
         if self.json {

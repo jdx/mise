@@ -2,7 +2,7 @@ use crate::config::{Config, CONFIG, SETTINGS};
 use crate::file;
 use crate::file::display_path;
 use crate::registry::REGISTRY;
-use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, ToolsetBuilder};
+use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{bail, Report, Result};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -79,12 +79,10 @@ impl Lockfile {
     }
 }
 
-pub fn update_lockfiles(new_versions: &[ToolVersion]) -> Result<()> {
+pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersion]) -> Result<()> {
     if !SETTINGS.lockfile || !SETTINGS.experimental {
         return Ok(());
     }
-    let config = Config::load()?;
-    let ts = ToolsetBuilder::new().build(&config)?;
     let mut all_tool_names = HashSet::new();
     let mut tools_by_source = HashMap::new();
     for (source, group) in &ts.versions.iter().chunk_by(|(_, tvl)| &tvl.source) {
