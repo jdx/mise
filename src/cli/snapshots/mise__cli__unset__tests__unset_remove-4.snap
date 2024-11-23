@@ -1,6 +1,0 @@
----
-source: src/cli/unset.rs
-expression: "file::read_to_string(cf_path).unwrap()"
-snapshot_kind: text
----
-[env]

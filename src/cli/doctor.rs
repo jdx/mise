@@ -60,9 +60,9 @@ impl Doctor {
             ));
         }
 
-        if self.warnings.is_empty() {
-            miseprintln!("No warnings found");
-        } else {
+        miseprintln!();
+
+        if !self.warnings.is_empty() {
             let warnings_plural = if self.warnings.len() == 1 { "" } else { "s" };
             let warning_summary =
                 format!("{} warning{warnings_plural} found:", self.warnings.len());
