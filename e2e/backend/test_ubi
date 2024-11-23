@@ -13,3 +13,5 @@ EOF
 mise use ubi:cilium/cilium-cli
 assert "cat mise.toml" '[tools]
 "ubi:cilium/cilium-cli" = { version = "latest", exe = "cilium" }'
+
+MISE_USE_VERSIONS_HOST=0 assert_not_contains "mise ls-remote cargo-binstall" "binstalk"
