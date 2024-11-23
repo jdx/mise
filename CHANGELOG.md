@@ -1,5 +1,43 @@
 # Changelog
 
+## [2024.11.24](https://github.com/jdx/mise/compare/v2024.11.23..v2024.11.24) - 2024-11-23
+
+### 🚀 Features
+
+- ignore config files after not trusting them by [@jdx](https://github.com/jdx) in [#3128](https://github.com/jdx/mise/pull/3128)
+- task vars by [@jdx](https://github.com/jdx) in [#3130](https://github.com/jdx/mise/pull/3130)
+- verify aqua packages with cosign and/or slsa when available by [@jdx](https://github.com/jdx) in [#3151](https://github.com/jdx/mise/pull/3151)
+- added `task_skip` setting by [@jdx](https://github.com/jdx) in [#3154](https://github.com/jdx/mise/pull/3154)
+- allow calling `mise settings foo=bar` as shorthand by [@jdx](https://github.com/jdx) in [#3155](https://github.com/jdx/mise/pull/3155)
+
+### 🐛 Bug Fixes
+
+- **(cargo)** added extra tool opts by [@jdx](https://github.com/jdx) in [#3144](https://github.com/jdx/mise/pull/3144)
+- hide MISE_GITHUB_TOKEN from `mise dr` by [@jdx](https://github.com/jdx) in [#3135](https://github.com/jdx/mise/pull/3135)
+- show password prompt when cloning and libgit2 is disabled by [@jdx](https://github.com/jdx) in [#3138](https://github.com/jdx/mise/pull/3138)
+- keep tools sorted by [@jdx](https://github.com/jdx) in [#3148](https://github.com/jdx/mise/pull/3148)
+- only use mise.toml files with lockfiles by [@jdx](https://github.com/jdx) in [#3150](https://github.com/jdx/mise/pull/3150)
+
+### 📚 Documentation
+
+- add more detail about task vars by [@jdx](https://github.com/jdx) in [#3136](https://github.com/jdx/mise/pull/3136)
+
+### 🧪 Testing
+
+- move ls tests to e2e by [@jdx](https://github.com/jdx) in [#3146](https://github.com/jdx/mise/pull/3146)
+
+### 🔍 Other Changes
+
+- Add note about how config values are template but not the file itself by [@syhol](https://github.com/syhol) in [#3137](https://github.com/jdx/mise/pull/3137)
+- bump usage by [@jdx](https://github.com/jdx) in [#3139](https://github.com/jdx/mise/pull/3139)
+- simplify render:settings task by [@jdx](https://github.com/jdx) in [#3142](https://github.com/jdx/mise/pull/3142)
+- use versions host more to avoid rate limiting by [@jdx](https://github.com/jdx) in [#3145](https://github.com/jdx/mise/pull/3145)
+- simplify release-plz output by [@mise-en-dev](https://github.com/mise-en-dev) in [b5bdf53](https://github.com/jdx/mise/commit/b5bdf537549433dacb6f6df0fd3f01f3190dd276)
+- disable versions host for `mise test-tool` by [@mise-en-dev](https://github.com/mise-en-dev) in [c4d487e](https://github.com/jdx/mise/commit/c4d487e7dd59e85eeeb3c0c3082c250590339188)
+- cache mise tools by [@jdx](https://github.com/jdx) in [#3147](https://github.com/jdx/mise/pull/3147)
+- ran `pre-commit run --all-files` against codebase by [@jdx](https://github.com/jdx) in [#3141](https://github.com/jdx/mise/pull/3141)
+- run autofix on windows by [@jdx](https://github.com/jdx) in [#3153](https://github.com/jdx/mise/pull/3153)
+
 ## [2024.11.23](https://github.com/jdx/mise/compare/v2024.11.22..v2024.11.23) - 2024-11-21
 
 ### 🐛 Bug Fixes
