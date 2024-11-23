@@ -1,4 +1,4 @@
-# pipx Backend <Badge type="warning" text="experimental" />
+# pipx Backend
 
 You may install python packages directly from:
 

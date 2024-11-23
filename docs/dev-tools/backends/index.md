@@ -7,7 +7,7 @@ In addition to asdf plugins, you can also directly install CLIs with some packag
 - [Cargo](/dev-tools/backends/cargo)
 - [Go](/dev-tools/backends/go) <Badge type="warning" text="experimental" />
 - [NPM](/dev-tools/backends/npm)
-- [Pipx](/dev-tools/backends/pipx) <Badge type="warning" text="experimental" />
+- [Pipx](/dev-tools/backends/pipx)
 - [SPM](/dev-tools/backends/spm) <Badge type="warning" text="experimental" />
 - [Ubi](/dev-tools/backends/ubi)
 - [Vfox](/dev-tools/backends/vfox) <Badge type="warning" text="experimental" />

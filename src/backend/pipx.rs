@@ -86,7 +86,6 @@ impl Backend for PIPXBackend {
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         let config = Config::try_get()?;
-        SETTINGS.ensure_experimental("pipx backend")?;
         let pipx_request = self
             .tool_name()
             .parse::<PipxRequest>()?
