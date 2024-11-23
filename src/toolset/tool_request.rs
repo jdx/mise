@@ -70,28 +70,28 @@ impl ToolRequest {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => Self::Ref {
                 ref_: r.to_string(),
                 ref_type: ref_type.to_string(),
-                options: backend.opts.clone().unwrap_or_default(),
+                options: backend.opts(),
                 os: None,
                 backend,
                 source,
             },
             Some(("prefix", p)) => Self::Prefix {
                 prefix: p.to_string(),
-                options: backend.opts.clone().unwrap_or_default(),
+                options: backend.opts(),
                 os: None,
                 backend,
                 source,
             },
             Some(("path", p)) => Self::Path {
                 path: PathBuf::from(p),
-                options: backend.opts.clone().unwrap_or_default(),
+                options: backend.opts(),
                 os: None,
                 backend,
                 source,
             },
             Some((p, v)) if p.starts_with("sub-") => Self::Sub {
                 sub: p.split_once('-').unwrap().1.to_string(),
-                options: backend.opts.clone().unwrap_or_default(),
+                options: backend.opts(),
                 orig_version: v.to_string(),
                 os: None,
                 backend,
@@ -100,7 +100,7 @@ impl ToolRequest {
             None => {
                 if s == "system" {
                     Self::System {
-                        options: backend.opts.clone().unwrap_or_default(),
+                        options: backend.opts(),
                         os: None,
                         backend,
                         source,
@@ -108,7 +108,7 @@ impl ToolRequest {
                 } else {
                     Self::Version {
                         version: s,
-                        options: backend.opts.clone().unwrap_or_default(),
+                        options: backend.opts(),
                         os: None,
                         backend,
                         source,

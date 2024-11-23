@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::cli::args::BackendArg;
-use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolSource};
 use crate::ui::style;
 use console::style;
 use eyre::bail;
@@ -16,7 +16,6 @@ pub struct ToolArg {
     pub version: Option<String>,
     pub version_type: ToolVersionType,
     pub tvr: Option<ToolRequest>,
-    pub opts: Option<ToolVersionOptions>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -36,21 +35,13 @@ impl FromStr for ToolArg {
         let (backend_input, version) = parse_input(input);
 
         let backend: BackendArg = backend_input.into();
-        let opts = backend.opts.clone();
         let version_type = match version.as_ref() {
             Some(version) => version.parse()?,
             None => ToolVersionType::Version(String::from("latest")),
         };
         let tvr = version
             .as_ref()
-            .map(|v| {
-                ToolRequest::new_opts(
-                    backend.clone(),
-                    v,
-                    opts.clone().unwrap_or_default(),
-                    ToolSource::Argument,
-                )
-            })
+            .map(|v| ToolRequest::new(backend.clone(), v, ToolSource::Argument))
             .transpose()?;
         Ok(Self {
             short: backend.short.clone(),
@@ -58,7 +49,6 @@ impl FromStr for ToolArg {
             version: version.map(|v| v.to_string()),
             version_type,
             ba: backend,
-            opts,
         })
     }
 }
@@ -199,7 +189,6 @@ mod tests {
                 version: None,
                 version_type: ToolVersionType::Version("latest".into()),
                 tvr: None,
-                opts: None,
             }
         );
     }
@@ -216,7 +205,6 @@ mod tests {
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
                 tvr: Some(ToolRequest::new("node".into(), "20", ToolSource::Argument).unwrap()),
-                opts: None,
             }
         );
     }
@@ -233,7 +221,6 @@ mod tests {
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
                 tvr: Some(ToolRequest::new("node".into(), "lts", ToolSource::Argument).unwrap()),
-                opts: None,
             }
         );
     }

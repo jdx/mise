@@ -742,7 +742,6 @@ editLink: false
 | tokei | [ubi:XAMPPRocky/tokei](https://github.com/XAMPPRocky/tokei) [asdf:gasuketsu/asdf-tokei](https://github.com/gasuketsu/asdf-tokei) |
 | tomcat | [asdf:mbutov/asdf-tomcat](https://github.com/mbutov/asdf-tomcat) |
 | tonnage | [asdf:elementalvoid/asdf-tonnage](https://github.com/elementalvoid/asdf-tonnage) |
-| tool-versions-to-env | [asdf:smartcontractkit/tool-versions-to-env-action](https://github.com/smartcontractkit/tool-versions-to-env-action) |
 | traefik | [asdf:Dabolus/asdf-traefik](https://github.com/Dabolus/asdf-traefik) |
 | trdsql | [aqua:noborus/trdsql](https://github.com/noborus/trdsql) [asdf:johnlayton/asdf-trdsql](https://github.com/johnlayton/asdf-trdsql) |
 | tree-sitter | [aqua:tree-sitter/tree-sitter](https://github.com/tree-sitter/tree-sitter) [asdf:ivanvc/asdf-tree-sitter](https://github.com/ivanvc/asdf-tree-sitter) |
