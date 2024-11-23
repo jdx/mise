@@ -1,0 +1,344 @@
+name: test
+on:
+  push:
+    tags: ["v*"]
+    branches: ["main", "mise"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  MISE_EXPERIMENTAL: 1
+  MISE_LOCKFILE: 1
+  RUST_BACKTRACE: 1
+  GITHUB_TOKEN: ${{ secrets.RTX_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
+
+permissions:
+  pull-requests: write
+
+jobs:
+  build-ubuntu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rui314/setup-mold@v1
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - run: rustup component add llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build
+      - run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: mise -v
+      - name: check for mold linker
+        run: readelf -p .comment target/debug/mise
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mise-ubuntu-latest
+          path: target/debug/mise
+
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build
+      - run: |
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: mise -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mise-macos-latest
+          path: target/debug/mise
+
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build
+      - shell: pwsh
+        run: |
+          cargo build
+          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+      - run: mise -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mise-windows-latest
+          path: target/debug/mise.exe
+
+  unit:
+    strategy:
+      fail-fast: false
+      # matrix: { os: [ubuntu-latest, macos-latest] }
+      matrix: { os: [macos-latest] }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    needs: [build-ubuntu, build-macos]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
+      - uses: rui314/setup-mold@v1
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-msrv,cargo-machete,cargo-llvm-cov
+      - run: rustup component add llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: unit
+      - uses: actions/download-artifact@v4
+        with:
+          name: mise-${{ matrix.os }}
+          path: target/debug
+      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise install
+      - run: mise x -- bun i
+      - run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          mise x -- cargo llvm-cov --all-features --lcov --output-path "unit-${{matrix.os}}.lcov"
+      - run: cargo deny check
+      - run: cargo msrv verify
+      - run: cargo machete --with-metadata
+      - run: ./scripts/test-standalone.sh
+      - run: mise run lint
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unit-${{matrix.os}}.lcov
+          path: unit-${{matrix.os}}.lcov
+          if-no-files-found: error
+
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: rui314/setup-mold@v1
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
+      - run: rustup default nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nightly
+      - run: |
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise install
+      - run: mise run test:shuffle
+
+  coverage:
+    name: coverage-${{matrix.tranche}}
+    runs-on: ubuntu-latest
+    needs: [build-ubuntu]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tranche: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - run: rustup component add llvm-tools-preview
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get install \
+            bison \
+            build-essential \
+            direnv \
+            fd-find \
+            fish \
+            pipx \
+            python3-venv \
+            zsh
+      - run: |
+          mkdir -p "$HOME/.local/bin"
+          ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          name: mise-ubuntu-latest
+          path: target/debug
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - name: Test w/ coverage
+        uses: nick-fields/retry@v3
+        env:
+          TEST_TRANCHE: ${{matrix.tranche}}
+          TEST_TRANCHE_COUNT: 8
+          TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
+        with:
+          timeout_minutes: 30
+          retry_wait_seconds: 30
+          max_attempts: 2
+          command: ./tasks/test/coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{matrix.tranche}}.lcov
+          path: coverage-${{matrix.tranche}}.lcov
+          if-no-files-found: error
+  coverage-report:
+    name: coverage-report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [coverage, unit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*.lcov"
+          path: .
+          merge-multiple: true
+      - run: |
+          pip install lcov_cobertura
+          npx lcov-result-merger '*.lcov' coverage.lcov
+          lcov_cobertura coverage.lcov --output coverage.xml
+      - uses: codacy/codacy-coverage-reporter-action@v1
+        continue-on-error: true
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: coverage.lcov
+  #  windows-unit:
+  #    runs-on: windows-latest
+  #    timeout-minutes: 30
+  #    needs: [build-windows]
+  #    env:
+  #      MISE_DATA_DIR: ~/.local/share/mise
+  #      MISE_CACHE_DIR: ~/.cache/mise
+  #    steps:
+  #      - uses: actions/checkout@v4
+  #      - uses: Swatinem/rust-cache@v2
+  #        with:
+  #          shared-key: unit
+  #      - uses: actions/download-artifact@v4
+  #        with:
+  #          name: mise-windows-latest
+  #          path: target/debug
+  #      - run: Add-Content "$env:GITHUB_PATH" "$env:GITHUB_WORKSPACE/target/debug"
+  #      - run: mise -v
+  #      # TODO: enable when we can remove continue-on-error:
+  #      # - name: cargo test
+  #      #   uses: nick-fields/retry@v3
+  #      #   with:
+  #      #     timeout_minutes: 30
+  #      #     retry_wait_seconds: 30
+  #      #     max_attempts: 2
+  #      #     command: cargo test
+  #      - uses: actions/cache@v4
+  #        with:
+  #          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+  #          path: |
+  #            ~/.local/share/mise
+  #            ~/.cache/mise
+  #      - run: mise install
+  #      - run: cargo test
+  #        continue-on-error: true
+  windows-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    needs: [build-windows]
+    env:
+      MISE_DATA_DIR: ~/.local/share/mise
+      MISE_CACHE_DIR: ~/.cache/mise
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mise-windows-latest
+          path: target/debug
+      - run: ls target\debug
+      - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise install
+      - name: e2e
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          retry_wait_seconds: 30
+          max_attempts: 2
+          command: pwsh e2e-win\run.ps1
+  tools:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        tranche: [0, 1, 2, 3]
+    needs: [build-macos, build-windows]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      TEST_TRANCHE: ${{matrix.tranche}}
+      TEST_TRANCHE_COUNT: 4
+      TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
+      MISE_DATA_DIR: ~/.local/share/mise
+      MISE_CACHE_DIR: ~/.cache/mise
+      MISE_USE_VERSIONS_HOST: 1
+      MISE_DISABLE_TOOLS: |
+        1password-cli,
+        adr-tools
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mise-${{ matrix.os }}
+          path: target/debug
+      - if: ${{ matrix.os != 'windows-latest' }}
+        run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+      - uses: actions/cache/restore@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise install
+      - run: mise test-tool --all
