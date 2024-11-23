@@ -2514,6 +2514,72 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
+                "tool"
+            ],
+            "description": "Gets information about a tool",
+            "options": [
+                {
+                    "name": [
+                        "-J",
+                        "--json"
+                    ],
+                    "description": "Output in JSON format",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--backend"
+                    ],
+                    "description": "Only show backend field",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--installed"
+                    ],
+                    "description": "Only show installed versions",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--active"
+                    ],
+                    "description": "Only show active versions",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--requested"
+                    ],
+                    "description": "Only show requested versions",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--config-source"
+                    ],
+                    "description": "Only show config source",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--tool-options"
+                    ],
+                    "description": "Only show tool options",
+                    "isRepeatable": false
+                }
+            ],
+            "args": [
+                {
+                    "name": "backend",
+                    "description": "Tool name to get information about",
+                    "isOptional": false,
+                    "isVariadic": false
+                }
+            ]
+        },
+        {
+            "name": [
                 "trust"
             ],
             "description": "Marks a config file as trusted",

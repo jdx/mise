@@ -12,7 +12,9 @@ use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
 use crate::file::{display_path, FindUp};
-use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
+use crate::toolset::{
+    InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, env, file};
 
@@ -94,12 +96,24 @@ impl Use {
         let mut ts = ToolsetBuilder::new().build(&config)?;
         let mpr = MultiProgressReport::get();
         let mut cf = self.get_config_file()?;
+        let mut resolve_options = ResolveOptions {
+            latest_versions: false,
+            use_locked_version: true,
+        };
         let versions: Vec<_> = self
             .tool
             .iter()
             .cloned()
             .map(|t| match t.tvr {
-                Some(tvr) => Ok(tvr),
+                Some(tvr) => {
+                    if tvr.version() == "latest" {
+                        // user specified `@latest` so we should resolve the latest version
+                        // TODO: this should only happen on this tool, not all of them
+                        resolve_options.latest_versions = true;
+                        resolve_options.use_locked_version = false;
+                    }
+                    Ok(tvr)
+                }
                 None => ToolRequest::new(
                     t.ba,
                     "latest",
@@ -114,7 +128,7 @@ impl Use {
                 force: self.force,
                 jobs: self.jobs,
                 raw: self.raw,
-                resolve_options: Default::default(),
+                resolve_options,
             },
         )?;
 

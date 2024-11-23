@@ -50,6 +50,7 @@ mod shell;
 mod sync;
 mod tasks;
 mod test_tool;
+mod tool;
 mod trust;
 mod uninstall;
 mod unset;
@@ -104,6 +105,7 @@ pub enum Commands {
     Sync(sync::Sync),
     Tasks(tasks::Tasks),
     TestTool(test_tool::TestTool),
+    Tool(tool::Tool),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Unset(unset::Unset),
@@ -163,6 +165,7 @@ impl Commands {
             Self::Sync(cmd) => cmd.run(),
             Self::Tasks(cmd) => cmd.run(),
             Self::TestTool(cmd) => cmd.run(),
+            Self::Tool(cmd) => cmd.run(),
             Self::Trust(cmd) => cmd.run(),
             Self::Uninstall(cmd) => cmd.run(),
             Self::Unset(cmd) => cmd.run(),

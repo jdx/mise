@@ -101,6 +101,7 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .flatten()
+        .filter(|(_, tool)| !tool.versions.is_empty())
         .collect::<BTreeMap<_, _>>();
     for (short, pt) in init_plugins()?.as_ref().unwrap() {
         let full = match pt {
