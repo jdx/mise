@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+assert "mise i tiny@1.0.0"
+assert "mise i dummy@1.0.0"
+
+assert "mise use dummy tiny"
+assert "mise tool dummy --requested" "latest"
+assert "mise tool dummy --active" "1.0.0"
+assert "mise tool tiny --active" "1.0.0"
+
+assert "mise use dummy@latest"
+assert "mise tool dummy --active" "2.0.0"
+assert "mise tool tiny --active" "1.0.0"
+assert "mise tool dummy --requested" "latest"
+assert "mise tool tiny --requested" "latest"
+
+touch mise.lock
+assert "mise use dummy@1 tiny@1"
+assert "cat mise.lock" '[tools.dummy]
+version = "1.0.0"
+
+[tools.tiny]
+version = "1.0.0"'
+assert "mise tool dummy --requested" "1"
+assert "mise tool tiny --requested" "1"
+assert "mise tool dummy --active" "1.0.0"
+assert "mise tool tiny --active" "1.0.0"
+
+assert "mise use dummy@latest"
+assert "cat mise.lock" '[tools.dummy]
+version = "2.0.0"
+
+[tools.tiny]
+version = "1.0.0"'
+assert "mise tool dummy --requested" "latest"
+assert "mise tool tiny --requested" "1"
+assert "mise tool dummy --active" "2.0.0"
+assert "mise tool tiny --active" "1.0.0"

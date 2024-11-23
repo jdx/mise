@@ -92,6 +92,7 @@ Answer yes to all confirmation prompts
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
 - [`mise tasks run [FLAGS] [TASK] [ARGS]...`](/cli/tasks/run.md)
+- [`mise tool [FLAGS] <BACKEND>`](/cli/tool.md)
 - [`mise trust [FLAGS] [CONFIG_FILE]`](/cli/trust.md)
 - [`mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`](/cli/uninstall.md)
 - [`mise unset [-f --file <FILE>] [-g --global] [KEYS]...`](/cli/unset.md)
