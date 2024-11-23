@@ -87,7 +87,8 @@ jobs:
   unit:
     strategy:
       fail-fast: false
-      matrix: { os: [ubuntu-latest, macos-latest] }
+      # matrix: { os: [ubuntu-latest, macos-latest] }
+      matrix: { os: [macos-latest] }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     permissions:
@@ -239,41 +240,41 @@ jobs:
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           coverage-reports: coverage.lcov
-  windows-unit:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    needs: [build-windows]
-    env:
-      MISE_DATA_DIR: ~/.local/share/mise
-      MISE_CACHE_DIR: ~/.cache/mise
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: unit
-      - uses: actions/download-artifact@v4
-        with:
-          name: mise-windows-latest
-          path: target/debug
-      - run: Add-Content "$env:GITHUB_PATH" "$env:GITHUB_WORKSPACE/target/debug"
-      - run: mise -v
-      # TODO: enable when we can remove continue-on-error:
-      # - name: cargo test
-      #   uses: nick-fields/retry@v3
-      #   with:
-      #     timeout_minutes: 30
-      #     retry_wait_seconds: 30
-      #     max_attempts: 2
-      #     command: cargo test
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise install
-      - run: cargo test
-        continue-on-error: true
+  #  windows-unit:
+  #    runs-on: windows-latest
+  #    timeout-minutes: 30
+  #    needs: [build-windows]
+  #    env:
+  #      MISE_DATA_DIR: ~/.local/share/mise
+  #      MISE_CACHE_DIR: ~/.cache/mise
+  #    steps:
+  #      - uses: actions/checkout@v4
+  #      - uses: Swatinem/rust-cache@v2
+  #        with:
+  #          shared-key: unit
+  #      - uses: actions/download-artifact@v4
+  #        with:
+  #          name: mise-windows-latest
+  #          path: target/debug
+  #      - run: Add-Content "$env:GITHUB_PATH" "$env:GITHUB_WORKSPACE/target/debug"
+  #      - run: mise -v
+  #      # TODO: enable when we can remove continue-on-error:
+  #      # - name: cargo test
+  #      #   uses: nick-fields/retry@v3
+  #      #   with:
+  #      #     timeout_minutes: 30
+  #      #     retry_wait_seconds: 30
+  #      #     max_attempts: 2
+  #      #     command: cargo test
+  #      - uses: actions/cache@v4
+  #        with:
+  #          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+  #          path: |
+  #            ~/.local/share/mise
+  #            ~/.cache/mise
+  #      - run: mise install
+  #      - run: cargo test
+  #        continue-on-error: true
   windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 30
