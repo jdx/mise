@@ -290,7 +290,9 @@ fn aqua_registries(d: &Path) -> Result<Vec<(String, String)>, std::io::Error> {
                     .strip_prefix(registry_dir())
                     .unwrap()
                     .to_string_lossy()
-                    .to_string(),
+                    .split(std::path::MAIN_SEPARATOR_STR)
+                    .collect::<Vec<_>>()
+                    .join("/"),
                 fs::read_to_string(&f).unwrap(),
             ));
         }
