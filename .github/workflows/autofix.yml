@@ -25,13 +25,15 @@ env:
   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
 
 jobs:
-  autofix:
+  ubuntu:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: autofix
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -44,5 +46,29 @@ jobs:
       - run: mise install
       - run: mise x -- bun i
       - run: mise run render
+      - run: mise run lint-fix
+      - uses: autofix-ci/action@v1.3.1
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: autofix
+      - run: |
+          cargo build
+          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+        shell: pwsh
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise install
+      - run: mise x -- npm i
+      #- run: mise run render
       - run: mise run lint-fix
       - uses: autofix-ci/action@v1.3.1

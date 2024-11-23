@@ -378,12 +378,12 @@ pub fn is_executable(path: &Path) -> bool {
     path.extension().map_or(
         SETTINGS
             .windows_executable_extensions
-            .contains(&String::from("")),
+            .contains(&String::new()),
         |ext| {
             if let Some(str_val) = ext.to_str() {
                 return SETTINGS
                     .windows_executable_extensions
-                    .contains(&str_val.to_string());
+                    .contains(&str_val.to_lowercase().to_string());
             }
             false
         },
