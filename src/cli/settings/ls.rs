@@ -1,6 +1,6 @@
+use crate::config;
+use crate::config::{Settings, SETTINGS};
 use eyre::Result;
-
-use crate::config::Settings;
 
 /// Show current settings
 ///
@@ -14,6 +14,10 @@ pub struct SettingsLs {
     /// List keys under this key
     pub key: Option<String>,
 
+    /// Use the local config file instead of the global one
+    #[clap(long, short)]
+    pub local: bool,
+
     /// Only display key names for each setting
     #[clap(long, verbatim_doc_comment, alias = "keys")]
     pub names: bool,
@@ -21,13 +25,23 @@ pub struct SettingsLs {
 
 impl SettingsLs {
     pub fn run(self) -> Result<()> {
-        let settings = Settings::try_get()?;
-        let mut settings = settings.as_dict()?;
+        let mut settings = if self.local {
+            let partial = Settings::parse_settings_file(&config::local_toml_config_path())
+                .unwrap_or_default();
+            Settings::partial_as_dict(&partial)?
+        } else {
+            SETTINGS.as_dict()?
+        };
         if let Some(key) = &self.key {
             settings = settings.remove(key).unwrap().try_into()?
         }
         for k in Settings::hidden_configs() {
             settings.remove(*k);
+        }
+        for (k, v) in settings.clone().iter() {
+            if v.as_table().is_some_and(|t| t.is_empty()) {
+                settings.remove(k);
+            }
         }
         if self.names {
             return self.print_names(&settings);

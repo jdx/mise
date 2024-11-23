@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use eyre::Result;
+use itertools::Itertools;
 use xx::file;
 
 use crate::cli::{version, CLI};
@@ -24,7 +25,12 @@ impl RenderMangen {
 
         let out_dir = project_root().join("man").join("man1");
         file::mkdirp(&out_dir)?;
-        fs::write(out_dir.join("mise.1"), buffer)?;
+        let s = String::from_utf8(buffer)?
+            .lines()
+            .map(|l| l.trim_end())
+            .join("\n")
+            + "\n";
+        fs::write(out_dir.join("mise.1"), s)?;
 
         Ok(())
     }

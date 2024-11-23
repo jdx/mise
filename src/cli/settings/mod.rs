@@ -13,12 +13,21 @@ pub struct Settings {
     #[clap(subcommand)]
     command: Option<Commands>,
 
+    /// Setting name to get/set
+    #[clap(conflicts_with = "names")]
+    key: Option<String>,
+
+    /// Setting value to set
+    #[clap(conflicts_with = "names")]
+    value: Option<String>,
+
     /// Only display key names for each setting
     #[clap(long, verbatim_doc_comment, alias = "keys")]
     names: bool,
 
-    #[clap(conflicts_with = "names")]
-    setting: Option<String>,
+    /// Use the local config file instead of the global one
+    #[clap(long, short, verbatim_doc_comment, global = true)]
+    local: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -45,19 +54,30 @@ impl Commands {
 impl Settings {
     pub fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or_else(|| {
-            if let Some(setting) = self.setting {
-                if let Some((setting, value)) = setting.split_once('=') {
+            if let Some(value) = self.value {
+                Commands::Set(set::SettingsSet {
+                    key: self.key.unwrap(),
+                    value,
+                    local: self.local,
+                })
+            } else if let Some(key) = self.key {
+                if let Some((key, value)) = key.split_once('=') {
                     Commands::Set(set::SettingsSet {
-                        setting: setting.to_string(),
+                        key: key.to_string(),
                         value: value.to_string(),
+                        local: self.local,
                     })
                 } else {
-                    Commands::Get(get::SettingsGet { setting })
+                    Commands::Get(get::SettingsGet {
+                        key,
+                        local: self.local,
+                    })
                 }
             } else {
                 Commands::Ls(ls::SettingsLs {
                     key: None,
                     names: self.names,
+                    local: self.local,
                 })
             }
         });
@@ -76,5 +96,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # set the value of the setting "always_keep_download" to "true"
     $ <bold>mise settings always_keep_download=true</bold>
+
+    # set the value of the setting "node.mirror_url" to "https://npm.taobao.org/mirrors/node"
+    $ <bold>mise settings node.mirror_url https://npm.taobao.org/mirrors/node</bold>
 "#
 );

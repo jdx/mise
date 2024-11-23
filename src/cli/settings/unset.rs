@@ -2,7 +2,7 @@ use eyre::Result;
 use toml_edit::DocumentMut;
 
 use crate::config::settings::SettingsFile;
-use crate::{env, file};
+use crate::{config, file};
 
 /// Clears a setting
 ///
@@ -11,19 +11,27 @@ use crate::{env, file};
 #[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsUnset {
     /// The setting to remove
-    pub setting: String,
+    pub key: String,
+
+    /// Use the local config file instead of the global one
+    #[clap(long, short)]
+    pub local: bool,
 }
 
 impl SettingsUnset {
     pub fn run(self) -> Result<()> {
-        let path = env::MISE_CONFIG_DIR.join("config.toml");
+        let path = if self.local {
+            config::local_toml_config_path()
+        } else {
+            config::global_config_path()
+        };
         let raw = file::read_to_string(&path)?;
         let mut config: DocumentMut = raw.parse()?;
         if !config.contains_key("settings") {
             return Ok(());
         }
         let settings = config["settings"].as_table_mut().unwrap();
-        settings.remove(&self.setting);
+        settings.remove(&self.key);
 
         // validate
         let _: SettingsFile = toml::from_str(&config.to_string())?;

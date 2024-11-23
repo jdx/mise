@@ -1,4 +1,5 @@
-use crate::config::Settings;
+use crate::config;
+use crate::config::{Settings, SETTINGS};
 use eyre::bail;
 
 /// Show a current setting
@@ -11,14 +12,23 @@ use eyre::bail;
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsGet {
     /// The setting to show
-    pub setting: String,
+    pub key: String,
+    /// Use the local config file instead of the global one
+    #[clap(long, short)]
+    pub local: bool,
 }
 
 impl SettingsGet {
     pub fn run(self) -> eyre::Result<()> {
-        let settings = Settings::try_get()?;
-        let mut value = toml::Value::Table(settings.as_dict()?);
-        let mut key = Some(self.setting.as_str());
+        let settings = if self.local {
+            let partial = Settings::parse_settings_file(&config::local_toml_config_path())
+                .unwrap_or_default();
+            Settings::partial_as_dict(&partial)?
+        } else {
+            SETTINGS.as_dict()?
+        };
+        let mut value = toml::Value::Table(settings);
+        let mut key = Some(self.key.as_str());
         while let Some(k) = key {
             let k = k
                 .split_once('.')
@@ -28,7 +38,7 @@ impl SettingsGet {
                 key = k.1;
                 value = v.clone()
             } else {
-                bail!("Unknown setting: {}", self.setting);
+                bail!("Unknown setting: {}", self.key);
             }
         }
         match value {

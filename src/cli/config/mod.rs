@@ -1,9 +1,5 @@
-use crate::config::{load_config_paths, DEFAULT_CONFIG_FILENAMES};
 use clap::Subcommand;
 use eyre::Result;
-use once_cell::sync::Lazy;
-use std::path::PathBuf;
-
 mod generate;
 mod get;
 mod ls;
@@ -53,19 +49,4 @@ impl Config {
 
         cmd.run()
     }
-}
-
-pub static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
-    DEFAULT_CONFIG_FILENAMES
-        .iter()
-        .filter(|s| s.ends_with(".toml"))
-        .map(|s| s.to_string())
-        .collect()
-});
-
-fn top_toml_config() -> Option<PathBuf> {
-    load_config_paths(&TOML_CONFIG_FILENAMES, false)
-        .iter()
-        .find(|p| p.to_string_lossy().ends_with(".toml"))
-        .map(|p| p.to_path_buf())
 }

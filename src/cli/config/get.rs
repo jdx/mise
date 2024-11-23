@@ -1,4 +1,4 @@
-use crate::cli::config::top_toml_config;
+use crate::config::top_toml_config;
 use crate::file::display_path;
 use eyre::bail;
 use std::path::PathBuf;

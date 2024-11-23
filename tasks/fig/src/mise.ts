@@ -1901,13 +1901,22 @@ const completionSpec: Fig.Spec = {
                         "add"
                     ],
                     "description": "Adds a setting to the configuration file",
+                    "options": [
+                        {
+                            "name": [
+                                "-l",
+                                "--local"
+                            ],
+                            "description": "Use the local config file instead of the global one",
+                            "isRepeatable": false
+                        }
+                    ],
                     "args": [
                         {
-                            "name": "setting",
+                            "name": "key",
                             "description": "The setting to set",
                             "isOptional": false,
-                            "isVariadic": false,
-                            "generators": settingsGenerator
+                            "isVariadic": false
                         },
                         {
                             "name": "value",
@@ -1922,13 +1931,22 @@ const completionSpec: Fig.Spec = {
                         "get"
                     ],
                     "description": "Show a current setting",
+                    "options": [
+                        {
+                            "name": [
+                                "-l",
+                                "--local"
+                            ],
+                            "description": "Use the local config file instead of the global one",
+                            "isRepeatable": false
+                        }
+                    ],
                     "args": [
                         {
-                            "name": "setting",
+                            "name": "key",
                             "description": "The setting to show",
                             "isOptional": false,
-                            "isVariadic": false,
-                            "generators": settingsGenerator
+                            "isVariadic": false
                         }
                     ]
                 },
@@ -1939,6 +1957,14 @@ const completionSpec: Fig.Spec = {
                     ],
                     "description": "Show current settings",
                     "options": [
+                        {
+                            "name": [
+                                "-l",
+                                "--local"
+                            ],
+                            "description": "Use the local config file instead of the global one",
+                            "isRepeatable": false
+                        },
                         {
                             "name": [
                                 "--names"
@@ -1962,13 +1988,22 @@ const completionSpec: Fig.Spec = {
                         "create"
                     ],
                     "description": "Add/update a setting",
+                    "options": [
+                        {
+                            "name": [
+                                "-l",
+                                "--local"
+                            ],
+                            "description": "Use the local config file instead of the global one",
+                            "isRepeatable": false
+                        }
+                    ],
                     "args": [
                         {
-                            "name": "setting",
+                            "name": "key",
                             "description": "The setting to set",
                             "isOptional": false,
-                            "isVariadic": false,
-                            "generators": settingsGenerator
+                            "isVariadic": false
                         },
                         {
                             "name": "value",
@@ -1987,13 +2022,22 @@ const completionSpec: Fig.Spec = {
                         "del"
                     ],
                     "description": "Clears a setting",
+                    "options": [
+                        {
+                            "name": [
+                                "-l",
+                                "--local"
+                            ],
+                            "description": "Use the local config file instead of the global one",
+                            "isRepeatable": false
+                        }
+                    ],
                     "args": [
                         {
-                            "name": "setting",
+                            "name": "key",
                             "description": "The setting to remove",
                             "isOptional": false,
-                            "isVariadic": false,
-                            "generators": settingsGenerator
+                            "isVariadic": false
                         }
                     ]
                 }
@@ -2005,14 +2049,28 @@ const completionSpec: Fig.Spec = {
                     ],
                     "description": "Only display key names for each setting",
                     "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-l",
+                        "--local"
+                    ],
+                    "description": "Use the local config file instead of the global one",
+                    "isRepeatable": false
                 }
             ],
             "args": [
                 {
-                    "name": "setting",
+                    "name": "key",
+                    "description": "Setting name to get/set",
                     "isOptional": true,
-                    "isVariadic": false,
-                    "generators": settingsGenerator
+                    "isVariadic": false
+                },
+                {
+                    "name": "value",
+                    "description": "Setting value to set",
+                    "isOptional": true,
+                    "isVariadic": false
                 }
             ]
         },
