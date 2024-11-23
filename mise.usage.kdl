@@ -990,7 +990,18 @@ By default, this command modifies `mise.toml` in the current directory."
     arg "[ENV_VARS]..." help="Environment variable(s) to set\ne.g.: NODE_ENV=production" var=true
 }
 cmd "settings" help="Manage settings" {
+    after_long_help r#"Examples:
+    # list all settings
+    $ mise settings
+
+    # get the value of the setting "always_keep_download"
+    $ mise settings always_keep_download
+
+    # set the value of the setting "always_keep_download" to "true"
+    $ mise settings always_keep_download=true
+"#
     flag "--names" help="Only display key names for each setting"
+    arg "[SETTING]"
     cmd "add" help="Adds a setting to the configuration file" {
         long_help r"Adds a setting to the configuration file
 
@@ -1045,7 +1056,7 @@ but managed separately with `mise aliases`"
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise settings set legacy_version_file true
+    $ mise settings legacy_version_file=true
 "
         arg "<SETTING>" help="The setting to set"
         arg "<VALUE>" help="The value to set"

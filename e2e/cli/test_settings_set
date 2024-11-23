@@ -13,3 +13,6 @@ assert_contains "mise settings" "all_compile = true"
 mise settings unset all_compile
 assert "mise settings get all_compile" "false"
 assert_fail "mise settings get abcdefg" "mise ERROR Unknown setting: abcdefg"
+assert "mise settings all_compile" "false"
+assert "mise settings all_compile=1"
+assert "mise settings all_compile" "true"

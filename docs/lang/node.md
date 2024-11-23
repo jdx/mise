@@ -76,7 +76,7 @@ compiling from source for these platforms.
 To use, first set the mirror url to point to the unofficial builds:
 
 ```sh
-mise settings set node.mirror_url https://unofficial-builds.nodejs.org/download/release/
+mise settings node.mirror_url=https://unofficial-builds.nodejs.org/download/release/
 ```
 
 If your goal is to simply support an alternative arch/os like linux-loong64 or linux-armv6l, this is
@@ -86,6 +86,6 @@ than what the official binaries are built with).
 To use these, set `node.flavor`:
 
 ```sh
-mise settings set node.flavor musl
-mise settings set node.flavor glibc-217
+mise settings node.flavor=musl
+mise settings node.flavor=glibc-217
 ```

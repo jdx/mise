@@ -2006,6 +2006,14 @@ const completionSpec: Fig.Spec = {
                     "description": "Only display key names for each setting",
                     "isRepeatable": false
                 }
+            ],
+            "args": [
+                {
+                    "name": "setting",
+                    "isOptional": true,
+                    "isVariadic": false,
+                    "generators": settingsGenerator
+                }
             ]
         },
         {
