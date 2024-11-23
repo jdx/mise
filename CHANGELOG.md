@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.11.25](https://github.com/jdx/mise/compare/v2024.11.24..v2024.11.25) - 2024-11-23
+
+### 🚀 Features
+
+- added `--local` option for `mise settings` commands by [@jdx](https://github.com/jdx) in [#3157](https://github.com/jdx/mise/pull/3157)
+
+### 🐛 Bug Fixes
+
+- minor tweak to dr output by [@jdx](https://github.com/jdx) in [#3160](https://github.com/jdx/mise/pull/3160)
+- bug with missing shims after install by [@jdx](https://github.com/jdx) in [#3159](https://github.com/jdx/mise/pull/3159)
+
+### 🔍 Other Changes
+
+- increase job count for e2e tests by [@jdx](https://github.com/jdx) in [969a14d](https://github.com/jdx/mise/commit/969a14d038a68e303bbf47e939f9dc9160e493fe)
+
 ## [2024.11.24](https://github.com/jdx/mise/compare/v2024.11.23..v2024.11.24) - 2024-11-23
 
 ### 🚀 Features
