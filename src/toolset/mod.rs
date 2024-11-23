@@ -7,13 +7,13 @@ use std::{panic, thread};
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
-use crate::config::Config;
+use crate::config::{Config, CONFIG};
 use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::errors::Error;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{backend, env, lockfile, runtime_symlinks, shims};
+use crate::{backend, config, env};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use eyre::{eyre, Result, WrapErr};
@@ -129,11 +129,7 @@ impl Toolset {
             }
         }
     }
-    pub fn install_arg_versions(
-        &mut self,
-        config: &Config,
-        opts: &InstallOptions,
-    ) -> Result<Vec<ToolVersion>> {
+    pub fn install_arg_versions(&mut self, opts: &InstallOptions) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
         let versions = self
             .list_current_versions()
@@ -143,9 +139,9 @@ impl Toolset {
             .filter(|tv| matches!(self.versions[tv.ba()].source, ToolSource::Argument))
             .map(|tv| tv.request)
             .collect_vec();
-        let versions = self.install_all_versions(config, versions, &mpr, opts)?;
+        let versions = self.install_all_versions(versions, &mpr, opts)?;
         if !versions.is_empty() {
-            lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
+            config::rebuild_shims_and_runtime_symlinks(&versions)?;
         }
         Ok(versions)
     }
@@ -190,7 +186,6 @@ impl Toolset {
 
     pub fn install_all_versions(
         &mut self,
-        config: &Config,
         mut versions: Vec<ToolRequest>,
         mpr: &MultiProgressReport,
         opts: &InstallOptions,
@@ -211,18 +206,11 @@ impl Toolset {
             leaf_deps = get_leaf_dependencies(&versions)?;
         }
 
-        trace!("install_state::reset()");
-        install_state::reset();
-
         trace!("install: resolving");
+        install_state::reset();
         if let Err(err) = self.resolve() {
             debug!("error resolving versions after install: {err:#}");
         }
-        trace!("install: reshimming");
-        shims::reshim(self, false)?;
-        trace!("install: rebuilding runtime symlinks");
-        runtime_symlinks::rebuild(config)?;
-        trace!("install: done");
         if log::log_enabled!(log::Level::Debug) {
             for tv in installed.iter() {
                 let backend = tv.backend()?;
@@ -234,7 +222,7 @@ impl Toolset {
                     .unwrap_or_default();
                 debug!("[{tv}] list_bin_paths: {bin_paths:?}");
                 let env = backend
-                    .exec_env(config, self, tv)
+                    .exec_env(&CONFIG, self, tv)
                     .map_err(|e| {
                         warn!("Error running exec-env: {e:#}");
                     })
@@ -579,7 +567,6 @@ impl Toolset {
             })
     }
     pub fn install_missing_bin(&mut self, bin_name: &str) -> Result<Option<Vec<ToolVersion>>> {
-        let config = Config::try_get()?;
         let plugins = self
             .list_installed_versions()?
             .into_iter()
@@ -600,13 +587,11 @@ impl Toolset {
                 .collect_vec();
             if !versions.is_empty() {
                 let mpr = MultiProgressReport::get();
-                let versions = self.install_all_versions(
-                    &config,
-                    versions.clone(),
-                    &mpr,
-                    &InstallOptions::new(),
-                )?;
-                lockfile::update_lockfiles(&versions).wrap_err("failed to update lockfiles")?;
+                let versions =
+                    self.install_all_versions(versions.clone(), &mpr, &InstallOptions::new())?;
+                if !versions.is_empty() {
+                    config::rebuild_shims_and_runtime_symlinks(&versions)?;
+                }
                 return Ok(Some(versions));
             }
         }

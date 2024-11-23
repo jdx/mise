@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use console::style;
-use eyre::{bail, eyre, Result, WrapErr};
+use eyre::{bail, eyre, Result};
 use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::toolset::{install_state, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{dirs, file, lockfile, runtime_symlinks, shims};
+use crate::{config, dirs, file};
 
 /// Removes installed tool versions
 ///
@@ -66,12 +66,8 @@ impl Uninstall {
             }
         }
 
-        install_state::reset();
         file::touch_dir(&dirs::DATA)?;
-        lockfile::update_lockfiles(&[]).wrap_err("failed to update lockfiles")?;
-        let ts = ToolsetBuilder::new().build(&config)?;
-        shims::reshim(&ts, false).wrap_err("failed to reshim")?;
-        runtime_symlinks::rebuild(&config)?;
+        config::rebuild_shims_and_runtime_symlinks(&[])?;
 
         Ok(())
     }
