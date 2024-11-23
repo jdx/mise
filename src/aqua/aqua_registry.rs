@@ -16,6 +16,9 @@ use std::path::PathBuf;
 use url::Url;
 use xx::regex;
 
+pub static AQUA_STANDARD_REGISTRY_FILES: Lazy<HashMap<&'static str, &'static str>> =
+    Lazy::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs")));
+
 pub static AQUA_REGISTRY: Lazy<AquaRegistry> = Lazy::new(|| {
     AquaRegistry::standard().unwrap_or_else(|err| {
         warn!("failed to initialize aqua registry: {err:?}");
@@ -164,11 +167,16 @@ impl AquaRegistry {
     pub fn package(&self, id: &str) -> Result<Option<AquaPackage>> {
         let path_id = id.split('/').join(std::path::MAIN_SEPARATOR_STR);
         let path = self.path.join("pkgs").join(&path_id).join("registry.yaml");
-        if !self.repo_exists && (!path.exists() || file::modified_duration(&path)? > DAILY) {
-            let url: Url =
-                format!("https://mise-versions.jdx.dev/aqua-registry/{path_id}/registry.yaml")
-                    .parse()?;
-            http::HTTP_FETCH.download_file(url, &path, None)?;
+        if !self.repo_exists {
+            if let Some(registry) = AQUA_STANDARD_REGISTRY_FILES.get(id) {
+                let registry: RegistryYaml = serde_yaml::from_str(registry)?;
+                return Ok(registry.packages.into_iter().next());
+            } else if !path.exists() || file::modified_duration(&path)? > DAILY {
+                let url: Url =
+                    format!("https://mise-versions.jdx.dev/aqua-registry/{path_id}/registry.yaml")
+                        .parse()?;
+                http::HTTP_FETCH.download_file(url, &path, None)?;
+            }
         }
         let f = file::open(&path)?;
         let registry: RegistryYaml = serde_yaml::from_reader(f)?;
