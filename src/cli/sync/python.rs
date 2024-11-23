@@ -1,9 +1,8 @@
 use eyre::Result;
 use itertools::sorted;
 
-use crate::config::Config;
 use crate::env::PYENV_ROOT;
-use crate::{backend, dirs, file};
+use crate::{backend, config, dirs, file};
 
 /// Symlinks all tool versions from an external tool into mise
 ///
@@ -18,7 +17,6 @@ pub struct SyncPython {
 
 impl SyncPython {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
         let python = backend::get(&"python".into()).unwrap();
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
@@ -35,7 +33,7 @@ impl SyncPython {
             miseprintln!("Synced python@{} from pyenv", v);
         }
 
-        config.rebuild_shims_and_runtime_symlinks()
+        config::rebuild_shims_and_runtime_symlinks(&[])
     }
 }
 

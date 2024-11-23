@@ -111,7 +111,7 @@ impl TestTool {
             raw: self.raw,
             resolve_options: Default::default(),
         };
-        ts.install_arg_versions(&CONFIG, &opts)?;
+        ts.install_arg_versions(&opts)?;
         ts.notify_if_versions_missing();
         let tv = if let Some(tv) = ts
             .versions

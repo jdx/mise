@@ -50,7 +50,7 @@ impl Shell {
             raw: self.raw,
             resolve_options: Default::default(),
         };
-        ts.install_arg_versions(&config, &opts)?;
+        ts.install_arg_versions(&opts)?;
         ts.notify_if_versions_missing();
 
         let shell = get_shell(None).expect("no shell detected");

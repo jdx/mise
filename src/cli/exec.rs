@@ -65,9 +65,7 @@ impl Exec {
             raw: self.raw,
             resolve_options: Default::default(),
         };
-        measure!("install_arg_versions", {
-            ts.install_arg_versions(&CONFIG, &opts)?
-        });
+        measure!("install_arg_versions", { ts.install_arg_versions(&opts)? });
         measure!("notify_if_versions_missing", {
             ts.notify_if_versions_missing()
         });
