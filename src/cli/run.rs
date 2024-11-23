@@ -325,7 +325,7 @@ impl Run {
             }
         }
 
-        if self.timings() {
+        if self.timings() && (task.file.as_ref().is_some() || !task.run().is_empty()) {
             eprintln!(
                 "{prefix} finished in {}",
                 time::format_duration(timer.elapsed())

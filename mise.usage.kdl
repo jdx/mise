@@ -999,9 +999,14 @@ cmd "settings" help="Manage settings" {
 
     # set the value of the setting "always_keep_download" to "true"
     $ mise settings always_keep_download=true
+
+    # set the value of the setting "node.mirror_url" to "https://npm.taobao.org/mirrors/node"
+    $ mise settings node.mirror_url https://npm.taobao.org/mirrors/node
 "#
     flag "--names" help="Only display key names for each setting"
-    arg "[SETTING]"
+    flag "-l --local" help="Use the local config file instead of the global one" global=true
+    arg "[KEY]" help="Setting name to get/set"
+    arg "[VALUE]" help="Setting value to set"
     cmd "add" help="Adds a setting to the configuration file" {
         long_help r"Adds a setting to the configuration file
 
@@ -1011,7 +1016,8 @@ This modifies the contents of ~/.config/mise/config.toml"
 
     $ mise settings add disable_hints python_multi
 "
-        arg "<SETTING>" help="The setting to set"
+        flag "-l --local" help="Use the local config file instead of the global one"
+        arg "<KEY>" help="The setting to set"
         arg "<VALUE>" help="The value to set"
     }
     cmd "get" help="Show a current setting" {
@@ -1026,7 +1032,8 @@ but managed separately with `mise aliases get`"
     $ mise settings get legacy_version_file
     true
 "
-        arg "<SETTING>" help="The setting to show"
+        flag "-l --local" help="Use the local config file instead of the global one"
+        arg "<KEY>" help="The setting to show"
     }
     cmd "ls" help="Show current settings" {
         alias "list"
@@ -1046,6 +1053,7 @@ but managed separately with `mise aliases`"
     default_packages_file = "~/.default-python-packages"
     ...
 "#
+        flag "-l --local" help="Use the local config file instead of the global one"
         flag "--names" help="Only display key names for each setting"
         arg "[KEY]" help="List keys under this key"
     }
@@ -1058,7 +1066,8 @@ This modifies the contents of ~/.config/mise/config.toml"
 
     $ mise settings legacy_version_file=true
 "
-        arg "<SETTING>" help="The setting to set"
+        flag "-l --local" help="Use the local config file instead of the global one"
+        arg "<KEY>" help="The setting to set"
         arg "<VALUE>" help="The value to set"
     }
     cmd "unset" help="Clears a setting" {
@@ -1070,7 +1079,8 @@ This modifies the contents of ~/.config/mise/config.toml"
 
     $ mise settings unset legacy_version_file
 "
-        arg "<SETTING>" help="The setting to remove"
+        flag "-l --local" help="Use the local config file instead of the global one"
+        arg "<KEY>" help="The setting to remove"
     }
 }
 cmd "shell" help="Sets a tool version for the current session." {

@@ -27,7 +27,7 @@ use crate::ui::style;
 use crate::{backend, dirs, env, file, registry};
 
 pub mod config_file;
-mod env_directive;
+pub mod env_directive;
 pub mod settings;
 pub mod tracking;
 
@@ -663,6 +663,13 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     }
     filenames
 });
+static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
+    DEFAULT_CONFIG_FILENAMES
+        .iter()
+        .filter(|s| s.ends_with(".toml"))
+        .map(|s| s.to_string())
+        .collect()
+});
 
 pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> Vec<PathBuf> {
     let mut config_files = Vec::new();
@@ -733,6 +740,45 @@ pub fn system_config_files() -> Vec<PathBuf> {
         config_files.push(system);
     }
     config_files
+}
+
+/// the top-most global config file or the path to where it should be written to
+pub fn global_config_path() -> PathBuf {
+    global_config_files()
+        .into_iter()
+        .next_back()
+        .unwrap_or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
+}
+
+/// the top-most mise.toml (local or global)
+pub fn top_toml_config() -> Option<PathBuf> {
+    load_config_paths(&TOML_CONFIG_FILENAMES, false)
+        .iter()
+        .rev()
+        .find(|p| p.to_string_lossy().ends_with(".toml"))
+        .map(|p| p.to_path_buf())
+}
+
+/// list of all non-global mise.tomls
+pub fn local_toml_config_paths() -> Vec<PathBuf> {
+    load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
+        .into_iter()
+        .filter(|p| !is_global_config(p))
+        .collect()
+}
+
+/// either the top local mise.toml or the path to where it should be written to
+pub fn local_toml_config_path() -> PathBuf {
+    static CWD: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("."));
+    local_toml_config_paths()
+        .into_iter()
+        .next_back()
+        .unwrap_or_else(|| {
+            dirs::CWD
+                .as_ref()
+                .unwrap_or(&CWD)
+                .join(&*env::MISE_DEFAULT_CONFIG_FILENAME)
+        })
 }
 
 fn load_all_config_files(

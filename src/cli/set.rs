@@ -1,16 +1,16 @@
 use std::path::{Path, PathBuf};
 
-use eyre::{bail, Result};
-use tabled::Tabled;
-
+use super::args::EnvVarArg;
+use crate::config;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
-use crate::config::{is_global_config, Config, LOCAL_CONFIG_FILENAMES};
-use crate::env::{self, MISE_DEFAULT_CONFIG_FILENAME};
-use crate::file::{self, display_path};
+use crate::config::env_directive::EnvDirective;
+use crate::config::CONFIG;
+use crate::env::{self};
+use crate::file::display_path;
 use crate::ui::table;
-
-use super::args::EnvVarArg;
+use eyre::{bail, Result};
+use tabled::Tabled;
 
 /// Set environment variables in mise.toml
 ///
@@ -42,11 +42,25 @@ pub struct Set {
 
 impl Set {
     pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+        let filename = if let Some(file) = &self.file {
+            file.clone()
+        } else if self.global {
+            config::global_config_path()
+        } else {
+            config::local_toml_config_path()
+        };
+
         if self.remove.is_none() && self.env_vars.is_none() {
-            let rows = config
+            let rows = CONFIG
                 .env_with_sources()?
                 .iter()
+                .filter(|(_, (_, source))| {
+                    if self.file.is_some() {
+                        source == &filename
+                    } else {
+                        true
+                    }
+                })
                 .map(|(key, (value, source))| Row {
                     key: key.clone(),
                     value: value.clone(),
@@ -59,15 +73,7 @@ impl Set {
             return Ok(());
         }
 
-        let filename = if let Some(env) = &*env::MISE_PROFILE {
-            config_file_from_dir(&env::current_dir()?.join(format!(".mise.{}.toml", env)))
-        } else if self.global {
-            env::MISE_GLOBAL_CONFIG_FILE.clone()
-        } else if let Some(p) = &self.file {
-            config_file_from_dir(p)
-        } else {
-            env::MISE_DEFAULT_CONFIG_FILENAME.clone().into()
-        };
+        let config = MiseToml::from_file(&filename).unwrap_or_default();
 
         let mut mise_toml = get_mise_toml(&filename)?;
 
@@ -80,7 +86,10 @@ impl Set {
         if let Some(env_vars) = self.env_vars {
             if env_vars.len() == 1 && env_vars[0].value.is_none() {
                 let key = &env_vars[0].key;
-                match config.env()?.get(key) {
+                match config.env_entries()?.into_iter().find_map(|ev| match ev {
+                    EnvDirective::Val(k, v) if &k == key => Some(v),
+                    _ => None,
+                }) {
                     Some(value) => miseprintln!("{value}"),
                     None => bail!("Environment variable {key} not found"),
                 }
@@ -108,26 +117,6 @@ fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
     Ok(mise_toml)
 }
 
-fn config_file_from_dir(p: &Path) -> PathBuf {
-    if !p.is_dir() {
-        return p.to_path_buf();
-    }
-    let mise_toml = p.join(&*MISE_DEFAULT_CONFIG_FILENAME);
-    if mise_toml.exists() {
-        return mise_toml;
-    }
-    let filenames = LOCAL_CONFIG_FILENAMES
-        .iter()
-        .rev()
-        .filter(|f| is_global_config(Path::new(f)))
-        .map(|f| f.to_string())
-        .collect::<Vec<_>>();
-    if let Some(p) = file::find_up(p, &filenames) {
-        return p;
-    }
-    mise_toml
-}
-
 #[derive(Tabled)]
 struct Row {
     key: String,
@@ -148,67 +137,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     NODE_ENV  production  ~/.config/mise/config.toml
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use insta::assert_snapshot;
-    use test_log::test;
-
-    use crate::test::reset;
-    use crate::{env, file};
-
-    fn remove_config_file(filename: &str) -> PathBuf {
-        let cf_path = env::current_dir().unwrap().join(filename);
-        let _ = file::write(&cf_path, "");
-        cf_path
-    }
-
-    #[test]
-    fn test_show_env_vars() {
-        reset();
-        assert_cli_snapshot!("env-vars");
-    }
-
-    #[test]
-    fn test_env_vars() {
-        reset();
-        // Using the default file
-        let filename = ".test.mise.toml";
-        let cf_path = remove_config_file(filename);
-        assert_cli_snapshot!("env-vars", "FOO=bar", @"");
-        assert_cli_snapshot!("env-vars", "FOO", @"bar");
-        assert_snapshot!(file::read_to_string(cf_path).unwrap());
-        remove_config_file(filename);
-
-        // Using a custom file
-        let filename = ".test-custom.mise.toml";
-        let cf_path = remove_config_file(filename);
-        assert_cli_snapshot!("env-vars", "--file", filename, "FOO=bar", @"");
-        assert_snapshot!(file::read_to_string(cf_path).unwrap());
-        remove_config_file(filename);
-        file::remove_file(filename).unwrap();
-    }
-
-    #[test]
-    fn test_env_vars_remove() {
-        reset();
-        // Using the default file
-        let filename = ".test.mise.toml";
-        let cf_path = remove_config_file(filename);
-        assert_cli_snapshot!("env-vars", "BAZ=quux", @"");
-        assert_cli_snapshot!("env-vars", "--remove", "BAZ", @"");
-        assert_snapshot!(file::read_to_string(cf_path).unwrap());
-        remove_config_file(filename);
-
-        // Using a custom file
-        let filename = ".test-custom.mise.toml";
-        let cf_path = remove_config_file(filename);
-        assert_cli_snapshot!("env-vars", "--file", filename, "BAZ=quux", @"");
-        assert_cli_snapshot!("env-vars", "--file", filename, "--remove", "BAZ", @"");
-        assert_snapshot!(file::read_to_string(cf_path).unwrap());
-        remove_config_file(filename);
-        file::remove_file(filename).unwrap();
-    }
-}

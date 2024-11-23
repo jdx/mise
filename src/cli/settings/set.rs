@@ -2,7 +2,7 @@ use eyre::{bail, eyre, Result};
 use toml_edit::DocumentMut;
 
 use crate::config::settings::{SettingsFile, SettingsType, SETTINGS_META};
-use crate::{env, file};
+use crate::{config, file};
 
 /// Add/update a setting
 ///
@@ -12,18 +12,21 @@ use crate::{env, file};
 pub struct SettingsSet {
     /// The setting to set
     #[clap()]
-    pub setting: String,
+    pub key: String,
     /// The value to set
     pub value: String,
+    /// Use the local config file instead of the global one
+    #[clap(long, short)]
+    pub local: bool,
 }
 
 impl SettingsSet {
     pub fn run(self) -> Result<()> {
-        set(&self.setting, &self.value, false)
+        set(&self.key, &self.value, false, self.local)
     }
 }
 
-pub fn set(mut key: &str, value: &str, add: bool) -> Result<()> {
+pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let value = if let Some(meta) = SETTINGS_META.get(key) {
         match meta.type_ {
             SettingsType::Bool => parse_bool(value)?,
@@ -37,9 +40,13 @@ pub fn set(mut key: &str, value: &str, add: bool) -> Result<()> {
         bail!("Unknown setting: {}", key);
     };
 
-    let path = &*env::MISE_GLOBAL_CONFIG_FILE;
+    let path = if local {
+        config::local_toml_config_path()
+    } else {
+        config::global_config_path()
+    };
     file::create_dir_all(path.parent().unwrap())?;
-    let raw = file::read_to_string(path).unwrap_or_default();
+    let raw = file::read_to_string(&path).unwrap_or_default();
     let mut config: DocumentMut = raw.parse()?;
     if !config.contains_key("settings") {
         config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());

@@ -1,6 +1,6 @@
-use crate::cli::config::top_toml_config;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::settings::{SettingsType, SETTINGS_META};
+use crate::config::top_toml_config;
 use clap::ValueEnum;
 use eyre::bail;
 use std::path::PathBuf;

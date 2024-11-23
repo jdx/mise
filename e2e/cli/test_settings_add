@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+assert "mise settings add disable_hints a" ""
+assert "mise settings add disable_hints b" ""
+assert "mise settings get disable_hints" '["a", "b"]'

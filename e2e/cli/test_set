@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+assert "mise set FOO=bar" ""
+assert "mise set FOO" "bar"
+assert "mise set" "FOO  bar ~/workdir/mise.toml"
+assert "mise set --rm FOO" ""
+assert_fail "mise set FOO" "Environment variable FOO not found"
+
+assert "mise set --file .test.mise.toml FOO=bar" ""
+assert "mise set --file .test.mise.toml FOO" "bar"
