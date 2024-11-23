@@ -10,6 +10,7 @@ use crate::tokio::RUNTIME;
 use crate::toolset::ToolVersion;
 use crate::{file, github, hash};
 use eyre::bail;
+use itertools::Itertools;
 use regex::Regex;
 use sha2::Sha256;
 use std::env;
@@ -41,7 +42,7 @@ impl Backend for UbiBackend {
         } else {
             self.remote_version_cache
                 .get_or_try_init(|| {
-                    let opts = self.ba.opts.clone().unwrap_or_default();
+                    let opts = self.ba.opts();
                     let tag_regex = OnceLock::new();
                     Ok(github::list_releases(&self.tool_name())?
                         .into_iter()
@@ -51,6 +52,7 @@ impl Backend for UbiBackend {
                             true => t[1..].to_string(),
                             false => t,
                         })
+                        .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(v))
                         .filter(|v| {
                             if let Some(re) = opts.get("tag_regex") {
                                 let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
