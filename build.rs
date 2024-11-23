@@ -1,7 +1,7 @@
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 fn main() {
@@ -14,6 +14,7 @@ fn main() {
 
     codegen_settings();
     codegen_registry();
+    codegen_aqua();
 }
 
 fn codegen_registry() {
@@ -254,4 +255,51 @@ pub static SETTINGS_META: Lazy<IndexMap<String, SettingsMeta>> = Lazy::new(|| {
     );
 
     fs::write(&dest_path, lines.join("\n")).unwrap();
+}
+
+// pub static AQUA_STANDARD_REGISTRY_FILES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+//     include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs"));
+// });
+
+fn codegen_aqua() {
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("aqua_standard_registry.rs");
+    let mut lines = vec!["[".to_string()];
+    for (k, v) in aqua_registries(&registry_dir()).unwrap_or_default() {
+        lines.push(format!(r####"    ("{k}", r###"{v}"###),"####));
+    }
+    lines.push("].into()".to_string());
+    fs::write(&dest_path, lines.join("\n")).unwrap();
+}
+
+fn ls(path: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
+    fs::read_dir(path)?
+        .map(|entry| entry.map(|e| e.path()))
+        .collect()
+}
+
+fn aqua_registries(d: &Path) -> Result<Vec<(String, String)>, std::io::Error> {
+    let mut registries = vec![];
+    for f in ls(d)? {
+        if f.is_dir() {
+            registries.extend(aqua_registries(&f)?);
+        } else if f.file_name() == Some("registry.yaml".as_ref()) {
+            registries.push((
+                f.parent()
+                    .unwrap()
+                    .strip_prefix(registry_dir())
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                fs::read_to_string(&f).unwrap(),
+            ));
+        }
+    }
+    Ok(registries)
+}
+
+fn registry_dir() -> PathBuf {
+    PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap())
+        .join("aqua-registry")
+        .join("pkgs")
 }
