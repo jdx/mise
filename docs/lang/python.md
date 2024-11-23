@@ -66,7 +66,7 @@ That said, there are
 some [quirks](https://github.com/indygreg/python-build-standalone/blob/main/docs/quirks.rst)
 with the precompiled binaries to be aware of.
 
-If you'd like to disable these binaries, set `mise settings set python.compile 1`.
+If you'd like to disable these binaries, set `mise settings python.compile=1`.
 
 These binaries may not work on older CPUs however you may opt into binaries which
 are more compatible with older CPUs by setting `MISE_PYTHON_PRECOMPILED_ARCH` with

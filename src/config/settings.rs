@@ -329,7 +329,7 @@ impl Settings {
 
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {
         if !self.experimental {
-            bail!("{what} is experimental. Enable it with `mise settings set experimental true`");
+            bail!("{what} is experimental. Enable it with `mise settings experimental=true`");
         }
         Ok(())
     }

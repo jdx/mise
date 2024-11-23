@@ -263,7 +263,7 @@ in mise and nvm. Here are some of the supported legacy version files:
 | yarn      | `.yarnrc`                                          |
 
 In mise these are enabled by default. You can disable them
-with `mise settings set legacy_version_file false`.
+with `mise settings legacy_version_file=false`.
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
 `bin/parse-version-file`. However these are [cached](/cache-behavior) so it's not a huge deal.
 You may not even notice.

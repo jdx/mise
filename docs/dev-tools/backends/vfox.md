@@ -30,8 +30,8 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 If you'd like to use vfox plugins by default like on Windows, set the following settings:
 
 ```sh
-mise settings set asdf false
-mise settings set vfox true
+mise settings asdf=false
+mise settings vfox=true
 ```
 
 Now you can list available plugins with `mise registry`:

@@ -146,7 +146,7 @@ impl PythonPlugin {
                         hint!(
                             "python_compile",
                             "To compile python from source, run",
-                            "mise settings set python.compile 1"
+                            "mise settings python.compile=1"
                         );
                     }
                     let arch = python_arch();
@@ -168,7 +168,7 @@ impl PythonPlugin {
                 "python_precompiled",
                 "installing precompiled python from indygreg/python-build-standalone\n\
                 if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
-                "mise settings set python.compile 1"
+                "mise settings python.compile=1"
             );
         }
 
@@ -268,7 +268,7 @@ impl PythonPlugin {
         if let Some(virtualenv) = tv.request.options().get("virtualenv") {
             if !SETTINGS.experimental {
                 warn!(
-                    "please enable experimental mode with `mise settings set experimental true` \
+                    "please enable experimental mode with `mise settings experimental=true` \
                     to use python virtualenv activation"
                 );
             }

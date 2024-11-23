@@ -8,7 +8,7 @@ mod set;
 mod unset;
 
 #[derive(Debug, clap::Args)]
-#[clap(about = "Manage settings")]
+#[clap(about = "Manage settings", after_long_help = AFTER_LONG_HELP)]
 pub struct Settings {
     #[clap(subcommand)]
     command: Option<Commands>,
@@ -16,6 +16,9 @@ pub struct Settings {
     /// Only display key names for each setting
     #[clap(long, verbatim_doc_comment, alias = "keys")]
     names: bool,
+
+    #[clap(conflicts_with = "names")]
+    setting: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -41,11 +44,37 @@ impl Commands {
 
 impl Settings {
     pub fn run(self) -> Result<()> {
-        let cmd = self.command.unwrap_or(Commands::Ls(ls::SettingsLs {
-            key: None,
-            names: self.names,
-        }));
+        let cmd = self.command.unwrap_or_else(|| {
+            if let Some(setting) = self.setting {
+                if let Some((setting, value)) = setting.split_once('=') {
+                    Commands::Set(set::SettingsSet {
+                        setting: setting.to_string(),
+                        value: value.to_string(),
+                    })
+                } else {
+                    Commands::Get(get::SettingsGet { setting })
+                }
+            } else {
+                Commands::Ls(ls::SettingsLs {
+                    key: None,
+                    names: self.names,
+                })
+            }
+        });
 
         cmd.run()
     }
 }
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+    # list all settings
+    $ <bold>mise settings</bold>
+
+    # get the value of the setting "always_keep_download"
+    $ <bold>mise settings always_keep_download</bold>
+
+    # set the value of the setting "always_keep_download" to "true"
+    $ <bold>mise settings always_keep_download=true</bold>
+"#
+);
