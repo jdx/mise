@@ -109,7 +109,7 @@ impl Install {
                                     backend: ta.ba.clone(),
                                     version: "latest".into(),
                                     os: None,
-                                    options: ta.opts.clone().unwrap_or(Default::default()),
+                                    options: ta.ba.opts(),
                                     source: ToolSource::Argument,
                                 };
                                 requests.push(tvr);
