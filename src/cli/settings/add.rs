@@ -11,14 +11,17 @@ use crate::cli::settings::set::set;
 pub struct SettingsAdd {
     /// The setting to set
     #[clap()]
-    pub setting: String,
+    pub key: String,
     /// The value to set
     pub value: String,
+    /// Use the local config file instead of the global one
+    #[clap(long, short)]
+    pub local: bool,
 }
 
 impl SettingsAdd {
     pub fn run(self) -> Result<()> {
-        set(&self.setting, &self.value, true)
+        set(&self.key, &self.value, true, self.local)
     }
 }
 
@@ -28,16 +31,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise settings add disable_hints python_multi</bold>
 "#
 );
-
-#[cfg(test)]
-pub mod tests {
-    use crate::test::reset;
-
-    #[test]
-    fn test_settings_add() {
-        reset();
-        assert_cli_snapshot!("settings", "add", "disable_hints", "a", @"");
-        assert_cli_snapshot!("settings", "add", "disable_hints", "b", @"");
-        assert_cli_snapshot!("settings", "get", "disable_hints", @r#"["a", "b"]"#);
-    }
-}

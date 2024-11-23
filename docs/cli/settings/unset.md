@@ -1,6 +1,6 @@
 # `mise settings unset`
 
-- **Usage**: `mise settings unset <SETTING>`
+- **Usage**: `mise settings unset [-l --local] <KEY>`
 - **Aliases**: `rm`, `remove`, `delete`, `del`
 - **Source code**: [`src/cli/settings/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/unset.rs)
 
@@ -10,9 +10,15 @@ This modifies the contents of ~/.config/mise/config.toml
 
 ## Arguments
 
-### `<SETTING>`
+### `<KEY>`
 
 The setting to remove
+
+## Flags
+
+### `-l --local`
+
+Use the local config file instead of the global one
 
 Examples:
 

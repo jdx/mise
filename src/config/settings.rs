@@ -271,7 +271,7 @@ impl Settings {
         Self::from_file(settings_file)
     }
 
-    fn parse_settings_file(path: &PathBuf) -> Result<SettingsPartial> {
+    pub fn parse_settings_file(path: &PathBuf) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
         let settings_file: SettingsFile = toml::from_str(&raw)?;
 
@@ -300,7 +300,7 @@ impl Settings {
             .collect()
     }
 
-    pub fn from_file(path: &PathBuf) -> Result<SettingsPartial> {
+    fn from_file(path: &PathBuf) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
         let settings: SettingsPartial = toml::from_str(&raw)?;
         Ok(settings)
@@ -405,6 +405,12 @@ impl Settings {
             .iter()
             .map(|t| t.trim().to_string())
             .collect()
+    }
+
+    pub fn partial_as_dict(partial: &SettingsPartial) -> eyre::Result<toml::Table> {
+        let s = toml::to_string(partial)?;
+        let table = toml::from_str(&s)?;
+        Ok(table)
     }
 }
 
