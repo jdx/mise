@@ -1,6 +1,0 @@
----
-source: src/cli/set.rs
-expression: output
-snapshot_kind: text
----
-TEST_ENV_VAR  test-123 ~/config/config.toml
