@@ -112,7 +112,7 @@ filter_commits = false
 # regex for matching git tags
 tag_pattern = '^v\d+\.\d+\.\d+$'
 # regex for skipping tags
-skip_tags = '^v(1|2023|2024\.0|2024\.5\.3)'
+skip_tags = '^v(1|2023|2024\.0|2024\.11\.27)'
 # regex for ignoring tags
 # ignore_tags = ""
 # sort the tags topologically
