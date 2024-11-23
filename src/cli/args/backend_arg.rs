@@ -157,6 +157,16 @@ impl BackendArg {
         }
     }
 
+    pub fn opts(&self) -> ToolVersionOptions {
+        self.opts.clone().unwrap_or_else(|| {
+            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&self.full()) {
+                parse_tool_options(c.get(2).unwrap().as_str())
+            } else {
+                ToolVersionOptions::default()
+            }
+        })
+    }
+
     pub fn tool_name(&self) -> String {
         let full = self.full();
         let (_backend, tool_name) = full.split_once(':').unwrap_or(("", &full));
