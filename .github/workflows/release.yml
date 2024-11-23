@@ -133,7 +133,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tranche: [0, 1, 2, 3]
+        tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
       - name: Install zsh/fish/direnv/fd
@@ -158,7 +158,7 @@ jobs:
         env:
           GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TEST_TRANCHE: ${{matrix.tranche}}
-          TEST_TRANCHE_COUNT: 4
+          TEST_TRANCHE_COUNT: 8
           TEST_ALL: 1
         with:
           timeout_minutes: 20
