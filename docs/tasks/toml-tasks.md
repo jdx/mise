@@ -130,3 +130,13 @@ run = 'echo {{flag(name=("myflag")}}'
 - `name`: The name of the flag. This is used for help/error messages.
 
 The value will be `true` if the flag is passed, and `false` otherwise.
+
+## Windows
+
+You can specify an alternate command to run on Windows by using the `run_windows` key:
+
+```toml
+[tasks.test]
+run = 'cargo test'
+run_windows = 'cargo test --features windows'
+```

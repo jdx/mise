@@ -4,7 +4,7 @@ version = "1.7.4"
 [tools.actionlint.checksums]
 actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
 actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5ccd2564bf86192c1b661"
-"actionlint.exe-windows-aarch64" = "sha256:88c33950ccbd3ba6854d14ffa14071673b8f427d5a5711d9ca68d6e97b8a523f"
+"actionlint.exe-windows-x86_64" = "sha256:04ca117d9f33b77731fd3ef6a3670bd6b11b40c1b1cc5b7aaf6c28392d74d2e2"
 
 [tools.bun]
 version = "1.1.36"
@@ -12,6 +12,7 @@ version = "1.1.36"
 [tools.bun.checksums]
 "bun-darwin-aarch64.zip" = "sha256:f299aaf467ec8e610bbefef8b91664ab3b199a174ceb2f5a97d624c96dfde068"
 "bun-linux-x64-baseline.zip" = "sha256:515666143dbda58ed0b90cf3ae0ade7178b0d705d7576f62bedf66c709740eb3"
+"bun-windows-x64-baseline.zip" = "sha256:fd47551a001e998eb5161e61a3f64ccbabf46cf978782310bab75f1a71cbbd29"
 
 [tools.cargo-binstall]
 version = "1.10.13"
@@ -19,7 +20,7 @@ version = "1.10.13"
 [tools.cargo-binstall.checksums]
 cargo-binstall-linux-x86_64 = "sha256:53a7157f56e1698d42d3cd50b1d08f02159638e3a73edf362e14215337942e86"
 cargo-binstall-macos-aarch64 = "sha256:f67dd4fc8ea01b4c55fe041a0fbd6d81a361947f1dbf2bd226490c641cc167b3"
-"cargo-binstall.exe-windows-aarch64" = "sha256:78d3289aee231c1ddaeb520c82576f622a7e202a3a4884ad9f8c206b6c17b25c"
+"cargo-binstall.exe-windows-x86_64" = "sha256:32a28a1e98ad23e2c7ac360b815001181d7feffd1283a20c6ef92c3c032d6ba6"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.0"
@@ -85,4 +86,4 @@ version = "2.6.0"
 [tools.slsa-verifier.checksums]
 slsa-verifier-linux-x86_64 = "sha256:1c9c0d6a272063f3def6d233fa3372adbaff1f5a3480611a07c744e73246b62d"
 slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff545460add0cb4a087aec056189c"
-"slsa-verifier.exe-windows-aarch64" = "sha256:6235daec8037a2e8f6aa11c583eed6b09b2cd36b61b43b9e5898281b39416d2f"
+"slsa-verifier.exe-windows-x86_64" = "sha256:37ca29ad748e8ea7be76d3ae766e8fa505362240431f6ea7f0648c727e2f2507"

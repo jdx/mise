@@ -70,8 +70,8 @@ impl TasksInfo {
         if let Some(file) = &task.file {
             info::inline_section("File", display_path(file))?;
         }
-        if !task.run.is_empty() {
-            info::section("Run", task.run.join("\n"))?;
+        if !task.run().is_empty() {
+            info::section("Run", task.run().join("\n"))?;
         }
         if !task.env.is_empty() {
             info::section("Environment Variables", toml::to_string_pretty(&task.env)?)?;
@@ -97,7 +97,7 @@ impl TasksInfo {
             "raw": task.raw,
             "sources": task.sources,
             "outputs": task.outputs,
-            "run": task.run,
+            "run": task.run(),
             "file": task.file,
             "usage_spec": spec,
         });

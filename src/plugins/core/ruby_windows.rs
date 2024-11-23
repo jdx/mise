@@ -129,7 +129,7 @@ impl RubyPlugin {
     }
 
     fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        self.test_ruby(&tv, ctx.pr.as_ref())
+        self.test_ruby(tv, ctx.pr.as_ref())
     }
 }
 

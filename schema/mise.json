@@ -746,6 +746,22 @@
                 }
               ]
             },
+            "run_windows": {
+              "oneOf": [
+                {
+                  "description": "script to run on windows",
+                  "type": "string"
+                },
+                {
+                  "description": "script to run on windows",
+                  "items": {
+                    "description": "script to run on windows",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
             "file": {
               "description": "Execute an external script",
               "type": "string"
