@@ -26,35 +26,35 @@ mise.jdx.dev is the asset host for mise. It's used to host precompiled mise CLI 
 which mise uses to occasionally check for a new version being released. Everything hosted there uses a single
 vendor to reduce surface area.
 
-## mise plugins
+## Cosign and slsa verification
 
-Plugins are by far the biggest source of potential problems and where the most work still needs to be made.
+mise will verify signatures of tools using [cosign](https://docs.sigstore.dev/) and [slsa-verifier](https://github.com/slsa-framework/slsa-verifier)
+if cosign/slsa-verifier is installed and the tool is configured to support it. Typically, these will be tools using aqua as the backend.
+See the [aqua docs](https://aquaproj.github.io/docs/reference/security/cosign-slsa) for more on how this is
+configured in the [aqua registry](https://github.com/aquaproj/aqua-registry).
 
-There are 3 types of plugins:
+## `mise.lock`
 
-- [core](https://github.com/jdx/mise/issues/236) - plugins that are hardcoded into the CLI.
-  These are official plugins for the most common languages written in Rust.
-- community - plugins in the [mise-plugins](https://github.com/mise-plugins) GitHub Org. [See below](#mise-plugins-github-org) for details.
-- external - plugins owned by other parties, these include plugins in the shorthand registry. These are no more
-  secure than installing any random tool from the internet. These receive a warning dialog when installed in mise.
+mise has support for [lockfiles](https://mise.jdx.dev/configuration/settings.html#lockfile) which will
+store/verify the checksum of tool tarballs. Committing this into your repository is a good way to ensure
+that the exact same version of a tool is installed across all developers and CI/CD systems.
 
-Just because a plugin is inside of the shorthand registry (so you can run `mise install foo@`, does not mean
-I vouch for it. I have no idea who almost anyone that builds those plugins are. If it's coming from the mise-plugins
-GitHub org, you can have more trust in it. (See the owners with `mise plugins ls-remote --urls`).
+Not all backends support this—notably asdf plugins do not.
 
-Over time we should be able to move more plugins into being fully maintained by mise. I plan to add an
-`MISE_PARANOID=1` env var that, when set, will make changes to make mise behave as securely as possible
-(e.g.: only using core/mise-plugins plugins, only allowing plugins that use GPG verification of assets).
+## asdf plugins
 
-## [mise-plugins](https://github.com/mise-plugins) GitHub org
+asdf plugins are by far the biggest source of potential problems since they are typically not written
+by the tool vendor and do not have checksum or signature verification—or if they do it isn't tied into
+mise lockfiles.
 
-This is similar to <https://github.com/asdf-community> but with the advantage of being more secure by keeping the
-contributor count minimal—currently only @jdx will be allowed to merge PRs. For this reason, plugins using this
-organization will not receive a confirmation warning dialog when installed with mise as they've been vetted by a
-trusted source.
+I'm actively moving away from using asdf plugins where possible towards backends like aqua and ubi.
+This has the added benefit of supporting Windows if the tool itself supports it.
+If a tool uses an asdf plugin you will receive a prompt in mise before installing it to check the plugin's source code.
 
-If you're a plugin maintainer that would like to move your repo to this org [please let me know](https://github.com/orgs/mise-plugins/discussions).
-Plugins can either retain compatibility with asdf or use mise specific functionality—that's up to you. asdf-compatible plugins should use "asdf-" as the prefix and "mise-" prefixed-plugins denote mise-only compatibility.
+Please contribute to this effort by checking if a tool works in ubi or aqua and submitting a PR to
+[registry.toml](https://github.com/jdx/mise/blob/main/registry.toml) to add it. If it doesn't work
+in ubi or is missing from aqua, submit an issue or PR to the respective project to add it. New tools
+using asdf are not likely to be accepted unless they cannot be supported in any other way.
 
 ## Supported Versions
 
