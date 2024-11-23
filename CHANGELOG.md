@@ -1,5 +1,20 @@
 # Changelog
 
+## [2024.11.26](https://github.com/jdx/mise/compare/v2024.11.25..v2024.11.26) - 2024-11-23
+
+### 🐛 Bug Fixes
+
+- show ubi versions starting with digit last by [@jdx](https://github.com/jdx) in [#3162](https://github.com/jdx/mise/pull/3162)
+- make built-in aqua cache work on windows by [@jdx](https://github.com/jdx) in [56aae79](https://github.com/jdx/mise/commit/56aae79c97b456cb866c81940519c815e6a67064)
+
+### 🧪 Testing
+
+- added test to check for bad cargo-binstall versions by [@jdx](https://github.com/jdx) in [#3163](https://github.com/jdx/mise/pull/3163)
+
+### 🔍 Other Changes
+
+- bake aqua registry into bin by [@jdx](https://github.com/jdx) in [#3161](https://github.com/jdx/mise/pull/3161)
+
 ## [2024.11.25](https://github.com/jdx/mise/compare/v2024.11.24..v2024.11.25) - 2024-11-23
 
 ### 🚀 Features
