@@ -6,7 +6,7 @@ use either::Either;
 use serde::de;
 use tera::{Context, Tera};
 
-use crate::task::EitherStringOrBool;
+use crate::task::{EitherIntOrBool, EitherStringOrIntOrBool};
 
 pub struct TomlParser<'a> {
     table: &'a toml::Value,
@@ -54,7 +54,7 @@ impl<'a> TomlParser<'a> {
     pub fn parse_env(
         &self,
         key: &str,
-    ) -> eyre::Result<Option<BTreeMap<String, EitherStringOrBool>>> {
+    ) -> eyre::Result<Option<BTreeMap<String, EitherStringOrIntOrBool>>> {
         self.table
             .get(key)
             .and_then(|value| value.as_table())
@@ -64,16 +64,20 @@ impl<'a> TomlParser<'a> {
                     .map(|(key, value)| {
                         let v = value
                             .as_str()
-                            .map(|v| Ok(EitherStringOrBool(Either::Left(self.render_tmpl(v)?))))
-                            .or_else(|| {
-                                value
-                                    .as_integer()
-                                    .map(|v| Ok(EitherStringOrBool(Either::Left(v.to_string()))))
+                            .map(|v| {
+                                Ok(EitherStringOrIntOrBool(Either::Left(self.render_tmpl(v)?)))
                             })
                             .or_else(|| {
-                                value
-                                    .as_bool()
-                                    .map(|v| Ok(EitherStringOrBool(Either::Right(v))))
+                                value.as_integer().map(|v| {
+                                    Ok(EitherStringOrIntOrBool(Either::Left(v.to_string())))
+                                })
+                            })
+                            .or_else(|| {
+                                value.as_bool().map(|v| {
+                                    Ok(EitherStringOrIntOrBool(Either::Right(EitherIntOrBool(
+                                        Either::Right(v),
+                                    ))))
+                                })
                             })
                             .unwrap_or_else(|| {
                                 Err(eyre::eyre!("invalid env value: {:?}", value))

@@ -47,7 +47,7 @@ pub struct Task {
     #[serde(default)]
     pub wait_for: Vec<String>,
     #[serde(default)]
-    pub env: BTreeMap<String, EitherStringOrBool>,
+    pub env: BTreeMap<String, EitherStringOrIntOrBool>,
     #[serde(default)]
     pub dir: Option<PathBuf>,
     #[serde(default)]
@@ -82,18 +82,32 @@ pub struct Task {
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct EitherStringOrBool(#[serde(with = "either::serde_untagged")] pub Either<String, bool>);
+pub struct EitherStringOrIntOrBool(
+    #[serde(with = "either::serde_untagged")] pub Either<String, EitherIntOrBool>,
+);
 
-impl Display for EitherStringOrBool {
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct EitherIntOrBool(#[serde(with = "either::serde_untagged")] pub Either<i64, bool>);
+
+impl Display for EitherIntOrBool {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.0 {
-            Either::Left(s) => write!(f, "\"{}\"", s),
-            Either::Right(b) => write!(f, "{}", b),
+            Either::Left(i) => write!(f, "{i}"),
+            Either::Right(b) => write!(f, "{b}"),
         }
     }
 }
 
-impl Debug for EitherStringOrBool {
+impl Display for EitherStringOrIntOrBool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Either::Left(s) => write!(f, "\"{s}\""),
+            Either::Right(b) => write!(f, "{b}"),
+        }
+    }
+}
+
+impl Debug for EitherStringOrIntOrBool {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self)
     }
