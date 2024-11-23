@@ -15,7 +15,7 @@ use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::toml::{deserialize_arr, deserialize_path_entry_arr};
-use crate::config::config_file::{trust_check, ConfigFile, TaskConfig};
+use crate::config::config_file::{trust, trust_check, ConfigFile, TaskConfig};
 use crate::config::env_directive::{EnvDirective, PathEntry};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap};
@@ -367,7 +367,9 @@ impl ConfigFile for MiseToml {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
-        file::write(&self.path, contents)
+        file::write(&self.path, contents)?;
+        trust(&self.path)?;
+        Ok(())
     }
 
     fn dump(&self) -> eyre::Result<String> {
