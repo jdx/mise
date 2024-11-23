@@ -31,7 +31,7 @@ See [environments](/environments.html)
 for more details.
 
 I have had virtually no reports of problems with `use mise` in the year it has been out.
-This could be because virtually is using it, or it has been surprisingly stable. I genuinely
+This could be because virtually no one is using it, or it has been surprisingly stable. I genuinely
 don't know which. If you try it or use it regularly let me know.
 
 While I have no immediate plans or reasons to do this now, I could see this functionality being

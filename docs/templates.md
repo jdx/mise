@@ -279,8 +279,6 @@ Mise offers additional tests:
 - `if path is dir` – Checks if the provided path is a directory.
 - `if path is file` – Checks if the path points to a file.
 - `if path is exists` – Checks if the path exists.
-- `if version is semver_matching(String)` – Confirms if a version string matches
-  a semantic version pattern (e.g., `if "1.10.2" is semver_matching("^1.10.0")`).
 
 ### Example Templates
 
