@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use url::Url;
 use xx::regex;
 
+#[allow(clippy::invisible_characters)]
 pub static AQUA_STANDARD_REGISTRY_FILES: Lazy<HashMap<&'static str, &'static str>> =
     Lazy::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs")));
 
