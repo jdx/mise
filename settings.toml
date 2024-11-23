@@ -244,7 +244,7 @@ default = "1h"
 description = "How long to cache remote versions for tools."
 docs = """
 duration that remote version cache is kept for
-for "fast" commands (represented by PREFER_STALE), these are always
+"fast" commands (represented by PREFER_STALE), these are always
 cached. For "slow" commands like `mise ls-remote` or `mise install`:
 - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
 - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
@@ -739,7 +739,7 @@ enum = [
     ],
     [
         "interleave",
-        "(default if jobs > 1) print by line with the prefix of the task name"
+        "(default if jobs == 1 or all tasks run sequentially) print output as it comes in"
     ]
 ]
 docs = """
