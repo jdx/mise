@@ -12,7 +12,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{CONFIG, SETTINGS};
 use crate::errors::Error;
 use crate::file::display_path;
-use crate::task::{Deps, GetMatchingExt, Task};
+use crate::task::{Deps, EitherIntOrBool, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, prompt, style, time};
 use crate::{dirs, env, exit, file, ui};
@@ -298,21 +298,28 @@ impl Run {
             return Ok(());
         }
 
-        let string_env = task.env.iter().filter_map(|(k, v)| match &v.0 {
-            Either::Left(v) => Some((k, v)),
-            _ => None,
-        });
+        let string_env: Vec<(String, String)> = task
+            .env
+            .iter()
+            .filter_map(|(k, v)| match &v.0 {
+                Either::Left(v) => Some((k.to_string(), v.to_string())),
+                Either::Right(EitherIntOrBool(Either::Left(v))) => {
+                    Some((k.to_string(), v.to_string()))
+                }
+                _ => None,
+            })
+            .collect_vec();
         let rm_env = task
             .env
             .iter()
-            .filter(|(_, v)| v.0 == Either::Right(false))
+            .filter(|(_, v)| v.0 == Either::Right(EitherIntOrBool(Either::Right(false))))
             .map(|(k, _)| k)
             .collect::<HashSet<_>>();
         let env: BTreeMap<String, String> = env
             .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
             .chain(string_env)
             .filter(|(k, _)| !rm_env.contains(k))
-            .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
         let timer = std::time::Instant::now();

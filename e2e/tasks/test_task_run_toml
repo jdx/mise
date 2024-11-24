@@ -14,6 +14,9 @@ run = 'echo "{{arg()}} {{flag(name="force")}} {{option(name="user")}}"'
 run = 'echo {{arg(default="arg1")}} {{option(name="user", default="user1")}}'
 [tasks.test-with-template]
 run = 'echo {{1 + 1}}'
+[tasks.int]
+env = { DEBUG = 0 } # should be parsed as a string
+run = 'echo DEBUG=\$DEBUG'
 EOF
 
 assert "mise run multi c" "a
@@ -23,6 +26,7 @@ assert "mise run test-with-args foo --force --user=user" "foo true user"
 assert "mise run test-with-defaults" "arg1 user1"
 assert "mise run test-with-defaults arg2 --user=user2" "arg2 user2"
 assert "mise run test-with-template" "2"
+assert "mise run int" "DEBUG=0"
 
 cat <<EOF >mise.windows.toml
 tasks.configtask = "echo configtask:windows"
