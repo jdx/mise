@@ -70,6 +70,7 @@ pub fn ensure_checksum(
         "md5" => file_hash_prog::<Md5>(path, pr)?,
         _ => bail!("Unknown checksum algorithm: {}", algo),
     };
+    let checksum = checksum.to_lowercase();
     if actual != checksum {
         bail!("Checksum mismatch for file {}:\nExpected: {algo}:{checksum}\nActual:   {algo}:{actual}",
         display_path(path));

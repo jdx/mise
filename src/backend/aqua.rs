@@ -42,13 +42,10 @@ impl Backend for AquaBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.remote_version_cache
             .get_or_try_init(|| {
-                if let Some(pkg) = AQUA_REGISTRY.package(&self.id)? {
-                    if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
-                        Ok(
-                            github::list_releases(&format!(
-                                "{}/{}",
-                                pkg.repo_owner, pkg.repo_name
-                            ))?
+                let pkg = AQUA_REGISTRY.package(&self.id)?;
+                if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
+                    Ok(
+                        github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
                             .into_iter()
                             .filter_map(|r| {
                                 let mut v = r.tag_name.as_str();
@@ -64,11 +61,7 @@ impl Backend for AquaBackend {
                             })
                             .rev()
                             .collect_vec(),
-                        )
-                    } else {
-                        warn!("no aqua registry found for {}", self.ba);
-                        Ok(vec![])
-                    }
+                    )
                 } else {
                     warn!("no aqua registry found for {}", self.ba);
                     Ok(vec![])
@@ -83,9 +76,7 @@ impl Backend for AquaBackend {
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         let mut v = format!("v{}", tv.version);
-        let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, &v)?
-            .wrap_err_with(|| format!("no aqua registry found for {}", self.id))?;
+        let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v)?;
         if let Some(prefix) = &pkg.version_prefix {
             v = format!("{}{}", prefix, v);
         }
@@ -110,9 +101,7 @@ impl Backend for AquaBackend {
     }
 
     fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, &tv.version)?
-            .wrap_err_with(|| format!("no aqua registry found for {}", self.ba))?;
+        let pkg = AQUA_REGISTRY.package_with_version(&self.id, &tv.version)?;
 
         let srcs = self.srcs(&pkg, tv)?;
         if srcs.is_empty() {
