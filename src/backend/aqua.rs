@@ -9,12 +9,14 @@ use crate::config::SETTINGS;
 use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{dirs, file, github};
 use eyre::{bail, ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use regex::Regex;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
@@ -56,6 +58,13 @@ impl Backend for AquaBackend {
                         .into_iter()
                         .filter_map(|v| {
                             let mut v = v.as_str();
+                            match pkg.version_filter_ok(v) {
+                                Ok(true) => {}
+                                Ok(false) => return None,
+                                Err(e) => {
+                                    warn!("[{}] aqua version filter error: {e}", self.ba);
+                                }
+                            }
                             if let Some(prefix) = &pkg.version_prefix {
                                 if let Some(_v) = v.strip_prefix(prefix) {
                                     v = _v
@@ -120,6 +129,29 @@ impl Backend for AquaBackend {
             .filter(|p| p.exists())
             .unique()
             .collect())
+    }
+
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+        let escaped_query = regex::escape(query);
+        let query = if query == "latest" {
+            "\\D*[0-9].*"
+        } else {
+            &escaped_query
+        };
+        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
+        let versions = versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if VERSION_REGEX.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect();
+        Ok(versions)
     }
 }
 

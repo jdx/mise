@@ -106,7 +106,7 @@ benthos.backends = ["asdf:benthosdev/benthos-asdf"]
 bfs.backends = ["asdf:virtualroot/asdf-bfs"]
 binnacle.backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
 bitwarden.backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
-bitwarden.test = ["bw --version", "{{version}}"]
+bitwarden.test = ["bw --version", ""] # TODO: change version_filter to version_prefix in aqua registry
 bitwarden-secrets-manager.backends = ["ubi:bitwarden/sdk[tag_regex=^bws,exe=bws]", "asdf:asdf-community/asdf-bitwarden-secrets-manager"]
 # bitwarden-secrets-manager.test = ["bws -V", ""] # fails on CI for some reason
 bombardier.backends = ["aqua:codesenberg/bombardier", "asdf:NeoHsu/asdf-bombardier"]
@@ -139,7 +139,8 @@ calendarsync.backends = ["asdf:FeryET/asdf-calendarsync"]
 calicoctl.backends = ["aqua:projectcalico/calico/calicoctl", "asdf:TheCubicleJockey/asdf-calicoctl"]
 camunda-modeler.backends = ["asdf:barmac/asdf-camunda-modeler"]
 # aqua needs version_filter set
-cargo-binstall.backends = ['ubi:cargo-bins/cargo-binstall[tag_regex=^\\d\\.]', "cargo:cargo-binstall"]
+cargo-binstall.backends = ["aqua:cargo-bins/cargo-binstall", 'ubi:cargo-bins/cargo-binstall[tag_regex=^\\d\\.]', "cargo:cargo-binstall"]
+cargo-binstall.test = ["cargo binstall -V", "{{version}}"]
 cargo-insta.backends = ["ubi:mitsuhiko/insta"]
 cargo-make.backends = ["asdf:mise-plugins/asdf-cargo-make"]
 carp.backends = ["asdf:susurri/asdf-carp"]
