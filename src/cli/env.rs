@@ -20,6 +20,10 @@ pub struct Env {
     #[clap(long, short = 'J', overrides_with = "shell")]
     json: bool,
 
+    /// Output in dotenv format
+    #[clap(long, short = 'D', overrides_with = "shell")]
+    dotenv: bool,
+
     /// Shell type to generate environment variables for
     #[clap(long, short, overrides_with = "json")]
     shell: Option<ShellType>,
@@ -34,6 +38,8 @@ impl Env {
 
         if self.json {
             self.output_json(&config, ts)
+        } else if self.dotenv {
+            self.output_dotenv(&config, ts)
         } else {
             self.output_shell(&config, ts)
         }
@@ -52,6 +58,15 @@ impl Env {
             let k = k.to_string();
             let v = v.to_string();
             miseprint!("{}", shell.set_env(&k, &v))?;
+        }
+        Ok(())
+    }
+
+    fn output_dotenv(&self, config: &Config, ts: Toolset) -> Result<()> {
+        for (k, v) in ts.env(config)? {
+            let k = k.to_string();
+            let v = v.to_string();
+            miseprint!("{}={}\n", k, v)?;
         }
         Ok(())
     }

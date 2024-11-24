@@ -334,6 +334,7 @@ use this if you have `mise activate` in your shell rc file."
     $ execx($(mise env -s xonsh))
 "#
     flag "-J --json" help="Output in JSON format"
+    flag "-D --dotenv" help="Output in dotenv format"
     flag "-s --shell" help="Shell type to generate environment variables for" {
         arg "<SHELL>" {
             choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
