@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.11.27"
+version = "2024.11.28"
 dependencies = [
  "assert_cmd",
  "base64",
@@ -2560,9 +2560,9 @@ checksum = "d43467300237085a4f9e864b937cf0bc012cef7740be12be1a48b10d2c8a3701"
 
 [[package]]
 name = "portable-atomic"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc9c68a3f6da06753e9335d63e27f6b9754dd1920d941135b7ea8224f141adb2"
+checksum = "280dc24453071f1b63954171985a0b0d30058d287960968b9b2aca264c8d4ee6"
 
 [[package]]
 name = "powerfmt"
