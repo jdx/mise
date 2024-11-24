@@ -142,6 +142,7 @@ impl Upgrade {
                 use_locked_version: false,
                 latest_versions: true,
             },
+            ..Default::default()
         };
         let new_versions = outdated.iter().map(|o| o.tool_request.clone()).collect();
         let versions = ts.install_all_versions(new_versions, &mpr, &opts)?;

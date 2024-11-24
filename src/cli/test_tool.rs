@@ -106,12 +106,12 @@ impl TestTool {
             .with_default_to_latest(true)
             .build(&CONFIG)?;
         let opts = InstallOptions {
-            force: false,
+            missing_args_only: false,
             jobs: self.jobs,
             raw: self.raw,
-            resolve_options: Default::default(),
+            ..Default::default()
         };
-        ts.install_arg_versions(&opts)?;
+        ts.install_missing_versions(&opts)?;
         ts.notify_if_versions_missing();
         let tv = if let Some(tv) = ts
             .versions

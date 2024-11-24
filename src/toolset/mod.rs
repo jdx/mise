@@ -52,20 +52,24 @@ pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
     opts
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct InstallOptions {
     pub force: bool,
     pub jobs: Option<usize>,
     pub raw: bool,
+    /// only install missing tools if passed as arguments
+    pub missing_args_only: bool,
     pub resolve_options: ResolveOptions,
 }
 
-impl InstallOptions {
-    pub fn new() -> Self {
+impl Default for InstallOptions {
+    fn default() -> Self {
         InstallOptions {
             jobs: Some(SETTINGS.jobs),
             raw: SETTINGS.raw,
-            ..Default::default()
+            force: false,
+            missing_args_only: true,
+            resolve_options: Default::default(),
         }
     }
 }
@@ -129,14 +133,15 @@ impl Toolset {
             }
         }
     }
-    pub fn install_arg_versions(&mut self, opts: &InstallOptions) -> Result<Vec<ToolVersion>> {
+    pub fn install_missing_versions(&mut self, opts: &InstallOptions) -> Result<Vec<ToolVersion>> {
         let mpr = MultiProgressReport::get();
         let versions = self
-            .list_current_versions()
+            .list_missing_versions()
             .into_iter()
-            .filter(|(p, tv)| opts.force || !p.is_version_installed(tv, true))
-            .map(|(_, tv)| tv)
-            .filter(|tv| matches!(self.versions[tv.ba()].source, ToolSource::Argument))
+            .filter(|tv| {
+                !opts.missing_args_only
+                    || matches!(self.versions[tv.ba()].source, ToolSource::Argument)
+            })
             .map(|tv| tv.request)
             .collect_vec();
         let versions = self.install_all_versions(versions, &mpr, opts)?;
@@ -588,7 +593,7 @@ impl Toolset {
             if !versions.is_empty() {
                 let mpr = MultiProgressReport::get();
                 let versions =
-                    self.install_all_versions(versions.clone(), &mpr, &InstallOptions::new())?;
+                    self.install_all_versions(versions.clone(), &mpr, &InstallOptions::default())?;
                 if !versions.is_empty() {
                     config::rebuild_shims_and_runtime_symlinks(&versions)?;
                 }

@@ -48,9 +48,9 @@ impl Shell {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
-            resolve_options: Default::default(),
+            ..Default::default()
         };
-        ts.install_arg_versions(&opts)?;
+        ts.install_missing_versions(&opts)?;
         ts.notify_if_versions_missing();
 
         let shell = get_shell(None).expect("no shell detected");
