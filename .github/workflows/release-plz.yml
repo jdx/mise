@@ -31,6 +31,10 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+      - uses: actions/checkout@v4
+        with:
+          repository: aquaproj/aqua-registry
+          path: aqua-registry
       - uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}

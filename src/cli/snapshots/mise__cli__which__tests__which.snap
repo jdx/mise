@@ -1,6 +1,0 @@
----
-source: src/cli/which.rs
-expression: output
-snapshot_kind: text
----
-~/data/installs/dummy/1.0.0/bin/dummy

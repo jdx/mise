@@ -20,9 +20,10 @@ include = [
     "/registry.toml",
     "/settings.toml",
     "/zipsign.pub",
-    "src/**/*.rs",
-    "src/assets/**",
-    "src/plugins/core/assets/**",
+    "/src/**/*.rs",
+    "/src/assets/**",
+    "/src/plugins/core/assets/**",
+    "/aqua-registry/pkgs/**/registry.yaml",
 ]
 rust-version = "1.79"
 build = "build.rs"
