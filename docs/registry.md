@@ -85,7 +85,7 @@ editLink: false
 | calendarsync | [asdf:FeryET/asdf-calendarsync](https://github.com/FeryET/asdf-calendarsync) |
 | calicoctl | [aqua:projectcalico/calico/calicoctl](https://github.com/projectcalico/calico/calicoctl) [asdf:TheCubicleJockey/asdf-calicoctl](https://github.com/TheCubicleJockey/asdf-calicoctl) |
 | camunda-modeler | [asdf:barmac/asdf-camunda-modeler](https://github.com/barmac/asdf-camunda-modeler) |
-| cargo-binstall | [ubi:cargo-bins/cargo-binstall](https://github.com/cargo-bins/cargo-binstall) [cargo:cargo-binstall](https://crates.io/crates/cargo-binstall) |
+| cargo-binstall | [aqua:cargo-bins/cargo-binstall](https://github.com/cargo-bins/cargo-binstall) [ubi:cargo-bins/cargo-binstall](https://github.com/cargo-bins/cargo-binstall) [cargo:cargo-binstall](https://crates.io/crates/cargo-binstall) |
 | cargo-insta | [ubi:mitsuhiko/insta](https://github.com/mitsuhiko/insta) |
 | cargo-make | [asdf:mise-plugins/asdf-cargo-make](https://github.com/mise-plugins/asdf-cargo-make) |
 | carp | [asdf:susurri/asdf-carp](https://github.com/susurri/asdf-carp) |

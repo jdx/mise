@@ -56,6 +56,13 @@ impl Backend for AquaBackend {
                         .into_iter()
                         .filter_map(|v| {
                             let mut v = v.as_str();
+                            match pkg.version_filter_ok(v) {
+                                Ok(true) => {}
+                                Ok(false) => return None,
+                                Err(e) => {
+                                    warn!("[{}] aqua version filter error: {e}", self.ba);
+                                }
+                            }
                             if let Some(prefix) = &pkg.version_prefix {
                                 if let Some(_v) = v.strip_prefix(prefix) {
                                     v = _v

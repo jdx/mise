@@ -63,7 +63,8 @@ impl Exec {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
-            missing_args_only: !SETTINGS.exec_auto_install,
+            // prevent installing things in shims by checking for tty
+            missing_args_only: !SETTINGS.exec_auto_install || !console::user_attended_stderr(),
             resolve_options: Default::default(),
         };
         measure!("install_arg_versions", {

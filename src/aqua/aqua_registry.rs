@@ -5,7 +5,8 @@ use crate::config::SETTINGS;
 use crate::duration::DAILY;
 use crate::git::Git;
 use crate::{dirs, file, hashmap, http};
-use eyre::{ContextCompat, Result};
+use expr::{ExprParser, ExprProgram, ExprValue};
+use eyre::{eyre, ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -61,8 +62,10 @@ pub struct AquaPackage {
     pub files: Vec<AquaFile>,
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
+    version_filter: Option<String>,
+    #[serde(skip)]
+    version_filter_expr: Option<ExprProgram>,
     pub version_source: Option<String>,
-    pub version_filter: Option<String>,
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     overrides: Vec<AquaOverride>,
@@ -190,15 +193,8 @@ impl AquaRegistry {
             .into_iter()
             .next()
             .wrap_err(format!("no package found for {id} in {path:?}"))?;
-        if let Some(filter) = &pkg.version_filter {
-            if let Some(filter) = filter.strip_prefix("Version startsWith") {
-                pkg.version_prefix = Some(
-                    pkg.version_prefix
-                        .unwrap_or(filter.trim().trim_matches('"').to_string()),
-                );
-            } else {
-                warn!("unsupported version filter: {filter}");
-            }
+        if let Some(version_filter) = &pkg.version_filter {
+            pkg.version_filter_expr = Some(ExprParser::new().compile(version_filter)?);
         }
         Ok(pkg)
     }
@@ -372,6 +368,29 @@ impl AquaPackage {
         };
         ctx.extend(overrides.clone());
         aqua_template::render(s, &ctx)
+    }
+
+    fn expr(&self, v: &str, program: ExprProgram) -> Result<ExprValue> {
+        let ctx = [("Version", v)];
+        let parser = ExprParser::new();
+        parser.run(program, ctx).map_err(|e| eyre!(e))
+    }
+
+    pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
+        // TODO: precompile the expression
+        if let Some(filter) = self.version_filter_expr.clone() {
+            if let ExprValue::Bool(expr) = self.expr(v, filter)? {
+                Ok(expr)
+            } else {
+                warn!(
+                    "invalid response from version filter: {}",
+                    self.version_filter.as_ref().unwrap()
+                );
+                Ok(true)
+            }
+        } else {
+            Ok(true)
+        }
     }
 }
 
