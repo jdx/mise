@@ -1019,9 +1019,9 @@ dependencies = [
 
 [[package]]
 name = "expr-lang"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68d9e161726bc87d56c12f715e2abe2f99e5e0c5955f05456557af0a65dcb97b"
+checksum = "1c0a72a785a2fcd3fec313bfe7684b50a38ec70185b5684f2f1577b3d54a239e"
 dependencies = [
  "indexmap 2.6.0",
  "lalrpop",

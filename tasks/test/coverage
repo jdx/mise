@@ -18,6 +18,6 @@ mise x -- bun i
 echo "::endgroup::"
 mise x -- ./e2e/run_all_tests
 echo "::group::mise test-tool"
-mise test-tool --all
+MISE_USE_VERSIONS_HOST=0 mise test-tool --all
 echo "::group::Render lcov report"
 cargo llvm-cov report --lcov --output-path "coverage-${TEST_TRANCHE:-}.lcov"

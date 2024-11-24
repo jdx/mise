@@ -331,7 +331,6 @@ jobs:
       TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
-      MISE_USE_VERSIONS_HOST: 1
       MISE_DISABLE_TOOLS: |
         1password-cli,
         adr-tools
@@ -359,3 +358,5 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: mise test-tool --all
+        env:
+          MISE_USE_VERSIONS_HOST: 0
