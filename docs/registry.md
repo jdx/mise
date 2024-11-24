@@ -75,12 +75,11 @@ editLink: false
 | bottom | [aqua:ClementTsang/bottom](https://github.com/ClementTsang/bottom) [asdf:carbonteq/asdf-btm](https://github.com/carbonteq/asdf-btm) |
 | boundary | [aqua:hashicorp/boundary](https://github.com/hashicorp/boundary) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | bpkg | [asdf:bpkg/asdf-bpkg](https://github.com/bpkg/asdf-bpkg) |
-| brig | [asdf:Ibotta/asdf-brig](https://github.com/Ibotta/asdf-brig) |
+| brig | [aqua:brigadecore/brigade](https://github.com/brigadecore/brigade) [asdf:Ibotta/asdf-brig](https://github.com/Ibotta/asdf-brig) |
 | btrace | [asdf:joschi/asdf-btrace](https://github.com/joschi/asdf-btrace) |
 | buf | [aqua:bufbuild/buf](https://github.com/bufbuild/buf) [ubi:bufbuild/buf](https://github.com/bufbuild/buf) [asdf:truepay/asdf-buf](https://github.com/truepay/asdf-buf) |
-| buildpack | [asdf:johnlayton/asdf-buildpack](https://github.com/johnlayton/asdf-buildpack) |
+| buildpack | [aqua:buildpacks/pack](https://github.com/buildpacks/pack) [asdf:johnlayton/asdf-buildpack](https://github.com/johnlayton/asdf-buildpack) |
 | bun | [core:bun](https://mise.jdx.dev/lang/bun.html) |
-| bundler | [asdf:jonathanmorley/asdf-bundler](https://github.com/jonathanmorley/asdf-bundler) |
 | cabal | [aqua:haskell/cabal/cabal-install](https://github.com/haskell/cabal/cabal-install) |
 | caddy | [aqua:caddyserver/caddy](https://github.com/caddyserver/caddy) [asdf:salasrod/asdf-caddy](https://github.com/salasrod/asdf-caddy) |
 | calendarsync | [asdf:FeryET/asdf-calendarsync](https://github.com/FeryET/asdf-calendarsync) |
@@ -119,12 +118,12 @@ editLink: false
 | cljstyle | [asdf:abogoyavlensky/asdf-cljstyle](https://github.com/abogoyavlensky/asdf-cljstyle) |
 | clojure | [asdf:asdf-community/asdf-clojure](https://github.com/asdf-community/asdf-clojure) |
 | cloud-sql-proxy | [aqua:GoogleCloudPlatform/cloud-sql-proxy](https://github.com/GoogleCloudPlatform/cloud-sql-proxy) [asdf:pbr0ck3r/asdf-cloud-sql-proxy](https://github.com/pbr0ck3r/asdf-cloud-sql-proxy) |
-| cloudflared | [asdf:threkk/asdf-cloudflared](https://github.com/threkk/asdf-cloudflared) |
+| cloudflared | [aqua:cloudflare/cloudflared](https://github.com/cloudflare/cloudflared) [asdf:threkk/asdf-cloudflared](https://github.com/threkk/asdf-cloudflared) |
 | clusterawsadm | [asdf:kahun/asdf-clusterawsadm](https://github.com/kahun/asdf-clusterawsadm) |
 | clusterctl | [asdf:pfnet-research/asdf-clusterctl](https://github.com/pfnet-research/asdf-clusterctl) |
 | cmake | [asdf:asdf-community/asdf-cmake](https://github.com/asdf-community/asdf-cmake) [vfox:version-fox/vfox-cmake](https://github.com/version-fox/vfox-cmake) |
 | cmctl | [aqua:cert-manager/cmctl](https://github.com/cert-manager/cmctl) [asdf:asdf-community/asdf-cmctl](https://github.com/asdf-community/asdf-cmctl) |
-| cockroach | [asdf:salasrod/asdf-cockroach](https://github.com/salasrod/asdf-cockroach) |
+| cockroach | [aqua:cockroachdb/cockroach](https://github.com/cockroachdb/cockroach) [asdf:salasrod/asdf-cockroach](https://github.com/salasrod/asdf-cockroach) |
 | cocoapods | [asdf:ronnnnn/asdf-cocoapods](https://github.com/ronnnnn/asdf-cocoapods) |
 | codefresh | [asdf:gurukulkarni/asdf-codefresh](https://github.com/gurukulkarni/asdf-codefresh) |
 | codeql | [asdf:bored-engineer/asdf-codeql](https://github.com/bored-engineer/asdf-codeql) |
@@ -774,7 +773,7 @@ editLink: false
 | vivid | [ubi:sharkdp/vivid](https://github.com/sharkdp/vivid) |
 | vlang | [vfox:ahai-code/vfox-vlang](https://github.com/ahai-code/vfox-vlang) |
 | vlt | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
-| vultr | [asdf:ikuradon/asdf-vultr-cli](https://github.com/ikuradon/asdf-vultr-cli) |
+| vultr | [ubi:vultr/vultr-cli](https://github.com/vultr/vultr-cli) [asdf:ikuradon/asdf-vultr-cli](https://github.com/ikuradon/asdf-vultr-cli) |
 | wasi-sdk | [asdf:coolreader18/asdf-wasi-sdk](https://github.com/coolreader18/asdf-wasi-sdk) |
 | wasm3 | [asdf:tachyonicbytes/asdf-wasm3](https://github.com/tachyonicbytes/asdf-wasm3) |
 | wasm4 | [asdf:jtakakura/asdf-wasm4](https://github.com/jtakakura/asdf-wasm4) |

@@ -15,6 +15,11 @@ pub struct GithubRelease {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct GithubTag {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct GithubAsset {
     pub name: String,
     // pub size: u64,
@@ -35,6 +40,21 @@ pub fn list_releases(repo: &str) -> eyre::Result<Vec<GithubRelease>> {
     }
 
     Ok(releases)
+}
+
+pub fn list_tags(repo: &str) -> eyre::Result<Vec<String>> {
+    let url = format!("https://api.github.com/repos/{}/tags", repo);
+    let (mut tags, mut headers) = crate::http::HTTP_FETCH.json_headers::<Vec<GithubTag>, _>(url)?;
+
+    if *env::MISE_LIST_ALL_VERSIONS {
+        while let Some(next) = next_page(&headers) {
+            let (more, h) = crate::http::HTTP_FETCH.json_headers::<Vec<GithubTag>, _>(next)?;
+            tags.extend(more);
+            headers = h;
+        }
+    }
+
+    Ok(tags.into_iter().map(|t| t.name).collect())
 }
 
 pub fn get_release(repo: &str, tag: &str) -> eyre::Result<GithubRelease> {

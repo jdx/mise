@@ -1,8 +1,3 @@
-asdf:Ibotta/asdf-brig
-asdf:joschi/asdf-btrace
-asdf:johnlayton/asdf-buildpack
-asdf:jonathanmorley/asdf-bundler
-
 asdf:FeryET/asdf-calendarsync
 asdf:barmac/asdf-camunda-modeler
 asdf:mise-plugins/asdf-cargo-make
@@ -26,11 +21,9 @@ asdf:tinybirdco/asdf-clickhouse
 asdf:rynkowsg/asdf-clj-kondo
 asdf:abogoyavlensky/asdf-cljstyle
 asdf:asdf-community/asdf-clojure
-asdf:threkk/asdf-cloudflared
 asdf:kahun/asdf-clusterawsadm
 asdf:pfnet-research/asdf-clusterctl
 asdf:asdf-community/asdf-cmake
-asdf:salasrod/asdf-cockroach
 asdf:ronnnnn/asdf-cocoapods
 asdf:gurukulkarni/asdf-codefresh
 asdf:bored-engineer/asdf-codeql
@@ -356,7 +349,6 @@ asdf:pdemagny/asdf-velad
 asdf:tsuyoshicho/asdf-vim
 asdf:tuist/asdf-virtualos
 asdf:asdf-community/asdf-hashicorp
-asdf:ikuradon/asdf-vultr-cli
 asdf:coolreader18/asdf-wasi-sdk
 asdf:tachyonicbytes/asdf-wasm3
 asdf:jtakakura/asdf-wasm4
