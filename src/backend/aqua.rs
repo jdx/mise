@@ -44,24 +44,30 @@ impl Backend for AquaBackend {
             .get_or_try_init(|| {
                 let pkg = AQUA_REGISTRY.package(&self.id)?;
                 if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
-                    Ok(
+                    let versions = if let Some("github_tag") = pkg.version_source.as_deref() {
+                        github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
+                    } else {
                         github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
                             .into_iter()
-                            .filter_map(|r| {
-                                let mut v = r.tag_name.as_str();
-                                if let Some(prefix) = &pkg.version_prefix {
-                                    if let Some(_v) = v.strip_prefix(prefix) {
-                                        v = _v
-                                    } else {
-                                        return None;
-                                    }
+                            .map(|r| r.tag_name)
+                            .collect_vec()
+                    };
+                    Ok(versions
+                        .into_iter()
+                        .filter_map(|v| {
+                            let mut v = v.as_str();
+                            if let Some(prefix) = &pkg.version_prefix {
+                                if let Some(_v) = v.strip_prefix(prefix) {
+                                    v = _v
+                                } else {
+                                    return None;
                                 }
-                                v = v.strip_prefix('v').unwrap_or(v);
-                                Some(v.to_string())
-                            })
-                            .rev()
-                            .collect_vec(),
-                    )
+                            }
+                            v = v.strip_prefix('v').unwrap_or(v);
+                            Some(v.to_string())
+                        })
+                        .rev()
+                        .collect())
                 } else {
                     warn!("no aqua registry found for {}", self.ba);
                     Ok(vec![])
@@ -276,7 +282,8 @@ impl AquaBackend {
                         .find(|(_, f)| f == filename)
                         .map(|(c, _)| c)
                         .unwrap_or(checksum_file);
-                    let checksum = format!("{}:{}", checksum.algorithm(), checksum_str.trim());
+                    let checksum_str = checksum_str.split_whitespace().next().unwrap();
+                    let checksum = format!("{}:{}", checksum.algorithm(), checksum_str);
                     tv.checksums.insert(filename.to_string(), checksum);
                 }
             }
