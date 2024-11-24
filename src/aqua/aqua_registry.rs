@@ -5,7 +5,7 @@ use crate::config::SETTINGS;
 use crate::duration::DAILY;
 use crate::git::Git;
 use crate::{dirs, file, hashmap, http};
-use eyre::Result;
+use eyre::{ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -61,6 +61,7 @@ pub struct AquaPackage {
     pub files: Vec<AquaFile>,
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
+    pub version_filter: Option<String>,
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     overrides: Vec<AquaOverride>,
@@ -165,31 +166,44 @@ impl AquaRegistry {
         Ok(Self { path, repo_exists })
     }
 
-    pub fn package(&self, id: &str) -> Result<Option<AquaPackage>> {
+    pub fn package(&self, id: &str) -> Result<AquaPackage> {
         let path_id = id.split('/').join(std::path::MAIN_SEPARATOR_STR);
         let path = self.path.join("pkgs").join(&path_id).join("registry.yaml");
-        if !self.repo_exists {
+        let registry: RegistryYaml = if !self.repo_exists {
             if let Some(registry) = AQUA_STANDARD_REGISTRY_FILES.get(id) {
-                let registry: RegistryYaml = serde_yaml::from_str(registry)?;
-                return Ok(registry.packages.into_iter().next());
+                serde_yaml::from_str(registry)?
             } else if !path.exists() || file::modified_duration(&path)? > DAILY {
                 let url: Url =
                     format!("https://mise-versions.jdx.dev/aqua-registry/{path_id}/registry.yaml")
                         .parse()?;
                 http::HTTP_FETCH.download_file(url, &path, None)?;
+                serde_yaml::from_reader(file::open(&path)?)?
+            } else {
+                serde_yaml::from_reader(file::open(&path)?)?
+            }
+        } else {
+            serde_yaml::from_reader(file::open(&path)?)?
+        };
+        let mut pkg = registry
+            .packages
+            .into_iter()
+            .next()
+            .wrap_err(format!("no package found for {id} in {path:?}"))?;
+        if let Some(filter) = &pkg.version_filter {
+            if let Some(filter) = filter.strip_prefix("Version startsWith") {
+                pkg.version_prefix = Some(
+                    pkg.version_prefix
+                        .unwrap_or(filter.trim().trim_matches('"').to_string()),
+                );
+            } else {
+                warn!("unsupported version filter: {filter}");
             }
         }
-        let f = file::open(&path)?;
-        let registry: RegistryYaml = serde_yaml::from_reader(f)?;
-        Ok(registry.packages.into_iter().next())
+        Ok(pkg)
     }
 
-    pub fn package_with_version(&self, id: &str, v: &str) -> Result<Option<AquaPackage>> {
-        if let Some(pkg) = self.package(id)? {
-            Ok(Some(pkg.with_version(v)))
-        } else {
-            Ok(None)
-        }
+    pub fn package_with_version(&self, id: &str, v: &str) -> Result<AquaPackage> {
+        Ok(self.package(id)?.with_version(v))
     }
 }
 

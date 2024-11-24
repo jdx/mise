@@ -6,7 +6,7 @@ use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
-use eyre::{eyre, Result};
+use eyre::{bail, eyre, Result};
 use std::path::PathBuf;
 
 /// Test a tool installs and executes
@@ -43,6 +43,7 @@ impl TestTool {
             "---".to_string(),
             "---".to_string(),
         ])?;
+        let mut found = self.all;
         for (i, (short, rt)) in REGISTRY.iter().enumerate() {
             if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
             {
@@ -53,6 +54,7 @@ impl TestTool {
                 if t.short != tool.short {
                     continue;
                 }
+                found = true;
                 tool = t.clone();
             }
             if self.all && rt.short != *short {
@@ -87,8 +89,11 @@ impl TestTool {
                 }
             };
         }
+        if !found {
+            bail!("{} not found", self.tool.unwrap().short);
+        }
         if !errored.is_empty() {
-            return Err(eyre!("tools failed: {}", errored.join(", ")));
+            bail!("tools failed: {}", errored.join(", "));
         }
         Ok(())
     }

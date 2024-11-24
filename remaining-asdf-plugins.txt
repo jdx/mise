@@ -1,22 +1,8 @@
-asdf:pitch-io/asdf-babashka
-asdf:boatkit-io/asdf-balena-cli
-asdf:pcrockett/asdf-bashly
-asdf:vhdirk/asdf-bat-extras
-asdf:johnlayton/asdf-batect
-asdf:timgluz/asdf-bats
-asdf:rajatvig/asdf-bazel
-asdf:vmware-tanzu/tanzu-plug-in-for-asdf
-asdf:vmware-tanzu/tanzu-plug-in-for-asdf
-asdf:benthosdev/benthos-asdf
-asdf:virtualroot/asdf-bfs
-asdf:vixus0/asdf-bitwarden
-asdf:asdf-community/asdf-bitwarden-secrets-manager
-asdf:vmware-tanzu/tanzu-plug-in-for-asdf
-asdf:bpkg/asdf-bpkg
 asdf:Ibotta/asdf-brig
 asdf:joschi/asdf-btrace
 asdf:johnlayton/asdf-buildpack
 asdf:jonathanmorley/asdf-bundler
+
 asdf:FeryET/asdf-calendarsync
 asdf:barmac/asdf-camunda-modeler
 asdf:mise-plugins/asdf-cargo-make
@@ -58,10 +44,10 @@ asdf:s3than/asdf-coredns
 asdf:jiahuili430/asdf-coursier
 asdf:dmpe/asdf-crane
 asdf:sqtran/asdf-crc
-asdf:vmware-tanzu/tanzu-plug-in-for-asdf
 asdf:joke/asdf-crossplane-cli
 asdf:asdf-community/asdf-crystal
 asdf:xeedio/asdf-cyclonedx
+
 asdf:MontakOleg/asdf-danger-js
 asdf:asdf-community/asdf-dapr-cli
 asdf:PatOConnor43/asdf-dart
@@ -172,7 +158,6 @@ asdf:comdotlinux/asdf-ki
 asdf:joke/asdf-kn
 asdf:susurri/asdf-koka
 asdf:asdf-community/asdf-kotlin
-asdf:vmware-tanzu/tanzu-plug-in-for-asdf
 asdf:asdf-community/asdf-kpack-cli
 asdf:nlamirault/asdf-kpt
 asdf:ohkrab/asdf-krab
@@ -245,7 +230,6 @@ asdf:sqtran/asdf-oc
 asdf:asdf-community/asdf-ocaml
 asdf:yasn77/asdf-oci
 asdf:jtakakura/asdf-odin
-asdf:vmware-tanzu/tanzu-plug-in-for-asdf
 asdf:jtakakura/asdf-onyx
 asdf:asdf-community/asdf-opam
 asdf:zekker6/asdf-faas-cli
@@ -266,7 +250,6 @@ asdf:asdf-community/asdf-php
 asdf:kogeletey/asdf-pipelight
 asdf:mise-plugins/mise-pipenv
 asdf:yozachar/asdf-pipx
-asdf:vmware-tanzu/tanzu-plug-in-for-asdf
 asdf:tvon/asdf-podman
 asdf:mise-plugins/mise-poetry
 asdf:knu/asdf-postgis
@@ -275,7 +258,6 @@ asdf:dex4er/asdf-powerline-go
 asdf:daveneeley/asdf-powershell-core
 asdf:asdf-community/asdf-promtool
 asdf:dylanrayboss/asdf-protoc-gen-connect-go
-asdf:pbr0ck3r/asdf-protoc-gen-go-grpc
 asdf:pbr0ck3r/asdf-protoc-gen-grpc-web
 asdf:pbr0ck3r/asdf-protoc-gen-js
 asdf:augustobmoura/asdf-protonge
@@ -346,7 +328,6 @@ asdf:younke/asdf-swiftgen
 asdf:klundberg/asdf-swiftlint
 asdf:mracos/asdf-swiprolog
 asdf:nwillc/syncher
-asdf:vmware-tanzu/tanzu-plug-in-for-asdf
 asdf:johnhamelink/asdf-tekton-cli
 asdf:MaloPolese/asdf-teleport-community
 asdf:highb/asdf-teleport-ent
@@ -366,7 +347,6 @@ asdf:Dabolus/asdf-traefik
 asdf:virtualstaticvoid/asdf-tsuru
 asdf:asdf-community/asdf-tuist
 asdf:ORCID/asdf-transifex
-asdf:vmware-tanzu/tanzu-plug-in-for-asdf
 asdf:susurri/asdf-unison
 asdf:ORCID/asdf-upt
 asdf:jimmidyson/asdf-upx
