@@ -61,6 +61,7 @@ pub struct AquaPackage {
     pub files: Vec<AquaFile>,
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
+    pub version_source: Option<String>,
     pub version_filter: Option<String>,
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
@@ -276,11 +277,11 @@ impl AquaPackage {
                 debug!("no asset or url for {}/{}", self.repo_owner, self.repo_name);
                 "".to_string()
             };
-            if asset.ends_with(".tar.gz") {
+            if asset.ends_with(".tar.gz") || asset.ends_with(".tgz") {
                 "tar.gz"
-            } else if asset.ends_with(".tar.xz") {
+            } else if asset.ends_with(".tar.xz") || asset.ends_with(".txz") {
                 "tar.xz"
-            } else if asset.ends_with(".tar.bz2") {
+            } else if asset.ends_with(".tar.bz2") || asset.ends_with(".tbz2") {
                 "tar.bz2"
             } else if asset.ends_with(".gz") {
                 "gz"
