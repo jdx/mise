@@ -80,6 +80,8 @@ impl Shell for Bash {
             unset _mise_hook
             unset mise
             unset MISE_SHELL
+            unset __MISE_DIFF
+            unset __MISE_WATCH
         "#}
     }
 

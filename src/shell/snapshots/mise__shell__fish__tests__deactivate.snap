@@ -8,3 +8,5 @@ functions --erase __mise_env_eval_2
 functions --erase __mise_cd_hook
 functions --erase mise
 set -e MISE_SHELL
+set -e __MISE_DIFF
+set -e __MISE_WATCH

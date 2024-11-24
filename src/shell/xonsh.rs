@@ -88,6 +88,10 @@ impl Shell for Xonsh {
             del XSH.aliases['mise']
             del XSH.env['MISE_SHELL']
             del os.environ['MISE_SHELL']
+            del XSH.env['__MISE_DIFF']
+            del os.environ['__MISE_DIFF']
+            del XSH.env['__MISE_WATCH']
+            del os.environ['__MISE_WATCH']
             "#}
     }
 
