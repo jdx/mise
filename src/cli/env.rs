@@ -38,10 +38,10 @@ impl Env {
 
         if self.json {
             self.output_json(&config, ts)
-        } else if self.shell.is_some() {
-            self.output_shell(&config, ts)
-        } else {
+        } else if self.dotenv {
             self.output_dotenv(&config, ts)
+        } else {
+            self.output_shell(&config, ts)
         }
     }
 
