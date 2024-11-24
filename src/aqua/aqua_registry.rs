@@ -235,29 +235,26 @@ impl AquaPackage {
     }
 
     fn version_override(&self, v: &str) -> Option<&AquaPackage> {
-        let re = regex!(r#"semver\("(.*)"\)"#);
-        let re_exact = regex!(r#"Version == "(.*)""#);
+        let mut expr = ExprParser::new();
+        let ctx = [("Version", v)];
         let v = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v)).unwrap();
-        let semver_match = |vc| {
-            if let Some(caps) = re.captures(vc) {
-                let vc = caps.get(1).unwrap().as_str().replace(' ', "");
-                if let Some(req) = versions::Requirement::new(&vc) {
-                    req.matches(&v)
-                } else {
-                    debug!("invalid semver constraint: {vc}");
-                    false
-                }
-            } else if let Some(caps) = re_exact.captures(vc) {
-                let vc = caps.get(1).unwrap().as_str();
-                v.to_string() == vc
-            } else {
-                false
+        expr.add_function("semver", |args| {
+            if args.len() != 1 {
+                // return Err("semver() takes exactly one argument".to_string());
+                warn!("semver() takes exactly one argument");
             }
-        };
+            let semver = args[0].as_string().unwrap();
+            if let Some(check_version) = versions::Requirement::new(semver) {
+                check_version.matches(&v).into()
+            } else {
+                warn!("invalid semver: {semver}");
+                false.into()
+            }
+        });
         vec![self]
             .into_iter()
             .chain(self.version_overrides.iter())
-            .find(|vo| vo.version_constraint == "true" || semver_match(&vo.version_constraint))
+            .find(|vo| expr.eval(&vo.version_constraint, ctx).map_err(|e| warn!("{e}")).unwrap_or(false.into()).as_bool().unwrap())
     }
 
     pub fn format(&self, v: &str) -> Result<&str> {
@@ -372,8 +369,7 @@ impl AquaPackage {
 
     fn expr(&self, v: &str, program: ExprProgram) -> Result<ExprValue> {
         let ctx = [("Version", v)];
-        let parser = ExprParser::new();
-        parser.run(program, ctx).map_err(|e| eyre!(e))
+        self.expr.run(program, ctx).map_err(|e| eyre!(e))
     }
 
     pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
