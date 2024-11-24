@@ -67,6 +67,10 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: aquaproj/aqua-registry
+          path: aqua-registry
       - name: cache crates
         id: cache-crates
         uses: actions/cache@v4

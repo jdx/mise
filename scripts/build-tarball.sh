@@ -70,7 +70,6 @@ case "$os-$arch" in
     ;;
 esac
 
-git clone --depth 1 https://github.com/aquaproj/aqua-registry
 if command -v cross >/dev/null; then
   cross build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored,git2/vendored-libgit2,git2/vendored-openssl
 elif command -v zig >/dev/null; then
