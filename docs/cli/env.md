@@ -1,6 +1,6 @@
 # `mise env`
 
-- **Usage**: `mise env [-J --json] [-D --dotenv] [-s --shell <SHELL>] [TOOL@VERSION]...`
+- **Usage**: `mise env [FLAGS] [TOOL@VERSION]...`
 - **Aliases**: `e`
 - **Source code**: [`src/cli/env.rs`](https://github.com/jdx/mise/blob/main/src/cli/env.rs)
 

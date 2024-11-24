@@ -50,7 +50,7 @@ Answer yes to all confirmation prompts
 - [`mise direnv <SUBCOMMAND>`](/cli/direnv.md)
 - [`mise direnv activate`](/cli/direnv/activate.md)
 - [`mise doctor`](/cli/doctor.md)
-- [`mise env [-J --json] [-s --shell <SHELL>] [TOOL@VERSION]...`](/cli/env.md)
+- [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)
 - [`mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`](/cli/exec.md)
 - [`mise generate <SUBCOMMAND>`](/cli/generate.md)
 - [`mise generate git-pre-commit [FLAGS]`](/cli/generate/git-pre-commit.md)

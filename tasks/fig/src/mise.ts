@@ -851,6 +851,14 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
+                        "-D",
+                        "--dotenv"
+                    ],
+                    "description": "Output in dotenv format",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
                         "-s",
                         "--shell"
                     ],
