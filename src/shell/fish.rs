@@ -102,6 +102,8 @@ impl Shell for Fish {
           functions --erase __mise_cd_hook
           functions --erase mise
           set -e MISE_SHELL
+          set -e __MISE_DIFF
+          set -e __MISE_WATCH
         "#}
     }
 

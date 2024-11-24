@@ -8,3 +8,5 @@ PROMPT_COMMAND="${PROMPT_COMMAND//_mise_hook/}"
 unset _mise_hook
 unset mise
 unset MISE_SHELL
+unset __MISE_DIFF
+unset __MISE_WATCH

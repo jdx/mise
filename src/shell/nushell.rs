@@ -93,7 +93,12 @@ impl Shell for Nushell {
     }
 
     fn deactivate(&self) -> String {
-        self.unset_env("MISE_SHELL")
+        [
+            self.unset_env("MISE_SHELL"),
+            self.unset_env("__MISE_DIFF"),
+            self.unset_env("__MISE_DIFF"),
+        ]
+        .join("")
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
