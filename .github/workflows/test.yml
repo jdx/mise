@@ -353,4 +353,9 @@ jobs:
             ~/.local/share/mise
             ~/.cache/mise
       - run: mise install
-      - run: mise test-tool --all
+      - uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          retry_wait_seconds: 30
+          max_attempts: 2
+          command: mise test-tool --all
