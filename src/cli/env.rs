@@ -27,8 +27,6 @@ pub struct Env {
     /// Shell type to generate environment variables for
     #[clap(long, short, overrides_with = "json")]
     shell: Option<ShellType>,
-
-
 }
 
 impl Env {
