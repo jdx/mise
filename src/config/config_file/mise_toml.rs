@@ -170,9 +170,9 @@ impl MiseToml {
             }
         }
         if let Some(aliases) = self.alias.get_mut(&fa.short) {
-            aliases.versions.swap_remove(from);
+            aliases.versions.shift_remove(from);
             if aliases.versions.is_empty() && aliases.backend.is_none() {
-                self.alias.swap_remove(&fa.short);
+                self.alias.shift_remove(&fa.short);
             }
         }
         Ok(())

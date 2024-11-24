@@ -154,7 +154,7 @@ impl ToolRequestSetBuilder {
         let backends = trs.tools.keys().cloned().collect::<Vec<_>>();
         for fa in &backends {
             if self.is_disabled(fa) {
-                trs.tools.swap_remove(fa);
+                trs.tools.shift_remove(fa);
                 trs.sources.remove(fa);
             }
         }
