@@ -1772,7 +1772,7 @@ const completionSpec: Fig.Spec = {
                         "-t",
                         "--tool"
                     ],
-                    "description": "Tool(s) to also add e.g.: node@20 python@3.10",
+                    "description": "Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10",
                     "isRepeatable": true,
                     "args": {
                         "name": "tool@version",
@@ -2388,7 +2388,7 @@ const completionSpec: Fig.Spec = {
                                 "-t",
                                 "--tool"
                             ],
-                            "description": "Tool(s) to also add e.g.: node@20 python@3.10",
+                            "description": "Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10",
                             "isRepeatable": true,
                             "args": {
                                 "name": "tool@version",

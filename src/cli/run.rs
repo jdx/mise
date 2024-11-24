@@ -94,7 +94,7 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
     pub interleave: bool,
 
-    /// Tool(s) to also add
+    /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
     #[clap(short, long, value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
@@ -202,8 +202,10 @@ impl Run {
 
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&CONFIG)?;
 
-        ts.install_arg_versions(&InstallOptions::new())?;
-        ts.notify_if_versions_missing();
+        ts.install_missing_versions(&InstallOptions {
+            missing_args_only: !SETTINGS.task_run_auto_install,
+            ..Default::default()
+        })?;
         let mut env = ts.env_with_path(&CONFIG)?;
         if let Some(root) = &CONFIG.project_root {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());

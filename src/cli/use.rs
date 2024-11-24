@@ -129,6 +129,7 @@ impl Use {
                 jobs: self.jobs,
                 raw: self.raw,
                 resolve_options,
+                ..Default::default()
             },
         )?;
 

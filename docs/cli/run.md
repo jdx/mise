@@ -58,7 +58,7 @@ Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 
 ### `-t --tool... <TOOL@VERSION>`
 
-Tool(s) to also add e.g.: node@20 python@3.10
+Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 
 ### `-j --jobs <JOBS>`
 

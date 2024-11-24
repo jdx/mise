@@ -228,6 +228,11 @@
           "description": "Path to a file containing environment variables.",
           "type": "string"
         },
+        "exec_auto_install": {
+          "default": true,
+          "description": "Automatically install missing tools when running `mise x`.",
+          "type": "boolean"
+        },
         "experimental": {
           "description": "Enable experimental mise features which are incomplete or unstable—breakings changes may occur",
           "type": "boolean"
@@ -545,6 +550,11 @@
           "description": "Change output style when executing tasks.",
           "type": "string",
           "enum": ["prefix", "interleave"]
+        },
+        "task_run_auto_install": {
+          "default": true,
+          "description": "Automatically install missing tools when executing tasks.",
+          "type": "boolean"
         },
         "task_skip": {
           "default": [],

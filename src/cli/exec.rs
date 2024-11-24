@@ -11,7 +11,7 @@ use eyre::{eyre, Result};
 use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
-use crate::config::CONFIG;
+use crate::config::{CONFIG, SETTINGS};
 use crate::env;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
@@ -63,9 +63,12 @@ impl Exec {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
+            missing_args_only: !SETTINGS.exec_auto_install,
             resolve_options: Default::default(),
         };
-        measure!("install_arg_versions", { ts.install_arg_versions(&opts)? });
+        measure!("install_arg_versions", {
+            ts.install_missing_versions(&opts)?
+        });
         measure!("notify_if_versions_missing", {
             ts.notify_if_versions_missing()
         });

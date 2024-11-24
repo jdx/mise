@@ -75,6 +75,7 @@ impl Install {
             force: self.force,
             jobs: self.jobs,
             raw: self.raw,
+            missing_args_only: false,
             resolve_options: ResolveOptions {
                 use_locked_version: true,
                 latest_versions: true,
