@@ -25,7 +25,7 @@ use crate::hash::{file_hash_sha256, hash_to_str};
 use crate::task::Task;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
-use crate::{backend, dirs, env, file};
+use crate::{backend, config, dirs, env, file};
 
 pub mod legacy_version;
 pub mod mise_toml;
@@ -259,6 +259,10 @@ pub fn is_trusted(path: &Path) -> bool {
         .unwrap()
         .contains(canonicalized_path.as_path())
     {
+        return true;
+    }
+    if config::is_global_config(path) {
+        add_trusted(canonicalized_path.to_path_buf());
         return true;
     }
     let settings = Settings::get();
