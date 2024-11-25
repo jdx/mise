@@ -44,9 +44,15 @@ impl Backend for UbiBackend {
                 .get_or_try_init(|| {
                     let opts = self.ba.opts();
                     let tag_regex = OnceLock::new();
-                    Ok(github::list_releases(&self.tool_name())?
+                    let mut versions = github::list_releases(&self.tool_name())?
                         .into_iter()
                         .map(|r| r.tag_name)
+                        .collect::<Vec<String>>();
+                    if versions.is_empty() {
+                        versions = github::list_tags(&self.tool_name())?.into_iter().collect();
+                    }
+                    Ok(versions
+                        .into_iter()
                         // trim 'v' prefixes if they exist
                         .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
                             true => t[1..].to_string(),
