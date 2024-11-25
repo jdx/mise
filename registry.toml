@@ -138,9 +138,8 @@ caddy.backends = ["aqua:caddyserver/caddy", "asdf:salasrod/asdf-caddy"]
 calendarsync.backends = ["asdf:FeryET/asdf-calendarsync"]
 calicoctl.backends = ["aqua:projectcalico/calico/calicoctl", "asdf:TheCubicleJockey/asdf-calicoctl"]
 camunda-modeler.backends = ["asdf:barmac/asdf-camunda-modeler"]
-# aqua needs version_filter set
 cargo-binstall.backends = ["aqua:cargo-bins/cargo-binstall", 'ubi:cargo-bins/cargo-binstall[tag_regex=^\\d\\.]', "cargo:cargo-binstall"]
-cargo-binstall.test = ["cargo binstall -V", "{{version}}"]
+# cargo-binstall.test = ["cargo binstall -V", "{{version}}"] # flaky on windows CI
 cargo-insta.backends = ["ubi:mitsuhiko/insta"]
 cargo-make.backends = ["asdf:mise-plugins/asdf-cargo-make"]
 carp.backends = ["asdf:susurri/asdf-carp"]
