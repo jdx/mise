@@ -838,6 +838,10 @@
                 {
                   "description": "option to pass to tool",
                   "type": "string"
+                },
+                {
+                  "description": "option to pass to tool",
+                  "type": "boolean"
                 }
               ]
             }
