@@ -5,7 +5,7 @@ use crate::config::SETTINGS;
 use crate::duration::DAILY;
 use crate::git::Git;
 use crate::{dirs, file, hashmap, http};
-use expr::{ExprParser, ExprProgram, ExprValue};
+use expr::{ExprContext, ExprParser, ExprProgram, ExprValue};
 use eyre::{eyre, ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -234,12 +234,12 @@ impl AquaPackage {
     fn version_override(&self, v: &str) -> &AquaPackage {
         let ver = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v));
         let mut expr = ExprParser::new();
-        let ctx = [("Version", v)];
-        expr.add_function("semver", |args| {
-            if args.len() != 1 {
+        let ctx = self.expr_ctx(v);
+        expr.add_function("semver", |c| {
+            if c.args.len() != 1 {
                 return Err("semver() takes exactly one argument".to_string().into());
             }
-            let semver = args[0].as_string().unwrap().replace(' ', "");
+            let semver = c.args[0].as_string().unwrap().replace(' ', "");
             if let Some(check_version) = versions::Requirement::new(&semver) {
                 if let Some(ver) = &ver {
                     Ok(check_version.matches(ver).into())
@@ -257,7 +257,7 @@ impl AquaPackage {
                 if vo.version_constraint.is_empty() {
                     true
                 } else {
-                    expr.eval(&vo.version_constraint, ctx)
+                    expr.eval(&vo.version_constraint, &ctx)
                         .map_err(|e| debug!("error parsing {}: {e}", vo.version_constraint))
                         .unwrap_or(false.into())
                         .as_bool()
@@ -378,9 +378,14 @@ impl AquaPackage {
     }
 
     fn expr(&self, v: &str, program: ExprProgram) -> Result<ExprValue> {
-        let ctx = [("Version", v)];
         let expr = ExprParser::new();
-        expr.run(program, ctx).map_err(|e| eyre!(e))
+        expr.run(program, &self.expr_ctx(v)).map_err(|e| eyre!(e))
+    }
+
+    fn expr_ctx(&self, v: &str) -> ExprContext {
+        let mut ctx = ExprContext::default();
+        ctx.insert("Version", v);
+        ctx
     }
 
     pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
