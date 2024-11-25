@@ -13,30 +13,6 @@ for tool in (cat tmp/missing_asdf_tools)
 end
 for tool in (cat tmp/pairs | gsort -R)
     set -l tool (string split " " $tool)
-    if test -f "tmp/$tool[1]"
-      continue
-    end
-    if test "$tool[1]" = "borg"
-      continue
-    end
-    if test "$tool[1]" = "jiq"
-      continue
-    end
-    if test "$tool[1]" = "eza"
-      continue
-    end
-    if test "$tool[1]" = "gitsign"
-      continue
-    end
-    if test "$tool[1]" = "terraform-lsp"
-      continue
-    end
-    if test "$tool[1]" = "istioctl"
-      continue
-    end
-    if test "$tool[1]" = "om"
-      continue
-    end
     set -l cmd "m x $tool[2] -- $tool[1] -v"
     echo $cmd
     set -l output (m x $tool[2] -- $tool[1] -v)
@@ -59,15 +35,6 @@ for tool in (cat tmp/pairs | gsort -R)
            echo "COMMAND: $cmd" >> "tmp/$tool[1]"
            echo "OUTPUT: $output" >> "tmp/$tool[1]"
         else
-            if test "$tool[1]" = "odo"
-              continue
-            end
-            if test "$tool[1]" = "iamlive"
-              continue
-            end
-            if test "$tool[1]" = "tridentctl"
-              continue
-            end
             set -l cmd "m x $tool[2] -- $tool[1] version"
             echo $cmd
             set -l output (m x $tool[2] -- $tool[1] version)
