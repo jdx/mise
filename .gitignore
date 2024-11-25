@@ -1,7 +1,6 @@
 .DS_Store
 /dist/
 /node_modules/
-aqua-registry
 package-lock.json
 .mise.lock
 

@@ -31,10 +31,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
         with:
-          repository: aquaproj/aqua-registry
-          path: aqua-registry
+          submodules: true
       - uses: rui314/setup-mold@v1
       - uses: taiki-e/install-action@cargo-llvm-cov
       - run: rustup component add llvm-tools-preview
@@ -58,10 +56,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
         with:
-          repository: aquaproj/aqua-registry
-          path: aqua-registry
+          submodules: true
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build
@@ -79,10 +75,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
         with:
-          repository: aquaproj/aqua-registry
-          path: aqua-registry
+          submodules: true
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build
@@ -112,6 +106,7 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN || github.token }}
+          submodules: true
       - uses: rui314/setup-mold@v1
         if: ${{ matrix.os == 'ubuntu-latest' }}
       - uses: taiki-e/install-action@v2
