@@ -258,7 +258,7 @@ impl AquaPackage {
                     true
                 } else {
                     expr.eval(&vo.version_constraint, ctx)
-                        .map_err(|e| warn!("error parsing {}: {e}", vo.version_constraint))
+                        .map_err(|e| debug!("error parsing {}: {e}", vo.version_constraint))
                         .unwrap_or(false.into())
                         .as_bool()
                         .unwrap()
