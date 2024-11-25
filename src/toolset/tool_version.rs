@@ -72,6 +72,10 @@ impl ToolVersion {
         self.ba().backend()
     }
 
+    pub fn short(&self) -> &str {
+        &self.ba().short
+    }
+
     pub fn install_path(&self) -> PathBuf {
         let pathname = match &self.request {
             ToolRequest::Path { path: p, .. } => p.to_string_lossy().to_string(),

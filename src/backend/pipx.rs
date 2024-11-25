@@ -7,7 +7,10 @@ use crate::config::{Config, SETTINGS};
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
+use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use std::fmt::Debug;
@@ -109,17 +112,14 @@ impl Backend for PIPXBackend {
             }
             cmd.execute()?;
         } else {
-            let mut cmd = CmdLineRunner::new("pipx")
-                .arg("install")
-                .arg(pipx_request)
-                .with_pr(ctx.pr.as_ref())
-                .env("PIPX_HOME", tv.install_path())
-                .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
-                .envs(ctx.ts.env_with_path(&config)?)
-                .prepend_path(ctx.ts.list_paths())?
-                // Prepend install path so pipx doesn't issue a warning about missing path
-                .prepend_path(vec![tv.install_path().join("bin")])?
-                .prepend_path(self.dependency_toolset()?.list_paths())?;
+            let mut cmd = Self::pipx_cmd(
+                &config,
+                &["install", &pipx_request],
+                self,
+                &tv,
+                ctx.ts,
+                &*ctx.pr,
+            )?;
             if let Some(args) = tv.request.options().get("pipx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -144,6 +144,54 @@ impl PIPXBackend {
             .build(),
             ba,
         }
+    }
+
+    pub fn reinstall_all() -> Result<()> {
+        if SETTINGS.pipx.uvx {
+            debug!("skipping pipx reinstall because uvx is enabled");
+            return Ok(());
+        }
+        let config = Config::load()?;
+        let ts = ToolsetBuilder::new().build(&config)?;
+        let pipx_tools = ts
+            .list_installed_versions()?
+            .into_iter()
+            .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
+            .collect_vec();
+        let pr = MultiProgressReport::get().add("reinstalling pipx tools");
+        for (b, tv) in pipx_tools {
+            Self::pipx_cmd(
+                &config,
+                &["reinstall", &tv.ba().tool_name],
+                &*b,
+                &tv,
+                &ts,
+                &*pr,
+            )?
+            .execute()?;
+        }
+        Ok(())
+    }
+
+    fn pipx_cmd<'a>(
+        config: &Config,
+        args: &[&str],
+        b: &dyn Backend,
+        tv: &ToolVersion,
+        ts: &Toolset,
+        pr: &'a dyn SingleReport,
+    ) -> Result<CmdLineRunner<'a>> {
+        let mut cmd = CmdLineRunner::new("pipx");
+        for arg in args {
+            cmd = cmd.arg(arg);
+        }
+        cmd.with_pr(pr)
+            .env("PIPX_HOME", tv.install_path())
+            .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
+            .envs(ts.env_with_path(config)?)
+            .prepend_path(ts.list_paths())?
+            .prepend_path(vec![tv.install_path().join("bin")])?
+            .prepend_path(b.dependency_toolset()?.list_paths())
     }
 }
 

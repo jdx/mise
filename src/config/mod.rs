@@ -23,7 +23,7 @@ use crate::file::display_path;
 use crate::shorthands::{get_shorthands, Shorthands};
 use crate::task::Task;
 use crate::toolset::{
-    install_state, ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolsetBuilder,
+    install_state, ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, ToolsetBuilder,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims};
@@ -53,6 +53,7 @@ pub struct Config {
     shorthands: OnceLock<Shorthands>,
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
+    toolset: OnceCell<Toolset>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -188,6 +189,14 @@ impl Config {
     pub fn get_tool_request_set(&self) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
             .get_or_try_init(|| ToolRequestSetBuilder::new().build())
+    }
+
+    pub fn get_toolset(&self) -> eyre::Result<&Toolset> {
+        self.toolset.get_or_try_init(|| {
+            let mut ts = Toolset::from(self.get_tool_request_set()?.clone());
+            ts.resolve()?;
+            Ok(ts)
+        })
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
@@ -903,9 +912,9 @@ fn default_task_includes() -> Vec<PathBuf> {
 }
 
 pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Result<()> {
+    install_state::reset();
     let config = Config::load()?;
     let ts = ToolsetBuilder::new().build(&config)?;
-    install_state::reset();
     trace!("rebuilding shims");
     shims::reshim(&ts, false).wrap_err("failed to rebuild shims")?;
     trace!("rebuilding runtime symlinks");
@@ -913,6 +922,7 @@ pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Resul
     trace!("updating lockfiles");
     lockfile::update_lockfiles(&config, &ts, new_versions)
         .wrap_err("failed to update lockfiles")?;
+
     Ok(())
 }
 

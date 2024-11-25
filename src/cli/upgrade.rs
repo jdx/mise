@@ -1,3 +1,4 @@
+use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
 use crate::config::{config_file, Config};
 use crate::file::display_path;
@@ -158,6 +159,12 @@ impl Upgrade {
         }
 
         config::rebuild_shims_and_runtime_symlinks(&versions)?;
+
+        if versions.iter().any(|v| v.short() == "python") {
+            PIPXBackend::reinstall_all().unwrap_or_else(|err| {
+                warn!("failed to reinstall pipx tools: {err}");
+            })
+        }
         Ok(())
     }
 
