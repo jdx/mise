@@ -706,7 +706,7 @@ editLink: false
 | temporal | [aqua:temporalio/temporal](https://github.com/temporalio/temporal) [asdf:asdf-community/asdf-temporal](https://github.com/asdf-community/asdf-temporal) |
 | temporalite | [asdf:eko/asdf-temporalite](https://github.com/eko/asdf-temporalite) |
 | terradozer | [aqua:jckuester/terradozer](https://github.com/jckuester/terradozer) [asdf:chessmango/asdf-terradozer](https://github.com/chessmango/asdf-terradozer) |
-| terraform | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) [vfox:enochchau/vfox-terraform](https://github.com/enochchau/vfox-terraform) |
+| terraform | [aqua:hashicorp/terraform](https://github.com/hashicorp/terraform) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) [vfox:enochchau/vfox-terraform](https://github.com/enochchau/vfox-terraform) |
 | terraform-docs | [aqua:terraform-docs/terraform-docs](https://github.com/terraform-docs/terraform-docs) [asdf:looztra/asdf-terraform-docs](https://github.com/looztra/asdf-terraform-docs) |
 | terraform-ls | [aqua:hashicorp/terraform-ls](https://github.com/hashicorp/terraform-ls) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | terraform-lsp | [aqua:juliosueiras/terraform-lsp](https://github.com/juliosueiras/terraform-lsp) [asdf:bartlomiejdanek/asdf-terraform-lsp](https://github.com/bartlomiejdanek/asdf-terraform-lsp) |
