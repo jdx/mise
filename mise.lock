@@ -18,8 +18,10 @@ version = "1.1.36"
 version = "1.10.13"
 
 [tools.cargo-binstall.checksums]
+"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:b3057055d33e443e6e07b23fea851a420dcb8c29338d1cb1e14401f91162bfe9"
 cargo-binstall-linux-x86_64 = "sha256:53a7157f56e1698d42d3cd50b1d08f02159638e3a73edf362e14215337942e86"
 cargo-binstall-macos-aarch64 = "sha256:f67dd4fc8ea01b4c55fe041a0fbd6d81a361947f1dbf2bd226490c641cc167b3"
+"cargo-binstall-x86_64-pc-windows-msvc.zip" = "sha256:6c5272909b50bf93758a294c32195e8874494e5fa1ac5c741a103070c8d1d599"
 "cargo-binstall.exe-windows-x86_64" = "sha256:32a28a1e98ad23e2c7ac360b815001181d7feffd1283a20c6ef92c3c032d6ba6"
 
 [tools."cargo:cargo-edit"]

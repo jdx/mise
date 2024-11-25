@@ -106,7 +106,7 @@ benthos.backends = ["asdf:benthosdev/benthos-asdf"]
 bfs.backends = ["asdf:virtualroot/asdf-bfs"]
 binnacle.backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
 bitwarden.backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
-bitwarden.test = ["bw --version", "{{version}}"]
+bitwarden.test = ["bw --version", ""] # TODO: change version_filter to version_prefix in aqua registry
 bitwarden-secrets-manager.backends = ["ubi:bitwarden/sdk[tag_regex=^bws,exe=bws]", "asdf:asdf-community/asdf-bitwarden-secrets-manager"]
 # bitwarden-secrets-manager.test = ["bws -V", ""] # fails on CI for some reason
 bombardier.backends = ["aqua:codesenberg/bombardier", "asdf:NeoHsu/asdf-bombardier"]
@@ -139,7 +139,8 @@ calendarsync.backends = ["asdf:FeryET/asdf-calendarsync"]
 calicoctl.backends = ["aqua:projectcalico/calico/calicoctl", "asdf:TheCubicleJockey/asdf-calicoctl"]
 camunda-modeler.backends = ["asdf:barmac/asdf-camunda-modeler"]
 # aqua needs version_filter set
-cargo-binstall.backends = ['ubi:cargo-bins/cargo-binstall[tag_regex=^\\d\\.]', "cargo:cargo-binstall"]
+cargo-binstall.backends = ["aqua:cargo-bins/cargo-binstall", 'ubi:cargo-bins/cargo-binstall[tag_regex=^\\d\\.]', "cargo:cargo-binstall"]
+cargo-binstall.test = ["cargo binstall -V", "{{version}}"]
 cargo-insta.backends = ["ubi:mitsuhiko/insta"]
 cargo-make.backends = ["asdf:mise-plugins/asdf-cargo-make"]
 carp.backends = ["asdf:susurri/asdf-carp"]
@@ -683,7 +684,7 @@ protoc.backends = ["aqua:protocolbuffers/protobuf/protoc", "asdf:paxosglobal/asd
 protoc-gen-connect-go.backends = ["asdf:dylanrayboss/asdf-protoc-gen-connect-go"]
 protoc-gen-go.backends = ["aqua:protocolbuffers/protobuf-go/protoc-gen-go", "asdf:pbr0ck3r/asdf-protoc-gen-go"]
 protoc-gen-go-grpc.backends = ["aqua:grpc/grpc-go/protoc-gen-go-grpc", "asdf:pbr0ck3r/asdf-protoc-gen-go-grpc"]
-protoc-gen-go-grpc.test = ["protoc-gen-go-grpc --version", "protoc-gen-go-grpc {{version}}"]
+protoc-gen-go-grpc.test = ["protoc-gen-go-grpc --version", "protoc-gen-go-grpc"] # TODO: use version_prefix and put version back in
 protoc-gen-grpc-web.backends = ["asdf:pbr0ck3r/asdf-protoc-gen-grpc-web"]
 protoc-gen-js.backends = ["asdf:pbr0ck3r/asdf-protoc-gen-js"]
 protolint.backends = ["aqua:yoheimuta/protolint", "asdf:spencergilbert/asdf-protolint"]

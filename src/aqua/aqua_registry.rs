@@ -5,7 +5,8 @@ use crate::config::SETTINGS;
 use crate::duration::DAILY;
 use crate::git::Git;
 use crate::{dirs, file, hashmap, http};
-use eyre::{ContextCompat, Result};
+use expr::{ExprParser, ExprProgram, ExprValue};
+use eyre::{eyre, ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -14,7 +15,6 @@ use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use url::Url;
-use xx::regex;
 
 #[allow(clippy::invisible_characters)]
 pub static AQUA_STANDARD_REGISTRY_FILES: Lazy<HashMap<&'static str, &'static str>> =
@@ -61,8 +61,10 @@ pub struct AquaPackage {
     pub files: Vec<AquaFile>,
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
+    version_filter: Option<String>,
+    #[serde(skip)]
+    version_filter_expr: Option<ExprProgram>,
     pub version_source: Option<String>,
-    pub version_filter: Option<String>,
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     overrides: Vec<AquaOverride>,
@@ -190,15 +192,8 @@ impl AquaRegistry {
             .into_iter()
             .next()
             .wrap_err(format!("no package found for {id} in {path:?}"))?;
-        if let Some(filter) = &pkg.version_filter {
-            if let Some(filter) = filter.strip_prefix("Version startsWith") {
-                pkg.version_prefix = Some(
-                    pkg.version_prefix
-                        .unwrap_or(filter.trim().trim_matches('"').to_string()),
-                );
-            } else {
-                warn!("unsupported version filter: {filter}");
-            }
+        if let Some(version_filter) = &pkg.version_filter {
+            pkg.version_filter_expr = Some(ExprParser::new().compile(version_filter)?);
         }
         Ok(pkg)
     }
@@ -219,9 +214,7 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
 
 impl AquaPackage {
     fn with_version(mut self, v: &str) -> AquaPackage {
-        if let Some(avo) = self.version_override(v).cloned() {
-            self = apply_override(self, &avo)
-        }
+        self = apply_override(self.clone(), self.version_override(v));
         if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
             if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
                 goos == aqua::os() && goarch == aqua::arch()
@@ -238,30 +231,40 @@ impl AquaPackage {
         self
     }
 
-    fn version_override(&self, v: &str) -> Option<&AquaPackage> {
-        let re = regex!(r#"semver\("(.*)"\)"#);
-        let re_exact = regex!(r#"Version == "(.*)""#);
-        let v = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v)).unwrap();
-        let semver_match = |vc| {
-            if let Some(caps) = re.captures(vc) {
-                let vc = caps.get(1).unwrap().as_str().replace(' ', "");
-                if let Some(req) = versions::Requirement::new(&vc) {
-                    req.matches(&v)
-                } else {
-                    debug!("invalid semver constraint: {vc}");
-                    false
-                }
-            } else if let Some(caps) = re_exact.captures(vc) {
-                let vc = caps.get(1).unwrap().as_str();
-                v.to_string() == vc
-            } else {
-                false
+    fn version_override(&self, v: &str) -> &AquaPackage {
+        let ver = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v));
+        let mut expr = ExprParser::new();
+        let ctx = [("Version", v)];
+        expr.add_function("semver", |args| {
+            if args.len() != 1 {
+                return Err("semver() takes exactly one argument".to_string().into());
             }
-        };
+            let semver = args[0].as_string().unwrap().replace(' ', "");
+            if let Some(check_version) = versions::Requirement::new(&semver) {
+                if let Some(ver) = &ver {
+                    Ok(check_version.matches(ver).into())
+                } else {
+                    Err("invalid version".to_string().into())
+                }
+            } else {
+                Err("invalid semver".to_string().into())
+            }
+        });
         vec![self]
             .into_iter()
             .chain(self.version_overrides.iter())
-            .find(|vo| vo.version_constraint == "true" || semver_match(&vo.version_constraint))
+            .find(|vo| {
+                if vo.version_constraint.is_empty() {
+                    true
+                } else {
+                    expr.eval(&vo.version_constraint, ctx)
+                        .map_err(|e| warn!("error parsing {}: {e}", vo.version_constraint))
+                        .unwrap_or(false.into())
+                        .as_bool()
+                        .unwrap()
+                }
+            })
+            .unwrap_or(self)
     }
 
     pub fn format(&self, v: &str) -> Result<&str> {
@@ -372,6 +375,29 @@ impl AquaPackage {
         };
         ctx.extend(overrides.clone());
         aqua_template::render(s, &ctx)
+    }
+
+    fn expr(&self, v: &str, program: ExprProgram) -> Result<ExprValue> {
+        let ctx = [("Version", v)];
+        let expr = ExprParser::new();
+        expr.run(program, ctx).map_err(|e| eyre!(e))
+    }
+
+    pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
+        // TODO: precompile the expression
+        if let Some(filter) = self.version_filter_expr.clone() {
+            if let ExprValue::Bool(expr) = self.expr(v, filter)? {
+                Ok(expr)
+            } else {
+                warn!(
+                    "invalid response from version filter: {}",
+                    self.version_filter.as_ref().unwrap()
+                );
+                Ok(true)
+            }
+        } else {
+            Ok(true)
+        }
     }
 }
 
