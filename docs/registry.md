@@ -194,7 +194,7 @@ editLink: false
 | dust | [ubi:bootandy/dust](https://github.com/bootandy/dust) [asdf:looztra/asdf-dust](https://github.com/looztra/asdf-dust) |
 | dvc | [asdf:fwfurtado/asdf-dvc](https://github.com/fwfurtado/asdf-dvc) |
 | dyff | [aqua:homeport/dyff](https://github.com/homeport/dyff) [asdf:https://gitlab.com/wt0f/asdf-dyff](https://gitlab.com/wt0f/asdf-dyff) |
-| dynatrace-monaco | [asdf:nsaputro/asdf-monaco](https://github.com/nsaputro/asdf-monaco) |
+| dynatrace-monaco | [ubi:Dynatrace/dynatrace-configuration-as-code](https://github.com/Dynatrace/dynatrace-configuration-as-code) [asdf:nsaputro/asdf-monaco](https://github.com/nsaputro/asdf-monaco) |
 | earthly | [aqua:earthly/earthly](https://github.com/earthly/earthly) [asdf:YR-ZR0/asdf-earthly](https://github.com/YR-ZR0/asdf-earthly) |
 | ecspresso | [aqua:kayac/ecspresso](https://github.com/kayac/ecspresso) [asdf:kayac/asdf-ecspresso](https://github.com/kayac/asdf-ecspresso) |
 | editorconfig-checker | [aqua:editorconfig-checker/editorconfig-checker](https://github.com/editorconfig-checker/editorconfig-checker) [asdf:gabitchov/asdf-editorconfig-checker](https://github.com/gabitchov/asdf-editorconfig-checker) |
