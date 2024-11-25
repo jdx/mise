@@ -907,9 +907,20 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
-                        _ => {
-                            options.insert(k, v.as_str().unwrap().to_string());
-                        }
+                        _ => match v {
+                            toml::Value::Boolean(v) => {
+                                options.insert(k, v.to_string());
+                            }
+                            toml::Value::Integer(v) => {
+                                options.insert(k, v.to_string());
+                            }
+                            toml::Value::String(v) => {
+                                options.insert(k, v);
+                            }
+                            _ => {
+                                return Err(de::Error::custom("invalid value type"));
+                            }
+                        },
                     }
                 }
                 if let Some(tt) = tt {
