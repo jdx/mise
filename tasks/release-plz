@@ -7,7 +7,7 @@ git config user.email release@mise.jdx.dev
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
 if ! cargo show mise --json | jq -r '.versions.[].num' | grep -q "^$cur_version$"; then
   echo "Releasing $cur_version"
-  cargo publish
+  cargo publish --allow-dirty
   changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
   changelog="$(echo "$changelog" | tail -n +3)"
   git tag "v$cur_version" -s -m "$changelog"
