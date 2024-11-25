@@ -180,7 +180,6 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.warn_if_dependencies_missing()?;
         self.get_remote_version_cache()
             .get_or_try_init(|| {
                 trace!("Listing remote versions for {}", self.ba().to_string());
