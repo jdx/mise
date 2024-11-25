@@ -675,6 +675,12 @@ impl Run {
     }
 
     fn err_no_task(&self, name: &str) -> Result<()> {
+        if CONFIG.tasks().is_ok_and(|t| t.is_empty()) {
+            bail!(
+                "no tasks defined in {}. Are you in a project directory?",
+                display_path(dirs::CWD.clone().unwrap_or_default())
+            );
+        }
         if let Some(cwd) = &*dirs::CWD {
             let includes = CONFIG.task_includes_for_dir(cwd);
             let path = includes
