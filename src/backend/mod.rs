@@ -301,7 +301,10 @@ pub trait Backend: Debug + Send + Sync {
     fn latest_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {
             Some(query) => {
-                let matches = self.list_versions_matching(&query)?;
+                let mut matches = self.list_versions_matching(&query)?;
+                if matches.is_empty() && query == "latest" {
+                    matches = self.list_remote_versions()?;
+                }
                 Ok(find_match_in_list(&matches, &query))
             }
             None => self.latest_stable_version(),

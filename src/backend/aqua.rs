@@ -508,11 +508,12 @@ impl AquaBackend {
         }
 
         for (src, dst) in self.srcs(pkg, tv)? {
-            if src != dst {
+            if src != dst && src.exists() && !dst.exists() {
                 if cfg!(windows) {
                     file::copy(&src, &dst)?;
                 } else {
-                    file::make_symlink(&PathBuf::from(".").join(&src), &dst)?;
+                    let src = PathBuf::from(".").join(src.file_name().unwrap().to_str().unwrap());
+                    file::make_symlink(&src, &dst)?;
                 }
             }
         }
@@ -521,7 +522,8 @@ impl AquaBackend {
     }
 
     fn srcs(&self, pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<(PathBuf, PathBuf)>> {
-        pkg.files
+        let files: Vec<(PathBuf, PathBuf)> = pkg
+            .files
             .iter()
             .map(|f| {
                 let srcs = if let Some(prefix) = &pkg.version_prefix {
@@ -542,7 +544,11 @@ impl AquaBackend {
                     }))
             })
             .flatten_ok()
-            .collect()
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .unique_by(|(src, _)| src.to_path_buf())
+            .collect();
+        Ok(files)
     }
 }
 
