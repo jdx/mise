@@ -47,7 +47,7 @@ impl PluginType {
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
-        r"(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
+        r"(?i)(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
     )
         .unwrap()
 });

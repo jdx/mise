@@ -774,7 +774,7 @@ editLink: false
 | vultr | [ubi:vultr/vultr-cli](https://github.com/vultr/vultr-cli) [asdf:ikuradon/asdf-vultr-cli](https://github.com/ikuradon/asdf-vultr-cli) |
 | wasi-sdk | [asdf:coolreader18/asdf-wasi-sdk](https://github.com/coolreader18/asdf-wasi-sdk) |
 | wasm3 | [asdf:tachyonicbytes/asdf-wasm3](https://github.com/tachyonicbytes/asdf-wasm3) |
-| wasm4 | [asdf:jtakakura/asdf-wasm4](https://github.com/jtakakura/asdf-wasm4) |
+| wasm4 | [ubi:aduros/wasm4](https://github.com/aduros/wasm4) [asdf:jtakakura/asdf-wasm4](https://github.com/jtakakura/asdf-wasm4) |
 | wasmer | [aqua:wasmerio/wasmer](https://github.com/wasmerio/wasmer) [asdf:tachyonicbytes/asdf-wasmer](https://github.com/tachyonicbytes/asdf-wasmer) |
 | wasmtime | [aqua:bytecodealliance/wasmtime](https://github.com/bytecodealliance/wasmtime) [asdf:tachyonicbytes/asdf-wasmtime](https://github.com/tachyonicbytes/asdf-wasmtime) |
 | watchexec | [ubi:watchexec/watchexec](https://github.com/watchexec/watchexec) [asdf:nyrst/asdf-watchexec](https://github.com/nyrst/asdf-watchexec) |
