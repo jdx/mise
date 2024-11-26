@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+export MISE_RUSTUP_HOME="$MISE_DATA_DIR/rustup"
+export MISE_CARGO_HOME="$MISE_DATA_DIR/cargo"
+
+assert_contains "mise x rust@1.82.0 -- rustc --version" "rustc 1.82.0"

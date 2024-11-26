@@ -309,8 +309,10 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
 
 #[cfg(windows)]
 //#[deprecated]
-pub fn make_symlink(_target: &Path, _link: &Path) -> Result<(PathBuf, PathBuf)> {
-    unimplemented!("make_symlink is not implemented on Windows")
+pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
+    junction::create(target, link)
+        .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
+    Ok((target.to_path_buf(), link.to_path_buf()))
 }
 
 #[cfg(windows)]
@@ -403,8 +405,6 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
 
 #[cfg(windows)]
 pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
-    trace!("chmod +x {}", display_path(&path));
-    warn!("make executable is not available on Windows, use windows_executable_extensions settings instead");
     Ok(())
 }
 

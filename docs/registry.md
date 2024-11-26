@@ -609,7 +609,7 @@ editLink: false
 | rstash | [asdf:carlduevel/asdf-rstash](https://github.com/carlduevel/asdf-rstash) |
 | ruby | [core:ruby](https://mise.jdx.dev/lang/ruby.html) |
 | ruff | [ubi:astral-sh/ruff](https://github.com/astral-sh/ruff) [asdf:simhem/asdf-ruff](https://github.com/simhem/asdf-ruff) |
-| rust | [asdf:code-lever/asdf-rust](https://github.com/code-lever/asdf-rust) |
+| rust | [core:rust](https://mise.jdx.dev/lang/rust.html) [asdf:code-lever/asdf-rust](https://github.com/code-lever/asdf-rust) |
 | rust-analyzer | [aqua:rust-lang/rust-analyzer](https://github.com/rust-lang/rust-analyzer) [asdf:Xyven1/asdf-rust-analyzer](https://github.com/Xyven1/asdf-rust-analyzer) |
 | rustic | [ubi:rustic-rs/rustic](https://github.com/rustic-rs/rustic) |
 | rye | [aqua:astral-sh/rye](https://github.com/astral-sh/rye) [asdf:Azuki-bar/asdf-rye](https://github.com/Azuki-bar/asdf-rye) |

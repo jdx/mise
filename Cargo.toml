@@ -81,6 +81,7 @@ indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
 indoc = "2"
 itertools = "0.13"
+junction = "1"
 log = "0.4"
 md-5 = "0.10"
 num_cpus = "1"
