@@ -4,7 +4,7 @@ Plugins in mise extend functionality. Historically they were the only way to add
 that backend works is every tool has its own plugin which needs to be manually installed. However now with core languages and
 backends like aqua/ubi, plugins are no longer necessary to run most tools in mise.
 
-Meanwhile, plugins have expanded beyond tools and can provide functionality like setting env vars globally without relying on a tool being installed.
+Meanwhile, plugins have expanded beyond tools and can provide functionality like [setting env vars globally](/environments.html#plugin-provided-env-directives) without relying on a tool being installed.
 
 Tool plugins should be avoided for security reasons. New tools will not be accepted into mise built with asdf/vfox plugins unless they are very popular and
 aqua/ubi is not an option for some reason.
