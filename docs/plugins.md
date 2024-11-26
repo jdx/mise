@@ -1,5 +1,19 @@
 # Plugins
 
+Plugins in mise extend functionality. Historically they were the only way to add new tools as the only backend was asdf the way
+that backend works is every tool has its own plugin which needs to be manually installed. However now with core languages and
+backends like aqua/ubi, plugins are no longer necessary to run most tools in mise.
+
+Meanwhile, plugins have expanded beyond tools and can provide functionality like setting env vars globally without relying on a tool being installed.
+
+Tool plugins should be avoided for security reasons. New tools will not be accepted into mise built with asdf/vfox plugins unless they are very popular and
+aqua/ubi is not an option for some reason.
+If you want to integrate a new tool into mise, you should either try to get it into the [aqua registry](https://mise.jdx.dev/dev-tools/backends/ubi.html)
+or see if it can be installed with [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html). Then add it to the [registry](https://github.com/jdx/mise/blob/main/registry.toml).
+Aqua is definitely preferred to ubi as it has better UX and more features like slsa verification and the ability to use different logic for older versions.
+
+## asdf Plugins
+
 mise uses asdf's plugin ecosystem under the hood. These plugins contain shell scripts like
 `bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
 
@@ -7,21 +21,9 @@ See <https://github.com/mise-plugins/registry> for the list of built-in plugins 
 [Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
 more about how they work.
 
-## Core Plugins
+## vfox Plugins
 
-mise comes with some plugins built into the CLI written in Rust. These are new and will improve over
-time. They can be easily overridden by installing a plugin with the same name, e.g.: `mise plugin install python https://github.com/asdf-community/asdf-python`.
-
-You can see the core plugins with `mise plugin ls --core`.
-
-- [Bun](/lang/bun)
-- [Deno](/lang/deno)
-- [Erlang](/lang/erlang) <Badge type="warning" text="experimental" />
-- [Go](/lang/go)
-- [Java](/lang/java)
-- [NodeJS](/lang/node)
-- [Python](/lang/python)
-- [Ruby](/lang/ruby)
+Similarly, mise can also use [vfox plugins](https://mise.jdx.dev/dev-tools/backends/vfox.html). These have the advantage of working on Windows so are preferred.
 
 ## Plugin Authors
 
