@@ -416,19 +416,22 @@ impl Run {
         let shell = self.get_shell(task, default_shell);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
-        let mut script_and_args = script.to_string();
+        let mut script = script.to_string();
+        if shell[0] == "sh" || shell[0] == "bash" || shell[0] == "zsh" {
+            script = format!("set -e\n{}", script);
+        }
         if !args.is_empty() {
             #[cfg(windows)]
             {
-                script_and_args = format!("{} {}", script_and_args, args.join(" "));
+                script = format!("{script} {}", args.join(" "));
             }
             #[cfg(unix)]
             {
-                script_and_args = format!("{} {}", script_and_args, shell_words::join(args));
+                script = format!("{script} {}", shell_words::join(args));
             }
         }
-        full_args.push(script_and_args);
-        (shell[0].clone(), full_args[1..].to_vec())
+        full_args.push(script);
+        (full_args[0].clone(), full_args[1..].to_vec())
     }
 
     fn clone_default_inline_shell(&self) -> Vec<String> {

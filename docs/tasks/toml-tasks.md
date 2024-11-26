@@ -44,6 +44,22 @@ description = 'Cut a new release'
 file = 'scripts/release.sh' # execute an external script
 ```
 
+## Task execution
+
+Tasks are executed with `set -e` (`set -o erropt`) if the shell is `sh`, `bash`, or `zsh`. This means that the script
+will exit if any command fails. You can disable this by running `set +e` in the script.
+
+Tasks are executed with `cwd` set to the directory containing `mise.toml`. You can use the directory
+from where the task was run with `dir = "{{cwd}}"`:
+
+```toml
+[tasks.test]
+run = 'cargo test'
+dir = "{{cwd}}"
+```
+
+Also, `MISE_ORIGNAL_CWD` is set to the original working directory and will be passed to the task.
+
 ## Arguments
 
 By default, arguments are passed to the last script in the `run` array. So if a task was defined as:
