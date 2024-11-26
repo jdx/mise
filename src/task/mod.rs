@@ -49,7 +49,7 @@ pub struct Task {
     #[serde(default)]
     pub env: BTreeMap<String, EitherStringOrIntOrBool>,
     #[serde(default)]
-    pub dir: Option<PathBuf>,
+    pub dir: Option<String>,
     #[serde(default)]
     pub hide: bool,
     #[serde(default)]
@@ -313,13 +313,12 @@ impl Task {
         if let Some(dir) = &self.dir {
             // TODO: memoize
             // let dir = self.dir_rendered.get_or_try_init(|| -> Result<PathBuf> {
-            let dir = dir.to_string_lossy().to_string();
             let mut tera = get_tera(self.config_root.as_deref());
             let mut ctx = BASE_CONTEXT.clone();
             if let Some(config_root) = &self.config_root {
                 ctx.insert("config_root", config_root);
             }
-            let dir = tera.render_str(&dir, &ctx)?;
+            let dir = tera.render_str(dir, &ctx)?;
             let dir = file::replace_path(&dir);
             if dir.is_absolute() {
                 Ok(Some(dir.to_path_buf()))

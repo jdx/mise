@@ -65,3 +65,14 @@ as `~/src/work/myproject/mise.local.toml` and they will be used inside tasks of 
 
 As of this writing vars are only supported in TOML tasks. I want to add support for file tasks, but
 I don't want to turn all file tasks into tera templates just for this feature.
+
+## Environment variables passed to tasks
+
+The following environment variables are passed to the task:
+
+- `MISE_ORIGINAL_CWD`: The original working directory from where the task was run.
+- `MISE_CONFIG_ROOT`: The directory containing the `mise.toml` file where the task was defined.
+- `MISE_PROJECT_ROOT`: The root of the project.
+- `MISE_TASK_NAME`: The name of the task being run.
+- `MISE_TASK_DIR`: The directory containing the task script.
+- `MISE_TASK_FILE`: The full path to the task script.
