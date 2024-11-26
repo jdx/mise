@@ -85,7 +85,10 @@ run = "cargo insta test --all-features --accept --unreferenced delete"
 [test]
 description = "run all tests"
 alias = 't'
-run = ["mise tasks run test:unit", "mise tasks run test:e2e"]
+run = """
+mise tasks run test:unit
+mise tasks run test:e2e
+"""
 
 ["test:unit"]
 description = "run unit tests"

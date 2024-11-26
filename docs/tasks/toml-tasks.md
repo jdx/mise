@@ -5,7 +5,7 @@ Tasks can be defined in `mise.toml` files in different ways:
 ```toml
 [tasks.cleancache]
 run = "rm -rf .cache"
-hide = true # hide this task from the list
+hide = true # hides this task from the list
 
 [tasks.clean]
 depends = ['cleancache']
@@ -18,24 +18,25 @@ alias = 'b' # `mise run b`
 
 [tasks.test]
 description = 'Run automated tests'
-run = [# multiple commands are run in series
+# run multiple commands in series
+run = [
     'cargo test',
     './scripts/test-e2e.sh',
 ]
-dir = "{{cwd}}" # run in user's cwd, default is the project's base directory
+dir = "{{cwd}}" # runs in user's cwd, default is the project's base directory
 
 [tasks.lint]
 description = 'Lint with clippy'
 env = { RUST_BACKTRACE = '1' } # env vars for the script
-# specify a shell command to run the script with (default is 'sh -c')
+# specify a shell command to run the script with (default is `sh -c`)
 shell = 'bash -c'
-# you can specify a multiline script instead of individual commands
+# you can also specify a multiline run command
 run = """
-#!/usr/bin/env bash
+cargo fmt --check
 cargo clippy
 """
 
-[tasks.ci] # only dependencies to be run
+[tasks.ci] # run only dependencies
 description = 'Run CI tasks'
 depends = ['build', 'lint', 'test']
 
