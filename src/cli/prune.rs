@@ -3,11 +3,10 @@ use std::sync::Arc;
 
 use console::style;
 use eyre::Result;
-
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::tracking::Tracker;
-use crate::config::{Config, Settings};
+use crate::config::{Config, SETTINGS};
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
@@ -87,7 +86,6 @@ impl Prune {
     }
 
     fn delete(&self, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Result<()> {
-        let settings = Settings::try_get()?;
         let mpr = MultiProgressReport::get();
         for (p, tv) in to_delete {
             let mut prefix = tv.style();
@@ -95,7 +93,10 @@ impl Prune {
                 prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
             }
             let pr = mpr.add(&prefix);
-            if self.dry_run || settings.yes || prompt::confirm(format!("remove {} ?", &tv))? {
+            if self.dry_run
+                || SETTINGS.yes
+                || prompt::confirm_with_all(format!("remove {} ?", &tv))?
+            {
                 p.uninstall_version(&tv, pr.as_ref(), self.dry_run)?;
                 pr.finish();
             }
