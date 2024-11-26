@@ -33,6 +33,7 @@ pub mod asdf;
 pub mod backend_type;
 pub mod cargo;
 mod external_plugin_cache;
+pub mod gem;
 pub mod go;
 pub mod npm;
 pub mod pipx;
@@ -121,6 +122,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Asdf => Some(Arc::new(asdf::AsdfBackend::from_arg(ba))),
         BackendType::Cargo => Some(Arc::new(cargo::CargoBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
+        BackendType::Gem => Some(Arc::new(gem::GemBackend::from_arg(ba))),
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),

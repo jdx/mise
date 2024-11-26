@@ -95,6 +95,10 @@ impl Backend for VfoxBackend {
             .filter(|(k, _)| k.to_uppercase() != "PATH")
             .collect())
     }
+
+    fn plugin(&self) -> Option<&dyn Plugin> {
+        Some(&*self.plugin)
+    }
 }
 
 impl VfoxBackend {

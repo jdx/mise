@@ -206,6 +206,10 @@ impl RubyPlugin {
     }
 
     fn test_gem(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+        if !regex!(r#"^\d"#).is_match(&self.tool_name()) {
+            // don't expect gem for artichoke
+            return Ok(());
+        }
         pr.set_message("gem -v".into());
         CmdLineRunner::new(self.gem_path(tv))
             .with_pr(pr)

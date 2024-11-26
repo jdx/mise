@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+mise use ruby
+assert "mise x gem:rubocop@1.69.0 -- rubocop --version" "1.69.0"
