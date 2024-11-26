@@ -207,6 +207,9 @@ impl Run {
             ..Default::default()
         })?;
         let mut env = ts.env_with_path(&CONFIG)?;
+        if let Some(cwd) = &*dirs::CWD {
+            env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
+        }
         if let Some(root) = &CONFIG.project_root {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
             env.insert("root".into(), root.display().to_string());
@@ -300,6 +303,16 @@ impl Run {
             return Ok(());
         }
 
+        let mut env = env.clone();
+        env.insert("MISE_TASK_NAME".into(), task.name.clone());
+        let task_file = task.file.as_ref().unwrap_or(&task.config_source);
+        env.insert("MISE_TASK_FILE".into(), task_file.display().to_string());
+        if let Some(dir) = task_file.parent() {
+            env.insert("MISE_TASK_DIR".into(), dir.display().to_string());
+        }
+        if let Some(config_root) = &task.config_root {
+            env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
+        }
         let string_env: Vec<(String, String)> = task
             .env
             .iter()
@@ -417,7 +430,9 @@ impl Run {
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
         let mut script = script.to_string();
-        if shell[0] == "sh" || shell[0] == "bash" || shell[0] == "zsh" {
+        if script.lines().count() > 1
+            && (shell[0] == "sh" || shell[0] == "bash" || shell[0] == "zsh")
+        {
             script = format!("set -e\n{}", script);
         }
         if !args.is_empty() {
