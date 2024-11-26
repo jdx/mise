@@ -258,7 +258,7 @@ desk.os = ["linux", "macos"]
 desk.test = ["desk version", "desk {{version}}"]
 devspace.backends = ["aqua:devspace-sh/devspace", "asdf:NeoHsu/asdf-devspace"]
 # dhall seems to not provide any releases in the latest
-#dhall.backends = ["aqua:dhall-lang/dhall-haskell", "asdf:aaaaninja/asdf-dhall"]
+# dhall.backends = ["aqua:dhall-lang/dhall-haskell", "asdf:aaaaninja/asdf-dhall"]
 dhall.backends = ["asdf:aaaaninja/asdf-dhall"]
 difftastic.backends = ["ubi:wilfred/difftastic[exe=difft]", "asdf:volf52/asdf-difftastic"]
 digdag.backends = ["asdf:jtakakura/asdf-digdag"]
