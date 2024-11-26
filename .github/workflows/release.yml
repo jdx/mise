@@ -13,6 +13,9 @@ env:
   CARGO_TERM_COLOR: always
   DRY_RUN: ${{ startsWith(github.event.ref, 'refs/tags/v') && '0' || '1' }}
   RUST_BACKTRACE: 1
+  GITHUB_API_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GH_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   build-tarball:
@@ -95,8 +98,6 @@ jobs:
           if-no-files-found: error
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-cache }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
   build-tarball-windows:
@@ -158,7 +159,6 @@ jobs:
       - name: Run e2e tests
         uses: nick-fields/retry@v3
         env:
-          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
           TEST_ALL: 1
@@ -272,7 +272,6 @@ jobs:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-          GITHUB_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: GitHub Release Assets
         uses: softprops/action-gh-release@v2
@@ -339,4 +338,3 @@ jobs:
           ALPINE_KEY_ID: ${{ secrets.ALPINE_KEY_ID }}
           ALPINE_PRIV_KEY: ${{ secrets.ALPINE_PRIV_KEY }}
           ALPINE_PUB_KEY: ${{ secrets.ALPINE_PUB_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

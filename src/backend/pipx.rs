@@ -21,7 +21,6 @@ use xx::regex;
 #[derive(Debug)]
 pub struct PIPXBackend {
     ba: BackendArg,
-    remote_version_cache: CacheManager<Vec<String>>,
     latest_version_cache: CacheManager<Option<String>>,
 }
 
@@ -47,27 +46,25 @@ impl Backend for PIPXBackend {
      * we return a single version.
      */
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.remote_version_cache
-            .get_or_try_init(|| match self.tool_name().parse()? {
-                PipxRequest::Pypi(package) => {
-                    let url = format!("https://pypi.org/pypi/{}/json", package);
-                    let data: PypiPackage = HTTP_FETCH.json(url)?;
-                    let versions = data
-                        .releases
-                        .keys()
-                        .map(|v| v.to_string())
-                        .sorted_by_cached_key(|v| Versioning::new(v))
-                        .collect();
-                    Ok(versions)
-                }
-                PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
-                    let repo = url.strip_prefix("https://github.com/").unwrap();
-                    let data = github::list_releases(repo)?;
-                    Ok(data.into_iter().rev().map(|r| r.tag_name).collect())
-                }
-                PipxRequest::Git { .. } => Ok(vec!["latest".to_string()]),
-            })
-            .cloned()
+        match self.tool_name().parse()? {
+            PipxRequest::Pypi(package) => {
+                let url = format!("https://pypi.org/pypi/{}/json", package);
+                let data: PypiPackage = HTTP_FETCH.json(url)?;
+                let versions = data
+                    .releases
+                    .keys()
+                    .map(|v| v.to_string())
+                    .sorted_by_cached_key(|v| Versioning::new(v))
+                    .collect();
+                Ok(versions)
+            }
+            PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
+                let repo = url.strip_prefix("https://github.com/").unwrap();
+                let data = github::list_releases(repo)?;
+                Ok(data.into_iter().rev().map(|r| r.tag_name).collect())
+            }
+            PipxRequest::Git { .. } => Ok(vec!["latest".to_string()]),
+        }
     }
 
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
@@ -132,11 +129,6 @@ impl Backend for PIPXBackend {
 impl PIPXBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
-            remote_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .build(),
             latest_version_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("latest_version.msgpack.z"),
             )

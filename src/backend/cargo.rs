@@ -7,7 +7,6 @@ use url::Url;
 
 use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
-use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
@@ -20,7 +19,6 @@ use crate::{env, file};
 #[derive(Debug)]
 pub struct CargoBackend {
     ba: BackendArg,
-    remote_version_cache: CacheManager<Vec<String>>,
 }
 
 impl Backend for CargoBackend {
@@ -45,20 +43,16 @@ impl Backend for CargoBackend {
             // TODO: maybe fetch tags/branches from git?
             return Ok(vec!["HEAD".into()]);
         }
-        self.remote_version_cache
-            .get_or_try_init(|| {
-                let raw = HTTP_FETCH.get_text(get_crate_url(&self.tool_name())?)?;
-                let stream = Deserializer::from_str(&raw).into_iter::<CrateVersion>();
-                let mut versions = vec![];
-                for v in stream {
-                    let v = v?;
-                    if !v.yanked {
-                        versions.push(v.vers);
-                    }
-                }
-                Ok(versions)
-            })
-            .cloned()
+        let raw = HTTP_FETCH.get_text(get_crate_url(&self.tool_name())?)?;
+        let stream = Deserializer::from_str(&raw).into_iter::<CrateVersion>();
+        let mut versions = vec![];
+        for v in stream {
+            let v = v?;
+            if !v.yanked {
+                versions.push(v.vers);
+            }
+        }
+        Ok(versions)
     }
 
     fn install_version_impl(
@@ -134,14 +128,7 @@ impl Backend for CargoBackend {
 
 impl CargoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self {
-            remote_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .build(),
-            ba,
-        }
+        Self { ba }
     }
 
     fn is_binstall_enabled(&self, tv: &ToolVersion) -> bool {

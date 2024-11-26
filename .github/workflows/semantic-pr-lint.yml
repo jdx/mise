@@ -9,11 +9,12 @@ on:
 permissions:
   pull-requests: read
 
+env:
+  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
 jobs:
   main:
     name: Validate PR title
     runs-on: ubuntu-latest
     steps:
       - uses: amannn/action-semantic-pull-request@v5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

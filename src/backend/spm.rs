@@ -1,9 +1,8 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
-use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Settings, SETTINGS};
+use crate::config::Settings;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{file, github};
@@ -22,7 +21,6 @@ use xx::regex;
 #[derive(Debug)]
 pub struct SPMBackend {
     ba: BackendArg,
-    remote_version_cache: CacheManager<Vec<String>>,
 }
 
 // https://github.com/apple/swift-package-manager
@@ -42,15 +40,11 @@ impl Backend for SPMBackend {
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         let repo = SwiftPackageRepo::new(&self.tool_name())?;
-        self.remote_version_cache
-            .get_or_try_init(|| {
-                Ok(github::list_releases(repo.shorthand.as_str())?
-                    .into_iter()
-                    .map(|r| r.tag_name)
-                    .rev()
-                    .collect())
-            })
-            .cloned()
+        Ok(github::list_releases(repo.shorthand.as_str())?
+            .into_iter()
+            .map(|r| r.tag_name)
+            .rev()
+            .collect())
     }
 
     fn install_version_impl(
@@ -89,14 +83,7 @@ impl Backend for SPMBackend {
 
 impl SPMBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self {
-            remote_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .build(),
-            ba,
-        }
+        Self { ba }
     }
 
     fn clone_package_repo(
