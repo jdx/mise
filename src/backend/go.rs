@@ -2,17 +2,15 @@ use std::fmt::Debug;
 
 use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
-use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Settings, SETTINGS};
+use crate::config::SETTINGS;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 
 #[derive(Debug)]
 pub struct GoBackend {
     ba: BackendArg,
-    remote_version_cache: CacheManager<Vec<String>>,
 }
 
 impl Backend for GoBackend {
@@ -29,33 +27,29 @@ impl Backend for GoBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.remote_version_cache
-            .get_or_try_init(|| {
-                let mut mod_path = Some(self.tool_name());
+        let mut mod_path = Some(self.tool_name());
 
-                while let Some(cur_mod_path) = mod_path {
-                    let res = cmd!("go", "list", "-m", "-versions", "-json", &cur_mod_path)
-                        .full_env(self.dependency_env()?)
-                        .read();
-                    if let Ok(raw) = res {
-                        let res = serde_json::from_str::<GoModInfo>(&raw);
-                        if let Ok(mut mod_info) = res {
-                            // remove the leading v from the versions
-                            mod_info.versions = mod_info
-                                .versions
-                                .into_iter()
-                                .map(|v| v.trim_start_matches('v').to_string())
-                                .collect();
-                            return Ok(mod_info.versions);
-                        }
-                    };
-
-                    mod_path = trim_after_last_slash(cur_mod_path);
+        while let Some(cur_mod_path) = mod_path {
+            let res = cmd!("go", "list", "-m", "-versions", "-json", &cur_mod_path)
+                .full_env(self.dependency_env()?)
+                .read();
+            if let Ok(raw) = res {
+                let res = serde_json::from_str::<GoModInfo>(&raw);
+                if let Ok(mut mod_info) = res {
+                    // remove the leading v from the versions
+                    mod_info.versions = mod_info
+                        .versions
+                        .into_iter()
+                        .map(|v| v.trim_start_matches('v').to_string())
+                        .collect();
+                    return Ok(mod_info.versions);
                 }
+            };
 
-                Ok(vec![])
-            })
-            .cloned()
+            mod_path = trim_after_last_slash(cur_mod_path);
+        }
+
+        Ok(vec![])
     }
 
     fn install_version_impl(
@@ -63,8 +57,7 @@ impl Backend for GoBackend {
         ctx: &InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let settings = Settings::get();
-        settings.ensure_experimental("go backend")?;
+        SETTINGS.ensure_experimental("go backend")?;
 
         let version = if tv.version.starts_with("v") {
             warn!("usage of a 'v' prefix in the version is discouraged");
@@ -94,14 +87,7 @@ impl Backend for GoBackend {
 
 impl GoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self {
-            remote_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .build(),
-            ba,
-        }
+        Self { ba }
     }
 }
 

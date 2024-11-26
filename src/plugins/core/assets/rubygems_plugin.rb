@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 def debug?
-  !!ENV["MISE_DEBUG"]
+  ENV["MISE_DEBUG"] == "true"
 end
 
 def log_debug(msg)

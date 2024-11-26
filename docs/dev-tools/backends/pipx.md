@@ -39,6 +39,21 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 "pipx:psf/black" = "latest"
 ```
 
+## Python upgrades
+
+If the python version used by a pipx package changes, (by mise or system python), you may need to
+reinstall the package. This can be done with:
+
+```sh
+mise install -f pipx:psf/black
+```
+
+Or you can reinstall all pipx packages with:
+
+```sh
+mise install -f "pipx:*"
+```
+
 ### Supported Pipx Syntax
 
 | Description                           | Usage                                                  |

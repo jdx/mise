@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install and build ruby using ruby-build
 
-export MISE_RUBY_INSTALL=0
-latest=$(mise latest ruby)
-assert_contains "mise x ruby@$latest -- ruby --version" "ruby $latest"
+# tested in test_gem_slow
+#export MISE_RUBY_INSTALL=0
+#latest=$(mise latest ruby)
+#assert_contains "mise x ruby@$latest -- ruby --version" "ruby $latest"

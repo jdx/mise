@@ -353,5 +353,5 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: mise test-tool --all
-        env:
-          MISE_USE_VERSIONS_HOST: 0
+#        env:
+#          MISE_USE_VERSIONS_HOST: 0
