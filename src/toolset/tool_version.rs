@@ -14,7 +14,6 @@ use crate::hash::hash_to_str;
 use crate::toolset::{tool_request, ToolRequest, ToolVersionOptions};
 use console::style;
 use eyre::Result;
-use heck::ToKebabCase;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
 
@@ -269,7 +268,7 @@ impl ToolVersion {
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", &self.ba().full(), &self.version.to_kebab_case())
+        write!(f, "{}@{}", &self.ba().full(), &self.version)
     }
 }
 
