@@ -8,7 +8,7 @@ pub struct GithubRelease {
     pub tag_name: String,
     // pub name: Option<String>,
     // pub body: Option<String>,
-    // pub prerelease: bool,
+    pub prerelease: bool,
     // pub created_at: String,
     // pub published_at: Option<String>,
     pub assets: Vec<GithubAsset>,
@@ -34,7 +34,7 @@ pub fn list_releases(repo: &str) -> eyre::Result<Vec<GithubRelease>> {
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
             let (more, h) = crate::http::HTTP_FETCH.json_headers::<Vec<GithubRelease>, _>(next)?;
-            releases.extend(more);
+            releases.extend(more.into_iter().filter(|r| !r.prerelease));
             headers = h;
         }
     }
