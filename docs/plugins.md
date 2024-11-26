@@ -33,10 +33,10 @@ See [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md) for more de
 If you'd like your plugin to be hosted here please let me know (GH discussion or discord is fine)
 and I'd be happy to host it for you.
 
-## Plugin Options
+## Tool Options
 
-mise has support for "plugin options" which is configuration specified in `mise.toml` to change behavior
-of plugins. One example of this is virtualenv on python runtimes:
+mise has support for "tool options" which is configuration specified in `mise.toml` to change behavior
+of tools. One example of this is virtualenv on python runtimes:
 
 ```toml
 [tools]
