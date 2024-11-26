@@ -15,7 +15,7 @@ use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
-use crate::plugins::Script::{Download, ExecEnv, Install, ParseLegacyFile};
+use crate::plugins::Script::{Download, ExecEnv, Install, ParseIdiomaticFile};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
@@ -36,7 +36,7 @@ pub struct AsdfBackend {
     remote_version_cache: CacheManager<Vec<String>>,
     latest_stable_cache: CacheManager<Option<String>>,
     alias_cache: CacheManager<Vec<(String, String)>>,
-    legacy_filename_cache: CacheManager<Vec<String>>,
+    idiomatic_filename_cache: CacheManager<Vec<String>>,
 }
 
 impl AsdfBackend {
@@ -69,8 +69,8 @@ impl AsdfBackend {
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases"))
                 .build(),
-            legacy_filename_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("legacy_filenames.msgpack.z"),
+            idiomatic_filename_cache: CacheManagerBuilder::new(
+                ba.cache_path.join("idiomatic_filenames.msgpack.z"),
             )
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/list-legacy-filenames"))
@@ -87,28 +87,28 @@ impl AsdfBackend {
         &*self.plugin
     }
 
-    fn fetch_cached_legacy_file(&self, legacy_file: &Path) -> Result<Option<String>> {
-        let fp = self.legacy_cache_file_path(legacy_file);
-        if !fp.exists() || fp.metadata()?.modified()? < legacy_file.metadata()?.modified()? {
+    fn fetch_cached_idiomatic_file(&self, idiomatic_file: &Path) -> Result<Option<String>> {
+        let fp = self.idiomatic_cache_file_path(idiomatic_file);
+        if !fp.exists() || fp.metadata()?.modified()? < idiomatic_file.metadata()?.modified()? {
             return Ok(None);
         }
 
         Ok(Some(fs::read_to_string(fp)?.trim().into()))
     }
 
-    fn legacy_cache_file_path(&self, legacy_file: &Path) -> PathBuf {
+    fn idiomatic_cache_file_path(&self, idiomatic_file: &Path) -> PathBuf {
         self.ba
             .cache_path
-            .join("legacy")
+            .join("idiomatic")
             .join(&self.name)
-            .join(hash_to_str(&legacy_file.to_string_lossy()))
+            .join(hash_to_str(&idiomatic_file.to_string_lossy()))
             .with_extension("txt")
     }
 
-    fn write_legacy_cache(&self, legacy_file: &Path, legacy_version: &str) -> Result<()> {
-        let fp = self.legacy_cache_file_path(legacy_file);
+    fn write_idiomatic_cache(&self, idiomatic_file: &Path, idiomatic_version: &str) -> Result<()> {
+        let fp = self.idiomatic_cache_file_path(idiomatic_file);
         file::create_dir_all(fp.parent().unwrap())?;
-        file::write(fp, legacy_version)?;
+        file::write(fp, idiomatic_version)?;
         Ok(())
     }
 
@@ -288,39 +288,42 @@ impl Backend for AsdfBackend {
         Ok(aliases)
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
-        if let Some(data) = &self.toml.list_legacy_filenames.data {
-            return Ok(self.plugin.parse_legacy_filenames(data));
+    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+        if let Some(data) = &self.toml.list_idiomatic_filenames.data {
+            return Ok(self.plugin.parse_idiomatic_filenames(data));
         }
-        if !self.plugin.has_list_legacy_filenames_script() {
+        if !self.plugin.has_list_idiomatic_filenames_script() {
             return Ok(vec![]);
         }
-        self.legacy_filename_cache
-            .get_or_try_init(|| self.plugin.fetch_legacy_filenames())
+        self.idiomatic_filename_cache
+            .get_or_try_init(|| self.plugin.fetch_idiomatic_filenames())
             .wrap_err_with(|| {
                 eyre!(
-                    "Failed fetching legacy filenames for plugin {}",
+                    "Failed fetching idiomatic filenames for plugin {}",
                     style(&self.name).blue().for_stderr(),
                 )
             })
             .cloned()
     }
 
-    fn parse_legacy_file(&self, legacy_file: &Path) -> Result<String> {
-        if let Some(cached) = self.fetch_cached_legacy_file(legacy_file)? {
+    fn parse_idiomatic_file(&self, idiomatic_file: &Path) -> Result<String> {
+        if let Some(cached) = self.fetch_cached_idiomatic_file(idiomatic_file)? {
             return Ok(cached);
         }
-        trace!("parsing legacy file: {}", legacy_file.to_string_lossy());
-        let script = ParseLegacyFile(legacy_file.to_string_lossy().into());
-        let legacy_version = match self.plugin.script_man.script_exists(&script) {
+        trace!(
+            "parsing idiomatic file: {}",
+            idiomatic_file.to_string_lossy()
+        );
+        let script = ParseIdiomaticFile(idiomatic_file.to_string_lossy().into());
+        let idiomatic_version = match self.plugin.script_man.script_exists(&script) {
             true => self.plugin.script_man.read(&script)?,
-            false => fs::read_to_string(legacy_file)?,
+            false => fs::read_to_string(idiomatic_file)?,
         }
         .trim()
         .to_string();
 
-        self.write_legacy_cache(legacy_file, &legacy_version)?;
-        Ok(legacy_version)
+        self.write_idiomatic_cache(idiomatic_file, &idiomatic_version)?;
+        Ok(idiomatic_version)
     }
 
     fn plugin(&self) -> Option<&dyn Plugin> {

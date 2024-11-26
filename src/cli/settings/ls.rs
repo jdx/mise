@@ -67,7 +67,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise settings ls</bold>
-    legacy_version_file = false
+    idiomatic_version_file = false
     ...
 
     $ <bold>mise settings ls python</bold>

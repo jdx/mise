@@ -367,8 +367,11 @@ impl Backend for PythonPlugin {
         }
     }
 
-    fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
-        Ok(vec![".python-version".to_string()])
+    fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+        Ok(vec![
+            ".python-version".to_string(),
+            ".python-versions".to_string(),
+        ])
     }
 
     fn install_version_impl(

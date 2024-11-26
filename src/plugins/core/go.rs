@@ -193,7 +193,7 @@ impl Backend for GoPlugin {
             Ok(versions)
         })
     }
-    fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
+    fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".go-version".into()])
     }
 

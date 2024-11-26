@@ -157,8 +157,8 @@ python = ['3.10', '3.11']
 [settings]
 # plugins can read the versions files used by other version managers (if enabled by the plugin)
 # for example, .nvmrc in the case of node's nvm
-legacy_version_file = true                     # enabled by default (unlike asdf)
-legacy_version_file_disable_tools = ['python'] # disable for specific tools
+idiomatic_version_file = true                     # enabled by default (unlike asdf)
+idiomatic_version_file_disable_tools = ['python'] # disable for specific tools
 
 # configure `mise install` to always keep the downloaded archive
 always_keep_download = false        # deleted after install by default
@@ -240,38 +240,38 @@ Both `.mise.toml` and `.tool-versions` support "scopes" which modify the behavio
   be used to express something like "2 versions behind lts" such as `sub-2:lts`. Or 1 minor
   version behind the latest version: `sub-0.1:latest`.
 
-## Legacy version files
+## Idiomatic version files
 
-mise supports "legacy version files" just like asdf. They're language-specific files
+mise supports "idiomatic version files" just like asdf. They're language-specific files
 like `.node-version`
 and `.python-version`. These are ideal for setting the runtime version of a project without forcing
 other developers to use a specific tool like mise/asdf.
 
 They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
-in mise and nvm. Here are some of the supported legacy version files:
+in mise and nvm. Here are some of the supported idiomatic version files:
 
-| Plugin    | "Legacy" (Idiomatic) Files                         |
+| Plugin    | Idiomatic Files                                    |
 | --------- | -------------------------------------------------- |
 | crystal   | `.crystal-version`                                 |
 | elixir    | `.exenv-version`                                   |
 | go        | `.go-version`, `go.mod`                            |
 | java      | `.java-version`, `.sdkmanrc`                       |
 | node      | `.nvmrc`, `.node-version`                          |
-| python    | `.python-version`                                  |
+| python    | `.python-version`, `.python-versions`              |
 | ruby      | `.ruby-version`, `Gemfile`                         |
 | terraform | `.terraform-version`, `.packer-version`, `main.tf` |
 | yarn      | `.yarnrc`                                          |
 
 In mise these are enabled by default. You can disable them
-with `mise settings legacy_version_file=false`.
+with `mise settings idiomatic_version_file=false`.
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
-`bin/parse-version-file`. However these are [cached](/cache-behavior) so it's not a huge deal.
+`bin/parse-version-file`. However, these are [cached](/cache-behavior) so it's not a huge deal.
 You may not even notice.
 
 ::: info
-asdf calls these "legacy version files" so we do too. I think this is a bad name since it implies
+asdf called these "legacy version files". I think this was a bad name since it implies
 that they shouldn't be used—which is definitely not the case IMO. I prefer the term "idiomatic"
-version files since they're version files not specific to asdf/mise and can be used by other tools.
+version files since they are version files not specific to asdf/mise and can be used by other tools.
 (`.nvmrc` being a notable exception, which is tied to a specific tool.)
 :::
 

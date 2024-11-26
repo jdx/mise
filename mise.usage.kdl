@@ -291,9 +291,9 @@ cmd "direnv" help="Output direnv function to use mise inside direnv" {
 
 See https://mise.jdx.dev/direnv.html for more information
 
-Because this generates the legacy files based on currently installed plugins,
+Because this generates the idiomatic files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
-direnv may not know to update environment variables when legacy file versions change."
+direnv may not know to update environment variables when idiomatic file versions change."
     cmd "envrc" hide=true help="[internal] This is an internal command that writes an envrc file\nfor direnv to consume."
     cmd "exec" hide=true help="[internal] This is an internal command that writes an envrc file\nfor direnv to consume."
     cmd "activate" help="Output direnv function to use mise inside direnv" {
@@ -301,9 +301,9 @@ direnv may not know to update environment variables when legacy file versions ch
 
 See https://mise.jdx.dev/direnv.html for more information
 
-Because this generates the legacy files based on currently installed plugins,
+Because this generates the idiomatic files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
-direnv may not know to update environment variables when legacy file versions change."
+direnv may not know to update environment variables when idiomatic file versions change."
         after_long_help r"Examples:
 
     $ mise direnv activate > ~/.config/direnv/lib/use_mise.sh
@@ -1030,7 +1030,7 @@ Note that aliases are also stored in this file
 but managed separately with `mise aliases get`"
         after_long_help r"Examples:
 
-    $ mise settings get legacy_version_file
+    $ mise settings get idiomatic_version_file
     true
 "
         flag "-l --local" help="Use the local config file instead of the global one"
@@ -1047,7 +1047,7 @@ but managed separately with `mise aliases`"
         after_long_help r#"Examples:
 
     $ mise settings ls
-    legacy_version_file = false
+    idiomatic_version_file = false
     ...
 
     $ mise settings ls python
@@ -1065,7 +1065,7 @@ but managed separately with `mise aliases`"
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise settings legacy_version_file=true
+    $ mise settings idiomatic_version_file=true
 "
         flag "-l --local" help="Use the local config file instead of the global one"
         arg "<KEY>" help="The setting to set"
@@ -1078,7 +1078,7 @@ This modifies the contents of ~/.config/mise/config.toml"
 This modifies the contents of ~/.config/mise/config.toml"
         after_long_help r"Examples:
 
-    $ mise settings unset legacy_version_file
+    $ mise settings unset idiomatic_version_file
 "
         flag "-l --local" help="Use the local config file instead of the global one"
         arg "<KEY>" help="The setting to remove"

@@ -164,7 +164,7 @@ pub fn reset() {
             [settings]
             always_keep_download= true
             always_keep_install= true
-            legacy_version_file= true
+            idiomatic_version_file= true
             plugin_autoupdate_last_check_duration = "20m"
             jobs = 2
             "#},

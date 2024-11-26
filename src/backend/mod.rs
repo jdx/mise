@@ -368,10 +368,10 @@ pub trait Backend: Debug + Send + Sync {
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
-    fn legacy_filenames(&self) -> eyre::Result<Vec<String>> {
+    fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![])
     }
-    fn parse_legacy_file(&self, path: &Path) -> eyre::Result<String> {
+    fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
         let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }

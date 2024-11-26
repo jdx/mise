@@ -94,7 +94,7 @@ impl Backend for BunPlugin {
         Ok(versions)
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".bun-version".into()])
     }
 

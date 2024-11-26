@@ -43,6 +43,6 @@ impl SettingsUnset {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise settings unset legacy_version_file</bold>
+    $ <bold>mise settings unset idiomatic_version_file</bold>
 "#
 );

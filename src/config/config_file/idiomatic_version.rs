@@ -8,12 +8,12 @@ use crate::config::config_file::ConfigFile;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 #[derive(Debug, Clone)]
-pub struct LegacyVersionFile {
+pub struct IdiomaticVersionFile {
     path: PathBuf,
     tools: ToolRequestSet,
 }
 
-impl LegacyVersionFile {
+impl IdiomaticVersionFile {
     pub fn init(path: PathBuf) -> Self {
         Self {
             path,
@@ -22,11 +22,11 @@ impl LegacyVersionFile {
     }
 
     pub fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
-        let source = ToolSource::LegacyVersionFile(path.clone());
+        let source = ToolSource::IdiomaticVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();
 
         for plugin in plugins {
-            let version = plugin.parse_legacy_file(&path)?;
+            let version = plugin.parse_idiomatic_file(&path)?;
             for version in version.split_whitespace() {
                 let tr = ToolRequest::new(plugin.ba().clone(), version, source.clone())?;
                 tools.add_version(tr, &source);
@@ -37,11 +37,11 @@ impl LegacyVersionFile {
     }
 
     pub fn from_file(path: &Path) -> Result<Self> {
-        trace!("parsing legacy version: {}", path.display());
+        trace!("parsing idiomatic version: {}", path.display());
         let file_name = &path.file_name().unwrap().to_string_lossy().to_string();
         let tools = backend::list()
             .into_iter()
-            .filter(|f| match f.legacy_filenames() {
+            .filter(|f| match f.idiomatic_filenames() {
                 Ok(f) => f.contains(file_name),
                 Err(_) => false,
             })
@@ -50,7 +50,7 @@ impl LegacyVersionFile {
     }
 }
 
-impl ConfigFile for LegacyVersionFile {
+impl ConfigFile for IdiomaticVersionFile {
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
@@ -80,7 +80,7 @@ impl ConfigFile for LegacyVersionFile {
     }
 
     fn source(&self) -> ToolSource {
-        ToolSource::LegacyVersionFile(self.path.clone())
+        ToolSource::IdiomaticVersionFile(self.path.clone())
     }
 
     fn to_tool_request_set(&self) -> Result<ToolRequestSet> {

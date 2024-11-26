@@ -14,7 +14,7 @@ use walkdir::WalkDir;
 
 use crate::backend::ABackend;
 use crate::cli::version;
-use crate::config::config_file::legacy_version::LegacyVersionFile;
+use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::ConfigFile;
 use crate::config::env_directive::EnvResults;
@@ -83,9 +83,9 @@ impl Config {
     }
     pub fn load() -> Result<Self> {
         time!("load start");
-        let legacy_files = load_legacy_files();
-        time!("load legacy_files");
-        let config_filenames = legacy_files
+        let idiomatic_files = load_idiomatic_files();
+        time!("load idiomatic_files");
+        let config_filenames = idiomatic_files
             .keys()
             .chain(DEFAULT_CONFIG_FILENAMES.iter())
             .cloned()
@@ -94,7 +94,7 @@ impl Config {
         let config_paths = load_config_paths(&config_filenames, false);
         time!("load config_paths");
         trace!("config_paths: {config_paths:?}");
-        let config_files = load_all_config_files(&config_paths, &legacy_files)?;
+        let config_files = load_all_config_files(&config_paths, &idiomatic_files)?;
         time!("load config_files");
 
         let mut config = Self {
@@ -581,18 +581,18 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
     project_root
 }
 
-fn load_legacy_files() -> BTreeMap<String, Vec<String>> {
-    if !SETTINGS.legacy_version_file {
+fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
+    if !SETTINGS.idiomatic_version_file {
         return BTreeMap::new();
     }
-    let legacy = backend::list()
+    let idiomatic = backend::list()
         .into_par_iter()
         .filter(|tool| {
             !SETTINGS
-                .legacy_version_file_disable_tools
+                .idiomatic_version_file_disable_tools
                 .contains(tool.id())
         })
-        .filter_map(|tool| match tool.legacy_filenames() {
+        .filter_map(|tool| match tool.idiomatic_filenames() {
             Ok(filenames) => Some(
                 filenames
                     .iter()
@@ -609,14 +609,14 @@ fn load_legacy_files() -> BTreeMap<String, Vec<String>> {
         .flatten()
         .collect::<Vec<(String, String)>>();
 
-    let mut legacy_filenames = BTreeMap::new();
-    for (filename, plugin) in legacy {
-        legacy_filenames
+    let mut idiomatic_filenames = BTreeMap::new();
+    for (filename, plugin) in idiomatic {
+        idiomatic_filenames
             .entry(filename)
             .or_insert_with(Vec::new)
             .push(plugin);
     }
-    legacy_filenames
+    idiomatic_filenames
 }
 
 pub static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
@@ -786,7 +786,7 @@ pub fn local_toml_config_path() -> PathBuf {
 
 fn load_all_config_files(
     config_filenames: &[PathBuf],
-    legacy_filenames: &BTreeMap<String, Vec<String>>,
+    idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
     Ok(config_filenames
         .iter()
@@ -794,7 +794,7 @@ fn load_all_config_files(
         .collect_vec()
         .into_par_iter()
         .map(|f| {
-            let cf = parse_config_file(f, legacy_filenames).wrap_err_with(|| {
+            let cf = parse_config_file(f, idiomatic_filenames).wrap_err_with(|| {
                 format!(
                     "error parsing config file: {}",
                     style::ebold(display_path(f))
@@ -812,16 +812,16 @@ fn load_all_config_files(
 
 fn parse_config_file(
     f: &PathBuf,
-    legacy_filenames: &BTreeMap<String, Vec<String>>,
+    idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<Box<dyn ConfigFile>> {
-    match legacy_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
+    match idiomatic_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
         Some(plugin) => {
-            trace!("legacy version file: {}", display_path(f));
+            trace!("idiomatic version file: {}", display_path(f));
             let tools = backend::list()
                 .into_iter()
                 .filter(|f| plugin.contains(&f.to_string()))
                 .collect::<Vec<_>>();
-            LegacyVersionFile::parse(f.into(), tools).map(|f| Box::new(f) as Box<dyn ConfigFile>)
+            IdiomaticVersionFile::parse(f.into(), tools).map(|f| Box::new(f) as Box<dyn ConfigFile>)
         }
         None => config_file::parse(f),
     }

@@ -315,6 +315,28 @@ type = "Duration"
 default = "30s"
 description = "Timeout in seconds for all HTTP requests in mise."
 
+[idiomatic_version_file]
+env = "MISE_IDIOMATIC_VERSION_FILE"
+type = "Bool"
+default = true
+description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
+docs = """
+Plugins can read the versions files used by other version managers (if enabled by the plugin)
+for example, `.nvmrc` in the case of node's nvm. See [idiomatic version files](#idiomatic-version-files)
+for more
+information.
+
+Set to "false" to disable idiomatic version file parsing.
+"""
+
+[idiomatic_version_file_disable_tools]
+env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_TOOLS"
+type = "ListString"
+rust_type = "BTreeSet<String>"
+default = []
+parse_env = "list_by_comma"
+description = "Specific tools to disable idiomatic version files for."
+
 [ignored_config_paths]
 env = "MISE_IGNORED_CONFIG_PATHS"
 type = "ListPath"
@@ -330,20 +352,13 @@ rust_type = "usize"
 default = 4
 description = "How many jobs to run concurrently such as tool installs."
 
-# TODO: rename to "idiomatic_version_file"
 [legacy_version_file]
 env = "MISE_LEGACY_VERSION_FILE"
 type = "Bool"
 default = true
+deprecated = "Use idiomatic_version_file instead."
 description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
-docs = """
-Plugins can read the versions files used by other version managers (if enabled by the plugin)
-for example, `.nvmrc` in the case of node's nvm. See [legacy version files](#legacy-version-files)
-for more
-information.
-
-Set to "false" to disable legacy version file parsing.
-"""
+hide = true
 
 [legacy_version_file_disable_tools]
 env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS"
@@ -351,7 +366,9 @@ type = "ListString"
 rust_type = "BTreeSet<String>"
 default = []
 parse_env = "list_by_comma"
+deprecated = "Use idiomatic_version_file_disable_tools instead."
 description = "Specific tools to disable idiomatic version files for."
+hide = true
 
 [libgit2]
 env = "MISE_LIBGIT2"

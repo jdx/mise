@@ -1,6 +1,6 @@
 CHANGELOG.md
 .venv
-registry/
+aqua-registry/
 docs/cli
 docs/environments.md
 docs/registry.md

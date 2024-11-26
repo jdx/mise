@@ -33,8 +33,8 @@ pub enum Script {
     LatestStable,
     ListAliases,
     ListAll,
-    ListLegacyFilenames,
-    ParseLegacyFile(String),
+    ListIdiomaticFilenames,
+    ParseIdiomaticFile(String),
 
     // RuntimeVersion
     Download,
@@ -51,9 +51,9 @@ impl Display for Script {
             // Plugin
             Script::LatestStable => write!(f, "latest-stable"),
             Script::ListAll => write!(f, "list-all"),
-            Script::ListLegacyFilenames => write!(f, "list-legacy-filenames"),
+            Script::ListIdiomaticFilenames => write!(f, "list-legacy-filenames"),
             Script::ListAliases => write!(f, "list-aliases"),
-            Script::ParseLegacyFile(_) => write!(f, "parse-legacy-file"),
+            Script::ParseIdiomaticFile(_) => write!(f, "parse-legacy-file"),
             Script::Hook(script) => write!(f, "{script}"),
 
             // RuntimeVersion
@@ -137,7 +137,7 @@ impl ScriptManager {
 
     pub fn cmd(&self, script: &Script) -> Expression {
         let args = match script {
-            Script::ParseLegacyFile(filename) => vec![filename.clone()],
+            Script::ParseIdiomaticFile(filename) => vec![filename.clone()],
             Script::RunExternalCommand(_, args) => args.clone(),
             _ => vec![],
         };
