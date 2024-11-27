@@ -18,6 +18,9 @@ concurrency:
   group: docs-${{ github.head_ref }}
   cancel-in-progress: true
 
+env:
+  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
 jobs:
   docs:
     if: github.repository == 'jdx/mise'
@@ -29,7 +32,7 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           install_args: bun
-          cache: false
+          cache: true
       - run: bun i
       - run: mise run docs:release
         env:
