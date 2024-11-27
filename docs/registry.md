@@ -652,7 +652,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | shell2http | [aqua:msoap/shell2http](https://github.com/msoap/shell2http) [asdf:ORCID/asdf-shell2http](https://github.com/ORCID/asdf-shell2http) |
 | shellcheck | [ubi:koalaman/shellcheck](https://github.com/koalaman/shellcheck) [asdf:luizm/asdf-shellcheck](https://github.com/luizm/asdf-shellcheck) |
 | shellspec | [aqua:shellspec/shellspec](https://github.com/shellspec/shellspec) [asdf:poikilotherm/asdf-shellspec](https://github.com/poikilotherm/asdf-shellspec) |
-| shfmt | [asdf:luizm/asdf-shfmt](https://github.com/luizm/asdf-shfmt) |
+| shfmt | [aqua:mvdan/sh](https://github.com/mvdan/sh) [asdf:luizm/asdf-shfmt](https://github.com/luizm/asdf-shfmt) |
 | shorebird | [asdf:valian-ca/asdf-shorebird](https://github.com/valian-ca/asdf-shorebird) |
 | sinker | [aqua:plexsystems/sinker](https://github.com/plexsystems/sinker) [asdf:elementalvoid/asdf-sinker](https://github.com/elementalvoid/asdf-sinker) |
 | skaffold | [aqua:GoogleContainerTools/skaffold](https://github.com/GoogleContainerTools/skaffold) [asdf:nklmilojevic/asdf-skaffold](https://github.com/nklmilojevic/asdf-skaffold) |
