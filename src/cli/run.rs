@@ -12,6 +12,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{CONFIG, SETTINGS};
 use crate::errors::Error;
 use crate::file::display_path;
+use crate::http::HTTP;
 use crate::task::{Deps, EitherIntOrBool, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, prompt, style, time};
@@ -26,6 +27,7 @@ use glob::glob;
 use itertools::Itertools;
 #[cfg(unix)]
 use nix::sys::signal::SIGTERM;
+use xx::regex;
 
 /// Run task(s)
 ///
@@ -130,10 +132,13 @@ pub struct Run {
 
     #[clap(skip)]
     pub output: TaskOutput,
+
+    #[clap(skip)]
+    pub tmpdir: PathBuf,
 }
 
 impl Run {
-    pub fn run(self) -> Result<()> {
+    pub fn run(mut self) -> Result<()> {
         if self.task == "-h" {
             self.get_clap_command().print_help()?;
             return Ok(());
@@ -143,6 +148,8 @@ impl Run {
             return Ok(());
         }
         time!("run init");
+        let tmpdir = tempfile::tempdir()?;
+        self.tmpdir = tmpdir.path().to_path_buf();
         let task_list = self.get_task_lists()?;
         time!("run get_task_lists");
         self.parallelize_tasks(task_list)?;
@@ -173,6 +180,25 @@ impl Run {
             })
             .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
             .map(|(t, args)| {
+                // can be any of the following:
+                // - ./path/to/script
+                // - ~/path/to/script
+                // - /path/to/script
+                // - ../path/to/script
+                // - C:\path\to\script
+                // - .\path\to\script
+                if regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#).is_match(&t) {
+                    let path = PathBuf::from(&t);
+                    if path.exists() {
+                        let config_root = CONFIG
+                            .project_root
+                            .clone()
+                            .or_else(|| dirs::CWD.clone())
+                            .unwrap_or_default();
+                        let task = Task::from_path(&path, &PathBuf::new(), &config_root)?;
+                        return Ok(vec![task.with_args(args)]);
+                    }
+                }
                 let tasks = CONFIG
                     .tasks_with_aliases()?
                     .get_matching(&t)?
@@ -196,7 +222,7 @@ impl Run {
             .collect()
     }
 
-    fn parallelize_tasks(mut self, tasks: Vec<Task>) -> Result<()> {
+    fn parallelize_tasks(mut self, mut tasks: Vec<Task>) -> Result<()> {
         time!("paralellize_tasks start");
 
         ctrlc::exit_on_ctrl_c(false);
@@ -216,6 +242,7 @@ impl Run {
             env.insert("root".into(), root.display().to_string());
         }
 
+        self.fetch_tasks(&mut tasks)?;
         let tasks = Deps::new(tasks)?;
         for task in tasks.all() {
             self.validate_task(task)?;
@@ -606,7 +633,7 @@ impl Run {
 
     fn validate_task(&self, task: &Task) -> Result<()> {
         if let Some(path) = &task.file {
-            if !file::is_executable(path) {
+            if path.exists() && !file::is_executable(path) {
                 let dp = display_path(path);
                 let msg = format!("Script `{dp}` is not executable. Make it executable?");
                 if ui::confirm(msg)? {
@@ -731,6 +758,23 @@ impl Run {
             && SETTINGS
                 .task_timings
                 .unwrap_or(self.output == TaskOutput::Prefix)
+    }
+
+    fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
+        let http_re = regex!("https?://");
+        for t in tasks {
+            if let Some(file) = t.file.clone() {
+                let source = file.to_string_lossy().to_string();
+                if http_re.is_match(&source) {
+                    let filename = file.file_name().unwrap().to_string_lossy().to_string();
+                    let tmp_path = self.tmpdir.join(&filename);
+                    HTTP.download_file(&source, &tmp_path, None)?;
+                    file::make_executable(&tmp_path)?;
+                    t.file = Some(tmp_path);
+                }
+            }
+        }
+        Ok(())
     }
 }
 

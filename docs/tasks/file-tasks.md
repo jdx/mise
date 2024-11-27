@@ -120,3 +120,25 @@ Also, the original working directory is available in the `MISE_ORIGINAL_CWD` env
 #!/usr/bin/env bash
 cd "$MISE_ORIGINAL_CWD"
 ```
+
+## Running tasks directly
+
+Tasks don't need to be configured as part of a config, you can just run them directly by passing the path to the script:
+
+```bash
+mise run ./path/to/script.sh
+```
+
+Note that the path must start with `/` or `./` to be considered a file path. (On Windows it can be `C:\` or `.\`)
+
+## Remote tasks
+
+Task files can be fetched via http:
+
+```toml
+[tasks.build]
+file = "https://example.com/build.sh"
+```
+
+Currently, they're fetched everytime they're executed, but we may add some cache support later.
+This could be extended with other protocols like mentioned in [this ticket](https://github.com/jdx/mise/issues/2488) if there were interest.
