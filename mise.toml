@@ -23,6 +23,7 @@ cosign = "latest"
 "shellcheck" = "0.10"
 "shfmt" = "3"
 slsa-verifier = "latest"
+wait-for-gh-rate-limit = "latest"
 
 [task_config]
 includes = ["tasks.toml", "tasks"]
