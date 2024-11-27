@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
-
 use crate::env::PATH_KEY;
 use crate::file::touch_dir;
+use crate::path_env::PathEnv;
 use crate::shell::{get_shell, Shell, ShellType};
 use crate::{dirs, env};
+use eyre::Result;
+use itertools::Itertools;
 
 /// Initializes mise in the current shell session
 ///
@@ -94,6 +95,7 @@ impl Activate {
         }
         miseprint!("{}", self.prepend_path(shell, exe_dir))?;
         miseprint!("{}", shell.activate(mise_bin, flags.join("")))?;
+        remove_shims(shell)?;
         Ok(())
     }
 
@@ -104,6 +106,23 @@ impl Activate {
             String::new()
         }
     }
+}
+
+fn remove_shims(shell: &dyn Shell) -> std::io::Result<()> {
+    let shims = dirs::SHIMS
+        .canonicalize()
+        .unwrap_or(dirs::SHIMS.to_path_buf());
+    if env::PATH
+        .iter()
+        .filter_map(|p| p.canonicalize().ok())
+        .contains(&shims)
+    {
+        let path_env = PathEnv::from_iter(env::PATH.clone());
+        // PathEnv automatically removes the shims directory
+        let cmd = shell.set_env(&PATH_KEY, path_env.join().to_string_lossy().as_ref());
+        miseprintln!("{cmd}");
+    }
+    Ok(())
 }
 
 fn is_dir_in_path(dir: &Path) -> bool {

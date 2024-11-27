@@ -46,26 +46,33 @@ If you prefer to use shims, you can run the following to use mise without activa
 
 You can use `.bashrc`/`.zshrc` instead of `.bash_profile`/`.zprofile` if you prefer to only use
 mise in interactive sessions (`.bash_profile`/`.zprofile` will work in non-interactive places
-like scripts or IDEs).
+like scripts or IDEs). Note that `mise activate` will remove the shims directory so it's fine
+to call `mise activate --shims` in the profile file then later call `mise activate` in an interactive
+session.
 
 ::: code-group
 
 ```sh [bash]
 # note that bash will read from ~/.profile or ~/.bash_profile if the latter exists
 # ergo, you may want to check to see which is defined on your system and only append to the existing file
-echo 'export PATH="$HOME/.local/share/mise/shims:$PATH"' >> ~/.bash_profile
+echo 'eval "$(mise activate bash --shims)"' >> ~/.bash_profile # this sets up non-interactive sessions
+echo 'eval "$(mise activate bash)"' >> ~/.bashrc       # this sets up interactive sessions
 ```
 
 ```sh [zsh]
-echo 'export PATH="$HOME/.local/share/mise/shims:$PATH"' >> ~/.zprofile
+echo 'eval "$(mise activate zsh --shims)"' >> ~/.zprofile # this sets up non-interactive sessions
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc    # this sets up interactive sessions
 ```
 
 ```sh [fish]
-fish_add_path ~/.local/share/mise/shims
+echo 'mise activate fish --shims | source' >> ~/.config/fish/config.fish
+echo 'mise activate fish | source' >> ~/.config/fish/fish.config
 ```
 
 :::tip
-You can also run `mise activate --shims` which will do the above for you.
+You can also run `export PATH="$HOME/.local/share/mise/shims:$PATH"` which is what `mise activate --shims` does.
+This can be helpful is mise may not be available at that point in time. It's also a tiny bit faster,
+but since this is only run once per shell session it's not a big deal.
 :::
 
 ## Shims vs PATH
