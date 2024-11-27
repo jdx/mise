@@ -10,7 +10,7 @@ when you push changes to your repository.
 
 ## Flags
 
-### `-n --name <NAME>`
+### `--name <NAME>`
 
 the name of the workflow to generate
 

@@ -26,7 +26,7 @@ assert "mise run test-with-args foo --force --user=user" "foo true user"
 assert "mise run test-with-defaults" "arg1 user1"
 assert "mise run test-with-defaults arg2 --user=user2" "arg2 user2"
 assert "mise run test-with-template" "2"
-assert "mise run int" "DEBUG=0"
+assert "mise int" "DEBUG=0"
 
 cat <<EOF >mise.windows.toml
 tasks.configtask = "echo configtask:windows"

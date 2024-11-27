@@ -218,10 +218,12 @@ impl EnvResults {
                     for p in xx::file::glob(normalize_path(&config_root, s.into()))? {
                         r.env_files.push(p.clone());
                         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(&p));
-                        for item in dotenvy::from_path_iter(&p).wrap_err_with(errfn)? {
-                            let (k, v) = item.wrap_err_with(errfn)?;
-                            r.env_remove.remove(&k);
-                            env.insert(k, (v, Some(p.clone())));
+                        if let Ok(dotenv) = dotenvy::from_path_iter(&p) {
+                            for item in dotenv {
+                                let (k, v) = item.wrap_err_with(errfn)?;
+                                r.env_remove.remove(&k);
+                                env.insert(k, (v, Some(p.clone())));
+                            }
                         }
                     }
                 }

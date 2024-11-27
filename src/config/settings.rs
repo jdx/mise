@@ -1,3 +1,4 @@
+use crate::cli::Cli;
 use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
 use crate::file::FindUp;
 use crate::{config, dirs, env, file};
@@ -214,7 +215,7 @@ impl Settings {
         }
     }
 
-    pub fn add_cli_matches(m: &clap::ArgMatches) {
+    pub fn add_cli_matches(cli: &Cli) {
         let mut s = SettingsPartial::empty();
         for arg in &*env::ARGS.read().unwrap() {
             if arg == "--" {
@@ -224,31 +225,31 @@ impl Settings {
                 s.raw = Some(true);
             }
         }
-        if let Some(cd) = m.get_one::<PathBuf>("cd") {
+        if let Some(cd) = &cli.cd {
             s.cd = Some(cd.clone());
         }
-        if let Some(profile) = m.get_one::<String>("profile") {
-            s.profile = Some(profile.clone());
+        if let Some(env) = cli.env.as_ref().or(cli.profile.as_ref()) {
+            s.env = Some(env.clone());
         }
-        if let Some(true) = m.get_one::<bool>("yes") {
+        if cli.yes {
             s.yes = Some(true);
         }
-        if let Some(true) = m.get_one::<bool>("quiet") {
+        if cli.quiet {
             s.quiet = Some(true);
         }
-        if let Some(true) = m.get_one::<bool>("trace") {
+        if cli.trace {
             s.log_level = Some("trace".to_string());
         }
-        if let Some(true) = m.get_one::<bool>("debug") {
+        if cli.debug {
             s.log_level = Some("debug".to_string());
         }
-        if let Some(log_level) = m.get_one::<String>("log-level") {
+        if let Some(log_level) = &cli.log_level {
             s.log_level = Some(log_level.to_string());
         }
-        if *m.get_one::<u8>("verbose").unwrap() > 0 {
+        if cli.verbose > 0 {
             s.verbose = Some(true);
         }
-        if *m.get_one::<u8>("verbose").unwrap() > 1 {
+        if cli.verbose > 1 {
             s.log_level = Some("trace".to_string());
         }
         Self::reset(Some(s));

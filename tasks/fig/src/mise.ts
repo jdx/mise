@@ -1004,7 +1004,6 @@ const completionSpec: Fig.Spec = {
                     "options": [
                         {
                             "name": [
-                                "-n",
                                 "--name"
                             ],
                             "description": "the name of the workflow to generate",
@@ -3013,16 +3012,28 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
-                "-P",
-                "--profile"
+                "-E",
+                "--env"
             ],
-            "description": "Set the profile (environment)",
+            "description": "Set the environment for loading `mise.<ENV>.toml`",
             "isRepeatable": false,
             "args": {
-                "name": "profile",
+                "name": "env",
                 "isOptional": false,
-                "isVariadic": false,
-                "template": "filepaths"
+                "isVariadic": false
+            }
+        },
+        {
+            "name": [
+                "-j",
+                "--jobs"
+            ],
+            "description": "How many jobs to run in parallel [default: 4]",
+            "isRepeatable": false,
+            "args": {
+                "name": "jobs",
+                "isOptional": false,
+                "isVariadic": false
             }
         },
         {
@@ -3031,6 +3042,13 @@ const completionSpec: Fig.Spec = {
                 "--quiet"
             ],
             "description": "Suppress non-error messages",
+            "isRepeatable": false
+        },
+        {
+            "name": [
+                "--raw"
+            ],
+            "description": "Read/write directly to stdin/stdout/stderr instead of by line",
             "isRepeatable": false
         },
         {
@@ -3048,6 +3066,15 @@ const completionSpec: Fig.Spec = {
             ],
             "description": "Answer yes to all confirmation prompts",
             "isRepeatable": false
+        }
+    ],
+    "args": [
+        {
+            "name": "task",
+            "description": "Task to run",
+            "isOptional": true,
+            "isVariadic": false,
+            "generators": simpleTaskGenerator
         }
     ]
 };

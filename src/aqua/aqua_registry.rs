@@ -174,17 +174,21 @@ impl AquaRegistry {
         let path = self.path.join("pkgs").join(&path_id).join("registry.yaml");
         let registry: RegistryYaml = if !self.repo_exists {
             if let Some(registry) = AQUA_STANDARD_REGISTRY_FILES.get(id) {
+                trace!("reading baked-in aqua-registry for {id}");
                 serde_yaml::from_str(registry)?
             } else if !path.exists() || file::modified_duration(&path)? > DAILY {
+                trace!("downloading aqua-registry for {id} to {path:?}");
                 let url: Url =
                     format!("https://mise-versions.jdx.dev/aqua-registry/{path_id}/registry.yaml")
                         .parse()?;
                 http::HTTP_FETCH.download_file(url, &path, None)?;
                 serde_yaml::from_reader(file::open(&path)?)?
             } else {
+                trace!("reading cached aqua-registry for {id} from {path:?}");
                 serde_yaml::from_reader(file::open(&path)?)?
             }
         } else {
+            trace!("reading aqua-registry for {id} from repo at {path:?}");
             serde_yaml::from_reader(file::open(&path)?)?
         };
         let mut pkg = registry

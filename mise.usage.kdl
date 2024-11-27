@@ -2,7 +2,8 @@ min_usage_version "1.3"
 name "mise"
 bin "mise"
 about "The front-end to your dev env"
-long_about r"mise is a tool for managing runtime versions. https://github.com/jdx/mise
+long_about r"
+mise is a tool for managing runtime versions. https://github.com/jdx/mise
 
 It's a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
 that works for any language. It's also great for managing linters/tools like
@@ -10,23 +11,45 @@ jq and shellcheck.
 
 It is inspired by asdf and uses asdf's plugin ecosystem under the hood:
 https://asdf-vm.com/"
-usage "Usage: mise [OPTIONS] <COMMAND>"
+usage "Usage: mise [OPTIONS] [TASK] [COMMAND]"
 flag "-C --cd" help="Change directory before running command" global=true {
     arg "<DIR>"
 }
+flag "-n --dry-run" help="Dry run, don't actually do anything" hide=true global=true
 flag "--debug" help="Sets log level to debug" hide=true global=true
-flag "--log-level" help="Set the log output verbosity" hide=true global=true {
+flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" global=true {
+    arg "<ENV>"
+}
+flag "-f --force" help="Force the operation" hide=true
+flag "-i --interleave" help="Set the log output verbosity" hide=true
+flag "-j --jobs" help="How many jobs to run in parallel [default: 4]" global=true {
+    arg "<JOBS>"
+}
+flag "--log-level" hide=true global=true {
     arg "<LEVEL>" {
-        choices "error" "warn" "info" "debug" "trace"
+        choices "trace" "debug" "info" "warning" "error"
     }
 }
-flag "-P --profile" help="Set the profile (environment)" global=true {
+flag "-p --prefix" hide=true
+flag "-P --profile" help="Set the profile (environment)" hide=true global=true {
     arg "<PROFILE>"
 }
+flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=true hide=true {
+    arg "<TOOL@VERSION>"
+}
 flag "-q --quiet" help="Suppress non-error messages" global=true
+flag "--raw" help="Read/write directly to stdin/stdout/stderr instead of by line" global=true
+flag "--timings" help="Shows elapsed time after each task completes" hide=true {
+    long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
+}
+flag "--no-timings" help="Hides elapsed time after each task completes" hide=true {
+    long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
+}
 flag "--trace" help="Sets log level to trace" hide=true global=true
 flag "-v --verbose" help="Show extra output (use -vv for even more)" var=true global=true count=true
 flag "-y --yes" help="Answer yes to all confirmation prompts" global=true
+arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise task run <TASK>`."
+arg "[TASK_ARGS]..." help="Task arguments" var=true hide=true
 cmd "activate" help="Initializes mise in the current shell session" {
     long_help r#"Initializes mise in the current shell session
 
@@ -407,7 +430,7 @@ when you push changes to your repository."
     $ git commit -m "feat: add new feature"
     $ git push # runs `mise run ci` on GitHub
 "#
-        flag "-n --name" help="the name of the workflow to generate" {
+        flag "--name" help="the name of the workflow to generate" {
             arg "<NAME>"
         }
         flag "-t --task" help="The task to run when the workflow is triggered" {
