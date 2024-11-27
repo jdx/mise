@@ -1,10 +1,11 @@
-use crate::config::Settings;
+use crate::cli::args::ToolArg;
+use crate::config::{Settings, CONFIG};
+use crate::exit::exit;
 use crate::ui::ctrlc;
 use crate::{logger, migrate, shims};
-use clap::{FromArgMatches, Subcommand};
+use clap::{ArgAction, CommandFactory, Parser, Subcommand};
 use color_eyre::Result;
-use indoc::indoc;
-use once_cell::sync::Lazy;
+use std::path::PathBuf;
 
 mod activate;
 mod alias;
@@ -62,7 +63,86 @@ mod watch;
 mod r#where;
 mod r#which;
 
-pub struct Cli {}
+#[derive(clap::ValueEnum, Debug, Clone, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
+pub enum LevelFilter {
+    Trace,
+    Debug,
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(clap::Parser, Debug)]
+#[clap(name = "mise", version = &*version::VERSION, about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true)]
+pub struct Cli {
+    #[clap(subcommand)]
+    pub command: Option<Commands>,
+    /// Task to run
+    #[clap(name = "TASK", long_help = LONG_TASK_ABOUT)]
+    pub task: Option<String>,
+    /// Task arguments
+    #[clap(hide = true)]
+    pub task_args: Option<Vec<String>>,
+    /// Change directory before running command
+    #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
+    pub cd: Option<PathBuf>,
+    /// Dry run, don't actually do anything
+    #[clap(short = 'n', long, global = true, hide = true)]
+    pub dry_run: bool,
+    /// Sets log level to debug
+    #[clap(long, global = true, hide = true)]
+    pub debug: bool,
+    /// Set the environment for loading `mise.<ENV>.toml`
+    #[clap(short = 'E', long, global = true)]
+    pub env: Option<String>,
+    /// Force the operation
+    #[clap(long, short, hide = true)]
+    pub force: bool,
+    /// Set the log output verbosity
+    #[clap(long, short, hide = true, overrides_with = "prefix")]
+    pub interleave: bool,
+    /// How many jobs to run in parallel [default: 4]
+    #[clap(long, short, global = true, env = "MISE_JOBS")]
+    pub jobs: Option<usize>,
+    #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum)]
+    pub log_level: Option<LevelFilter>,
+    #[clap(long, short, hide = true, overrides_with = "interleave")]
+    pub prefix: bool,
+    /// Set the profile (environment)
+    #[clap(short = 'P', long, global = true, hide = true)]
+    pub profile: Option<String>,
+    /// Tool(s) to run in addition to what is in mise.toml files
+    /// e.g.: node@20 python@3.10
+    #[clap(short, long, hide = true, value_name = "TOOL@VERSION")]
+    pub tool: Vec<ToolArg>,
+    /// Suppress non-error messages
+    #[clap(short = 'q', long, global = true, overrides_with = "verbose")]
+    pub quiet: bool,
+    /// Read/write directly to stdin/stdout/stderr instead of by line
+    #[clap(long, global = true)]
+    pub raw: bool,
+    /// Shows elapsed time after each task completes
+    ///
+    /// Default to always show with `MISE_TASK_TIMINGS=1`
+    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    pub timings: bool,
+    /// Hides elapsed time after each task completes
+    ///
+    /// Default to always hide with `MISE_TASK_TIMINGS=0`
+    #[clap(long, alias = "no-timing", hide = true, verbatim_doc_comment)]
+    pub no_timings: bool,
+
+    /// Sets log level to trace
+    #[clap(long, global = true, hide = true)]
+    pub trace: bool,
+    /// Show extra output (use -vv for even more)
+    #[clap(short='v', long, global=true, overrides_with="quiet", action=ArgAction::Count)]
+    pub verbose: u8,
+    /// Answer yes to all confirmation prompts
+    #[clap(short = 'y', long, global = true)]
+    pub yes: bool,
+}
 
 #[derive(Debug, Subcommand, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
@@ -186,27 +266,6 @@ impl Commands {
     }
 }
 
-pub static CLI: Lazy<clap::Command> = Lazy::new(|| {
-    Commands::augment_subcommands(
-        clap::Command::new("mise")
-            .about(env!("CARGO_PKG_DESCRIPTION"))
-            .author("Jeff Dickey <@jdx>")
-            .long_about(LONG_ABOUT)
-            .arg_required_else_help(true)
-            .subcommand_required(true)
-            .after_long_help(AFTER_LONG_HELP)
-            .arg(args::CD_ARG.clone())
-            .arg(args::DEBUG_ARG.clone())
-            .arg(args::LOG_LEVEL_ARG.clone())
-            .arg(args::PROFILE_ARG.clone())
-            .arg(args::QUIET_ARG.clone())
-            .arg(args::TRACE_ARG.clone())
-            .arg(args::VERBOSE_ARG.clone())
-            .arg(args::YES_ARG.clone())
-            .version(version::VERSION.to_string()),
-    )
-});
-
 impl Cli {
     pub fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
@@ -214,8 +273,8 @@ impl Cli {
         ctrlc::init();
         version::print_version_if_requested(args)?;
 
-        let matches = measure!("pre_settings", { Self::pre_settings(args) })?;
-        measure!("add_cli_matches", { Settings::add_cli_matches(&matches) });
+        let cli = measure!("pre_settings", { Self::pre_settings(args) })?;
+        measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         measure!("settings", {
             let _ = Settings::try_get();
         });
@@ -226,18 +285,13 @@ impl Cli {
         }
 
         debug!("ARGS: {}", &args.join(" "));
-        match Commands::from_arg_matches(&matches) {
-            Ok(cmd) => measure!("run {cmd}", { cmd.run() }),
-            Err(err) => matches
-                .subcommand()
-                .ok_or(err)
-                .map(|(command, sub_m)| external::execute(&command.into(), sub_m))?,
-        }
+        let cmd = cli.get_command()?;
+        measure!("run {cmd}", { cmd.run() })
     }
 
-    fn pre_settings(args: &Vec<String>) -> Result<clap::ArgMatches> {
+    fn pre_settings(args: &Vec<String>) -> Result<Cli> {
         let mut results = vec![];
-        let mut matches = None;
+        let mut cli = None;
         rayon::scope(|r| {
             r.spawn(|_| {
                 measure!("install_state", {
@@ -245,19 +299,52 @@ impl Cli {
                 });
             });
             measure!("get_matches_from", {
-                matches = Some(CLI.clone().try_get_matches_from(args).unwrap_or_else(|_| {
-                    CLI.clone()
-                        .subcommands(external::commands())
-                        .get_matches_from(args)
-                }));
+                cli = Some(Cli::parse_from(args));
             });
         });
         results.into_iter().try_for_each(|r| r)?;
-        Ok(matches.unwrap())
+        Ok(cli.unwrap())
+    }
+
+    fn get_command(self) -> Result<Commands> {
+        if let Some(cmd) = self.command {
+            Ok(cmd)
+        } else {
+            if let Some(task) = self.task {
+                if CONFIG.tasks()?.contains_key(&task) {
+                    return Ok(Commands::Run(run::Run {
+                        task,
+                        args: self.task_args.unwrap_or_default(),
+                        cd: self.cd,
+                        dry_run: self.dry_run,
+                        failed_tasks: Default::default(),
+                        force: self.force,
+                        interleave: self.interleave,
+                        is_linear: false,
+                        jobs: self.jobs,
+                        no_timings: self.no_timings,
+                        output: run::TaskOutput::Prefix,
+                        prefix: self.prefix,
+                        raw: self.raw,
+                        timings: self.timings,
+                        tool: Default::default(),
+                    }));
+                } else if let Some(cmd) = external::COMMANDS.get(&task) {
+                    external::execute(
+                        &task.into(),
+                        cmd.clone(),
+                        self.task_args.unwrap_or_default(),
+                    )?;
+                    exit(0);
+                }
+            }
+            Cli::command().print_help()?;
+            exit(1)
+        }
     }
 }
 
-const LONG_ABOUT: &str = indoc! {"
+const LONG_ABOUT: &str = "
 mise is a tool for managing runtime versions. https://github.com/jdx/mise
 
 It's a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
@@ -265,7 +352,11 @@ that works for any language. It's also great for managing linters/tools like
 jq and shellcheck.
 
 It is inspired by asdf and uses asdf's plugin ecosystem under the hood:
-https://asdf-vm.com/"};
+https://asdf-vm.com/";
+
+const LONG_TASK_ABOUT: &str = r#"Task to run.
+
+Shorthand for `mise task run <TASK>`."#;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>

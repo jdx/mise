@@ -207,6 +207,12 @@ default = []
 parse_env = "list_by_comma"
 description = "Tools defined in mise.toml that should be ignored"
 
+[env]
+env = "MISE_ENV"
+type = "String"
+description = "Env to use for mise.<MISE_ENV>.toml files."
+optional = true
+
 [env_file]
 env = "MISE_ENV_FILE"
 type = "Path"
@@ -512,6 +518,7 @@ env = "MISE_PROFILE"
 type = "String"
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 optional = true
+hide = true
 
 [python.compile]
 env = "MISE_PYTHON_COMPILE"

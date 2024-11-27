@@ -4,8 +4,9 @@
 .SH NAME
 mise \- The front\-end to your dev env
 .SH SYNOPSIS
-\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-P\fR|\fB\-\-profile\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-E\fR|\fB\-\-env\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fITASK\fR] [\fITASK_ARGS\fR] [\fIsubcommands\fR]
 .SH DESCRIPTION
+.PP
 mise is a tool for managing runtime versions. https://github.com/jdx/mise
 .PP
 It\*(Aqs a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
@@ -19,11 +20,20 @@ https://asdf\-vm.com/
 \fB\-C\fR, \fB\-\-cd\fR=\fIDIR\fR
 Change directory before running command
 .TP
-\fB\-P\fR, \fB\-\-profile\fR=\fIPROFILE\fR
-Set the profile (environment)
+\fB\-E\fR, \fB\-\-env\fR=\fIENV\fR
+Set the environment for loading `mise.<ENV>.toml`
+.TP
+\fB\-j\fR, \fB\-\-jobs\fR=\fIJOBS\fR
+How many jobs to run in parallel [default: 4]
+.RS
+May also be specified with the \fBMISE_JOBS\fR environment variable.
+.RE
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress non\-error messages
+.TP
+\fB\-\-raw\fR
+Read/write directly to stdin/stdout/stderr instead of by line
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Show extra output (use \-vv for even more)
@@ -36,6 +46,11 @@ Print help (see a summary with \*(Aq\-h\*(Aq)
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Print version
+.TP
+[\fITASK\fR]
+Task to run.
+
+Shorthand for `mise task run <TASK>`.
 .SH SUBCOMMANDS
 .TP
 mise\-activate(1)

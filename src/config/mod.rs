@@ -650,7 +650,7 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         .iter()
         .map(|f| f.to_string())
         .collect_vec();
-    if let Some(env) = &*env::MISE_PROFILE {
+    if let Some(env) = &*env::MISE_ENV {
         filenames.push(format!(".config/mise/config.{env}.toml"));
         filenames.push(format!(".config/mise.{env}.toml"));
         filenames.push(format!("mise/config.{env}.toml"));
@@ -720,7 +720,7 @@ pub fn global_config_files() -> Vec<PathBuf> {
             config_files.push(f);
         }
     }
-    if let Some(env) = &*env::MISE_PROFILE {
+    if let Some(env) = &*env::MISE_ENV {
         let global_profile_files = vec![
             dirs::CONFIG.join(format!("config.{env}.toml")),
             dirs::CONFIG.join(format!("config.{env}.local.toml")),

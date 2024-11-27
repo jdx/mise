@@ -1,4 +1,4 @@
-use crate::cli::args::PROFILE_ARG;
+use crate::cli::args::{ENV_ARG, PROFILE_ARG};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
 use crate::hook_env::{deserialize_watches, HookEnvWatches};
@@ -85,7 +85,7 @@ pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
 });
 pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> =
     Lazy::new(|| var("MISE_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| "mise.toml".into()));
-pub static MISE_PROFILE: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
+pub static MISE_ENV: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 pub static MISE_SETTINGS_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SETTINGS_FILE").unwrap_or_else(|| MISE_CONFIG_DIR.join("settings.toml"))
 });
@@ -384,19 +384,22 @@ fn prefer_stale(args: &[String]) -> bool {
 }
 
 fn environment(args: &[String]) -> Option<String> {
-    let long_arg = format!("--{}", PROFILE_ARG.get_long().unwrap_or_default());
-    let short_arg = format!("-{}", PROFILE_ARG.get_short().unwrap_or_default());
+    let arg_defs = HashSet::from([
+        format!("--{}", PROFILE_ARG.get_long().unwrap_or_default()),
+        format!("-{}", PROFILE_ARG.get_short().unwrap_or_default()),
+        format!("--{}", ENV_ARG.get_long().unwrap_or_default()),
+        format!("-{}", ENV_ARG.get_short().unwrap_or_default()),
+    ]);
 
     args.windows(2)
         .find_map(|window| {
-            if window[0] == long_arg || window[0] == short_arg {
+            if arg_defs.iter().contains(&window[0]) {
                 Some(window[1].clone())
             } else {
                 None
             }
         })
         .or_else(|| var("MISE_PROFILE").ok())
-        // TODO: it may make sense to deprecate these in the future if we want to reuse MISE_ENV for something else
         .or_else(|| var("MISE_ENV").ok())
         .or_else(|| var("MISE_ENVIRONMENT").ok())
 }

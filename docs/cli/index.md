@@ -1,8 +1,16 @@
 # `mise`
 
-**Usage**: `mise [FLAGS] <SUBCOMMAND>`
+**Usage**: `mise [FLAGS] [TASK] <SUBCOMMAND>`
 
-- **Usage**: `mise [FLAGS] <SUBCOMMAND>`
+- **Usage**: `mise [FLAGS] [TASK] <SUBCOMMAND>`
+
+## Arguments
+
+### `[TASK]`
+
+Task to run.
+
+Shorthand for `mise task run <TASK>`.
 
 ## Global Flags
 
@@ -10,13 +18,21 @@
 
 Change directory before running command
 
-### `-P --profile <PROFILE>`
+### `-E --env <ENV>`
 
-Set the profile (environment)
+Set the environment for loading `mise.<ENV>.toml`
+
+### `-j --jobs <JOBS>`
+
+How many jobs to run in parallel [default: 4]
 
 ### `-q --quiet`
 
 Suppress non-error messages
+
+### `--raw`
+
+Read/write directly to stdin/stdout/stderr instead of by line
 
 ### `-v --verbose...`
 
