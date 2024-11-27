@@ -28,7 +28,7 @@ permissions:
 jobs:
   build-ubuntu:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,10 +50,18 @@ jobs:
         with:
           name: mise-ubuntu-latest
           path: target/debug/mise
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise i
+      - run: mise x -- wait-for-gh-rate-limit
 
   build-macos:
     runs-on: macos-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,10 +77,18 @@ jobs:
         with:
           name: mise-macos-latest
           path: target/debug/mise
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise i
+      - run: mise x -- wait-for-gh-rate-limit
 
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,6 +105,14 @@ jobs:
         with:
           name: mise-windows-latest
           path: target/debug/mise.exe
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise i
+      - run: mise x -- wait-for-gh-rate-limit
 
   unit:
     strategy:

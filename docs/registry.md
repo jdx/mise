@@ -788,6 +788,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | vlang | [vfox:ahai-code/vfox-vlang](https://github.com/ahai-code/vfox-vlang) |
 | vlt | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | vultr | [ubi:vultr/vultr-cli](https://github.com/vultr/vultr-cli) [asdf:ikuradon/asdf-vultr-cli](https://github.com/ikuradon/asdf-vultr-cli) |
+| wait-for-gh-rate-limit | [ubi:jdx/wait-for-gh-rate-limit](https://github.com/jdx/wait-for-gh-rate-limit) |
 | wasi-sdk | [asdf:coolreader18/asdf-wasi-sdk](https://github.com/coolreader18/asdf-wasi-sdk) |
 | wasm3 | [asdf:tachyonicbytes/asdf-wasm3](https://github.com/tachyonicbytes/asdf-wasm3) |
 | wasm4 | [ubi:aduros/wasm4](https://github.com/aduros/wasm4) [asdf:jtakakura/asdf-wasm4](https://github.com/jtakakura/asdf-wasm4) |

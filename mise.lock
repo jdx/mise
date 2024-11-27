@@ -90,3 +90,9 @@ version = "2.6.0"
 slsa-verifier-linux-x86_64 = "sha256:1c9c0d6a272063f3def6d233fa3372adbaff1f5a3480611a07c744e73246b62d"
 slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff545460add0cb4a087aec056189c"
 "slsa-verifier.exe-windows-x86_64" = "sha256:37ca29ad748e8ea7be76d3ae766e8fa505362240431f6ea7f0648c727e2f2507"
+
+[tools.wait-for-gh-rate-limit]
+version = "0.1.6"
+
+[tools.wait-for-gh-rate-limit.checksums]
+wait-for-gh-rate-limit-macos-aarch64 = "sha256:17a7c99021d8264071d70974bffd69741690da25a65518f515fd0c81ddc75c19"
