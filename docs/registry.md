@@ -144,6 +144,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | codeql | [asdf:bored-engineer/asdf-codeql](https://github.com/bored-engineer/asdf-codeql) |
 | coder | [aqua:coder/coder](https://github.com/coder/coder) [asdf:mise-plugins/asdf-coder](https://github.com/mise-plugins/asdf-coder) |
 | colima | [ubi:abiosoft/colima](https://github.com/abiosoft/colima) [asdf:CrouchingMuppet/asdf-colima](https://github.com/CrouchingMuppet/asdf-colima) |
+| committed | [aqua:crate-ci/committed](https://github.com/crate-ci/committed) |
 | conan | [pipx:conan](https://pypi.org/project/conan) [asdf:amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp) |
 | concourse | [aqua:concourse/concourse/concourse](https://github.com/concourse/concourse/concourse) [asdf:mattysweeps/asdf-concourse](https://github.com/mattysweeps/asdf-concourse) |
 | conduit | [ubi:ConduitIO/conduit](https://github.com/ConduitIO/conduit) [asdf:gmcabrita/asdf-conduit](https://github.com/gmcabrita/asdf-conduit) |

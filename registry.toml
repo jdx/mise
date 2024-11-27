@@ -203,6 +203,7 @@ codefresh.backends = ["ubi:codefresh-io/cli[exe=codefresh]", "asdf:gurukulkarni/
 codeql.backends = ["asdf:bored-engineer/asdf-codeql"]
 coder.backends = ["aqua:coder/coder", "asdf:mise-plugins/asdf-coder"]
 colima.backends = ["ubi:abiosoft/colima", "asdf:CrouchingMuppet/asdf-colima"]
+committed.backends = ["aqua:crate-ci/committed"]
 conan.backends = ["pipx:conan", "asdf:amrox/asdf-pyapp"]
 conan.test = ["conan --version", "Conan version {{version}}"]
 concourse.backends = ["aqua:concourse/concourse/concourse", "asdf:mattysweeps/asdf-concourse"]
