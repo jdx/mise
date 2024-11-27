@@ -539,6 +539,19 @@
             }
           }
         },
+        "rust": {
+          "additionalProperties": false,
+          "properties": {
+            "cargo_home": {
+              "description": "Path to the cargo home directory. Defaults to ~/.cargo or %USERPROFILE%\\.cargo",
+              "type": "string"
+            },
+            "rustup_home": {
+              "description": "Path to the rustup home directory. Defaults to ~/.rustup or %USERPROFILE%\\.rustup",
+              "type": "string"
+            }
+          }
+        },
         "shorthands_file": {
           "description": "Path to a file containing custom tool shorthands.",
           "type": "string"
