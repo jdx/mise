@@ -315,7 +315,7 @@ jobs:
     needs: [build-macos, build-windows]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    if: startsWith(github.ref, 'refs/branches/release')
+    if: startsWith(github.ref, 'refs/heads/release')
     env:
       TEST_TRANCHE: ${{matrix.tranche}}
       TEST_TRANCHE_COUNT: 4
