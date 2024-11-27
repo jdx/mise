@@ -24,6 +24,7 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    if: github.head_ref == 'release' || github.head_ref == 'hyperfine'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,21 +35,21 @@ jobs:
       - run: echo "$HOME/bin" >> "$GITHUB_PATH"
       - id: versions
         run: |
-          echo "main=$(git rev-parse --short origin/main)" >> "$GITHUB_OUTPUT"
+          #echo "main=$(git rev-parse --short origin/main)" >> "$GITHUB_OUTPUT"
           echo "release=$(mise-release v | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        with:
-          path: ~/bin/mise-${{ steps.versions.outputs.main }}
-          key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}
-      - name: build main
-        run: |
-          if [ ! -f "$HOME/bin/mise-${{ steps.versions.outputs.main }}" ]; then
-            git checkout main
-            cargo build --profile serious && mv target/serious/mise "$HOME/bin/mise-${{ steps.versions.outputs.main }}"
-            git checkout -
-          fi
+      #- uses: actions/cache@v4
+      #  with:
+      #    path: ~/bin/mise-${{ steps.versions.outputs.main }}
+      #    key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}
+      #- name: build main
+      #  run: |
+      #    if [ ! -f "$HOME/bin/mise-${{ steps.versions.outputs.main }}" ]; then
+      #      git checkout main
+      #      cargo build --profile serious && mv target/serious/mise "$HOME/bin/mise-${{ steps.versions.outputs.main }}"
+      #      git checkout -
+      #    fi
       - run: mv "$HOME/bin/mise-release" "$HOME/bin/mise-${{ steps.versions.outputs.release }}"
-      - run: cp "$HOME/bin/mise-${{ steps.versions.outputs.main }}" "$HOME/bin/mise-main"
+      #- run: cp "$HOME/bin/mise-${{ steps.versions.outputs.main }}" "$HOME/bin/mise-main"
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
       - uses: actions/cache@v4
         with:
@@ -66,7 +67,8 @@ jobs:
           )
           echo "# Hyperfine Performance" >> comment.md
           for cmd in "${CMDS[@]}"; do
-            mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-main $cmd" "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
+             #mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-main $cmd" "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
+             mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
             echo "### \`mise $cmd\`" >> comment.md
             cat out.md >> comment.md
           done
