@@ -74,7 +74,7 @@ impl HookEnv {
                 .list_current_installed_versions()
                 .into_iter()
                 .rev()
-                .map(|(_, v)| v.short().to_string())
+                .map(|(_, v)| format!("{}@{}", v.short(), v.version))
                 .collect_vec();
             if !installed_versions.is_empty() {
                 let status = installed_versions.into_iter().rev().join(" ");
