@@ -853,7 +853,6 @@ impl Display for OutdatedInfo {
 
 #[cfg(test)]
 mod tests {
-    use crate::backend::reset;
     use pretty_assertions::assert_eq;
     use test_log::test;
 
@@ -861,8 +860,6 @@ mod tests {
 
     #[test]
     fn test_is_outdated_version() {
-        reset();
-
         assert_eq!(is_outdated_version("1.10.0", "1.12.0"), true);
         assert_eq!(is_outdated_version("1.12.0", "1.10.0"), false);
 
@@ -887,7 +884,6 @@ mod tests {
 
     #[test]
     fn test_check_semver_bump() {
-        crate::test::reset();
         std::assert_eq!(check_semver_bump("20", "20.0.0"), None);
         std::assert_eq!(check_semver_bump("20.0", "20.0.0"), None);
         std::assert_eq!(check_semver_bump("20.0.0", "20.0.0"), None);
@@ -908,7 +904,6 @@ mod tests {
 
     #[test]
     fn test_tool_version_options() {
-        crate::test::reset();
         let t = |input, f| {
             let opts = super::parse_tool_options(input);
             assert_eq!(opts, f);

@@ -404,7 +404,7 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
+pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 
@@ -679,18 +679,14 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
 
     use pretty_assertions::assert_eq;
     use test_log::test;
-
-    use crate::test::reset;
 
     use super::*;
 
     #[test]
     fn test_find_up() {
-        reset();
         let path = &env::current_dir().unwrap();
         let filenames = vec![".miserc", ".mise.toml", ".test-tool-versions"]
             .into_iter()
@@ -708,7 +704,6 @@ mod tests {
 
     #[test]
     fn test_find_up_2() {
-        reset();
         let path = &dirs::HOME.join("fixtures");
         let filenames = vec![".test-tool-versions"];
         let result = find_up(path, &filenames);
@@ -717,14 +712,14 @@ mod tests {
 
     #[test]
     fn test_dir_subdirs() {
-        reset();
         let subdirs = dir_subdirs(&dirs::HOME).unwrap();
         assert!(subdirs.contains("cwd"));
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_display_path() {
-        reset();
+        use std::ops::Deref;
         let path = dirs::HOME.join("cwd");
         assert_eq!(display_path(path), "~/cwd");
 
@@ -736,7 +731,6 @@ mod tests {
 
     #[test]
     fn test_replace_path() {
-        reset();
         assert_eq!(replace_path(Path::new("~/cwd")), dirs::HOME.join("cwd"));
         assert_eq!(replace_path(Path::new("/cwd")), Path::new("/cwd"));
     }

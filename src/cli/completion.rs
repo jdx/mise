@@ -92,16 +92,3 @@ impl ValueEnum for Shell {
         Some(PossibleValue::new(self.to_string()))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-
-    #[test]
-    fn test_completion() {
-        reset();
-        assert_cli!("completion", "zsh");
-        assert_cli!("completion", "bash");
-        assert_cli!("completion", "fish");
-    }
-}

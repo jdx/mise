@@ -1155,6 +1155,7 @@ cmd "tasks" help="Manage tasks" {
     }
     flag "-J --json" help="Output in JSON format"
     flag "--usage" hide=true
+    arg "[TASK]" help="Task name to get info of"
     cmd "deps" help="Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
 

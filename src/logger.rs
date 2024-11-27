@@ -147,11 +147,9 @@ fn init_log_file(log_file: &Path) -> Result<File> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::reset;
 
     #[test]
     fn test_init() {
-        reset();
         init();
     }
 }

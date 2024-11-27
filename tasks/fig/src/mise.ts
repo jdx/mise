@@ -2518,6 +2518,15 @@ const completionSpec: Fig.Spec = {
                     "description": "Output in JSON format",
                     "isRepeatable": false
                 }
+            ],
+            "args": [
+                {
+                    "name": "task",
+                    "description": "Task name to get info of",
+                    "isOptional": true,
+                    "isVariadic": false,
+                    "generators": simpleTaskGenerator
+                }
             ]
         },
         {

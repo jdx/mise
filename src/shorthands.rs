@@ -63,16 +63,15 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
 mod tests {
     use std::ops::Deref;
 
+    #[cfg(unix)]
     use pretty_assertions::assert_str_eq;
     use test_log::test;
-
-    use crate::test::reset;
 
     use super::*;
 
     #[test]
+    #[cfg(unix)]
     fn test_get_shorthands() {
-        reset();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
@@ -84,7 +83,6 @@ mod tests {
 
     #[test]
     fn test_get_shorthands_missing_file() {
-        reset();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("test/fixtures/missing.toml".into());

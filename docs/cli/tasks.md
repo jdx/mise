@@ -1,10 +1,16 @@
 # `mise tasks`
 
-- **Usage**: `mise tasks [FLAGS] <SUBCOMMAND>`
+- **Usage**: `mise tasks [FLAGS] [TASK] <SUBCOMMAND>`
 - **Aliases**: `t`
 - **Source code**: [`src/cli/tasks.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks.rs)
 
 Manage tasks
+
+## Arguments
+
+### `[TASK]`
+
+Task name to get info of
 
 ## Flags
 

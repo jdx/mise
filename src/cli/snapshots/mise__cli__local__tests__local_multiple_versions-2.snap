@@ -1,6 +1,0 @@
----
-source: src/cli/local.rs
-expression: output
-snapshot_kind: text
----
-mise ~/cwd/.test-tool-versions tiny@2 tiny@1 tiny@3

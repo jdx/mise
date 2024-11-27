@@ -1,5 +1,0 @@
----
-source: src/cli/install.rs
-expression: output
-snapshot_kind: text
----

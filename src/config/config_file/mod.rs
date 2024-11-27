@@ -457,12 +457,7 @@ pub struct TaskConfig {
 }
 
 #[cfg(test)]
-pub fn reset() {
-    IS_TRUSTED.lock().unwrap().clear();
-    IS_IGNORED.lock().unwrap().clear();
-}
-
-#[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use pretty_assertions::assert_eq;
 
@@ -470,7 +465,6 @@ mod tests {
 
     #[test]
     fn test_detect_config_file_type() {
-        reset();
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.nvmrc")),
             Some(ConfigFileType::IdiomaticVersion)

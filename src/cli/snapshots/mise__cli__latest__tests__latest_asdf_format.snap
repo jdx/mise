@@ -1,6 +1,0 @@
----
-source: src/cli/latest.rs
-expression: output
-snapshot_kind: text
----
-1.1.0

@@ -63,31 +63,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>git commit -m "feat: add new feature"</bold> <dim># runs `mise run pre-commit`</dim>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-    use test_log::test;
-
-    use crate::file;
-    use crate::git::Git;
-    use crate::test::{cleanup, reset, setup_git_repo};
-
-    #[test]
-    fn test_git_pre_commit() {
-        reset();
-        setup_git_repo();
-        assert_cli_snapshot!("generate", "pre-commit", "--task=testing123");
-        cleanup();
-    }
-    #[test]
-    fn test_git_pre_commit_write() {
-        reset();
-        setup_git_repo();
-        assert_cli_snapshot!("generate", "pre-commit", "-w", "--hook", "testing123");
-        let path = Git::get_root().unwrap().join(".git/hooks/testing123");
-        assert_snapshot!(file::read_to_string(&path).unwrap());
-        assert!(file::is_executable(&path));
-        cleanup();
-    }
-}

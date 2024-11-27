@@ -1,48 +1,9 @@
 use std::env::join_paths;
 use std::path::PathBuf;
 
-use color_eyre::{Help, SectionExt};
 use indoc::indoc;
 
-use crate::cli::Cli;
-use crate::config::{config_file, Config};
-use crate::output::tests::{STDERR, STDOUT};
-use crate::toolset::install_state;
-use crate::{backend, cmd, dirs, env, file};
-
-#[macro_export]
-macro_rules! assert_cli_snapshot {
-    ($($args:expr),+, @$snapshot:literal) => {
-        let args = &vec!["mise".into(), $($args.into()),+];
-        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
-        let output = [stdout, stderr].join("\n").trim().to_string();
-        insta::assert_snapshot!(output, @$snapshot);
-    };
-    ($($args:expr),+) => {
-        let args = &vec!["mise".into(), $($args.into()),+];
-        let (stdout, stderr) = $crate::test::cli_run(args).unwrap();
-        let output = [stdout, stderr].join("\n").trim().to_string();
-        insta::assert_snapshot!(output);
-    };
-}
-
-#[macro_export]
-macro_rules! assert_cli {
-    ($($args:expr),+) => {{
-        let args = &vec!["mise".into(), $($args.into()),+];
-        $crate::test::cli_run(args).unwrap();
-        let output = $crate::output::tests::STDOUT.lock().unwrap().join("\n");
-        console::strip_ansi_codes(&output).trim().to_string()
-    }};
-}
-
-#[macro_export]
-macro_rules! assert_cli_err {
-    ($($args:expr),+) => {{
-        let args = &vec!["mise".into(), $($args.into()),+];
-        $crate::test::cli_run(args).unwrap_err()
-    }};
-}
+use crate::{env, file};
 
 #[ctor::ctor]
 fn init() {
@@ -71,81 +32,9 @@ fn init() {
     env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
     env::set_var("MISE_USE_TOML", "0");
     env::set_var("MISE_YES", "1");
-    //env::set_var("TERM", "dumb");
-}
-
-pub fn reset() {
-    install_state::reset();
-    Config::reset();
-    backend::reset();
-    config_file::reset();
     file::remove_all(&*env::HOME.join("cwd")).unwrap();
-    file::create_dir_all(&*env::HOME.join("cwd")).unwrap();
+    file::create_dir_all(&*env::HOME.join("cwd").join(".mise").join("tasks")).unwrap();
     env::set_current_dir(env::HOME.join("cwd")).unwrap();
-    env::remove_var("MISE_FAILURE");
-    file::remove_all(&*dirs::TRUSTED_CONFIGS).unwrap();
-    file::remove_all(&*dirs::TRACKED_CONFIGS).unwrap();
-    file::create_dir_all(".mise/tasks/.hidden").unwrap();
-    file::write(
-        ".mise/tasks/.hidden/executable",
-        indoc! {r#"#!/usr/bin/env bash
-        echo "this should not be a task"
-        "#},
-    )
-    .unwrap();
-    file::make_executable(".mise/tasks/.hidden/executable").unwrap();
-    file::write(
-        ".mise/tasks/.hidden-executable",
-        indoc! {r#"#!/usr/bin/env bash
-        echo "this should not be a task"
-        "#},
-    )
-    .unwrap();
-    file::make_executable(".mise/tasks/.hidden-executable").unwrap();
-    file::write(
-        ".mise/tasks/filetask",
-        indoc! {r#"#!/usr/bin/env bash
-        #MISE alias="ft"
-        #MISE description="This is a test build script"
-        #MISE depends=["lint", "test"]
-        #MISE sources=[".test-tool-versions"]
-        #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
-        #MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID", BOOLEAN_VAR = true}
-
-        #USAGE flag "--user <user>" help="The user to run as"
-
-        set -exo pipefail
-        cd "$MISE_PROJECT_ROOT" || exit 1
-        echo "running test-build script"
-        echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.txt
-        echo "user=$usage_user"
-        "#},
-    )
-    .unwrap();
-    file::make_executable(".mise/tasks/filetask").unwrap();
-    file::write(
-        env::HOME.join(".test-tool-versions"),
-        indoc! {r#"
-            tiny  2
-            dummy ref:master
-            "#},
-    )
-    .unwrap();
-    file::write(
-        env::current_dir().unwrap().join(".test-tool-versions"),
-        indoc! {r#"
-            tiny 3
-            "#},
-    )
-    .unwrap();
-    file::write(
-        env::HOME.join("config").join("settings.toml"),
-        indoc! {r#"
-            experimental = true
-            verbose = true
-            "#},
-    )
-    .unwrap();
     file::write(
         env::HOME.join("config").join("config.toml"),
         indoc! {r#"
@@ -170,33 +59,42 @@ pub fn reset() {
             "#},
     )
     .unwrap();
-    let _ = file::remove_file(".test.mise.toml");
-    assert_cli!("prune");
-    assert_cli!("install");
-}
-
-pub fn setup_git_repo() {
-    cmd!("git", "init", "-b", "trunk").run().unwrap();
-    file::write("README.md", "# testing123").unwrap();
-    cmd!("git", "add", "README.md").run().unwrap();
-    cmd!(
-        "git",
-        "-c",
-        "user.name=ferris",
-        "-c",
-        "user.email=ferris@example.com",
-        "commit",
-        "-m",
-        "feat: add README"
+    file::write(
+        env::HOME.join(".test-tool-versions"),
+        indoc! {r#"
+            tiny  2
+            dummy ref:master
+            "#},
     )
-    .run()
     .unwrap();
-}
+    file::write(
+        env::current_dir().unwrap().join(".test-tool-versions"),
+        indoc! {r#"
+            tiny 3
+            "#},
+    )
+    .unwrap();
+    file::write(
+        ".mise/tasks/filetask",
+        indoc! {r#"#!/usr/bin/env bash
+        #MISE alias="ft"
+        #MISE description="This is a test build script"
+        #MISE depends=["lint", "test"]
+        #MISE sources=[".test-tool-versions"]
+        #MISE outputs=["$MISE_PROJECT_ROOT/test/test-build-output.txt"]
+        #MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID", BOOLEAN_VAR = true}
 
-pub fn cleanup() {
-    let _ = file::remove_all(".github");
-    let _ = file::remove_all(".git");
-    let _ = file::remove_all("README.md");
+        #USAGE flag "--user <user>" help="The user to run as"
+
+        set -exo pipefail
+        cd "$MISE_PROJECT_ROOT" || exit 1
+        echo "running test-build script"
+        echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" > test-build-output.txt
+        echo "user=$usage_user"
+        "#},
+    )
+    .unwrap();
+    file::make_executable(".mise/tasks/filetask").unwrap();
 }
 
 pub fn replace_path(input: &str) -> String {
@@ -209,37 +107,6 @@ pub fn replace_path(input: &str) -> String {
         .replace(&path, "$PATH")
         .replace(&home, "~")
         .replace(&*env::MISE_BIN.to_string_lossy(), "mise")
-}
-
-pub fn cli_run(args: &Vec<String>) -> eyre::Result<(String, String)> {
-    install_state::reset();
-    Config::reset();
-    backend::reset();
-    config_file::reset();
-    env::ARGS.write().unwrap().clone_from(args);
-    STDOUT.lock().unwrap().clear();
-    STDERR.lock().unwrap().clear();
-    Cli::run(args).with_section(|| format!("{}", args.join(" ").header("Command:")))?;
-    let stdout = clean_output(STDOUT.lock().unwrap().join("\n"));
-    let stderr = clean_output(STDERR.lock().unwrap().join("\n"));
-
-    Ok((stdout, stderr))
-}
-
-pub fn change_installed_version(tool: &str, cur: &str, new: &str) {
-    file::rename(
-        dirs::INSTALLS.join(tool).join(cur),
-        dirs::INSTALLS.join(tool).join(new),
-    )
-    .unwrap()
-}
-
-fn clean_output(output: String) -> String {
-    let output = output.trim().to_string();
-    let output = console::strip_ansi_codes(&output).to_string();
-    let output = output.replace(dirs::HOME.to_string_lossy().as_ref(), "~");
-    let output = replace_path(&output);
-    output.trim().to_string()
 }
 
 #[macro_export]

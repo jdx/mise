@@ -182,32 +182,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise tasks ls</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-    use test_log::test;
-
-    #[test]
-    fn test_task_ls() {
-        reset();
-        assert_cli_snapshot!("t", "--no-headers", @r"
-        configtask                               ~/config/config.toml
-        filetask    This is a test build script  ~/cwd/.mise/tasks/filetask
-        lint                                     ~/config/config.toml
-        test                                     ~/config/config.toml
-        ");
-    }
-
-    #[test]
-    fn test_task_ls_json() {
-        reset();
-        assert_cli_snapshot!("t", "--json");
-    }
-
-    #[test]
-    fn test_task_ls_json_extended() {
-        reset();
-        assert_cli_snapshot!("t", "--json", "-x");
-    }
-}

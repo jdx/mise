@@ -15,6 +15,9 @@ pub struct Tasks {
     #[clap(subcommand)]
     command: Option<Commands>,
 
+    /// Task name to get info of
+    task: Option<String>,
+
     #[clap(flatten)]
     ls: ls::TasksLs,
 }
@@ -42,7 +45,15 @@ impl Commands {
 
 impl Tasks {
     pub fn run(self) -> Result<()> {
-        let cmd = self.command.unwrap_or(Commands::Ls(self.ls));
+        let cmd = self
+            .command
+            .or(self.task.map(|t| {
+                Commands::Info(info::TasksInfo {
+                    task: t,
+                    json: self.ls.json,
+                })
+            }))
+            .unwrap_or(Commands::Ls(self.ls));
 
         cmd.run()
     }

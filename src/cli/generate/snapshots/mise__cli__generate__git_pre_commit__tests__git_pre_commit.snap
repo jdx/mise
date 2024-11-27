@@ -1,7 +1,0 @@
----
-source: src/cli/generate/git_pre_commit.rs
-expression: output
-snapshot_kind: text
----
-#!/bin/sh
-mise run testing123

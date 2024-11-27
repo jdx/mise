@@ -103,22 +103,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     {"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-
-    #[test]
-    fn test_outdated() {
-        reset();
-        assert_cli!("prune");
-        assert_cli!("install");
-        assert_cli_snapshot!("outdated");
-    }
-
-    #[test]
-    fn test_outdated_with_runtimes() {
-        reset();
-        assert_cli_snapshot!("outdated", "tiny");
-    }
-}

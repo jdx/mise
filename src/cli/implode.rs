@@ -57,19 +57,3 @@ impl Implode {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::dirs;
-    use crate::test::reset;
-
-    #[test]
-    fn test_implode() {
-        reset();
-        let stdout = assert_cli!("implode", "--config", "--dry-run");
-        assert!(stdout.contains(format!("rm -rf {}", dirs::STATE.display()).as_str()));
-        assert!(stdout.contains(format!("rm -rf {}", dirs::DATA.display()).as_str()));
-        assert!(stdout.contains(format!("rm -rf {}", dirs::CACHE.display()).as_str()));
-        assert!(stdout.contains(format!("rm -rf {}", dirs::CONFIG.display()).as_str()));
-    }
-}

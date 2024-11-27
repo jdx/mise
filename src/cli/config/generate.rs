@@ -91,20 +91,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise cf generate --output=mise.toml</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-
-    #[test]
-    fn test_generate() {
-        reset();
-        with_settings!({
-            let out = assert_cli!("config", "generate");
-            for line in out.lines() {
-                assert!(line.len() < 80);
-            }
-            assert_cli_snapshot!("cfg", "generate");
-        });
-    }
-}

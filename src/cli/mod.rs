@@ -297,18 +297,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise settings color=0</bold>          Disable color by modifying global config file
 "#
 );
-
-#[cfg(test)]
-pub mod tests {
-    use crate::dirs;
-
-    pub fn grep(output: String, pattern: &str) -> String {
-        output
-            .split('\n')
-            .find(|line| line.contains(pattern))
-            .map(|line| line.to_string())
-            .unwrap_or_else(|| panic!("pattern not found: {}", pattern))
-            .trim()
-            .replace(dirs::HOME.to_string_lossy().as_ref(), "~")
-    }
-}

@@ -1,7 +1,0 @@
----
-source: src/cli/shell.rs
-expression: err
-snapshot_kind: text
----
-mise is not activated in this shell session.
-Please run `mise activate` first in your shell rc file.

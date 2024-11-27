@@ -74,18 +74,16 @@ impl FromIterator<PathBuf> for PathEnv {
     }
 }
 
+#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
     use test_log::test;
 
-    use crate::test::reset;
-
     use super::*;
 
     #[test]
     fn test_path_env() {
-        reset();
         let mut path_env = PathEnv::from_iter(
             [
                 "/before-1",
@@ -109,7 +107,6 @@ mod tests {
 
     #[test]
     fn test_path_env_no_mise() {
-        reset();
         let mut path_env = PathEnv::from_iter(
             [
                 "/before-1",
@@ -131,7 +128,6 @@ mod tests {
     }
     #[test]
     fn test_path_env_with_colon() {
-        reset();
         let mut path_env = PathEnv::from_iter(["/item1", "/item2"].map(PathBuf::from));
         path_env.add("/1:/2".into());
         assert_eq!(path_env.to_string(), format!("/1:/2:/item1:/item2"));

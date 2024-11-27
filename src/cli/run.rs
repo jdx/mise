@@ -399,7 +399,7 @@ impl Run {
     ) -> (String, Vec<String>) {
         let display = file.display().to_string();
         if file::is_executable(file) && !SETTINGS.use_file_shell_for_executable_tasks {
-            if cfg!(windows) && file.extension().map_or(false, |e| e == "ps1") {
+            if cfg!(windows) && file.extension().is_some_and(|e| e == "ps1") {
                 let args = vec!["-File".to_string(), display]
                     .into_iter()
                     .chain(args.iter().cloned())

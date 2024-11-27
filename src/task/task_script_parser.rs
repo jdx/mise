@@ -330,11 +330,9 @@ pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::reset;
 
     #[test]
     fn test_task_parse_arg() {
-        reset();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(i=0, name='foo') }}".to_string()];
         let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
@@ -349,7 +347,6 @@ mod tests {
 
     #[test]
     fn test_task_parse_arg_var() {
-        reset();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(var=true) }}".to_string()];
         let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
@@ -368,7 +365,6 @@ mod tests {
 
     #[test]
     fn test_task_parse_flag() {
-        reset();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ flag(name='foo') }}".to_string()];
         let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
@@ -384,7 +380,6 @@ mod tests {
 
     #[test]
     fn test_task_parse_option() {
-        reset();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ option(name='foo') }}".to_string()];
         let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
