@@ -153,7 +153,7 @@ editLink: false
 | cyclonedx | [aqua:CycloneDX/cyclonedx-cli](https://github.com/CycloneDX/cyclonedx-cli) [asdf:xeedio/asdf-cyclonedx](https://github.com/xeedio/asdf-cyclonedx) |
 | dagger | [aqua:dagger/dagger](https://github.com/dagger/dagger) [asdf:virtualstaticvoid/asdf-dagger](https://github.com/virtualstaticvoid/asdf-dagger) |
 | danger-js | [asdf:MontakOleg/asdf-danger-js](https://github.com/MontakOleg/asdf-danger-js) |
-| dapr | [asdf:asdf-community/asdf-dapr-cli](https://github.com/asdf-community/asdf-dapr-cli) |
+| dapr | [aqua:dapr/cli](https://github.com/dapr/cli) [asdf:asdf-community/asdf-dapr-cli](https://github.com/asdf-community/asdf-dapr-cli) |
 | dart | [asdf:PatOConnor43/asdf-dart](https://github.com/PatOConnor43/asdf-dart) [vfox:version-fox/vfox-dart](https://github.com/version-fox/vfox-dart) |
 | dasel | [aqua:TomWright/dasel](https://github.com/TomWright/dasel) [asdf:asdf-community/asdf-dasel](https://github.com/asdf-community/asdf-dasel) |
 | datree | [aqua:datreeio/datree](https://github.com/datreeio/datree) [asdf:lukeab/asdf-datree](https://github.com/lukeab/asdf-datree) |
@@ -162,8 +162,7 @@ editLink: false
 | deck | [aqua:Kong/deck](https://github.com/Kong/deck) [asdf:nutellinoit/asdf-deck](https://github.com/nutellinoit/asdf-deck) |
 | delta | [ubi:dandavison/delta](https://github.com/dandavison/delta) [asdf:andweeb/asdf-delta](https://github.com/andweeb/asdf-delta) |
 | deno | [core:deno](https://mise.jdx.dev/lang/deno.html) |
-| dep | [asdf:paxosglobal/asdf-dep](https://github.com/paxosglobal/asdf-dep) |
-| depot | [asdf:depot/asdf-depot](https://github.com/depot/asdf-depot) |
+| depot | [ubi:depot/cli](https://github.com/depot/cli) [asdf:depot/asdf-depot](https://github.com/depot/asdf-depot) |
 | desk | [aqua:jamesob/desk](https://github.com/jamesob/desk) [asdf:endorama/asdf-desk](https://github.com/endorama/asdf-desk) |
 | devspace | [aqua:devspace-sh/devspace](https://github.com/devspace-sh/devspace) [asdf:NeoHsu/asdf-devspace](https://github.com/NeoHsu/asdf-devspace) |
 | dhall | [asdf:aaaaninja/asdf-dhall](https://github.com/aaaaninja/asdf-dhall) |
@@ -171,16 +170,16 @@ editLink: false
 | digdag | [asdf:jtakakura/asdf-digdag](https://github.com/jtakakura/asdf-digdag) |
 | direnv | [aqua:direnv/direnv](https://github.com/direnv/direnv) [asdf:asdf-community/asdf-direnv](https://github.com/asdf-community/asdf-direnv) |
 | dive | [ubi:wagoodman/dive](https://github.com/wagoodman/dive) [asdf:looztra/asdf-dive](https://github.com/looztra/asdf-dive) |
-| djinni | [asdf:cross-language-cpp/asdf-djinni](https://github.com/cross-language-cpp/asdf-djinni) |
+| djinni | [ubi:cross-language-cpp/djinni-generator](https://github.com/cross-language-cpp/djinni-generator) [asdf:cross-language-cpp/asdf-djinni](https://github.com/cross-language-cpp/asdf-djinni) |
 | dmd | [asdf:sylph01/asdf-dmd](https://github.com/sylph01/asdf-dmd) |
-| docker-compose-v1 | [asdf:yilas/asdf-docker-compose-v1](https://github.com/yilas/asdf-docker-compose-v1) |
-| docker-slim | [asdf:xataz/asdf-docker-slim](https://github.com/xataz/asdf-docker-slim) |
+| docker-compose | [aqua:docker/compose](https://github.com/docker/compose) |
+| docker-slim | [ubi:slimtoolkit/slim](https://github.com/slimtoolkit/slim) [asdf:xataz/asdf-docker-slim](https://github.com/xataz/asdf-docker-slim) |
 | dockle | [aqua:goodwithtech/dockle](https://github.com/goodwithtech/dockle) [asdf:mathew-fleisch/asdf-dockle](https://github.com/mathew-fleisch/asdf-dockle) |
 | doctl | [ubi:digitalocean/doctl](https://github.com/digitalocean/doctl) [asdf:maristgeek/asdf-doctl](https://github.com/maristgeek/asdf-doctl) |
 | doctoolchain | [asdf:joschi/asdf-doctoolchain](https://github.com/joschi/asdf-doctoolchain) |
 | docuum | [ubi:stepchowfun/docuum](https://github.com/stepchowfun/docuum) [cargo:docuum](https://crates.io/crates/docuum) [asdf:bradym/asdf-docuum](https://github.com/bradym/asdf-docuum) |
 | dome | [asdf:jtakakura/asdf-dome](https://github.com/jtakakura/asdf-dome) |
-| doppler | [asdf:takutakahashi/asdf-doppler](https://github.com/takutakahashi/asdf-doppler) |
+| doppler | [ubi:DopplerHQ/cli](https://github.com/DopplerHQ/cli) [asdf:takutakahashi/asdf-doppler](https://github.com/takutakahashi/asdf-doppler) |
 | dotenv-linter | [ubi:dotenv-linter/dotenv-linter](https://github.com/dotenv-linter/dotenv-linter) [asdf:wesleimp/asdf-dotenv-linter](https://github.com/wesleimp/asdf-dotenv-linter) |
 | dotnet | [asdf:hensou/asdf-dotnet](https://github.com/hensou/asdf-dotnet) [vfox:version-fox/vfox-dotnet](https://github.com/version-fox/vfox-dotnet) |
 | dotnet-core | [asdf:emersonsoares/asdf-dotnet-core](https://github.com/emersonsoares/asdf-dotnet-core) |
@@ -190,12 +189,12 @@ editLink: false
 | driftctl | [aqua:snyk/driftctl](https://github.com/snyk/driftctl) [asdf:nlamirault/asdf-driftctl](https://github.com/nlamirault/asdf-driftctl) |
 | drone | [ubi:harness/drone-cli](https://github.com/harness/drone-cli) [asdf:virtualstaticvoid/asdf-drone](https://github.com/virtualstaticvoid/asdf-drone) |
 | dt | [aqua:so-dang-cool/dt](https://github.com/so-dang-cool/dt) [asdf:so-dang-cool/asdf-dt](https://github.com/so-dang-cool/asdf-dt) |
-| dtm | [asdf:zhenyuanlau/asdf-dtm](https://github.com/zhenyuanlau/asdf-dtm) |
+| dtm | [ubi:devstream-io/devstream](https://github.com/devstream-io/devstream) [asdf:zhenyuanlau/asdf-dtm](https://github.com/zhenyuanlau/asdf-dtm) |
 | duf | [aqua:muesli/duf](https://github.com/muesli/duf) [asdf:NeoHsu/asdf-duf](https://github.com/NeoHsu/asdf-duf) |
 | dust | [ubi:bootandy/dust](https://github.com/bootandy/dust) [asdf:looztra/asdf-dust](https://github.com/looztra/asdf-dust) |
 | dvc | [asdf:fwfurtado/asdf-dvc](https://github.com/fwfurtado/asdf-dvc) |
 | dyff | [aqua:homeport/dyff](https://github.com/homeport/dyff) [asdf:https://gitlab.com/wt0f/asdf-dyff](https://gitlab.com/wt0f/asdf-dyff) |
-| dynatrace-monaco | [asdf:nsaputro/asdf-monaco](https://github.com/nsaputro/asdf-monaco) |
+| dynatrace-monaco | [ubi:Dynatrace/dynatrace-configuration-as-code](https://github.com/Dynatrace/dynatrace-configuration-as-code) [asdf:nsaputro/asdf-monaco](https://github.com/nsaputro/asdf-monaco) |
 | earthly | [aqua:earthly/earthly](https://github.com/earthly/earthly) [asdf:YR-ZR0/asdf-earthly](https://github.com/YR-ZR0/asdf-earthly) |
 | ecspresso | [aqua:kayac/ecspresso](https://github.com/kayac/ecspresso) [asdf:kayac/asdf-ecspresso](https://github.com/kayac/asdf-ecspresso) |
 | editorconfig-checker | [aqua:editorconfig-checker/editorconfig-checker](https://github.com/editorconfig-checker/editorconfig-checker) [asdf:gabitchov/asdf-editorconfig-checker](https://github.com/gabitchov/asdf-editorconfig-checker) |
@@ -774,7 +773,7 @@ editLink: false
 | vultr | [ubi:vultr/vultr-cli](https://github.com/vultr/vultr-cli) [asdf:ikuradon/asdf-vultr-cli](https://github.com/ikuradon/asdf-vultr-cli) |
 | wasi-sdk | [asdf:coolreader18/asdf-wasi-sdk](https://github.com/coolreader18/asdf-wasi-sdk) |
 | wasm3 | [asdf:tachyonicbytes/asdf-wasm3](https://github.com/tachyonicbytes/asdf-wasm3) |
-| wasm4 | [asdf:jtakakura/asdf-wasm4](https://github.com/jtakakura/asdf-wasm4) |
+| wasm4 | [ubi:aduros/wasm4](https://github.com/aduros/wasm4) [asdf:jtakakura/asdf-wasm4](https://github.com/jtakakura/asdf-wasm4) |
 | wasmer | [aqua:wasmerio/wasmer](https://github.com/wasmerio/wasmer) [asdf:tachyonicbytes/asdf-wasmer](https://github.com/tachyonicbytes/asdf-wasmer) |
 | wasmtime | [aqua:bytecodealliance/wasmtime](https://github.com/bytecodealliance/wasmtime) [asdf:tachyonicbytes/asdf-wasmtime](https://github.com/tachyonicbytes/asdf-wasmtime) |
 | watchexec | [ubi:watchexec/watchexec](https://github.com/watchexec/watchexec) [asdf:nyrst/asdf-watchexec](https://github.com/nyrst/asdf-watchexec) |
