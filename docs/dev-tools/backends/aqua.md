@@ -17,7 +17,7 @@ notice problems. The maintainer is super responsive and great to work with.
 
 If all else fails, you can disable aqua entirely with [`MISE_DISABLE_BACKENDS=aqua`](/configuration/settings.html#disable_backends).
 
-Currently aqua plugins don't support setting environment variables or doing more than simply downloading
+Currently aqua tools don't support setting environment variables or doing more than simply downloading
 binaries though (and I'm not sure this functionality would ever get added), so some tools will likely
 always require plugins like asdf/vfox.
 
