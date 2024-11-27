@@ -439,6 +439,10 @@
               "description": "URL to fetch pyenv from for compiling python with python-build.",
               "type": "string"
             },
+            "uv_venv_auto": {
+              "description": "Integrate with uv to automatically create/source venvs if uv.lock is present.",
+              "type": "boolean"
+            },
             "venv_auto_create": {
               "description": "Automatically create virtualenvs for python tools.",
               "deprecated": "Use env._python.venv instead.",

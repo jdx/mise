@@ -210,6 +210,9 @@ impl Settings {
         if let Some(python_pyenv_repo) = &self.python_pyenv_repo {
             self.python.pyenv_repo = python_pyenv_repo.clone();
         }
+        if let Some(python_venv_stdlib) = self.python_venv_stdlib {
+            self.python.venv_stdlib = python_venv_stdlib;
+        }
         if let Some(python_venv_auto_create) = self.python_venv_auto_create {
             self.python.venv_auto_create = python_venv_auto_create;
         }

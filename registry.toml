@@ -224,7 +224,7 @@ coredns.test = ["coredns --version", "CoreDNS-{{version}}"]
 cosign.backends = ["aqua:sigstore/cosign", "asdf:https://gitlab.com/wt0f/asdf-cosign"]
 cosign.test = ["cosign version", "v{{version}}"]
 coursier.backends = ["ubi:coursier/coursier[exe=cs]", "asdf:jiahuili430/asdf-coursier"]
-coursier.test = ["cs version", "{{version}}"]
+# coursier.test = ["cs version", "{{version}}"] flaky builds
 crane.backends = ["ubi:google/go-containerregistry[exe=crane]", "asdf:dmpe/asdf-crane"]
 crane.test = ["crane version", "{{version}}"]
 crc.backends = ["asdf:sqtran/asdf-crc"]

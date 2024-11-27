@@ -64,6 +64,7 @@ mod tokio;
 mod toml;
 mod toolset;
 mod ui;
+mod uv;
 mod versions_host;
 
 pub(crate) use crate::exit::exit;
