@@ -108,7 +108,7 @@ signal-hook = "0.3"
 siphasher = "1"
 strum = { version = "0.26", features = ["derive"] }
 sys-info = "0.9"
-tabled = { version = "0.16", features = ["ansi"] }
+tabled = { version = "0.17", features = ["ansi"] }
 tar = "0.4"
 tempfile = "3"
 tera = "1"

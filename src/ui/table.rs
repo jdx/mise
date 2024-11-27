@@ -2,7 +2,7 @@ use console::style;
 use tabled::settings::object::{Columns, Rows};
 use tabled::settings::peaker::PriorityMax;
 use tabled::settings::width::{MinWidth, Wrap};
-use tabled::settings::{Disable, Format, Margin, Modify, Padding, Settings, Style, Width};
+use tabled::settings::{Format, Margin, Modify, Padding, Remove, Settings, Style, Width};
 use tabled::Table;
 
 use crate::env::TERM_WIDTH;
@@ -14,7 +14,7 @@ type SettingMinWidth = Settings<SettingPriority, MinWidth>;
 
 pub fn term_size_settings() -> SettingMinWidth {
     Settings::default()
-        .with(Width::wrap(*TERM_WIDTH).priority(PriorityMax))
+        .with(Width::wrap(*TERM_WIDTH).priority(PriorityMax::default()))
         .with(Width::increase(*TERM_WIDTH))
     // .with(Height::limit(*TERM_HEIGHT))
     // .with(Height::increase(*TERM_HEIGHT))
@@ -24,7 +24,7 @@ pub fn default_style(table: &mut Table, no_headers: bool) {
     let header = |h: &_| style(h).italic().magenta().to_string();
 
     if no_headers || !console::user_attended() || cfg!(test) {
-        table.with(Disable::row(Rows::first()));
+        table.with(Remove::row(Rows::first()));
     } else {
         table.with(Modify::new(Rows::first()).with(Format::content(header)));
     }
@@ -40,6 +40,6 @@ pub fn default_style(table: &mut Table, no_headers: bool) {
 
 pub fn disable_columns(table: &mut Table, col_idxs: Vec<usize>) {
     for idx in col_idxs {
-        table.with(Disable::column(Columns::single(idx)));
+        table.with(Remove::column(Columns::single(idx)));
     }
 }
