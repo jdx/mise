@@ -92,18 +92,14 @@ impl Backend for PIPXBackend {
             .pipx_request(&tv.version, &tv.request.options());
 
         if SETTINGS.pipx.uvx {
-            let mut cmd = CmdLineRunner::new("uv")
-                .arg("tool")
-                .arg("install")
-                .arg(pipx_request)
-                .with_pr(ctx.pr.as_ref())
-                .env("UV_TOOL_DIR", tv.install_path())
-                .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
-                .envs(ctx.ts.env_with_path(&config)?)
-                .prepend_path(ctx.ts.list_paths())?
-                // Prepend install path so pipx doesn't issue a warning about missing path
-                .prepend_path(vec![tv.install_path().join("bin")])?
-                .prepend_path(self.dependency_toolset()?.list_paths())?;
+            let mut cmd = Self::uvx_cmd(
+                &config,
+                &["tool", "install", &pipx_request],
+                self,
+                &tv,
+                ctx.ts,
+                &*ctx.pr,
+            )?;
             if let Some(args) = tv.request.options().get("uvx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -139,10 +135,6 @@ impl PIPXBackend {
     }
 
     pub fn reinstall_all() -> Result<()> {
-        if SETTINGS.pipx.uvx {
-            debug!("skipping pipx reinstall because uvx is enabled");
-            return Ok(());
-        }
         let config = Config::load()?;
         let ts = ToolsetBuilder::new().build(&config)?;
         let pipx_tools = ts
@@ -150,19 +142,46 @@ impl PIPXBackend {
             .into_iter()
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
             .collect_vec();
-        let pr = MultiProgressReport::get().add("reinstalling pipx tools");
-        for (b, tv) in pipx_tools {
-            Self::pipx_cmd(
-                &config,
-                &["reinstall", &tv.ba().tool_name],
-                &*b,
-                &tv,
-                &ts,
-                &*pr,
-            )?
-            .execute()?;
+        if SETTINGS.pipx.uvx {
+            let pr = MultiProgressReport::get().add("reinstalling pipx tools with uvx");
+            for (b, tv) in pipx_tools {
+                for (cmd, tool) in &[
+                    ("uninstall", tv.ba().tool_name.to_string()),
+                    ("install", format!("{}=={}", tv.ba().tool_name, tv.version)),
+                ] {
+                    let args = &["tool", cmd, tool];
+                    Self::uvx_cmd(&config, args, &*b, &tv, &ts, &*pr)?.execute()?;
+                }
+            }
+        } else {
+            let pr = MultiProgressReport::get().add("reinstalling pipx tools");
+            for (b, tv) in pipx_tools {
+                let args = &["reinstall", &tv.ba().tool_name];
+                Self::pipx_cmd(&config, args, &*b, &tv, &ts, &*pr)?.execute()?;
+            }
         }
         Ok(())
+    }
+
+    fn uvx_cmd<'a>(
+        config: &Config,
+        args: &[&str],
+        b: &dyn Backend,
+        tv: &ToolVersion,
+        ts: &Toolset,
+        pr: &'a dyn SingleReport,
+    ) -> Result<CmdLineRunner<'a>> {
+        let mut cmd = CmdLineRunner::new("uv");
+        for arg in args {
+            cmd = cmd.arg(arg);
+        }
+        cmd.with_pr(pr)
+            .env("UV_TOOL_DIR", tv.install_path())
+            .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
+            .envs(ts.env_with_path(config)?)
+            .prepend_path(ts.list_paths())?
+            .prepend_path(vec![tv.install_path().join("bin")])?
+            .prepend_path(b.dependency_toolset()?.list_paths())
     }
 
     fn pipx_cmd<'a>(

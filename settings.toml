@@ -487,6 +487,7 @@ passing `--fuzzy` on the command line.
 """
 
 [pipx.uvx]
+env = "MISE_PIPX_UVX"
 type = "Bool"
 description = "Use uvx instead of pipx if uv is installed and on PATH."
 docs = """
