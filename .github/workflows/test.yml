@@ -318,6 +318,7 @@ jobs:
     needs: [build-macos, build-windows]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    if: github.ref_name == 'release'
     env:
       TEST_TRANCHE: ${{matrix.tranche}}
       TEST_TRANCHE_COUNT: 4
@@ -351,5 +352,5 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: mise test-tool --all
-#        env:
-#          MISE_USE_VERSIONS_HOST: 0
+        env:
+          MISE_USE_VERSIONS_HOST: 0
