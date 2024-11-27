@@ -20,8 +20,9 @@ export MISE_PIPX_UVX=1
 # Set up a 2-step installation: pipx@1.5.0 > pipx:mkdocs@1.6.0
 cat >.mise.toml <<EOF
 [tools]
+python = "3.12.3"
 pipx = "1.5.0"
-uv = "0.3.4"
+uv = "0.5.5"
 "pipx:mkdocs" = "1.6.0"
 EOF
 
@@ -31,3 +32,6 @@ mise install
 # Assert that mkdocs 1.6.0 has been installed with pipx
 # (mkdocs conveniently returns its installation path in with --version)
 assert_contains "mise x -- mkdocs --version" "/mise/installs/pipx-mkdocs/1.6.0/"
+
+assert "mise up --bump python"
+assert_contains "mise x -- mkdocs --version" "mkdocs, version 1.6.0"

@@ -54,6 +54,8 @@ Or you can reinstall all pipx packages with:
 mise install -f "pipx:*"
 ```
 
+mise _should_ do this automatically when using `mise up python`.
+
 ### Supported Pipx Syntax
 
 | Description                           | Usage                                                  |
