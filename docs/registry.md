@@ -221,11 +221,11 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | elixir-ls | [asdf:juantascon/asdf-elixir-ls](https://github.com/juantascon/asdf-elixir-ls) |
 | elm | [ubi:elm/compiler](https://github.com/elm/compiler) [asdf:asdf-community/asdf-elm](https://github.com/asdf-community/asdf-elm) |
 | emsdk | [asdf:RobLoach/asdf-emsdk](https://github.com/RobLoach/asdf-emsdk) |
-| envcli | [asdf:zekker6/asdf-envcli](https://github.com/zekker6/asdf-envcli) |
+| envcli | [ubi:EnvCLI/EnvCLI](https://github.com/EnvCLI/EnvCLI) [asdf:zekker6/asdf-envcli](https://github.com/zekker6/asdf-envcli) |
 | envsubst | [aqua:a8m/envsubst](https://github.com/a8m/envsubst) [asdf:dex4er/asdf-envsubst](https://github.com/dex4er/asdf-envsubst) |
 | ephemeral-postgres | [asdf:smashedtoatoms/asdf-ephemeral-postgres](https://github.com/smashedtoatoms/asdf-ephemeral-postgres) |
 | erlang | [core:erlang](https://mise.jdx.dev/lang/erlang.html) |
-| esc | [asdf:fxsalazar/asdf-esc](https://github.com/fxsalazar/asdf-esc) |
+| esc | [ubi:pulumi/esc](https://github.com/pulumi/esc) [asdf:fxsalazar/asdf-esc](https://github.com/fxsalazar/asdf-esc) |
 | esy | [asdf:asdf-community/asdf-esy](https://github.com/asdf-community/asdf-esy) |
 | etcd | [aqua:etcd-io/etcd](https://github.com/etcd-io/etcd) [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) [vfox:version-fox/vfox-etcd](https://github.com/version-fox/vfox-etcd) |
 | evans | [aqua:ktr0731/evans](https://github.com/ktr0731/evans) [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
