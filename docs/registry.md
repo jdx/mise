@@ -792,7 +792,7 @@ editLink: false
 | xh | [ubi:ducaale/xh](https://github.com/ducaale/xh) [asdf:NeoHsu/asdf-xh](https://github.com/NeoHsu/asdf-xh) |
 | yadm | [asdf:particledecay/asdf-yadm](https://github.com/particledecay/asdf-yadm) |
 | yamlfmt | [aqua:google/yamlfmt](https://github.com/google/yamlfmt) [asdf:mise-plugins/asdf-yamlfmt](https://github.com/mise-plugins/asdf-yamlfmt) |
-| yamllint | [asdf:ericcornelissen/asdf-yamllint](https://github.com/ericcornelissen/asdf-yamllint) |
+| yamllint | [pipx:yamllint](https://pypi.org/project/yamllint) [asdf:ericcornelissen/asdf-yamllint](https://github.com/ericcornelissen/asdf-yamllint) |
 | yamlscript | [asdf:FeryET/asdf-yamlscript](https://github.com/FeryET/asdf-yamlscript) |
 | yarn | [asdf:mise-plugins/asdf-yarn](https://github.com/mise-plugins/asdf-yarn) |
 | yay | [asdf:aaaaninja/asdf-yay](https://github.com/aaaaninja/asdf-yay) |
