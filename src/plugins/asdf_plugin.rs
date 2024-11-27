@@ -142,18 +142,19 @@ impl AsdfPlugin {
         })
     }
 
-    pub fn fetch_legacy_filenames(&self) -> eyre::Result<Vec<String>> {
-        let stdout = self.script_man.read(&Script::ListLegacyFilenames)?;
-        Ok(self.parse_legacy_filenames(&stdout))
+    pub fn fetch_idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+        let stdout = self.script_man.read(&Script::ListIdiomaticFilenames)?;
+        Ok(self.parse_idiomatic_filenames(&stdout))
     }
-    pub fn parse_legacy_filenames(&self, data: &str) -> Vec<String> {
+    pub fn parse_idiomatic_filenames(&self, data: &str) -> Vec<String> {
         data.split_whitespace().map(|v| v.into()).collect()
     }
     pub fn has_list_alias_script(&self) -> bool {
         self.script_man.script_exists(&Script::ListAliases)
     }
-    pub fn has_list_legacy_filenames_script(&self) -> bool {
-        self.script_man.script_exists(&Script::ListLegacyFilenames)
+    pub fn has_list_idiomatic_filenames_script(&self) -> bool {
+        self.script_man
+            .script_exists(&Script::ListIdiomaticFilenames)
     }
     pub fn has_latest_stable_script(&self) -> bool {
         self.script_man.script_exists(&Script::LatestStable)

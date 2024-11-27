@@ -285,6 +285,19 @@
           "description": "Timeout in seconds for all HTTP requests in mise.",
           "type": "string"
         },
+        "idiomatic_version_file": {
+          "default": true,
+          "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
+          "type": "boolean"
+        },
+        "idiomatic_version_file_disable_tools": {
+          "default": [],
+          "description": "Specific tools to disable idiomatic version files for.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "ignored_config_paths": {
           "default": [],
           "description": "This is a list of config paths that mise will ignore.",
@@ -301,11 +314,13 @@
         "legacy_version_file": {
           "default": true,
           "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
+          "deprecated": "Use idiomatic_version_file instead.",
           "type": "boolean"
         },
         "legacy_version_file_disable_tools": {
           "default": [],
           "description": "Specific tools to disable idiomatic version files for.",
+          "deprecated": "Use idiomatic_version_file_disable_tools instead.",
           "type": "array",
           "items": {
             "type": "string"

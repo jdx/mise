@@ -30,7 +30,7 @@ Only display key names for each setting
 Examples:
 
     $ mise settings ls
-    legacy_version_file = false
+    idiomatic_version_file = false
     ...
 
     $ mise settings ls python

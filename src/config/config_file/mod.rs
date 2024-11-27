@@ -7,8 +7,8 @@ use std::sync::{Mutex, Once};
 
 use eyre::eyre;
 use eyre::Result;
+use idiomatic_version::IdiomaticVersionFile;
 use indexmap::IndexMap;
-use legacy_version::LegacyVersionFile;
 use once_cell::sync::Lazy;
 use serde_derive::Deserialize;
 use versions::Versioning;
@@ -27,7 +27,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, T
 use crate::ui::{prompt, style};
 use crate::{backend, config, dirs, env, file};
 
-pub mod legacy_version;
+pub mod idiomatic_version;
 pub mod mise_toml;
 pub mod toml;
 pub mod tool_versions;
@@ -36,7 +36,7 @@ pub mod tool_versions;
 pub enum ConfigFileType {
     MiseToml,
     ToolVersions,
-    LegacyVersion,
+    IdiomaticVersion,
 }
 
 pub trait ConfigFile: Debug + Send + Sync {
@@ -190,8 +190,8 @@ fn init(path: &Path) -> Box<dyn ConfigFile> {
     match detect_config_file_type(path) {
         Some(ConfigFileType::MiseToml) => Box::new(MiseToml::init(path)),
         Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path)),
-        Some(ConfigFileType::LegacyVersion) => {
-            Box::new(LegacyVersionFile::init(path.to_path_buf()))
+        Some(ConfigFileType::IdiomaticVersion) => {
+            Box::new(IdiomaticVersionFile::init(path.to_path_buf()))
         }
         _ => panic!("Unknown config file type: {}", path.display()),
     }
@@ -214,7 +214,9 @@ pub fn parse(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
     match detect_config_file_type(path) {
         Some(ConfigFileType::MiseToml) => Ok(Box::new(MiseToml::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
-        Some(ConfigFileType::LegacyVersion) => Ok(Box::new(LegacyVersionFile::from_file(path)?)),
+        Some(ConfigFileType::IdiomaticVersion) => {
+            Ok(Box::new(IdiomaticVersionFile::from_file(path)?))
+        }
         #[allow(clippy::box_default)]
         _ => Ok(Box::new(MiseToml::default())),
     }
@@ -420,9 +422,9 @@ fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         }
         f if backend::list()
             .iter()
-            .any(|b| b.legacy_filenames().unwrap().contains(&f.to_string())) =>
+            .any(|b| b.idiomatic_filenames().unwrap().contains(&f.to_string())) =>
         {
-            Some(ConfigFileType::LegacyVersion)
+            Some(ConfigFileType::IdiomaticVersion)
         }
         _ => None,
     }
@@ -471,11 +473,11 @@ mod tests {
         reset();
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.nvmrc")),
-            Some(ConfigFileType::LegacyVersion)
+            Some(ConfigFileType::IdiomaticVersion)
         );
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.ruby-version")),
-            Some(ConfigFileType::LegacyVersion)
+            Some(ConfigFileType::IdiomaticVersion)
         );
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")),

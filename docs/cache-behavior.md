@@ -10,7 +10,7 @@ to be updating, this is a good place to start.
 ## Plugin/Runtime Cache
 
 Each plugin has a cache that's stored in `~/$MISE_CACHE_DIR/<PLUGIN>`. It stores
-the list of versions available for that plugin (`mise ls-remote <PLUGIN>`), the legacy filenames (see below),
+the list of versions available for that plugin (`mise ls-remote <PLUGIN>`), the idiomatic filenames (see below),
 the list of aliases, the bin directories within each runtime installation, and the result of
 running `exec-env` after the runtime was installed.
 

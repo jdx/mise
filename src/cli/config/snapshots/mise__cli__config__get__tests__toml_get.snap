@@ -12,8 +12,8 @@ TEST_ENV_VAR = "test-123"
 [settings]
 always_keep_download = true
 always_keep_install = true
+idiomatic_version_file = true
 jobs = 2
-legacy_version_file = true
 plugin_autoupdate_last_check_duration = "20m"
 
 [tasks.configtask]

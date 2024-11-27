@@ -58,9 +58,9 @@ sudo ln -s ~/.local/share/mise/installs/java/openjdk-21/Contents /Library/Java/J
 
 > Note: Not all distributions of the Java SDK support this integration (e.g liberica).
 
-## Legacy version files
+## Idiomatic version files
 
-The Java core plugin supports the legacy version files `.java-version` and `.sdkmanrc`.
+The Java core plugin supports the idiomatic version files `.java-version` and `.sdkmanrc`.
 
 For `.sdkmanrc` files, mise will try to map the vendor and version to the appropriate version
 string. For example, the version `20.0.2-tem` will be mapped to `temurin-20.0.2`. Due to Azul's Zulu

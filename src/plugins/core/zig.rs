@@ -133,7 +133,7 @@ impl Backend for ZigPlugin {
         Ok(versions)
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".zig-version".into()])
     }
 

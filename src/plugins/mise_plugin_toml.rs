@@ -18,7 +18,7 @@ pub struct MisePluginToml {
     pub exec_env: MisePluginTomlScriptConfig,
     pub list_aliases: MisePluginTomlScriptConfig,
     pub list_bin_paths: MisePluginTomlScriptConfig,
-    pub list_legacy_filenames: MisePluginTomlScriptConfig,
+    pub list_idiomatic_filenames: MisePluginTomlScriptConfig,
 }
 
 impl MisePluginToml {
@@ -46,12 +46,12 @@ impl MisePluginToml {
                 "exec-env" => self.exec_env = self.parse_script_config(k, v)?,
                 "list-aliases" => self.list_aliases = self.parse_script_config(k, v)?,
                 "list-bin-paths" => self.list_bin_paths = self.parse_script_config(k, v)?,
-                "list-legacy-filenames" => {
-                    self.list_legacy_filenames = self.parse_script_config(k, v)?
+                "list-idiomatic-filenames" | "list-legacy-filenames" => {
+                    self.list_idiomatic_filenames = self.parse_script_config(k, v)?
                 }
                 // this is an old key used in rtx-python
                 // this file is invalid, so just stop parsing entirely if we see it
-                "legacy-filenames" => return Ok(()),
+                "idiomatic-filenames" | "legacy-filenames" => return Ok(()),
                 _ => Err(eyre!("unknown key: {}", k))?,
             }
         }
@@ -121,8 +121,8 @@ mod tests {
         let cf = parse(&formatdoc! {r#"
         [list-aliases]
         data = "test-aliases"
-        [list-legacy-filenames]
-        data = "test-legacy-filenames"
+        [list-idiomatic-filenames]
+        data = "test-idiomatic-filenames"
         [exec-env]
         cache-key = ["foo", "bar"]
         [list-bin-paths]

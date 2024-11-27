@@ -23,7 +23,7 @@
       "additionalProperties": false,
       "properties": {
         "data": {
-          "description": "list of legacy filenames to check for",
+          "description": "list of idiomatic filenames to check for",
           "type": "string"
         }
       }

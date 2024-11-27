@@ -348,11 +348,11 @@ impl Backend for NodePlugin {
         Ok(aliases)
     }
 
-    fn legacy_filenames(&self) -> Result<Vec<String>> {
+    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".node-version".into(), ".nvmrc".into()])
     }
 
-    fn parse_legacy_file(&self, path: &Path) -> Result<String> {
+    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let body = file::read_to_string(path)?;
         // strip comments
         let body = body.split('#').next().unwrap_or_default().to_string();

@@ -11,7 +11,7 @@ use crate::file::display_path;
 pub enum ToolSource {
     ToolVersions(PathBuf),
     MiseToml(PathBuf),
-    LegacyVersionFile(PathBuf),
+    IdiomaticVersionFile(PathBuf),
     Argument,
     Environment(String, String),
     #[default]
@@ -23,7 +23,7 @@ impl Display for ToolSource {
         match self {
             ToolSource::ToolVersions(path) => write!(f, "{}", display_path(path)),
             ToolSource::MiseToml(path) => write!(f, "{}", display_path(path)),
-            ToolSource::LegacyVersionFile(path) => write!(f, "{}", display_path(path)),
+            ToolSource::IdiomaticVersionFile(path) => write!(f, "{}", display_path(path)),
             ToolSource::Argument => write!(f, "--runtime"),
             ToolSource::Environment(k, v) => write!(f, "{k}={v}"),
             ToolSource::Unknown => write!(f, "unknown"),
@@ -36,7 +36,7 @@ impl ToolSource {
         match self {
             ToolSource::ToolVersions(path) => Some(path),
             ToolSource::MiseToml(path) => Some(path),
-            ToolSource::LegacyVersionFile(path) => Some(path),
+            ToolSource::IdiomaticVersionFile(path) => Some(path),
             _ => None,
         }
     }
@@ -51,8 +51,8 @@ impl ToolSource {
                 "type".to_string() => "mise.toml".to_string(),
                 "path".to_string() => path.to_string_lossy().to_string(),
             },
-            ToolSource::LegacyVersionFile(path) => indexmap! {
-                "type".to_string() => "legacy-version-file".to_string(),
+            ToolSource::IdiomaticVersionFile(path) => indexmap! {
+                "type".to_string() => "idiomatic-version-file".to_string(),
                 "path".to_string() => path.to_string_lossy().to_string(),
             },
             ToolSource::Argument => indexmap! {
@@ -85,8 +85,8 @@ impl Serialize for ToolSource {
                 s.serialize_field("type", "mise.toml")?;
                 s.serialize_field("path", path)?;
             }
-            ToolSource::LegacyVersionFile(path) => {
-                s.serialize_field("type", "legacy-version-file")?;
+            ToolSource::IdiomaticVersionFile(path) => {
+                s.serialize_field("type", "idiomatic-version-file")?;
                 s.serialize_field("path", path)?;
             }
             ToolSource::Argument => {
@@ -122,7 +122,7 @@ mod tests {
         let ts = ToolSource::MiseToml(PathBuf::from("/home/user/.mise.toml"));
         assert_str_eq!(ts.to_string(), "/home/user/.mise.toml");
 
-        let ts = ToolSource::LegacyVersionFile(PathBuf::from("/home/user/.node-version"));
+        let ts = ToolSource::IdiomaticVersionFile(PathBuf::from("/home/user/.node-version"));
         assert_str_eq!(ts.to_string(), "/home/user/.node-version");
 
         let ts = ToolSource::Argument;
@@ -152,11 +152,11 @@ mod tests {
             }
         );
 
-        let ts = ToolSource::LegacyVersionFile(PathBuf::from("/home/user/.node-version"));
+        let ts = ToolSource::IdiomaticVersionFile(PathBuf::from("/home/user/.node-version"));
         assert_eq!(
             ts.as_json(),
             indexmap! {
-                "type".to_string() => "legacy-version-file".to_string(),
+                "type".to_string() => "idiomatic-version-file".to_string(),
                 "path".to_string() => "/home/user/.node-version".to_string(),
             }
         );

@@ -22,4 +22,4 @@ Use the local config file instead of the global one
 
 Examples:
 
-    mise settings unset legacy_version_file
+    mise settings unset idiomatic_version_file
