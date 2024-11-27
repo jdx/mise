@@ -81,7 +81,7 @@ impl Backend for RustPlugin {
         let toml = toml.parse::<toml::Value>()?;
         if let Some(toolchain) = toml.get("toolchain") {
             if let Some(channel) = toolchain.get("channel") {
-                return Ok(channel.to_string());
+                return Ok(channel.as_str().unwrap().to_string());
             }
         }
         Ok("".into())
@@ -100,7 +100,7 @@ impl Backend for RustPlugin {
             .execute()?;
 
         file::remove_all(tv.install_path())?;
-        file::make_symlink(&cargo_home().join(&tv.version), &tv.install_path())?;
+        file::make_symlink(&cargo_home().join("bin"), &tv.install_path())?;
 
         self.test_rust(ctx, &tv)?;
 

@@ -219,8 +219,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | elasticsearch | [asdf:asdf-community/asdf-elasticsearch](https://github.com/asdf-community/asdf-elasticsearch) |
 | elixir | [asdf:mise-plugins/mise-elixir](https://github.com/mise-plugins/mise-elixir) [vfox:version-fox/vfox-elixir](https://github.com/version-fox/vfox-elixir) |
 | elixir-ls | [asdf:juantascon/asdf-elixir-ls](https://github.com/juantascon/asdf-elixir-ls) |
-| elm | [asdf:asdf-community/asdf-elm](https://github.com/asdf-community/asdf-elm) |
-| embulk | [asdf:yuokada/asdf-embulk](https://github.com/yuokada/asdf-embulk) |
+| elm | [ubi:elm/compiler](https://github.com/elm/compiler) [asdf:asdf-community/asdf-elm](https://github.com/asdf-community/asdf-elm) |
 | emsdk | [asdf:RobLoach/asdf-emsdk](https://github.com/RobLoach/asdf-emsdk) |
 | envcli | [asdf:zekker6/asdf-envcli](https://github.com/zekker6/asdf-envcli) |
 | envsubst | [aqua:a8m/envsubst](https://github.com/a8m/envsubst) [asdf:dex4er/asdf-envsubst](https://github.com/dex4er/asdf-envsubst) |
