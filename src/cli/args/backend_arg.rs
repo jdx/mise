@@ -261,14 +261,18 @@ mod tests {
             assert_str_eq!(tool_name, fa.tool_name);
             assert_eq!(t, fa.backend_type());
         };
+        #[cfg(unix)]
         let asdf = |s, full, name| t(s, full, name, BackendType::Asdf);
         let cargo = |s, full, name| t(s, full, name, BackendType::Cargo);
         // let core = |s, full, name| t(s, full, name, BackendType::Core);
         let npm = |s, full, name| t(s, full, name, BackendType::Npm);
         let vfox = |s, full, name| t(s, full, name, BackendType::Vfox);
 
-        asdf("asdf:poetry", "asdf:poetry", "poetry");
-        asdf("poetry", "asdf:mise-plugins/mise-poetry", "poetry");
+        #[cfg(unix)]
+        {
+            asdf("asdf:poetry", "asdf:poetry", "poetry");
+            asdf("poetry", "asdf:mise-plugins/mise-poetry", "poetry");
+        }
         cargo("cargo:eza", "cargo:eza", "eza");
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");

@@ -392,6 +392,7 @@ impl Debug for EnvResults {
 }
 
 #[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use insta::assert_debug_snapshot;
     use test_log::test;

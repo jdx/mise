@@ -63,12 +63,14 @@ fn parse_shorthands_file(mut f: PathBuf) -> Result<Shorthands> {
 mod tests {
     use std::ops::Deref;
 
+    #[cfg(unix)]
     use pretty_assertions::assert_str_eq;
     use test_log::test;
 
     use super::*;
 
     #[test]
+    #[cfg(unix)]
     fn test_get_shorthands() {
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();

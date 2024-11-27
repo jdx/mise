@@ -143,6 +143,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_add_path_to_old_and_new() {
         let mut diff = DirenvDiff {
             old: HashMap::from([("PATH".to_string(), "/foo:/tmp:/bar:/old".to_string())]),
@@ -155,6 +156,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_null_path() {
         let mut diff = DirenvDiff {
             old: HashMap::from([]),

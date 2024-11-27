@@ -927,6 +927,7 @@ pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Resul
 }
 
 #[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use insta::assert_debug_snapshot;
 

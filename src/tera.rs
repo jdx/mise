@@ -359,18 +359,21 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_xdg_config_home() {
         let s = render("{{xdg_config_home}}");
         assert!(s.ends_with("/.config")); // test dir is not deterministic
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_xdg_data_home() {
         let s = render("{{xdg_data_home}}");
         assert!(s.ends_with("/.local/share")); // test dir is not deterministic
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_xdg_state_home() {
         let s = render("{{xdg_state_home}}");
         assert!(s.ends_with("/.local/state")); // test dir is not deterministic
@@ -469,12 +472,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_hash_file() {
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
         assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_canonicalize() {
         let s = render("{{ \"../fixtures/shorthands.toml\" | canonicalize }}");
         assert!(s.ends_with("/fixtures/shorthands.toml")); // test dir is not deterministic
@@ -505,6 +510,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_file_size() {
         let s = render(r#"{{ "../fixtures/shorthands.toml" | file_size }}"#);
         assert_eq!(s, "48");
@@ -518,6 +524,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_join_path() {
         let s = render(r#"{{ ["..", "fixtures", "shorthands.toml"] | join_path }}"#);
         assert_eq!(s, "../fixtures/shorthands.toml");

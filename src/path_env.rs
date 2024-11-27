@@ -74,6 +74,7 @@ impl FromIterator<PathBuf> for PathEnv {
     }
 }
 
+#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;

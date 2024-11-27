@@ -1184,6 +1184,7 @@ fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
 }
 
 #[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use indoc::formatdoc;
     use insta::{assert_debug_snapshot, assert_snapshot};

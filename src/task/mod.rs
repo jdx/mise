@@ -495,6 +495,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_name_from_path() {
         let test_cases = [
             (("/.mise/tasks", "/.mise/tasks/a"), "a"),

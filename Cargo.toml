@@ -151,12 +151,9 @@ toml = "0.8"
 indexmap = "2"
 
 [dev-dependencies]
-assert_cmd = "2"
 ctor = "0.2"
 insta = { version = "1", features = ["filters", "json"] }
-predicates = "3"
 pretty_assertions = "1"
-test-case = "3"
 test-log = "0.2"
 
 [features]

@@ -404,7 +404,7 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
+pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 
@@ -679,7 +679,6 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
 
     use pretty_assertions::assert_eq;
     use test_log::test;
@@ -718,7 +717,9 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_display_path() {
+        use std::ops::Deref;
         let path = dirs::HOME.join("cwd");
         assert_eq!(display_path(path), "~/cwd");
 

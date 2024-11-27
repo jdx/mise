@@ -246,12 +246,9 @@ fn normalize_escape_sequences(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use indexmap::indexmap;
     use insta::assert_debug_snapshot;
     use pretty_assertions::assert_str_eq;
     use test_log::test;
-
-    use crate::dirs;
 
     use super::*;
 
@@ -319,7 +316,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_from_bash_script() {
+        use crate::dirs;
+        use indexmap::indexmap;
         let path = dirs::HOME.join("fixtures/exec-env");
         let orig = indexmap! {
             "UNMODIFIED_VAR" => "unmodified",
