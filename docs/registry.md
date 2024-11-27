@@ -770,6 +770,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | usql | [aqua:xo/usql](https://github.com/xo/usql) [asdf:itspngu/asdf-usql](https://github.com/itspngu/asdf-usql) |
 | uv | [aqua:astral-sh/uv](https://github.com/astral-sh/uv) [asdf:asdf-community/asdf-uv](https://github.com/asdf-community/asdf-uv) |
 | v | [asdf:jthegedus/asdf-v](https://github.com/jthegedus/asdf-v) |
+| vacuum | [aqua:daveshanley/vacuum](https://github.com/daveshanley/vacuum) |
 | vale | [aqua:errata-ai/vale](https://github.com/errata-ai/vale) [asdf:pdemagny/asdf-vale](https://github.com/pdemagny/asdf-vale) |
 | vals | [aqua:helmfile/vals](https://github.com/helmfile/vals) [asdf:dex4er/asdf-vals](https://github.com/dex4er/asdf-vals) |
 | vault | [aqua:hashicorp/vault](https://github.com/hashicorp/vault) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
