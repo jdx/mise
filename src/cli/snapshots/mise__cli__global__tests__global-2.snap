@@ -1,6 +1,0 @@
----
-source: src/cli/global.rs
-expression: output
-snapshot_kind: text
----
-mise ~/config/config.toml tiny@2

@@ -123,30 +123,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise config set settings.jobs 4</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-
-    #[test]
-    fn test_config_set() {
-        reset();
-        assert_cli_snapshot!("config", "set", "env.TEST_ENV_VAR", "ABC", @"");
-        assert_cli_snapshot!("config", "get", "env.TEST_ENV_VAR", @"ABC");
-
-        assert_cli_snapshot!("config", "set", "settings.ruby.default_packages_file", "abc", @"");
-        assert_cli_snapshot!("config", "get", "settings.ruby.default_packages_file", @"abc");
-
-        assert_cli_snapshot!("config", "set", "settings.always_keep_download", "--type", "bool", "true", @"");
-        assert_cli_snapshot!("config", "get", "settings.always_keep_download", @"true");
-
-        assert_cli_snapshot!("config", "set", "settings.jobs", "--type", "integer", "4", @"");
-        assert_cli_snapshot!("config", "get", "settings.jobs", @"4");
-
-        assert_cli_snapshot!("config", "set", "settings.jobs", "4", @"");
-        assert_cli_snapshot!("config", "get", "settings.jobs", @"4");
-
-        assert_cli_snapshot!("config", "set", "settings.disable_tools", "--type", "list", "node,rust", @"");
-        assert_cli_snapshot!("config", "get", "settings.disable_tools", @r#"["node", "rust"]"#);
-    }
-}

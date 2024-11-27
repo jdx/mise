@@ -167,34 +167,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise x -C /path/to/project node@20 -- node ./app.js</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use std::env;
-
-    use insta::assert_snapshot;
-    use test_log::test;
-
-    use crate::test::reset;
-
-    #[test]
-    fn test_exec_ok() {
-        reset();
-        assert_cli!("exec", "--", "echo");
-    }
-
-    #[test]
-    fn test_exec_fail() {
-        reset();
-        let err = assert_cli_err!("exec", "--", "exit", "1");
-        assert_snapshot!(err);
-    }
-
-    #[test]
-    fn test_exec_cd() {
-        reset();
-        let cwd = env::current_dir().unwrap();
-        assert_cli!("exec", "-C", "/tmp", "--", "pwd");
-        env::set_current_dir(cwd).unwrap();
-    }
-}

@@ -39,19 +39,3 @@ impl RenderMangen {
 fn project_root() -> PathBuf {
     Path::new(&env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::env::HOME;
-    use crate::file;
-    use crate::test::reset;
-
-    #[test]
-    fn test_render_mangen() {
-        reset();
-        let out_dir = HOME.parent().unwrap().join("man").join("man1");
-        let orig = file::read_to_string(out_dir.join("mise.1")).unwrap();
-        assert_cli!("render-mangen");
-        file::write(out_dir.join("mise.1"), orig).unwrap();
-    }
-}

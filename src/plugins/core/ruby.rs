@@ -442,13 +442,11 @@ fn parse_gemfile(body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::reset;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn test_parse_gemfile() {
-        reset();
         assert_eq!(
             parse_gemfile(indoc! {r#"
             ruby '2.7.2'

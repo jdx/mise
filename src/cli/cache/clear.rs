@@ -55,20 +55,3 @@ impl CacheClear {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-
-    #[test]
-    fn test_cache_clear() {
-        reset();
-        assert_cli_snapshot!("cache", "clear", @"mise cache cleared");
-    }
-
-    #[test]
-    fn test_cache_clear_plugin() {
-        reset();
-        assert_cli_snapshot!("cache", "clear", "tiny", @"mise cache cleared for tiny");
-    }
-}

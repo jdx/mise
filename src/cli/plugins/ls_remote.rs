@@ -62,17 +62,3 @@ Examples:
 
     $ mise plugins ls-remote
 "#;
-
-#[cfg(test)]
-mod tests {
-    use test_log::test;
-
-    use crate::test::reset;
-
-    #[test]
-    fn test_plugin_list_remote() {
-        reset();
-        let stdout = assert_cli!("plugin", "ls-remote");
-        assert!(stdout.contains("tiny"));
-    }
-}

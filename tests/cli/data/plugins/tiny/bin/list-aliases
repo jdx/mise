@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-
-set -eu -o pipefail
-
-echo "lts 3.1.0"
-echo "lts-prev 2.0.0"

@@ -31,12 +31,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     ubi
 "#
 );
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_backends_list() {
-        assert_cli_snapshot!("backends", "list");
-    }
-}

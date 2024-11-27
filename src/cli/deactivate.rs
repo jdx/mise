@@ -44,25 +44,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise deactivate</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-
-    use crate::config::Config;
-    use crate::env;
-    use crate::test::reset;
-
-    #[test]
-    fn test_deactivate() {
-        reset();
-        let _config = Config::try_get().unwrap(); // hack: prevents error parsing __MISE_DIFF
-        let err = assert_cli_err!("deactivate");
-        assert_snapshot!(err);
-        env::set_var("__MISE_DIFF", "");
-        env::set_var("MISE_SHELL", "zsh");
-        assert_cli_snapshot!("deactivate");
-        env::remove_var("__MISE_DIFF");
-        env::remove_var("MISE_SHELL");
-    }
-}

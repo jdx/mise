@@ -396,13 +396,12 @@ mod tests {
     use insta::assert_debug_snapshot;
     use test_log::test;
 
-    use crate::test::{replace_path, reset};
+    use crate::test::replace_path;
 
     use super::*;
 
     #[test]
     fn test_env_path() {
-        reset();
         let mut env = HashMap::new();
         env.insert("A".to_string(), "1".to_string());
         env.insert("B".to_string(), "2".to_string());
@@ -444,7 +443,6 @@ mod tests {
 
     #[test]
     fn test_venv_path() {
-        reset();
         let env = HashMap::new();
         let results = EnvResults::resolve(
             &env,

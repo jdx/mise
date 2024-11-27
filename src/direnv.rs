@@ -121,12 +121,10 @@ impl Display for DirenvDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::reset;
     use insta::assert_snapshot;
 
     #[test]
     fn test_parse() {
-        reset();
         let input = r#"eJys0c1yojAAwPF3ybmWaLB-zPSAGCqIQCGgeGGIELDlM2BEOr77zs7szr7AXv-H3-X_Axqw_gGabYM1qPk1A88XUP1OW93FVhBtdReswURq-FXEfSqJmEusLpKUdxLspALRJY1Yt2Bifk8aLhf5iiZIhhDCjEtE6svmteGuSJVHAV7-qppuYrAG_0WVXtNK8Ms__KgQdYc9sAapMXRj1-9XW8VX7A16UA4NPIs9xCK5WO51XnvfwWBT1R9N7zIcHvvJbZF5g8pk0V2c5CboIw8_NjOUWDK5qcxIcaFrp3anhwdr5FeKJmfd9stgqvuVZqcXsXHYJ-kSGWpoxyZLzf0a0LUcMgv17exenXXunfOTZZfybiVmb9OAhjDtHEcOk0lrRWG84OrRobW6IgGGZqwelglTq8UmJrbP9p0x9pTW5t3L21P1mZfL7_pMtIW599v-Cx_dmzEdCcZ1TAzkz7dvfO4QAefO6Y4VxYmijzgP_Oz9Hbz8uU5jDp7PXwEAAP__wB6qKg=="#;
         let diff = DirenvDiff::parse(input).unwrap();
         assert_snapshot!(diff);
@@ -134,7 +132,6 @@ mod tests {
 
     #[test]
     fn test_dump() {
-        reset();
         let diff = DirenvDiff {
             old: HashMap::from([("a".to_string(), "b".to_string())]),
             new: HashMap::from([("c".to_string(), "d".to_string())]),
@@ -147,7 +144,6 @@ mod tests {
 
     #[test]
     fn test_add_path_to_old_and_new() {
-        reset();
         let mut diff = DirenvDiff {
             old: HashMap::from([("PATH".to_string(), "/foo:/tmp:/bar:/old".to_string())]),
             new: HashMap::from([("PATH".to_string(), "/foo:/bar:/new".to_string())]),
@@ -160,7 +156,6 @@ mod tests {
 
     #[test]
     fn test_null_path() {
-        reset();
         let mut diff = DirenvDiff {
             old: HashMap::from([]),
             new: HashMap::from([]),

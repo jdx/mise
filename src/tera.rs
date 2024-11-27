@@ -320,25 +320,21 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::reset;
     use insta::assert_snapshot;
     use pretty_assertions::assert_str_eq;
 
     #[test]
     fn test_config_root() {
-        reset();
         assert_eq!(render("{{config_root}}"), "/");
     }
 
     #[test]
     fn test_cwd() {
-        reset();
         assert_eq!(render("{{cwd}}"), "/");
     }
 
     #[test]
     fn test_mise_bin() {
-        reset();
         assert_eq!(
             render("{{mise_bin}}"),
             env::current_exe()
@@ -351,7 +347,6 @@ mod tests {
 
     #[test]
     fn test_mise_pid() {
-        reset();
         let s = render("{{mise_pid}}");
         let pid = s.trim().parse::<u32>().unwrap();
         assert!(pid > 0);
@@ -359,35 +354,30 @@ mod tests {
 
     #[test]
     fn test_xdg_cache_home() {
-        reset();
         let s = render("{{xdg_cache_home}}");
         assert_str_eq!(s, env::XDG_CACHE_HOME.to_string_lossy());
     }
 
     #[test]
     fn test_xdg_config_home() {
-        reset();
         let s = render("{{xdg_config_home}}");
         assert!(s.ends_with("/.config")); // test dir is not deterministic
     }
 
     #[test]
     fn test_xdg_data_home() {
-        reset();
         let s = render("{{xdg_data_home}}");
         assert!(s.ends_with("/.local/share")); // test dir is not deterministic
     }
 
     #[test]
     fn test_xdg_state_home() {
-        reset();
         let s = render("{{xdg_state_home}}");
         assert!(s.ends_with("/.local/state")); // test dir is not deterministic
     }
 
     #[test]
     fn test_arch() {
-        reset();
         if cfg!(target_arch = "x86_64") {
             assert_eq!(render("{{arch()}}"), "x64");
         } else if cfg!(target_arch = "aarch64") {
@@ -399,7 +389,6 @@ mod tests {
 
     #[test]
     fn test_num_cpus() {
-        reset();
         let s = render("{{ num_cpus() }}");
         let num = s.parse::<u32>().unwrap();
         assert!(num > 0);
@@ -407,7 +396,6 @@ mod tests {
 
     #[test]
     fn test_os() {
-        reset();
         if cfg!(target_os = "linux") {
             assert_eq!(render("{{os()}}"), "linux");
         } else if cfg!(target_os = "macos") {
@@ -419,7 +407,6 @@ mod tests {
 
     #[test]
     fn test_os_family() {
-        reset();
         if cfg!(target_family = "unix") {
             assert_eq!(render("{{os_family()}}"), "unix");
         } else if cfg!(target_os = "windows") {
@@ -429,119 +416,102 @@ mod tests {
 
     #[test]
     fn test_choice() {
-        reset();
         let result = render("{{choice(n=8, alphabet=\"abcdefgh\")}}");
         assert_eq!(result.trim().len(), 8);
     }
 
     #[test]
     fn test_quote() {
-        reset();
         let s = render("{{ \"quoted'str\" | quote }}");
         assert_eq!(s, "'quoted\\'str'");
     }
 
     #[test]
     fn test_kebabcase() {
-        reset();
         let s = render("{{ \"thisFilter\" | kebabcase }}");
         assert_eq!(s, "this-filter");
     }
 
     #[test]
     fn test_lowercamelcase() {
-        reset();
         let s = render("{{ \"Camel-case\" | lowercamelcase }}");
         assert_eq!(s, "camelCase");
     }
 
     #[test]
     fn test_shoutykebabcase() {
-        reset();
         let s = render("{{ \"kebabCase\" | shoutykebabcase }}");
         assert_eq!(s, "KEBAB-CASE");
     }
 
     #[test]
     fn test_shoutysnakecase() {
-        reset();
         let s = render("{{ \"snakeCase\" | shoutysnakecase }}");
         assert_eq!(s, "SNAKE_CASE");
     }
 
     #[test]
     fn test_snakecase() {
-        reset();
         let s = render("{{ \"snakeCase\" | snakecase }}");
         assert_eq!(s, "snake_case");
     }
 
     #[test]
     fn test_uppercamelcase() {
-        reset();
         let s = render("{{ \"CamelCase\" | uppercamelcase }}");
         assert_eq!(s, "CamelCase");
     }
 
     #[test]
     fn test_hash() {
-        reset();
         let s = render("{{ \"foo\" | hash(len=8) }}");
         assert_eq!(s, "2c26b46b");
     }
 
     #[test]
     fn test_hash_file() {
-        reset();
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
         assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
     }
 
     #[test]
     fn test_canonicalize() {
-        reset();
         let s = render("{{ \"../fixtures/shorthands.toml\" | canonicalize }}");
         assert!(s.ends_with("/fixtures/shorthands.toml")); // test dir is not deterministic
     }
 
     #[test]
     fn test_dirname() {
-        reset();
         let s = render(r#"{{ "a/b/c" | dirname }}"#);
         assert_eq!(s, "a/b");
     }
 
     #[test]
     fn test_basename() {
-        reset();
         let s = render(r#"{{ "a/b/c" | basename }}"#);
         assert_eq!(s, "c");
     }
 
     #[test]
     fn test_extname() {
-        reset();
         let s = render(r#"{{ "a/b/c.txt" | extname }}"#);
         assert_eq!(s, "txt");
     }
 
     #[test]
     fn test_file_stem() {
-        reset();
         let s = render(r#"{{ "a/b/c.txt" | file_stem }}"#);
         assert_eq!(s, "c");
     }
 
     #[test]
     fn test_file_size() {
-        reset();
         let s = render(r#"{{ "../fixtures/shorthands.toml" | file_size }}"#);
         assert_eq!(s, "48");
     }
 
     #[test]
     fn test_last_modified() {
-        reset();
         let s = render(r#"{{ "../fixtures/shorthands.toml" | last_modified }}"#);
         let timestamp = s.parse::<u64>().unwrap();
         assert!((1725000000..=2725000000).contains(&timestamp));
@@ -549,35 +519,30 @@ mod tests {
 
     #[test]
     fn test_join_path() {
-        reset();
         let s = render(r#"{{ ["..", "fixtures", "shorthands.toml"] | join_path }}"#);
         assert_eq!(s, "../fixtures/shorthands.toml");
     }
 
     #[test]
     fn test_is_dir() {
-        reset();
         let s = render(r#"{% set p = ".mise" %}{% if p is dir %} ok {% endif %}"#);
         assert_eq!(s.trim(), "ok");
     }
 
     #[test]
     fn test_is_file() {
-        reset();
         let s = render(r#"{% set p = ".test-tool-versions" %}{% if p is file %} ok {% endif %}"#);
         assert_eq!(s.trim(), "ok");
     }
 
     #[test]
     fn test_exists() {
-        reset();
         let s = render(r#"{% set p = ".test-tool-versions" %}{% if p is exists %} ok {% endif %}"#);
         assert_eq!(s.trim(), "ok");
     }
 
     #[test]
     fn test_semver_matching() {
-        reset();
         let s = render(
             r#"{% set p = "1.10.2" %}{% if p is semver_matching("^1.10.0") %} ok {% endif %}"#,
         );

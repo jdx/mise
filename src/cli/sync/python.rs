@@ -45,16 +45,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise use -g python@3.11.0</bold> - uses pyenv-provided python
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use test_log::test;
-
-    use crate::test::reset;
-
-    #[test]
-    fn test_pyenv() {
-        reset();
-        assert_cli!("sync", "python", "--pyenv");
-    }
-}

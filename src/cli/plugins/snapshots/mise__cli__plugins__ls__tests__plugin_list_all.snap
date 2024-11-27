@@ -1,6 +1,0 @@
----
-source: src/cli/plugins/ls.rs
-expression: "grep(stdout, \"zephyr\")"
-snapshot_kind: text
----
-zephyr                        https://github.com/nsaunders/asdf-zephyr.git

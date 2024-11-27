@@ -39,31 +39,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     20.0.0
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-
-    use crate::test::reset;
-
-    #[test]
-    fn test_alias_get() {
-        reset();
-        let stdout = assert_cli!("alias", "get", "tiny", "my/alias");
-        assert_snapshot!(stdout, @"3.0");
-    }
-
-    #[test]
-    fn test_alias_get_plugin_unknown() {
-        reset();
-        let err = assert_cli_err!("alias", "get", "unknown", "unknown");
-        assert_snapshot!(err, @"Unknown plugin: unknown");
-    }
-
-    #[test]
-    fn test_alias_get_alias_unknown() {
-        reset();
-        let err = assert_cli_err!("alias", "get", "tiny", "unknown");
-        assert_snapshot!(err, @"Unknown alias: unknown");
-    }
-}

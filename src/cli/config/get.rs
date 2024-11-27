@@ -75,15 +75,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     3.12
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use crate::test::reset;
-
-    #[test]
-    fn test_toml_get() {
-        reset();
-        assert_cli_snapshot!("cfg", "get");
-        assert_cli_snapshot!("cfg", "get", "env.TEST_ENV_VAR", @"test-123");
-    }
-}

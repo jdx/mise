@@ -474,14 +474,12 @@ mod tests {
 
     use crate::dirs;
     use crate::task::Task;
-    use crate::test::reset;
     use pretty_assertions::assert_eq;
 
     use super::name_from_path;
 
     #[test]
     fn test_from_path() {
-        reset();
         let test_cases = [(".mise/tasks/filetask", "filetask", vec!["ft"])];
 
         for (path, name, aliases) in test_cases {
@@ -498,7 +496,6 @@ mod tests {
 
     #[test]
     fn test_name_from_path() {
-        reset();
         let test_cases = [
             (("/.mise/tasks", "/.mise/tasks/a"), "a"),
             (("/.mise/tasks", "/.mise/tasks/a/b"), "a:b"),
@@ -514,7 +511,6 @@ mod tests {
 
     #[test]
     fn test_name_from_path_invalid() {
-        reset();
         let test_cases = [("/some/other/dir", "/.mise/tasks/a")];
 
         for (root, path) in test_cases {

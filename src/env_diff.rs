@@ -252,20 +252,17 @@ mod tests {
     use test_log::test;
 
     use crate::dirs;
-    use crate::test::reset;
 
     use super::*;
 
     #[test]
     fn test_diff() {
-        reset();
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         assert_debug_snapshot!(diff.to_patches());
     }
 
     #[test]
     fn test_reverse() {
-        reset();
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let patches = diff.reverse().to_patches();
         let to_remove = patches
@@ -315,7 +312,6 @@ mod tests {
 
     #[test]
     fn test_serialize() {
-        reset();
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let serialized = diff.serialize().unwrap();
         let deserialized = EnvDiff::deserialize(&serialized).unwrap();
@@ -324,7 +320,6 @@ mod tests {
 
     #[test]
     fn test_from_bash_script() {
-        reset();
         let path = dirs::HOME.join("fixtures/exec-env");
         let orig = indexmap! {
             "UNMODIFIED_VAR" => "unmodified",
@@ -358,7 +353,6 @@ mod tests {
 
     #[test]
     fn test_invalid_escape_sequence() {
-        reset();
         let input = r#""\g\""#;
         let output = normalize_escape_sequences(input);
         // just warns

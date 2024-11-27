@@ -930,13 +930,10 @@ pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Resul
 mod tests {
     use insta::assert_debug_snapshot;
 
-    use crate::test::reset;
-
     use super::*;
 
     #[test]
     fn test_load() {
-        reset();
         let config = Config::load().unwrap();
         assert_debug_snapshot!(config);
     }

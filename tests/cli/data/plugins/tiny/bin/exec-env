@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-
-set -eu -o pipefail
-
-JDXCODE_TINY="$(cat "$ASDF_INSTALL_PATH/VERSION")"
-export JDXCODE_TINY

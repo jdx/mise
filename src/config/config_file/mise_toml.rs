@@ -1190,14 +1190,13 @@ mod tests {
     use test_log::test;
 
     use crate::dirs::CWD;
-    use crate::test::{replace_path, reset};
+    use crate::test::replace_path;
     use crate::toolset::ToolRequest;
 
     use super::*;
 
     #[test]
     fn test_fixture() {
-        reset();
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env_entries().unwrap());
@@ -1213,7 +1212,6 @@ mod tests {
 
     #[test]
     fn test_env() {
-        reset();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1241,7 +1239,6 @@ mod tests {
 
     #[test]
     fn test_env_array_valid() {
-        reset();
         let env = parse_env(formatdoc! {r#"
         [[env]]
         foo="bar"
@@ -1265,7 +1262,6 @@ mod tests {
 
     #[test]
     fn test_path_dirs() {
-        reset();
         let env = parse_env(formatdoc! {r#"
             env_path=["/foo", "./bar"]
             [env]
@@ -1322,7 +1318,6 @@ mod tests {
 
     #[test]
     fn test_env_file() {
-        reset();
         let env = parse_env(formatdoc! {r#"
             env_file = ".env"
             "#});
@@ -1356,7 +1351,6 @@ mod tests {
 
     #[test]
     fn test_set_alias() {
-        reset();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1382,7 +1376,6 @@ mod tests {
 
     #[test]
     fn test_remove_alias() {
-        reset();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1412,7 +1405,6 @@ mod tests {
 
     #[test]
     fn test_replace_versions() {
-        reset();
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1443,7 +1435,6 @@ mod tests {
 
     #[test]
     fn test_remove_plugin() {
-        reset();
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1465,7 +1456,6 @@ mod tests {
 
     #[test]
     fn test_env_entries() {
-        reset();
         let toml = formatdoc! {r#"
         [env]
         foo1="1"
@@ -1487,7 +1477,6 @@ mod tests {
 
     #[test]
     fn test_env_arr() {
-        reset();
         let toml = formatdoc! {r#"
         [[env]]
         foo1="1"

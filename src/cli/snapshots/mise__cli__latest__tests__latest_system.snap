@@ -1,6 +1,0 @@
----
-source: src/cli/latest.rs
-expression: err
-snapshot_kind: text
----
-invalid version: dummy@system

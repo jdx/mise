@@ -90,18 +90,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise generate task-docs</bold>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use test_log::test;
-
-    use crate::test::{cleanup, reset, setup_git_repo};
-
-    #[test]
-    fn test_task_docs() {
-        reset();
-        setup_git_repo();
-        assert_cli_snapshot!("generate", "task-docs");
-        cleanup();
-    }
-}

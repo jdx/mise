@@ -45,14 +45,12 @@ impl ToolVersionList {
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::test::reset;
     use crate::{backend, dirs, env, file};
 
     use super::*;
 
     #[test]
     fn test_tool_version_list() {
-        reset();
         let fa: BackendArg = "tiny".into();
         let mut tvl = ToolVersionList::new(fa.clone(), ToolSource::Argument);
         tvl.requests
@@ -67,7 +65,6 @@ mod tests {
 
     #[test]
     fn test_tool_version_list_failure() {
-        reset();
         backend::reset();
         env::set_var("MISE_FAILURE", "1");
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
@@ -80,5 +77,6 @@ mod tests {
             use_locked_version: false,
         });
         assert_eq!(tvl.versions.len(), 0);
+        env::remove_var("MISE_FAILURE");
     }
 }

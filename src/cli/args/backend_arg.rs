@@ -251,12 +251,10 @@ impl Hash for BackendArg {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::reset;
     use pretty_assertions::{assert_eq, assert_str_eq};
 
     #[test]
     fn test_backend_arg() {
-        reset();
         let t = |s: &str, full, tool_name, t| {
             let fa: BackendArg = s.into();
             assert_str_eq!(full, fa.full());
@@ -284,7 +282,6 @@ mod tests {
 
     #[test]
     fn test_backend_arg_pathname() {
-        reset();
         let t = |s: &str, expected| {
             let fa: BackendArg = s.into();
             let actual = fa.installs_path.to_string_lossy();

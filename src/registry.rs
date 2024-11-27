@@ -44,7 +44,7 @@ impl RegistryTool {
             .filter(|full| {
                 full.split(':')
                     .next()
-                    .map_or(false, |b| BACKEND_TYPES.contains(b))
+                    .is_some_and(|b| BACKEND_TYPES.contains(b))
             })
             .copied()
             .collect()
