@@ -803,7 +803,7 @@
       }
     },
     "task_config": {
-      "description": "configration for task execution/management",
+      "description": "configuration for task execution/management",
       "type": "object",
       "additionalProperties": false,
       "properties": {

@@ -158,7 +158,7 @@ Mise offers additional functions:
   of `alphabet`. For example, `choice(64, HEX)` will generate a random
   64-character lowercase hex string.
 
-A example of function using `exec`:
+An example of function using `exec`:
 
 ```toml
 [alias.node.versions]

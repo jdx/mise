@@ -352,7 +352,7 @@ of what is set in `.tool-versions`/`.mise.toml`.
 
 ### `MISE_USE_TOML=1`
 
-Set to `0` to default to using `.tool-verisons` in `mise local` instead of `mise.toml` for
+Set to `0` to default to using `.tool-versions` in `mise local` instead of `mise.toml` for
 configuration.
 
 This is not used by `mise use` which will only use `mise.toml` unless `--path` is specified.
