@@ -213,7 +213,7 @@ jobs:
         env:
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
-          TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
+          TEST_ALL: ${{github.head_ref == 'release' && '1' || '0'}}
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
@@ -315,11 +315,11 @@ jobs:
     needs: [build-macos, build-windows]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    if: github.ref == 'refs/heads/release'
+    if: github.head_ref == 'release'
     env:
       TEST_TRANCHE: ${{matrix.tranche}}
       TEST_TRANCHE_COUNT: 4
-      TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
+      TEST_ALL: ${{github.head_ref == 'release' && '1' || '0'}}
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
       MISE_DISABLE_TOOLS: |
