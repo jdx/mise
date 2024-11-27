@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >.mise.toml
+[env]
+_.file = 'not_present'
+EOF
+
+assert "mise env" # does not error
