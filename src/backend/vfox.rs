@@ -10,7 +10,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::{Config, SETTINGS};
+use crate::config::Config;
 use crate::dirs;
 use crate::install_context::InstallContext;
 use crate::plugins::vfox_plugin::VfoxPlugin;
@@ -23,7 +23,6 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 pub struct VfoxBackend {
     ba: BackendArg,
     plugin: Box<VfoxPlugin>,
-    remote_version_cache: CacheManager<Vec<String>>,
     exec_env_cache: RwLock<HashMap<String, CacheManager<BTreeMap<String, String>>>>,
     pathname: String,
 }
@@ -42,18 +41,14 @@ impl Backend for VfoxBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.remote_version_cache
-            .get_or_try_init(|| {
-                let (vfox, _log_rx) = self.plugin.vfox();
-                self.ensure_plugin_installed()?;
-                let versions = RUNTIME.block_on(vfox.list_available_versions(&self.pathname))?;
-                Ok(versions
-                    .into_iter()
-                    .rev()
-                    .map(|v| v.version)
-                    .collect::<Vec<String>>())
-            })
-            .cloned()
+        let (vfox, _log_rx) = self.plugin.vfox();
+        self.ensure_plugin_installed()?;
+        let versions = RUNTIME.block_on(vfox.list_available_versions(&self.pathname))?;
+        Ok(versions
+            .into_iter()
+            .rev()
+            .map(|v| v.version)
+            .collect::<Vec<String>>())
     }
 
     fn install_version_impl(
@@ -108,14 +103,6 @@ impl VfoxBackend {
         let mut plugin = VfoxPlugin::new(pathname.clone(), plugin_path.clone());
         plugin.full = Some(ba.full());
         Self {
-            remote_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .with_fresh_file(dirs::DATA.to_path_buf())
-            .with_fresh_file(plugin_path.to_path_buf())
-            .with_fresh_file(ba.installs_path.to_path_buf())
-            .build(),
             exec_env_cache: Default::default(),
             plugin: Box::new(plugin),
             ba,

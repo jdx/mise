@@ -1,7 +1,6 @@
 use crate::aqua::aqua_registry::{AquaChecksumType, AquaPackage, AquaPackageType, AQUA_REGISTRY};
 use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
-use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
@@ -12,7 +11,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
-use crate::{dirs, file, github};
+use crate::{file, github};
 use eyre::{bail, ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -25,7 +24,6 @@ use std::path::{Path, PathBuf};
 pub struct AquaBackend {
     ba: BackendArg,
     id: String,
-    remote_version_cache: CacheManager<Vec<String>>,
 }
 
 impl Backend for AquaBackend {
@@ -42,47 +40,43 @@ impl Backend for AquaBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.remote_version_cache
-            .get_or_try_init(|| {
-                let pkg = AQUA_REGISTRY.package(&self.id)?;
-                if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
-                    let versions = if let Some("github_tag") = pkg.version_source.as_deref() {
-                        github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
-                    } else {
-                        github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
-                            .into_iter()
-                            .map(|r| r.tag_name)
-                            .collect_vec()
-                    };
-                    Ok(versions
-                        .into_iter()
-                        .filter_map(|v| {
-                            let mut v = v.as_str();
-                            match pkg.version_filter_ok(v) {
-                                Ok(true) => {}
-                                Ok(false) => return None,
-                                Err(e) => {
-                                    warn!("[{}] aqua version filter error: {e}", self.ba);
-                                }
-                            }
-                            if let Some(prefix) = &pkg.version_prefix {
-                                if let Some(_v) = v.strip_prefix(prefix) {
-                                    v = _v
-                                } else {
-                                    return None;
-                                }
-                            }
-                            v = v.strip_prefix('v').unwrap_or(v);
-                            Some(v.to_string())
-                        })
-                        .rev()
-                        .collect())
-                } else {
-                    warn!("no aqua registry found for {}", self.ba);
-                    Ok(vec![])
-                }
-            })
-            .cloned()
+        let pkg = AQUA_REGISTRY.package(&self.id)?;
+        if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
+            let versions = if let Some("github_tag") = pkg.version_source.as_deref() {
+                github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
+            } else {
+                github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
+                    .into_iter()
+                    .map(|r| r.tag_name)
+                    .collect_vec()
+            };
+            Ok(versions
+                .into_iter()
+                .filter_map(|v| {
+                    let mut v = v.as_str();
+                    match pkg.version_filter_ok(v) {
+                        Ok(true) => {}
+                        Ok(false) => return None,
+                        Err(e) => {
+                            warn!("[{}] aqua version filter error: {e}", self.ba);
+                        }
+                    }
+                    if let Some(prefix) = &pkg.version_prefix {
+                        if let Some(_v) = v.strip_prefix(prefix) {
+                            v = _v
+                        } else {
+                            return None;
+                        }
+                    }
+                    v = v.strip_prefix('v').unwrap_or(v);
+                    Some(v.to_string())
+                })
+                .rev()
+                .collect())
+        } else {
+            warn!("no aqua registry found for {}", self.ba);
+            Ok(vec![])
+        }
     }
 
     fn install_version_impl(
@@ -168,13 +162,6 @@ impl AquaBackend {
                 });
         }
         Self {
-            remote_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .with_fresh_file(dirs::DATA.to_path_buf())
-            .with_fresh_file(ba.installs_path.to_path_buf())
-            .build(),
             id: id.to_string(),
             ba,
         }

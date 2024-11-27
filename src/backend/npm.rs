@@ -13,7 +13,6 @@ use crate::toolset::ToolVersion;
 #[derive(Debug)]
 pub struct NPMBackend {
     ba: BackendArg,
-    remote_version_cache: CacheManager<Vec<String>>,
     latest_version_cache: CacheManager<Option<String>>,
 }
 
@@ -33,15 +32,11 @@ impl Backend for NPMBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.remote_version_cache
-            .get_or_try_init(|| {
-                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
-                    .full_env(self.dependency_env()?)
-                    .read()?;
-                let versions: Vec<String> = serde_json::from_str(&raw)?;
-                Ok(versions)
-            })
-            .cloned()
+        let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
+            .full_env(self.dependency_env()?)
+            .read()?;
+        let versions: Vec<String> = serde_json::from_str(&raw)?;
+        Ok(versions)
     }
 
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
@@ -110,11 +105,6 @@ impl Backend for NPMBackend {
 impl NPMBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
-            remote_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .build(),
             latest_version_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("latest_version.msgpack.z"),
             )

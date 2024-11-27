@@ -12,6 +12,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  GITHUB_API_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || github.token }}
 
 jobs:
   docker:
@@ -85,8 +86,6 @@ jobs:
     container:
       image: ghcr.io/jdx/mise:dev
     needs: [dev]
-    env:
-      GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - run: cargo install --path . --debug

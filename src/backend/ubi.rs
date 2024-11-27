@@ -1,6 +1,5 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
-use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::env::GITHUB_TOKEN;
@@ -23,7 +22,6 @@ use xx::regex;
 #[derive(Debug)]
 pub struct UbiBackend {
     ba: BackendArg,
-    remote_version_cache: CacheManager<Vec<String>>,
 }
 
 // Uses ubi for installations https://github.com/houseabsolute/ubi
@@ -40,37 +38,33 @@ impl Backend for UbiBackend {
         if name_is_url(&self.tool_name()) {
             Ok(vec!["latest".to_string()])
         } else {
-            self.remote_version_cache
-                .get_or_try_init(|| {
-                    let opts = self.ba.opts();
-                    let tag_regex = OnceLock::new();
-                    let mut versions = github::list_releases(&self.tool_name())?
-                        .into_iter()
-                        .map(|r| r.tag_name)
-                        .collect::<Vec<String>>();
-                    if versions.is_empty() {
-                        versions = github::list_tags(&self.tool_name())?.into_iter().collect();
-                    }
-                    Ok(versions
-                        .into_iter()
-                        // trim 'v' prefixes if they exist
-                        .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
-                            true => t[1..].to_string(),
-                            false => t,
-                        })
-                        .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(v))
-                        .filter(|v| {
-                            if let Some(re) = opts.get("tag_regex") {
-                                let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
-                                re.is_match(v)
-                            } else {
-                                true
-                            }
-                        })
-                        .rev()
-                        .collect())
+            let opts = self.ba.opts();
+            let tag_regex = OnceLock::new();
+            let mut versions = github::list_releases(&self.tool_name())?
+                .into_iter()
+                .map(|r| r.tag_name)
+                .collect::<Vec<String>>();
+            if versions.is_empty() {
+                versions = github::list_tags(&self.tool_name())?.into_iter().collect();
+            }
+            Ok(versions
+                .into_iter()
+                // trim 'v' prefixes if they exist
+                .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
+                    true => t[1..].to_string(),
+                    false => t,
                 })
-                .cloned()
+                .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(v))
+                .filter(|v| {
+                    if let Some(re) = opts.get("tag_regex") {
+                        let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
+                        re.is_match(v)
+                    } else {
+                        true
+                    }
+                })
+                .rev()
+                .collect())
         }
     }
 
@@ -221,14 +215,7 @@ impl Backend for UbiBackend {
 
 impl UbiBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self {
-            remote_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .build(),
-            ba,
-        }
+        Self { ba }
     }
 }
 

@@ -33,7 +33,6 @@ pub struct AsdfBackend {
     pub toml: MisePluginToml,
     plugin: Box<AsdfPlugin>,
     cache: ExternalPluginCache,
-    remote_version_cache: CacheManager<Vec<String>>,
     latest_stable_cache: CacheManager<Option<String>>,
     alias_cache: CacheManager<Vec<(String, String)>>,
     idiomatic_filename_cache: CacheManager<Vec<String>>,
@@ -51,13 +50,6 @@ impl AsdfBackend {
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
         Self {
             cache: ExternalPluginCache::default(),
-            remote_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("remote_versions.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/list-all"))
-            .build(),
             latest_stable_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("latest_stable.msgpack.z"),
             )
@@ -240,15 +232,7 @@ impl Backend for AsdfBackend {
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        self.remote_version_cache
-            .get_or_try_init(|| self.plugin.fetch_remote_versions())
-            .wrap_err_with(|| {
-                eyre!(
-                    "Failed listing remote versions for asdf tool {}",
-                    style(&self.name).blue().for_stderr(),
-                )
-            })
-            .cloned()
+        self.plugin.fetch_remote_versions()
     }
 
     fn latest_stable_version(&self) -> Result<Option<String>> {

@@ -20,7 +20,7 @@ env:
   NPM_CONFIG_FUND: false
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   release-plz:
