@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -82,7 +81,7 @@ impl Ls {
         if self.current || self.global {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally
-            runtimes.retain(|(_, _, _, source)| source.is_some());
+            runtimes.retain(|(_, _, _, source)| !source.is_unknown());
         }
         if self.installed {
             runtimes.retain(|(_, p, tv, _)| p.is_version_installed(tv, true));
@@ -145,11 +144,15 @@ impl Ls {
             .map(|(ls, p, tv, source)| Row {
                 tool: p.clone(),
                 version: (ls, p.as_ref(), &tv, &source).into(),
-                requested: match source.is_some() {
-                    true => Some(tv.request.version()),
-                    false => None,
+                requested: match source.is_unknown() {
+                    true => None,
+                    false => Some(tv.request.version()),
                 },
-                source,
+                source: if source.is_unknown() {
+                    None
+                } else {
+                    Some(source)
+                },
             })
             .collect::<Vec<_>>();
         let mut table = Table::new(rows);
@@ -173,24 +176,13 @@ impl Ls {
 
         let mut ts = Toolset::from(trs);
         ts.resolve()?;
-        let mut versions: HashMap<(String, String), (Arc<dyn Backend>, ToolVersion)> = ts
-            .list_installed_versions()?
-            .into_iter()
-            .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p, tv)))
-            .collect();
 
-        let active = ts
-            .list_current_versions()
+        let rvs: Vec<RuntimeRow> = ts
+            .list_all_versions()?
             .into_iter()
-            .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p, tv)))
-            .collect::<HashMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
-
-        versions.extend(active.clone());
-
-        let rvs: Vec<RuntimeRow> = versions
-            .into_iter()
-            .filter(|(_, (f, _))| match &self.plugin {
-                Some(p) => p.contains(f.ba()),
+            .map(|(b, tv)| ((b, tv.version.clone()), tv))
+            .filter(|((b, _), _)| match &self.plugin {
+                Some(p) => p.contains(b.ba()),
                 None => true,
             })
             .sorted_by_cached_key(|((plugin_name, version), _)| {
@@ -200,15 +192,9 @@ impl Ls {
                     version.clone(),
                 )
             })
-            .map(|(k, (p, tv))| {
-                let source = match &active.get(&k) {
-                    Some((_, tv)) => ts.versions.get(tv.ba()).map(|tv| tv.source.clone()),
-                    None => None,
-                };
-                (self, p, tv, source)
-            })
+            .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
             // if it isn't installed and it's not specified, don't show it
-            .filter(|(_ls, p, tv, source)| source.is_some() || p.is_version_installed(tv, true))
+            .filter(|(_ls, p, tv, source)| !source.is_unknown() || p.is_version_installed(tv, true))
             .filter(|(_ls, p, _, _)| match &self.plugin {
                 Some(backend) => backend.contains(p.ba()),
                 None => true,
@@ -235,7 +221,7 @@ struct JSONToolVersion {
     active: bool,
 }
 
-type RuntimeRow<'a> = (&'a Ls, Arc<dyn Backend>, ToolVersion, Option<ToolSource>);
+type RuntimeRow<'a> = (&'a Ls, Arc<dyn Backend>, ToolVersion, ToolSource);
 
 #[derive(Tabled)]
 #[tabled(rename_all = "PascalCase")]
@@ -274,9 +260,17 @@ impl From<RuntimeRow<'_>> for JSONToolVersion {
         JSONToolVersion {
             symlinked_to: p.symlink_path(&tv),
             install_path: tv.install_path(),
-            version: tv.version,
-            requested_version: source.as_ref().map(|_| tv.request.version()),
-            source: source.map(|source| source.as_json()),
+            version: tv.version.clone(),
+            requested_version: if source.is_unknown() {
+                None
+            } else {
+                Some(tv.request.version())
+            },
+            source: if source.is_unknown() {
+                None
+            } else {
+                Some(source.as_json())
+            },
             installed: !matches!(vs, VersionStatus::Missing(_)),
             active: matches!(vs, VersionStatus::Active(_, _)),
         }
@@ -290,13 +284,13 @@ enum VersionStatus {
     Symlink(String, bool),
 }
 
-impl From<(&Ls, &dyn Backend, &ToolVersion, &Option<ToolSource>)> for VersionStatus {
-    fn from((ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &Option<ToolSource>)) -> Self {
+impl From<(&Ls, &dyn Backend, &ToolVersion, &ToolSource)> for VersionStatus {
+    fn from((ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &ToolSource)) -> Self {
         if p.symlink_path(tv).is_some() {
-            VersionStatus::Symlink(tv.version.clone(), source.is_some())
+            VersionStatus::Symlink(tv.version.clone(), !source.is_unknown())
         } else if !p.is_version_installed(tv, true) {
             VersionStatus::Missing(tv.version.clone())
-        } else if source.is_some() {
+        } else if !source.is_unknown() {
             let outdated = if ls.offline {
                 false
             } else {

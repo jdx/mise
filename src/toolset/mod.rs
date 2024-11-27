@@ -388,6 +388,15 @@ impl Toolset {
             })
             .collect()
     }
+    pub fn list_all_versions(&self) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
+        let versions = self
+            .list_current_versions()
+            .into_iter()
+            .chain(self.list_installed_versions()?)
+            .unique_by(|(ba, tv)| (ba.clone(), tv.tv_pathname().to_string()))
+            .collect();
+        Ok(versions)
+    }
     pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_versions()
             .into_iter()
