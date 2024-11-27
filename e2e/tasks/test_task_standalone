@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mytask
+#!/usr/bin/env bash
+echo "running mytask"
+EOF
+chmod +x mytask
+
+assert "mise run ./mytask" "running mytask"
+
+cat <<EOF >mise.toml
+[tasks.mytask]
+file = "./mytask"
+EOF
+
+mkdir -p subdir
+cd subdir || exit 1
+assert "mise run mytask" "running mytask"
+cd .. || exit 1
+
+cat <<EOF >mise.toml
+tasks.mytask.file = "https://mise.jdx.dev/test/mytask"
+EOF
+assert "mise run mytask" "running mytask"

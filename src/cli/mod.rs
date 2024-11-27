@@ -328,6 +328,7 @@ impl Cli {
                         raw: self.raw,
                         timings: self.timings,
                         tool: Default::default(),
+                        tmpdir: Default::default(),
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
