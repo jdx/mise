@@ -6,7 +6,7 @@ use std::time::Duration;
 use eyre::{bail, Report, Result};
 use once_cell::sync::Lazy;
 use reqwest::header::HeaderMap;
-use reqwest::{ClientBuilder, IntoUrl, Response};
+use reqwest::{ClientBuilder, IntoUrl, RequestBuilder, Response};
 use url::Url;
 
 use crate::cli::version;
@@ -57,13 +57,10 @@ impl Client {
         let get = |url: Url| async move {
             debug!("GET {}", &url);
             let mut req = self.reqwest.get(url.clone());
-            if url.host_str() == Some("api.github.com") {
-                if let Some(token) = &*env::GITHUB_TOKEN {
-                    req = req.header("authorization", format!("token {}", token));
-                }
-            }
+            req = with_github_auth(&url, req);
             let resp = req.send().await?;
             debug!("GET {url} {}", resp.status());
+            display_github_rate_limit(&resp);
             resp.error_for_status_ref()?;
             Ok(resp)
         };
@@ -91,13 +88,10 @@ impl Client {
         let head = |url: Url| async move {
             debug!("HEAD {}", &url);
             let mut req = self.reqwest.head(url.clone());
-            if url.host_str() == Some("api.github.com") {
-                if let Some(token) = &*env::GITHUB_TOKEN {
-                    req = req.header("authorization", format!("token {}", token));
-                }
-            }
+            req = with_github_auth(&url, req);
             let resp = req.send().await?;
             debug!("HEAD {url} {}", resp.status());
+            display_github_rate_limit(&resp);
             resp.error_for_status_ref()?;
             Ok(resp)
         };
@@ -193,5 +187,36 @@ pub fn error_code(e: &Report) -> Option<u16> {
         err.status().map(|s| s.as_u16())
     } else {
         None
+    }
+}
+
+fn with_github_auth(url: &Url, mut req: RequestBuilder) -> RequestBuilder {
+    if url.host_str() == Some("api.github.com") {
+        if let Some(token) = &*env::GITHUB_TOKEN {
+            req = req.header("authorization", format!("token {}", token));
+        }
+    }
+    req
+}
+
+fn display_github_rate_limit(resp: &Response) {
+    let status = resp.status().as_u16();
+    if status == 403 || status == 429 {
+        if !resp
+            .headers()
+            .get("x-ratelimit-remaining")
+            .is_some_and(|r| r == "0")
+        {
+            return;
+        }
+        if let Some(reset) = resp.headers().get("x-ratelimit-reset") {
+            let reset = reset.to_str().map(|r| r.to_string()).unwrap_or_default();
+            if let Some(reset) = chrono::DateTime::from_timestamp(reset.parse().unwrap(), 0) {
+                warn!(
+                    "GitHub rate limit exceeded. Resets at {}",
+                    reset.naive_local().to_string()
+                );
+            }
+        }
     }
 }
