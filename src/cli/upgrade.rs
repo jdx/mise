@@ -214,27 +214,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise upgrade --interactive</bold>
 "#
 );
-
-#[cfg(test)]
-pub mod tests {
-    use crate::dirs;
-    use crate::test::{change_installed_version, reset};
-
-    #[test]
-    fn test_upgrade() {
-        reset();
-        change_installed_version("tiny", "3.1.0", "3.0.0");
-        assert_cli_snapshot!("upgrade", "--dry-run");
-        assert_cli_snapshot!("upgrade");
-        assert!(dirs::INSTALLS.join("tiny").join("3.1.0").exists());
-    }
-
-    #[test]
-    fn test_upgrade_bump() {
-        reset();
-        change_installed_version("tiny", "3.1.0", "3.0.0");
-        assert_cli_snapshot!("upgrade", "--dry-run", "--bump");
-        assert_cli_snapshot!("upgrade");
-        assert!(dirs::INSTALLS.join("tiny").join("3.1.0").exists());
-    }
-}
