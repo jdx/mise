@@ -1,11 +1,13 @@
-use clap::{ArgMatches, Command};
+use clap::Command;
 use eyre::Result;
+use once_cell::sync::Lazy;
 use rayon::prelude::*;
+use std::collections::HashMap;
 
 use crate::backend;
 use crate::cli::args::BackendArg;
 
-pub fn commands() -> Vec<Command> {
+pub static COMMANDS: Lazy<HashMap<String, Command>> = Lazy::new(|| {
     backend::list()
         .into_par_iter()
         .flat_map(|b| {
@@ -18,27 +20,18 @@ pub fn commands() -> Vec<Command> {
             }
             vec![]
         })
+        .map(|cmd| (cmd.get_name().to_string(), cmd))
         .collect()
-}
+});
 
-pub fn execute(ba: &BackendArg, args: &ArgMatches) -> Result<()> {
-    if let Some(mut cmd) = commands()
-        .into_iter()
-        .find(|c| c.get_name() == ba.to_string())
-    {
-        if let Some((subcommand, matches)) = args.subcommand() {
-            let backend = ba.backend()?;
-            let args: Vec<String> = matches
-                .get_raw("args")
-                .unwrap_or_default()
-                .map(|s| s.to_string_lossy().to_string())
-                .collect();
-            if let Some(p) = backend.plugin() {
-                p.execute_external_command(subcommand, args)?;
-            }
-        } else {
-            cmd.print_help().unwrap();
+pub fn execute(ba: &BackendArg, mut cmd: Command, args: Vec<String>) -> Result<()> {
+    if let Some(subcommand) = cmd.find_subcommand(&args[0]) {
+        let backend = ba.backend()?;
+        if let Some(p) = backend.plugin() {
+            p.execute_external_command(subcommand.get_name(), args)?;
         }
+    } else {
+        cmd.print_help().unwrap();
     }
 
     Ok(())

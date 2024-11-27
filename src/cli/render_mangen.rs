@@ -1,11 +1,11 @@
-use std::path::{Path, PathBuf};
-use std::{env, fs};
-
+use clap::CommandFactory;
 use eyre::Result;
 use itertools::Itertools;
+use std::path::{Path, PathBuf};
+use std::{env, fs};
 use xx::file;
 
-use crate::cli::{version, CLI};
+use crate::cli::{version, Cli};
 
 /// internal command to generate markdown from help
 #[derive(Debug, clap::Args)]
@@ -14,8 +14,7 @@ pub struct RenderMangen {}
 
 impl RenderMangen {
     pub fn run(self) -> Result<()> {
-        let cli = CLI
-            .clone()
+        let cli = Cli::command()
             .version(version::V.to_string())
             .disable_colored_help(true);
 

@@ -224,6 +224,10 @@
             "type": "string"
           }
         },
+        "env": {
+          "description": "Env to use for mise.<MISE_ENV>.toml files.",
+          "type": "string"
+        },
         "env_file": {
           "description": "Path to a file containing environment variables.",
           "type": "string"

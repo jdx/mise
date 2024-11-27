@@ -185,7 +185,7 @@ impl Use {
 
     fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-        let path = if let Some(env) = &*env::MISE_PROFILE {
+        let path = if let Some(env) = &*env::MISE_ENV {
             config_file_from_dir(&cwd.join(format!("mise.{env}.toml")))
         } else if self.global || env::in_home_dir() {
             MISE_GLOBAL_CONFIG_FILE.clone()

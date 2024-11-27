@@ -44,6 +44,12 @@ task3 = "echo task3"
 run = "echo task4"
 ```
 
+## Running tasks
+
+Tasks can be run with `mise run <TASK>` or `mise <TASK>`—if the name doesn't conflict with a mise command.
+Because mise may later add a command with a conflicting name, it's recommended to use `mise run <TASK>` in
+scripts and documentation.
+
 ## Vars
 
 Vars are variables that can be shared between tasks like environment variables but they are not

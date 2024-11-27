@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 use super::args::ToolArg;
-use crate::cli::CLI;
+use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
 use crate::config::{CONFIG, SETTINGS};
 use crate::errors::Error;
@@ -16,7 +16,7 @@ use crate::task::{Deps, EitherIntOrBool, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, prompt, style, time};
 use crate::{dirs, env, exit, file, ui};
-use clap::ValueHint;
+use clap::{CommandFactory, ValueHint};
 use crossbeam_channel::{select, unbounded};
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
@@ -129,7 +129,7 @@ pub struct Run {
     pub failed_tasks: Mutex<Vec<(Task, i32)>>,
 
     #[clap(skip)]
-    output: TaskOutput,
+    pub output: TaskOutput,
 }
 
 impl Run {
@@ -151,7 +151,8 @@ impl Run {
     }
 
     fn get_clap_command(&self) -> clap::Command {
-        CLI.get_subcommands()
+        Cli::command()
+            .get_subcommands()
             .find(|s| s.get_name() == "run")
             .unwrap()
             .clone()
@@ -827,7 +828,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[derive(Debug, Default, PartialEq, strum::EnumString)]
 #[strum(serialize_all = "snake_case")]
-enum TaskOutput {
+pub enum TaskOutput {
     #[default]
     Prefix,
     Interleave,
