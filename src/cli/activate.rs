@@ -114,13 +114,12 @@ fn remove_shims(shell: &dyn Shell) -> std::io::Result<()> {
         .unwrap_or(dirs::SHIMS.to_path_buf());
     if env::PATH
         .iter()
-        .map(|p| p.canonicalize().ok())
-        .flatten()
+        .filter_map(|p| p.canonicalize().ok())
         .contains(&shims)
     {
         let path_env = PathEnv::from_iter(env::PATH.clone());
         // PathEnv automatically removes the shims directory
-        let cmd = shell.set_env(&PATH_KEY, &path_env.join().to_string_lossy().to_string());
+        let cmd = shell.set_env(&PATH_KEY, path_env.join().to_string_lossy().as_ref());
         miseprintln!("{cmd}");
     }
     Ok(())
