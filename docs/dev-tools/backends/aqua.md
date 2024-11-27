@@ -64,7 +64,7 @@ The fix is simple, just edit the `supported_envs` section of `registry.yaml` for
 
 ### Using `version_filter` instead of `version_prefix`
 
-This is a weird one that doesn't causes weird issues in mise. In general in mise we like versions like
+This is a weird one that causes weird issues in mise. In general in mise we like versions like
 `1.2.3` with no decoration like `v1.2.3` or `cli-v1.2.3`. This consistency not only makes `mise.toml`
 cleaner but, it also helps make things like `mise up` function right because it's able to parse it as
 semver without dealing with a bunch of edge-cases.
