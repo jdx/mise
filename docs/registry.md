@@ -233,7 +233,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | eza | [asdf:lwiechec/asdf-eza](https://github.com/lwiechec/asdf-eza) |
 | fd | [ubi:sharkdp/fd](https://github.com/sharkdp/fd) [asdf:https://gitlab.com/wt0f/asdf-fd](https://gitlab.com/wt0f/asdf-fd) |
 | ffmpeg | [asdf:acj/asdf-ffmpeg](https://github.com/acj/asdf-ffmpeg) |
-| figma-export | [asdf:younke/asdf-figma-export](https://github.com/younke/asdf-figma-export) |
+| figma-export | [ubi:RedMadRobot/figma-export](https://github.com/RedMadRobot/figma-export) [asdf:younke/asdf-figma-export](https://github.com/younke/asdf-figma-export) |
 | fillin | [aqua:itchyny/fillin](https://github.com/itchyny/fillin) [asdf:ouest/asdf-fillin](https://github.com/ouest/asdf-fillin) |
 | firebase | [asdf:jthegedus/asdf-firebase](https://github.com/jthegedus/asdf-firebase) |
 | fission | [aqua:fission/fission](https://github.com/fission/fission) [asdf:virtualstaticvoid/asdf-fission](https://github.com/virtualstaticvoid/asdf-fission) |
