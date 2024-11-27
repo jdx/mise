@@ -176,7 +176,7 @@ cmd "config" help="[experimental] Manage config files" {
 "
         flag "--no-header" help="Do not print table header"
     }
-    cmd "generate" help="[experimental] Generate an .mise.toml file" {
+    cmd "generate" help="[experimental] Generate a .mise.toml file" {
         alias "g"
         after_long_help r"Examples:
 
@@ -1164,7 +1164,7 @@ cmd "use" help="Install tool version and add it to config" {
     long_help r"Install tool version and add it to config
 
 This will install the tool if it is not already installed.
-By default, this will use an `.mise.toml` file in the current directory.
+By default, this will use a `.mise.toml` file in the current directory.
 Use the --global flag to use the global config file instead.
 This replaces asdf's `local` and `global` commands, however those are still available in mise."
     after_long_help r"Examples:

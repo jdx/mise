@@ -58,7 +58,7 @@ run = 'cargo test'
 dir = "{{cwd}}"
 ```
 
-Also, `MISE_ORIGNAL_CWD` is set to the original working directory and will be passed to the task.
+Also, `MISE_ORIGINAL_CWD` is set to the original working directory and will be passed to the task.
 
 ## Arguments
 

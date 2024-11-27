@@ -2,7 +2,7 @@
 
 unset GITHUB_TOKEN GITHUB_API_TOKEN
 
-# Create an cargo-binstall stub that just output the value of GITHUB_TOKEN
+# Create a cargo-binstall stub that just outputs the value of GITHUB_TOKEN
 cat >~/bin/cargo-binstall <<'EOF'
 #!/usr/bin/env bash
 echo "token=$GITHUB_TOKEN"

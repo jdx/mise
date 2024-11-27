@@ -836,7 +836,7 @@ deprecated = "Use disable_backends instead."
 description = "Use vfox as a default plugin backend instead of asdf."
 docs = """
 Use vfox as a default plugin backend. This means running something like `mise use cmake` will
-default to using an vfox plugin for cmake.
+default to using a vfox plugin for cmake.
 """
 
 [windows_default_file_shell_args]
