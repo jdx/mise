@@ -255,6 +255,7 @@ impl EnvResults {
                     let venv = normalize_path(&config_root, venv.into());
                     if !venv.exists() && create {
                         // TODO: the toolset stuff doesn't feel like it's in the right place here
+                        // TODO: in fact this should probably be moved to execute at the same time as src/uv.rs runs in ts.env() instead of config.env()
                         let config = Config::get();
                         let ts = ToolsetBuilder::new().build(&config)?;
                         let path = ts
@@ -269,11 +270,14 @@ impl EnvResults {
                         {
                             debug!("python not installed, skipping venv creation");
                         } else {
-                            let cmd = if let (false, Some(_uv_in_path)) =
-                                (SETTINGS.python.venv_stdlib, which_non_pristine("uv"))
-                            {
+                            let has_uv_bin =
+                                ts.which("uv").is_some() || which_non_pristine("uv").is_some();
+                            let use_uv = !SETTINGS.python.venv_stdlib && has_uv_bin;
+                            let cmd = if use_uv {
+                                info!("creating venv with uv at: {}", display_path(&venv));
                                 CmdLineRunner::new("uv").args(["venv", &venv.to_string_lossy()])
                             } else {
+                                info!("creating venv with stdlib at: {}", display_path(&venv));
                                 CmdLineRunner::new("python3").args([
                                     "-m",
                                     "venv",
@@ -285,7 +289,6 @@ impl EnvResults {
                                 PATH_KEY.to_string(),
                                 env::join_paths(&path)?.to_string_lossy().to_string(),
                             );
-                            info!("creating venv at: {}", display_path(&venv));
                             cmd.execute()?;
                         }
                     }

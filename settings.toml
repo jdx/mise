@@ -573,6 +573,11 @@ type = "String"
 default = "https://github.com/pyenv/pyenv.git"
 description = "URL to fetch pyenv from for compiling python with python-build."
 
+[python.uv_venv_auto]
+env = "MISE_PYTHON_UV_VENV_AUTO"
+type = "Bool"
+description = "Integrate with uv to automatically create/source venvs if uv.lock is present."
+
 [python.venv_auto_create]
 env = "MISE_PYTHON_VENV_AUTO_CREATE"
 type = "Bool"

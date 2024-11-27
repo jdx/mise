@@ -13,6 +13,7 @@ use crate::errors::Error;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::uv::UV_VENV;
 use crate::{backend, config, env};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
@@ -511,6 +512,9 @@ impl Toolset {
         for p in config.path_dirs()?.clone() {
             path_env.add(p);
         }
+        if let Some(venv) = &*UV_VENV {
+            path_env.add(venv.venv_path.clone());
+        }
         let mut env = self.env(config)?;
         if let Some(path) = env.get(&*PATH_KEY) {
             path_env.add(PathBuf::from(path));
@@ -553,6 +557,11 @@ impl Toolset {
             entries.insert(PATH_KEY.to_string(), add_paths);
         }
         entries.extend(config.env()?.clone());
+        if let Some(venv) = &*UV_VENV {
+            for (k, v) in &venv.env {
+                entries.insert(k.clone(), v.clone());
+            }
+        }
         time!("env end");
         Ok(entries)
     }
@@ -579,6 +588,11 @@ impl Toolset {
                     false
                 }
             })
+    }
+    pub fn which_bin(&self, bin_name: &str) -> Option<PathBuf> {
+        self.which(bin_name)
+            .and_then(|(p, tv)| p.which(&tv, bin_name).ok())
+            .flatten()
     }
     pub fn install_missing_bin(&mut self, bin_name: &str) -> Result<Option<Vec<ToolVersion>>> {
         let plugins = self
