@@ -24,6 +24,8 @@ You can configure how tasks are used in mise with the `[task_config]` section of
 
 ```toml
 [task_config]
+# change the default directory tasks are run from
+dir = "{{cwd}}"
 
 # add toml files containing toml tasks, or file tasks to include when looking for tasks
 includes = [

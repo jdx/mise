@@ -835,6 +835,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "dir": {
+          "description": "default directory to run tasks in defined in this file",
+          "type": "string"
+        },
         "includes": {
           "description": "files/directories to include searching for tasks",
           "items": {

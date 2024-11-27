@@ -1,5 +1,5 @@
 use crate::config::config_file::toml::{deserialize_arr, TomlParser};
-use crate::config::Config;
+use crate::config::{Config, CONFIG};
 use crate::file;
 use crate::task::task_script_parser::{
     has_any_args_defined, replace_template_placeholders_with_args, TaskScriptParser,
@@ -20,12 +20,14 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::{ffi, fmt, path};
 use xx::regex;
 
 mod deps;
 mod task_script_parser;
 
+use crate::config::config_file::ConfigFile;
 use crate::file::display_path;
 use crate::ui::style;
 pub use deps::Deps;
@@ -40,6 +42,8 @@ pub struct Task {
     pub aliases: Vec<String>,
     #[serde(skip)]
     pub config_source: PathBuf,
+    #[serde(skip)]
+    pub cf: Option<Arc<dyn ConfigFile>>,
     #[serde(skip)]
     pub config_root: Option<PathBuf>,
     #[serde(default)]
@@ -310,9 +314,7 @@ impl Task {
     }
 
     pub fn dir(&self) -> Result<Option<PathBuf>> {
-        if let Some(dir) = &self.dir {
-            // TODO: memoize
-            // let dir = self.dir_rendered.get_or_try_init(|| -> Result<PathBuf> {
+        let render = |dir| {
             let mut tera = get_tera(self.config_root.as_deref());
             let mut ctx = BASE_CONTEXT.clone();
             if let Some(config_root) = &self.config_root {
@@ -327,9 +329,23 @@ impl Task {
             } else {
                 Ok(Some(dir.clone()))
             }
+        };
+        if let Some(dir) = &self.dir {
+            render(dir)
+        } else if let Some(dir) = self
+            .cf()
+            .as_ref()
+            .and_then(|cf| cf.task_config().dir.clone())
+        {
+            render(&dir)
         } else {
             Ok(self.config_root.clone())
         }
+    }
+
+    #[allow(clippy::borrowed_box)]
+    pub fn cf(&self) -> Option<&Box<dyn ConfigFile>> {
+        CONFIG.config_files.get(&self.config_source)
     }
 }
 
@@ -368,6 +384,7 @@ impl Default for Task {
             description: "".to_string(),
             aliases: vec![],
             config_source: PathBuf::new(),
+            cf: None,
             config_root: None,
             depends: vec![],
             wait_for: vec![],
