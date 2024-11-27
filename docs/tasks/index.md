@@ -14,6 +14,8 @@ Here's my favorite features about mise's task runner:
 - ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack
   syntax highlighting and linting/checking support
 
+There are 2 ways to define tasks: [inside of `mise.toml` files](./toml-tasks.html) or as [standalone shell scripts](./file-tasks.html).
+
 ## Task Environment Variables
 
 - `root` - the root of the project, defaults to the directory of the `mise.toml` file
@@ -45,12 +47,6 @@ task3 = "echo task3"
 [task4]
 run = "echo task4"
 ```
-
-## Running tasks
-
-Tasks can be run with `mise run <TASK>` or `mise <TASK>`—if the name doesn't conflict with a mise command.
-Because mise may later add a command with a conflicting name, it's recommended to use `mise run <TASK>` in
-scripts and documentation.
 
 ## Vars
 
