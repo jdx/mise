@@ -1,16 +1,15 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use console::style;
-use eyre::Result;
-
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::tracking::Tracker;
-use crate::config::{Config, Settings};
+use crate::config::{Config, SETTINGS};
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
+use console::style;
+use eyre::Result;
 
 use super::trust::Trust;
 
@@ -68,8 +67,8 @@ impl Prune {
         let mut to_delete = ts
             .list_installed_versions()?
             .into_iter()
-            .map(|(p, tv)| (tv.to_string(), (p, tv)))
-            .collect::<BTreeMap<String, (Arc<dyn Backend>, ToolVersion)>>();
+            .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
+            .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
 
         if let Some(backends) = &self.plugin {
             to_delete.retain(|_, (_, tv)| backends.contains(tv.ba()));
@@ -79,7 +78,7 @@ impl Prune {
             let mut ts = Toolset::from(cf.to_tool_request_set()?);
             ts.resolve()?;
             for (_, tv) in ts.list_current_versions() {
-                to_delete.remove(&tv.to_string());
+                to_delete.remove(&(tv.ba().short.to_string(), tv.tv_pathname()));
             }
         }
 
@@ -87,7 +86,6 @@ impl Prune {
     }
 
     fn delete(&self, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Result<()> {
-        let settings = Settings::try_get()?;
         let mpr = MultiProgressReport::get();
         for (p, tv) in to_delete {
             let mut prefix = tv.style();
@@ -95,7 +93,10 @@ impl Prune {
                 prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
             }
             let pr = mpr.add(&prefix);
-            if self.dry_run || settings.yes || prompt::confirm(format!("remove {} ?", &tv))? {
+            if self.dry_run
+                || SETTINGS.yes
+                || prompt::confirm_with_all(format!("remove {} ?", &tv))?
+            {
                 p.uninstall_version(&tv, pr.as_ref(), self.dry_run)?;
                 pr.finish();
             }
