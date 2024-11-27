@@ -432,13 +432,10 @@ mod tests {
     use pretty_assertions::assert_eq;
     use test_log::test;
 
-    use crate::test::reset;
-
     use super::*;
 
     #[test]
     fn test_apply_patches() {
-        reset();
         let mut env = HashMap::new();
         env.insert("foo".into(), "bar".into());
         env.insert("baz".into(), "qux".into());
@@ -455,7 +452,6 @@ mod tests {
 
     #[test]
     fn test_var_path() {
-        reset();
         set_var("MISE_TEST_PATH", "/foo/bar");
         assert_eq!(
             var_path("MISE_TEST_PATH").unwrap(),

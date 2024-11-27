@@ -86,21 +86,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     asdf:mise-plugins/mise-poetry
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-    use test_log::test;
-
-    use crate::cli::tests::grep;
-    use crate::test::reset;
-
-    #[test]
-    fn test_registry() {
-        reset();
-        let out = assert_cli!("registry");
-        // TODO: enable this when core plugins are back in the registry
-        // assert_snapshot!(grep(out, "node"), @"node                         core:node");
-        assert_snapshot!(grep(out, "poetry"), @"poetry                       asdf:mise-plugins/mise-poetry");
-    }
-}

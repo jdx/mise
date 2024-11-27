@@ -95,8 +95,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use test_log::test;
 
-    use crate::test::reset;
-
     use super::*;
 
     #[test]
@@ -106,7 +104,6 @@ mod tests {
 
     #[test]
     fn test_hash_sha256() {
-        reset();
         let path = Path::new(".test-tool-versions");
         let hash = file_hash_sha256(path).unwrap();
         assert_snapshot!(hash);

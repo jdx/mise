@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+assert_contains "mise backends" "cargo"

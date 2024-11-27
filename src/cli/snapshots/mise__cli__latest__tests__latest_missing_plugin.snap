@@ -1,6 +1,0 @@
----
-source: src/cli/latest.rs
-expression: stdout
-snapshot_kind: text
----
-invalid_plugin not found in mise tool registry

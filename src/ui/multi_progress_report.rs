@@ -75,11 +75,9 @@ impl MultiProgressReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::reset;
 
     #[test]
     fn test_multi_progress_report() {
-        reset();
         let mpr = MultiProgressReport::get();
         let pr = mpr.add("PREFIX");
         pr.finish_with_message("test".into());

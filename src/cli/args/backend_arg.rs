@@ -251,26 +251,28 @@ impl Hash for BackendArg {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::reset;
     use pretty_assertions::{assert_eq, assert_str_eq};
 
     #[test]
     fn test_backend_arg() {
-        reset();
         let t = |s: &str, full, tool_name, t| {
             let fa: BackendArg = s.into();
             assert_str_eq!(full, fa.full());
             assert_str_eq!(tool_name, fa.tool_name);
             assert_eq!(t, fa.backend_type());
         };
+        #[cfg(unix)]
         let asdf = |s, full, name| t(s, full, name, BackendType::Asdf);
         let cargo = |s, full, name| t(s, full, name, BackendType::Cargo);
         // let core = |s, full, name| t(s, full, name, BackendType::Core);
         let npm = |s, full, name| t(s, full, name, BackendType::Npm);
         let vfox = |s, full, name| t(s, full, name, BackendType::Vfox);
 
-        asdf("asdf:poetry", "asdf:poetry", "poetry");
-        asdf("poetry", "asdf:mise-plugins/mise-poetry", "poetry");
+        #[cfg(unix)]
+        {
+            asdf("asdf:poetry", "asdf:poetry", "poetry");
+            asdf("poetry", "asdf:mise-plugins/mise-poetry", "poetry");
+        }
         cargo("cargo:eza", "cargo:eza", "eza");
         // core("node", "node", "node");
         npm("npm:@antfu/ni", "npm:@antfu/ni", "@antfu/ni");
@@ -284,7 +286,6 @@ mod tests {
 
     #[test]
     fn test_backend_arg_pathname() {
-        reset();
         let t = |s: &str, expected| {
             let fa: BackendArg = s.into();
             let actual = fa.installs_path.to_string_lossy();

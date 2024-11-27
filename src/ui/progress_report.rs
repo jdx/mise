@@ -181,13 +181,10 @@ impl SingleReport for VerboseReport {
 mod tests {
     use test_log::test;
 
-    use crate::test::reset;
-
     use super::*;
 
     #[test]
     fn test_progress_report() {
-        reset();
         let pr = ProgressReport::new("foo".into());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
@@ -195,7 +192,6 @@ mod tests {
 
     #[test]
     fn test_progress_report_verbose() {
-        reset();
         let pr = VerboseReport::new("PREFIX".to_string());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
@@ -203,7 +199,6 @@ mod tests {
 
     #[test]
     fn test_progress_report_quiet() {
-        reset();
         let pr = QuietReport::new();
         pr.set_message("message".into());
         pr.finish_with_message("message".into());

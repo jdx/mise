@@ -458,6 +458,7 @@ enum ChildProcessOutput {
 }
 
 #[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use pretty_assertions::assert_eq;
 

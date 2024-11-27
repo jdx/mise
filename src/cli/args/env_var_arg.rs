@@ -29,13 +29,10 @@ mod tests {
     use pretty_assertions::assert_eq;
     use test_log::test;
 
-    use crate::test::reset;
-
     use super::EnvVarArg;
 
     #[test]
     fn valid_values() {
-        reset();
         let values = [
             ("FOO", new_arg("FOO", None)),
             ("FOO=", new_arg("FOO", Some(""))),

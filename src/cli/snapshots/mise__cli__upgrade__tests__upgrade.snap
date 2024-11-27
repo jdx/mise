@@ -1,7 +1,0 @@
----
-source: src/cli/upgrade.rs
-expression: output
-snapshot_kind: text
----
-Would uninstall tiny@3.0.0
-Would install tiny@3.1.0

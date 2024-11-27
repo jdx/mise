@@ -86,7 +86,7 @@ Answer yes to all confirmation prompts
 - [`mise sync <SUBCOMMAND>`](/cli/sync.md)
 - [`mise sync node [FLAGS]`](/cli/sync/node.md)
 - [`mise sync python <--pyenv>`](/cli/sync/python.md)
-- [`mise tasks [FLAGS] <SUBCOMMAND>`](/cli/tasks.md)
+- [`mise tasks [FLAGS] [TASK] <SUBCOMMAND>`](/cli/tasks.md)
 - [`mise tasks deps [--hidden] [--dot] [TASKS]...`](/cli/tasks/deps.md)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)

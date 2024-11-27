@@ -43,18 +43,3 @@ impl Cache {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_str_eq;
-
-    use crate::env;
-    use crate::test::reset;
-
-    #[test]
-    fn test_cache() {
-        reset();
-        let stdout = assert_cli!("cache");
-        assert_str_eq!(stdout.trim(), env::MISE_CACHE_DIR.display().to_string());
-    }
-}

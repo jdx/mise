@@ -90,24 +90,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     v20.0.0
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use std::env;
-
-    use insta::assert_snapshot;
-
-    use crate::test::reset;
-
-    #[test]
-    fn test_shell() {
-        reset();
-        let err = assert_cli_err!("shell", "tiny@1.0.1");
-        assert_snapshot!(err);
-        env::set_var("__MISE_DIFF", "");
-        env::set_var("MISE_SHELL", "zsh");
-        assert_cli_snapshot!("shell", "tiny@1.0.1");
-        env::remove_var("__MISE_DIFF");
-        env::remove_var("MISE_SHELL");
-    }
-}

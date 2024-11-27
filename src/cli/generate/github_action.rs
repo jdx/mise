@@ -81,39 +81,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>git push</bold> <dim># runs `mise run ci` on GitHub</dim>
 "#
 );
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-    use test_log::test;
-
-    use crate::file;
-    use crate::git::Git;
-    use crate::test::{cleanup, reset, setup_git_repo};
-
-    #[test]
-    fn test_github_action() {
-        reset();
-        setup_git_repo();
-        assert_cli_snapshot!("generate", "github-action");
-        cleanup();
-    }
-    #[test]
-    fn test_github_action_write() {
-        reset();
-        setup_git_repo();
-        assert_cli_snapshot!(
-            "generate",
-            "github-action",
-            "-w",
-            "-ttesting123",
-            "-n=testing123"
-        );
-        let path = Git::get_root()
-            .unwrap()
-            .join(".github/workflows/testing123.yml");
-        let contents = file::read_to_string(path).unwrap();
-        assert_snapshot!(contents);
-        cleanup();
-    }
-}

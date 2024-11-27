@@ -387,13 +387,10 @@ impl Debug for AsdfBackend {
 mod tests {
     use test_log::test;
 
-    use crate::test::reset;
-
     use super::*;
 
     #[test]
     fn test_debug() {
-        reset();
         let plugin = AsdfBackend::from_arg("dummy".into());
         assert!(format!("{:?}", plugin).starts_with("AsdfPlugin { name: \"dummy\""));
     }
