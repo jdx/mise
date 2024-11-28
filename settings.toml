@@ -762,6 +762,16 @@ type = "Path"
 optional = true
 description = "Path to the rustup home directory. Defaults to ~/.rustup or %USERPROFILE%\\.rustup"
 
+[shell]
+env = "MISE_SHELL"
+type = "String"
+optional = true
+description = "Sets the shell across all mise commands like `mise run`, `mise en`, and watch files."
+docs = """
+Sets the shell across all mise commands like `mise run`, `mise en`, and watch files.
+This overrides MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS and MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS if set.
+"""
+
 [shorthands_file]
 env = "MISE_SHORTHANDS_FILE"
 type = "Path"
@@ -881,18 +891,14 @@ description = "This is a list of config paths that mise will automatically mark 
 
 [unix_default_file_shell_args]
 env = "MISE_UNIX_DEFAULT_FILE_SHELL_ARGS"
-type = "ListString"
-rust_type = "Vec<String>"
-default = ["sh"]
-parse_env = "list_by_comma"
+type = "String"
+default = "sh"
 description = "List of default shell arguments for unix to be used with `file`. For example `sh`."
 
 [unix_default_inline_shell_args]
 env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
-type = "ListString"
-rust_type = "Vec<String>"
-default = ["sh", "-c", "-o", "errexit"]
-parse_env = "list_by_comma"
+type = "String"
+default = "sh -c -o errexit"
 description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh."
 
 [use_file_shell_for_executable_tasks]
@@ -935,17 +941,14 @@ default to using a vfox plugin for cmake.
 [windows_default_file_shell_args]
 env = "MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS"
 type = "ListString"
-rust_type = "Vec<String>"
-default = ["cmd", "/c"]
-parse_env = "list_by_comma"
+rust_type = "String"
+default = "cmd /c"
 description = "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe."
 
 [windows_default_inline_shell_args]
 env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
-type = "ListString"
-rust_type = "Vec<String>"
-default = ["cmd", "/c"]
-parse_env = "list_by_comma"
+type = "String"
+default = "cmd /c"
 description = "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe."
 
 [windows_executable_extensions]

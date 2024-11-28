@@ -179,6 +179,10 @@ impl Settings {
         if let Some(false) = self.vfox {
             self.disable_backends.push("vfox".to_string());
         }
+        if let Some(shell) = &self.shell {
+            self.unix_default_inline_shell_args = shell.clone();
+            self.windows_default_inline_shell_args = shell.clone();
+        }
         if let Some(disable_default_shorthands) = self.disable_default_shorthands {
             self.disable_default_registry = disable_default_shorthands;
         }

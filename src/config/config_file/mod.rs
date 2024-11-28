@@ -22,9 +22,11 @@ use crate::config::{AliasMap, Settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
+use crate::hooks::Hook;
 use crate::task::Task;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
+use crate::watch_files::WatchFile;
 use crate::{backend, config, dirs, env, file, hash};
 
 pub mod idiomatic_version;
@@ -92,6 +94,14 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn vars(&self) -> Result<&IndexMap<String, String>> {
         static DEFAULT_VARS: Lazy<IndexMap<String, String>> = Lazy::new(IndexMap::new);
         Ok(&DEFAULT_VARS)
+    }
+
+    fn watch_files(&self) -> Result<Vec<WatchFile>> {
+        Ok(Default::default())
+    }
+
+    fn hooks(&self) -> Result<Vec<Hook>> {
+        Ok(Default::default())
     }
 }
 

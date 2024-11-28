@@ -448,7 +448,7 @@ impl Run {
         file: &Path,
         task: &Task,
         args: &[String],
-    ) -> (String, Vec<String>) {
+    ) -> Result<(String, Vec<String>)> {
         let display = file.display().to_string();
         if file::is_executable(file) && !SETTINGS.use_file_shell_for_executable_tasks {
             if cfg!(windows) && file.extension().is_some_and(|e| e == "ps1") {
@@ -456,11 +456,11 @@ impl Run {
                     .into_iter()
                     .chain(args.iter().cloned())
                     .collect_vec();
-                return ("pwsh".to_string(), args);
+                return Ok(("pwsh".to_string(), args));
             }
-            return (display, args.to_vec());
+            return Ok((display, args.to_vec()));
         }
-        let default_shell = self.clone_default_file_shell();
+        let default_shell = self.clone_default_file_shell()?;
         let shell = self.get_shell(task, default_shell);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
@@ -468,7 +468,7 @@ impl Run {
         if !args.is_empty() {
             full_args.extend(args.iter().cloned());
         }
-        (shell[0].clone(), full_args[1..].to_vec())
+        Ok((shell[0].clone(), full_args[1..].to_vec()))
     }
 
     fn get_cmd_program_and_args(
@@ -500,17 +500,23 @@ impl Run {
         if let Some(shell) = &self.shell {
             Ok(shell_words::split(shell)?)
         } else if cfg!(windows) {
-            Ok(SETTINGS.windows_default_inline_shell_args.clone())
+            Ok(shell_words::split(
+                &SETTINGS.windows_default_inline_shell_args,
+            )?)
         } else {
-            Ok(SETTINGS.unix_default_inline_shell_args.clone())
+            Ok(shell_words::split(
+                &SETTINGS.unix_default_inline_shell_args,
+            )?)
         }
     }
 
-    fn clone_default_file_shell(&self) -> Vec<String> {
+    fn clone_default_file_shell(&self) -> Result<Vec<String>> {
         if cfg!(windows) {
-            SETTINGS.windows_default_file_shell_args.clone()
+            Ok(shell_words::split(
+                &SETTINGS.windows_default_file_shell_args,
+            )?)
         } else {
-            SETTINGS.unix_default_file_shell_args.clone()
+            Ok(shell_words::split(&SETTINGS.unix_default_file_shell_args)?)
         }
     }
 
@@ -565,7 +571,7 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
-        let (program, args) = self.get_file_program_and_args(file, task, args);
+        let (program, args) = self.get_file_program_and_args(file, task, args)?;
         self.exec_program(&program, &args, task, env, prefix)
     }
 
@@ -578,7 +584,10 @@ impl Run {
         prefix: &str,
     ) -> Result<()> {
         let program = program.to_executable();
-        let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env);
+        let mut cmd = CmdLineRunner::new(program.clone())
+            .args(args)
+            .envs(env)
+            .raw(self.raw(task));
         cmd.with_pass_signals();
         match self.output {
             TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
@@ -588,9 +597,6 @@ impl Run {
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit())
             }
-        }
-        if self.raw(task) {
-            cmd.with_raw();
         }
         let dir = self.cwd(task)?;
         if !dir.exists() {
