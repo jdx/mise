@@ -296,7 +296,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | gomigrate | [asdf:joschi/asdf-gomigrate](https://github.com/joschi/asdf-gomigrate) |
 | gomplate | [aqua:hairyhenderson/gomplate](https://github.com/hairyhenderson/gomplate) [asdf:sneakybeaky/asdf-gomplate](https://github.com/sneakybeaky/asdf-gomplate) |
 | gopass | [aqua:gopasspw/gopass](https://github.com/gopasspw/gopass) [asdf:trallnag/asdf-gopass](https://github.com/trallnag/asdf-gopass) |
-| goreleaser | [ubi:goreleaser/goreleaser](https://github.com/goreleaser/goreleaser) [asdf:kforsthoevel/asdf-goreleaser](https://github.com/kforsthoevel/asdf-goreleaser) |
+| goreleaser | [aqua:goreleaser/goreleaser](https://github.com/goreleaser/goreleaser) [ubi:goreleaser/goreleaser](https://github.com/goreleaser/goreleaser) [asdf:kforsthoevel/asdf-goreleaser](https://github.com/kforsthoevel/asdf-goreleaser) |
 | goss | [aqua:goss-org/goss](https://github.com/goss-org/goss) [asdf:raimon49/asdf-goss](https://github.com/raimon49/asdf-goss) |
 | gotestsum | [aqua:gotestyourself/gotestsum](https://github.com/gotestyourself/gotestsum) [asdf:pmalek/mise-gotestsum](https://github.com/pmalek/mise-gotestsum) |
 | graalvm | [asdf:asdf-community/asdf-graalvm](https://github.com/asdf-community/asdf-graalvm) |
