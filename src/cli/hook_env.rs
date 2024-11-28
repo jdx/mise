@@ -12,7 +12,7 @@ use crate::env::{PATH_KEY, TERM_WIDTH, __MISE_DIFF};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::shell::{get_shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
-use crate::{env, hook_env};
+use crate::{dirs, env, hook_env};
 
 /// [internal] called by activate hook to update env vars directory change
 #[derive(Debug, clap::Args)]
@@ -59,6 +59,7 @@ impl HookEnv {
         patches.extend(self.build_path_operations(&settings, &paths, &__MISE_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(self.build_watch_operation(&watch_files)?);
+        patches.push(self.build_dir_operation()?);
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
@@ -164,6 +165,16 @@ impl HookEnv {
         Ok(EnvDiffOperation::Add(
             "__MISE_DIFF".into(),
             diff.serialize()?,
+        ))
+    }
+
+    fn build_dir_operation(&self) -> Result<EnvDiffOperation> {
+        Ok(EnvDiffOperation::Add(
+            "__MISE_DIR".into(),
+            dirs::CWD
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default(),
         ))
     }
 
