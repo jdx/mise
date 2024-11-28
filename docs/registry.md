@@ -651,7 +651,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | serverless | [asdf:pdemagny/asdf-serverless](https://github.com/pdemagny/asdf-serverless) |
 | setup-envtest | [asdf:pmalek/mise-setup-envtest](https://github.com/pmalek/mise-setup-envtest) |
 | shell2http | [aqua:msoap/shell2http](https://github.com/msoap/shell2http) [asdf:ORCID/asdf-shell2http](https://github.com/ORCID/asdf-shell2http) |
-| shellcheck | [ubi:koalaman/shellcheck](https://github.com/koalaman/shellcheck) [asdf:luizm/asdf-shellcheck](https://github.com/luizm/asdf-shellcheck) |
+| shellcheck | [aqua:koalaman/shellcheck](https://github.com/koalaman/shellcheck) [ubi:koalaman/shellcheck](https://github.com/koalaman/shellcheck) [asdf:luizm/asdf-shellcheck](https://github.com/luizm/asdf-shellcheck) |
 | shellspec | [aqua:shellspec/shellspec](https://github.com/shellspec/shellspec) [asdf:poikilotherm/asdf-shellspec](https://github.com/poikilotherm/asdf-shellspec) |
 | shfmt | [aqua:mvdan/sh](https://github.com/mvdan/sh) [asdf:luizm/asdf-shfmt](https://github.com/luizm/asdf-shfmt) |
 | shorebird | [asdf:valian-ca/asdf-shorebird](https://github.com/valian-ca/asdf-shorebird) |
