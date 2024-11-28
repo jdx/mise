@@ -34,6 +34,9 @@ flag "-p --prefix" hide=true
 flag "-P --profile" help="Set the profile (environment)" hide=true global=true {
     arg "<PROFILE>"
 }
+flag "-s --shell" hide=true {
+    arg "<SHELL>"
+}
 flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=true hide=true {
     arg "<TOOL@VERSION>"
 }
@@ -982,6 +985,10 @@ The name of the script will be the name of the tasks.
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
     flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
     flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
+    flag "-s --shell" help="Shell to use to run toml tasks" {
+        long_help "Shell to use to run toml tasks\n\nDefaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows\nCan also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`\nOr it can be overridden with the `shell` property on a task."
+        arg "<SHELL>"
+    }
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=true {
         arg "<TOOL@VERSION>"
     }
@@ -1345,6 +1352,10 @@ The name of the script will be the name of the tasks.
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
         flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
         flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
+        flag "-s --shell" help="Shell to use to run toml tasks" {
+            long_help "Shell to use to run toml tasks\n\nDefaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows\nCan also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`\nOr it can be overridden with the `shell` property on a task."
+            arg "<SHELL>"
+        }
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=true {
             arg "<TOOL@VERSION>"
         }
@@ -1509,18 +1520,12 @@ See https://usage.jdx.dev for more information on this specification."
 }
 cmd "use" help="Installs a tool and adds the version it to mise.toml." {
     alias "u"
-    long_help r#"Installs a tool and adds the version it to mise.toml.
+    long_help r"Installs a tool and adds the version it to mise.toml.
 
 This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.
 
-In the following order:
-  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.
-  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
-  - If `MISE_ENV` is set, it will use a `mise.<env>.toml` instead.
-  - Otherwise just "mise.toml"
-
-Use the `--global` flag to use the global config file instead."#
+Use the `--global` flag to use the global config file instead."
     after_long_help r"Examples:
 
     # set the current version of node to 20.x in mise.toml of current directory
