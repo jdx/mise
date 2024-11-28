@@ -3,15 +3,14 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
+use crate::git::Git;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{file, github};
 use eyre::WrapErr;
-use git2::Repository;
 use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
 use serde_derive::Deserialize;
-use std::env::temp_dir;
 use std::fmt::{self, Debug};
 use std::path::PathBuf;
 use url::Url;
@@ -62,7 +61,7 @@ impl Backend for SPMBackend {
         } else {
             tv.version.clone()
         };
-        let repo_dir = self.clone_package_repo(&repo, &revision)?;
+        let repo_dir = self.clone_package_repo(ctx, &tv, &repo, &revision)?;
 
         let executables = self.get_executable_names(&repo_dir)?;
         if executables.is_empty() {
@@ -88,24 +87,24 @@ impl SPMBackend {
 
     fn clone_package_repo(
         &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
         package_repo: &SwiftPackageRepo,
         revision: &str,
     ) -> Result<PathBuf, eyre::Error> {
-        let tmp_repo_dir = temp_dir().join("spm").join(package_repo.dir_name(revision));
-        file::remove_all(&tmp_repo_dir)?;
-        file::create_dir_all(tmp_repo_dir.parent().unwrap())?;
+        let repo = Git::new(tv.cache_path().join(package_repo.dir_name(revision)));
+        if !repo.exists() {
+            debug!(
+                "Cloning swift package repo {} to {}",
+                package_repo.url.as_str(),
+                repo.dir.display(),
+            );
+            repo.clone(package_repo.url.as_str(), Some(ctx.pr.as_ref()))?;
+        }
+        debug!("Checking out revision: {revision}");
+        repo.update(Some(revision.to_string()))?;
 
-        debug!(
-            "Cloning swift package repo: {}, revision: {} to path: {}",
-            package_repo.url.as_str(),
-            revision,
-            tmp_repo_dir.display()
-        );
-        let repo = Repository::clone(package_repo.url.as_str(), &tmp_repo_dir)?;
-        let (object, reference) = repo.revparse_ext(revision)?;
-        repo.checkout_tree(&object, None)?;
-        repo.set_head(reference.unwrap().name().unwrap())?;
-        Ok(tmp_repo_dir)
+        Ok(repo.dir)
     }
 
     fn get_executable_names(&self, repo_dir: &PathBuf) -> Result<Vec<String>, eyre::Error> {
