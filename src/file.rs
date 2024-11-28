@@ -32,6 +32,21 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     File::open(path).wrap_err_with(|| format!("failed open: {}", display_path(path)))
 }
 
+#[allow(unused)]
+pub fn read<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
+    let path = path.as_ref();
+    trace!("cat {}", display_path(path));
+    fs::read(path).wrap_err_with(|| format!("failed read: {}", display_path(path)))
+}
+
+pub fn size<P: AsRef<Path>>(path: P) -> Result<u64> {
+    let path = path.as_ref();
+    trace!("du -b {}", display_path(path));
+    path.metadata()
+        .map(|m| m.len())
+        .wrap_err_with(|| format!("failed size: {}", display_path(path)))
+}
+
 pub fn append<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
     let path = path.as_ref();
     trace!("append {}", display_path(path));

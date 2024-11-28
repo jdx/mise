@@ -612,6 +612,15 @@
             }
           }
         },
+        "swift": {
+          "additionalProperties": false,
+          "properties": {
+            "gpg_verify": {
+              "description": "Use gpg to verify swift tool signatures.",
+              "type": "boolean"
+            }
+          }
+        },
         "task_output": {
           "description": "Change output style when executing tasks.",
           "type": "string",

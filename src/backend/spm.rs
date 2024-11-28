@@ -33,8 +33,7 @@ impl Backend for SPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        // TODO: swift as dependencies (wait for swift core plugin: https://github.com/jdx/mise/pull/1708)
-        Ok(vec![])
+        Ok(vec!["swift"])
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {

@@ -19,6 +19,7 @@ use crate::plugins::core::java::JavaPlugin;
 use crate::plugins::core::node::NodePlugin;
 use crate::plugins::core::ruby::RubyPlugin;
 use crate::plugins::core::rust::RustPlugin;
+use crate::plugins::core::swift::SwiftPlugin;
 #[cfg(unix)]
 use crate::plugins::core::zig::ZigPlugin;
 use crate::timeout::run_with_timeout;
@@ -35,6 +36,7 @@ mod python;
 #[cfg_attr(windows, path = "ruby_windows.rs")]
 mod ruby;
 mod rust;
+mod swift;
 #[cfg(unix)]
 mod zig;
 
@@ -50,6 +52,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
         Arc::new(RustPlugin::new()),
+        Arc::new(SwiftPlugin::new()),
         Arc::new(ZigPlugin::new()),
     ];
     #[cfg(windows)]
@@ -63,6 +66,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(PythonPlugin::new()),
         Arc::new(RubyPlugin::new()),
         Arc::new(RustPlugin::new()),
+        Arc::new(SwiftPlugin::new()),
         // Arc::new(ZigPlugin::new()),
     ];
     plugins

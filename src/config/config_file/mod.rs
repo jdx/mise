@@ -21,11 +21,11 @@ use crate::config::env_directive::EnvDirective;
 use crate::config::{AliasMap, Settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
-use crate::hash::{file_hash_sha256, hash_to_str};
+use crate::hash::hash_to_str;
 use crate::task::Task;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
-use crate::{backend, config, dirs, env, file};
+use crate::{backend, config, dirs, env, file, hash};
 
 pub mod idiomatic_version;
 pub mod mise_toml;
@@ -348,7 +348,7 @@ pub fn trust(path: &Path) -> eyre::Result<()> {
         file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
     }
     let trust_hash_path = hashed_path.with_extension("hash");
-    let hash = file_hash_sha256(path)?;
+    let hash = hash::file_hash_sha256(path, None)?;
     file::write(trust_hash_path, hash)?;
     Ok(())
 }
@@ -409,7 +409,7 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
         return Ok(false);
     }
     let hash = file::read_to_string(&trust_hash_path)?;
-    let actual = file_hash_sha256(path)?;
+    let actual = hash::file_hash_sha256(path, None)?;
     Ok(hash == actual)
 }
 

@@ -101,4 +101,5 @@ slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff54546
 version = "0.1.6"
 
 [tools.wait-for-gh-rate-limit.checksums]
+wait-for-gh-rate-limit-linux-x86_64 = "sha256:f02a40ac86bd1777151fe1ba3a7ee74c10174944e1b43a8bdd19af7021ad541f"
 wait-for-gh-rate-limit-macos-aarch64 = "sha256:17a7c99021d8264071d70974bffd69741690da25a65518f515fd0c81ddc75c19"

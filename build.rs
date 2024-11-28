@@ -8,6 +8,7 @@ fn main() {
     cfg_aliases::cfg_aliases! {
         asdf: { any(feature = "asdf", not(target_os = "windows")) },
         macos: { target_os = "macos" },
+        linux: { target_os = "linux" },
         vfox: { any(feature = "vfox", target_os = "windows") },
     }
     built::write_built_file().expect("Failed to acquire build-time information");

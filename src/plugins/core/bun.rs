@@ -102,7 +102,7 @@ impl Backend for BunPlugin {
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion> {
+    ) -> Result<ToolVersion> {
         let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;

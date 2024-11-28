@@ -26,11 +26,17 @@ pub fn hash_sha256_to_str(s: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn file_hash_sha256(path: &Path) -> Result<String> {
-    file_hash_prog::<Sha256>(path, None)
+pub fn file_hash_sha256(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
+    let use_external_hasher = file::size(path).unwrap_or_default() > 50 * 1024 * 1024;
+    if use_external_hasher && file::which("sha256sum").is_some() {
+        let out = cmd!("sha256sum", path).read()?;
+        Ok(out.split_whitespace().next().unwrap().to_string())
+    } else {
+        file_hash_prog::<Sha256>(path, pr)
+    }
 }
 
-pub fn file_hash_prog<D>(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String>
+fn file_hash_prog<D>(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String>
 where
     D: Digest + Write,
     D::OutputSize: std::ops::Add,
@@ -63,11 +69,33 @@ pub fn ensure_checksum(
     pr: Option<&dyn SingleReport>,
     algo: &str,
 ) -> Result<()> {
+    let use_external_hasher = file::size(path).unwrap_or(u64::MAX) > 10 * 1024 * 1024;
     let actual = match algo {
-        "sha512" => file_hash_prog::<Sha512>(path, pr)?,
+        "sha512" => {
+            if use_external_hasher && file::which("sha512sum").is_some() {
+                let out = cmd!("sha512sum", path).read()?;
+                out.split_whitespace().next().unwrap().to_string()
+            } else {
+                file_hash_prog::<Sha512>(path, pr)?
+            }
+        }
         "sha256" => file_hash_prog::<Sha256>(path, pr)?,
-        "sha1" => file_hash_prog::<Sha1>(path, pr)?,
-        "md5" => file_hash_prog::<Md5>(path, pr)?,
+        "sha1" => {
+            if use_external_hasher && file::which("sha1sum").is_some() {
+                let out = cmd!("sha1sum", path).read()?;
+                out.split_whitespace().next().unwrap().to_string()
+            } else {
+                file_hash_prog::<Sha1>(path, pr)?
+            }
+        }
+        "md5" => {
+            if use_external_hasher && file::which("md5sum").is_some() {
+                let out = cmd!("md5sum", path).read()?;
+                out.split_whitespace().next().unwrap().to_string()
+            } else {
+                file_hash_prog::<Md5>(path, pr)?
+            }
+        }
         _ => bail!("Unknown checksum algorithm: {}", algo),
     };
     let checksum = checksum.to_lowercase();
@@ -105,7 +133,7 @@ mod tests {
     #[test]
     fn test_hash_sha256() {
         let path = Path::new(".test-tool-versions");
-        let hash = file_hash_sha256(path).unwrap();
+        let hash = file_hash_prog::<Sha256>(path, None).unwrap();
         assert_snapshot!(hash);
     }
 }
