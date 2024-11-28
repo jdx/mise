@@ -24,6 +24,12 @@ pub fn should_exit_early(watch_files: impl IntoIterator<Item = impl AsRef<Path>>
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
     }
+    if !dirs::CWD
+        .as_ref()
+        .is_some_and(|cwd| cwd == &*env::__MISE_DIR)
+    {
+        return false;
+    }
     let watch_files = get_watch_files(watch_files);
     match &*env::__MISE_WATCH {
         Some(watches) => {
