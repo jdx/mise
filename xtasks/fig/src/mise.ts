@@ -836,6 +836,36 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
+                "en"
+            ],
+            "description": "[experimental] starts a new shell with the mise environment built from the current configuration",
+            "options": [
+                {
+                    "name": [
+                        "-s",
+                        "--shell"
+                    ],
+                    "description": "Shell to start",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "shell",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                }
+            ],
+            "args": [
+                {
+                    "name": "dir",
+                    "description": "Directory to start the shell in",
+                    "isOptional": true,
+                    "isVariadic": false,
+                    "template": "folders"
+                }
+            ]
+        },
+        {
+            "name": [
                 "env",
                 "e"
             ],
@@ -1776,6 +1806,19 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
+                        "-s",
+                        "--shell"
+                    ],
+                    "description": "Shell to use to run toml tasks",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "shell",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
                         "-t",
                         "--tool"
                     ],
@@ -2397,6 +2440,19 @@ const completionSpec: Fig.Spec = {
                             ],
                             "description": "Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var",
                             "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-s",
+                                "--shell"
+                            ],
+                            "description": "Shell to use to run toml tasks",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "shell",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
                         },
                         {
                             "name": [

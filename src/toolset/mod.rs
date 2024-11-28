@@ -18,7 +18,7 @@ use crate::{backend, config, env};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use eyre::{eyre, Result, WrapErr};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use rayon::prelude::*;
 use serde_derive::Serialize;
@@ -508,18 +508,9 @@ impl Toolset {
         Ok(env)
     }
     pub fn env_with_path(&self, config: &Config) -> Result<BTreeMap<String, String>> {
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in config.path_dirs()?.clone() {
-            path_env.add(p);
-        }
-        if let Some(venv) = &*UV_VENV {
-            path_env.add(venv.venv_path.clone());
-        }
         let mut env = self.env(config)?;
-        if let Some(path) = env.get(&*PATH_KEY) {
-            path_env.add(PathBuf::from(path));
-        }
-        for p in self.list_paths() {
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in self.list_final_paths()? {
             path_env.add(p);
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
@@ -577,6 +568,23 @@ impl Toolset {
             })
             .filter(|p| p.parent().is_some())
             .collect()
+    }
+    /// same as list_paths but includes config.list_paths, venv paths, and MISE_ADD_PATHs from self.env()
+    pub fn list_final_paths(&self) -> Result<Vec<PathBuf>> {
+        let mut paths = IndexSet::new();
+        for p in CONFIG.path_dirs()?.clone() {
+            paths.insert(p);
+        }
+        if let Some(venv) = &*UV_VENV {
+            paths.insert(venv.venv_path.clone());
+        }
+        if let Some(path) = self.env(&CONFIG)?.get(&*PATH_KEY) {
+            paths.insert(PathBuf::from(path));
+        }
+        for p in self.list_paths() {
+            paths.insert(p);
+        }
+        Ok(paths.into_iter().collect())
     }
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_installed_versions()

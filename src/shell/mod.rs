@@ -39,6 +39,17 @@ impl ShellType {
             None
         }
     }
+
+    pub fn as_shell(&self) -> Box<dyn Shell> {
+        match self {
+            Self::Bash => Box::<bash::Bash>::default(),
+            Self::Elvish => Box::<elvish::Elvish>::default(),
+            Self::Fish => Box::<fish::Fish>::default(),
+            Self::Nu => Box::<nushell::Nushell>::default(),
+            Self::Xonsh => Box::<xonsh::Xonsh>::default(),
+            Self::Zsh => Box::<zsh::Zsh>::default(),
+        }
+    }
 }
 
 impl Display for ShellType {
@@ -63,13 +74,5 @@ pub trait Shell {
 }
 
 pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
-    match shell.or_else(ShellType::load) {
-        Some(ShellType::Bash) => Some(Box::<bash::Bash>::default()),
-        Some(ShellType::Elvish) => Some(Box::<elvish::Elvish>::default()),
-        Some(ShellType::Fish) => Some(Box::<fish::Fish>::default()),
-        Some(ShellType::Nu) => Some(Box::<nushell::Nushell>::default()),
-        Some(ShellType::Xonsh) => Some(Box::<xonsh::Xonsh>::default()),
-        Some(ShellType::Zsh) => Some(Box::<zsh::Zsh>::default()),
-        _ => None,
-    }
+    shell.or_else(ShellType::load).map(|st| st.as_shell())
 }

@@ -96,6 +96,14 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
     pub interleave: bool,
 
+    /// Shell to use to run toml tasks
+    ///
+    /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
+    /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
+    /// Or it can be overridden with the `shell` property on a task.
+    #[clap(long, short, verbatim_doc_comment, env = "MISE_SHELL")]
+    pub shell: Option<String>,
+
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
     #[clap(short, long, value_name = "TOOL@VERSION")]
@@ -426,7 +434,7 @@ impl Run {
             file::make_executable(&file)?;
             self.exec(&file, args, task, env, prefix)
         } else {
-            let default_shell = self.clone_default_inline_shell();
+            let default_shell = self.clone_default_inline_shell()?;
             let (program, args) = self.get_cmd_program_and_args(script, task, args, default_shell);
             self.exec_program(&program, &args, task, env, prefix)
         }
@@ -471,11 +479,6 @@ impl Run {
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
         let mut script = script.to_string();
-        if script.lines().count() > 1
-            && (shell[0] == "sh" || shell[0] == "bash" || shell[0] == "zsh")
-        {
-            script = format!("set -e\n{}", script);
-        }
         if !args.is_empty() {
             #[cfg(windows)]
             {
@@ -490,18 +493,22 @@ impl Run {
         (full_args[0].clone(), full_args[1..].to_vec())
     }
 
-    fn clone_default_inline_shell(&self) -> Vec<String> {
-        #[cfg(windows)]
-        return SETTINGS.windows_default_inline_shell_args.clone();
-        #[cfg(unix)]
-        return SETTINGS.unix_default_inline_shell_args.clone();
+    fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
+        if let Some(shell) = &self.shell {
+            Ok(shell_words::split(shell)?)
+        } else if cfg!(windows) {
+            Ok(SETTINGS.windows_default_inline_shell_args.clone())
+        } else {
+            Ok(SETTINGS.unix_default_inline_shell_args.clone())
+        }
     }
 
     fn clone_default_file_shell(&self) -> Vec<String> {
-        #[cfg(windows)]
-        return SETTINGS.windows_default_file_shell_args.clone();
-        #[cfg(unix)]
-        return SETTINGS.unix_default_file_shell_args.clone();
+        if cfg!(windows) {
+            SETTINGS.windows_default_file_shell_args.clone()
+        } else {
+            SETTINGS.unix_default_file_shell_args.clone()
+        }
     }
 
     fn get_shell(&self, task: &Task, default_shell: Vec<String>) -> Vec<String> {

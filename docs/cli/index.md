@@ -66,6 +66,7 @@ Answer yes to all confirmation prompts
 - [`mise direnv <SUBCOMMAND>`](/cli/direnv.md)
 - [`mise direnv activate`](/cli/direnv/activate.md)
 - [`mise doctor`](/cli/doctor.md)
+- [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.md)
 - [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)
 - [`mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`](/cli/exec.md)
 - [`mise generate <SUBCOMMAND>`](/cli/generate.md)

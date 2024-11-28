@@ -664,7 +664,7 @@
           }
         },
         "unix_default_inline_shell_args": {
-          "default": ["sh", "-c"],
+          "default": ["sh", "-c", "-o", "errexit"],
           "description": "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh.",
           "type": "array",
           "items": {

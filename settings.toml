@@ -885,7 +885,7 @@ description = "List of default shell arguments for unix to be used with `file`. 
 env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
 type = "ListString"
 rust_type = "Vec<String>"
-default = ["sh", "-c"]
+default = ["sh", "-c", "-o", "errexit"]
 parse_env = "list_by_comma"
 description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh."
 
