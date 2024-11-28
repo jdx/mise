@@ -142,6 +142,8 @@ impl BackendArg {
         }
         if let Some(full) = &self.full {
             full.clone()
+        } else if let Some(full) = install_state::get_tool_full(short).unwrap_or_default() {
+            full
         } else if let Some(pt) = install_state::get_plugin_type(short).unwrap_or_default() {
             match pt {
                 PluginType::Asdf => format!("asdf:{short}"),

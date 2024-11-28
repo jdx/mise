@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 #MISE alias=["format"]
-#MISE wait_for=["build", "render:settings"]
+#MISE wait_for=["render:settings"]
 set -euxo pipefail
 
 # Used for shellcheck which needs explicit args
 scripts=("$PWD"/scripts/*.sh "$PWD"/e2e/{test_,run_}* "$PWD"/e2e/*.sh)
 # Used for shfmt which will run only on files it can
 scripts_dirs=("$PWD"/scripts "$PWD"/e2e)
-cargo clippy --all-features --fix --allow-staged --allow-dirty -- -Dwarnings
 shellcheck -x "${scripts[@]}"
 shfmt -w  -i 2 -ci -bn "${scripts_dirs[@]}"
 # shellcheck disable=SC2046
@@ -24,3 +23,4 @@ imports_granularity = "Module"
 EOF
 cargo fmt --all
 rm rustfmt.toml
+cargo clippy --all-features --fix --allow-staged --allow-dirty -- -Dwarnings
