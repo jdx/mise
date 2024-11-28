@@ -290,7 +290,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | gofumpt | [ubi:mvdan/gofumpt](https://github.com/mvdan/gofumpt) [asdf:looztra/asdf-gofumpt](https://github.com/looztra/asdf-gofumpt) |
 | gohugo | [ubi:gohugoio/hugo](https://github.com/gohugoio/hugo) [asdf:nklmilojevic/asdf-hugo](https://github.com/nklmilojevic/asdf-hugo) |
 | gojq | [aqua:itchyny/gojq](https://github.com/itchyny/gojq) [asdf:jimmidyson/asdf-gojq](https://github.com/jimmidyson/asdf-gojq) |
-| golangci-lint | [ubi:golangci/golangci-lint](https://github.com/golangci/golangci-lint) [asdf:hypnoglow/asdf-golangci-lint](https://github.com/hypnoglow/asdf-golangci-lint) |
+| golangci-lint | [aqua:golangci/golangci-lint](https://github.com/golangci/golangci-lint) [ubi:golangci/golangci-lint](https://github.com/golangci/golangci-lint) [asdf:hypnoglow/asdf-golangci-lint](https://github.com/hypnoglow/asdf-golangci-lint) |
 | golangci-lint-langserver | [ubi:nametake/golangci-lint-langserver](https://github.com/nametake/golangci-lint-langserver) [go:github.com/nametake/golangci-lint-langserver](https://pkg.go.dev/github.com/nametake/golangci-lint-langserver) |
 | golines | [ubi:segmentio/golines](https://github.com/segmentio/golines) [go:github.com/segmentio/golines](https://pkg.go.dev/github.com/segmentio/golines) |
 | gomigrate | [asdf:joschi/asdf-gomigrate](https://github.com/joschi/asdf-gomigrate) |
