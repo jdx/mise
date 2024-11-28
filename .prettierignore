@@ -8,4 +8,4 @@ docs/.vitepress/cache
 docs/.vitepress/dist
 docs/public/site.webmanifest
 tasks.md
-tasks/fig/src/mise.ts
+xtasks/fig/src/mise.ts

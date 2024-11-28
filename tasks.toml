@@ -53,7 +53,7 @@ depends = ["build"]
 run = "./scripts/render-registry.js"
 
 ["render:settings"]
-run = "tsx tasks/render/settings.ts"
+run = "tsx xtasks/render/settings.ts"
 
 ["render:mangen"]
 depends = ["build"]
@@ -63,8 +63,8 @@ run = "mise render-mangen"
 ["render:fig"]
 wait_for = ["render:completions"]
 run = [
-    "usage generate fig --file mise.usage.kdl --out-file tasks/fig/src/mise.ts",
-    "tsx tasks/fig/addCustomGenerators.ts tasks/fig/src/mise.ts tasks/fig/src/mise.ts"
+    "usage generate fig --file mise.usage.kdl --out-file xtasks/fig/src/mise.ts",
+    "tsx xtasks/fig/addCustomGenerators.ts xtasks/fig/src/mise.ts xtasks/fig/src/mise.ts"
 ]
 
 ["render:help"]
