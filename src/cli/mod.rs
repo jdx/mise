@@ -325,10 +325,11 @@ impl Cli {
                         no_timings: self.no_timings,
                         output: run::TaskOutput::Prefix,
                         prefix: self.prefix,
+                        quiet: self.quiet,
                         raw: self.raw,
                         timings: self.timings,
-                        tool: Default::default(),
                         tmpdir: Default::default(),
+                        tool: Default::default(),
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(

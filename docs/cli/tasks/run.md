@@ -91,6 +91,10 @@ Hides elapsed time after each task completes
 
 Default to always hide with `MISE_TASK_TIMINGS=0`
 
+### `-q --quiet`
+
+Don't show extra output
+
 Examples:
 
     # Runs the "lint" tasks. This needs to either be defined in mise.toml

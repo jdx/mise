@@ -971,6 +971,7 @@ The name of the script will be the name of the tasks.
     flag "--no-timings" help="Hides elapsed time after each task completes" {
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
+    flag "-q --quiet" help="Don't show extra output"
     mount run="mise tasks --usage"
 }
 cmd "self-update" help="Updates mise itself." {
@@ -1333,6 +1334,7 @@ The name of the script will be the name of the tasks.
         flag "--no-timings" help="Hides elapsed time after each task completes" {
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }
+        flag "-q --quiet" help="Don't show extra output"
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
         mount run="mise tasks --usage"
