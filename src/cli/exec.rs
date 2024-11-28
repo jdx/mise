@@ -11,7 +11,7 @@ use eyre::{eyre, Result};
 use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::env;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
@@ -57,7 +57,7 @@ impl Exec {
             ToolsetBuilder::new()
                 .with_args(&self.tool)
                 .with_default_to_latest(true)
-                .build(&CONFIG)?
+                .build(&Config::get())?
         });
         let opts = InstallOptions {
             force: false,
@@ -75,7 +75,7 @@ impl Exec {
         });
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = measure!("env_with_path", { ts.env_with_path(&CONFIG)? });
+        let env = measure!("env_with_path", { ts.env_with_path(&Config::get())? });
 
         if program.rsplit('/').next() == Some("fish") {
             let mut cmd = vec![];

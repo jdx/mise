@@ -9,7 +9,7 @@ use std::time::SystemTime;
 use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::errors::Error;
 use crate::file::display_path;
 use crate::http::HTTP;
@@ -202,7 +202,7 @@ impl Run {
                 if regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#).is_match(&t) {
                     let path = PathBuf::from(&t);
                     if path.exists() {
-                        let config_root = CONFIG
+                        let config_root = Config::get()
                             .project_root
                             .clone()
                             .or_else(|| dirs::CWD.clone())
@@ -211,7 +211,8 @@ impl Run {
                         return Ok(vec![task.with_args(args)]);
                     }
                 }
-                let tasks = CONFIG
+                let config = Config::get();
+                let tasks = config
                     .tasks_with_aliases()?
                     .get_matching(&t)?
                     .into_iter()
@@ -239,17 +240,19 @@ impl Run {
 
         ctrlc::exit_on_ctrl_c(false);
 
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&CONFIG)?;
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&Config::get())?;
 
         ts.install_missing_versions(&InstallOptions {
             missing_args_only: !SETTINGS.task_run_auto_install,
             ..Default::default()
         })?;
-        let mut env = ts.env_with_path(&CONFIG)?;
+        let mut env = ts.env_with_path(&Config::get())?;
         if let Some(cwd) = &*dirs::CWD {
             env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
         }
-        if let Some(root) = &CONFIG.project_root {
+        if let Some(root) = Config::get().project_root.clone() {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
             env.insert("root".into(), root.display().to_string());
         }
@@ -635,7 +638,8 @@ impl Run {
     }
 
     fn prompt_for_task(&self) -> Result<Task> {
-        let tasks = CONFIG.tasks()?;
+        let config = Config::get();
+        let tasks = config.tasks()?;
         ensure!(
             !tasks.is_empty(),
             "no tasks defined. see {url}",
@@ -729,7 +733,7 @@ impl Run {
         } else if let Some(d) = task.dir()? {
             Ok(d)
         } else {
-            Ok(CONFIG
+            Ok(Config::get()
                 .project_root
                 .clone()
                 .unwrap_or_else(|| env::current_dir().unwrap()))
@@ -745,14 +749,14 @@ impl Run {
     }
 
     fn err_no_task(&self, name: &str) -> Result<()> {
-        if CONFIG.tasks().is_ok_and(|t| t.is_empty()) {
+        if Config::get().tasks().is_ok_and(|t| t.is_empty()) {
             bail!(
                 "no tasks defined in {}. Are you in a project directory?",
                 display_path(dirs::CWD.clone().unwrap_or_default())
             );
         }
         if let Some(cwd) = &*dirs::CWD {
-            let includes = CONFIG.task_includes_for_dir(cwd);
+            let includes = Config::get().task_includes_for_dir(cwd);
             let path = includes
                 .iter()
                 .map(|d| d.join(name))

@@ -1,14 +1,13 @@
+use crate::config::config_file::ConfigFile;
+use crate::config::Config;
+use crate::file::display_path;
+use crate::ui::table;
 use console::style;
 use eyre::Result;
 use itertools::Itertools;
 use tabled::settings::object::Columns;
 use tabled::settings::{Modify, Width};
 use tabled::Tabled;
-
-use crate::config::config_file::ConfigFile;
-use crate::config::CONFIG;
-use crate::file::display_path;
-use crate::ui::table;
 
 /// List config files currently in use
 #[derive(Debug, clap::Args)]
@@ -34,9 +33,10 @@ impl ConfigLs {
     }
 
     fn display(&self) -> Result<()> {
-        let rows = CONFIG
+        let rows = Config::get()
             .config_files
             .values()
+            .rev()
             .map(|cf| cf.as_ref().into())
             .collect::<Vec<Row>>();
         let mut table = tabled::Table::new(rows);
@@ -47,7 +47,7 @@ impl ConfigLs {
     }
 
     fn display_json(&self) -> Result<()> {
-        let array_items = CONFIG
+        let array_items = Config::get()
             .config_files
             .values()
             .map(|cf| {

@@ -88,7 +88,7 @@ impl Backend for ErlangPlugin {
         Ok(versions)
     }
 
-    fn install_version_impl(
+    fn install_version_(
         &self,
         _ctx: &InstallContext,
         tv: ToolVersion,

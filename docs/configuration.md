@@ -9,6 +9,7 @@
 - `mise/config.toml`
 - `.config/mise.toml` - use this in order to group config files into a common directory
 - `.config/mise/config.toml`
+- `.config/mise/conf.d/*.toml` - all files in this directory will be loaded in alphabetical order
 
 Notes:
 

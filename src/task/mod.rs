@@ -1,5 +1,5 @@
 use crate::config::config_file::toml::{deserialize_arr, TomlParser};
-use crate::config::{Config, CONFIG};
+use crate::config::Config;
 use crate::file;
 use crate::task::task_script_parser::{
     has_any_args_defined, replace_template_placeholders_with_args, TaskScriptParser,
@@ -330,10 +330,11 @@ impl Task {
                 Ok(Some(dir.clone()))
             }
         };
+        let config = Config::get();
         if let Some(dir) = &self.dir {
             render(dir)
         } else if let Some(dir) = self
-            .cf()
+            .cf(&config)
             .as_ref()
             .and_then(|cf| cf.task_config().dir.clone())
         {
@@ -344,8 +345,8 @@ impl Task {
     }
 
     #[allow(clippy::borrowed_box)]
-    pub fn cf(&self) -> Option<&Box<dyn ConfigFile>> {
-        CONFIG.config_files.get(&self.config_source)
+    pub fn cf<'a>(&self, config: &'a Config) -> Option<&'a Box<dyn ConfigFile>> {
+        config.config_files.get(&self.config_source)
     }
 }
 

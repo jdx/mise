@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
@@ -44,7 +44,7 @@ pub fn handle_shim() -> Result<()> {
 }
 
 fn which_shim(bin_name: &str) -> Result<PathBuf> {
-    let mut ts = ToolsetBuilder::new().build(&CONFIG)?;
+    let mut ts = ToolsetBuilder::new().build(&Config::get())?;
     if let Some((p, tv)) = ts.which(bin_name) {
         if let Some(bin) = p.which(&tv, bin_name)? {
             trace!(

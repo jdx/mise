@@ -27,8 +27,16 @@ fn init() {
     env::set_var("MISE_CACHE_DIR", env::HOME.join("data").join("cache"));
     env::set_var("MISE_CONFIG_DIR", env::HOME.join("config"));
     env::set_var("MISE_DATA_DIR", env::HOME.join("data"));
-    env::set_var("MISE_DEFAULT_CONFIG_FILENAME", ".test.mise.toml");
-    env::set_var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME", ".test-tool-versions");
+    env::set_var("MISE_GLOBAL_CONFIG_FILE", "~/config/config.toml");
+    env::set_var("MISE_SYSTEM_CONFIG_FILE", "doesntexist");
+    env::set_var(
+        "MISE_OVERRIDE_CONFIG_FILENAMES",
+        ".test.mise.toml:test.config.toml",
+    );
+    env::set_var(
+        "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES",
+        ".test-tool-versions",
+    );
     env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
     env::set_var("MISE_USE_TOML", "0");
     env::set_var("MISE_YES", "1");

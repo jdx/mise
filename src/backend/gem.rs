@@ -41,11 +41,7 @@ impl Backend for GemBackend {
         Ok(versions)
     }
 
-    fn install_version_impl(
-        &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
         SETTINGS.ensure_experimental("gem backend")?;
 
         CmdLineRunner::new("gem")

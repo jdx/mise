@@ -1,7 +1,7 @@
 use eyre::Result;
 
 use crate::cli::args::ToolArg;
-use crate::config::CONFIG;
+use crate::config::Config;
 use crate::errors::Error::VersionNotInstalled;
 use crate::toolset::ToolsetBuilder;
 
@@ -33,7 +33,7 @@ impl Where {
             None => match self.asdf_version {
                 Some(version) => self.tool.with_version(&version).tvr.unwrap(),
                 None => {
-                    let ts = ToolsetBuilder::new().build(&CONFIG)?;
+                    let ts = ToolsetBuilder::new().build(&Config::get())?;
                     ts.versions
                         .get(&self.tool.ba)
                         .and_then(|tvr| tvr.requests.first().cloned())

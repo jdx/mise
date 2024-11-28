@@ -1,6 +1,6 @@
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::Result;
@@ -35,7 +35,7 @@ fn get_or_create_venv(venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
         env: Default::default(),
         venv_path: venv_path.join("bin"),
     };
-    if let Some(python_tv) = CONFIG
+    if let Some(python_tv) = Config::get()
         .get_toolset()?
         .versions
         .get(&BackendArg::from("python"))
@@ -71,7 +71,7 @@ fn venv_path() -> Option<PathBuf> {
     Some(uv_root()?.join(".venv"))
 }
 fn uv_path() -> Option<PathBuf> {
-    CONFIG
+    Config::get()
         .get_toolset()
         .ok()?
         .which_bin("uv")

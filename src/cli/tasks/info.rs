@@ -1,7 +1,7 @@
 use eyre::{bail, Result};
 use serde_json::json;
 
-use crate::config::CONFIG;
+use crate::config::Config;
 use crate::file::display_path;
 use crate::task::Task;
 use crate::ui::info;
@@ -20,7 +20,8 @@ pub struct TasksInfo {
 
 impl TasksInfo {
     pub fn run(self) -> Result<()> {
-        let task = CONFIG.tasks()?.get(&self.task);
+        let config = Config::get();
+        let task = config.tasks()?.get(&self.task);
 
         if let Some(task) = task {
             if self.json {

@@ -160,12 +160,6 @@ type = "Bool"
 default = true
 description = "Use color in mise terminal output"
 
-[config_file]
-env = "MISE_CONFIG_FILE"
-type = "Path"
-optional = true
-description = "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var."
-
 [debug]
 env = "MISE_DEBUG"
 type = "Bool"
@@ -293,6 +287,12 @@ type = "Duration"
 default = "10s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
 aliases = ["fetch_remote_version_timeout"]
+
+[global_config_file]
+env = "MISE_GLOBAL_CONFIG_FILE"
+type = "Path"
+optional = true
+description = "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var."
 
 [go_default_packages_file]
 env = "MISE_GO_DEFAULT_PACKAGES_FILE"
@@ -819,6 +819,12 @@ env = "MISE_SWIFT_GPG_VERIFY"
 type = "Bool"
 optional = true
 description = "Use gpg to verify swift tool signatures."
+
+[system_config_file]
+env = "MISE_SYSTEM_CONFIG_FILE"
+type = "Path"
+optional = true
+description = "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var."
 
 [task_output]
 env = "MISE_TASK_OUTPUT"

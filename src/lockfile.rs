@@ -1,4 +1,4 @@
-use crate::config::{Config, CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::file;
 use crate::file::display_path;
 use crate::registry::REGISTRY;
@@ -156,7 +156,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 }
 
 fn read_all_lockfiles() -> Lockfile {
-    CONFIG
+    Config::get()
         .config_files
         .iter()
         .rev()

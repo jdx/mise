@@ -7,7 +7,7 @@ use std::{panic, thread};
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
-use crate::config::{Config, CONFIG};
+use crate::config::Config;
 use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::errors::Error;
 use crate::install_context::InstallContext;
@@ -228,7 +228,7 @@ impl Toolset {
                     .unwrap_or_default();
                 debug!("[{tv}] list_bin_paths: {bin_paths:?}");
                 let env = backend
-                    .exec_env(&CONFIG, self, tv)
+                    .exec_env(&Config::get(), self, tv)
                     .map_err(|e| {
                         warn!("Error running exec-env: {e:#}");
                     })
@@ -572,13 +572,13 @@ impl Toolset {
     /// same as list_paths but includes config.list_paths, venv paths, and MISE_ADD_PATHs from self.env()
     pub fn list_final_paths(&self) -> Result<Vec<PathBuf>> {
         let mut paths = IndexSet::new();
-        for p in CONFIG.path_dirs()?.clone() {
+        for p in Config::get().path_dirs()?.clone() {
             paths.insert(p);
         }
         if let Some(venv) = &*UV_VENV {
             paths.insert(venv.venv_path.clone());
         }
-        if let Some(path) = self.env(&CONFIG)?.get(&*PATH_KEY) {
+        if let Some(path) = self.env(&Config::get())?.get(&*PATH_KEY) {
             paths.insert(PathBuf::from(path));
         }
         for p in self.list_paths() {

@@ -19,8 +19,8 @@ EOF
 cd subdir || exit 1
 
 assert "mise trust --all"
-assert "mise cfg" "~/workdir/subdir/mise.toml dummy
-~/workdir/mise.toml        dummy"
+assert "mise cfg" "~/workdir/mise.toml        dummy
+~/workdir/subdir/mise.toml dummy"
 assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/subdir/mise.toml 2.0.0"
 assert "mise settings get go_download_mirror" "subdir/mise.toml"
 assert "mise trust --ignore"
@@ -28,13 +28,13 @@ assert "mise cfg" "~/workdir/mise.toml dummy"
 assert "mise settings get go_download_mirror" "mise.toml"
 assert "mise ls dummy" "dummy  1.0.0 (missing)  ~/workdir/mise.toml 1.0.0"
 assert "mise trust ."
-assert "mise cfg" "~/workdir/subdir/mise.toml dummy
-~/workdir/mise.toml        dummy"
+assert "mise cfg" "~/workdir/mise.toml        dummy
+~/workdir/subdir/mise.toml dummy"
 assert "MISE_IGNORED_CONFIG_PATHS=~/workdir/subdir mise cfg" "~/workdir/mise.toml dummy"
 assert "MISE_IGNORED_CONFIG_PATHS=~ mise cfg" ""
 assert "mise trust --ignore mise.toml"
 assert "mise trust --ignore .."
 assert "mise cfg" ""
 assert "mise trust --all"
-assert "mise cfg" "~/workdir/subdir/mise.toml dummy
-~/workdir/mise.toml        dummy"
+assert "mise cfg" "~/workdir/mise.toml        dummy
+~/workdir/subdir/mise.toml dummy"

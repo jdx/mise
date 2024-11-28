@@ -31,4 +31,7 @@ assert "mise int" "DEBUG=0"
 cat <<EOF >mise.windows.toml
 tasks.configtask = "echo configtask:windows"
 EOF
+assert "mise run -E windows configtask" "configtask:windows"
+assert "mise run -P windows configtask" "configtask:windows"
+MISE_ENV=windows assert "mise run configtask" "configtask:windows"
 MISE_PROFILE=windows assert "mise run configtask" "configtask:windows"

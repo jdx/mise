@@ -3,12 +3,12 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CORE_PLUGINS;
@@ -47,10 +47,10 @@ pub type VersionCacheManager = CacheManager<Vec<String>>;
 
 static TOOLS: Mutex<Option<BackendMap>> = Mutex::new(None);
 
-pub fn load_tools() {
+fn load_tools() -> MutexGuard<'static, Option<BackendMap>> {
     let mut memo_tools = TOOLS.lock().unwrap();
     if memo_tools.is_some() {
-        return;
+        return memo_tools;
     }
     time!("load_tools start");
     let core_tools = CORE_PLUGINS.values().cloned().collect::<Vec<ABackend>>();
@@ -80,23 +80,15 @@ pub fn load_tools() {
         .collect();
     *memo_tools = Some(tools.clone());
     time!("load_tools done");
+    memo_tools
 }
 
 pub fn list() -> BackendList {
-    load_tools();
-    TOOLS
-        .lock()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .values()
-        .cloned()
-        .collect()
+    load_tools().as_ref().unwrap().values().cloned().collect()
 }
 
 pub fn get(ba: &BackendArg) -> Option<ABackend> {
-    load_tools();
-    let mut m = TOOLS.lock().unwrap();
+    let mut m = load_tools();
     let backends = m.as_mut().unwrap();
     if let Some(backend) = backends.get(&ba.short) {
         Some(backend.clone())
@@ -109,8 +101,8 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
 }
 
 pub fn remove(short: &str) {
-    let mut m = TOOLS.lock().unwrap();
-    let backends = m.as_mut().unwrap();
+    let mut t = load_tools();
+    let backends = t.as_mut().unwrap();
     backends.remove(short);
 }
 
@@ -395,7 +387,7 @@ pub trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
-        let tv = match self.install_version_impl(&ctx, tv) {
+        let tv = match self.install_version_(&ctx, tv) {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
@@ -439,15 +431,11 @@ pub trait Backend: Debug + Send + Sync {
             .with_pr(ctx.pr.as_ref())
             .arg("-c")
             .arg(script)
-            .envs(self.exec_env(&CONFIG, ctx.ts, tv)?)
+            .envs(self.exec_env(&Config::get(), ctx.ts, tv)?)
             .execute()?;
         Ok(())
     }
-    fn install_version_impl(
-        &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion>;
+    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion>;
     fn uninstall_version(
         &self,
         tv: &ToolVersion,

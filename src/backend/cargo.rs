@@ -55,11 +55,7 @@ impl Backend for CargoBackend {
         Ok(versions)
     }
 
-    fn install_version_impl(
-        &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
         let config = Config::try_get()?;
         let install_arg = format!("{}@{}", self.tool_name(), tv.version);
 

@@ -1,4 +1,4 @@
-use crate::config::CONFIG;
+use crate::config::Config;
 use crate::{dirs, file};
 use std::path::PathBuf;
 
@@ -41,7 +41,7 @@ enum TaskDocsStyle {
 impl TaskDocs {
     pub fn run(self) -> eyre::Result<()> {
         let dir = dirs::CWD.as_ref().unwrap();
-        let tasks = CONFIG.load_tasks_in_dir(dir)?;
+        let tasks = Config::get().load_tasks_in_dir(dir)?;
         let mut out = vec![];
         for task in &tasks {
             out.push(task.render_markdown(dir)?);

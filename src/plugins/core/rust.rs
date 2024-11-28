@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, Toolset};
@@ -41,7 +41,7 @@ impl RustPlugin {
             .arg("--default-toolchain")
             .arg("none")
             .arg("-y")
-            .envs(self.exec_env(&CONFIG, CONFIG.get_toolset()?, tv)?);
+            .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)?);
         cmd.execute()?;
         Ok(())
     }
@@ -51,7 +51,7 @@ impl RustPlugin {
         CmdLineRunner::new(RUSTC_BIN)
             .with_pr(ctx.pr.as_ref())
             .arg("-V")
-            .envs(self.exec_env(&CONFIG, CONFIG.get_toolset()?, tv)?)
+            .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)?)
             .prepend_path(self.list_bin_paths(tv)?)?
             .execute()
     }
@@ -87,7 +87,7 @@ impl Backend for RustPlugin {
         Ok("".into())
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         self.setup_rustup(ctx, &tv)?;
 
         CmdLineRunner::new(RUSTUP_BIN)
@@ -96,7 +96,7 @@ impl Backend for RustPlugin {
             .arg("install")
             .arg(&tv.version)
             .prepend_path(self.list_bin_paths(&tv)?)?
-            .envs(self.exec_env(&CONFIG, CONFIG.get_toolset()?, &tv)?)
+            .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, &tv)?)
             .execute()?;
 
         file::remove_all(tv.install_path())?;

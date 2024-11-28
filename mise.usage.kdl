@@ -1059,8 +1059,10 @@ cmd "settings" help="Manage settings" {
     # set the value of the setting "node.mirror_url" to "https://npm.taobao.org/mirrors/node"
     $ mise settings node.mirror_url https://npm.taobao.org/mirrors/node
 "#
-    flag "--names" help="Only display key names for each setting"
+    flag "-a --all" help="List all settings"
     flag "-l --local" help="Use the local config file instead of the global one" global=true
+    flag "-J --json" help="Output in JSON format"
+    flag "-T --toml" help="Output in TOML format"
     arg "[KEY]" help="Setting name to get/set"
     arg "[VALUE]" help="Setting value to set"
     cmd "add" help="Adds a setting to the configuration file" {
@@ -1109,8 +1111,10 @@ but managed separately with `mise aliases`"
     default_packages_file = "~/.default-python-packages"
     ...
 "#
+        flag "-a --all" help="Display settings set to the default"
         flag "-l --local" help="Use the local config file instead of the global one"
-        flag "--names" help="Only display key names for each setting"
+        flag "-J --json" help="Output in JSON format"
+        flag "-T --toml" help="Output in TOML format"
         arg "[KEY]" help="List keys under this key"
     }
     cmd "set" help="Add/update a setting" {
