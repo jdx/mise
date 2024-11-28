@@ -70,6 +70,12 @@ impl MultiProgressReport {
             None => f(),
         }
     }
+    pub fn stop(&self) -> eyre::Result<()> {
+        if let Some(mp) = &self.mp {
+            mp.clear()?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -69,6 +69,7 @@ mod versions_host;
 
 pub(crate) use crate::exit::exit;
 pub(crate) use crate::toolset::install_state;
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
@@ -79,6 +80,9 @@ fn main() -> eyre::Result<()> {
             Err(err) => handle_err(err),
         }?;
     });
+    if let Some(mpr) = MultiProgressReport::try_get() {
+        mpr.stop()?;
+    }
     Ok(())
 }
 

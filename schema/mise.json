@@ -942,16 +942,24 @@
   "description": "config file for mise version manager (mise.toml)",
   "properties": {
     "alias": {
+      "description": "custom shorthands",
+      "type": "object",
       "additionalProperties": {
-        "additionalProperties": {
-          "description": "version alias points to",
-          "type": "string"
-        },
-        "description": "plugin to set aliases for",
-        "type": "object"
-      },
-      "description": "custom shorthands for versions",
-      "type": "object"
+        "oneOf": [
+          {
+            "description": "where the alias goes",
+            "type": "string"
+          },
+          {
+            "description": "tool to set aliases for",
+            "type": "object",
+            "additionalProperties": {
+              "description": "version alias points to",
+              "type": "string"
+            }
+          }
+        ]
+      }
     },
     "env": {
       "oneOf": [
