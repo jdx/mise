@@ -124,6 +124,10 @@ pub struct Run {
     #[clap(long, alias = "no-timing", verbatim_doc_comment)]
     pub no_timings: bool,
 
+    /// Don't show extra output
+    #[clap(long, short, verbatim_doc_comment)]
+    pub quiet: bool,
+
     #[clap(skip)]
     pub is_linear: bool,
 
@@ -252,6 +256,9 @@ impl Run {
         self.is_linear = tasks.is_linear();
         if let Some(task) = tasks.all().next() {
             self.output = self.output(task)?;
+            if let TaskOutput::Quiet = self.output {
+                self.quiet = true;
+            }
         }
 
         let tasks = Mutex::new(tasks);
@@ -323,11 +330,15 @@ impl Run {
     fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
-            eprintln!("{prefix} skipping task");
+            if !self.quiet {
+                eprintln!("{prefix} skipping task");
+            }
             return Ok(());
         }
         if !self.force && self.sources_are_fresh(task)? {
-            eprintln!("{prefix} sources up-to-date, skipping");
+            if !self.quiet {
+                eprintln!("{prefix} sources up-to-date, skipping");
+            }
             return Ok(());
         }
 
@@ -401,7 +412,9 @@ impl Run {
                 .bright()
                 .to_string(),
         );
-        eprintln!("{prefix} {cmd}");
+        if !self.quiet {
+            eprintln!("{prefix} {cmd}");
+        }
 
         if script.starts_with("#!") {
             let dir = tempfile::tempdir()?;
@@ -527,7 +540,9 @@ impl Run {
 
         let cmd = format!("{} {}", display_path(file), args.join(" "));
         let cmd = trunc(&style::ebold(format!("$ {cmd}")).bright().to_string());
-        eprintln!("{prefix} {cmd}");
+        if !self.quiet {
+            eprintln!("{prefix} {cmd}");
+        }
 
         self.exec(file, &args, task, &env, prefix)
     }
@@ -557,7 +572,7 @@ impl Run {
         cmd.with_pass_signals();
         match self.output {
             TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
-            TaskOutput::Interleave => {
+            TaskOutput::Quiet | TaskOutput::Interleave => {
                 cmd = cmd
                     .stdin(Stdio::inherit())
                     .stdout(Stdio::inherit())
@@ -585,7 +600,9 @@ impl Run {
     }
 
     fn output(&self, task: &Task) -> Result<TaskOutput> {
-        if self.prefix {
+        if self.quiet {
+            Ok(TaskOutput::Quiet)
+        } else if self.prefix {
             Ok(TaskOutput::Prefix)
         } else if self.interleave {
             Ok(TaskOutput::Interleave)
@@ -754,7 +771,8 @@ impl Run {
     }
 
     fn timings(&self) -> bool {
-        !self.no_timings
+        !self.quiet
+            && !self.no_timings
             && SETTINGS
                 .task_timings
                 .unwrap_or(self.output == TaskOutput::Prefix)
@@ -876,6 +894,7 @@ pub enum TaskOutput {
     #[default]
     Prefix,
     Interleave,
+    Quiet,
 }
 
 fn trunc(msg: &str) -> String {

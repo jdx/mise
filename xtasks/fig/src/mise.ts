@@ -1815,6 +1815,14 @@ const completionSpec: Fig.Spec = {
                     ],
                     "description": "Hides elapsed time after each task completes",
                     "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-q",
+                        "--quiet"
+                    ],
+                    "description": "Don't show extra output",
+                    "isRepeatable": false
                 }
             ],
             "generateSpec": usageGenerateSpec(["mise tasks --usage"]),
@@ -2430,6 +2438,14 @@ const completionSpec: Fig.Spec = {
                                 "--no-timings"
                             ],
                             "description": "Hides elapsed time after each task completes",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-q",
+                                "--quiet"
+                            ],
+                            "description": "Don't show extra output",
                             "isRepeatable": false
                         }
                     ],
