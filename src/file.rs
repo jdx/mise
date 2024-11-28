@@ -178,8 +178,13 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     if !path.exists() {
         trace!("mkdir -p {}", display_path(path));
-        fs::create_dir_all(path)
-            .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)))?;
+        if let Err(err) = fs::create_dir_all(path) {
+            // if not exists error
+            if err.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(err)
+                    .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)));
+            }
+        }
     }
     Ok(())
 }
@@ -310,8 +315,16 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
 #[cfg(windows)]
 //#[deprecated]
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
-    junction::create(target, link)
-        .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
+    if let Err(err) = junction::create(target, link) {
+        if err.kind() == std::io::ErrorKind::AlreadyExists {
+            let _ = fs::remove_file(link);
+            junction::create(target, link)
+        } else {
+            Err(err)
+        }
+    } else {
+        Ok(())
+    }.wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
     Ok((target.to_path_buf(), link.to_path_buf()))
 }
 
