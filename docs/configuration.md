@@ -130,7 +130,9 @@ my_custom_node = '20'
 
 ### Minimum mise version
 
-Define a minimum supported version of mise for the config file. mise will ignore config files that use too new of a version.
+Specify the minimum supported version of mise required for the configuration file.
+If the configuration file specifies a version of mise that is higher than
+the currently installed version, mise will error out.
 
 ```toml
 min_version = '2024.11.1'
