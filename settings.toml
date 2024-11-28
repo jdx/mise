@@ -160,11 +160,29 @@ type = "Bool"
 default = true
 description = "Use color in mise terminal output"
 
+[config_file]
+env = "MISE_CONFIG_FILE"
+type = "Path"
+optional = true
+description = "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var."
+
 [debug]
 env = "MISE_DEBUG"
 type = "Bool"
 hide = true
 description = "Sets log level to debug"
+
+[default_config_filename]
+env = "MISE_DEFAULT_CONFIG_FILENAME"
+type = "String"
+default = "mise.toml"
+description = "The default config filename read. `mise use` and other commands that create new config files will use this value. This must be an env var."
+
+[default_tool_versions_filename]
+env = "MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+type = "String"
+default = ".tool-versions"
+description = "The default .tool-versions filename read. `mise use` and other commands that write to new config files will use this if asdf_compat=1. This must be an env var."
 
 [disable_backends]
 env = "MISE_DISABLE_BACKENDS"
@@ -212,6 +230,13 @@ env = "MISE_ENV"
 type = "String"
 description = "Env to use for mise.<MISE_ENV>.toml files."
 optional = true
+docs = """
+Enables profile-specific config files such as `.mise.development.toml`.
+Use this for different env vars or different tool versions in
+development/staging/production environments. See
+[Configuration Environments](/configuration/environments) for more on how
+to use this feature.
+"""
 
 [env_file]
 env = "MISE_ENV_FILE"
@@ -468,6 +493,20 @@ You can install it with mise:
 mise use -g bun
 ```
 """
+
+[override_config_filenames]
+env = "MISE_OVERRIDE_CONFIG_FILENAMES"
+type = "ListString"
+default = []
+description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var."
+parse_env = "list_by_colon"
+
+[override_tool_versions_filename]
+env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAME"
+type = "ListString"
+default = []
+description = "If set, mise will ignore .tool-versions files and use these filename instead. Can be set to `none` to disable .tool-versions. This must be an env var."
+parse_env = "list_by_colon"
 
 [paranoid]
 env = "MISE_PARANOID"

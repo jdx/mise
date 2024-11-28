@@ -9,6 +9,13 @@ Installs a tool and adds the version it to mise.toml.
 This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.
 
+In the following order:
+
+- If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.
+- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
+- If `MISE_ENV` is set, it will use a `mise.<env>.toml` instead.
+- Otherwise just "mise.toml"
+
 Use the `--global` flag to use the global config file instead.
 
 ## Arguments

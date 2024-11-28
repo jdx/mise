@@ -40,6 +40,10 @@ export default defineConfig({
         items: [
           { text: "mise.toml", link: "/configuration" },
           { text: "Settings", link: "/configuration/settings" },
+          {
+            text: "Configuration Environments",
+            link: "/configuration/environments",
+          },
         ],
       },
       {
@@ -92,7 +96,6 @@ export default defineConfig({
         text: "Environments",
         items: [
           { text: "Environment variables", link: "/environments/" },
-          { text: "Profiles", link: "/profiles" },
           { text: "direnv", link: "/direnv" },
         ],
       },

@@ -2,6 +2,7 @@ use crate::cli::args::{ENV_ARG, PROFILE_ARG};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
 use crate::hook_env::{deserialize_watches, HookEnvWatches};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
 use once_cell::sync::Lazy;
@@ -81,10 +82,32 @@ pub static MISE_SHIMS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_SHIMS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("shims")));
 
 pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
-    var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME").unwrap_or_else(|_| ".tool-versions".into())
+    var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME")
+        .ok()
+        .or(MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
+            .as_ref()
+            .and_then(|v| v.first().cloned()))
+        .or(var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME").ok())
+        .unwrap_or_else(|| ".tool-versions".into())
 });
-pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> =
-    Lazy::new(|| var("MISE_DEFAULT_CONFIG_FILENAME").unwrap_or_else(|_| "mise.toml".into()));
+pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> = Lazy::new(|| {
+    var("MISE_DEFAULT_CONFIG_FILENAME")
+        .ok()
+        .or(MISE_OVERRIDE_CONFIG_FILENAMES.first().cloned())
+        .or(MISE_ENV.as_ref().map(|env| format!("mise.{env}.toml")))
+        .unwrap_or_else(|| "mise.toml".into())
+});
+pub static MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: Lazy<Option<IndexSet<String>>> =
+    Lazy::new(|| match var("MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES") {
+        Ok(v) if v == "none" => Some([].into()),
+        Ok(v) => Some(v.split(':').map(|s| s.to_string()).collect()),
+        Err(_) => Default::default(),
+    });
+pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
+    Lazy::new(|| match var("MISE_OVERRIDE_CONFIG_FILENAMES") {
+        Ok(v) => v.split(':').map(|s| s.to_string()).collect(),
+        Err(_) => Default::default(),
+    });
 pub static MISE_ENV: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 pub static MISE_SETTINGS_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SETTINGS_FILE").unwrap_or_else(|| MISE_CONFIG_DIR.join("settings.toml"))

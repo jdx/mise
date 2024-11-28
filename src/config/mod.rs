@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
 
 use eyre::{ensure, eyre, Context, Result};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use rayon::prelude::*;
@@ -619,9 +619,10 @@ fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
     idiomatic_filenames
 }
 
-pub static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
-    if *env::MISE_DEFAULT_CONFIG_FILENAME == "mise.toml" {
-        vec![
+static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
+    if env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
+        [
+            ".tool-versions",
             &*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME, // .tool-versions
             ".config/mise/config.toml",
             ".config/mise.toml",
@@ -629,6 +630,7 @@ pub static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
             "mise/config.toml",
             ".mise/config.toml",
             ".rtx.toml",
+            "mise.toml",
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
             ".mise.toml",
             ".config/mise/config.local.toml",
@@ -638,11 +640,13 @@ pub static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
             "mise.local.toml",
             ".mise.local.toml",
         ]
+        .into_iter()
+        .collect()
     } else {
-        vec![
-            &*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME,
-            &*env::MISE_DEFAULT_CONFIG_FILENAME,
-        ]
+        env::MISE_OVERRIDE_CONFIG_FILENAMES
+            .iter()
+            .map(|s| s.as_str())
+            .collect()
     }
 });
 pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {

@@ -416,7 +416,14 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
     match path.file_name().unwrap().to_str().unwrap() {
         f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
+        f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
         f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
+        f if env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
+            .as_ref()
+            .is_some_and(|o| o.contains(f)) =>
+        {
+            Some(ConfigFileType::ToolVersions)
+        }
         f if env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
         }

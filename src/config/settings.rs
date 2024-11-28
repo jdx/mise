@@ -266,6 +266,9 @@ impl Settings {
             .to_string_lossy();
         // if the file doesn't exist or is actually a .tool-versions config
         if !global_config.exists()
+            || env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
+                .as_ref()
+                .is_some_and(|f| f.contains(&filename.to_string()))
             || filename == *env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME
             || filename == ".tool-versions"
         {
@@ -295,8 +298,11 @@ impl Settings {
             .iter()
             .filter(|p| {
                 let filename = p.file_name().unwrap_or_default().to_string_lossy();
-                filename != *env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME
-                    && filename != ".tool-versions"
+                env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
+                    .as_ref()
+                    .is_some_and(|f| f.contains(&filename.to_string()))
+                    || filename != *env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME
+                        && filename != ".tool-versions"
             })
             .map(Self::parse_settings_file)
             .chain(once(Self::config_settings()))
