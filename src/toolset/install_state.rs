@@ -126,6 +126,15 @@ pub fn list_plugins() -> Result<BTreeMap<String, PluginType>> {
     Ok(plugins.as_ref().unwrap().clone())
 }
 
+pub fn get_tool_full(short: &str) -> Result<Option<String>> {
+    let tools = init_tools()?;
+    Ok(tools
+        .as_ref()
+        .unwrap()
+        .get(short)
+        .and_then(|t| t.full.clone()))
+}
+
 pub fn get_plugin_type(short: &str) -> Result<Option<PluginType>> {
     let plugins = init_plugins()?;
     Ok(plugins.as_ref().unwrap().get(short).cloned())

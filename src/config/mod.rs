@@ -344,11 +344,11 @@ impl Config {
                 p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml"
             })
             .map(|p| {
-                self.load_task_file(p).unwrap_or_else(|err| {
-                    warn!("loading tasks in {}: {err}", display_path(p));
-                    vec![]
-                })
+                self.load_task_file(p)
+                    .wrap_err_with(|| format!("loading tasks in {}", display_path(p)))
             })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
             .flatten()
             .collect::<Vec<_>>();
         let file_tasks = includes

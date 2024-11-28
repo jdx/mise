@@ -65,6 +65,12 @@ version = "3.3.3"
 [tools."pipx:toml-sort"]
 version = "0.24.2"
 
+[tools.pre-commit]
+version = "4.0.1"
+
+[tools.pre-commit.checksums]
+"pre-commit-4.0.1.pyz" = "sha256:f3e65c943795be7879e7ea2beda248321b6c8ae851dabc785522a432fb8ce003"
+
 [tools.ripgrep]
 version = "14.1.1"
 

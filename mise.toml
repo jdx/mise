@@ -18,6 +18,7 @@ cosign = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
 "pipx:toml-sort" = "latest"
+pre-commit = "latest"
 #"python" = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 "ripgrep" = "latest"
 "shellcheck" = "0.10"
