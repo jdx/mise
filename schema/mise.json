@@ -972,6 +972,9 @@
       },
       "description": "dev tools to use",
       "type": "object"
+    },
+    "_": {
+      "additionalProperties": true
     }
   }
 }

@@ -28,6 +28,8 @@ use crate::{dirs, file};
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
+    #[serde(rename = "_")]
+    custom: Option<toml::Value>,
     #[serde(default, deserialize_with = "deserialize_version")]
     min_version: Option<Versioning>,
     #[serde(skip)]
@@ -482,6 +484,7 @@ impl Debug for MiseToml {
 impl Clone for MiseToml {
     fn clone(&self) -> Self {
         Self {
+            custom: self.custom.clone(),
             min_version: self.min_version.clone(),
             context: self.context.clone(),
             path: self.path.clone(),
