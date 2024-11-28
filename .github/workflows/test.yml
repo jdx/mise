@@ -242,7 +242,7 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: ./tasks/test/coverage
+          command: mise run test:coverage
       - uses: actions/upload-artifact@v4
         with:
           name: coverage-${{matrix.tranche}}.lcov

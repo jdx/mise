@@ -26,4 +26,4 @@ slsa-verifier = "latest"
 wait-for-gh-rate-limit = "latest"
 
 [task_config]
-includes = ["tasks.toml", "tasks"]
+includes = ["tasks.toml", "xtasks"]
