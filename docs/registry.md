@@ -695,7 +695,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | sver | [aqua:mitoma/sver](https://github.com/mitoma/sver) [asdf:robzr/asdf-sver](https://github.com/robzr/asdf-sver) |
 | svu | [aqua:caarlos0/svu](https://github.com/caarlos0/svu) [asdf:asdf-community/asdf-svu](https://github.com/asdf-community/asdf-svu) |
 | swag | [aqua:swaggo/swag](https://github.com/swaggo/swag) [asdf:behoof4mind/asdf-swag](https://github.com/behoof4mind/asdf-swag) |
-| swift | [asdf:fcrespo82/asdf-swift](https://github.com/fcrespo82/asdf-swift) |
+| swift | [core:swift](https://mise.jdx.dev/lang/swift.html) |
 | swift-package-list | [asdf:MacPaw/asdf-swift-package-list](https://github.com/MacPaw/asdf-swift-package-list) |
 | swiftformat | [asdf:younke/asdf-swiftformat](https://github.com/younke/asdf-swiftformat) |
 | swiftgen | [asdf:younke/asdf-swiftgen](https://github.com/younke/asdf-swiftgen) |

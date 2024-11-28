@@ -775,6 +775,12 @@ env = "MISE_STATUS_MESSAGE_SHOW_TOOLS"
 type = "Bool"
 description = "Show configured env vars when entering a directory with a mise.toml file."
 
+[swift.gpg_verify]
+env = "MISE_SWIFT_GPG_VERIFY"
+type = "Bool"
+optional = true
+description = "Use gpg to verify swift tool signatures."
+
 [task_output]
 env = "MISE_TASK_OUTPUT"
 type = "String"

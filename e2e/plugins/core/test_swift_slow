@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_USE_VERSIONS_HOST=0
+
+MISE_DEBUG=1 mise use swift
+assert_contains "mise x -- swift --version" "Swift version 6.0.2"
+
+assert "mise x spm:nicklockwood/SwiftFormat@0.53.10 -- swiftformat --version" "0.53.10"
+assert "mise x spm:https://github.com/nicklockwood/SwiftFormat.git@0.53.10 -- swiftformat --version" "0.53.10"
+
+# test package with resources (`templates list` command depends on resources being installed)
+#assert "mise x spm:SwiftGen/SwiftGen@6.6.2 --verbose -- swiftgen templates list --only colors" "colors:
+#   - literals-swift4
+#   - literals-swift5
+#   - swift4
+#   - swift5
+#---
+#You can also specify custom templates by path, using \`templatePath\` instead of \`templateName\`.
+#For more information, see the documentation on GitHub or use \`swiftgen template doc\`.
+#"

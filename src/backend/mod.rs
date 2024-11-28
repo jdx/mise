@@ -26,7 +26,6 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use sha2::Sha256;
 
 pub mod aqua;
 pub mod asdf;
@@ -471,7 +470,9 @@ pub trait Backend: Debug + Send + Sync {
             remove_all_with_warning(dir)
         };
         rmdir(&tv.install_path())?;
-        rmdir(&tv.download_path())?;
+        if !SETTINGS.always_keep_download {
+            rmdir(&tv.download_path())?;
+        }
         rmdir(&tv.cache_path())?;
         Ok(())
     }
@@ -526,7 +527,9 @@ pub trait Backend: Debug + Send + Sync {
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
         let _ = remove_all_with_warning(tv.install_path());
-        let _ = remove_all_with_warning(tv.download_path());
+        if !SETTINGS.always_keep_download {
+            let _ = remove_all_with_warning(tv.download_path());
+        }
         let _ = remove_all_with_warning(tv.cache_path());
         let _ = file::remove_file(tv.install_path()); // removes if it is a symlink
         file::create_dir_all(tv.install_path())?;
@@ -542,7 +545,7 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
     fn cleanup_install_dirs(&self, tv: &ToolVersion) {
-        if !SETTINGS.always_keep_download && !SETTINGS.always_keep_install {
+        if !SETTINGS.always_keep_download {
             let _ = remove_all_with_warning(tv.download_path());
         }
     }
@@ -642,7 +645,7 @@ pub trait Backend: Debug + Send + Sync {
             }
         } else if SETTINGS.lockfile && SETTINGS.experimental {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_prog::<Sha256>(file, Some(ctx.pr.as_ref()))?;
+            let hash = hash::file_hash_sha256(file, Some(ctx.pr.as_ref()))?;
             tv.checksums.insert(filename, format!("sha256:{hash}"));
         }
         Ok(())

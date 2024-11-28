@@ -678,6 +678,15 @@
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
+        },
+        "swift": {
+          "additionalProperties": false,
+          "properties": {
+            "gpg_verify": {
+              "description": "Use gpg to verify swift tool signatures.",
+              "type": "boolean"
+            }
+          }
         }
       }
     },
