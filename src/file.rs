@@ -324,7 +324,8 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
         }
     } else {
         Ok(())
-    }.wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
+    }
+    .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
     Ok((target.to_path_buf(), link.to_path_buf()))
 }
 
