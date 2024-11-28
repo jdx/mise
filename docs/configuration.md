@@ -13,7 +13,7 @@
 Notes:
 
 - Paths which start with `mise` can be dotfiles, e.g.: `mise.toml` or `.mise/config.toml`.
-- This list doesn't include [Profiles](/profiles) which allow for environment-specific config files like `mise.development.toml`—set with `MISE_PROFILE=development`.
+- This list doesn't include [Configuration Environments](/configuration/environments) which allow for environment-specific config files like `mise.development.toml`—set with `MISE_ENV=development`.
 - See [`LOCAL_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
 
 These files recurse upwards, so if you have a `~/src/work/myproj/mise.toml` file, what is defined
@@ -77,7 +77,7 @@ Then when inside of `~/src/myproj/backend`, `node` will be `18`, `python` will b
 will be `3.1`. You can check the active versions with `mise ls --current`.
 
 You can also have environment specific config files like `.mise.production.toml`, see
-[Profiles](/profiles) for more details.
+[Configuration Environments](/configuration/environments) for more details.
 
 ### `[tools]` - Dev tools
 
@@ -291,6 +291,14 @@ See [Tasks](/tasks/) for the full list of configuration options.
 
 ## Environment variables
 
+::: tip
+Normally environment variables in mise are used to set [settings](/configuration/settings) so most
+environment variables are in that doc. The following are environment variables that are not settings.
+
+A setting in mise is generally something that can be configured either as an environment variable
+or set in a config file.
+:::
+
 mise can also be configured via environment variables. The following options are available:
 
 ### `MISE_DATA_DIR`
@@ -327,24 +335,6 @@ This is the directory where mise stores system-wide configuration.
 Default: `$MISE_CONFIG_DIR/config.toml` (Usually ~/.config/mise/config.toml)
 
 This is the path to the config file.
-
-### `MISE_DEFAULT_TOOL_VERSIONS_FILENAME`
-
-Set to something other than ".tool-versions" to have mise look for `.tool-versions` files but with
-a different name.
-
-### `MISE_DEFAULT_CONFIG_FILENAME`
-
-Set to something other than `.mise.toml` to have mise look for `.mise.toml` config files with a
-different name.
-
-### `MISE_PROFILE`
-
-Enables profile-specific config files such as `.mise.development.toml`.
-Use this for different env vars or different tool versions in
-development/staging/production environments. See
-[Profiles](/profiles) for more on how
-to use this feature.
 
 ### `MISE_ENV_FILE`
 

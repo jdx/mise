@@ -187,9 +187,23 @@
           "description": "Use color in mise terminal output",
           "type": "boolean"
         },
+        "config_file": {
+          "description": "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var.",
+          "type": "string"
+        },
         "debug": {
           "description": "Sets log level to debug",
           "type": "boolean"
+        },
+        "default_config_filename": {
+          "default": "mise.toml",
+          "description": "The default config filename read. `mise use` and other commands that create new config files will use this value. This must be an env var.",
+          "type": "string"
+        },
+        "default_tool_versions_filename": {
+          "default": ".tool-versions",
+          "description": "The default .tool-versions filename read. `mise use` and other commands that write to new config files will use this if asdf_compat=1. This must be an env var.",
+          "type": "string"
         },
         "disable_backends": {
           "default": [],
@@ -375,6 +389,22 @@
               "description": "Use bun instead of npm if bun is installed and on PATH.",
               "type": "boolean"
             }
+          }
+        },
+        "override_config_filenames": {
+          "default": [],
+          "description": "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "override_tool_versions_filename": {
+          "default": [],
+          "description": "If set, mise will ignore .tool-versions files and use these filename instead. Can be set to `none` to disable .tool-versions. This must be an env var.",
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         },
         "paranoid": {

@@ -7,7 +7,7 @@ use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, is_global_config, Config, LOCAL_CONFIG_FILENAMES, SETTINGS};
+use crate::config::{config_file, is_global_config, Config, DEFAULT_CONFIG_FILENAMES, SETTINGS};
 use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
@@ -22,6 +22,12 @@ use crate::{config, env, file};
 ///
 /// This will install the tool version if it is not already installed.
 /// By default, this will use a `mise.toml` file in the current directory.
+///
+/// In the following order:
+///   - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.
+///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
+///   - If `MISE_ENV` is set, it will use a `mise.<env>.toml` instead.
+///   - Otherwise just "mise.toml"
 ///
 /// Use the `--global` flag to use the global config file instead.
 #[derive(Debug, clap::Args)]
@@ -244,7 +250,7 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
-    let filenames = LOCAL_CONFIG_FILENAMES
+    let filenames = DEFAULT_CONFIG_FILENAMES
         .iter()
         .map(|f| f.to_string())
         .collect::<Vec<_>>();
