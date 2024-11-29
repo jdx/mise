@@ -10,12 +10,14 @@ actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5c
 version = "1.1.37"
 
 [tools.bun.checksums]
+"bun-darwin-aarch64.zip" = "sha256:6fc53d2db76dbef5c5d25d38f8e1b763c6dd883b0d9ce29d0039d08abb36ccae"
 "bun-linux-x64-baseline.zip" = "sha256:0079a9bfb8ea2c15b50b91b4b1fcc6fa9a5cb65bb147cc6c719c650a757220dc"
 
 [tools.cargo-binstall]
 version = "1.10.14"
 
 [tools.cargo-binstall.checksums]
+"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:a0e0c7d7bfa0e18c89047ae8f095dfe2eb3d6947125733383203055c1bb2211b"
 "cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:e1a045ccac90f4a18cb5e9bd79fe5016d50edba16242a767dbcf4a07d4de040e"
 
 [tools."cargo:cargo-edit"]
@@ -78,6 +80,7 @@ version = "0.10.0"
 [tools.shellcheck.checksums]
 shellcheck-linux-x86_64 = "sha256:f35ae15a4677945428bdfe61ccc297490d89dd1e544cc06317102637638c6deb"
 shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f8b02ea4811cd4cc1109"
+"shellcheck-v0.10.0.darwin.x86_64.tar.xz" = "sha256:ef27684f23279d112d8ad84e0823642e43f838993bbb8c0963db9b58a90464c2"
 "shellcheck-v0.10.0.linux.x86_64.tar.xz" = "sha256:6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87"
 
 [tools.shfmt]
@@ -99,3 +102,4 @@ version = "0.1.7"
 
 [tools.wait-for-gh-rate-limit.checksums]
 wait-for-gh-rate-limit-linux-x86_64 = "sha256:6450f0a9f262c09e6df0e9ad68db1ce7f9e93c60afe7b248f84bf9e171c60e00"
+wait-for-gh-rate-limit-macos-aarch64 = "sha256:edca6735cc8fec17b260bcb3f716455fb1e70dd4dfa29c121731d92a1140b801"

@@ -11,7 +11,7 @@ for tool in (cat tmp/missing_asdf_tools)
         echo "$tool aqua:$aqua" >> tmp/pairs
     end
 end
-for tool in (cat tmp/pairs | gsort -R)
+for tool in (cat tmp/pairs | sort -R)
     set -l tool (string split " " $tool)
     set -l cmd "m x $tool[2] -- $tool[1] -v"
     echo $cmd
