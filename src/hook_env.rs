@@ -8,6 +8,7 @@ use base64::prelude::*;
 use eyre::Result;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
+use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
@@ -15,25 +16,40 @@ use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches};
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
-use crate::{dirs, env};
+use crate::{dirs, env, hooks, watch_files};
+
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct WatchFilePattern {
+    pub root: Option<PathBuf>,
+    pub patterns: Vec<String>,
+}
+
+impl From<&Path> for WatchFilePattern {
+    fn from(path: &Path) -> Self {
+        Self {
+            root: None,
+            patterns: vec![path.to_string_lossy().to_string()],
+        }
+    }
+}
 
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
-pub fn should_exit_early(watch_files: impl IntoIterator<Item = impl AsRef<Path>>) -> bool {
+pub fn should_exit_early(watch_files: impl IntoIterator<Item = WatchFilePattern>) -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
     }
-    if !dirs::CWD
-        .as_ref()
-        .is_some_and(|cwd| cwd == &*env::__MISE_DIR)
-    {
+    if dir_change().is_some() {
+        hooks::schedule_hook(hooks::Hooks::Cd);
+        hooks::schedule_hook(hooks::Hooks::Enter);
+        hooks::schedule_hook(hooks::Hooks::Leave);
         return false;
     }
     let watch_files = get_watch_files(watch_files);
     match &*env::__MISE_WATCH {
         Some(watches) => {
-            if have_config_files_been_modified(watches, watch_files) {
+            if have_files_been_modified(watches, watch_files) {
                 return false;
             }
             if have_mise_env_vars_been_modified(watches) {
@@ -48,10 +64,17 @@ pub fn should_exit_early(watch_files: impl IntoIterator<Item = impl AsRef<Path>>
     true
 }
 
-fn have_config_files_been_modified(
-    watches: &HookEnvWatches,
-    watch_files: BTreeSet<PathBuf>,
-) -> bool {
+pub fn dir_change() -> Option<(PathBuf, PathBuf)> {
+    match (&*env::__MISE_DIR, &*dirs::CWD) {
+        (Some(old), Some(new)) if old != new => {
+            trace!("dir change: {:?} -> {:?}", old, new);
+            Some((old.clone(), new.clone()))
+        }
+        _ => None,
+    }
+}
+
+fn have_files_been_modified(watches: &HookEnvWatches, watch_files: BTreeSet<PathBuf>) -> bool {
     // make sure they have exactly the same config filenames
     let watch_keys = watches.files.keys().cloned().collect::<BTreeSet<_>>();
     if watch_keys != watch_files {
@@ -63,20 +86,28 @@ fn have_config_files_been_modified(
     }
 
     // check the files to see if they've been altered
+    let mut modified = false;
     for (fp, prev_modtime) in &watches.files {
         if let Ok(modtime) = fp
             .metadata()
             .expect("accessing config file modtime")
             .modified()
         {
-            if &modtime != prev_modtime {
-                trace!("config file modified: {:?}", fp);
-                return true;
+            let modtime = modtime
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            if modtime != *prev_modtime {
+                trace!("file modified: {:?}", fp);
+                modified = true;
+                watch_files::add_modified_file(fp.clone());
             }
         }
     }
-    trace!("config files unmodified");
-    false
+    if !modified {
+        trace!("config files unmodified");
+    }
+    modified
 }
 
 fn have_mise_env_vars_been_modified(watches: &HookEnvWatches) -> bool {
@@ -88,7 +119,7 @@ fn have_mise_env_vars_been_modified(watches: &HookEnvWatches) -> bool {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HookEnvWatches {
-    files: BTreeMap<PathBuf, SystemTime>,
+    files: BTreeMap<PathBuf, u64>,
     env_var_hash: String,
 }
 
@@ -108,11 +139,17 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
 }
 
 pub fn build_watches(
-    watch_files: impl IntoIterator<Item = impl AsRef<Path>>,
+    watch_files: impl IntoIterator<Item = WatchFilePattern>,
 ) -> Result<HookEnvWatches> {
     let mut watches = BTreeMap::new();
     for cf in get_watch_files(watch_files) {
-        watches.insert(cf.clone(), cf.metadata()?.modified()?);
+        watches.insert(
+            cf.clone(),
+            cf.metadata()?
+                .modified()?
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_secs(),
+        );
     }
 
     Ok(HookEnvWatches {
@@ -122,14 +159,26 @@ pub fn build_watches(
 }
 
 pub fn get_watch_files(
-    watch_files: impl IntoIterator<Item = impl AsRef<Path>>,
+    watch_files: impl IntoIterator<Item = WatchFilePattern>,
 ) -> BTreeSet<PathBuf> {
     let mut watches = BTreeSet::new();
     if dirs::DATA.exists() {
         watches.insert(dirs::DATA.to_path_buf());
     }
-    for cf in watch_files {
-        watches.insert(cf.as_ref().to_path_buf());
+    for (root, patterns) in &watch_files.into_iter().chunk_by(|wfp| wfp.root.clone()) {
+        if let Some(root) = root {
+            let patterns = patterns.flat_map(|wfp| wfp.patterns).collect::<Vec<_>>();
+            let glob = GlobWalkerBuilder::from_patterns(root, &patterns)
+                .follow_links(true)
+                .build();
+            if let Ok(glob) = glob {
+                for entry in glob.flatten() {
+                    watches.insert(entry.path().to_path_buf());
+                }
+            }
+        } else {
+            watches.extend(patterns.flat_map(|wfp| wfp.patterns).map(PathBuf::from));
+        }
     }
 
     watches
@@ -190,23 +239,35 @@ mod tests {
             files: BTreeMap::new(),
             env_var_hash: "".into(),
         };
-        assert!(!have_config_files_been_modified(&watches, files));
+        assert!(!have_files_been_modified(&watches, files));
 
         let fp = env::current_dir().unwrap().join(".test-tool-versions");
         let watches = HookEnvWatches {
-            files: BTreeMap::from([(fp.clone(), UNIX_EPOCH)]),
+            files: BTreeMap::from([(
+                fp.clone(),
+                UNIX_EPOCH
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            )]),
             env_var_hash: "".into(),
         };
         let files = BTreeSet::from([fp.clone()]);
-        assert!(have_config_files_been_modified(&watches, files));
+        assert!(have_files_been_modified(&watches, files));
 
         let modtime = fp.metadata().unwrap().modified().unwrap();
         let watches = HookEnvWatches {
-            files: BTreeMap::from([(fp.clone(), modtime)]),
+            files: BTreeMap::from([(
+                fp.clone(),
+                modtime
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            )]),
             env_var_hash: "".into(),
         };
         let files = BTreeSet::from([fp]);
-        assert!(!have_config_files_been_modified(&watches, files));
+        assert!(!have_files_been_modified(&watches, files));
     }
 
     #[test]
@@ -223,7 +284,13 @@ mod tests {
     #[test]
     fn test_serialize_watches() {
         let serialized = serialize_watches(&HookEnvWatches {
-            files: BTreeMap::from([("foo".into(), UNIX_EPOCH)]),
+            files: BTreeMap::from([(
+                PathBuf::from("foo"),
+                UNIX_EPOCH
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            )]),
             env_var_hash: "testing-123".into(),
         })
         .unwrap();
@@ -231,11 +298,14 @@ mod tests {
         assert_eq!(deserialized.files.len(), 1);
         assert_str_eq!(deserialized.env_var_hash, "testing-123");
         assert_eq!(
-            deserialized
+            *deserialized
                 .files
                 .get(PathBuf::from("foo").as_path())
                 .unwrap(),
-            &UNIX_EPOCH
+            UNIX_EPOCH
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
         );
     }
 }

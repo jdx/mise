@@ -10,11 +10,12 @@ use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
 use crate::config::Config;
 use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::errors::Error;
+use crate::hooks::Hooks;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::uv::UV_VENV;
-use crate::{backend, config, env};
+use crate::{backend, config, env, hooks};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use eyre::{eyre, Result, WrapErr};
@@ -199,6 +200,7 @@ impl Toolset {
         if versions.is_empty() {
             return Ok(vec![]);
         }
+        hooks::run_one_hook(self, Hooks::Preinstall);
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
         let mut installed = vec![];
@@ -238,6 +240,7 @@ impl Toolset {
                 }
             }
         }
+        hooks::run_one_hook(self, Hooks::Postinstall);
         Ok(installed)
     }
 

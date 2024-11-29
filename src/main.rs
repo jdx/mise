@@ -41,6 +41,7 @@ mod git;
 pub(crate) mod github;
 mod hash;
 mod hook_env;
+mod hooks;
 mod http;
 mod install_context;
 mod lock_file;
@@ -66,6 +67,7 @@ mod toolset;
 mod ui;
 mod uv;
 mod versions_host;
+mod watch_files;
 
 pub(crate) use crate::exit::exit;
 pub(crate) use crate::toolset::install_state;

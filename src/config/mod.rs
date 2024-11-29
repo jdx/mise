@@ -33,7 +33,10 @@ pub mod env_directive;
 pub mod settings;
 pub mod tracking;
 
+use crate::hook_env::WatchFilePattern;
+use crate::hooks::Hook;
 use crate::plugins::PluginType;
+use crate::watch_files::WatchFile;
 pub use settings::SETTINGS;
 
 type AliasMap = IndexMap<String, Alias>;
@@ -554,15 +557,57 @@ impl Config {
         Ok(env_results)
     }
 
-    pub fn watch_files(&self) -> eyre::Result<BTreeSet<PathBuf>> {
+    pub fn hooks(&self) -> Result<Vec<(PathBuf, Hook)>> {
+        self.config_files
+            .values()
+            .map(|cf| Ok((cf.project_root(), cf.hooks()?)))
+            .filter_map_ok(|(root, hooks)| root.map(|r| (r.to_path_buf(), hooks)))
+            .map_ok(|(root, hooks)| {
+                hooks
+                    .into_iter()
+                    .map(|h| (root.clone(), h))
+                    .collect::<Vec<_>>()
+            })
+            .flatten_ok()
+            .collect()
+    }
+
+    pub fn watch_file_hooks(&self) -> Result<IndexSet<(PathBuf, WatchFile)>> {
+        Ok(self
+            .config_files
+            .values()
+            .map(|cf| Ok((cf.project_root(), cf.watch_files()?)))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|(root, watch_files)| root.map(|r| (r.to_path_buf(), watch_files)))
+            .flat_map(|(root, watch_files)| {
+                watch_files
+                    .iter()
+                    .map(|wf| (root.clone(), wf.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect())
+    }
+
+    pub fn watch_files(&self) -> Result<BTreeSet<WatchFilePattern>> {
         let env_results = self.env_results()?;
         Ok(self
             .config_files
-            .keys()
-            .map(|p| p.to_path_buf())
-            .chain(env_results.env_files.clone())
-            .chain(env_results.env_scripts.clone())
-            .chain(SETTINGS.env_files())
+            .iter()
+            .map(|(p, cf)| {
+                let mut watch_files: Vec<WatchFilePattern> = vec![p.as_path().into()];
+                watch_files.extend(cf.watch_files()?.iter().map(|wf| WatchFilePattern {
+                    root: cf.project_root().map(|pr| pr.to_path_buf()),
+                    patterns: wf.patterns.clone(),
+                }));
+                Ok(watch_files)
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .chain(env_results.env_files.iter().map(|p| p.as_path().into()))
+            .chain(env_results.env_scripts.iter().map(|p| p.as_path().into()))
+            .chain(SETTINGS.env_files().iter().map(|p| p.as_path().into()))
             .collect())
     }
 }

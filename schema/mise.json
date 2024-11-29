@@ -590,6 +590,10 @@
             }
           }
         },
+        "shell": {
+          "description": "Sets the shell across all mise commands like `mise run`, `mise en`, and watch files.",
+          "type": "string"
+        },
         "shorthands_file": {
           "description": "Path to a file containing custom tool shorthands.",
           "type": "string"
@@ -660,20 +664,14 @@
           }
         },
         "unix_default_file_shell_args": {
-          "default": ["sh"],
+          "default": "sh",
           "description": "List of default shell arguments for unix to be used with `file`. For example `sh`.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "string"
         },
         "unix_default_inline_shell_args": {
-          "default": ["sh", "-c", "-o", "errexit"],
+          "default": "sh -c -o errexit",
           "description": "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "string"
         },
         "use_file_shell_for_executable_tasks": {
           "default": false,
@@ -695,7 +693,7 @@
           "type": "boolean"
         },
         "windows_default_file_shell_args": {
-          "default": ["cmd", "/c"],
+          "default": "cmd /c",
           "description": "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe.",
           "type": "array",
           "items": {
@@ -703,12 +701,9 @@
           }
         },
         "windows_default_inline_shell_args": {
-          "default": ["cmd", "/c"],
+          "default": "cmd /c",
           "description": "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "string"
         },
         "windows_executable_extensions": {
           "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
@@ -940,6 +935,39 @@
           }
         }
       ]
+    },
+    "hooks": {
+      "description": "hooks to run",
+      "type": "object",
+      "additionalProperties": {
+        "description": "script to run",
+        "type": "string"
+      }
+    },
+    "watch_files": {
+      "description": "files to watch for changes",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "file to watch for changes",
+        "additionalProperties": false,
+        "properties": {
+          "run": {
+            "type": "string",
+            "description": "script to run when file changes",
+            "items": {
+              "type": "string"
+            }
+          },
+          "patterns": {
+            "type": "array",
+            "description": "patterns to watch for",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   },
   "additionalProperties": false,
@@ -1023,6 +1051,15 @@
       },
       "description": "dev tools to use",
       "type": "object"
+    },
+    "hooks": {
+      "$ref": "#/$defs/hooks"
+    },
+    "vars": {
+      "$ref": "#/$defs/vars"
+    },
+    "watch_files": {
+      "$ref": "#/$defs/watch_files"
     },
     "_": {
       "additionalProperties": true
