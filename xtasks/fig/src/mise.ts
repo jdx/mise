@@ -2017,6 +2017,14 @@ const completionSpec: Fig.Spec = {
                     "options": [
                         {
                             "name": [
+                                "-a",
+                                "--all"
+                            ],
+                            "description": "Display settings set to the default",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
                                 "-l",
                                 "--local"
                             ],
@@ -2025,9 +2033,18 @@ const completionSpec: Fig.Spec = {
                         },
                         {
                             "name": [
-                                "--names"
+                                "-J",
+                                "--json"
                             ],
-                            "description": "Only display key names for each setting",
+                            "description": "Output in JSON format",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-T",
+                                "--toml"
+                            ],
+                            "description": "Output in TOML format",
                             "isRepeatable": false
                         }
                     ],
@@ -2103,9 +2120,10 @@ const completionSpec: Fig.Spec = {
             "options": [
                 {
                     "name": [
-                        "--names"
+                        "-a",
+                        "--all"
                     ],
-                    "description": "Only display key names for each setting",
+                    "description": "List all settings",
                     "isRepeatable": false
                 },
                 {
@@ -2114,6 +2132,22 @@ const completionSpec: Fig.Spec = {
                         "--local"
                     ],
                     "description": "Use the local config file instead of the global one",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-J",
+                        "--json"
+                    ],
+                    "description": "Output in JSON format",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-T",
+                        "--toml"
+                    ],
+                    "description": "Output in TOML format",
                     "isRepeatable": false
                 }
             ],

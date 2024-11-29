@@ -1,4 +1,4 @@
-use crate::config::CONFIG;
+use crate::config::Config;
 use crate::task::Task;
 use crossbeam_channel as channel;
 use itertools::Itertools;
@@ -28,12 +28,13 @@ impl Deps {
                 .entry(t.name.clone())
                 .or_insert_with(|| graph.add_node(t.clone()));
         }
+        let config = Config::get();
         let all_tasks_to_run: Vec<&Task> = tasks
             .iter()
             .map(|t| {
                 eyre::Ok(
                     [t].into_iter()
-                        .chain(t.all_depends(&CONFIG)?)
+                        .chain(t.all_depends(&config)?)
                         .collect::<Vec<_>>(),
                 )
             })
@@ -43,7 +44,7 @@ impl Deps {
             let a_idx = *indexes
                 .entry(a.name.clone())
                 .or_insert_with(|| graph.add_node(a.clone()));
-            for b in a.resolve_depends(&CONFIG, &all_tasks_to_run)? {
+            for b in a.resolve_depends(&Config::get(), &all_tasks_to_run)? {
                 let b_idx = *indexes
                     .entry(b.name.clone())
                     .or_insert_with(|| graph.add_node(b.clone()));

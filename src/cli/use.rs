@@ -7,11 +7,11 @@ use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, is_global_config, Config, DEFAULT_CONFIG_FILENAMES, SETTINGS};
+use crate::config::{config_file, is_global_config, Config, SETTINGS};
 use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
-use crate::file::{display_path, FindUp};
+use crate::file::display_path;
 use crate::toolset::{
     InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder,
 };
@@ -250,13 +250,11 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
-    let filenames = DEFAULT_CONFIG_FILENAMES
-        .iter()
-        .map(|f| f.to_string())
-        .collect::<Vec<_>>();
-    for p in FindUp::new(p, &filenames) {
-        if !is_global_config(&p) {
-            return p;
+    for dir in file::all_dirs().unwrap_or_default() {
+        if let Some(cf) = config::config_files_in_dir(&dir).last() {
+            if !is_global_config(cf) {
+                return cf.clone();
+            }
         }
     }
     match SETTINGS.asdf_compat {

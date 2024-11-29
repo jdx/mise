@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-assert_contains "mise settings" "all_compile = false"
-assert_contains "mise settings ls" "all_compile = false"
-assert_contains "mise settings --names" "all_compile"
-assert_contains "mise settings ls python" "venv_auto_create = false"
+echo "settings.all_compile = false" >mise.toml
+assert_contains "mise settings" "all_compile  false"
+assert_contains "mise settings ls -T" "all_compile = false"
+echo "settings.python.venv_auto_create = false" >>mise.toml
+assert_contains "mise settings ls python" "venv_auto_create  false"

@@ -1,5 +1,5 @@
 use crate::cli::args::ToolArg;
-use crate::config::CONFIG;
+use crate::config::Config;
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::tera::{get_tera, BASE_CONTEXT};
@@ -109,7 +109,7 @@ impl TestTool {
         let mut ts = ToolsetBuilder::new()
             .with_args(&[tool.clone()])
             .with_default_to_latest(true)
-            .build(&CONFIG)?;
+            .build(&Config::get())?;
         let opts = InstallOptions {
             missing_args_only: false,
             jobs: self.jobs,
@@ -129,7 +129,7 @@ impl TestTool {
             return Ok(());
         };
         let backend = tv.backend()?;
-        let env = ts.env_with_path(&CONFIG)?;
+        let env = ts.env_with_path(&Config::get())?;
         let mut which_parts = cmd.split_whitespace().collect::<Vec<_>>();
         let cmd = which_parts.remove(0);
         let mut which_cmd = backend.which(&tv, cmd)?.unwrap_or(PathBuf::from(cmd));

@@ -52,11 +52,7 @@ impl Backend for GoBackend {
         Ok(vec![])
     }
 
-    fn install_version_impl(
-        &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
         SETTINGS.ensure_experimental("go backend")?;
 
         let version = if tv.version.starts_with("v") {

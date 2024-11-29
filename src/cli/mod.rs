@@ -1,5 +1,5 @@
 use crate::cli::args::ToolArg;
-use crate::config::{Settings, CONFIG};
+use crate::config::{Config, Settings};
 use crate::exit::exit;
 use crate::ui::ctrlc;
 use crate::{logger, migrate, shims};
@@ -316,7 +316,7 @@ impl Cli {
             Ok(cmd)
         } else {
             if let Some(task) = self.task {
-                if CONFIG.tasks()?.contains_key(&task) {
+                if Config::get().tasks()?.contains_key(&task) {
                     return Ok(Commands::Run(run::Run {
                         task,
                         args: self.task_args.unwrap_or_default(),

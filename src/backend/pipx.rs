@@ -80,11 +80,7 @@ impl Backend for PIPXBackend {
             .cloned()
     }
 
-    fn install_version_impl(
-        &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let config = Config::try_get()?;
         let pipx_request = self
             .tool_name()
@@ -92,6 +88,8 @@ impl Backend for PIPXBackend {
             .pipx_request(&tv.version, &tv.request.options());
 
         if SETTINGS.pipx.uvx {
+            ctx.pr
+                .set_message(format!("uv tool install {pipx_request}"));
             let mut cmd = Self::uvx_cmd(
                 &config,
                 &["tool", "install", &pipx_request],
@@ -105,6 +103,7 @@ impl Backend for PIPXBackend {
             }
             cmd.execute()?;
         } else {
+            ctx.pr.set_message(format!("pipx install {pipx_request}"));
             let mut cmd = Self::pipx_cmd(
                 &config,
                 &["install", &pipx_request],

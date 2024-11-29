@@ -166,11 +166,7 @@ impl Backend for SwiftPlugin {
         Ok(vec![".swift-version".into()])
     }
 
-    fn install_version_impl(
-        &self,
-        ctx: &InstallContext,
-        mut tv: ToolVersion,
-    ) -> Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
         let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
         if cfg!(target_os = "linux") && SETTINGS.swift.gpg_verify != Some(false) {
             self.verify_gpg(ctx, &tv, &tarball_path)?;

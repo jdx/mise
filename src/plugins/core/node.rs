@@ -363,7 +363,7 @@ impl Backend for NodePlugin {
         Ok(body)
     }
 
-    fn install_version_impl(
+    fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,

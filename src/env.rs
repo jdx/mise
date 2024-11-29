@@ -109,13 +109,13 @@ pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
         Err(_) => Default::default(),
     });
 pub static MISE_ENV: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
-pub static MISE_SETTINGS_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_SETTINGS_FILE").unwrap_or_else(|| MISE_CONFIG_DIR.join("settings.toml"))
-});
 pub static MISE_GLOBAL_CONFIG_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_GLOBAL_CONFIG_FILE")
         .or_else(|| var_path("MISE_CONFIG_FILE"))
         .unwrap_or_else(|| MISE_CONFIG_DIR.join("config.toml"))
+});
+pub static MISE_SYSTEM_CONFIG_FILE: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_SYSTEM_CONFIG_FILE").unwrap_or_else(|| MISE_SYSTEM_DIR.join("config.toml"))
 });
 pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_USE_TOML"));
 pub static MISE_LIST_ALL_VERSIONS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LIST_ALL_VERSIONS"));
@@ -423,8 +423,8 @@ fn environment(args: &[String]) -> Option<String> {
                 None
             }
         })
-        .or_else(|| var("MISE_PROFILE").ok())
         .or_else(|| var("MISE_ENV").ok())
+        .or_else(|| var("MISE_PROFILE").ok())
         .or_else(|| var("MISE_ENVIRONMENT").ok())
 }
 

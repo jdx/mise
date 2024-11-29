@@ -1,12 +1,11 @@
+use crate::config::Config;
+use crate::task::{Deps, Task};
+use crate::ui::style::{self};
+use crate::ui::tree::print_tree;
 use console::style;
 use eyre::{eyre, Result};
 use itertools::Itertools;
 use petgraph::dot::Dot;
-
-use crate::config::CONFIG;
-use crate::task::{Deps, Task};
-use crate::ui::style::{self};
-use crate::ui::tree::print_tree;
 
 /// Display a tree visualization of a dependency graph
 #[derive(Debug, clap::Args)]
@@ -45,7 +44,7 @@ impl TasksDeps {
     }
 
     fn get_all_tasks(&self) -> Result<Vec<Task>> {
-        Ok(CONFIG
+        Ok(Config::get()
             .tasks()?
             .values()
             .filter(|t| self.hidden || !t.hide)
@@ -54,7 +53,8 @@ impl TasksDeps {
     }
 
     fn get_task_lists(&self) -> Result<Vec<Task>> {
-        let tasks = CONFIG.tasks()?;
+        let config = Config::get();
+        let tasks = config.tasks()?;
         let tasks = self.tasks.as_ref().map(|t| {
             t.iter()
                 .map(|tn| match tasks.get(tn).cloned() {
@@ -131,7 +131,8 @@ impl TasksDeps {
     }
 
     fn err_no_task(&self, t: &str) -> eyre::Report {
-        let tasks = CONFIG
+        let config = Config::get();
+        let tasks = config
             .tasks()
             .map(|t| t.keys().collect::<Vec<_>>())
             .unwrap_or_default();

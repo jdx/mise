@@ -2,7 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::plugins::PluginType;
-use crate::{backend, dirs, file, runtime_symlinks};
+use crate::{dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
 use itertools::Itertools;
@@ -241,5 +241,4 @@ pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
 pub fn reset() {
     *INSTALL_STATE_PLUGINS.lock().unwrap() = None;
     *INSTALL_STATE_TOOLS.lock().unwrap() = None;
-    backend::reset();
 }

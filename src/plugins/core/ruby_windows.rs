@@ -179,7 +179,7 @@ impl Backend for RubyPlugin {
         Ok(v)
     }
 
-    fn install_version_impl(
+    fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,

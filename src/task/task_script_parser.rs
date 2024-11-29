@@ -1,4 +1,4 @@
-use crate::config::CONFIG;
+use crate::config::Config;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use eyre::Result;
 use indexmap::IndexMap;
@@ -263,7 +263,7 @@ impl TaskScriptParser {
         ctx.insert("config_root", config_root);
         let mut vars = IndexMap::new();
         ctx.insert("vars", &vars);
-        for (k, v) in &CONFIG.vars {
+        for (k, v) in &Config::get().vars {
             vars.insert(k.clone(), tera.render_str(v, &ctx).unwrap());
             ctx.insert("vars", &vars);
         }

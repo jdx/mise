@@ -138,7 +138,7 @@ impl Backend for ZigPlugin {
     }
 
     #[requires(matches!(tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
-    fn install_version_impl(
+    fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,

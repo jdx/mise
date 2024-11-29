@@ -1,6 +1,6 @@
 # `mise settings ls`
 
-- **Usage**: `mise settings ls [-l --local] [--names] [KEY]`
+- **Usage**: `mise settings ls [FLAGS] [KEY]`
 - **Aliases**: `list`
 - **Source code**: [`src/cli/settings/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/ls.rs)
 
@@ -19,13 +19,21 @@ List keys under this key
 
 ## Flags
 
+### `-a --all`
+
+Display settings set to the default
+
 ### `-l --local`
 
 Use the local config file instead of the global one
 
-### `--names`
+### `-J --json`
 
-Only display key names for each setting
+Output in JSON format
+
+### `-T --toml`
+
+Output in TOML format
 
 Examples:
 

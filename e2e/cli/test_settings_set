@@ -9,7 +9,7 @@ assert "mise settings get status.missing_tools" 'never'
 mise settings set plugin_autoupdate_last_check_duration 1
 assert "mise settings get plugin_autoupdate_last_check_duration" '1'
 mise settings set all_compile 1
-assert_contains "mise settings" "all_compile = true"
+assert_contains "mise settings -T" "all_compile = true"
 mise settings unset all_compile
 assert "mise settings get all_compile" "false"
 assert_fail "mise settings get abcdefg" "mise ERROR Unknown setting: abcdefg"
@@ -20,7 +20,7 @@ assert "mise settings all_compile=0"
 assert "mise settings all_compile" "false"
 assert "mise settings -l" ""
 assert "mise settings -l all_compile=1"
-assert "mise settings -l" "all_compile = true"
+assert "mise settings -l" "all_compile  true ~/workdir/mise.toml"
 assert "mise settings all_compile" "true"
 assert "mise settings all_compile=0"
 assert "mise settings all_compile" "true"
