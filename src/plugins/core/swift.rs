@@ -107,23 +107,20 @@ impl SwiftPlugin {
         tv: &ToolVersion,
         tarball_path: &Path,
     ) -> Result<()> {
-        if file::which("gpg").is_none() && SETTINGS.swift.gpg_verify.is_none() {
+        if file::which_non_pristine("gpg").is_none() && SETTINGS.swift.gpg_verify.is_none() {
             ctx.pr
                 .println("gpg not found, skipping verification".to_string());
             return Ok(());
         }
-        let add_key = |key: &str| {
-            self.gpg(ctx)
-                .arg("--quiet")
-                .arg("--keyserver")
-                .arg("hkp://keyserver.ubuntu.com")
-                .arg("--recv-keys")
-                .arg(key)
-                .execute()
-        };
-        add_key("E813 C892 820A 6FA1 3755 B268 F167 DF1A CF9C E069")?;
-        add_key("A62A E125 BBBF BB96 A6E0 42EC 925C C1CC ED3D 1561")?;
-        add_key("52BB 7E3D E28A 71BE 22EC 05FF EF80 A866 B47A 981F")?;
+        self.gpg(ctx)
+            .arg("--quiet")
+            .arg("--keyserver")
+            .arg("hkp://keyserver.ubuntu.com")
+            .arg("--recv-keys")
+            .arg("E813 C892 820A 6FA1 3755 B268 F167 DF1A CF9C E069")
+            .arg("A62A E125 BBBF BB96 A6E0 42EC 925C C1CC ED3D 1561")
+            .arg("52BB 7E3D E28A 71BE 22EC 05FF EF80 A866 B47A 981F")
+            .execute()?;
         let sig_path = PathBuf::from(format!("{}.sig", tarball_path.to_string_lossy()));
         HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(ctx.pr.as_ref()))?;
         self.gpg(ctx)

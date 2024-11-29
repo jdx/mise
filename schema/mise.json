@@ -371,6 +371,10 @@
               "description": "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo.",
               "type": "string"
             },
+            "gpg_verify": {
+              "description": "Use gpg to verify node tool signatures.",
+              "type": "boolean"
+            },
             "mirror_url": {
               "description": "Mirror to download node tarballs from.",
               "type": "string"
