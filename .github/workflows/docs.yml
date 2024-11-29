@@ -33,6 +33,7 @@ jobs:
         with:
           install_args: bun
           cache: true
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: bun i
       - run: mise run docs:release
         env:

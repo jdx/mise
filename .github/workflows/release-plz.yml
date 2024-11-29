@@ -50,6 +50,7 @@ jobs:
           path: |
             ~/.local/share/mise
             ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
       - run: mise x -- bun i
       - run: mise run release-plz

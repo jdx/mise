@@ -53,8 +53,8 @@ jobs:
           path: |
             ~/.local/share/mise
             ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
-      - run: mise x -- wait-for-gh-rate-limit
 
   build-macos:
     runs-on: macos-latest
@@ -108,8 +108,8 @@ jobs:
           path: |
             ~/.local/share/mise
             ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
-      - run: mise x -- wait-for-gh-rate-limit
 
   unit:
     strategy:
@@ -147,6 +147,7 @@ jobs:
           path: |
             ~/.local/share/mise
             ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
       - run: mise x -- bun i
       - run: mise x -- cargo test --all-features
@@ -178,6 +179,7 @@ jobs:
           path: |
             ~/.local/share/mise
             ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
       - run: mise run test:shuffle
 
@@ -220,7 +222,7 @@ jobs:
             ~/.local/share/mise
             ~/.cache/mise
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
-      - run: mise x -- wait-for-gh-rate-limit
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
@@ -271,6 +273,7 @@ jobs:
           path: |
             ~/.local/share/mise
             ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
       - name: e2e
         uses: nick-fields/retry@v3
@@ -315,6 +318,7 @@ jobs:
           path: |
             ~/.local/share/mise
             ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
       - uses: nick-fields/retry@v3
         with:
