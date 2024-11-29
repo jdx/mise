@@ -19,7 +19,7 @@ pub struct En {
     /// Shell to start
     ///
     /// Defaults to $SHELL
-    #[clap(verbatim_doc_comment, long, short = 's', env = "MISE_SHELL")]
+    #[clap(verbatim_doc_comment, long, short = 's')]
     pub shell: Option<String>,
 }
 
