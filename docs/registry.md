@@ -251,7 +251,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | fx | [aqua:antonmedv/fx](https://github.com/antonmedv/fx) [asdf:https://gitlab.com/wt0f/asdf-fx](https://gitlab.com/wt0f/asdf-fx) |
 | fzf | [ubi:junegunn/fzf](https://github.com/junegunn/fzf) [asdf:kompiro/asdf-fzf](https://github.com/kompiro/asdf-fzf) |
 | gallery-dl | [asdf:iul1an/asdf-gallery-dl](https://github.com/iul1an/asdf-gallery-dl) |
-| gam | [asdf:offbyone/asdf-gam](https://github.com/offbyone/asdf-gam) |
+| gam | [ubi:GAM-team/GAM](https://github.com/GAM-team/GAM) [asdf:offbyone/asdf-gam](https://github.com/offbyone/asdf-gam) |
 | gator | [ubi:open-policy-agent/gatekeeper](https://github.com/open-policy-agent/gatekeeper) [asdf:MxNxPx/asdf-gator](https://github.com/MxNxPx/asdf-gator) |
 | gauche | [asdf:sakuro/asdf-gauche](https://github.com/sakuro/asdf-gauche) |
 | gcc-arm-none-eabi | [asdf:dlech/asdf-gcc-arm-none-eabi](https://github.com/dlech/asdf-gcc-arm-none-eabi) |
@@ -265,7 +265,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | ginkgo | [asdf:jimmidyson/asdf-ginkgo](https://github.com/jimmidyson/asdf-ginkgo) |
 | git-chglog | [aqua:git-chglog/git-chglog](https://github.com/git-chglog/git-chglog) [asdf:GoodwayGroup/asdf-git-chglog](https://github.com/GoodwayGroup/asdf-git-chglog) |
 | git-cliff | [aqua:orhun/git-cliff](https://github.com/orhun/git-cliff) [asdf:jylenhof/asdf-git-cliff](https://github.com/jylenhof/asdf-git-cliff) |
-| gitconfig | [asdf:0ghny/asdf-gitconfig](https://github.com/0ghny/asdf-gitconfig) |
+| gitconfig | [ubi:0ghny/gitconfig](https://github.com/0ghny/gitconfig) [asdf:0ghny/asdf-gitconfig](https://github.com/0ghny/asdf-gitconfig) |
 | github-cli | [aqua:cli/cli](https://github.com/cli/cli) [ubi:cli/cli](https://github.com/cli/cli) [asdf:bartlomiejdanek/asdf-github-cli](https://github.com/bartlomiejdanek/asdf-github-cli) |
 | github-markdown-toc | [aqua:ekalinin/github-markdown-toc](https://github.com/ekalinin/github-markdown-toc) [asdf:skyzyx/asdf-github-markdown-toc](https://github.com/skyzyx/asdf-github-markdown-toc) |
 | gitleaks | [aqua:gitleaks/gitleaks](https://github.com/gitleaks/gitleaks) [asdf:jmcvetta/asdf-gitleaks](https://github.com/jmcvetta/asdf-gitleaks) |
@@ -274,7 +274,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | gitui | [aqua:extrawurst/gitui](https://github.com/extrawurst/gitui) [asdf:looztra/asdf-gitui](https://github.com/looztra/asdf-gitui) |
 | glab | [asdf:particledecay/asdf-glab](https://github.com/particledecay/asdf-glab) |
 | gleam | [aqua:gleam-lang/gleam](https://github.com/gleam-lang/gleam) [asdf:asdf-community/asdf-gleam](https://github.com/asdf-community/asdf-gleam) |
-| glen | [asdf:bradym/asdf-glen](https://github.com/bradym/asdf-glen) |
+| glen | [ubi:lingrino/glen](https://github.com/lingrino/glen) [asdf:bradym/asdf-glen](https://github.com/bradym/asdf-glen) |
 | glooctl | [asdf:halilkaya/asdf-glooctl](https://github.com/halilkaya/asdf-glooctl) |
 | glow | [aqua:charmbracelet/glow](https://github.com/charmbracelet/glow) [asdf:mise-plugins/asdf-glow](https://github.com/mise-plugins/asdf-glow) |
 | go | [core:go](https://mise.jdx.dev/lang/go.html) |
@@ -292,7 +292,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | golangci-lint | [aqua:golangci/golangci-lint](https://github.com/golangci/golangci-lint) [ubi:golangci/golangci-lint](https://github.com/golangci/golangci-lint) [asdf:hypnoglow/asdf-golangci-lint](https://github.com/hypnoglow/asdf-golangci-lint) |
 | golangci-lint-langserver | [ubi:nametake/golangci-lint-langserver](https://github.com/nametake/golangci-lint-langserver) [go:github.com/nametake/golangci-lint-langserver](https://pkg.go.dev/github.com/nametake/golangci-lint-langserver) |
 | golines | [ubi:segmentio/golines](https://github.com/segmentio/golines) [go:github.com/segmentio/golines](https://pkg.go.dev/github.com/segmentio/golines) |
-| gomigrate | [asdf:joschi/asdf-gomigrate](https://github.com/joschi/asdf-gomigrate) |
+| gomigrate | [aqua:golang-migrate/migrate](https://github.com/golang-migrate/migrate) [asdf:joschi/asdf-gomigrate](https://github.com/joschi/asdf-gomigrate) |
 | gomplate | [aqua:hairyhenderson/gomplate](https://github.com/hairyhenderson/gomplate) [asdf:sneakybeaky/asdf-gomplate](https://github.com/sneakybeaky/asdf-gomplate) |
 | gopass | [aqua:gopasspw/gopass](https://github.com/gopasspw/gopass) [asdf:trallnag/asdf-gopass](https://github.com/trallnag/asdf-gopass) |
 | goreleaser | [aqua:goreleaser/goreleaser](https://github.com/goreleaser/goreleaser) [ubi:goreleaser/goreleaser](https://github.com/goreleaser/goreleaser) [asdf:kforsthoevel/asdf-goreleaser](https://github.com/kforsthoevel/asdf-goreleaser) |
