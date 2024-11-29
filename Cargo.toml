@@ -182,3 +182,6 @@ ignored = ["built", "openssl", "cfg_aliases"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }
+
+[lints.clippy]
+borrowed_box = "allow"

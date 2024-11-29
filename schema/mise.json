@@ -629,6 +629,14 @@
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
         },
+        "task_disable_paths": {
+          "default": [],
+          "description": "Paths that mise will not look for tasks in.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "task_output": {
           "description": "Change output style when executing tasks.",
           "type": "string",

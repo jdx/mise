@@ -836,6 +836,14 @@ type = "Path"
 optional = true
 description = "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var."
 
+[task_disable_paths]
+env = "MISE_TASK_DISABLE_PATHS"
+type = "ListPath"
+rust_type = "BTreeSet<PathBuf>"
+default = []
+parse_env = "list_by_colon"
+description = "Paths that mise will not look for tasks in."
+
 [task_output]
 env = "MISE_TASK_OUTPUT"
 type = "String"

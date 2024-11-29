@@ -427,7 +427,6 @@ impl Config {
             .collect())
     }
 
-    #[allow(clippy::borrowed_box)]
     fn load_config_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
         cf.map(|cf| cf.tasks())
             .unwrap_or_default()
@@ -436,7 +435,6 @@ impl Config {
             .collect()
     }
 
-    #[allow(clippy::borrowed_box)]
     fn load_file_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>, config_root: &Path) -> Vec<Task> {
         let includes = match cf {
             Some(cf) => cf
@@ -475,6 +473,7 @@ impl Config {
             .try_collect::<_, Vec<PathBuf>, _>()?
             .into_par_iter()
             .filter(|p| file::is_executable(p))
+            .filter(|p| !SETTINGS.task_disable_paths.iter().any(|d| p.starts_with(d)))
             .map(|path| Task::from_path(&path, root, config_root))
             .collect()
     }

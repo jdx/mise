@@ -344,7 +344,6 @@ impl Task {
         }
     }
 
-    #[allow(clippy::borrowed_box)]
     pub fn cf<'a>(&self, config: &'a Config) -> Option<&'a Box<dyn ConfigFile>> {
         config.config_files.get(&self.config_source)
     }
