@@ -96,6 +96,7 @@ export default defineConfig({
         text: "Environments",
         items: [
           { text: "Environment variables", link: "/environments/" },
+          { text: "Hooks", link: "/hooks" },
           { text: "direnv", link: "/direnv" },
         ],
       },
