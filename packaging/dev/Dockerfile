@@ -41,7 +41,6 @@ RUN    apt-get update \
     && cargo binstall -y \
     cargo-deny \
     cargo-insta \
-    cargo-llvm-cov \
     cargo-machete \
     # cargo-msrv \ this is very slow to compile
     cargo-nextest \
