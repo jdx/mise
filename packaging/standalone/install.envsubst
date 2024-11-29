@@ -42,11 +42,12 @@ get_os() {
 
 get_arch() {
 	musl=""
-	if [ "${MISE_GLIBC-}" = "1" ]; then
-    musl=""
-  elif [ "$(get_os)" = "linux" ]; then
-    musl="-musl"
-  fi
+	if type ldd >/dev/null 2>/dev/null; then
+		libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
+		if [ -n "$libc" ]; then
+			musl="-musl"
+		fi
+	fi
 	arch="$(uname -m)"
 	if [ "$arch" = x86_64 ]; then
 		echo "x64$musl"
