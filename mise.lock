@@ -7,23 +7,18 @@ actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5c
 "actionlint.exe-windows-x86_64" = "sha256:04ca117d9f33b77731fd3ef6a3670bd6b11b40c1b1cc5b7aaf6c28392d74d2e2"
 
 [tools.bun]
-version = "1.1.36"
+version = "1.1.37"
 
 [tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:f299aaf467ec8e610bbefef8b91664ab3b199a174ceb2f5a97d624c96dfde068"
-"bun-linux-x64-baseline.zip" = "sha256:515666143dbda58ed0b90cf3ae0ade7178b0d705d7576f62bedf66c709740eb3"
-"bun-windows-x64-baseline.zip" = "sha256:fd47551a001e998eb5161e61a3f64ccbabf46cf978782310bab75f1a71cbbd29"
+"bun-darwin-aarch64.zip" = "sha256:6fc53d2db76dbef5c5d25d38f8e1b763c6dd883b0d9ce29d0039d08abb36ccae"
+"bun-linux-x64-baseline.zip" = "sha256:0079a9bfb8ea2c15b50b91b4b1fcc6fa9a5cb65bb147cc6c719c650a757220dc"
 
 [tools.cargo-binstall]
-version = "1.10.13"
+version = "1.10.14"
 
 [tools.cargo-binstall.checksums]
-"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:b3057055d33e443e6e07b23fea851a420dcb8c29338d1cb1e14401f91162bfe9"
-cargo-binstall-linux-x86_64 = "sha256:53a7157f56e1698d42d3cd50b1d08f02159638e3a73edf362e14215337942e86"
-cargo-binstall-macos-aarch64 = "sha256:f67dd4fc8ea01b4c55fe041a0fbd6d81a361947f1dbf2bd226490c641cc167b3"
-"cargo-binstall-x86_64-pc-windows-msvc.zip" = "sha256:6c5272909b50bf93758a294c32195e8874494e5fa1ac5c741a103070c8d1d599"
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:0e649badc8b9ade5f32be2afe1df9144fc4c1bb548b92eca71f0709baa240633"
-"cargo-binstall.exe-windows-x86_64" = "sha256:32a28a1e98ad23e2c7ac360b815001181d7feffd1283a20c6ef92c3c032d6ba6"
+"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:a0e0c7d7bfa0e18c89047ae8f095dfe2eb3d6947125733383203055c1bb2211b"
+"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:e1a045ccac90f4a18cb5e9bd79fe5016d50edba16242a767dbcf4a07d4de040e"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.0"
@@ -57,10 +52,10 @@ jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea
 "jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
 
 [tools."npm:markdownlint-cli"]
-version = "0.42.0"
+version = "0.43.0"
 
 [tools."npm:prettier"]
-version = "3.3.3"
+version = "3.4.1"
 
 [tools."pipx:toml-sort"]
 version = "0.24.2"
@@ -85,9 +80,14 @@ version = "0.10.0"
 [tools.shellcheck.checksums]
 shellcheck-linux-x86_64 = "sha256:f35ae15a4677945428bdfe61ccc297490d89dd1e544cc06317102637638c6deb"
 shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f8b02ea4811cd4cc1109"
+"shellcheck-v0.10.0.darwin.x86_64.tar.xz" = "sha256:ef27684f23279d112d8ad84e0823642e43f838993bbb8c0963db9b58a90464c2"
+"shellcheck-v0.10.0.linux.x86_64.tar.xz" = "sha256:6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87"
 
 [tools.shfmt]
 version = "3.10.0"
+
+[tools.shfmt.checksums]
+"shfmt_v3.10.0_linux_amd64" = "sha256:1f57a384d59542f8fac5f503da1f3ea44242f46dff969569e80b524d64b71dbc"
 
 [tools.slsa-verifier]
 version = "2.6.0"
@@ -98,8 +98,8 @@ slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff54546
 "slsa-verifier.exe-windows-x86_64" = "sha256:37ca29ad748e8ea7be76d3ae766e8fa505362240431f6ea7f0648c727e2f2507"
 
 [tools.wait-for-gh-rate-limit]
-version = "0.1.6"
+version = "0.1.7"
 
 [tools.wait-for-gh-rate-limit.checksums]
-wait-for-gh-rate-limit-linux-x86_64 = "sha256:f02a40ac86bd1777151fe1ba3a7ee74c10174944e1b43a8bdd19af7021ad541f"
-wait-for-gh-rate-limit-macos-aarch64 = "sha256:17a7c99021d8264071d70974bffd69741690da25a65518f515fd0c81ddc75c19"
+wait-for-gh-rate-limit-linux-x86_64 = "sha256:6450f0a9f262c09e6df0e9ad68db1ce7f9e93c60afe7b248f84bf9e171c60e00"
+wait-for-gh-rate-limit-macos-aarch64 = "sha256:edca6735cc8fec17b260bcb3f716455fb1e70dd4dfa29c121731d92a1140b801"
