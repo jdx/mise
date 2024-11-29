@@ -764,17 +764,8 @@ pub fn is_outdated_version(current: &str, latest: &str) -> bool {
 /// used with `mise outdated --bump` to determine what new semver range to use
 /// given old: "20" and new: "21.2.3", return Some("21")
 fn check_semver_bump(old: &str, new: &str) -> Option<String> {
-    // get the common prefix between old and new
-    let prefix = old
-        .chars()
-        .zip(new.chars())
-        .take_while(|(a, b)| a == b)
-        .map(|(c, _)| c)
-        .collect::<String>();
-    let mut old = old.strip_prefix(&prefix).unwrap();
-    let new = new.strip_prefix(&prefix).unwrap();
     if let Some(("prefix", old_)) = old.split_once(':') {
-        old = old_;
+        return check_semver_bump(old_, new);
     }
     let old_chunks = chunkify_version(old);
     let new_chunks = chunkify_version(new);
@@ -793,10 +784,10 @@ fn check_semver_bump(old: &str, new: &str) -> Option<String> {
         if bump == old_chunks {
             None
         } else {
-            Some(format!("{prefix}{}", bump.join("")))
+            Some(bump.join(""))
         }
     } else {
-        Some(format!("{prefix}{new}"))
+        Some(new.to_string())
     }
 }
 
