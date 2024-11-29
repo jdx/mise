@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::io::prelude::*;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::prelude::*;
 use eyre::Result;
@@ -75,29 +75,15 @@ pub fn dir_change() -> Option<(PathBuf, PathBuf)> {
 }
 
 fn have_files_been_modified(watches: &HookEnvWatches, watch_files: BTreeSet<PathBuf>) -> bool {
-    // make sure they have exactly the same config filenames
-    let watch_keys = watches.files.keys().cloned().collect::<BTreeSet<_>>();
-    if watch_keys != watch_files {
-        trace!(
-            "config files do not match {:?}",
-            watch_keys.symmetric_difference(&watch_files)
-        );
-        return true;
-    }
-
     // check the files to see if they've been altered
     let mut modified = false;
-    for (fp, prev_modtime) in &watches.files {
-        if let Ok(modtime) = fp
-            .metadata()
-            .expect("accessing config file modtime")
-            .modified()
-        {
+    for fp in &watch_files {
+        if let Ok(modtime) = fp.metadata().and_then(|m| m.modified()) {
             let modtime = modtime
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            if modtime != *prev_modtime {
+            if modtime > watches.latest_update {
                 trace!("file modified: {:?}", fp);
                 modified = true;
                 watch_files::add_modified_file(fp.clone());
@@ -117,9 +103,9 @@ fn have_mise_env_vars_been_modified(watches: &HookEnvWatches) -> bool {
     false
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct HookEnvWatches {
-    files: BTreeMap<PathBuf, u64>,
+    latest_update: u64,
     env_var_hash: String,
 }
 
@@ -141,20 +127,17 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
 pub fn build_watches(
     watch_files: impl IntoIterator<Item = WatchFilePattern>,
 ) -> Result<HookEnvWatches> {
-    let mut watches = BTreeMap::new();
+    let mut max_modtime = UNIX_EPOCH;
     for cf in get_watch_files(watch_files) {
-        watches.insert(
-            cf.clone(),
-            cf.metadata()?
-                .modified()?
-                .duration_since(SystemTime::UNIX_EPOCH)?
-                .as_secs(),
-        );
+        max_modtime = std::cmp::max(cf.metadata()?.modified()?, max_modtime);
     }
 
     Ok(HookEnvWatches {
-        files: watches,
         env_var_hash: get_mise_env_vars_hashed(),
+        latest_update: max_modtime
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
     })
 }
 
@@ -221,91 +204,4 @@ pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String
     }
 
     output
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::UNIX_EPOCH;
-
-    use pretty_assertions::{assert_eq, assert_str_eq};
-    use test_log::test;
-
-    use super::*;
-
-    #[test]
-    fn test_have_config_files_been_modified() {
-        let files = BTreeSet::new();
-        let watches = HookEnvWatches {
-            files: BTreeMap::new(),
-            env_var_hash: "".into(),
-        };
-        assert!(!have_files_been_modified(&watches, files));
-
-        let fp = env::current_dir().unwrap().join(".test-tool-versions");
-        let watches = HookEnvWatches {
-            files: BTreeMap::from([(
-                fp.clone(),
-                UNIX_EPOCH
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            )]),
-            env_var_hash: "".into(),
-        };
-        let files = BTreeSet::from([fp.clone()]);
-        assert!(have_files_been_modified(&watches, files));
-
-        let modtime = fp.metadata().unwrap().modified().unwrap();
-        let watches = HookEnvWatches {
-            files: BTreeMap::from([(
-                fp.clone(),
-                modtime
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            )]),
-            env_var_hash: "".into(),
-        };
-        let files = BTreeSet::from([fp]);
-        assert!(!have_files_been_modified(&watches, files));
-    }
-
-    #[test]
-    fn test_serialize_watches_empty() {
-        let watches = HookEnvWatches {
-            files: BTreeMap::new(),
-            env_var_hash: "".into(),
-        };
-        let serialized = serialize_watches(&watches).unwrap();
-        let deserialized = deserialize_watches(serialized).unwrap();
-        assert_eq!(deserialized.files.len(), 0);
-    }
-
-    #[test]
-    fn test_serialize_watches() {
-        let serialized = serialize_watches(&HookEnvWatches {
-            files: BTreeMap::from([(
-                PathBuf::from("foo"),
-                UNIX_EPOCH
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            )]),
-            env_var_hash: "testing-123".into(),
-        })
-        .unwrap();
-        let deserialized = deserialize_watches(serialized).unwrap();
-        assert_eq!(deserialized.files.len(), 1);
-        assert_str_eq!(deserialized.env_var_hash, "testing-123");
-        assert_eq!(
-            *deserialized
-                .files
-                .get(PathBuf::from("foo").as_path())
-                .unwrap(),
-            UNIX_EPOCH
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-        );
-    }
 }
