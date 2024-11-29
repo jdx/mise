@@ -25,6 +25,7 @@ env:
 jobs:
   release-plz:
     if: github.repository == 'jdx/mise'
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
