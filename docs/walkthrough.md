@@ -120,7 +120,7 @@ This example makes CLIs installed with `npm` available:
 
 ```toml
 [env]
-_.PATH = "./node_modules/.bin"
+_.path = "./node_modules/.bin"
 ```
 
 This will add `./node_modules/.bin` to the PATH for the project—with "." here referring to the directory
