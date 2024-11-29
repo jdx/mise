@@ -661,7 +661,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | slsa-verifier | [ubi:slsa-framework/slsa-verifier](https://github.com/slsa-framework/slsa-verifier) |
 | smithy | [asdf:aws/asdf-smithy](https://github.com/aws/asdf-smithy) |
 | smlnj | [asdf:samontea/asdf-smlnj](https://github.com/samontea/asdf-smlnj) |
-| snyk | [asdf:nirfuchs/asdf-snyk](https://github.com/nirfuchs/asdf-snyk) |
+| snyk | [aqua:snyk/cli](https://github.com/snyk/cli) [asdf:nirfuchs/asdf-snyk](https://github.com/nirfuchs/asdf-snyk) |
 | soft-serve | [asdf:chessmango/asdf-soft-serve](https://github.com/chessmango/asdf-soft-serve) |
 | solidity | [asdf:diegodorado/asdf-solidity](https://github.com/diegodorado/asdf-solidity) |
 | sonobuoy | [asdf:Nick-Triller/asdf-sonobuoy](https://github.com/Nick-Triller/asdf-sonobuoy) |
