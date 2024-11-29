@@ -34,8 +34,8 @@ impl Update {
                 })
                 .collect(),
             None => install_state::list_plugins()?
-                .into_keys()
-                .map(|p| (p, None))
+                .keys()
+                .map(|p| (p.clone(), None))
                 .collect::<Vec<_>>(),
         };
 

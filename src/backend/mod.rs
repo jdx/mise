@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -45,9 +46,9 @@ pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<String>>;
 
-static TOOLS: Mutex<Option<BackendMap>> = Mutex::new(None);
+static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
-fn load_tools() -> MutexGuard<'static, Option<BackendMap>> {
+fn load_tools() -> MutexGuard<'static, Option<Arc<BackendMap>>> {
     let mut memo_tools = TOOLS.lock().unwrap();
     if memo_tools.is_some() {
         return memo_tools;
@@ -62,9 +63,9 @@ fn load_tools() -> MutexGuard<'static, Option<BackendMap>> {
                 warn!("{err:#}");
             })
             .unwrap_or_default()
-            .into_values()
+            .values()
             .filter(|ist| ist.full.is_some())
-            .flat_map(|ist| arg_to_backend(ist.into())),
+            .flat_map(|ist| arg_to_backend(ist.clone().into())),
     );
     time!("load_tools install_state");
     tools.retain(|backend| !SETTINGS.disable_tools().contains(backend.id()));
@@ -78,7 +79,7 @@ fn load_tools() -> MutexGuard<'static, Option<BackendMap>> {
         .into_iter()
         .map(|backend| (backend.ba().short.clone(), backend))
         .collect();
-    *memo_tools = Some(tools.clone());
+    *memo_tools = Some(Arc::new(tools.clone()));
     time!("load_tools done");
     memo_tools
 }
@@ -93,7 +94,9 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
     if let Some(backend) = backends.get(&ba.short) {
         Some(backend.clone())
     } else if let Some(backend) = arg_to_backend(ba.clone()) {
+        let mut backends = (**backends).clone();
         backends.insert(ba.short.clone(), backend.clone());
+        *m = Some(Arc::new(backends));
         Some(backend)
     } else {
         None
@@ -102,8 +105,9 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
 
 pub fn remove(short: &str) {
     let mut t = load_tools();
-    let backends = t.as_mut().unwrap();
+    let mut backends = t.clone().unwrap().deref().clone();
     backends.remove(short);
+    *t = Some(Arc::new(backends));
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {

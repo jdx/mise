@@ -8,12 +8,14 @@ use heck::ToKebabCase;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
+use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use versions::Versioning;
 
 type InstallStatePlugins = BTreeMap<String, PluginType>;
 type InstallStateTools = BTreeMap<String, InstallStateTool>;
+type MutexResult<T> = Result<MutexGuard<'static, Option<Arc<T>>>>;
 
 #[derive(Debug, Clone)]
 pub struct InstallStateTool {
@@ -22,8 +24,8 @@ pub struct InstallStateTool {
     pub versions: Vec<String>,
 }
 
-static INSTALL_STATE_PLUGINS: Mutex<Option<InstallStatePlugins>> = Mutex::new(None);
-static INSTALL_STATE_TOOLS: Mutex<Option<InstallStateTools>> = Mutex::new(None);
+static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
+static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
 
 pub(crate) fn init() -> Result<()> {
     let (plugins, tools) = rayon::join(
@@ -43,7 +45,7 @@ pub(crate) fn init() -> Result<()> {
     Ok(())
 }
 
-fn init_plugins() -> Result<MutexGuard<'static, Option<BTreeMap<String, PluginType>>>> {
+fn init_plugins() -> MutexResult<InstallStatePlugins> {
     let mut mu = INSTALL_STATE_PLUGINS.lock().unwrap();
     if mu.is_some() {
         return Ok(mu);
@@ -63,11 +65,11 @@ fn init_plugins() -> Result<MutexGuard<'static, Option<BTreeMap<String, PluginTy
             }
         })
         .collect();
-    *mu = Some(plugins);
+    *mu = Some(Arc::new(plugins));
     Ok(mu)
 }
 
-fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallStateTool>>>> {
+fn init_tools() -> MutexResult<InstallStateTools> {
     let mut mu = INSTALL_STATE_TOOLS.lock().unwrap();
     if mu.is_some() {
         return Ok(mu);
@@ -103,7 +105,7 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
         .flatten()
         .filter(|(_, tool)| !tool.versions.is_empty())
         .collect::<BTreeMap<_, _>>();
-    for (short, pt) in init_plugins()?.as_ref().unwrap() {
+    for (short, pt) in init_plugins()?.as_ref().unwrap().iter() {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
             PluginType::Vfox => format!("vfox:{short}"),
@@ -117,11 +119,11 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
             });
         tool.full = Some(full);
     }
-    *mu = Some(tools);
+    *mu = Some(Arc::new(tools));
     Ok(mu)
 }
 
-pub fn list_plugins() -> Result<BTreeMap<String, PluginType>> {
+pub fn list_plugins() -> Result<Arc<BTreeMap<String, PluginType>>> {
     let plugins = init_plugins()?;
     Ok(plugins.as_ref().unwrap().clone())
 }
@@ -140,7 +142,7 @@ pub fn get_plugin_type(short: &str) -> Result<Option<PluginType>> {
     Ok(plugins.as_ref().unwrap().get(short).cloned())
 }
 
-pub fn list_tools() -> Result<BTreeMap<String, InstallStateTool>> {
+pub fn list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>> {
     let tools = init_tools()?;
     Ok(tools.as_ref().unwrap().clone())
 }
@@ -167,11 +169,10 @@ pub fn list_versions(short: &str) -> Result<Vec<String>> {
 }
 
 pub fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
-    let mut plugins = init_plugins()?;
-    plugins
-        .as_mut()
-        .unwrap()
-        .insert(short.to_string(), plugin_type);
+    let mut p = init_plugins()?;
+    let mut plugins = p.take().unwrap().deref().clone();
+    plugins.insert(short.to_string(), plugin_type);
+    *p = Some(Arc::new(plugins));
     Ok(())
 }
 
