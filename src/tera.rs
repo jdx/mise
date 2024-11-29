@@ -320,7 +320,6 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use insta::assert_snapshot;
     use pretty_assertions::assert_str_eq;
 
     #[test]
@@ -475,7 +474,7 @@ mod tests {
     #[cfg(unix)]
     fn test_hash_file() {
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
-        assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
+        insta::assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
     }
 
     #[test]

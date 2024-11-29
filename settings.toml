@@ -461,6 +461,12 @@ type = "String"
 optional = true
 description = "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo."
 
+[node.gpg_verify]
+env = "MISE_NODE_GPG_VERIFY"
+type = "Bool"
+optional = true
+description = "Use gpg to verify node tool signatures."
+
 [node.mirror_url]
 env = "MISE_NODE_MIRROR_URL"
 type = "Url"

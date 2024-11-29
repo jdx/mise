@@ -220,6 +220,7 @@ jobs:
             ~/.local/share/mise
             ~/.cache/mise
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - run: mise x -- wait-for-gh-rate-limit
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
