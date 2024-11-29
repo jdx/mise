@@ -5,7 +5,7 @@ use crate::config::SETTINGS;
 use crate::duration::DAILY;
 use crate::git::Git;
 use crate::{dirs, file, hashmap, http};
-use expr::{ExprContext, ExprParser, ExprProgram, ExprValue};
+use expr::{Context, Parser, Program, Value};
 use eyre::{eyre, ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -63,7 +63,7 @@ pub struct AquaPackage {
     pub version_prefix: Option<String>,
     version_filter: Option<String>,
     #[serde(skip)]
-    version_filter_expr: Option<ExprProgram>,
+    version_filter_expr: Option<Program>,
     pub version_source: Option<String>,
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
@@ -197,7 +197,7 @@ impl AquaRegistry {
             .next()
             .wrap_err(format!("no package found for {id} in {path:?}"))?;
         if let Some(version_filter) = &pkg.version_filter {
-            pkg.version_filter_expr = Some(ExprParser::new().compile(version_filter)?);
+            pkg.version_filter_expr = Some(Parser::new().compile(version_filter)?);
         }
         Ok(pkg)
     }
@@ -237,7 +237,7 @@ impl AquaPackage {
 
     fn version_override(&self, v: &str) -> &AquaPackage {
         let ver = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v));
-        let mut expr = ExprParser::new();
+        let mut expr = Parser::new();
         let ctx = self.expr_ctx(v);
         expr.add_function("semver", |c| {
             if c.args.len() != 1 {
@@ -381,13 +381,13 @@ impl AquaPackage {
         aqua_template::render(s, &ctx)
     }
 
-    fn expr(&self, v: &str, program: ExprProgram) -> Result<ExprValue> {
-        let expr = ExprParser::new();
+    fn expr(&self, v: &str, program: Program) -> Result<Value> {
+        let expr = Parser::new();
         expr.run(program, &self.expr_ctx(v)).map_err(|e| eyre!(e))
     }
 
-    fn expr_ctx(&self, v: &str) -> ExprContext {
-        let mut ctx = ExprContext::default();
+    fn expr_ctx(&self, v: &str) -> Context {
+        let mut ctx = Context::default();
         ctx.insert("Version", v);
         ctx
     }
@@ -395,7 +395,7 @@ impl AquaPackage {
     pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
         // TODO: precompile the expression
         if let Some(filter) = self.version_filter_expr.clone() {
-            if let ExprValue::Bool(expr) = self.expr(v, filter)? {
+            if let Value::Bool(expr) = self.expr(v, filter)? {
                 Ok(expr)
             } else {
                 warn!(
