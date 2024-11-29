@@ -10,12 +10,12 @@ use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use versions::Versioning;
 
 type InstallStatePlugins = BTreeMap<String, PluginType>;
 type InstallStateTools = BTreeMap<String, InstallStateTool>;
-type MutexResult<T> = Result<MutexGuard<'static, Option<Arc<T>>>>;
+type MutexResult<T> = Result<Arc<T>>;
 
 #[derive(Debug, Clone)]
 pub struct InstallStateTool {
@@ -46,12 +46,11 @@ pub(crate) fn init() -> Result<()> {
 }
 
 fn init_plugins() -> MutexResult<InstallStatePlugins> {
-    let mut mu = INSTALL_STATE_PLUGINS.lock().unwrap();
-    if mu.is_some() {
-        return Ok(mu);
+    if let Some(plugins) = INSTALL_STATE_PLUGINS.lock().unwrap().clone() {
+        return Ok(plugins);
     }
     let dirs = file::dir_subdirs(&dirs::PLUGINS)?;
-    let plugins = dirs
+    let plugins: InstallStatePlugins = dirs
         .into_iter()
         .filter_map(|d| {
             time!("init_plugins {d}");
@@ -65,14 +64,14 @@ fn init_plugins() -> MutexResult<InstallStatePlugins> {
             }
         })
         .collect();
-    *mu = Some(Arc::new(plugins));
-    Ok(mu)
+    let plugins = Arc::new(plugins);
+    *INSTALL_STATE_PLUGINS.lock().unwrap() = Some(plugins.clone());
+    Ok(plugins)
 }
 
 fn init_tools() -> MutexResult<InstallStateTools> {
-    let mut mu = INSTALL_STATE_TOOLS.lock().unwrap();
-    if mu.is_some() {
-        return Ok(mu);
+    if let Some(tools) = INSTALL_STATE_TOOLS.lock().unwrap().clone() {
+        return Ok(tools);
     }
     let mut tools = file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
@@ -105,7 +104,7 @@ fn init_tools() -> MutexResult<InstallStateTools> {
         .flatten()
         .filter(|(_, tool)| !tool.versions.is_empty())
         .collect::<BTreeMap<_, _>>();
-    for (short, pt) in init_plugins()?.as_ref().unwrap().iter() {
+    for (short, pt) in init_plugins()?.iter() {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
             PluginType::Vfox => format!("vfox:{short}"),
@@ -119,39 +118,34 @@ fn init_tools() -> MutexResult<InstallStateTools> {
             });
         tool.full = Some(full);
     }
-    *mu = Some(Arc::new(tools));
-    Ok(mu)
+    let tools = Arc::new(tools);
+    *INSTALL_STATE_TOOLS.lock().unwrap() = Some(tools.clone());
+    Ok(tools)
 }
 
 pub fn list_plugins() -> Result<Arc<BTreeMap<String, PluginType>>> {
     let plugins = init_plugins()?;
-    Ok(plugins.as_ref().unwrap().clone())
+    Ok(plugins)
 }
 
 pub fn get_tool_full(short: &str) -> Result<Option<String>> {
     let tools = init_tools()?;
-    Ok(tools
-        .as_ref()
-        .unwrap()
-        .get(short)
-        .and_then(|t| t.full.clone()))
+    Ok(tools.get(short).and_then(|t| t.full.clone()))
 }
 
 pub fn get_plugin_type(short: &str) -> Result<Option<PluginType>> {
     let plugins = init_plugins()?;
-    Ok(plugins.as_ref().unwrap().get(short).cloned())
+    Ok(plugins.get(short).cloned())
 }
 
 pub fn list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>> {
     let tools = init_tools()?;
-    Ok(tools.as_ref().unwrap().clone())
+    Ok(tools)
 }
 
 pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
     let tools = init_tools()?;
     let backend_type = tools
-        .as_ref()
-        .unwrap()
         .get(short)
         .and_then(|ist| ist.full.as_ref())
         .map(|full| BackendType::guess(full));
@@ -161,18 +155,15 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
 pub fn list_versions(short: &str) -> Result<Vec<String>> {
     let tools = init_tools()?;
     Ok(tools
-        .as_ref()
-        .unwrap()
         .get(short)
         .map(|tool| tool.versions.clone())
         .unwrap_or_default())
 }
 
 pub fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
-    let mut p = init_plugins()?;
-    let mut plugins = p.take().unwrap().deref().clone();
+    let mut plugins = init_plugins()?.deref().clone();
     plugins.insert(short.to_string(), plugin_type);
-    *p = Some(Arc::new(plugins));
+    *INSTALL_STATE_PLUGINS.lock().unwrap() = Some(Arc::new(plugins));
     Ok(())
 }
 

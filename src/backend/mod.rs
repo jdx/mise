@@ -4,7 +4,7 @@ use std::fs::File;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::{BackendArg, ToolVersionType};
@@ -48,9 +48,8 @@ pub type VersionCacheManager = CacheManager<Vec<String>>;
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
-fn load_tools() -> MutexGuard<'static, Option<Arc<BackendMap>>> {
-    let mut memo_tools = TOOLS.lock().unwrap();
-    if memo_tools.is_some() {
+fn load_tools() -> Arc<BackendMap> {
+    if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
         return memo_tools;
     }
     time!("load_tools start");
@@ -79,24 +78,24 @@ fn load_tools() -> MutexGuard<'static, Option<Arc<BackendMap>>> {
         .into_iter()
         .map(|backend| (backend.ba().short.clone(), backend))
         .collect();
-    *memo_tools = Some(Arc::new(tools.clone()));
+    let tools = Arc::new(tools);
+    *TOOLS.lock().unwrap() = Some(tools.clone());
     time!("load_tools done");
-    memo_tools
+    tools
 }
 
 pub fn list() -> BackendList {
-    load_tools().as_ref().unwrap().values().cloned().collect()
+    load_tools().values().cloned().collect()
 }
 
 pub fn get(ba: &BackendArg) -> Option<ABackend> {
-    let mut m = load_tools();
-    let backends = m.as_mut().unwrap();
+    let backends = load_tools();
     if let Some(backend) = backends.get(&ba.short) {
         Some(backend.clone())
     } else if let Some(backend) = arg_to_backend(ba.clone()) {
-        let mut backends = (**backends).clone();
+        let mut backends = backends.deref().clone();
         backends.insert(ba.short.clone(), backend.clone());
-        *m = Some(Arc::new(backends));
+        *TOOLS.lock().unwrap() = Some(Arc::new(backends));
         Some(backend)
     } else {
         None
@@ -104,10 +103,9 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
 }
 
 pub fn remove(short: &str) {
-    let mut t = load_tools();
-    let mut backends = t.clone().unwrap().deref().clone();
+    let mut backends = load_tools().deref().clone();
     backends.remove(short);
-    *t = Some(Arc::new(backends));
+    *TOOLS.lock().unwrap() = Some(Arc::new(backends));
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
