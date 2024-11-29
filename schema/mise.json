@@ -594,10 +594,6 @@
             }
           }
         },
-        "shell": {
-          "description": "Sets the shell across all mise commands like `mise run`, `mise en`, and watch files.",
-          "type": "string"
-        },
         "shorthands_file": {
           "description": "Path to a file containing custom tool shorthands.",
           "type": "string"

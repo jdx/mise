@@ -101,7 +101,7 @@ pub struct Run {
     /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
     /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
     /// Or it can be overridden with the `shell` property on a task.
-    #[clap(long, short, verbatim_doc_comment, env = "MISE_SHELL")]
+    #[clap(long, short, verbatim_doc_comment)]
     pub shell: Option<String>,
 
     /// Tool(s) to run in addition to what is in mise.toml files
