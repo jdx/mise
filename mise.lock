@@ -10,12 +10,14 @@ actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5c
 version = "1.1.38"
 
 [tools.bun.checksums]
+"bun-darwin-aarch64.zip" = "sha256:bbc6fb0e7bb99e7e95001ba05105cf09d0b79c06941d9f6ee3d0b34dc1541590"
 "bun-linux-x64-baseline.zip" = "sha256:353e2e6d4086a09eeee984d2ed61736dcd905838ede51b82689fd7b3e95def90"
 
 [tools.cargo-binstall]
 version = "1.10.15"
 
 [tools.cargo-binstall.checksums]
+"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:0afb56acd834d7b0bc9a5293963da04abe48923d90f374bed98068b313a48f2c"
 "cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:f333f552699e76e8fe570da6fb928c273c0c2d14e0955f6b79f7f59eb932ba73"
 
 [tools."cargo:cargo-edit"]
@@ -100,3 +102,4 @@ version = "0.1.8"
 
 [tools.wait-for-gh-rate-limit.checksums]
 wait-for-gh-rate-limit-linux-x86_64 = "sha256:a3e7e966a8d681f30bb7887e471740607074ab7f28580dd926efc307b0d35c20"
+wait-for-gh-rate-limit-macos-aarch64 = "sha256:94975cf4b05c29d1a2bf42ead5c07f297ab80169a3c1813bcbbbac35d9acf7cb"
