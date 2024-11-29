@@ -235,7 +235,6 @@ jobs:
   windows-unit:
     runs-on: windows-latest
     timeout-minutes: 30
-    needs: [build-windows]
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
@@ -244,19 +243,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: unit
-      #        - uses: actions/download-artifact@v4
-      #          with:
-      #            name: mise-windows-latest
-      #            path: target/debug
-      #        - run: Add-Content "$env:GITHUB_PATH" "$env:GITHUB_WORKSPACE/target/debug"
-      #        - uses: actions/cache@v4
-      #          with:
-      #            key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-      #            path: |
-      #              ~/.local/share/mise
-      #              ~/.cache/mise
-      #        - run: mise -v
-      #        - run: mise install
       - name: cargo test
         uses: nick-fields/retry@v3
         with:
