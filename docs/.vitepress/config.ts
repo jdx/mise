@@ -68,6 +68,7 @@ export default defineConfig({
               { text: "Python", link: "/lang/python" },
               { text: "Ruby", link: "/lang/ruby" },
               { text: "Rust", link: "/lang/rust" },
+              { text: "Swift", link: "/lang/swift" },
             ],
           },
           {

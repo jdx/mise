@@ -9,9 +9,10 @@ You can see the core plugins with `mise plugin ls --core`.
 
 - [Bun](/lang/bun)
 - [Deno](/lang/deno)
-- [Erlang](/lang/erlang) <Badge type="warning" text="experimental" />
+- [Erlang](/lang/erlang)
 - [Go](/lang/go)
 - [Java](/lang/java)
 - [NodeJS](/lang/node)
 - [Python](/lang/python)
 - [Ruby](/lang/ruby)
+- [Swift](/lang/swift)
