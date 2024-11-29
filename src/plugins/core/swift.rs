@@ -62,6 +62,7 @@ impl SwiftPlugin {
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
+        let version = &tv.version;
         ctx.pr.set_message(format!("extract {filename}"));
         if cfg!(macos) {
             let tmp = {
@@ -77,11 +78,7 @@ impl SwiftPlugin {
                 .execute()?;
             file::remove_all(tv.install_path())?;
             file::rename(
-                tmp.join("pkg")
-                    .join(format!(
-                        "swift-{version}-RELEASE-osx-package.pkg",
-                        version = tv.version
-                    ))
+                tmp.join(format!("swift-{version}-RELEASE-osx-package.pkg"))
                     .join("Payload"),
                 tv.install_path(),
             )?;
