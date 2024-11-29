@@ -213,9 +213,10 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::File(input) => {
-                    trust_check(&source)?;
                     let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    for p in xx::file::glob(normalize_path(&config_root, s.into()))? {
+                    for p in
+                        xx::file::glob(normalize_path(&config_root, s.into())).unwrap_or_default()
+                    {
                         r.env_files.push(p.clone());
                         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(&p));
                         if let Ok(dotenv) = dotenvy::from_path_iter(&p) {
@@ -229,20 +230,25 @@ impl EnvResults {
                 }
                 EnvDirective::Source(input) => {
                     SETTINGS.ensure_experimental("env._.source")?;
-                    trust_check(&source)?;
-                    let s = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())?;
-                    for p in xx::file::glob(normalize_path(&config_root, s.into()))? {
-                        r.env_scripts.push(p.clone());
-                        let env_diff = EnvDiff::from_bash_script(&p, env_vars.clone())?;
-                        for p in env_diff.to_patches() {
-                            match p {
-                                EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                                    r.env_remove.remove(&k);
-                                    env.insert(k.clone(), (v.clone(), Some(source.clone())));
-                                }
-                                EnvDiffOperation::Remove(k) => {
-                                    env.shift_remove(&k);
-                                    r.env_remove.insert(k);
+                    if let Ok(s) = r.parse_template(&ctx, &source, input.to_string_lossy().as_ref())
+                    {
+                        for p in xx::file::glob(normalize_path(&config_root, s.into()))
+                            .unwrap_or_default()
+                        {
+                            r.env_scripts.push(p.clone());
+                            let env_diff =
+                                EnvDiff::from_bash_script(&p, env_vars.clone()).unwrap_or_default();
+                            for p in env_diff.to_patches() {
+                                match p {
+                                    EnvDiffOperation::Add(k, v)
+                                    | EnvDiffOperation::Change(k, v) => {
+                                        r.env_remove.remove(&k);
+                                        env.insert(k.clone(), (v.clone(), Some(source.clone())));
+                                    }
+                                    EnvDiffOperation::Remove(k) => {
+                                        env.shift_remove(&k);
+                                        r.env_remove.insert(k);
+                                    }
                                 }
                             }
                         }
