@@ -1040,7 +1040,6 @@ fn reset() {
         || {
             install_state::reset();
             backend::reset();
-            Settings::reset(None);
             _CONFIG.write().unwrap().take();
             *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
             *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
