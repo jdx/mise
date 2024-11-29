@@ -1,15 +1,15 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt::{Debug, Formatter};
-use std::iter::once;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
-
 use eyre::{ensure, eyre, Context, Result};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use rayon::prelude::*;
 pub use settings::Settings;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::{Debug, Formatter};
+use std::iter::once;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::Duration;
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
@@ -26,7 +26,7 @@ use crate::toolset::{
     install_state, ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, ToolsetBuilder,
 };
 use crate::ui::style;
-use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims};
+use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 
 pub mod config_file;
 pub mod env_directive;
@@ -1036,13 +1036,21 @@ pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Resul
 }
 
 fn reset() {
-    install_state::reset();
-    backend::reset();
-    Settings::reset(None);
-    _CONFIG.write().unwrap().take();
-    *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
-    *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
-    GLOB_RESULTS.lock().unwrap().clear()
+    if let Err(err) = timeout::run_with_timeout(
+        || {
+            install_state::reset();
+            backend::reset();
+            Settings::reset(None);
+            _CONFIG.write().unwrap().take();
+            *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
+            *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
+            GLOB_RESULTS.lock().unwrap().clear();
+            Ok(())
+        },
+        Duration::from_secs(5),
+    ) {
+        error!("reset: {err}");
+    }
 }
 
 #[cfg(test)]
