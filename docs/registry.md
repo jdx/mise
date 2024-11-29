@@ -235,20 +235,19 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | ffmpeg | [asdf:acj/asdf-ffmpeg](https://github.com/acj/asdf-ffmpeg) |
 | figma-export | [ubi:RedMadRobot/figma-export](https://github.com/RedMadRobot/figma-export) [asdf:younke/asdf-figma-export](https://github.com/younke/asdf-figma-export) |
 | fillin | [aqua:itchyny/fillin](https://github.com/itchyny/fillin) [asdf:ouest/asdf-fillin](https://github.com/ouest/asdf-fillin) |
-| firebase | [asdf:jthegedus/asdf-firebase](https://github.com/jthegedus/asdf-firebase) |
+| firebase | [aqua:firebase/firebase-tools](https://github.com/firebase/firebase-tools) [asdf:jthegedus/asdf-firebase](https://github.com/jthegedus/asdf-firebase) |
 | fission | [aqua:fission/fission](https://github.com/fission/fission) [asdf:virtualstaticvoid/asdf-fission](https://github.com/virtualstaticvoid/asdf-fission) |
-| flamingo | [asdf:log2/asdf-flamingo](https://github.com/log2/asdf-flamingo) |
-| flarectl | [asdf:mise-plugins/asdf-flarectl](https://github.com/mise-plugins/asdf-flarectl) |
-| flatc | [asdf:TheOpenDictionary/asdf-flatc](https://github.com/TheOpenDictionary/asdf-flatc) |
+| flamingo | [ubi:flux-subsystem-argo/flamingo](https://github.com/flux-subsystem-argo/flamingo) [asdf:log2/asdf-flamingo](https://github.com/log2/asdf-flamingo) |
+| flarectl | [ubi:cloudflare/cloudflare-go](https://github.com/cloudflare/cloudflare-go) [asdf:mise-plugins/asdf-flarectl](https://github.com/mise-plugins/asdf-flarectl) |
+| flatc | [ubi:google/flatbuffers](https://github.com/google/flatbuffers) [asdf:TheOpenDictionary/asdf-flatc](https://github.com/TheOpenDictionary/asdf-flatc) |
 | flutter | [asdf:oae/asdf-flutter](https://github.com/oae/asdf-flutter) [vfox:version-fox/vfox-flutter](https://github.com/version-fox/vfox-flutter) |
-| fluttergen | [asdf:FlutterGen/asdf-fluttergen](https://github.com/FlutterGen/asdf-fluttergen) |
+| fluttergen | [ubi:FlutterGen/flutter_gen](https://github.com/FlutterGen/flutter_gen) [asdf:FlutterGen/asdf-fluttergen](https://github.com/FlutterGen/asdf-fluttergen) |
 | flux2 | [aqua:fluxcd/flux2](https://github.com/fluxcd/flux2) [asdf:tablexi/asdf-flux2](https://github.com/tablexi/asdf-flux2) |
-| fluxctl | [asdf:stefansedich/asdf-fluxctl](https://github.com/stefansedich/asdf-fluxctl) |
 | fly | [aqua:concourse/concourse/fly](https://github.com/concourse/concourse/fly) [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
 | flyctl | [ubi:superfly/flyctl](https://github.com/superfly/flyctl) [asdf:chessmango/asdf-flyctl](https://github.com/chessmango/asdf-flyctl) |
 | flyway | [asdf:junminahn/asdf-flyway](https://github.com/junminahn/asdf-flyway) |
 | func-e | [asdf:carnei-ro/asdf-func-e](https://github.com/carnei-ro/asdf-func-e) |
-| furyctl | [asdf:sighupio/asdf-furyctl](https://github.com/sighupio/asdf-furyctl) |
+| furyctl | [ubi:sighupio/furyctl](https://github.com/sighupio/furyctl) [asdf:sighupio/asdf-furyctl](https://github.com/sighupio/asdf-furyctl) |
 | fx | [aqua:antonmedv/fx](https://github.com/antonmedv/fx) [asdf:https://gitlab.com/wt0f/asdf-fx](https://gitlab.com/wt0f/asdf-fx) |
 | fzf | [ubi:junegunn/fzf](https://github.com/junegunn/fzf) [asdf:kompiro/asdf-fzf](https://github.com/kompiro/asdf-fzf) |
 | gallery-dl | [asdf:iul1an/asdf-gallery-dl](https://github.com/iul1an/asdf-gallery-dl) |
