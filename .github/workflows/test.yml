@@ -34,13 +34,10 @@ jobs:
         with:
           submodules: true
       - uses: rui314/setup-mold@v1
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build
       - run: |
-          source <(cargo llvm-cov show-env --export-prefix)
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
@@ -134,7 +131,7 @@ jobs:
         if: ${{ matrix.os == 'ubuntu-latest' }}
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny,cargo-msrv,cargo-machete,cargo-llvm-cov
+          tool: cargo-deny,cargo-msrv,cargo-machete
       - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
@@ -152,19 +149,12 @@ jobs:
             ~/.cache/mise
       - run: mise install
       - run: mise x -- bun i
-      - run: |
-          source <(cargo llvm-cov show-env --export-prefix)
-          mise x -- cargo llvm-cov --all-features --lcov --output-path "unit-${{matrix.os}}.lcov"
+      - run: mise x -- cargo test --all-features
       - run: cargo deny check
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
       - run: mise run lint
-      - uses: actions/upload-artifact@v4
-        with:
-          name: unit-${{matrix.os}}.lcov
-          path: unit-${{matrix.os}}.lcov
-          if-no-files-found: error
 
   nightly:
     runs-on: ubuntu-latest
@@ -204,8 +194,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - run: rustup component add llvm-tools-preview
       - name: Install build and test dependencies
         run: |
           sudo apt-get install \
@@ -243,32 +231,6 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: mise run test:coverage
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{matrix.tranche}}.lcov
-          path: coverage-${{matrix.tranche}}.lcov
-          if-no-files-found: error
-  coverage-report:
-    name: coverage-report
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [coverage, unit]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: "*.lcov"
-          path: .
-          merge-multiple: true
-      - run: |
-          pip install lcov_cobertura
-          npx lcov-result-merger '*.lcov' coverage.lcov
-          lcov_cobertura coverage.lcov --output coverage.xml
-      - uses: codacy/codacy-coverage-reporter-action@v1
-        continue-on-error: true
-        with:
-          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          coverage-reports: coverage.lcov
   windows-unit:
     runs-on: windows-latest
     timeout-minutes: 30
