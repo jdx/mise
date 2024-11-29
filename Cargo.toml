@@ -65,7 +65,7 @@ dotenvy = "0.15"
 duct = "0.13"
 either = { version = "1", features = ["serde"] }
 # expr-lang = { path = "../expr-lang" }
-expr-lang = "0.1"
+expr-lang = "0.2"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
