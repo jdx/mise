@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.11.33"
+version = "2024.11.34"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
