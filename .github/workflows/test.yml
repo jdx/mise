@@ -282,49 +282,50 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: pwsh e2e-win\run.ps1
-  tools:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-        tranche: [0, 1, 2, 3]
-    needs: [build-macos, build-windows]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    if: github.head_ref == 'release'
-    env:
-      TEST_TRANCHE: ${{matrix.tranche}}
-      TEST_TRANCHE_COUNT: 4
-      TEST_ALL: ${{github.head_ref == 'release' && '1' || '0'}}
-      MISE_DATA_DIR: ~/.local/share/mise
-      MISE_CACHE_DIR: ~/.cache/mise
-      MISE_DISABLE_TOOLS: |
-        1password-cli,
-        adr-tools
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: mise-${{ matrix.os }}
-          path: target/debug
-      - if: ${{ matrix.os != 'windows-latest' }}
-        run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
-      - if: ${{ matrix.os == 'windows-latest' }}
-        shell: pwsh
-        run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
-      - uses: actions/cache/restore@v4
-        with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise install
-      - uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 30
-          retry_wait_seconds: 30
-          max_attempts: 2
-          command: mise test-tool --all
-        env:
-          MISE_USE_VERSIONS_HOST: 0
+#  disabled until I can get gh rate limits under control
+#  tools:
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        os: [windows-latest, macos-latest]
+#        tranche: [0, 1, 2, 3]
+#    needs: [build-macos, build-windows]
+#    runs-on: ${{ matrix.os }}
+#    timeout-minutes: 20
+#    if: github.head_ref == 'release'
+#    env:
+#      TEST_TRANCHE: ${{matrix.tranche}}
+#      TEST_TRANCHE_COUNT: 4
+#      TEST_ALL: ${{github.head_ref == 'release' && '1' || '0'}}
+#      MISE_DATA_DIR: ~/.local/share/mise
+#      MISE_CACHE_DIR: ~/.cache/mise
+#      MISE_DISABLE_TOOLS: |
+#        1password-cli,
+#        adr-tools
+#    steps:
+#      - uses: actions/checkout@v4
+#      - uses: actions/download-artifact@v4
+#        with:
+#          name: mise-${{ matrix.os }}
+#          path: target/debug
+#      - if: ${{ matrix.os != 'windows-latest' }}
+#        run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+#      - if: ${{ matrix.os == 'windows-latest' }}
+#        shell: pwsh
+#        run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+#      - uses: actions/cache/restore@v4
+#        with:
+#          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+#          path: |
+#            ~/.local/share/mise
+#            ~/.cache/mise
+#      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+#      - run: mise install
+#      - uses: nick-fields/retry@v3
+#        with:
+#          timeout_minutes: 30
+#          retry_wait_seconds: 30
+#          max_attempts: 2
+#          command: mise test-tool --all
+#        env:
+#          MISE_USE_VERSIONS_HOST: 0
