@@ -7,18 +7,16 @@ actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5c
 "actionlint.exe-windows-x86_64" = "sha256:04ca117d9f33b77731fd3ef6a3670bd6b11b40c1b1cc5b7aaf6c28392d74d2e2"
 
 [tools.bun]
-version = "1.1.37"
+version = "1.1.38"
 
 [tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:6fc53d2db76dbef5c5d25d38f8e1b763c6dd883b0d9ce29d0039d08abb36ccae"
-"bun-linux-x64-baseline.zip" = "sha256:0079a9bfb8ea2c15b50b91b4b1fcc6fa9a5cb65bb147cc6c719c650a757220dc"
+"bun-linux-x64-baseline.zip" = "sha256:353e2e6d4086a09eeee984d2ed61736dcd905838ede51b82689fd7b3e95def90"
 
 [tools.cargo-binstall]
-version = "1.10.14"
+version = "1.10.15"
 
 [tools.cargo-binstall.checksums]
-"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:a0e0c7d7bfa0e18c89047ae8f095dfe2eb3d6947125733383203055c1bb2211b"
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:e1a045ccac90f4a18cb5e9bd79fe5016d50edba16242a767dbcf4a07d4de040e"
+"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:f333f552699e76e8fe570da6fb928c273c0c2d14e0955f6b79f7f59eb932ba73"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.0"
@@ -98,8 +96,7 @@ slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff54546
 "slsa-verifier.exe-windows-x86_64" = "sha256:37ca29ad748e8ea7be76d3ae766e8fa505362240431f6ea7f0648c727e2f2507"
 
 [tools.wait-for-gh-rate-limit]
-version = "0.1.7"
+version = "0.1.8"
 
 [tools.wait-for-gh-rate-limit.checksums]
-wait-for-gh-rate-limit-linux-x86_64 = "sha256:6450f0a9f262c09e6df0e9ad68db1ce7f9e93c60afe7b248f84bf9e171c60e00"
-wait-for-gh-rate-limit-macos-aarch64 = "sha256:edca6735cc8fec17b260bcb3f716455fb1e70dd4dfa29c121731d92a1140b801"
+wait-for-gh-rate-limit-linux-x86_64 = "sha256:a3e7e966a8d681f30bb7887e471740607074ab7f28580dd926efc307b0d35c20"
