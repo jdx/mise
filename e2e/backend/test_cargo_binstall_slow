@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-require_cmd cargo
-
-cat >mise.toml <<EOF
-tools."cargo:cargo-binstall" = "latest"
-tools."cargo:cargo-show" = "latest"
-EOF
-mise i
