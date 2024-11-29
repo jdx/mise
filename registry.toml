@@ -109,6 +109,8 @@ bitwarden.backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
 bitwarden.test = ["bw --version", ""] # TODO: change version_filter to version_prefix in aqua registry
 bitwarden-secrets-manager.backends = ["ubi:bitwarden/sdk[tag_regex=^bws,exe=bws]", "asdf:asdf-community/asdf-bitwarden-secrets-manager"]
 # bitwarden-secrets-manager.test = ["bws -V", ""] # fails on CI for some reason
+black.backends = ["aqua:psf/black"]
+black.test = ["black --version", "black, {{version}}"]
 bombardier.backends = ["aqua:codesenberg/bombardier", "asdf:NeoHsu/asdf-bombardier"]
 borg.backends = ["aqua:borgbackup/borg", "asdf:lwiechec/asdf-borg"]
 bosh.backends = ["aqua:cloudfoundry/bosh-cli", "asdf:vmware-tanzu/tanzu-plug-in-for-asdf"]
