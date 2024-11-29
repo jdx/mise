@@ -2,18 +2,20 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::plugins::PluginType;
-use crate::{backend, dirs, file, runtime_symlinks};
+use crate::{dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
+use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use versions::Versioning;
 
 type InstallStatePlugins = BTreeMap<String, PluginType>;
 type InstallStateTools = BTreeMap<String, InstallStateTool>;
+type MutexResult<T> = Result<Arc<T>>;
 
 #[derive(Debug, Clone)]
 pub struct InstallStateTool {
@@ -22,8 +24,8 @@ pub struct InstallStateTool {
     pub versions: Vec<String>,
 }
 
-static INSTALL_STATE_PLUGINS: Mutex<Option<InstallStatePlugins>> = Mutex::new(None);
-static INSTALL_STATE_TOOLS: Mutex<Option<InstallStateTools>> = Mutex::new(None);
+static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
+static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
 
 pub(crate) fn init() -> Result<()> {
     let (plugins, tools) = rayon::join(
@@ -43,13 +45,12 @@ pub(crate) fn init() -> Result<()> {
     Ok(())
 }
 
-fn init_plugins() -> Result<MutexGuard<'static, Option<BTreeMap<String, PluginType>>>> {
-    let mut mu = INSTALL_STATE_PLUGINS.lock().unwrap();
-    if mu.is_some() {
-        return Ok(mu);
+fn init_plugins() -> MutexResult<InstallStatePlugins> {
+    if let Some(plugins) = INSTALL_STATE_PLUGINS.lock().unwrap().clone() {
+        return Ok(plugins);
     }
     let dirs = file::dir_subdirs(&dirs::PLUGINS)?;
-    let plugins = dirs
+    let plugins: InstallStatePlugins = dirs
         .into_iter()
         .filter_map(|d| {
             time!("init_plugins {d}");
@@ -63,14 +64,14 @@ fn init_plugins() -> Result<MutexGuard<'static, Option<BTreeMap<String, PluginTy
             }
         })
         .collect();
-    *mu = Some(plugins);
-    Ok(mu)
+    let plugins = Arc::new(plugins);
+    *INSTALL_STATE_PLUGINS.lock().unwrap() = Some(plugins.clone());
+    Ok(plugins)
 }
 
-fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallStateTool>>>> {
-    let mut mu = INSTALL_STATE_TOOLS.lock().unwrap();
-    if mu.is_some() {
-        return Ok(mu);
+fn init_tools() -> MutexResult<InstallStateTools> {
+    if let Some(tools) = INSTALL_STATE_TOOLS.lock().unwrap().clone() {
+        return Ok(tools);
     }
     let mut tools = file::dir_subdirs(&dirs::INSTALLS)?
         .into_par_iter()
@@ -103,7 +104,7 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
         .flatten()
         .filter(|(_, tool)| !tool.versions.is_empty())
         .collect::<BTreeMap<_, _>>();
-    for (short, pt) in init_plugins()?.as_ref().unwrap() {
+    for (short, pt) in init_plugins()?.iter() {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
             PluginType::Vfox => format!("vfox:{short}"),
@@ -117,30 +118,34 @@ fn init_tools() -> Result<MutexGuard<'static, Option<BTreeMap<String, InstallSta
             });
         tool.full = Some(full);
     }
-    *mu = Some(tools);
-    Ok(mu)
+    let tools = Arc::new(tools);
+    *INSTALL_STATE_TOOLS.lock().unwrap() = Some(tools.clone());
+    Ok(tools)
 }
 
-pub fn list_plugins() -> Result<BTreeMap<String, PluginType>> {
+pub fn list_plugins() -> Result<Arc<BTreeMap<String, PluginType>>> {
     let plugins = init_plugins()?;
-    Ok(plugins.as_ref().unwrap().clone())
+    Ok(plugins)
+}
+
+pub fn get_tool_full(short: &str) -> Result<Option<String>> {
+    let tools = init_tools()?;
+    Ok(tools.get(short).and_then(|t| t.full.clone()))
 }
 
 pub fn get_plugin_type(short: &str) -> Result<Option<PluginType>> {
     let plugins = init_plugins()?;
-    Ok(plugins.as_ref().unwrap().get(short).cloned())
+    Ok(plugins.get(short).cloned())
 }
 
-pub fn list_tools() -> Result<BTreeMap<String, InstallStateTool>> {
+pub fn list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>> {
     let tools = init_tools()?;
-    Ok(tools.as_ref().unwrap().clone())
+    Ok(tools)
 }
 
 pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
     let tools = init_tools()?;
     let backend_type = tools
-        .as_ref()
-        .unwrap()
         .get(short)
         .and_then(|ist| ist.full.as_ref())
         .map(|full| BackendType::guess(full));
@@ -150,19 +155,15 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
 pub fn list_versions(short: &str) -> Result<Vec<String>> {
     let tools = init_tools()?;
     Ok(tools
-        .as_ref()
-        .unwrap()
         .get(short)
         .map(|tool| tool.versions.clone())
         .unwrap_or_default())
 }
 
 pub fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
-    let mut plugins = init_plugins()?;
-    plugins
-        .as_mut()
-        .unwrap()
-        .insert(short.to_string(), plugin_type);
+    let mut plugins = init_plugins()?.deref().clone();
+    plugins.insert(short.to_string(), plugin_type);
+    *INSTALL_STATE_PLUGINS.lock().unwrap() = Some(Arc::new(plugins));
     Ok(())
 }
 
@@ -232,5 +233,4 @@ pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
 pub fn reset() {
     *INSTALL_STATE_PLUGINS.lock().unwrap() = None;
     *INSTALL_STATE_TOOLS.lock().unwrap() = None;
-    backend::reset();
 }

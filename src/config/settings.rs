@@ -1,7 +1,7 @@
 use crate::cli::Cli;
-use crate::config::{system_config_files, DEFAULT_CONFIG_FILENAMES};
+use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::file::FindUp;
-use crate::{config, dirs, env, file};
+use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
@@ -12,8 +12,7 @@ use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
-use std::iter::once;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -258,32 +257,7 @@ impl Settings {
         Self::reset(Some(s));
     }
 
-    fn config_settings() -> Result<SettingsPartial> {
-        let global_config = &*env::MISE_GLOBAL_CONFIG_FILE;
-        let filename = global_config
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
-        // if the file doesn't exist or is actually a .tool-versions config
-        if !global_config.exists()
-            || filename == *env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME
-            || filename == ".tool-versions"
-        {
-            return Ok(Default::default());
-        }
-        Self::parse_settings_file(global_config)
-    }
-
-    fn deprecated_settings_file() -> Result<SettingsPartial> {
-        // TODO: show warning and merge with config file in a few weeks
-        let settings_file = &*env::MISE_SETTINGS_FILE;
-        if !settings_file.exists() {
-            return Ok(Default::default());
-        }
-        Self::from_file(settings_file)
-    }
-
-    pub fn parse_settings_file(path: &PathBuf) -> Result<SettingsPartial> {
+    pub fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
         let settings_file: SettingsFile = toml::from_str(&raw)?;
 
@@ -291,17 +265,9 @@ impl Settings {
     }
 
     fn all_settings_files() -> Vec<SettingsPartial> {
-        config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
+        ALL_TOML_CONFIG_FILES
             .iter()
-            .filter(|p| {
-                let filename = p.file_name().unwrap_or_default().to_string_lossy();
-                filename != *env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME
-                    && filename != ".tool-versions"
-            })
-            .map(Self::parse_settings_file)
-            .chain(once(Self::config_settings()))
-            .chain(once(Self::deprecated_settings_file()))
-            .chain(system_config_files().iter().map(Self::parse_settings_file))
+            .map(|p| Self::parse_settings_file(p))
             .filter_map(|cfg| match cfg {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
@@ -310,12 +276,6 @@ impl Settings {
                 }
             })
             .collect()
-    }
-
-    fn from_file(path: &PathBuf) -> Result<SettingsPartial> {
-        let raw = file::read_to_string(path)?;
-        let settings: SettingsPartial = toml::from_str(&raw)?;
-        Ok(settings)
     }
 
     pub fn hidden_configs() -> &'static HashSet<&'static str> {

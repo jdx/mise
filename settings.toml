@@ -166,6 +166,18 @@ type = "Bool"
 hide = true
 description = "Sets log level to debug"
 
+[default_config_filename]
+env = "MISE_DEFAULT_CONFIG_FILENAME"
+type = "String"
+default = "mise.toml"
+description = "The default config filename read. `mise use` and other commands that create new config files will use this value. This must be an env var."
+
+[default_tool_versions_filename]
+env = "MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+type = "String"
+default = ".tool-versions"
+description = "The default .tool-versions filename read. `mise use` and other commands that write to new config files will use this if asdf_compat=1. This must be an env var."
+
 [disable_backends]
 env = "MISE_DISABLE_BACKENDS"
 type = "ListString"
@@ -212,6 +224,13 @@ env = "MISE_ENV"
 type = "String"
 description = "Env to use for mise.<MISE_ENV>.toml files."
 optional = true
+docs = """
+Enables profile-specific config files such as `.mise.development.toml`.
+Use this for different env vars or different tool versions in
+development/staging/production environments. See
+[Configuration Environments](/configuration/environments) for more on how
+to use this feature.
+"""
 
 [env_file]
 env = "MISE_ENV_FILE"
@@ -268,6 +287,12 @@ type = "Duration"
 default = "10s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
 aliases = ["fetch_remote_version_timeout"]
+
+[global_config_file]
+env = "MISE_GLOBAL_CONFIG_FILE"
+type = "Path"
+optional = true
+description = "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var."
 
 [go_default_packages_file]
 env = "MISE_GO_DEFAULT_PACKAGES_FILE"
@@ -436,6 +461,12 @@ type = "String"
 optional = true
 description = "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo."
 
+[node.gpg_verify]
+env = "MISE_NODE_GPG_VERIFY"
+type = "Bool"
+optional = true
+description = "Use gpg to verify node tool signatures."
+
 [node.mirror_url]
 env = "MISE_NODE_MIRROR_URL"
 type = "Url"
@@ -468,6 +499,20 @@ You can install it with mise:
 mise use -g bun
 ```
 """
+
+[override_config_filenames]
+env = "MISE_OVERRIDE_CONFIG_FILENAMES"
+type = "ListString"
+default = []
+description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var."
+parse_env = "list_by_colon"
+
+[override_tool_versions_filename]
+env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAME"
+type = "ListString"
+default = []
+description = "If set, mise will ignore .tool-versions files and use these filename instead. Can be set to `none` to disable .tool-versions. This must be an env var."
+parse_env = "list_by_colon"
 
 [paranoid]
 env = "MISE_PARANOID"
@@ -775,6 +820,26 @@ env = "MISE_STATUS_MESSAGE_SHOW_TOOLS"
 type = "Bool"
 description = "Show configured env vars when entering a directory with a mise.toml file."
 
+[swift.gpg_verify]
+env = "MISE_SWIFT_GPG_VERIFY"
+type = "Bool"
+optional = true
+description = "Use gpg to verify swift tool signatures."
+
+[system_config_file]
+env = "MISE_SYSTEM_CONFIG_FILE"
+type = "Path"
+optional = true
+description = "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var."
+
+[task_disable_paths]
+env = "MISE_TASK_DISABLE_PATHS"
+type = "ListPath"
+rust_type = "BTreeSet<PathBuf>"
+default = []
+parse_env = "list_by_colon"
+description = "Paths that mise will not look for tasks in."
+
 [task_output]
 env = "MISE_TASK_OUTPUT"
 type = "String"
@@ -830,18 +895,14 @@ description = "This is a list of config paths that mise will automatically mark 
 
 [unix_default_file_shell_args]
 env = "MISE_UNIX_DEFAULT_FILE_SHELL_ARGS"
-type = "ListString"
-rust_type = "Vec<String>"
-default = ["sh"]
-parse_env = "list_by_comma"
+type = "String"
+default = "sh"
 description = "List of default shell arguments for unix to be used with `file`. For example `sh`."
 
 [unix_default_inline_shell_args]
 env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
-type = "ListString"
-rust_type = "Vec<String>"
-default = ["sh", "-c"]
-parse_env = "list_by_comma"
+type = "String"
+default = "sh -c -o errexit"
 description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh."
 
 [use_file_shell_for_executable_tasks]
@@ -884,17 +945,14 @@ default to using a vfox plugin for cmake.
 [windows_default_file_shell_args]
 env = "MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS"
 type = "ListString"
-rust_type = "Vec<String>"
-default = ["cmd", "/c"]
-parse_env = "list_by_comma"
+rust_type = "String"
+default = "cmd /c"
 description = "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe."
 
 [windows_default_inline_shell_args]
 env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
-type = "ListString"
-rust_type = "Vec<String>"
-default = ["cmd", "/c"]
-parse_env = "list_by_comma"
+type = "String"
+default = "cmd /c"
 description = "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe."
 
 [windows_executable_extensions]

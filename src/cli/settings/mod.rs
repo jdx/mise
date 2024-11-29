@@ -14,20 +14,28 @@ pub struct Settings {
     command: Option<Commands>,
 
     /// Setting name to get/set
-    #[clap(conflicts_with = "names")]
+    #[clap(conflicts_with = "all")]
     key: Option<String>,
 
     /// Setting value to set
-    #[clap(conflicts_with = "names")]
+    #[clap(conflicts_with = "all")]
     value: Option<String>,
 
-    /// Only display key names for each setting
-    #[clap(long, verbatim_doc_comment, alias = "keys")]
-    names: bool,
+    /// List all settings
+    #[clap(long, short)]
+    all: bool,
 
     /// Use the local config file instead of the global one
     #[clap(long, short, verbatim_doc_comment, global = true)]
     local: bool,
+
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    pub json: bool,
+
+    /// Output in TOML format
+    #[clap(long, short = 'T')]
+    pub toml: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -75,9 +83,11 @@ impl Settings {
                 }
             } else {
                 Commands::Ls(ls::SettingsLs {
+                    all: self.all,
                     key: None,
-                    names: self.names,
                     local: self.local,
+                    json: self.json,
+                    toml: self.toml,
                 })
             }
         });

@@ -1,6 +1,6 @@
 # `mise settings`
 
-- **Usage**: `mise settings [--names] [-l --local] [KEY] [VALUE] <SUBCOMMAND>`
+- **Usage**: `mise settings [FLAGS] [KEY] [VALUE] <SUBCOMMAND>`
 - **Source code**: [`src/cli/settings.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings.rs)
 
 Manage settings
@@ -23,15 +23,23 @@ Use the local config file instead of the global one
 
 ## Flags
 
-### `--names`
+### `-a --all`
 
-Only display key names for each setting
+List all settings
+
+### `-J --json`
+
+Output in JSON format
+
+### `-T --toml`
+
+Output in TOML format
 
 ## Subcommands
 
 - [`mise settings add [-l --local] <KEY> <VALUE>`](/cli/settings/add.md)
 - [`mise settings get [-l --local] <KEY>`](/cli/settings/get.md)
-- [`mise settings ls [-l --local] [--names] [KEY]`](/cli/settings/ls.md)
+- [`mise settings ls [FLAGS] [KEY]`](/cli/settings/ls.md)
 - [`mise settings set [-l --local] <KEY> <VALUE>`](/cli/settings/set.md)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
 

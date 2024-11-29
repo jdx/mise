@@ -4,7 +4,7 @@ use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
 use crate::cli::version;
 use crate::cli::version::VERSION;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::core::CORE_PLUGINS;
@@ -90,7 +90,7 @@ impl Doctor {
     }
 
     fn analyze_settings(&mut self) -> eyre::Result<()> {
-        match Settings::try_get() {
+        match cmd!("mise", "settings").read() {
             Ok(settings) => {
                 info::section("settings", settings)?;
             }

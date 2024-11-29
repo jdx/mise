@@ -89,7 +89,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
                 let path = Path::new(s);
-                let mut hash = hash::file_hash_sha256(path).unwrap();
+                let mut hash = hash::file_hash_sha256(path, None).unwrap();
                 if let Some(len) = args.get("len").and_then(Value::as_u64) {
                     hash = hash.chars().take(len as usize).collect();
                 }
@@ -320,7 +320,6 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use insta::assert_snapshot;
     use pretty_assertions::assert_str_eq;
 
     #[test]
@@ -475,7 +474,7 @@ mod tests {
     #[cfg(unix)]
     fn test_hash_file() {
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
-        assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
+        insta::assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
     }
 
     #[test]

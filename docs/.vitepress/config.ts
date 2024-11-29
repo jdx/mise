@@ -40,6 +40,10 @@ export default defineConfig({
         items: [
           { text: "mise.toml", link: "/configuration" },
           { text: "Settings", link: "/configuration/settings" },
+          {
+            text: "Configuration Environments",
+            link: "/configuration/environments",
+          },
         ],
       },
       {
@@ -64,6 +68,7 @@ export default defineConfig({
               { text: "Python", link: "/lang/python" },
               { text: "Ruby", link: "/lang/ruby" },
               { text: "Rust", link: "/lang/rust" },
+              { text: "Swift", link: "/lang/swift" },
             ],
           },
           {
@@ -92,7 +97,7 @@ export default defineConfig({
         text: "Environments",
         items: [
           { text: "Environment variables", link: "/environments/" },
-          { text: "Profiles", link: "/profiles" },
+          { text: "Hooks", link: "/hooks" },
           { text: "direnv", link: "/direnv" },
         ],
       },

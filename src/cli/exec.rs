@@ -11,7 +11,7 @@ use eyre::{eyre, Result};
 use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::env;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
@@ -34,11 +34,11 @@ pub struct Exec {
 
     /// Command string to execute (same as --command)
     #[clap(conflicts_with = "c", required_unless_present = "c", last = true)]
-    pub command: Option<Vec<OsString>>,
+    pub command: Option<Vec<String>>,
 
     /// Command string to execute
     #[clap(short, long = "command", value_hint = ValueHint::CommandString, conflicts_with = "command")]
-    pub c: Option<OsString>,
+    pub c: Option<String>,
 
     /// Number of jobs to run in parallel
     /// [default: 4]
@@ -57,7 +57,7 @@ impl Exec {
             ToolsetBuilder::new()
                 .with_args(&self.tool)
                 .with_default_to_latest(true)
-                .build(&CONFIG)?
+                .build(&Config::get())?
         });
         let opts = InstallOptions {
             force: false,
@@ -74,8 +74,27 @@ impl Exec {
             ts.notify_if_versions_missing()
         });
 
-        let (program, args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = measure!("env_with_path", { ts.env_with_path(&CONFIG)? });
+        let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
+        let env = measure!("env_with_path", { ts.env_with_path(&Config::get())? });
+
+        if program.rsplit('/').next() == Some("fish") {
+            let mut cmd = vec![];
+            for (k, v) in env.iter().filter(|(k, _)| *k != "PATH") {
+                cmd.push(format!(
+                    "set -gx {} {}",
+                    shell_escape::escape(k.into()),
+                    shell_escape::escape(v.into())
+                ));
+            }
+            for p in ts.list_final_paths()? {
+                cmd.push(format!(
+                    "fish_add_path -gm {}",
+                    shell_escape::escape(p.to_string_lossy())
+                ));
+            }
+            args.insert(0, cmd.join("\n"));
+            args.insert(0, "-C".into());
+        }
 
         time!("exec");
         self.exec(program, args, env)
@@ -142,9 +161,9 @@ impl Exec {
 
 fn parse_command(
     shell: &str,
-    command: &Option<Vec<OsString>>,
-    c: &Option<OsString>,
-) -> (OsString, Vec<OsString>) {
+    command: &Option<Vec<String>>,
+    c: &Option<String>,
+) -> (String, Vec<String>) {
     match (&command, &c) {
         (Some(command), _) => {
             let (program, args) = command.split_first().unwrap();

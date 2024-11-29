@@ -11,7 +11,6 @@ use crate::{file, github, hash};
 use eyre::bail;
 use itertools::Itertools;
 use regex::Regex;
-use sha2::Sha256;
 use std::env;
 use std::fmt::Debug;
 use std::path::Path;
@@ -68,7 +67,7 @@ impl Backend for UbiBackend {
         }
     }
 
-    fn install_version_impl(
+    fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
@@ -206,7 +205,7 @@ impl Backend for UbiBackend {
         } else if SETTINGS.lockfile && SETTINGS.experimental {
             ctx.pr
                 .set_message(format!("checksum generate {checksum_key}"));
-            let hash = hash::file_hash_prog::<Sha256>(file, Some(ctx.pr.as_ref()))?;
+            let hash = hash::file_hash_sha256(file, Some(ctx.pr.as_ref()))?;
             tv.checksums.insert(checksum_key, format!("sha256:{hash}"));
         }
         Ok(())

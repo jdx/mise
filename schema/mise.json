@@ -191,6 +191,16 @@
           "description": "Sets log level to debug",
           "type": "boolean"
         },
+        "default_config_filename": {
+          "default": "mise.toml",
+          "description": "The default config filename read. `mise use` and other commands that create new config files will use this value. This must be an env var.",
+          "type": "string"
+        },
+        "default_tool_versions_filename": {
+          "default": ".tool-versions",
+          "description": "The default .tool-versions filename read. `mise use` and other commands that write to new config files will use this if asdf_compat=1. This must be an env var.",
+          "type": "string"
+        },
         "disable_backends": {
           "default": [],
           "description": "Backends to disable such as `asdf` or `pipx`",
@@ -249,6 +259,10 @@
         "fetch_remote_versions_timeout": {
           "default": "10s",
           "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
+          "type": "string"
+        },
+        "global_config_file": {
+          "description": "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var.",
           "type": "string"
         },
         "go_default_packages_file": {
@@ -357,6 +371,10 @@
               "description": "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo.",
               "type": "string"
             },
+            "gpg_verify": {
+              "description": "Use gpg to verify node tool signatures.",
+              "type": "boolean"
+            },
             "mirror_url": {
               "description": "Mirror to download node tarballs from.",
               "type": "string"
@@ -375,6 +393,22 @@
               "description": "Use bun instead of npm if bun is installed and on PATH.",
               "type": "boolean"
             }
+          }
+        },
+        "override_config_filenames": {
+          "default": [],
+          "description": "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "override_tool_versions_filename": {
+          "default": [],
+          "description": "If set, mise will ignore .tool-versions files and use these filename instead. Can be set to `none` to disable .tool-versions. This must be an env var.",
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         },
         "paranoid": {
@@ -582,6 +616,27 @@
             }
           }
         },
+        "swift": {
+          "additionalProperties": false,
+          "properties": {
+            "gpg_verify": {
+              "description": "Use gpg to verify swift tool signatures.",
+              "type": "boolean"
+            }
+          }
+        },
+        "system_config_file": {
+          "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
+          "type": "string"
+        },
+        "task_disable_paths": {
+          "default": [],
+          "description": "Paths that mise will not look for tasks in.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "task_output": {
           "description": "Change output style when executing tasks.",
           "type": "string",
@@ -617,20 +672,14 @@
           }
         },
         "unix_default_file_shell_args": {
-          "default": ["sh"],
+          "default": "sh",
           "description": "List of default shell arguments for unix to be used with `file`. For example `sh`.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "string"
         },
         "unix_default_inline_shell_args": {
-          "default": ["sh", "-c"],
+          "default": "sh -c -o errexit",
           "description": "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "string"
         },
         "use_file_shell_for_executable_tasks": {
           "default": false,
@@ -652,7 +701,7 @@
           "type": "boolean"
         },
         "windows_default_file_shell_args": {
-          "default": ["cmd", "/c"],
+          "default": "cmd /c",
           "description": "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe.",
           "type": "array",
           "items": {
@@ -660,12 +709,9 @@
           }
         },
         "windows_default_inline_shell_args": {
-          "default": ["cmd", "/c"],
+          "default": "cmd /c",
           "description": "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "string"
         },
         "windows_executable_extensions": {
           "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
@@ -897,22 +943,63 @@
           }
         }
       ]
+    },
+    "hooks": {
+      "description": "hooks to run",
+      "type": "object",
+      "additionalProperties": {
+        "description": "script to run",
+        "type": "string"
+      }
+    },
+    "watch_files": {
+      "description": "files to watch for changes",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "file to watch for changes",
+        "additionalProperties": false,
+        "properties": {
+          "run": {
+            "type": "string",
+            "description": "script to run when file changes",
+            "items": {
+              "type": "string"
+            }
+          },
+          "patterns": {
+            "type": "array",
+            "description": "patterns to watch for",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   },
   "additionalProperties": false,
   "description": "config file for mise version manager (mise.toml)",
   "properties": {
     "alias": {
+      "description": "custom shorthands",
+      "type": "object",
       "additionalProperties": {
-        "additionalProperties": {
-          "description": "version alias points to",
-          "type": "string"
-        },
-        "description": "plugin to set aliases for",
-        "type": "object"
-      },
-      "description": "custom shorthands for versions",
-      "type": "object"
+        "oneOf": [
+          {
+            "description": "where the alias goes",
+            "type": "string"
+          },
+          {
+            "description": "tool to set aliases for",
+            "type": "object",
+            "additionalProperties": {
+              "description": "version alias points to",
+              "type": "string"
+            }
+          }
+        ]
+      }
     },
     "env": {
       "oneOf": [
@@ -972,6 +1059,18 @@
       },
       "description": "dev tools to use",
       "type": "object"
+    },
+    "hooks": {
+      "$ref": "#/$defs/hooks"
+    },
+    "vars": {
+      "$ref": "#/$defs/vars"
+    },
+    "watch_files": {
+      "$ref": "#/$defs/watch_files"
+    },
+    "_": {
+      "additionalProperties": true
     }
   }
 }

@@ -1,6 +1,11 @@
 use crate::config;
-use crate::config::{Settings, SETTINGS};
+use crate::config::settings::SettingsPartial;
+use crate::config::{Settings, ALL_TOML_CONFIG_FILES, SETTINGS};
+use crate::file::display_path;
+use crate::ui::table;
 use eyre::Result;
+use std::path::{Path, PathBuf};
+use tabled::{Table, Tabled};
 
 /// Show current settings
 ///
@@ -14,51 +19,103 @@ pub struct SettingsLs {
     /// List keys under this key
     pub key: Option<String>,
 
+    /// Display settings set to the default
+    #[clap(long, short)]
+    pub all: bool,
+
     /// Use the local config file instead of the global one
     #[clap(long, short)]
     pub local: bool,
 
-    /// Only display key names for each setting
-    #[clap(long, verbatim_doc_comment, alias = "keys")]
-    pub names: bool,
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    pub json: bool,
+
+    /// Output in TOML format
+    #[clap(long, short = 'T')]
+    pub toml: bool,
 }
 
 impl SettingsLs {
     pub fn run(self) -> Result<()> {
-        let mut settings = if self.local {
-            let partial = Settings::parse_settings_file(&config::local_toml_config_path())
-                .unwrap_or_default();
-            Settings::partial_as_dict(&partial)?
+        let mut rows: Vec<Row> = if self.local {
+            let source = config::local_toml_config_path();
+            let partial = Settings::parse_settings_file(&source).unwrap_or_default();
+            Row::from_partial(&partial, &source)?
         } else {
-            SETTINGS.as_dict()?
+            let mut rows = vec![];
+            if self.all {
+                for (k, v) in SETTINGS.as_dict()? {
+                    rows.extend(Row::from_toml(k.to_string(), v, None));
+                }
+            }
+            rows.extend(ALL_TOML_CONFIG_FILES.iter().rev().flat_map(|source| {
+                match Settings::parse_settings_file(source) {
+                    Ok(partial) => match Row::from_partial(&partial, source) {
+                        Ok(rows) => rows,
+                        Err(e) => {
+                            warn!("Error parsing {}: {}", display_path(source), e);
+                            vec![]
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Error parsing {}: {}", display_path(source), e);
+                        vec![]
+                    }
+                }
+            }));
+            rows
         };
         if let Some(key) = &self.key {
-            settings = settings.remove(key).unwrap().try_into()?
+            rows.retain(|r| &r.key == key || r.key.starts_with(&format!("{key}.")));
         }
         for k in Settings::hidden_configs() {
-            settings.remove(*k);
+            rows.retain(|r| &r.key != k || r.key.starts_with(&format!("{k}.")));
         }
-        for (k, v) in settings.clone().iter() {
-            if v.as_table().is_some_and(|t| t.is_empty()) {
-                settings.remove(k);
-            }
+        if self.json {
+            self.print_json(rows)?;
+        } else if self.toml {
+            self.print_toml(rows)?;
+        } else {
+            let mut table = Table::new(rows);
+            table::default_style(&mut table, false);
+            miseprintln!("{}", table.to_string());
         }
-        if self.names {
-            return self.print_names(&settings);
-        }
-        miseprintln!("{}", settings);
         Ok(())
     }
 
-    fn print_names(&self, settings: &toml::Table) -> Result<()> {
-        for (k, v) in settings {
-            miseprintln!("{k}");
-            if let toml::Value::Table(t) = v {
-                for (subkey, _) in t {
-                    miseprintln!("{k}.{subkey}");
-                }
+    fn print_json(&self, rows: Vec<Row>) -> Result<()> {
+        let mut table = serde_json::Map::new();
+        for row in rows {
+            if let Some((key, subkey)) = row.key.split_once('.') {
+                let subtable = table
+                    .entry(key)
+                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                let subtable = subtable.as_object_mut().unwrap();
+                subtable.insert(subkey.to_string(), toml_value_to_json_value(row.toml_value));
+            } else {
+                table.insert(row.key, toml_value_to_json_value(row.toml_value));
             }
         }
+        miseprintln!("{}", serde_json::to_string_pretty(&table)?);
+        Ok(())
+    }
+
+    fn print_toml(&self, rows: Vec<Row>) -> Result<()> {
+        let mut table = toml::Table::new();
+        for row in rows {
+            if let Some((key, subkey)) = row.key.split_once('.') {
+                let subtable = table
+                    .entry(key)
+                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+                let subtable = subtable.as_table_mut().unwrap();
+                subtable.insert(subkey.to_string(), row.toml_value);
+                continue;
+            } else {
+                table.insert(row.key, row.toml_value);
+            }
+        }
+        miseprintln!("{}", toml::to_string(&table)?);
         Ok(())
     }
 }
@@ -75,3 +132,62 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     ...
 "#
 );
+
+#[derive(Debug, Tabled)]
+#[tabled(rename_all = "PascalCase")]
+struct Row {
+    key: String,
+    value: String,
+    #[tabled(display_with = "Self::display_option_path")]
+    source: Option<PathBuf>,
+    #[tabled(skip)]
+    toml_value: toml::Value,
+}
+
+impl Row {
+    fn display_option_path(o: &Option<PathBuf>) -> String {
+        o.as_ref().map(display_path).unwrap_or_default()
+    }
+
+    fn from_partial(p: &SettingsPartial, source: &Path) -> Result<Vec<Self>> {
+        let rows = Settings::partial_as_dict(p)?
+            .into_iter()
+            .flat_map(|(k, v)| Self::from_toml(k.to_string(), v, Some(source.to_path_buf())))
+            .collect();
+        Ok(rows)
+    }
+
+    fn from_toml(k: String, v: toml::Value, source: Option<PathBuf>) -> Vec<Self> {
+        let mut rows = vec![];
+        if let Some(table) = v.as_table() {
+            if !table.is_empty() {
+                for (subkey, subvalue) in table {
+                    rows.push(Row {
+                        key: format!("{k}.{subkey}"),
+                        value: subvalue.to_string(),
+                        source: source.clone(),
+                        toml_value: subvalue.clone(),
+                    });
+                }
+            }
+        } else {
+            rows.push(Row {
+                key: k,
+                value: v.to_string(),
+                source,
+                toml_value: v,
+            });
+        }
+        rows
+    }
+}
+
+fn toml_value_to_json_value(v: toml::Value) -> serde_json::Value {
+    match v {
+        toml::Value::String(s) => s.into(),
+        toml::Value::Integer(i) => i.into(),
+        toml::Value::Boolean(b) => b.into(),
+        toml::Value::Float(f) => f.into(),
+        v => v.to_string().into(),
+    }
+}

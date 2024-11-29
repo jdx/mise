@@ -18,11 +18,13 @@ cosign = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
 "pipx:toml-sort" = "latest"
+pre-commit = "latest"
 #"python" = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 "ripgrep" = "latest"
 "shellcheck" = "0.10"
 "shfmt" = "3"
 slsa-verifier = "latest"
+wait-for-gh-rate-limit = "latest"
 
 [task_config]
-includes = ["tasks.toml", "tasks"]
+includes = ["tasks.toml", "xtasks"]

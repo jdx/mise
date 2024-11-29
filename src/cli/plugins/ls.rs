@@ -44,8 +44,8 @@ pub struct PluginsLs {
 impl PluginsLs {
     pub fn run(self, config: &Config) -> Result<()> {
         let mut plugins: BTreeMap<_, _> = install_state::list_plugins()?
-            .into_iter()
-            .map(|(k, p)| (k, (p, None)))
+            .iter()
+            .map(|(k, p)| (k.clone(), (*p, None)))
             .collect();
 
         if self.core {

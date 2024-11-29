@@ -314,7 +314,7 @@ impl Backend for AsdfBackend {
         Some(self.plugin())
     }
 
-    fn install_version_impl(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let mut sm = self.script_man_for_tv(&tv)?;
 
         for p in ctx.ts.list_paths() {

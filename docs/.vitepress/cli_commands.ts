@@ -96,6 +96,9 @@ export const commands: { [key: string]: Command } = {
   doctor: {
     hide: false,
   },
+  en: {
+    hide: false,
+  },
   env: {
     hide: false,
   },

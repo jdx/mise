@@ -7,18 +7,19 @@ use std::{panic, thread};
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
-use crate::config::{Config, CONFIG};
+use crate::config::Config;
 use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::errors::Error;
+use crate::hooks::Hooks;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::uv::UV_VENV;
-use crate::{backend, config, env};
+use crate::{backend, config, env, hooks};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use eyre::{eyre, Result, WrapErr};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use rayon::prelude::*;
 use serde_derive::Serialize;
@@ -199,6 +200,7 @@ impl Toolset {
         if versions.is_empty() {
             return Ok(vec![]);
         }
+        hooks::run_one_hook(self, Hooks::Preinstall);
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
         let mut installed = vec![];
@@ -228,7 +230,7 @@ impl Toolset {
                     .unwrap_or_default();
                 debug!("[{tv}] list_bin_paths: {bin_paths:?}");
                 let env = backend
-                    .exec_env(&CONFIG, self, tv)
+                    .exec_env(&Config::get(), self, tv)
                     .map_err(|e| {
                         warn!("Error running exec-env: {e:#}");
                     })
@@ -238,6 +240,7 @@ impl Toolset {
                 }
             }
         }
+        hooks::run_one_hook(self, Hooks::Postinstall);
         Ok(installed)
     }
 
@@ -508,18 +511,9 @@ impl Toolset {
         Ok(env)
     }
     pub fn env_with_path(&self, config: &Config) -> Result<BTreeMap<String, String>> {
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in config.path_dirs()?.clone() {
-            path_env.add(p);
-        }
-        if let Some(venv) = &*UV_VENV {
-            path_env.add(venv.venv_path.clone());
-        }
         let mut env = self.env(config)?;
-        if let Some(path) = env.get(&*PATH_KEY) {
-            path_env.add(PathBuf::from(path));
-        }
-        for p in self.list_paths() {
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in self.list_final_paths()? {
             path_env.add(p);
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
@@ -577,6 +571,23 @@ impl Toolset {
             })
             .filter(|p| p.parent().is_some())
             .collect()
+    }
+    /// same as list_paths but includes config.list_paths, venv paths, and MISE_ADD_PATHs from self.env()
+    pub fn list_final_paths(&self) -> Result<Vec<PathBuf>> {
+        let mut paths = IndexSet::new();
+        for p in Config::get().path_dirs()?.clone() {
+            paths.insert(p);
+        }
+        if let Some(venv) = &*UV_VENV {
+            paths.insert(venv.venv_path.clone());
+        }
+        if let Some(path) = self.env(&Config::get())?.get(&*PATH_KEY) {
+            paths.insert(PathBuf::from(path));
+        }
+        for p in self.list_paths() {
+            paths.insert(p);
+        }
+        Ok(paths.into_iter().collect())
     }
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_installed_versions()

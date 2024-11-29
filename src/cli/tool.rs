@@ -3,7 +3,7 @@ use itertools::Itertools;
 use serde_derive::Serialize;
 
 use crate::cli::args::BackendArg;
-use crate::config::CONFIG;
+use crate::config::Config;
 use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
 use crate::ui::table;
 
@@ -51,7 +51,7 @@ pub struct ToolInfoFilter {
 
 impl Tool {
     pub fn run(self) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().build(&CONFIG)?;
+        let mut ts = ToolsetBuilder::new().build(&Config::get())?;
         ts.resolve()?;
         let tvl = ts.versions.get(&self.backend);
         let tv = tvl.map(|tvl| tvl.versions.first().unwrap());

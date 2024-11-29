@@ -6,7 +6,7 @@ The code for this is inside of the mise repository at [`./src/backend/spm.rs`](h
 
 ## Dependencies
 
-This relies on having `swift` installed. You can install it according to the [instructions](https://www.swift.org/install).
+This relies on having `swift` installed. You can either install it [manually](https://www.swift.org/install) or [with mise](/lang/swift).
 
 > [!NOTE]
 > If you have Xcode installed and selected in your system via `xcode-select`, Swift is already available through the toolchain embedded in the Xcode installation.

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::cli::args::ToolArg;
-use crate::config::CONFIG;
+use crate::config::Config;
 use crate::toolset::{OutdatedInfo, ToolsetBuilder};
 use crate::ui::table;
 use eyre::Result;
@@ -41,7 +41,9 @@ pub struct Outdated {
 
 impl Outdated {
     pub fn run(self) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&CONFIG)?;
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&Config::get())?;
         let tool_set = self
             .tool
             .iter()

@@ -156,6 +156,7 @@ jobs:
       - run: tar -C "$HOME" -xvJf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.xz"
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - run: mise -v
+      - run: mise i
       - name: Run e2e tests
         uses: nick-fields/retry@v3
         env:

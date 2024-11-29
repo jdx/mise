@@ -369,11 +369,7 @@ impl Backend for RubyPlugin {
         Ok(v)
     }
 
-    fn install_version_impl(
-        &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
         if let Err(err) = self.update_build_tool(Some(ctx)) {
             warn!("ruby build tool update error: {err:#}");
         }

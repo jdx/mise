@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
+use crate::config::{
+    config_file, config_files_in_dir, ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES, SETTINGS,
+};
+use crate::file::{display_path, remove_file};
+use crate::{config, dirs, env, file};
 use clap::ValueHint;
 use eyre::Result;
-
-use crate::config::{config_file, DEFAULT_CONFIG_FILENAMES, SETTINGS};
-use crate::file::{display_path, remove_file};
-use crate::{config, dirs, file};
 
 /// Marks a config file as trusted
 ///
@@ -140,13 +141,10 @@ impl Trust {
     fn config_file(&self) -> Option<PathBuf> {
         self.config_file.as_ref().map(|config_file| {
             if config_file.is_dir() {
-                for filename in DEFAULT_CONFIG_FILENAMES.iter().rev() {
-                    let path = config_file.join(filename);
-                    if path.exists() {
-                        return path;
-                    }
-                }
-                config_file.join("mise.toml")
+                config_files_in_dir(config_file)
+                    .last()
+                    .cloned()
+                    .unwrap_or(config_file.join(&*env::MISE_DEFAULT_CONFIG_FILENAME))
             } else {
                 config_file.clone()
             }
@@ -154,9 +152,7 @@ impl Trust {
     }
 
     fn get_next(&self) -> Option<PathBuf> {
-        config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
-            .first()
-            .cloned()
+        ALL_CONFIG_FILES.first().cloned()
     }
     fn get_next_untrusted(&self) -> Option<PathBuf> {
         config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)

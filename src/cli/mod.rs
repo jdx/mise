@@ -1,5 +1,5 @@
 use crate::cli::args::ToolArg;
-use crate::config::{Settings, CONFIG};
+use crate::config::{Config, Settings};
 use crate::exit::exit;
 use crate::ui::ctrlc;
 use crate::{logger, migrate, shims};
@@ -20,6 +20,7 @@ mod current;
 mod deactivate;
 mod direnv;
 mod doctor;
+mod en;
 mod env;
 pub mod exec;
 mod external;
@@ -112,6 +113,8 @@ pub struct Cli {
     /// Set the profile (environment)
     #[clap(short = 'P', long, global = true, hide = true)]
     pub profile: Option<String>,
+    #[clap(long, short, hide = true)]
+    pub shell: Option<String>,
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
     #[clap(short, long, hide = true, value_name = "TOOL@VERSION")]
@@ -159,6 +162,7 @@ pub enum Commands {
     Deactivate(deactivate::Deactivate),
     Direnv(direnv::Direnv),
     Doctor(doctor::Doctor),
+    En(en::En),
     Env(env::Env),
     Exec(exec::Exec),
     Generate(generate::Generate),
@@ -219,6 +223,7 @@ impl Commands {
             Self::Deactivate(cmd) => cmd.run(),
             Self::Direnv(cmd) => cmd.run(),
             Self::Doctor(cmd) => cmd.run(),
+            Self::En(cmd) => cmd.run(),
             Self::Env(cmd) => cmd.run(),
             Self::Exec(cmd) => cmd.run(),
             Self::Generate(cmd) => cmd.run(),
@@ -311,7 +316,7 @@ impl Cli {
             Ok(cmd)
         } else {
             if let Some(task) = self.task {
-                if CONFIG.tasks()?.contains_key(&task) {
+                if Config::get().tasks()?.contains_key(&task) {
                     return Ok(Commands::Run(run::Run {
                         task,
                         args: self.task_args.unwrap_or_default(),
@@ -325,10 +330,12 @@ impl Cli {
                         no_timings: self.no_timings,
                         output: run::TaskOutput::Prefix,
                         prefix: self.prefix,
+                        shell: self.shell,
+                        quiet: self.quiet,
                         raw: self.raw,
                         timings: self.timings,
-                        tool: Default::default(),
                         tmpdir: Default::default(),
+                        tool: Default::default(),
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(

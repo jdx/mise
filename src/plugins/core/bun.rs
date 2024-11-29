@@ -98,11 +98,7 @@ impl Backend for BunPlugin {
         Ok(vec![".bun-version".into()])
     }
 
-    fn install_version_impl(
-        &self,
-        ctx: &InstallContext,
-        mut tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
         let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;

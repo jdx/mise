@@ -1,13 +1,12 @@
 use crate::exit;
 use std::collections::{BTreeSet, HashSet};
-use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
@@ -26,10 +25,11 @@ pub fn handle_shim() -> Result<()> {
         return Ok(());
     }
     logger::init();
-    let args = env::ARGS.read().unwrap();
+    let mut args = env::ARGS.read().unwrap().clone();
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    let mut args: Vec<OsString> = args.iter().map(OsString::from).collect();
-    args[0] = which_shim(&env::MISE_BIN_NAME)?.into();
+    args[0] = which_shim(&env::MISE_BIN_NAME)?
+        .to_string_lossy()
+        .to_string();
     env::set_var("__MISE_SHIM", "1");
     let exec = Exec {
         tool: vec![],
@@ -44,7 +44,7 @@ pub fn handle_shim() -> Result<()> {
 }
 
 fn which_shim(bin_name: &str) -> Result<PathBuf> {
-    let mut ts = ToolsetBuilder::new().build(&CONFIG)?;
+    let mut ts = ToolsetBuilder::new().build(&Config::get())?;
     if let Some((p, tv)) = ts.which(bin_name) {
         if let Some(bin) = p.which(&tv, bin_name)? {
             trace!(

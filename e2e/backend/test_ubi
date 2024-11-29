@@ -15,3 +15,11 @@ assert "cat mise.toml" '[tools]
 "ubi:cilium/cilium-cli" = { version = "latest", exe = "cilium" }'
 
 MISE_USE_VERSIONS_HOST=0 assert_not_contains "mise ls-remote cargo-binstall" "binstalk"
+
+# the following tests that tool options from ubi are still retained even if the default backend changes to aqua
+assert "MISE_DISABLE_BACKENDS=aqua mise use gh"
+cat "$MISE_DATA_DIR/installs/gh/.mise.backend"
+assert_contains "mise tool gh" "ubi:cli/cli[exe=gh]"
+assert "mise i -f gh"
+cat "$MISE_DATA_DIR/installs/gh/.mise.backend"
+assert_contains "mise tool gh" "ubi:cli/cli[exe=gh]"

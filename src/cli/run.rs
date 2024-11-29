@@ -9,7 +9,7 @@ use std::time::SystemTime;
 use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
-use crate::config::{CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::errors::Error;
 use crate::file::display_path;
 use crate::http::HTTP;
@@ -96,6 +96,14 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
     pub interleave: bool,
 
+    /// Shell to use to run toml tasks
+    ///
+    /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
+    /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
+    /// Or it can be overridden with the `shell` property on a task.
+    #[clap(long, short, verbatim_doc_comment)]
+    pub shell: Option<String>,
+
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
     #[clap(short, long, value_name = "TOOL@VERSION")]
@@ -123,6 +131,10 @@ pub struct Run {
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
     #[clap(long, alias = "no-timing", verbatim_doc_comment)]
     pub no_timings: bool,
+
+    /// Don't show extra output
+    #[clap(long, short, verbatim_doc_comment)]
+    pub quiet: bool,
 
     #[clap(skip)]
     pub is_linear: bool,
@@ -190,7 +202,7 @@ impl Run {
                 if regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#).is_match(&t) {
                     let path = PathBuf::from(&t);
                     if path.exists() {
-                        let config_root = CONFIG
+                        let config_root = Config::get()
                             .project_root
                             .clone()
                             .or_else(|| dirs::CWD.clone())
@@ -199,7 +211,8 @@ impl Run {
                         return Ok(vec![task.with_args(args)]);
                     }
                 }
-                let tasks = CONFIG
+                let config = Config::get();
+                let tasks = config
                     .tasks_with_aliases()?
                     .get_matching(&t)?
                     .into_iter()
@@ -227,17 +240,19 @@ impl Run {
 
         ctrlc::exit_on_ctrl_c(false);
 
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&CONFIG)?;
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&Config::get())?;
 
         ts.install_missing_versions(&InstallOptions {
             missing_args_only: !SETTINGS.task_run_auto_install,
             ..Default::default()
         })?;
-        let mut env = ts.env_with_path(&CONFIG)?;
+        let mut env = ts.env_with_path(&Config::get())?;
         if let Some(cwd) = &*dirs::CWD {
             env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
         }
-        if let Some(root) = &CONFIG.project_root {
+        if let Some(root) = Config::get().project_root.clone() {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
             env.insert("root".into(), root.display().to_string());
         }
@@ -252,6 +267,9 @@ impl Run {
         self.is_linear = tasks.is_linear();
         if let Some(task) = tasks.all().next() {
             self.output = self.output(task)?;
+            if let TaskOutput::Quiet = self.output {
+                self.quiet = true;
+            }
         }
 
         let tasks = Mutex::new(tasks);
@@ -323,11 +341,15 @@ impl Run {
     fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
-            eprintln!("{prefix} skipping task");
+            if !self.quiet {
+                eprintln!("{prefix} skipping task");
+            }
             return Ok(());
         }
         if !self.force && self.sources_are_fresh(task)? {
-            eprintln!("{prefix} sources up-to-date, skipping");
+            if !self.quiet {
+                eprintln!("{prefix} sources up-to-date, skipping");
+            }
             return Ok(());
         }
 
@@ -401,7 +423,9 @@ impl Run {
                 .bright()
                 .to_string(),
         );
-        eprintln!("{prefix} {cmd}");
+        if !self.quiet {
+            eprintln!("{prefix} {cmd}");
+        }
 
         if script.starts_with("#!") {
             let dir = tempfile::tempdir()?;
@@ -413,7 +437,7 @@ impl Run {
             file::make_executable(&file)?;
             self.exec(&file, args, task, env, prefix)
         } else {
-            let default_shell = self.clone_default_inline_shell();
+            let default_shell = self.clone_default_inline_shell()?;
             let (program, args) = self.get_cmd_program_and_args(script, task, args, default_shell);
             self.exec_program(&program, &args, task, env, prefix)
         }
@@ -424,7 +448,7 @@ impl Run {
         file: &Path,
         task: &Task,
         args: &[String],
-    ) -> (String, Vec<String>) {
+    ) -> Result<(String, Vec<String>)> {
         let display = file.display().to_string();
         if file::is_executable(file) && !SETTINGS.use_file_shell_for_executable_tasks {
             if cfg!(windows) && file.extension().is_some_and(|e| e == "ps1") {
@@ -432,11 +456,11 @@ impl Run {
                     .into_iter()
                     .chain(args.iter().cloned())
                     .collect_vec();
-                return ("pwsh".to_string(), args);
+                return Ok(("pwsh".to_string(), args));
             }
-            return (display, args.to_vec());
+            return Ok((display, args.to_vec()));
         }
-        let default_shell = self.clone_default_file_shell();
+        let default_shell = self.clone_default_file_shell()?;
         let shell = self.get_shell(task, default_shell);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
@@ -444,7 +468,7 @@ impl Run {
         if !args.is_empty() {
             full_args.extend(args.iter().cloned());
         }
-        (shell[0].clone(), full_args[1..].to_vec())
+        Ok((shell[0].clone(), full_args[1..].to_vec()))
     }
 
     fn get_cmd_program_and_args(
@@ -458,11 +482,6 @@ impl Run {
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
         let mut script = script.to_string();
-        if script.lines().count() > 1
-            && (shell[0] == "sh" || shell[0] == "bash" || shell[0] == "zsh")
-        {
-            script = format!("set -e\n{}", script);
-        }
         if !args.is_empty() {
             #[cfg(windows)]
             {
@@ -477,18 +496,28 @@ impl Run {
         (full_args[0].clone(), full_args[1..].to_vec())
     }
 
-    fn clone_default_inline_shell(&self) -> Vec<String> {
-        #[cfg(windows)]
-        return SETTINGS.windows_default_inline_shell_args.clone();
-        #[cfg(unix)]
-        return SETTINGS.unix_default_inline_shell_args.clone();
+    fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
+        if let Some(shell) = &self.shell {
+            Ok(shell_words::split(shell)?)
+        } else if cfg!(windows) {
+            Ok(shell_words::split(
+                &SETTINGS.windows_default_inline_shell_args,
+            )?)
+        } else {
+            Ok(shell_words::split(
+                &SETTINGS.unix_default_inline_shell_args,
+            )?)
+        }
     }
 
-    fn clone_default_file_shell(&self) -> Vec<String> {
-        #[cfg(windows)]
-        return SETTINGS.windows_default_file_shell_args.clone();
-        #[cfg(unix)]
-        return SETTINGS.unix_default_file_shell_args.clone();
+    fn clone_default_file_shell(&self) -> Result<Vec<String>> {
+        if cfg!(windows) {
+            Ok(shell_words::split(
+                &SETTINGS.windows_default_file_shell_args,
+            )?)
+        } else {
+            Ok(shell_words::split(&SETTINGS.unix_default_file_shell_args)?)
+        }
     }
 
     fn get_shell(&self, task: &Task, default_shell: Vec<String>) -> Vec<String> {
@@ -527,7 +556,9 @@ impl Run {
 
         let cmd = format!("{} {}", display_path(file), args.join(" "));
         let cmd = trunc(&style::ebold(format!("$ {cmd}")).bright().to_string());
-        eprintln!("{prefix} {cmd}");
+        if !self.quiet {
+            eprintln!("{prefix} {cmd}");
+        }
 
         self.exec(file, &args, task, &env, prefix)
     }
@@ -540,7 +571,7 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
-        let (program, args) = self.get_file_program_and_args(file, task, args);
+        let (program, args) = self.get_file_program_and_args(file, task, args)?;
         self.exec_program(&program, &args, task, env, prefix)
     }
 
@@ -553,19 +584,19 @@ impl Run {
         prefix: &str,
     ) -> Result<()> {
         let program = program.to_executable();
-        let mut cmd = CmdLineRunner::new(program.clone()).args(args).envs(env);
+        let mut cmd = CmdLineRunner::new(program.clone())
+            .args(args)
+            .envs(env)
+            .raw(self.raw(task));
         cmd.with_pass_signals();
         match self.output {
             TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
-            TaskOutput::Interleave => {
+            TaskOutput::Quiet | TaskOutput::Interleave => {
                 cmd = cmd
                     .stdin(Stdio::inherit())
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit())
             }
-        }
-        if self.raw(task) {
-            cmd.with_raw();
         }
         let dir = self.cwd(task)?;
         if !dir.exists() {
@@ -585,7 +616,9 @@ impl Run {
     }
 
     fn output(&self, task: &Task) -> Result<TaskOutput> {
-        if self.prefix {
+        if self.quiet {
+            Ok(TaskOutput::Quiet)
+        } else if self.prefix {
             Ok(TaskOutput::Prefix)
         } else if self.interleave {
             Ok(TaskOutput::Interleave)
@@ -611,7 +644,8 @@ impl Run {
     }
 
     fn prompt_for_task(&self) -> Result<Task> {
-        let tasks = CONFIG.tasks()?;
+        let config = Config::get();
+        let tasks = config.tasks()?;
         ensure!(
             !tasks.is_empty(),
             "no tasks defined. see {url}",
@@ -705,7 +739,7 @@ impl Run {
         } else if let Some(d) = task.dir()? {
             Ok(d)
         } else {
-            Ok(CONFIG
+            Ok(Config::get()
                 .project_root
                 .clone()
                 .unwrap_or_else(|| env::current_dir().unwrap()))
@@ -721,14 +755,14 @@ impl Run {
     }
 
     fn err_no_task(&self, name: &str) -> Result<()> {
-        if CONFIG.tasks().is_ok_and(|t| t.is_empty()) {
+        if Config::get().tasks().is_ok_and(|t| t.is_empty()) {
             bail!(
                 "no tasks defined in {}. Are you in a project directory?",
                 display_path(dirs::CWD.clone().unwrap_or_default())
             );
         }
         if let Some(cwd) = &*dirs::CWD {
-            let includes = CONFIG.task_includes_for_dir(cwd);
+            let includes = Config::get().task_includes_for_dir(cwd);
             let path = includes
                 .iter()
                 .map(|d| d.join(name))
@@ -754,7 +788,8 @@ impl Run {
     }
 
     fn timings(&self) -> bool {
-        !self.no_timings
+        !self.quiet
+            && !self.no_timings
             && SETTINGS
                 .task_timings
                 .unwrap_or(self.output == TaskOutput::Prefix)
@@ -876,6 +911,7 @@ pub enum TaskOutput {
     #[default]
     Prefix,
     Interleave,
+    Quiet,
 }
 
 fn trunc(msg: &str) -> String {

@@ -28,19 +28,16 @@ permissions:
 jobs:
   build-ubuntu:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: rui314/setup-mold@v1
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build
       - run: |
-          source <(cargo llvm-cov show-env --export-prefix)
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
@@ -50,10 +47,18 @@ jobs:
         with:
           name: mise-ubuntu-latest
           path: target/debug/mise
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise i
+      - run: mise x -- wait-for-gh-rate-limit
 
   build-macos:
     runs-on: macos-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,10 +74,18 @@ jobs:
         with:
           name: mise-macos-latest
           path: target/debug/mise
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise i
+      - run: mise x -- wait-for-gh-rate-limit
 
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,6 +102,14 @@ jobs:
         with:
           name: mise-windows-latest
           path: target/debug/mise.exe
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise i
+      - run: mise x -- wait-for-gh-rate-limit
 
   unit:
     strategy:
@@ -110,7 +131,7 @@ jobs:
         if: ${{ matrix.os == 'ubuntu-latest' }}
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny,cargo-msrv,cargo-machete,cargo-llvm-cov
+          tool: cargo-deny,cargo-msrv,cargo-machete
       - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
@@ -128,19 +149,12 @@ jobs:
             ~/.cache/mise
       - run: mise install
       - run: mise x -- bun i
-      - run: |
-          source <(cargo llvm-cov show-env --export-prefix)
-          mise x -- cargo llvm-cov --all-features --lcov --output-path "unit-${{matrix.os}}.lcov"
+      - run: mise x -- cargo test --all-features
       - run: cargo deny check
       - run: cargo msrv verify
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
       - run: mise run lint
-      - uses: actions/upload-artifact@v4
-        with:
-          name: unit-${{matrix.os}}.lcov
-          path: unit-${{matrix.os}}.lcov
-          if-no-files-found: error
 
   nightly:
     runs-on: ubuntu-latest
@@ -180,8 +194,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - run: rustup component add llvm-tools-preview
       - name: Install build and test dependencies
         run: |
           sudo apt-get install \
@@ -208,47 +220,21 @@ jobs:
             ~/.local/share/mise
             ~/.cache/mise
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - run: mise x -- wait-for-gh-rate-limit
       - name: Test w/ coverage
         uses: nick-fields/retry@v3
         env:
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
-          TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
+          TEST_ALL: ${{github.head_ref == 'release' && '1' || '0'}}
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: ./tasks/test/coverage
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{matrix.tranche}}.lcov
-          path: coverage-${{matrix.tranche}}.lcov
-          if-no-files-found: error
-  coverage-report:
-    name: coverage-report
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [coverage, unit]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: "*.lcov"
-          path: .
-          merge-multiple: true
-      - run: |
-          pip install lcov_cobertura
-          npx lcov-result-merger '*.lcov' coverage.lcov
-          lcov_cobertura coverage.lcov --output coverage.xml
-      - uses: codacy/codacy-coverage-reporter-action@v1
-        continue-on-error: true
-        with:
-          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          coverage-reports: coverage.lcov
+          command: mise run test:coverage
   windows-unit:
     runs-on: windows-latest
     timeout-minutes: 30
-    needs: [build-windows]
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
@@ -257,19 +243,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: unit
-      #        - uses: actions/download-artifact@v4
-      #          with:
-      #            name: mise-windows-latest
-      #            path: target/debug
-      #        - run: Add-Content "$env:GITHUB_PATH" "$env:GITHUB_WORKSPACE/target/debug"
-      #        - uses: actions/cache@v4
-      #          with:
-      #            key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
-      #            path: |
-      #              ~/.local/share/mise
-      #              ~/.cache/mise
-      #        - run: mise -v
-      #        - run: mise install
       - name: cargo test
         uses: nick-fields/retry@v3
         with:
@@ -315,11 +288,11 @@ jobs:
     needs: [build-macos, build-windows]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    if: startsWith(github.ref, 'refs/heads/release')
+    if: github.head_ref == 'release'
     env:
       TEST_TRANCHE: ${{matrix.tranche}}
       TEST_TRANCHE_COUNT: 4
-      TEST_ALL: ${{github.ref_name == 'release' && '1' || '0'}}
+      TEST_ALL: ${{github.head_ref == 'release' && '1' || '0'}}
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
       MISE_DISABLE_TOOLS: |

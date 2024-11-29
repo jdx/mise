@@ -41,6 +41,7 @@ mod git;
 pub(crate) mod github;
 mod hash;
 mod hook_env;
+mod hooks;
 mod http;
 mod install_context;
 mod lock_file;
@@ -66,9 +67,11 @@ mod toolset;
 mod ui;
 mod uv;
 mod versions_host;
+mod watch_files;
 
 pub(crate) use crate::exit::exit;
 pub(crate) use crate::toolset::install_state;
+use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
@@ -79,6 +82,9 @@ fn main() -> eyre::Result<()> {
             Err(err) => handle_err(err),
         }?;
     });
+    if let Some(mpr) = MultiProgressReport::try_get() {
+        mpr.stop()?;
+    }
     Ok(())
 }
 

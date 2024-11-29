@@ -2,13 +2,14 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, CONFIG, SETTINGS};
+use crate::config::{Config, SETTINGS};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CORE_PLUGINS;
@@ -26,7 +27,6 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use sha2::Sha256;
 
 pub mod aqua;
 pub mod asdf;
@@ -46,12 +46,11 @@ pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<String>>;
 
-static TOOLS: Mutex<Option<BackendMap>> = Mutex::new(None);
+static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
-pub fn load_tools() {
-    let mut memo_tools = TOOLS.lock().unwrap();
-    if memo_tools.is_some() {
-        return;
+fn load_tools() -> Arc<BackendMap> {
+    if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
+        return memo_tools;
     }
     time!("load_tools start");
     let core_tools = CORE_PLUGINS.values().cloned().collect::<Vec<ABackend>>();
@@ -63,9 +62,9 @@ pub fn load_tools() {
                 warn!("{err:#}");
             })
             .unwrap_or_default()
-            .into_values()
+            .values()
             .filter(|ist| ist.full.is_some())
-            .flat_map(|ist| arg_to_backend(ist.into())),
+            .flat_map(|ist| arg_to_backend(ist.clone().into())),
     );
     time!("load_tools install_state");
     tools.retain(|backend| !SETTINGS.disable_tools().contains(backend.id()));
@@ -79,30 +78,24 @@ pub fn load_tools() {
         .into_iter()
         .map(|backend| (backend.ba().short.clone(), backend))
         .collect();
-    *memo_tools = Some(tools.clone());
+    let tools = Arc::new(tools);
+    *TOOLS.lock().unwrap() = Some(tools.clone());
     time!("load_tools done");
+    tools
 }
 
 pub fn list() -> BackendList {
-    load_tools();
-    TOOLS
-        .lock()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .values()
-        .cloned()
-        .collect()
+    load_tools().values().cloned().collect()
 }
 
 pub fn get(ba: &BackendArg) -> Option<ABackend> {
-    load_tools();
-    let mut m = TOOLS.lock().unwrap();
-    let backends = m.as_mut().unwrap();
+    let backends = load_tools();
     if let Some(backend) = backends.get(&ba.short) {
         Some(backend.clone())
     } else if let Some(backend) = arg_to_backend(ba.clone()) {
+        let mut backends = backends.deref().clone();
         backends.insert(ba.short.clone(), backend.clone());
+        *TOOLS.lock().unwrap() = Some(Arc::new(backends));
         Some(backend)
     } else {
         None
@@ -110,9 +103,9 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
 }
 
 pub fn remove(short: &str) {
-    let mut m = TOOLS.lock().unwrap();
-    let backends = m.as_mut().unwrap();
+    let mut backends = load_tools().deref().clone();
     backends.remove(short);
+    *TOOLS.lock().unwrap() = Some(Arc::new(backends));
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
@@ -396,7 +389,7 @@ pub trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
-        let tv = match self.install_version_impl(&ctx, tv) {
+        let tv = match self.install_version_(&ctx, tv) {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
@@ -440,15 +433,11 @@ pub trait Backend: Debug + Send + Sync {
             .with_pr(ctx.pr.as_ref())
             .arg("-c")
             .arg(script)
-            .envs(self.exec_env(&CONFIG, ctx.ts, tv)?)
+            .envs(self.exec_env(&Config::get(), ctx.ts, tv)?)
             .execute()?;
         Ok(())
     }
-    fn install_version_impl(
-        &self,
-        ctx: &InstallContext,
-        tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion>;
+    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion>;
     fn uninstall_version(
         &self,
         tv: &ToolVersion,
@@ -471,7 +460,9 @@ pub trait Backend: Debug + Send + Sync {
             remove_all_with_warning(dir)
         };
         rmdir(&tv.install_path())?;
-        rmdir(&tv.download_path())?;
+        if !SETTINGS.always_keep_download {
+            rmdir(&tv.download_path())?;
+        }
         rmdir(&tv.cache_path())?;
         Ok(())
     }
@@ -526,7 +517,9 @@ pub trait Backend: Debug + Send + Sync {
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
         let _ = remove_all_with_warning(tv.install_path());
-        let _ = remove_all_with_warning(tv.download_path());
+        if !SETTINGS.always_keep_download {
+            let _ = remove_all_with_warning(tv.download_path());
+        }
         let _ = remove_all_with_warning(tv.cache_path());
         let _ = file::remove_file(tv.install_path()); // removes if it is a symlink
         file::create_dir_all(tv.install_path())?;
@@ -542,7 +535,7 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
     fn cleanup_install_dirs(&self, tv: &ToolVersion) {
-        if !SETTINGS.always_keep_download && !SETTINGS.always_keep_install {
+        if !SETTINGS.always_keep_download {
             let _ = remove_all_with_warning(tv.download_path());
         }
     }
@@ -642,7 +635,7 @@ pub trait Backend: Debug + Send + Sync {
             }
         } else if SETTINGS.lockfile && SETTINGS.experimental {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_prog::<Sha256>(file, Some(ctx.pr.as_ref()))?;
+            let hash = hash::file_hash_sha256(file, Some(ctx.pr.as_ref()))?;
             tv.checksums.insert(filename, format!("sha256:{hash}"));
         }
         Ok(())

@@ -1,15 +1,15 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt::{Debug, Formatter};
-use std::iter::once;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock, RwLock};
-
 use eyre::{ensure, eyre, Context, Result};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
 use rayon::prelude::*;
 pub use settings::Settings;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::{Debug, Formatter};
+use std::iter::once;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::Duration;
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
@@ -26,14 +26,17 @@ use crate::toolset::{
     install_state, ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, ToolsetBuilder,
 };
 use crate::ui::style;
-use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims};
+use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 
 pub mod config_file;
 pub mod env_directive;
 pub mod settings;
 pub mod tracking;
 
+use crate::hook_env::WatchFilePattern;
+use crate::hooks::Hook;
 use crate::plugins::PluginType;
+use crate::watch_files::WatchFile;
 pub use settings::SETTINGS;
 
 type AliasMap = IndexMap<String, Alias>;
@@ -62,7 +65,6 @@ pub struct Alias {
     pub versions: IndexMap<String, String>,
 }
 
-pub static CONFIG: Lazy<Arc<Config>> = Lazy::new(Config::get);
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 
 pub fn is_loaded() -> bool {
@@ -82,6 +84,7 @@ impl Config {
         Ok(config)
     }
     pub fn load() -> Result<Self> {
+        reset();
         time!("load start");
         let idiomatic_files = load_idiomatic_files();
         time!("load idiomatic_files");
@@ -319,6 +322,7 @@ impl Config {
     pub fn task_includes_for_dir(&self, dir: &Path) -> Vec<PathBuf> {
         self.configs_at_root(dir)
             .iter()
+            .rev()
             .find_map(|cf| cf.task_config().includes.clone())
             .unwrap_or_else(default_task_includes)
             .into_par_iter()
@@ -344,11 +348,11 @@ impl Config {
                 p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml"
             })
             .map(|p| {
-                self.load_task_file(p).unwrap_or_else(|err| {
-                    warn!("loading tasks in {}: {err}", display_path(p));
-                    vec![]
-                })
+                self.load_task_file(p)
+                    .wrap_err_with(|| format!("loading tasks in {}", display_path(p)))
             })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
             .flatten()
             .collect::<Vec<_>>();
         let file_tasks = includes
@@ -411,7 +415,7 @@ impl Config {
     }
 
     fn load_system_tasks(&self) -> Result<Vec<Task>> {
-        let cf = self.config_files.get(&dirs::SYSTEM.join("config.toml"));
+        let cf = self.config_files.get(&*env::MISE_SYSTEM_CONFIG_FILE);
         let config_root = cf
             .and_then(|cf| cf.project_root())
             .map(|p| p.to_path_buf())
@@ -423,7 +427,6 @@ impl Config {
             .collect())
     }
 
-    #[allow(clippy::borrowed_box)]
     fn load_config_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
         cf.map(|cf| cf.tasks())
             .unwrap_or_default()
@@ -432,7 +435,6 @@ impl Config {
             .collect()
     }
 
-    #[allow(clippy::borrowed_box)]
     fn load_file_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>, config_root: &Path) -> Vec<Task> {
         let includes = match cf {
             Some(cf) => cf
@@ -471,6 +473,7 @@ impl Config {
             .try_collect::<_, Vec<PathBuf>, _>()?
             .into_par_iter()
             .filter(|p| file::is_executable(p))
+            .filter(|p| !SETTINGS.task_disable_paths.iter().any(|d| p.starts_with(d)))
             .map(|path| Task::from_path(&path, root, config_root))
             .collect()
     }
@@ -553,22 +556,58 @@ impl Config {
         Ok(env_results)
     }
 
-    pub fn watch_files(&self) -> eyre::Result<BTreeSet<PathBuf>> {
-        let env_results = self.env_results()?;
+    pub fn hooks(&self) -> Result<Vec<(PathBuf, Hook)>> {
+        self.config_files
+            .values()
+            .map(|cf| Ok((cf.project_root(), cf.hooks()?)))
+            .filter_map_ok(|(root, hooks)| root.map(|r| (r.to_path_buf(), hooks)))
+            .map_ok(|(root, hooks)| {
+                hooks
+                    .into_iter()
+                    .map(|h| (root.clone(), h))
+                    .collect::<Vec<_>>()
+            })
+            .flatten_ok()
+            .collect()
+    }
+
+    pub fn watch_file_hooks(&self) -> Result<IndexSet<(PathBuf, WatchFile)>> {
         Ok(self
             .config_files
-            .keys()
-            .map(|p| p.to_path_buf())
-            .chain(env_results.env_files.clone())
-            .chain(env_results.env_scripts.clone())
-            .chain(SETTINGS.env_files())
+            .values()
+            .map(|cf| Ok((cf.project_root(), cf.watch_files()?)))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|(root, watch_files)| root.map(|r| (r.to_path_buf(), watch_files)))
+            .flat_map(|(root, watch_files)| {
+                watch_files
+                    .iter()
+                    .map(|wf| (root.clone(), wf.clone()))
+                    .collect::<Vec<_>>()
+            })
             .collect())
     }
 
-    #[cfg(test)]
-    pub fn reset() {
-        Settings::reset(None);
-        _CONFIG.write().unwrap().take();
+    pub fn watch_files(&self) -> Result<BTreeSet<WatchFilePattern>> {
+        let env_results = self.env_results()?;
+        Ok(self
+            .config_files
+            .iter()
+            .map(|(p, cf)| {
+                let mut watch_files: Vec<WatchFilePattern> = vec![p.as_path().into()];
+                watch_files.extend(cf.watch_files()?.iter().map(|wf| WatchFilePattern {
+                    root: cf.project_root().map(|pr| pr.to_path_buf()),
+                    patterns: wf.patterns.clone(),
+                }));
+                Ok(watch_files)
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .chain(env_results.env_files.iter().map(|p| p.as_path().into()))
+            .chain(env_results.env_scripts.iter().map(|p| p.as_path().into()))
+            .chain(SETTINGS.env_files().iter().map(|p| p.as_path().into()))
+            .collect())
     }
 }
 
@@ -619,16 +658,32 @@ fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
     idiomatic_filenames
 }
 
-pub static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
-    if *env::MISE_DEFAULT_CONFIG_FILENAME == "mise.toml" {
-        vec![
+static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
+    let mut paths: IndexSet<&'static str> = IndexSet::new();
+    if let Some(o) = &*env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES {
+        paths.extend(o.iter().map(|s| s.as_str()));
+    } else {
+        paths.extend([
+            ".tool-versions",
             &*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME, // .tool-versions
+        ]);
+    }
+    if !env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
+        paths.extend(
+            env::MISE_OVERRIDE_CONFIG_FILENAMES
+                .iter()
+                .map(|s| s.as_str()),
+        )
+    } else {
+        paths.extend([
+            ".config/mise/conf.d/*.toml",
             ".config/mise/config.toml",
             ".config/mise.toml",
             ".mise/config.toml",
             "mise/config.toml",
             ".mise/config.toml",
             ".rtx.toml",
+            "mise.toml",
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
             ".mise.toml",
             ".config/mise/config.local.toml",
@@ -637,13 +692,10 @@ pub static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
             ".rtx.local.toml",
             "mise.local.toml",
             ".mise.local.toml",
-        ]
-    } else {
-        vec![
-            &*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME,
-            &*env::MISE_DEFAULT_CONFIG_FILENAME,
-        ]
+        ]);
     }
+
+    paths
 });
 pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     let mut filenames = LOCAL_CONFIG_FILENAMES
@@ -673,15 +725,54 @@ static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
         .map(|s| s.to_string())
         .collect()
 });
+pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
+    load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
+        .into_iter()
+        .collect()
+});
+// pub static LOCAL_CONFIG_FILES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+//     ALL_CONFIG_FILES
+//         .iter()
+//         .filter(|cf| !is_global_config(cf))
+//         .cloned()
+//         .collect()
+// });
+
+type GlobResults = HashMap<(PathBuf, String), Vec<PathBuf>>;
+static GLOB_RESULTS: Lazy<Mutex<GlobResults>> = Lazy::new(Default::default);
+
+pub fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
+    let mut results = GLOB_RESULTS.lock().unwrap();
+    let key = (dir.to_path_buf(), pattern.to_string());
+    if let Some(glob) = results.get(&key) {
+        return Ok(glob.clone());
+    }
+    let paths = glob::glob(dir.join(pattern).to_string_lossy().as_ref())?
+        .filter_map(|p| p.ok())
+        .collect_vec();
+    results.insert(key, paths.clone());
+    Ok(paths)
+}
+
+pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
+    DEFAULT_CONFIG_FILENAMES
+        .iter()
+        .flat_map(|f| glob(dir, f).unwrap_or_default())
+        .collect()
+}
 
 pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> Vec<PathBuf> {
-    let mut config_files = Vec::new();
+    let dirs = file::all_dirs().unwrap_or_default();
 
-    // The current directory is not always available, e.g.
-    // when a directory was deleted or inside FUSE mounts.
-    if let Some(current_dir) = &*dirs::CWD {
-        config_files.extend(file::FindUp::new(current_dir, config_filenames));
-    };
+    let mut config_files = dirs
+        .iter()
+        .flat_map(|dir| {
+            config_filenames
+                .iter()
+                .rev()
+                .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+        })
+        .collect_vec();
 
     config_files.extend(global_config_files());
     config_files.extend(system_config_files());
@@ -694,14 +785,18 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
 }
 
 pub fn is_global_config(path: &Path) -> bool {
-    global_config_files()
-        .iter()
-        .chain(system_config_files().iter())
-        .any(|p| p == path)
+    global_config_files().contains(path) || system_config_files().contains(path)
 }
 
-pub fn global_config_files() -> Vec<PathBuf> {
-    let mut config_files = vec![];
+static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
+static SYSTEM_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
+
+pub fn global_config_files() -> IndexSet<PathBuf> {
+    let mut g = GLOBAL_CONFIG_FILES.lock().unwrap();
+    if let Some(g) = &*g {
+        return g.clone();
+    }
+    let mut config_files = IndexSet::new();
     if env::var_path("MISE_CONFIG_FILE").is_none()
         && env::var_path("MISE_GLOBAL_CONFIG_FILE").is_none()
         && !*env::MISE_USE_TOML
@@ -710,14 +805,14 @@ pub fn global_config_files() -> Vec<PathBuf> {
         // because that's how the user overrides the default
         let home_config = dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
         if home_config.is_file() {
-            config_files.push(home_config);
+            config_files.insert(home_config);
         }
     };
     let global_config = env::MISE_GLOBAL_CONFIG_FILE.clone();
     let global_local_config = global_config.with_extension("local.toml");
     for f in [global_config, global_local_config] {
         if f.is_file() {
-            config_files.push(f);
+            config_files.insert(f);
         }
     }
     if let Some(env) = &*env::MISE_ENV {
@@ -729,27 +824,36 @@ pub fn global_config_files() -> Vec<PathBuf> {
         ];
         for f in global_profile_files {
             if f.is_file() {
-                config_files.push(f);
+                config_files.insert(f);
             }
         }
     }
+    *g = Some(config_files.clone());
     config_files
 }
 
-pub fn system_config_files() -> Vec<PathBuf> {
-    let mut config_files = vec![];
-    let system = dirs::SYSTEM.join("config.toml");
-    if system.is_file() {
-        config_files.push(system);
+pub fn system_config_files() -> IndexSet<PathBuf> {
+    let mut s = SYSTEM_CONFIG_FILES.lock().unwrap();
+    if let Some(s) = &*s {
+        return s.clone();
     }
+    let mut config_files = IndexSet::new();
+    if env::MISE_SYSTEM_CONFIG_FILE.is_file() {
+        config_files.insert(env::MISE_SYSTEM_CONFIG_FILE.clone());
+    }
+    let system_local = env::MISE_SYSTEM_CONFIG_FILE.with_extension("local.toml");
+    if system_local.is_file() {
+        config_files.insert(system_local);
+    }
+    *s = Some(config_files.clone());
     config_files
 }
 
 /// the top-most global config file or the path to where it should be written to
 pub fn global_config_path() -> PathBuf {
     global_config_files()
-        .into_iter()
-        .next_back()
+        .last()
+        .cloned()
         .unwrap_or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
 }
 
@@ -757,15 +861,20 @@ pub fn global_config_path() -> PathBuf {
 pub fn top_toml_config() -> Option<PathBuf> {
     load_config_paths(&TOML_CONFIG_FILENAMES, false)
         .iter()
-        .rev()
         .find(|p| p.to_string_lossy().ends_with(".toml"))
         .map(|p| p.to_path_buf())
 }
 
-/// list of all non-global mise.tomls
-pub fn local_toml_config_paths() -> Vec<PathBuf> {
-    load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
+pub static ALL_TOML_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
+    load_config_paths(&TOML_CONFIG_FILENAMES, false)
         .into_iter()
+        .collect()
+});
+
+/// list of all non-global mise.tomls
+pub fn local_toml_config_paths() -> Vec<&'static PathBuf> {
+    ALL_TOML_CONFIG_FILES
+        .iter()
         .filter(|p| !is_global_config(p))
         .collect()
 }
@@ -776,6 +885,7 @@ pub fn local_toml_config_path() -> PathBuf {
     local_toml_config_paths()
         .into_iter()
         .next_back()
+        .cloned()
         .unwrap_or_else(|| {
             dirs::CWD
                 .as_ref()
@@ -912,7 +1022,6 @@ fn default_task_includes() -> Vec<PathBuf> {
 }
 
 pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Result<()> {
-    install_state::reset();
     let config = Config::load()?;
     let ts = ToolsetBuilder::new().build(&config)?;
     trace!("rebuilding shims");
@@ -924,6 +1033,23 @@ pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Resul
         .wrap_err("failed to update lockfiles")?;
 
     Ok(())
+}
+
+fn reset() {
+    if let Err(err) = timeout::run_with_timeout(
+        || {
+            install_state::reset();
+            backend::reset();
+            _CONFIG.write().unwrap().take();
+            *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
+            *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
+            GLOB_RESULTS.lock().unwrap().clear();
+            Ok(())
+        },
+        Duration::from_secs(5),
+    ) {
+        error!("reset: {err}");
+    }
 }
 
 #[cfg(test)]

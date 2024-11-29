@@ -5,7 +5,7 @@ use crate::config;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
 use crate::config::env_directive::EnvDirective;
-use crate::config::CONFIG;
+use crate::config::Config;
 use crate::env::{self};
 use crate::file::display_path;
 use crate::ui::table;
@@ -51,7 +51,7 @@ impl Set {
         };
 
         if self.remove.is_none() && self.env_vars.is_none() {
-            let rows = CONFIG
+            let rows = Config::get()
                 .env_with_sources()?
                 .iter()
                 .filter(|(_, (_, source))| {

@@ -836,6 +836,36 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
+                "en"
+            ],
+            "description": "[experimental] starts a new shell with the mise environment built from the current configuration",
+            "options": [
+                {
+                    "name": [
+                        "-s",
+                        "--shell"
+                    ],
+                    "description": "Shell to start",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "shell",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                }
+            ],
+            "args": [
+                {
+                    "name": "dir",
+                    "description": "Directory to start the shell in",
+                    "isOptional": true,
+                    "isVariadic": false,
+                    "template": "folders"
+                }
+            ]
+        },
+        {
+            "name": [
                 "env",
                 "e"
             ],
@@ -1776,6 +1806,19 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
+                        "-s",
+                        "--shell"
+                    ],
+                    "description": "Shell to use to run toml tasks",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "shell",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
                         "-t",
                         "--tool"
                     ],
@@ -1814,6 +1857,14 @@ const completionSpec: Fig.Spec = {
                         "--no-timings"
                     ],
                     "description": "Hides elapsed time after each task completes",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-q",
+                        "--quiet"
+                    ],
+                    "description": "Don't show extra output",
                     "isRepeatable": false
                 }
             ],
@@ -1966,6 +2017,14 @@ const completionSpec: Fig.Spec = {
                     "options": [
                         {
                             "name": [
+                                "-a",
+                                "--all"
+                            ],
+                            "description": "Display settings set to the default",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
                                 "-l",
                                 "--local"
                             ],
@@ -1974,9 +2033,18 @@ const completionSpec: Fig.Spec = {
                         },
                         {
                             "name": [
-                                "--names"
+                                "-J",
+                                "--json"
                             ],
-                            "description": "Only display key names for each setting",
+                            "description": "Output in JSON format",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-T",
+                                "--toml"
+                            ],
+                            "description": "Output in TOML format",
                             "isRepeatable": false
                         }
                     ],
@@ -2052,9 +2120,10 @@ const completionSpec: Fig.Spec = {
             "options": [
                 {
                     "name": [
-                        "--names"
+                        "-a",
+                        "--all"
                     ],
-                    "description": "Only display key names for each setting",
+                    "description": "List all settings",
                     "isRepeatable": false
                 },
                 {
@@ -2063,6 +2132,22 @@ const completionSpec: Fig.Spec = {
                         "--local"
                     ],
                     "description": "Use the local config file instead of the global one",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-J",
+                        "--json"
+                    ],
+                    "description": "Output in JSON format",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-T",
+                        "--toml"
+                    ],
+                    "description": "Output in TOML format",
                     "isRepeatable": false
                 }
             ],
@@ -2392,6 +2477,19 @@ const completionSpec: Fig.Spec = {
                         },
                         {
                             "name": [
+                                "-s",
+                                "--shell"
+                            ],
+                            "description": "Shell to use to run toml tasks",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "shell",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
                                 "-t",
                                 "--tool"
                             ],
@@ -2430,6 +2528,14 @@ const completionSpec: Fig.Spec = {
                                 "--no-timings"
                             ],
                             "description": "Hides elapsed time after each task completes",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-q",
+                                "--quiet"
+                            ],
+                            "description": "Don't show extra output",
                             "isRepeatable": false
                         }
                     ],

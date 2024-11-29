@@ -80,6 +80,18 @@ a full reload.
 tl;dr: asdf adds overhead (~120ms) when calling a runtime, mise adds a small amount of overhead (~5ms)
 when the prompt loads.
 
+## Windows support
+
+asdf does not run on Windows at all. With mise, tools using non-asdf backends can support Windows. Of course, this means the tool
+vendor must provide Windows binaries but if they do, and the backend isn't asdf, the tool should work on Windows.
+
+## Security
+
+asdf plugins are insecure. They typically are written by individuals with no ties to the vendors that provide the underlying tool.
+Where possible, mise does not use asdf plugins and instead uses backends like aqua and ubi which do not require separate plugins.
+
+Aqua tools can be configured with cosign/slsa verification as well. See [SECURITY](https://github.com/jdx/mise/blob/main/SECURITY.md) for more information.
+
 ## Command Compatibility
 
 In nearly all places you can use the exact syntax that works in asdf, however this likely won't

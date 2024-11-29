@@ -1,6 +1,6 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH mise 1  "mise 2024.11.31"
+.TH mise 1  "mise 2024.11.35"
 .SH NAME
 mise \- The front\-end to your dev env
 .SH SYNOPSIS
@@ -82,6 +82,9 @@ Output direnv function to use mise inside direnv
 .TP
 mise\-doctor(1)
 Check mise installation for possible problems
+.TP
+mise\-en(1)
+[experimental] starts a new shell with the mise environment built from the current configuration
 .TP
 mise\-env(1)
 Exports env vars to activate mise a single time
@@ -207,6 +210,6 @@ Examples:
     $ mise settings                  Show settings in use
     $ mise settings color=0          Disable color by modifying global config file
 .SH VERSION
-v2024.11.31
+v2024.11.35
 .SH AUTHORS
 Jeff Dickey <@jdx>

@@ -247,8 +247,8 @@ impl<'a> CmdLineRunner<'a> {
         self.pr = Some(pr);
         self
     }
-    pub fn with_raw(&mut self) -> &mut Self {
-        self.raw = true;
+    pub fn raw(mut self, raw: bool) -> Self {
+        self.raw = raw;
         self
     }
 

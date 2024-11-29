@@ -20,14 +20,18 @@ use crate::config::env_directive::{EnvDirective, PathEntry};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap};
 use crate::file::{create_dir_all, display_path};
+use crate::hooks::{Hook, Hooks};
 use crate::registry::REGISTRY;
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
+use crate::watch_files::WatchFile;
 use crate::{dirs, file};
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
+    #[serde(rename = "_")]
+    custom: Option<toml::Value>,
     #[serde(default, deserialize_with = "deserialize_version")]
     min_version: Option<Versioning>,
     #[serde(skip)]
@@ -45,6 +49,8 @@ pub struct MiseToml {
     #[serde(skip)]
     doc: OnceCell<DocumentMut>,
     #[serde(default)]
+    hooks: IndexMap<Hooks, String>,
+    #[serde(default)]
     tools: IndexMap<BackendArg, MiseTomlToolList>,
     #[serde(default)]
     plugins: HashMap<String, String>,
@@ -52,6 +58,8 @@ pub struct MiseToml {
     task_config: TaskConfig,
     #[serde(default)]
     tasks: Tasks,
+    #[serde(default)]
+    watch_files: Vec<WatchFile>,
     #[serde(default)]
     vars: IndexMap<String, String>,
     #[serde(default)]
@@ -430,6 +438,32 @@ impl ConfigFile for MiseToml {
         &self.task_config
     }
 
+    fn watch_files(&self) -> eyre::Result<Vec<WatchFile>> {
+        self.watch_files
+            .iter()
+            .map(|wf| {
+                Ok(WatchFile {
+                    patterns: wf
+                        .patterns
+                        .iter()
+                        .map(|p| self.parse_template(p))
+                        .collect::<eyre::Result<Vec<String>>>()?,
+                    run: self.parse_template(&wf.run)?,
+                })
+            })
+            .collect()
+    }
+
+    fn hooks(&self) -> eyre::Result<Vec<Hook>> {
+        self.hooks
+            .iter()
+            .map(|(hook, run)| {
+                let run = self.parse_template(run)?;
+                Ok(Hook { hook: *hook, run })
+            })
+            .collect()
+    }
+
     fn vars(&self) -> eyre::Result<&IndexMap<String, String>> {
         Ok(&self.vars)
     }
@@ -482,6 +516,7 @@ impl Debug for MiseToml {
 impl Clone for MiseToml {
     fn clone(&self) -> Self {
         Self {
+            custom: self.custom.clone(),
             min_version: self.min_version.clone(),
             context: self.context.clone(),
             path: self.path.clone(),
@@ -490,11 +525,13 @@ impl Clone for MiseToml {
             env_path: self.env_path.clone(),
             alias: self.alias.clone(),
             doc: self.doc.clone(),
+            hooks: self.hooks.clone(),
             tools: self.tools.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
             task_config: self.task_config.clone(),
             settings: self.settings.clone(),
+            watch_files: self.watch_files.clone(),
             vars: self.vars.clone(),
         }
     }

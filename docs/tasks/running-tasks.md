@@ -122,3 +122,9 @@ mise watch -t build -- --print-events --verbose
 
 See watchexec's help with `watchexec --help` or `mise watch -- --help` to see
 all of the options.
+
+## `mise run` shorthand
+
+Tasks can be run with `mise run <TASK>` or `mise <TASK>`—if the name doesn't conflict with a mise command.
+Because mise may later add a command with a conflicting name, it's recommended to use `mise run <TASK>` in
+scripts and documentation.

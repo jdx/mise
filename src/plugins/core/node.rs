@@ -152,7 +152,7 @@ impl NodePlugin {
         }
         if *env::MISE_NODE_VERIFY && !tv.checksums.contains_key(&tarball_name) {
             tv.checksums
-                .insert(tarball_name, self.get_checksum(local, version)?);
+                .insert(tarball_name, self.get_checksum(ctx, local, version)?);
         }
         self.verify_checksum(ctx, tv, local)?;
         Ok(())
@@ -180,13 +180,56 @@ impl NodePlugin {
         self.sh(ctx, opts)?.arg(&opts.make_install_cmd).execute()
     }
 
-    fn get_checksum(&self, tarball: &Path, version: &str) -> Result<String> {
+    fn get_checksum(&self, ctx: &InstallContext, tarball: &Path, version: &str) -> Result<String> {
         let tarball_name = tarball.file_name().unwrap().to_string_lossy().to_string();
-        // TODO: verify gpg signature
-        let shasums = HTTP.get_text(self.shasums_url(version)?)?;
+        let shasums_file = tarball.parent().unwrap().join("SHASUMS256.txt");
+        HTTP.download_file(
+            self.shasums_url(version)?,
+            &shasums_file,
+            Some(ctx.pr.as_ref()),
+        )?;
+        if SETTINGS.node.gpg_verify != Some(false) && version.starts_with("2") {
+            self.verify_with_gpg(ctx, &shasums_file, version)?;
+        }
+        let shasums = file::read_to_string(&shasums_file)?;
         let shasums = hash::parse_shasums(&shasums);
         let shasum = shasums.get(&tarball_name).unwrap();
         Ok(format!("sha256:{shasum}"))
+    }
+
+    fn verify_with_gpg(&self, ctx: &InstallContext, shasums_file: &Path, v: &str) -> Result<()> {
+        if file::which_non_pristine("gpg").is_none() && SETTINGS.node.gpg_verify.is_none() {
+            warn!("gpg not found, skipping verification");
+            return Ok(());
+        }
+        let sig_file = shasums_file.with_extension("asc");
+        let sig_url = format!("{}.sig", self.shasums_url(v)?);
+        HTTP.download_file(sig_url, &sig_file, Some(ctx.pr.as_ref()))?;
+        CmdLineRunner::new("gpg")
+            .arg("--keyserver")
+            .arg("hkps://keys.openpgp.org")
+            .arg("--recv-keys")
+            .arg("--quiet")
+            .arg("C0D6248439F1D5604AAFFB4021D900FFDB233756") // Antoine du Hamel
+            .arg("DD792F5973C6DE52C432CBDAC77ABFA00DDBF2B7") // Juan José Arboleda
+            .arg("CC68F5A3106FF448322E48ED27F5E38D5B0A215F") // Marco Ippolito
+            .arg("8FCCA13FEF1D0C2E91008E09770F7A9A5AE15600") // Michaël Zasso
+            .arg("890C08DB8579162FEE0DF9DB8BEAB4DFCF555EF4") // Rafael Gonzaga
+            .arg("C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C") // Richard Lau
+            .arg("108F52B48DB57BB0CC439B2997B01419BD92F80A") // Ruy Adorno
+            .arg("A363A499291CBBC940DD62E41F10027AF002F8B0") // Ulises Gascón
+            .with_pr(ctx.pr.as_ref())
+            .execute()?;
+        CmdLineRunner::new("gpg")
+            .arg("--quiet")
+            .arg("--trust-model")
+            .arg("always")
+            .arg("--verify")
+            .arg(sig_file)
+            .arg(shasums_file)
+            .with_pr(ctx.pr.as_ref())
+            .execute()?;
+        Ok(())
     }
 
     fn node_path(&self, tv: &ToolVersion) -> PathBuf {
@@ -363,7 +406,7 @@ impl Backend for NodePlugin {
         Ok(body)
     }
 
-    fn install_version_impl(
+    fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,

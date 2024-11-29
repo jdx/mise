@@ -32,6 +32,21 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     File::open(path).wrap_err_with(|| format!("failed open: {}", display_path(path)))
 }
 
+#[allow(unused)]
+pub fn read<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
+    let path = path.as_ref();
+    trace!("cat {}", display_path(path));
+    fs::read(path).wrap_err_with(|| format!("failed read: {}", display_path(path)))
+}
+
+pub fn size<P: AsRef<Path>>(path: P) -> Result<u64> {
+    let path = path.as_ref();
+    trace!("du -b {}", display_path(path));
+    path.metadata()
+        .map(|m| m.len())
+        .wrap_err_with(|| format!("failed size: {}", display_path(path)))
+}
+
 pub fn append<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
     let path = path.as_ref();
     trace!("append {}", display_path(path));
@@ -178,8 +193,13 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     if !path.exists() {
         trace!("mkdir -p {}", display_path(path));
-        fs::create_dir_all(path)
-            .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)))?;
+        if let Err(err) = fs::create_dir_all(path) {
+            // if not exists error
+            if err.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(err)
+                    .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)));
+            }
+        }
     }
     Ok(())
 }
@@ -310,8 +330,17 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
 #[cfg(windows)]
 //#[deprecated]
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
-    junction::create(target, link)
-        .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
+    if let Err(err) = junction::create(target, link) {
+        if err.kind() == std::io::ErrorKind::AlreadyExists {
+            let _ = fs::remove_file(link);
+            junction::create(target, link)
+        } else {
+            Err(err)
+        }
+    } else {
+        Ok(())
+    }
+    .wrap_err_with(|| format!("failed to ln -sf {} {}", target.display(), link.display()))?;
     Ok((target.to_path_buf(), link.to_path_buf()))
 }
 

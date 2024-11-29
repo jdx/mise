@@ -21,11 +21,13 @@ use crate::config::env_directive::EnvDirective;
 use crate::config::{AliasMap, Settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
-use crate::hash::{file_hash_sha256, hash_to_str};
+use crate::hash::hash_to_str;
+use crate::hooks::Hook;
 use crate::task::Task;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
-use crate::{backend, config, dirs, env, file};
+use crate::watch_files::WatchFile;
+use crate::{backend, config, dirs, env, file, hash};
 
 pub mod idiomatic_version;
 pub mod mise_toml;
@@ -92,6 +94,14 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn vars(&self) -> Result<&IndexMap<String, String>> {
         static DEFAULT_VARS: Lazy<IndexMap<String, String>> = Lazy::new(IndexMap::new);
         Ok(&DEFAULT_VARS)
+    }
+
+    fn watch_files(&self) -> Result<Vec<WatchFile>> {
+        Ok(Default::default())
+    }
+
+    fn hooks(&self) -> Result<Vec<Hook>> {
+        Ok(Default::default())
     }
 }
 
@@ -348,7 +358,7 @@ pub fn trust(path: &Path) -> eyre::Result<()> {
         file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
     }
     let trust_hash_path = hashed_path.with_extension("hash");
-    let hash = file_hash_sha256(path)?;
+    let hash = hash::file_hash_sha256(path, None)?;
     file::write(trust_hash_path, hash)?;
     Ok(())
 }
@@ -409,14 +419,21 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
         return Ok(false);
     }
     let hash = file::read_to_string(&trust_hash_path)?;
-    let actual = file_hash_sha256(path)?;
+    let actual = hash::file_hash_sha256(path, None)?;
     Ok(hash == actual)
 }
 
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
     match path.file_name().unwrap().to_str().unwrap() {
         f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
+        f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
         f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
+        f if env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
+            .as_ref()
+            .is_some_and(|o| o.contains(f)) =>
+        {
+            Some(ConfigFileType::ToolVersions)
+        }
         f if env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
         }
