@@ -11,6 +11,11 @@
 - `.config/mise/config.toml`
 - `.config/mise/conf.d/*.toml` - all files in this directory will be loaded in alphabetical order
 
+::: tip
+Run [`mise cfg`](/cli/config.html) to figure out what order mise is loading files on your particular setup. This is often
+a lot easier than figuring out mise's rules.
+:::
+
 Notes:
 
 - Paths which start with `mise` can be dotfiles, e.g.: `mise.toml` or `.mise/config.toml`.
