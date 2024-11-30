@@ -44,6 +44,20 @@ console.log(`Running node: ${process.version}`);
 This can also be useful in environments where mise isn't activated
 (such as a non-interactive session).
 
+You can also download the https://mise.run script to use in a project bootstrap script:
+
+```sh
+curl https://mise.run > setup-mise.sh
+chmod +x setup-mise.sh
+./setup-mise.sh
+```
+
+::: tip
+This file contains checksums so it's more secure to commit it into your project rather than
+calling `curl https://mise.run` dynamically—though of course this means it will only fetch
+the version of mise that was current when the script was created.
+:::
+
 ## CI/CD
 
 Using mise in CI/CD is a great way to synchronize tool versions for dev/build.
@@ -75,13 +89,13 @@ jobs:
 
 ## `mise set`
 
-Instead of manually editing `mise.toml` to add env vars, you can use `mise set` instead:
+Instead of manually editing `mise.toml` to add env vars, you can use [`mise set`](/cli/set.html) instead:
 
 ```sh
 mise set NODE_ENV=production
 ```
 
-## `mise run` shorthand
+## [`mise run`](/cli/run.html) shorthand
 
 As long as the task name doesn't conflict with a mise-provided command you can skip the `run` part:
 
@@ -102,7 +116,7 @@ brew install gpg
 mise use -g cosign slsa-verify
 ```
 
-## `mise up --bump`
+## [`mise up --bump`](/cli/upgrade.html)
 
 Use `mise up --bump` to upgrade all software to the latest version and update `mise.toml` files. This keeps the same semver range as before,
 so if you had `node = "20"` and node 22 is the latest, `mise up --bump node` will change `mise.toml` to `node = "22"`.
@@ -116,12 +130,12 @@ so if you use `cargo:` you should add this to make `mise i` go much faster.
 mise use -g cargo-binstall
 ```
 
-## `mise cache clear`
+## [`mise cache clear`](/cli/cache.html)
 
 mise caches things for obvious reasons but sometimes you want it to use fresh data (maybe it's not noticing a new release). Run `mise cache clear` to remove the cache which
 basically just run `rm -rf ~/.cache/mise/*`.
 
-## `mise en`
+## [`mise en`](/cli/en.html)
 
 `mise en` is a great alternative to `mise activate` if you don't want to always be using mise for some reason. It sets up the mise environment in your current directory
 but doesn't keep running and updating the env vars after that.
@@ -135,7 +149,7 @@ Auto-install tools when entering a project by adding the following to `mise.toml
 enter = "mise i -q"
 ```
 
-## `mise tool [TOOL]`
+## [`mise tool [TOOL]`](/cli/tool.html)
 
 Get information about what backend a tool is using and other information with `mise tool [TOOL]`:
 
@@ -149,7 +163,7 @@ Config Source:      ~/src/mise/mise.toml
 Tool Options:       [none]
 ```
 
-## `mise cfg`
+## [`mise cfg`](/cli/config.html)
 
 List the config files mise is reading in a particular directory with `mise cfg`:
 
@@ -165,3 +179,18 @@ Path                                    Tools
 ```
 
 This is helpful figuring out which order the config files are loaded in to figure out which one is overriding.
+
+## `mise.lock`
+
+If you enable experimental mode, mise will update `mise.lock` with full versions and tarball checksums (if supported by the backend).
+These can be updated with [`mise up`](/cli/upgrade.html). You need to manually create the lockfile, then mise will add the tools to it:
+
+```sh
+touch mise.lock
+mise i
+```
+
+Note that at least currently mise needs to actually install the tool to get the tarball checksum (otherwise it would need to download the tarball just
+to get the checksum of it since normally that gets deleted). So you may need to run something like `mise uninstall --all` first in order to have it
+reinstall everything. It will store the full versions even if it doesn't know the checksum though so it'll still lock the version just not have a checksum
+to go with it.
