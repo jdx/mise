@@ -80,3 +80,24 @@ Instead of manually editing `mise.toml` to add env vars, you can use `mise set` 
 ```sh
 mise set NODE_ENV=production
 ```
+
+## `mise run` shorthand
+
+As long as the task name doesn't conflict with a mise-provided command you can skip the `run` part:
+
+```sh
+mise test
+```
+
+::: warning
+Don't do this inside of scripts because mise may add a command in a future version and could conflict with your task.
+:::
+
+## Software verification
+
+Install cosign, slsa-verify, and gpg (cosign and slsa-verify can be installed with mise) in order to verify tools automatically.
+
+```sh
+brew install gpg
+mise use -g cosign slsa-verify
+```
