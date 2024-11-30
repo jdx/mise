@@ -30,11 +30,15 @@ pub struct Settings {
     local: bool,
 
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[clap(long, short = 'J', group = "output")]
     pub json: bool,
 
+    /// Output in JSON format with sources
+    #[clap(long, group = "output")]
+    pub json_extended: bool,
+
     /// Output in TOML format
-    #[clap(long, short = 'T')]
+    #[clap(long, short = 'T', group = "output")]
     pub toml: bool,
 }
 
@@ -87,6 +91,7 @@ impl Settings {
                     key: None,
                     local: self.local,
                     json: self.json,
+                    json_extended: self.json_extended,
                     toml: self.toml,
                 })
             }

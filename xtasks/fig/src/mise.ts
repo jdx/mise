@@ -2041,6 +2041,13 @@ const completionSpec: Fig.Spec = {
                         },
                         {
                             "name": [
+                                "--json-extended"
+                            ],
+                            "description": "Output in JSON format with sources",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
                                 "-T",
                                 "--toml"
                             ],
@@ -2140,6 +2147,13 @@ const completionSpec: Fig.Spec = {
                         "--json"
                     ],
                     "description": "Output in JSON format",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--json-extended"
+                    ],
+                    "description": "Output in JSON format with sources",
                     "isRepeatable": false
                 },
                 {

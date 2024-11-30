@@ -1,7 +1,36 @@
 #!/usr/bin/env bash
 
 echo "settings.all_compile = false" >mise.toml
-assert_contains "mise settings" "all_compile  false"
+echo "settings.disable_backends = [\"rust\", \"java\"]" >>mise.toml
+
+assert_contains "mise settings" 'all_compile       false            ~/workdir/mise.toml
+disable_backends  ["rust", "java"] ~/workdir/mise.toml'
+
+assert_contains "mise settings --json" '{
+  "all_compile": false,
+  "disable_backends": [
+    "rust",
+    "java"
+  ]
+}'
+
+assert_contains "mise settings --toml" 'all_compile = false
+disable_backends = ["rust", "java"]'
+
+assert_contains "mise settings --json-extended" '{
+  "all_compile": {
+    "source": "~/workdir/mise.toml",
+    "value": false
+  },
+  "disable_backends": {
+    "source": "~/workdir/mise.toml",
+    "value": [
+      "rust",
+      "java"
+    ]
+  }
+}'
+
 assert_contains "mise settings ls -T" "all_compile = false"
 echo "settings.python.venv_auto_create = false" >>mise.toml
 assert_contains "mise settings ls python" "venv_auto_create  false"

@@ -31,6 +31,10 @@ List all settings
 
 Output in JSON format
 
+### `--json-extended`
+
+Output in JSON format with sources
+
 ### `-T --toml`
 
 Output in TOML format

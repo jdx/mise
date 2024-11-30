@@ -31,6 +31,10 @@ Use the local config file instead of the global one
 
 Output in JSON format
 
+### `--json-extended`
+
+Output in JSON format with sources
+
 ### `-T --toml`
 
 Output in TOML format

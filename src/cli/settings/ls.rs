@@ -28,11 +28,15 @@ pub struct SettingsLs {
     pub local: bool,
 
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[clap(long, short = 'J', group = "output")]
     pub json: bool,
 
+    /// Output in JSON format with sources
+    #[clap(long, group = "output")]
+    pub json_extended: bool,
+
     /// Output in TOML format
-    #[clap(long, short = 'T')]
+    #[clap(long, short = 'T', group = "output")]
     pub toml: bool,
 }
 
@@ -74,6 +78,8 @@ impl SettingsLs {
         }
         if self.json {
             self.print_json(rows)?;
+        } else if self.json_extended {
+            self.print_json_extended(rows)?;
         } else if self.toml {
             self.print_toml(rows)?;
         } else {
@@ -95,6 +101,31 @@ impl SettingsLs {
                 subtable.insert(subkey.to_string(), toml_value_to_json_value(row.toml_value));
             } else {
                 table.insert(row.key, toml_value_to_json_value(row.toml_value));
+            }
+        }
+        miseprintln!("{}", serde_json::to_string_pretty(&table)?);
+        Ok(())
+    }
+
+    fn print_json_extended(&self, rows: Vec<Row>) -> Result<()> {
+        let mut table = serde_json::Map::new();
+        for row in rows {
+            let mut entry = serde_json::Map::new();
+            entry.insert(
+                "value".to_string(),
+                toml_value_to_json_value(row.toml_value),
+            );
+            if let Some(source) = row.source {
+                entry.insert("source".to_string(), display_path(&source).into());
+            }
+            if let Some((key, subkey)) = row.key.split_once('.') {
+                let subtable = table
+                    .entry(key)
+                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                let subtable = subtable.as_object_mut().unwrap();
+                subtable.insert(subkey.to_string(), entry.into());
+            } else {
+                table.insert(row.key, entry.into());
             }
         }
         miseprintln!("{}", serde_json::to_string_pretty(&table)?);
@@ -188,6 +219,14 @@ fn toml_value_to_json_value(v: toml::Value) -> serde_json::Value {
         toml::Value::Integer(i) => i.into(),
         toml::Value::Boolean(b) => b.into(),
         toml::Value::Float(f) => f.into(),
+        toml::Value::Table(t) => {
+            let mut table = serde_json::Map::new();
+            for (k, v) in t {
+                table.insert(k, toml_value_to_json_value(v));
+            }
+            table.into()
+        }
+        toml::Value::Array(a) => a.into_iter().map(toml_value_to_json_value).collect(),
         v => v.to_string().into(),
     }
 }
