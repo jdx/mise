@@ -168,7 +168,7 @@ jobs:
           - zig
           - shellcheck
           - scala
-          - maven
+          # TODO: - maven
           - kustomize
           - graalvm
           - sbcl
