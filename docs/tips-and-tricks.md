@@ -44,7 +44,7 @@ console.log(`Running node: ${process.version}`);
 This can also be useful in environments where mise isn't activated
 (such as a non-interactive session).
 
-You can also download the https://mise.run script to use in a project bootstrap script:
+You can also download the <https://mise.run> script to use in a project bootstrap script:
 
 ```sh
 curl https://mise.run > setup-mise.sh
