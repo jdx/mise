@@ -86,6 +86,9 @@ jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 60
+    env:
+      MISE_DATA_DIR: ~/.local/share/mise
+      MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@v4
         with:
