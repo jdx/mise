@@ -39,7 +39,7 @@ impl Backend for AquaBackend {
         Ok(vec!["cosign", "slsa-verifier"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self) -> Result<Vec<String>> {
         let pkg = AQUA_REGISTRY.package(&self.id)?;
         if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
             let versions = if let Some("github_tag") = pkg.version_source.as_deref() {
