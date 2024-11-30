@@ -763,6 +763,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | uaa | [ubi:cloudfoundry/uaa-cli](https://github.com/cloudfoundry/uaa-cli) [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
 | ubi | [ubi:houseabsolute/ubi](https://github.com/houseabsolute/ubi) |
 | unison | [asdf:susurri/asdf-unison](https://github.com/susurri/asdf-unison) |
+| upctl | [aqua:UpCloudLtd/upcloud-cli](https://github.com/UpCloudLtd/upcloud-cli) |
 | updatecli | [aqua:updatecli/updatecli](https://github.com/updatecli/updatecli) [asdf:updatecli/asdf-updatecli](https://github.com/updatecli/asdf-updatecli) |
 | upt | [asdf:ORCID/asdf-upt](https://github.com/ORCID/asdf-upt) |
 | upx | [asdf:jimmidyson/asdf-upx](https://github.com/jimmidyson/asdf-upx) |
