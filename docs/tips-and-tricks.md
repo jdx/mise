@@ -148,3 +148,20 @@ Requested Version:  latest
 Config Source:      ~/src/mise/mise.toml   
 Tool Options:       [none]
 ```
+
+## `mise cfg`
+
+List the config files mise is reading in a particular directory with `mise cfg`:
+
+```sh
+❯ mise cfg
+Path                                    Tools                                   
+~/.config/mise/config.toml              (none)                                  
+~/.mise/config.toml                     (none)                                  
+~/src/mise.toml                         (none)                                  
+~/src/mise/.config/mise/conf.d/foo.toml (none)                                  
+~/src/mise/mise.toml                    actionlint, bun, cargo-binstall, cargo:…
+~/src/mise/mise.local.toml              (none)
+```
+
+This is helpful figuring out which order the config files are loaded in to figure out which one is overriding.
