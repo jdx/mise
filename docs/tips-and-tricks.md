@@ -44,7 +44,7 @@ console.log(`Running node: ${process.version}`);
 This can also be useful in environments where mise isn't activated
 (such as a non-interactive session).
 
-You can also download the https://mise.run script to use in a project bootstrap script:
+You can also download the <https://mise.run> script to use in a project bootstrap script:
 
 ```sh
 curl https://mise.run > setup-mise.sh
@@ -156,10 +156,10 @@ Get information about what backend a tool is using and other information with `m
 ```sh
 ❯ mise tool ripgrep
 Backend:            aqua:BurntSushi/ripgrep
-Installed Versions: 14.1.1                 
-Active Version:     14.1.1                 
-Requested Version:  latest                 
-Config Source:      ~/src/mise/mise.toml   
+Installed Versions: 14.1.1
+Active Version:     14.1.1
+Requested Version:  latest
+Config Source:      ~/src/mise/mise.toml
 Tool Options:       [none]
 ```
 
@@ -169,11 +169,11 @@ List the config files mise is reading in a particular directory with `mise cfg`:
 
 ```sh
 ❯ mise cfg
-Path                                    Tools                                   
-~/.config/mise/config.toml              (none)                                  
-~/.mise/config.toml                     (none)                                  
-~/src/mise.toml                         (none)                                  
-~/src/mise/.config/mise/conf.d/foo.toml (none)                                  
+Path                                    Tools
+~/.config/mise/config.toml              (none)
+~/.mise/config.toml                     (none)
+~/src/mise.toml                         (none)
+~/src/mise/.config/mise/conf.d/foo.toml (none)
 ~/src/mise/mise.toml                    actionlint, bun, cargo-binstall, cargo:…
 ~/src/mise/mise.local.toml              (none)
 ```

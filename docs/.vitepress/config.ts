@@ -113,6 +113,7 @@ export default defineConfig({
       { text: "FAQs", link: "/faq" },
       { text: "Troubleshooting", link: "/troubleshooting" },
       { text: "Tips & Tricks", link: "/tips-and-tricks" },
+      { text: "Cookbook", link: "/mise-cookbook" },
       {
         text: "About",
         items: [
