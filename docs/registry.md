@@ -276,14 +276,14 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | glab | [asdf:particledecay/asdf-glab](https://github.com/particledecay/asdf-glab) |
 | gleam | [aqua:gleam-lang/gleam](https://github.com/gleam-lang/gleam) [asdf:asdf-community/asdf-gleam](https://github.com/asdf-community/asdf-gleam) |
 | glen | [ubi:lingrino/glen](https://github.com/lingrino/glen) [asdf:bradym/asdf-glen](https://github.com/bradym/asdf-glen) |
-| glooctl | [asdf:halilkaya/asdf-glooctl](https://github.com/halilkaya/asdf-glooctl) |
+| glooctl | [ubi:solo-io/gloo](https://github.com/solo-io/gloo) [asdf:halilkaya/asdf-glooctl](https://github.com/halilkaya/asdf-glooctl) |
 | glow | [aqua:charmbracelet/glow](https://github.com/charmbracelet/glow) [asdf:mise-plugins/asdf-glow](https://github.com/mise-plugins/asdf-glow) |
 | go | [core:go](https://mise.jdx.dev/lang/go.html) |
 | go-containerregistry | [aqua:google/go-containerregistry](https://github.com/google/go-containerregistry) [asdf:dex4er/asdf-go-containerregistry](https://github.com/dex4er/asdf-go-containerregistry) |
 | go-getter | [asdf:ryodocx/asdf-go-getter](https://github.com/ryodocx/asdf-go-getter) |
-| go-jira | [asdf:dguihal/asdf-go-jira](https://github.com/dguihal/asdf-go-jira) |
+| go-jira | [aqua:go-jira/jira](https://github.com/go-jira/jira) [asdf:dguihal/asdf-go-jira](https://github.com/dguihal/asdf-go-jira) |
 | go-jsonnet | [aqua:google/go-jsonnet](https://github.com/google/go-jsonnet) [asdf:https://gitlab.com/craigfurman/asdf-go-jsonnet](https://gitlab.com/craigfurman/asdf-go-jsonnet) |
-| go-junit-report | [asdf:jwillker/asdf-go-junit-report](https://github.com/jwillker/asdf-go-junit-report) |
+| go-junit-report | [ubi:jstemmer/go-junit-report](https://github.com/jstemmer/go-junit-report) [asdf:jwillker/asdf-go-junit-report](https://github.com/jwillker/asdf-go-junit-report) |
 | go-sdk | [asdf:yacchi/asdf-go-sdk](https://github.com/yacchi/asdf-go-sdk) |
 | go-swagger | [aqua:go-swagger/go-swagger](https://github.com/go-swagger/go-swagger) [asdf:jfreeland/asdf-go-swagger](https://github.com/jfreeland/asdf-go-swagger) |
 | goconvey | [asdf:therounds-contrib/asdf-goconvey](https://github.com/therounds-contrib/asdf-goconvey) |
