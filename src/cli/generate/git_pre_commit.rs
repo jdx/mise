@@ -50,7 +50,7 @@ impl GitPreCommit {
         let task = &self.task;
         format!(
             r#"#!/bin/sh
-mise run {task}
+exec mise run {task}
 "#
         )
     }
