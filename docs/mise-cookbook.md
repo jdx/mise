@@ -42,6 +42,6 @@ description = "Checks the Terraform files"
 depends = ["terraform:format", "terraform:validate"]
 
 [env]
-'_'.file = ".env"
+_.file = ".env"
 
 ```
