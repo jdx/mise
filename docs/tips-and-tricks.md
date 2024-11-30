@@ -179,3 +179,18 @@ Path                                    Tools
 ```
 
 This is helpful figuring out which order the config files are loaded in to figure out which one is overriding.
+
+## `mise.lock`
+
+If you enable experimental mode, mise will update `mise.lock` with full versions and tarball checksums (if supported by the backend).
+These can be updated with [`mise up`](/cli/upgrade.html). You need to manually create the lockfile, then mise will add the tools to it:
+
+```sh
+touch mise.lock
+mise i
+```
+
+Note that at least currently mise needs to actually install the tool to get the tarball checksum (otherwise it would need to download the tarball just
+to get the checksum of it since normally that gets deleted). So you may need to run something like `mise uninstall --all` first in order to have it
+reinstall everything. It will store the full versions even if it doesn't know the checksum though so it'll still lock the version just not have a checksum
+to go with it.
