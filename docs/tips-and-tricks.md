@@ -80,3 +80,88 @@ Instead of manually editing `mise.toml` to add env vars, you can use `mise set` 
 ```sh
 mise set NODE_ENV=production
 ```
+
+## `mise run` shorthand
+
+As long as the task name doesn't conflict with a mise-provided command you can skip the `run` part:
+
+```sh
+mise test
+```
+
+::: warning
+Don't do this inside of scripts because mise may add a command in a future version and could conflict with your task.
+:::
+
+## Software verification
+
+Install cosign, slsa-verify, and gpg (cosign and slsa-verify can be installed with mise) in order to verify tools automatically.
+
+```sh
+brew install gpg
+mise use -g cosign slsa-verify
+```
+
+## `mise up --bump`
+
+Use `mise up --bump` to upgrade all software to the latest version and update `mise.toml` files. This keeps the same semver range as before,
+so if you had `node = "20"` and node 22 is the latest, `mise up --bump node` will change `mise.toml` to `node = "22"`.
+
+## cargo-binstall
+
+cargo-binstall is sort of like ubi but specific to rust tools. It fetches binaries for cargo releases. mise will use this automatically for `cargo:` tools if it is installed
+so if you use `cargo:` you should add this to make `mise i` go much faster.
+
+```sh
+mise use -g cargo-binstall
+```
+
+## `mise cache clear`
+
+mise caches things for obvious reasons but sometimes you want it to use fresh data (maybe it's not noticing a new release). Run `mise cache clear` to remove the cache which
+basically just run `rm -rf ~/.cache/mise/*`.
+
+## `mise en`
+
+`mise en` is a great alternative to `mise activate` if you don't want to always be using mise for some reason. It sets up the mise environment in your current directory
+but doesn't keep running and updating the env vars after that.
+
+## Auto-install when entering a project
+
+Auto-install tools when entering a project by adding the following to `mise.toml`:
+
+```toml
+[hooks]
+enter = "mise i -q"
+```
+
+## `mise tool [TOOL]`
+
+Get information about what backend a tool is using and other information with `mise tool [TOOL]`:
+
+```sh
+❯ mise tool ripgrep
+Backend:            aqua:BurntSushi/ripgrep
+Installed Versions: 14.1.1                 
+Active Version:     14.1.1                 
+Requested Version:  latest                 
+Config Source:      ~/src/mise/mise.toml   
+Tool Options:       [none]
+```
+
+## `mise cfg`
+
+List the config files mise is reading in a particular directory with `mise cfg`:
+
+```sh
+❯ mise cfg
+Path                                    Tools                                   
+~/.config/mise/config.toml              (none)                                  
+~/.mise/config.toml                     (none)                                  
+~/src/mise.toml                         (none)                                  
+~/src/mise/.config/mise/conf.d/foo.toml (none)                                  
+~/src/mise/mise.toml                    actionlint, bun, cargo-binstall, cargo:…
+~/src/mise/mise.local.toml              (none)
+```
+
+This is helpful figuring out which order the config files are loaded in to figure out which one is overriding.
