@@ -938,6 +938,8 @@ uaa.backends = ["ubi:cloudfoundry/uaa-cli[exe=uaa]", "asdf:vmware-tanzu/tanzu-pl
 uaa.test = ["uaa version", "{{version}}"]
 ubi.backends = ["ubi:houseabsolute/ubi"]
 unison.backends = ["asdf:susurri/asdf-unison"]
+upctl.backends = ["aqua:UpCloudLtd/upcloud-cli"]
+upctl.test = ["upctl version", "{{version}}"]
 updatecli.backends = ["aqua:updatecli/updatecli", "asdf:updatecli/asdf-updatecli"]
 upt.backends = ["asdf:ORCID/asdf-upt"]
 upx.backends = ["asdf:jimmidyson/asdf-upx"]
