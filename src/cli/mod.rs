@@ -75,75 +75,75 @@ pub enum LevelFilter {
 }
 
 #[derive(clap::Parser, Debug)]
-#[clap(name = "mise", version = &*version::VERSION, about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true)]
+#[clap(name = "mise", version = &*version::VERSION, about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, next_display_order = 0)]
 pub struct Cli {
-    #[clap(subcommand)]
+    #[clap(subcommand, next_display_order=0)]
     pub command: Option<Commands>,
     /// Task to run
-    #[clap(name = "TASK", long_help = LONG_TASK_ABOUT)]
+    #[clap(name = "TASK", long_help = LONG_TASK_ABOUT, display_order=0)]
     pub task: Option<String>,
     /// Task arguments
-    #[clap(hide = true)]
+    #[clap(hide = true, display_order=0)]
     pub task_args: Option<Vec<String>>,
     /// Change directory before running command
-    #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
+    #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath, display_order=0)]
     pub cd: Option<PathBuf>,
     /// Dry run, don't actually do anything
-    #[clap(short = 'n', long, global = true, hide = true)]
+    #[clap(short = 'n', long, global = true, hide = true, display_order=0)]
     pub dry_run: bool,
     /// Sets log level to debug
-    #[clap(long, global = true, hide = true)]
+    #[clap(long, global = true, hide = true, display_order=0)]
     pub debug: bool,
     /// Set the environment for loading `mise.<ENV>.toml`
-    #[clap(short = 'E', long, global = true)]
+    #[clap(short = 'E', long, global = true, display_order=0)]
     pub env: Option<String>,
     /// Force the operation
-    #[clap(long, short, hide = true)]
+    #[clap(long, short, hide = true, display_order=0)]
     pub force: bool,
     /// Set the log output verbosity
-    #[clap(long, short, hide = true, overrides_with = "prefix")]
+    #[clap(long, short, hide = true, overrides_with = "prefix", display_order=0)]
     pub interleave: bool,
     /// How many jobs to run in parallel [default: 4]
-    #[clap(long, short, global = true, env = "MISE_JOBS")]
+    #[clap(long, short, global = true, env = "MISE_JOBS", display_order=0)]
     pub jobs: Option<usize>,
-    #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum)]
+    #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum, display_order=0)]
     pub log_level: Option<LevelFilter>,
-    #[clap(long, short, hide = true, overrides_with = "interleave")]
+    #[clap(long, short, hide = true, overrides_with = "interleave", display_order=0)]
     pub prefix: bool,
     /// Set the profile (environment)
-    #[clap(short = 'P', long, global = true, hide = true)]
+    #[clap(short = 'P', long, global = true, hide = true, display_order=0)]
     pub profile: Option<String>,
-    #[clap(long, short, hide = true)]
+    #[clap(long, short, hide = true, display_order=0)]
     pub shell: Option<String>,
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
-    #[clap(short, long, hide = true, value_name = "TOOL@VERSION")]
+    #[clap(short, long, hide = true, value_name = "TOOL@VERSION", display_order=0)]
     pub tool: Vec<ToolArg>,
     /// Suppress non-error messages
-    #[clap(short = 'q', long, global = true, overrides_with = "verbose")]
+    #[clap(short = 'q', long, global = true, overrides_with = "verbose", display_order=0)]
     pub quiet: bool,
     /// Read/write directly to stdin/stdout/stderr instead of by line
-    #[clap(long, global = true)]
+    #[clap(long, global = true, display_order = 0)]
     pub raw: bool,
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
-    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true, display_order = 0)]
     pub timings: bool,
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
-    #[clap(long, alias = "no-timing", hide = true, verbatim_doc_comment)]
+    #[clap(long, alias = "no-timing", hide = true, verbatim_doc_comment, display_order = 0)]
     pub no_timings: bool,
 
     /// Sets log level to trace
-    #[clap(long, global = true, hide = true)]
+    #[clap(long, global = true, hide = true, display_order = 0)]
     pub trace: bool,
     /// Show extra output (use -vv for even more)
-    #[clap(short='v', long, global=true, overrides_with="quiet", action=ArgAction::Count)]
+    #[clap(short='v', long, global=true, overrides_with="quiet", action=ArgAction::Count, display_order=0)]
     pub verbose: u8,
     /// Answer yes to all confirmation prompts
-    #[clap(short = 'y', long, global = true)]
+    #[clap(short = 'y', long, global = true, display_order = 0)]
     pub yes: bool,
 }
 

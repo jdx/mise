@@ -7,17 +7,17 @@ mod set;
 
 /// Manage config files
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "cfg", alias = "toml")]
+#[clap(visible_alias = "cfg", alias = "toml", next_display_order = 0)]
 pub struct Config {
     #[clap(subcommand)]
     command: Option<Commands>,
 
     /// Do not print table header
-    #[clap(long, alias = "no-headers", verbatim_doc_comment)]
+    #[clap(long, alias = "no-headers", verbatim_doc_comment, display_order = 0)]
     no_header: bool,
 
     /// Output in JSON format
-    #[clap(short = 'J', long, verbatim_doc_comment)]
+    #[clap(short = 'J', long, verbatim_doc_comment, display_order = 0)]
     pub json: bool,
 }
 
