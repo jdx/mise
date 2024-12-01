@@ -39,6 +39,7 @@ mod fake_asdf;
 mod file;
 mod git;
 pub(crate) mod github;
+mod gpg;
 mod hash;
 mod hook_env;
 mod hooks;
@@ -70,6 +71,7 @@ mod versions_host;
 mod watch_files;
 
 pub(crate) use crate::exit::exit;
+pub(crate) use crate::result::Result;
 pub(crate) use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 

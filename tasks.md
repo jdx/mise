@@ -71,6 +71,10 @@ run a command inside of development docker container
 
 - **Usage**: `docs:setup`
 
+## `fetch-gpg-keys`
+
+- **Usage**: `fetch-gpg-keys`
+
 ## `filetask`
 
 - **Usage**: `filetask [-f --force] [-u --user <user>] [file] [arg_with_default]`

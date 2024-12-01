@@ -6,7 +6,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file, github, plugins};
+use crate::{env, file, github, gpg, plugins};
 use eyre::Result;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir_in;
@@ -109,15 +109,7 @@ impl SwiftPlugin {
                 .println("gpg not found, skipping verification".to_string());
             return Ok(());
         }
-        self.gpg(ctx)
-            .arg("--quiet")
-            .arg("--keyserver")
-            .arg("hkp://keyserver.ubuntu.com")
-            .arg("--recv-keys")
-            .arg("E813 C892 820A 6FA1 3755 B268 F167 DF1A CF9C E069")
-            .arg("A62A E125 BBBF BB96 A6E0 42EC 925C C1CC ED3D 1561")
-            .arg("52BB 7E3D E28A 71BE 22EC 05FF EF80 A866 B47A 981F")
-            .execute()?;
+        gpg::add_keys_swift(ctx)?;
         let sig_path = PathBuf::from(format!("{}.sig", tarball_path.to_string_lossy()));
         HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(ctx.pr.as_ref()))?;
         self.gpg(ctx)

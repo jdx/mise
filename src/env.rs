@@ -124,6 +124,9 @@ pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
 pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
 pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
 
+pub static HTTP_PROXY: Lazy<Option<String>> =
+    Lazy::new(|| var("https_proxy").or_else(|_| var("http_proxy")).ok());
+
 pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 
 // true if running inside a shim
