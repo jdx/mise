@@ -13,19 +13,19 @@ use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 #[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Env {
     /// Tool(s) to use
-    #[clap(value_name = "TOOL@VERSION", display_order=0)]
+    #[clap(value_name = "TOOL@VERSION", display_order = 0)]
     tool: Vec<ToolArg>,
 
     /// Output in JSON format
-    #[clap(long, short = 'J', overrides_with = "shell", display_order=0)]
+    #[clap(long, short = 'J', overrides_with = "shell", display_order = 0)]
     json: bool,
 
     /// Output in dotenv format
-    #[clap(long, short = 'D', overrides_with = "shell", display_order=0)]
+    #[clap(long, short = 'D', overrides_with = "shell", display_order = 0)]
     dotenv: bool,
 
     /// Shell type to generate environment variables for
-    #[clap(long, short, overrides_with = "json", display_order=0)]
+    #[clap(long, short, overrides_with = "json", display_order = 0)]
     shell: Option<ShellType>,
 }
 
