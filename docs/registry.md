@@ -624,7 +624,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | rome | [asdf:kichiemon/asdf-rome](https://github.com/kichiemon/asdf-rome) |
 | rstash | [asdf:carlduevel/asdf-rstash](https://github.com/carlduevel/asdf-rstash) |
 | ruby | [core:ruby](https://mise.jdx.dev/lang/ruby.html) |
-| ruff | [ubi:astral-sh/ruff](https://github.com/astral-sh/ruff) [asdf:simhem/asdf-ruff](https://github.com/simhem/asdf-ruff) |
+| ruff | [aqua:astral-sh/ruff](https://github.com/astral-sh/ruff) [ubi:astral-sh/ruff](https://github.com/astral-sh/ruff) [asdf:simhem/asdf-ruff](https://github.com/simhem/asdf-ruff) |
 | rust | [core:rust](https://mise.jdx.dev/lang/rust.html) [asdf:code-lever/asdf-rust](https://github.com/code-lever/asdf-rust) |
 | rust-analyzer | [aqua:rust-lang/rust-analyzer](https://github.com/rust-lang/rust-analyzer) [asdf:Xyven1/asdf-rust-analyzer](https://github.com/Xyven1/asdf-rust-analyzer) |
 | rustic | [ubi:rustic-rs/rustic](https://github.com/rustic-rs/rustic) |
