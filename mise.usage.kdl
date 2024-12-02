@@ -1062,6 +1062,7 @@ cmd "settings" help="Manage settings" {
     flag "-a --all" help="List all settings"
     flag "-l --local" help="Use the local config file instead of the global one" global=true
     flag "-J --json" help="Output in JSON format"
+    flag "--json-extended" help="Output in JSON format with sources"
     flag "-T --toml" help="Output in TOML format"
     arg "[KEY]" help="Setting name to get/set"
     arg "[VALUE]" help="Setting value to set"
@@ -1114,6 +1115,7 @@ but managed separately with `mise aliases`"
         flag "-a --all" help="Display settings set to the default"
         flag "-l --local" help="Use the local config file instead of the global one"
         flag "-J --json" help="Output in JSON format"
+        flag "--json-extended" help="Output in JSON format with sources"
         flag "-T --toml" help="Output in TOML format"
         arg "[KEY]" help="List keys under this key"
     }
