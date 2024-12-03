@@ -47,13 +47,13 @@ install a particular tag, branch, or commit revision:
 
 ```sh
 # Install a specific tag
-mise use cargo:github.com/username/demo@tag:<release_tag>
+mise use cargo:https://github.com/username/demo@tag:<release_tag>
 
 # Install the latest from a branch
-mise use cargo:github.com/username/demo@branch:<branch_name>
+mise use cargo:https://github.com/username/demo@branch:<branch_name>
 
 # Install a specific commit revision
-mise use cargo:github.com/username/demo@rev:<commit_hash>
+mise use cargo:https://github.com/username/demo@rev:<commit_hash>
 ```
 
 This will execute a `cargo install` command with the corresponding Git options.
