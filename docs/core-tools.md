@@ -15,4 +15,5 @@ You can see the core plugins with `mise plugin ls --core`.
 - [NodeJS](/lang/node)
 - [Python](/lang/python)
 - [Ruby](/lang/ruby)
+- [Rust](/lang/rust)
 - [Swift](/lang/swift)
