@@ -441,7 +441,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | kubie | [aqua:sbstp/kubie](https://github.com/sbstp/kubie) [asdf:johnhamelink/asdf-kubie](https://github.com/johnhamelink/asdf-kubie) |
 | kustomize | [aqua:kubernetes-sigs/kustomize](https://github.com/kubernetes-sigs/kustomize) [asdf:Banno/asdf-kustomize](https://github.com/Banno/asdf-kustomize) |
 | kwt | [aqua:carvel-dev/kwt](https://github.com/carvel-dev/kwt) [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
-| kyverno-cli | [aqua:kyverno/kyverno](https://github.com/kyverno/kyverno) [asdf:https://github.com/hobaen/asdf-kyverno-cli.git](https://github.com/hobaen/asdf-kyverno-cli) |
+| kyverno | [aqua:kyverno/kyverno](https://github.com/kyverno/kyverno) [asdf:https://github.com/hobaen/asdf-kyverno-cli.git](https://github.com/hobaen/asdf-kyverno-cli) |
 | lab | [aqua:zaquestion/lab](https://github.com/zaquestion/lab) [asdf:particledecay/asdf-lab](https://github.com/particledecay/asdf-lab) |
 | lane | [asdf:CodeReaper/asdf-lane](https://github.com/CodeReaper/asdf-lane) |
 | lazygit | [aqua:jesseduffield/lazygit](https://github.com/jesseduffield/lazygit) [asdf:nklmilojevic/asdf-lazygit](https://github.com/nklmilojevic/asdf-lazygit) |
