@@ -781,6 +781,8 @@ ripgrep.backends = ["aqua:BurntSushi/ripgrep", "ubi:BurntSushi/ripgrep[exe=rg]",
 ripgrep.test = ["rg --version", "ripgrep {{version}}"]
 ripgrep-all.backends = ["aqua:phiresky/ripgrep-all"]
 ripgrep-all.test = ["rga --version", "ripgrep-all {{version}}"]
+ripsecret.backends = ["aqua:sirwart/ripsecrets", "asdf:https://github.com/boris-smidt-klarrio/asdf-ripsecrets"]
+ripsecret.test = ["ripsecrets --version", "ripsecrets {{version}}"]
 rke.backends = ["aqua:rancher/rke", "asdf:particledecay/asdf-rke"]
 rlwrap.backends = ["asdf:asdf-community/asdf-rlwrap"]
 rome.backends = ["asdf:kichiemon/asdf-rome"]
