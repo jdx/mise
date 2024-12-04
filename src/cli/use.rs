@@ -18,7 +18,7 @@ use crate::toolset::{
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, env, file};
 
-/// Installs a tool and adds the version it to mise.toml.
+/// Installs a tool and adds the version to mise.toml.
 ///
 /// This will install the tool version if it is not already installed.
 /// By default, this will use a `mise.toml` file in the current directory.

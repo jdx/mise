@@ -2901,7 +2901,7 @@ const completionSpec: Fig.Spec = {
                 "use",
                 "u"
             ],
-            "description": "Installs a tool and adds the version it to mise.toml.",
+            "description": "Installs a tool and adds the version to mise.toml.",
             "options": [
                 {
                     "name": [
