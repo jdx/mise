@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 
-mise i vfox:version-fox/vfox-golang@1.23.3
-assert_contains "mise x vfox:version-fox/vfox-golang@1.23.3 -- go version" "go version go1.23.3"
+version="$(mise latest vfox:version-fox/vfox-golang)"
+assert "mise i vfox:version-fox/vfox-golang"
+assert_contains "mise x vfox:version-fox/vfox-golang -- go version" "go version go$version"

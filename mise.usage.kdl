@@ -1524,9 +1524,9 @@ cmd "usage" hide=true help="Generate a usage CLI spec" {
 
 See https://usage.jdx.dev for more information on this specification."
 }
-cmd "use" help="Installs a tool and adds the version it to mise.toml." {
+cmd "use" help="Installs a tool and adds the version to mise.toml." {
     alias "u"
-    long_help r#"Installs a tool and adds the version it to mise.toml.
+    long_help r#"Installs a tool and adds the version to mise.toml.
 
 This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.

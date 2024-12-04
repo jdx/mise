@@ -4,7 +4,7 @@
 - **Aliases**: `u`
 - **Source code**: [`src/cli/use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs)
 
-Installs a tool and adds the version it to mise.toml.
+Installs a tool and adds the version to mise.toml.
 
 This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.
