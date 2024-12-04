@@ -162,6 +162,9 @@ impl Settings {
             if settings.python.compile.is_none() {
                 settings.python.compile = Some(true);
             }
+            if settings.erlang.compile.is_none() {
+                settings.erlang.compile = Some(true);
+            }
         }
         settings.set_hidden_configs();
         let settings = Arc::new(settings);

@@ -20,3 +20,10 @@ See available versions with `mise ls-remote erlang`.
 
 The plugin uses [kerl](https://github.com/kerl/kerl) under the hood to build erlang.
 See kerl's docs for information on configuring kerl.
+
+## Settings
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="erlang" :level="3" />

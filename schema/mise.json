@@ -242,6 +242,15 @@
           "description": "Path to a file containing environment variables.",
           "type": "string"
         },
+        "erlang": {
+          "additionalProperties": false,
+          "properties": {
+            "compile": {
+              "description": "If true, compile erlang from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
+              "type": "boolean"
+            }
+          }
+        },
         "exec_auto_install": {
           "default": true,
           "description": "Automatically install missing tools when running `mise x`.",

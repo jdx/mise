@@ -240,6 +240,12 @@ optional = true
 description = "Path to a file containing environment variables."
 hide = true
 
+[erlang.compile]
+env = "MISE_ERLANG_COMPILE"
+type = "Bool"
+optional = true
+description = "If true, compile erlang from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
+
 [exec_auto_install]
 env = "MISE_EXEC_AUTO_INSTALL"
 type = "Bool"
