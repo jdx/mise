@@ -10,7 +10,7 @@ use crate::cli::self_update::SelfUpdate;
 #[cfg(not(test))]
 use crate::config::Settings;
 use crate::file::modified_duration;
-use crate::{dirs, duration, env, exit, file};
+use crate::{dirs, duration, env, file};
 
 /// Display the version of mise
 ///
@@ -59,11 +59,12 @@ pub static V: Lazy<Versioning> = Lazy::new(|| Versioning::new(env!("CARGO_PKG_VE
 impl Version {
     pub fn run(self) -> Result<()> {
         show_version()?;
+        show_latest();
         Ok(())
     }
 }
 
-pub fn print_version_if_requested(args: &[String]) -> std::io::Result<()> {
+pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
     #[cfg(unix)]
     let mise_bin = "mise";
     #[cfg(windows)]
@@ -72,20 +73,19 @@ pub fn print_version_if_requested(args: &[String]) -> std::io::Result<()> {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" {
             show_version()?;
-            exit(0);
+            return Ok(true);
         }
     }
     debug!("Version: {}", *VERSION);
-    Ok(())
+    Ok(false)
 }
 
 fn show_version() -> std::io::Result<()> {
     miseprintln!("{}", *VERSION);
-    show_latest();
     Ok(())
 }
 
-fn show_latest() {
+pub fn show_latest() {
     if ci_info::is_ci() && !cfg!(test) {
         return;
     }
@@ -112,7 +112,7 @@ fn get_latest_version(duration: Duration) -> Option<String> {
     if let Ok(metadata) = modified_duration(&version_file_path) {
         if metadata < duration {
             if let Ok(version) = file::read_to_string(&version_file_path) {
-                return Some(version);
+                return Some(version.trim().to_string());
             }
         }
     }

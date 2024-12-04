@@ -276,7 +276,7 @@ impl Cli {
         crate::env::ARGS.write().unwrap().clone_from(args);
         measure!("hande_shim", { shims::handle_shim() })?;
         ctrlc::init();
-        version::print_version_if_requested(args)?;
+        let print_version = version::print_version_if_requested(args)?;
 
         let cli = measure!("pre_settings", { Self::pre_settings(args) })?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
@@ -290,6 +290,10 @@ impl Cli {
         }
 
         debug!("ARGS: {}", &args.join(" "));
+        if print_version {
+            version::show_latest();
+            exit(0);
+        }
         let cmd = cli.get_command()?;
         measure!("run {cmd}", { cmd.run() })
     }

@@ -54,6 +54,7 @@ impl Doctor {
         self.analyze_settings()?;
 
         if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
+            version::show_latest();
             self.errors.push(format!(
                 "new mise version {latest} available, currently on {}",
                 *version::V
