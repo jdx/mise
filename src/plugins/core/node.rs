@@ -10,7 +10,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file, hash, http, plugins};
+use crate::{env, file, gpg, hash, http, plugins};
 use eyre::{bail, ensure, Result};
 use serde_derive::Deserialize;
 use std::collections::BTreeMap;
@@ -205,21 +205,7 @@ impl NodePlugin {
         let sig_file = shasums_file.with_extension("asc");
         let sig_url = format!("{}.sig", self.shasums_url(v)?);
         HTTP.download_file(sig_url, &sig_file, Some(ctx.pr.as_ref()))?;
-        CmdLineRunner::new("gpg")
-            .arg("--keyserver")
-            .arg("hkps://keys.openpgp.org")
-            .arg("--recv-keys")
-            .arg("--quiet")
-            .arg("C0D6248439F1D5604AAFFB4021D900FFDB233756") // Antoine du Hamel
-            .arg("DD792F5973C6DE52C432CBDAC77ABFA00DDBF2B7") // Juan José Arboleda
-            .arg("CC68F5A3106FF448322E48ED27F5E38D5B0A215F") // Marco Ippolito
-            .arg("8FCCA13FEF1D0C2E91008E09770F7A9A5AE15600") // Michaël Zasso
-            .arg("890C08DB8579162FEE0DF9DB8BEAB4DFCF555EF4") // Rafael Gonzaga
-            .arg("C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C") // Richard Lau
-            .arg("108F52B48DB57BB0CC439B2997B01419BD92F80A") // Ruy Adorno
-            .arg("A363A499291CBBC940DD62E41F10027AF002F8B0") // Ulises Gascón
-            .with_pr(ctx.pr.as_ref())
-            .execute()?;
+        gpg::add_keys_node(ctx)?;
         CmdLineRunner::new("gpg")
             .arg("--quiet")
             .arg("--trust-model")
