@@ -347,7 +347,7 @@ mise completion bash > /etc/bash_completion.d/mise
 # If you use oh-my-zsh, there is a `mise` plugin. Update your .zshrc file with:
 # plugins=(... mise)
 
-# Otherwise, look where zsh search for completions with 
+# Otherwise, look where zsh search for completions with
 echo $fpath | tr ' ' '\n'
 
 # if you installed zsh with `apt-get` for example, this will work:
