@@ -516,7 +516,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | nerdctl | [asdf:dmpe/asdf-nerdctl](https://github.com/dmpe/asdf-nerdctl) |
 | newrelic | [ubi:newrelic/newrelic-cli](https://github.com/newrelic/newrelic-cli) [asdf:NeoHsu/asdf-newrelic-cli](https://github.com/NeoHsu/asdf-newrelic-cli) |
 | nfpm | [aqua:goreleaser/nfpm](https://github.com/goreleaser/nfpm) [ubi:goreleaser/nfpm](https://github.com/goreleaser/nfpm) [asdf:ORCID/asdf-nfpm](https://github.com/ORCID/asdf-nfpm) |
-| nim | [asdf:asdf-community/asdf-nim](https://github.com/asdf-community/asdf-nim) |
+| nim | [asdf:mise-plugins/mise-nim](https://github.com/mise-plugins/mise-nim) |
 | ninja | [aqua:ninja-build/ninja](https://github.com/ninja-build/ninja) [asdf:asdf-community/asdf-ninja](https://github.com/asdf-community/asdf-ninja) |
 | node | [core:node](https://mise.jdx.dev/lang/node.html) |
 | nomad | [aqua:hashicorp/levant](https://github.com/hashicorp/levant) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
