@@ -103,14 +103,6 @@ There are many ways it can be used:
   .tool-versions/.mise.toml
 - `mise install` - install all plugins and tools
 
-### `mise local|global` <Badge type="danger" text="not recommended" />
-
-`mise local` and `mise global` are command which only modify the `.tool-versions` or `.mise.toml`
-files.
-These are hidden from the CLI help and remain for asdf-compatibility. The recommended approach is
-to use `mise use` instead because that will do the same thing but also install the tool if it does
-not already exists.
-
 ### [`mise exec`|`mise x`](/cli/exec)
 
 `mise x` can be used for one-off commands using specific tools. e.g.: if you want to run a script
