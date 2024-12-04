@@ -55,7 +55,7 @@ pub struct Use {
     /// Save fuzzy version to config file
     ///
     /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
-    /// this is the default behavior unless `MISE_PIN=1` or `MISE_ASDF_COMPAT=1`
+    /// this is the default behavior unless `MISE_PIN=1`
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
 
@@ -63,7 +63,7 @@ pub struct Use {
     #[clap(short, long, overrides_with_all = & ["path", "env"])]
     global: bool,
 
-    /// Modify an environment-specific config file like .mise.<env>.toml
+    /// Create/modify an environment-specific config file like .mise.<env>.toml
     #[clap(long, short, overrides_with_all = & ["global", "path"])]
     env: Option<String>,
 
@@ -83,15 +83,17 @@ pub struct Use {
 
     /// Specify a path to a config file or directory
     ///
-    /// If a directory is specified, it will look for `mise.toml` (default) or `.tool-versions` if
-    /// `MISE_ASDF_COMPAT=1`
-    #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath
-    )]
+    /// If a directory is specified, it will look for a config file in that directory following
+    /// the rules above.
+    #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
     /// Save exact version to config file
     /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
-    /// Set `MISE_PIN=1` or `MISE_ASDF_COMPAT=1` to make this the default behavior
+    /// Set `MISE_PIN=1` to make this the default behavior
+    ///
+    /// Consider using mise.lock as a better alternative to pinning in mise.toml:
+    /// https://mise.jdx.dev/configuration/settings.html#lockfile
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 }

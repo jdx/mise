@@ -2931,7 +2931,7 @@ const completionSpec: Fig.Spec = {
                         "-e",
                         "--env"
                     ],
-                    "description": "Modify an environment-specific config file like .mise.<env>.toml",
+                    "description": "Create/modify an environment-specific config file like .mise.<env>.toml",
                     "isRepeatable": false,
                     "args": {
                         "name": "env",
@@ -2990,7 +2990,7 @@ const completionSpec: Fig.Spec = {
                     "name": [
                         "--pin"
                     ],
-                    "description": "Save exact version to config file\ne.g.: `mise use --pin node@20` will save 20.0.0 as the version\nSet `MISE_PIN=1` or `MISE_ASDF_COMPAT=1` to make this the default behavior",
+                    "description": "Save exact version to config file\ne.g.: `mise use --pin node@20` will save 20.0.0 as the version\nSet `MISE_PIN=1` to make this the default behavior",
                     "isRepeatable": false
                 }
             ],

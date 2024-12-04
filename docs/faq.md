@@ -125,18 +125,9 @@ wouldn't want to install a version that is already installed.
 
 ## How do I migrate from asdf?
 
-First, just install mise with `mise activate` like in the getting started guide and remove asdf from
-your
-shell rc file.
-
-Then you can just run `mise install` in a directory with an asdf `.tool-versions` file and it will
-install the runtimes. You could attempt to avoid this by copying the internal directory from asdf
-over
-to mise with `cp -r ~/.asdf ~/.local/share/mise`. That _should_ work because they use the same
-structure,
-however this isn't officially supported or regularly tested. Alternatively you can
-set `MISE_DATA_DIR=~/.asdf`
-and see what happens.
+First, just install mise with `mise activate` as described in the [getting started guide](/getting-started)
+and remove asdf from your shell rc file. Then run `mise install` in a directory with an asdf `.tool-versions` file
+and mise will install the tools.
 
 ## How compatible is mise with asdf?
 
@@ -154,11 +145,11 @@ we should attempt to make things as consistent as possible.
 This isn't important for usability reasons so much as making it so plugins continue to work that
 call asdf commands.
 
-If you need to switch to/from asdf or work in a project with asdf users, you can set
-[`MISE_ASDF_COMPAT=1`](/configuration#mise_asdf_compat1). That prevents
-mise from writing `.tool-versions` files that will not be
-compatible with asdf. Also consider using `mise.toml` instead which won't conflict with asdf
-setups.
+Using commands like `mise use` may output `.tool-versions` files that are not compatible with asdf,
+such as using fuzzy versions. You can set `MISE_PIN=1` to make it output asdf-compatible versions.
+That said, in general compatibility with asdf is no longer a design goal. It's long been the case
+that there is no reason to prefer asdf to mise so users should migrate. While plenty of users have
+teams which use both in tandem, issues with such a setup are unlikely to be prioritized.
 
 ## How do I disable/force CLI color output?
 

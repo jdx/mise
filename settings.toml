@@ -96,6 +96,7 @@ default to using an asdf plugin for cmake.
 [asdf_compat]
 env = "MISE_ASDF_COMPAT"
 type = "Bool"
+hide = true
 description = "set to true to ensure .tool-versions will be compatible with asdf"
 docs = """
 Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.

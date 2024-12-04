@@ -102,6 +102,10 @@ pub fn local(
     fuzzy: bool,
     show_path: bool,
 ) -> Result<()> {
+    deprecated!(
+        "local",
+        "mise local/global are deprecated. Use `mise use` instead."
+    );
     let settings = Settings::try_get()?;
     let mut cf = config_file::parse_or_init(path)?;
     if show_path {

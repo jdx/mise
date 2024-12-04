@@ -183,7 +183,6 @@ trusted_config_paths = [
 ]
 
 verbose = false       # set to true to see full installation output, see `MISE_VERBOSE`
-asdf_compat = false   # set to true to ensure .tool-versions will be compatible with asdf, see `MISE_ASDF_COMPAT`
 http_timeout = "30s"  # set the timeout for http requests as duration string, see `MISE_HTTP_TIMEOUT`
 jobs = 4              # number of plugins or runtimes to install in parallel. The default is `4`.
 raw = false           # set to true to directly pipe plugins to stdin/stdout/stderr
@@ -351,13 +350,6 @@ Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 
 Set the version for a runtime. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
 of what is set in `.tool-versions`/`.mise.toml`.
-
-### `MISE_USE_TOML=1`
-
-Set to `0` to default to using `.tool-versions` in `mise local` instead of `mise.toml` for
-configuration.
-
-This is not used by `mise use` which will only use `mise.toml` unless `--path` is specified.
 
 ### `MISE_TRUSTED_CONFIG_PATHS`
 

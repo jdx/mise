@@ -42,7 +42,7 @@ Force reinstall even if already installed
 Save fuzzy version to config file
 
 e.g.: `mise use --fuzzy node@20` will save 20 as the version
-this is the default behavior unless `MISE_PIN=1` or `MISE_ASDF_COMPAT=1`
+this is the default behavior unless `MISE_PIN=1`
 
 ### `-g --global`
 
@@ -50,7 +50,7 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 
 ### `-e --env <ENV>`
 
-Modify an environment-specific config file like .mise.&lt;env>.toml
+Create/modify an environment-specific config file like .mise.&lt;env>.toml
 
 ### `-j --jobs <JOBS>`
 
@@ -69,13 +69,16 @@ Remove the plugin(s) from config file
 
 Specify a path to a config file or directory
 
-If a directory is specified, it will look for `mise.toml` (default) or `.tool-versions` if `MISE_ASDF_COMPAT=1`
+If a directory is specified, it will look for a config file in that directory following the rules above.
 
 ### `--pin`
 
 Save exact version to config file
 e.g.: `mise use --pin node@20` will save 20.0.0 as the version
-Set `MISE_PIN=1` or `MISE_ASDF_COMPAT=1` to make this the default behavior
+Set `MISE_PIN=1` to make this the default behavior
+
+Consider using mise.lock as a better alternative to pinning in mise.toml:
+<https://mise.jdx.dev/configuration/settings.html#lockfile>
 
 Examples:
 
