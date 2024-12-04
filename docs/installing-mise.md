@@ -344,7 +344,13 @@ mise completion bash > /etc/bash_completion.d/mise
 ```
 
 ```sh [zsh]
-# This requires zsh to be configured. If you e.g. use oh-my-zsh, it should work out of the box.
+# If you use oh-my-zsh, there is a `mise` plugin. Update your .zshrc file with:
+# plugins=(... mise)
+
+# Otherwise, look where zsh search for completions with
+echo $fpath | tr ' ' '\n'
+
+# if you installed zsh with `apt-get` for example, this will work:
 mkdir -p /usr/local/share/zsh/site-functions
 mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
 ```

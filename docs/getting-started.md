@@ -70,7 +70,7 @@ or [running tasks](/tasks/)
 this step is not necessary. You can use it to make sure `mise` is correctly setup.
 :::
 
-Install `node` and set it as the global default:
+As an example, here is how you can install `node` and set it as the global default:
 
 ```sh
 mise use --global node@22
