@@ -156,9 +156,16 @@ impl PythonPlugin {
                         tv.version
                     );
                 }
-                debug!("no precompiled python found for {}", tv.version);
-                let mut available = precompiled_versions.iter().map(|(v, _, _)| v);
-                trace!("available precompiled versions: {}", available.join(", "));
+                let available = precompiled_versions.iter().map(|(v, _, _)| v).collect_vec();
+                if available.is_empty() {
+                    debug!("no precompiled python found for {}", tv.version);
+                } else {
+                    warn!("no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile=false`", tv.version);
+                }
+                trace!(
+                    "available precompiled versions: {}",
+                    available.into_iter().join(", ")
+                );
                 return self.install_compiled(ctx, tv);
             }
         };
