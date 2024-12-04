@@ -1,5 +1,56 @@
 # Changelog
 
+## [2024.12.0](https://github.com/jdx/mise/compare/v2024.11.37..v2024.12.0) - 2024-12-04
+
+### 🚀 Features
+
+- **(erlang)** use precompiled binaries for macos by [@jdx](https://github.com/jdx) in [#3353](https://github.com/jdx/mise/pull/3353)
+- add upctl by [@scop](https://github.com/scop) in [#3309](https://github.com/jdx/mise/pull/3309)
+- Add `json-with-sources` option to settings ls by [@hverlin](https://github.com/hverlin) in [#3307](https://github.com/jdx/mise/pull/3307)
+- add ripsecrets to registry.toml by [@boris-smidt-klarrio](https://github.com/boris-smidt-klarrio) in [#3334](https://github.com/jdx/mise/pull/3334)
+- Add kyverno-cli by [@boris-smidt-klarrio](https://github.com/boris-smidt-klarrio) in [#3336](https://github.com/jdx/mise/pull/3336)
+
+### 🐛 Bug Fixes
+
+- add exec to `mise g git-pre-commit` by [@jdx](https://github.com/jdx) in [27a3aef](https://github.com/jdx/mise/commit/27a3aefa767c8ef142009dd54c4d7dcc19c235b2)
+- bake gpg keys in by [@jdx](https://github.com/jdx) in [#3318](https://github.com/jdx/mise/pull/3318)
+- deprecate `mise local|global` by [@jdx](https://github.com/jdx) in [#3350](https://github.com/jdx/mise/pull/3350)
+
+### 🚜 Refactor
+
+- use aqua for ruff by [@scop](https://github.com/scop) in [#3316](https://github.com/jdx/mise/pull/3316)
+
+### 📚 Documentation
+
+- add terraform recipe to the cookbook by [@AliSajid](https://github.com/AliSajid) in [#3305](https://github.com/jdx/mise/pull/3305)
+- fix git examples for cargo backend by [@tmeijn](https://github.com/tmeijn) in [#3335](https://github.com/jdx/mise/pull/3335)
+
+### 🧪 Testing
+
+- remove non-working maven test by [@jdx](https://github.com/jdx) in [5a3ed16](https://github.com/jdx/mise/commit/5a3ed16efb29dbf80f5ac251eec39e3a462d2219)
+- remove gleam by [@jdx](https://github.com/jdx) in [fdfe20b](https://github.com/jdx/mise/commit/fdfe20b32b16b835655551d3f12b5d6e90856b2e)
+- use latest golang in e2e test by [@jdx](https://github.com/jdx) in [#3349](https://github.com/jdx/mise/pull/3349)
+
+### 🔍 Other Changes
+
+- Update tips-and-tricks.md by [@jdx](https://github.com/jdx) in [5071419](https://github.com/jdx/mise/commit/5071419b988d3655b87e7413a4577fab2684ddf8)
+- Update tips-and-tricks.md by [@jdx](https://github.com/jdx) in [fcc6b59](https://github.com/jdx/mise/commit/fcc6b59740306ee2065f365d230b30abbefcc7d2)
+- Update tips-and-tricks.md by [@jdx](https://github.com/jdx) in [039b19d](https://github.com/jdx/mise/commit/039b19dd9dc68e3047b23127483af2f9efd11e1b)
+- Update configuration.md by [@jdx](https://github.com/jdx) in [b0cac9e](https://github.com/jdx/mise/commit/b0cac9e7573ccb5dd70c3b3b1e53a0a7911c2e18)
+- Update tips-and-tricks.md by [@jdx](https://github.com/jdx) in [9347be8](https://github.com/jdx/mise/commit/9347be89a9a86c0bde40c3986c01b98e4f8d68b8)
+- Update tips-and-tricks.md by [@jdx](https://github.com/jdx) in [1cfc822](https://github.com/jdx/mise/commit/1cfc8228541c98111c36c5470323f9fe52d2125f)
+- Update registry.toml by [@jdx](https://github.com/jdx) in [5a28860](https://github.com/jdx/mise/commit/5a28860ac7f8d81194926d6b14eb394ecbe7dc0d)
+- upgrade usage-lib by [@jdx](https://github.com/jdx) in [554d533](https://github.com/jdx/mise/commit/554d533a253a137c27c5cdac6da2ae09629029dc)
+- add rust to core tools list by [@gurgelio](https://github.com/gurgelio) in [#3341](https://github.com/jdx/mise/pull/3341)
+- use asdf:mise-plugins/mise-nim by [@jdx](https://github.com/jdx) in [#3352](https://github.com/jdx/mise/pull/3352)
+
+### New Contributors
+
+- @gurgelio made their first contribution in [#3341](https://github.com/jdx/mise/pull/3341)
+- @tmeijn made their first contribution in [#3335](https://github.com/jdx/mise/pull/3335)
+- @boris-smidt-klarrio made their first contribution in [#3336](https://github.com/jdx/mise/pull/3336)
+- @AliSajid made their first contribution in [#3305](https://github.com/jdx/mise/pull/3305)
+
 ## [2024.11.37](https://github.com/jdx/mise/compare/v2024.11.36..v2024.11.37) - 2024-11-30
 
 ### 🚀 Features
