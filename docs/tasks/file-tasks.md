@@ -8,6 +8,8 @@ In addition to defining tasks through the configuration, they can also be define
 - `.mise/tasks/:task_name`
 - `.config/mise/tasks/:task_name`
 
+Note that you can include additional directories using the [task_config](/tasks/#task-configuration) section.
+
 Here is an example of a file task that builds a Rust CLI:
 
 ```bash
