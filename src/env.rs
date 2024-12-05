@@ -431,6 +431,7 @@ fn environment(args: &[String]) -> Vec<String> {
         .or_else(|| var("MISE_ENVIRONMENT").ok())
         .unwrap_or_default()
         .split(',')
+        .filter(|s| !s.is_empty())
         .map(String::from)
         .collect()
 }

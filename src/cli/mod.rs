@@ -111,7 +111,7 @@ pub struct Cli {
     #[clap(long, short, hide = true, overrides_with = "interleave")]
     pub prefix: bool,
     /// Set the profile (environment)
-    #[clap(short = 'P', long, global = true, hide = true)]
+    #[clap(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
     pub profile: Option<Vec<String>>,
     #[clap(long, short, hide = true)]
     pub shell: Option<String>,
