@@ -171,13 +171,18 @@ impl HookEnv {
         ))
     }
 
+    /// set the directory where hook-env was last run from
+    /// prefixed with ":" so it does not conflict with zsh's auto_name_dirs feature
     fn build_dir_operation(&self) -> Result<EnvDiffOperation> {
         Ok(EnvDiffOperation::Add(
             "__MISE_DIR".into(),
-            dirs::CWD
-                .as_ref()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default(),
+            format!(
+                ":{}",
+                dirs::CWD
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ),
         ))
     }
 
