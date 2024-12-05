@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
 
-mise use dummy@latest
-assert "mise bin-paths" "$MISE_DATA_DIR/installs/dummy/2.0.0/bin"
+mise use dummy@latest tiny@latest
+assert "mise bin-paths dummy" "$MISE_DATA_DIR/installs/dummy/2.0.0/bin"
+assert "mise bin-paths tiny" "$MISE_DATA_DIR/installs/tiny/3.1.0/bin"
+assert "mise bin-paths" "$MISE_DATA_DIR/installs/dummy/2.0.0/bin
+$MISE_DATA_DIR/installs/tiny/3.1.0/bin"
