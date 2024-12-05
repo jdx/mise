@@ -186,8 +186,5 @@ const ARCH: &str = "unknown";
 #[cfg(macos)]
 const OS: &str = "apple-darwin";
 
-#[cfg(linux)]
-const OS: &str = "unknown";
-
-#[cfg(windows)]
+#[cfg(not(macos))]
 const OS: &str = "unknown";
