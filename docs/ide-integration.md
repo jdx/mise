@@ -52,7 +52,7 @@ Here is an example using VSCode:
 # ~/.zprofile
 if [[ "$TERM_PROGRAM" == "vscode" ]]; then
   eval "$($HOME/.local/bin/mise activate zsh --shims)"
-elif; then
+else
   eval "$($HOME/.local/bin/mise activate zsh)"
 fi
 ```
@@ -61,7 +61,7 @@ fi
 # ~/.bash_profile or ~/.bash_login or ~/.profile
 if [[ "$TERM_PROGRAM" == "vscode" ]]; then
   eval "$($HOME/.local/bin/mise activate bash --shims)"
-elif; then
+else
   eval "$($HOME/.local/bin/mise activate bash)"
 fi
 ```
