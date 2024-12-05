@@ -572,7 +572,16 @@ const completionSpec: Fig.Spec = {
             "name": [
                 "bin-paths"
             ],
-            "description": "List all the active runtime bin paths"
+            "description": "List all the active runtime bin paths",
+            "args": [
+                {
+                    "name": "tool@version",
+                    "description": "Tool(s) to look up\ne.g.: ruby@3",
+                    "isOptional": true,
+                    "isVariadic": true,
+                    "generators": toolVersionGenerator
+                }
+            ]
         },
         {
             "name": [

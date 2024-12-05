@@ -52,7 +52,7 @@ Answer yes to all confirmation prompts
 - [`mise alias unset <PLUGIN> <ALIAS>`](/cli/alias/unset.md)
 - [`mise backends <SUBCOMMAND>`](/cli/backends.md)
 - [`mise backends ls`](/cli/backends/ls.md)
-- [`mise bin-paths`](/cli/bin-paths.md)
+- [`mise bin-paths [TOOL@VERSION]...`](/cli/bin-paths.md)
 - [`mise cache <SUBCOMMAND>`](/cli/cache.md)
 - [`mise cache clear [PLUGIN]...`](/cli/cache/clear.md)
 - [`mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`](/cli/cache/prune.md)

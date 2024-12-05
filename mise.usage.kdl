@@ -178,7 +178,9 @@ cmd "backends" help="Manage backends" {
 "
     }
 }
-cmd "bin-paths" help="List all the active runtime bin paths"
+cmd "bin-paths" help="List all the active runtime bin paths" {
+    arg "[TOOL@VERSION]..." help="Tool(s) to look up\ne.g.: ruby@3" var=true
+}
 cmd "cache" help="Manage the mise cache" {
     long_help r"Manage the mise cache
 
