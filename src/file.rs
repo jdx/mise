@@ -678,6 +678,16 @@ pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
+    debug!(
+        "pkgutil --expand-full {} {}",
+        archive.display(),
+        dest.display()
+    );
+    cmd!("pkgutil", "--expand-full", archive, dest).run()?;
+    Ok(())
+}
+
 #[cfg(windows)]
 pub fn un7z(archive: &Path, dest: &Path) -> Result<()> {
     sevenz_rust::decompress_file(archive, dest)

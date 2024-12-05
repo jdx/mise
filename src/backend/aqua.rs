@@ -490,6 +490,8 @@ impl AquaBackend {
             file::make_executable(&bin_path)?;
         } else if format == "dmg" {
             file::un_dmg(&tarball_path, &install_path)?;
+        } else if format == "pkg" {
+            file::un_pkg(&tarball_path, &install_path)?;
         } else {
             bail!("unsupported format: {}", format);
         }
