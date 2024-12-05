@@ -94,7 +94,7 @@ pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_CONFIG_FILENAME")
         .ok()
         .or(MISE_OVERRIDE_CONFIG_FILENAMES.first().cloned())
-        .or(MISE_ENV.as_ref().map(|env| format!("mise.{env}.toml")))
+        .or(MISE_ENV.last().map(|env| format!("mise.{env}.toml")))
         .unwrap_or_else(|| "mise.toml".into())
 });
 pub static MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: Lazy<Option<IndexSet<String>>> =
@@ -108,7 +108,7 @@ pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
         Ok(v) => v.split(':').map(|s| s.to_string()).collect(),
         Err(_) => Default::default(),
     });
-pub static MISE_ENV: Lazy<Option<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
+pub static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 pub static MISE_GLOBAL_CONFIG_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_GLOBAL_CONFIG_FILE")
         .or_else(|| var_path("MISE_CONFIG_FILE"))
@@ -410,7 +410,7 @@ fn prefer_stale(args: &[String]) -> bool {
     .contains(&c.as_str())
 }
 
-fn environment(args: &[String]) -> Option<String> {
+fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from([
         format!("--{}", PROFILE_ARG.get_long().unwrap_or_default()),
         format!("-{}", PROFILE_ARG.get_short().unwrap_or_default()),
@@ -429,6 +429,10 @@ fn environment(args: &[String]) -> Option<String> {
         .or_else(|| var("MISE_ENV").ok())
         .or_else(|| var("MISE_PROFILE").ok())
         .or_else(|| var("MISE_ENVIRONMENT").ok())
+        .unwrap_or_default()
+        .split(',')
+        .map(String::from)
+        .collect()
 }
 
 fn log_file_level() -> Option<LevelFilter> {
