@@ -64,7 +64,11 @@ impl Git {
         self.dir.join(".git").is_dir()
     }
 
-    pub fn update_libgit2(&self, repo: &git2::Repository, gitref: &str) -> Result<(String, String)> {
+    pub fn update_libgit2(
+        &self,
+        repo: &git2::Repository,
+        gitref: &str,
+    ) -> Result<(String, String)> {
         let mut fetch_options = get_fetch_options()?;
         let mut remote = repo.find_remote("origin")?;
         remote.fetch(&[gitref], Some(&mut fetch_options), None)?;
@@ -78,7 +82,7 @@ impl Git {
         touch_dir(&self.dir)?;
         Ok((prev_rev, post_rev))
     }
-    
+
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
         let gitref = gitref.map_or_else(|| self.current_branch(), Ok)?;
         debug!("updating {} to {}", self.dir.display(), gitref);

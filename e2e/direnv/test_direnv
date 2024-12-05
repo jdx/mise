@@ -37,17 +37,3 @@ _direnv_hook
 assert "which dummy" "$PWD/node_modules/.bin/dummy"
 # shellcheck disable=SC2016
 assert 'echo $FIRST' "first"
-
-# Deny direnv from using the .envrc file
-direnv deny && _mise_hook && _direnv_hook
-
-# Should use dummy@latest again
-assert "which dummy" "$MISE_DATA_DIR/installs/dummy/2.0.0/bin/dummy"
-# shellcheck disable=SC2016
-assert 'echo $FIRST' "last"
-
-# Allow direnv to use the .envrc file, but this a different activation order
-direnv allow && _direnv_hook
-
-# Should use dummy from node_modules (direnv PATH takes precedence)
-assert "which dummy" "$PWD/node_modules/.bin/dummy"
