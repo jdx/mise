@@ -186,6 +186,8 @@ User to run as
 
 ## `render:fig`
 
+- Depends: docs:setup
+
 - **Usage**: `render:fig`
 
 ## `render:help`
@@ -207,6 +209,8 @@ User to run as
 - **Usage**: `render:registry`
 
 ## `render:settings`
+
+- Depends: docs:setup
 
 - **Usage**: `render:settings`
 

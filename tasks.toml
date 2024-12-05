@@ -54,6 +54,7 @@ run = "./scripts/render-registry.js"
 
 ["render:settings"]
 run = "tsx xtasks/render/settings.ts"
+depends = ['docs:setup']
 
 ["render:mangen"]
 depends = ["build"]
@@ -66,6 +67,7 @@ run = [
     "usage generate fig --file mise.usage.kdl --out-file xtasks/fig/src/mise.ts",
     "tsx xtasks/fig/addCustomGenerators.ts xtasks/fig/src/mise.ts xtasks/fig/src/mise.ts"
 ]
+depends = ['docs:setup']
 
 ["render:help"]
 depends = ["build"]
