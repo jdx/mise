@@ -45,7 +45,11 @@ impl Shell for Bash {
             if [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook;"* ]]; then
               PROMPT_COMMAND="_mise_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
             fi
-            "#};
+            {}
+            {}
+            chpwd_functions+=(_mise_hook)
+            _mise_hook
+            "#, include_str!("../assets/bash_zsh_support/chpwd/function.sh"), include_str!("../assets/bash_zsh_support/chpwd/load.sh")};
         if settings.not_found_auto_install {
             out.push_str(&formatdoc! {r#"
             if [ -z "${{_mise_cmd_not_found:-}}" ]; then

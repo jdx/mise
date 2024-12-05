@@ -7,6 +7,7 @@ docs/cli
 docs/environments.md
 docs/public/site.webmanifest
 docs/registry.md
+src/assets/bash_zsh_support/
 tasks.md
 tmp
 xtasks/fig/src/mise.ts

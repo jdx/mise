@@ -64,23 +64,30 @@ impl Git {
         self.dir.join(".git").is_dir()
     }
 
+    pub fn update_libgit2(&self, repo: &git2::Repository, gitref: &str) -> Result<(String, String)> {
+        let mut fetch_options = get_fetch_options()?;
+        let mut remote = repo.find_remote("origin")?;
+        remote.fetch(&[gitref], Some(&mut fetch_options), None)?;
+        let prev_rev = self.current_sha()?;
+        let (obj, reference) = repo.revparse_ext(gitref)?;
+        repo.checkout_tree(&obj, None)?;
+        if let Some(reference) = reference.and_then(|r| r.name().map(|s| s.to_string())) {
+            repo.set_head(&reference)?;
+        }
+        let post_rev = self.current_sha()?;
+        touch_dir(&self.dir)?;
+        Ok((prev_rev, post_rev))
+    }
+    
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
         let gitref = gitref.map_or_else(|| self.current_branch(), Ok)?;
         debug!("updating {} to {}", self.dir.display(), gitref);
         if SETTINGS.libgit2 {
             if let Ok(repo) = self.repo() {
-                let mut fetch_options = get_fetch_options()?;
-                let mut remote = repo.find_remote("origin")?;
-                remote.fetch(&[&gitref], Some(&mut fetch_options), None)?;
-                let prev_rev = self.current_sha()?;
-                let (obj, reference) = repo.revparse_ext(&gitref)?;
-                repo.checkout_tree(&obj, None)?;
-                if let Some(reference) = reference.and_then(|r| r.name().map(|s| s.to_string())) {
-                    repo.set_head(&reference)?;
+                match self.update_libgit2(repo, &gitref) {
+                    Ok(res) => return Ok(res),
+                    Err(err) => warn!("libgit2 failed: {err}"),
                 }
-                let post_rev = self.current_sha()?;
-                touch_dir(&self.dir)?;
-                return Ok((prev_rev, post_rev));
             }
         }
         let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
