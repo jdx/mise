@@ -90,8 +90,19 @@ fn codegen_registry() {
                 depends
             })
             .unwrap_or_default();
+        let idiomatic_files = info
+            .get("idiomatic_files")
+            .map(|idiomatic_files| {
+                idiomatic_files
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|f| f.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}]}}"#,
+            r#"RegistryTool{{short: "{short}", backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
             backends = fulls.join("\", \""),
             aliases = aliases
                 .iter()
@@ -109,6 +120,11 @@ fn codegen_registry() {
             depends = depends
                 .iter()
                 .map(|d| format!("\"{d}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            idiomatic_files = idiomatic_files
+                .iter()
+                .map(|f| format!("\"{f}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
         );

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+echo "1.10.0" > .terraform-version
+assert_contains "mise tool terraform" "1.10.0"
