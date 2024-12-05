@@ -1,4 +1,4 @@
-# Hooks
+# Hooks <Badge type="warning" text="experimental" />
 
 You can have mise automatically execute scripts when it runs. The configuration goes into `mise.toml`.
 
