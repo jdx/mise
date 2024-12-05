@@ -73,7 +73,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | balena | [ubi:balena-io/balena-cli](https://github.com/balena-io/balena-cli) [asdf:boatkit-io/asdf-balena-cli](https://github.com/boatkit-io/asdf-balena-cli) |
 | bashbot | [aqua:mathew-fleisch/bashbot](https://github.com/mathew-fleisch/bashbot) [asdf:mathew-fleisch/asdf-bashbot](https://github.com/mathew-fleisch/asdf-bashbot) |
 | bashly | [asdf:pcrockett/asdf-bashly](https://github.com/pcrockett/asdf-bashly) |
-| bat | [ubi:sharkdp/bat](https://github.com/sharkdp/bat) [asdf:https://gitlab.com/wt0f/asdf-bat](https://gitlab.com/wt0f/asdf-bat) |
+| bat | [aqua:sharkdp/bat](https://github.com/sharkdp/bat) [ubi:sharkdp/bat](https://github.com/sharkdp/bat) [asdf:https://gitlab.com/wt0f/asdf-bat](https://gitlab.com/wt0f/asdf-bat) |
 | bat-extras | [asdf:vhdirk/asdf-bat-extras](https://github.com/vhdirk/asdf-bat-extras) |
 | bats | [aqua:bats-core/bats-core](https://github.com/bats-core/bats-core) [asdf:timgluz/asdf-bats](https://github.com/timgluz/asdf-bats) |
 | bazel | [ubi:bazelbuild/bazel](https://github.com/bazelbuild/bazel) [asdf:rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel) |
@@ -232,7 +232,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | etcd | [aqua:etcd-io/etcd](https://github.com/etcd-io/etcd) [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) [vfox:version-fox/vfox-etcd](https://github.com/version-fox/vfox-etcd) |
 | evans | [aqua:ktr0731/evans](https://github.com/ktr0731/evans) [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
 | eza | [asdf:lwiechec/asdf-eza](https://github.com/lwiechec/asdf-eza) |
-| fd | [ubi:sharkdp/fd](https://github.com/sharkdp/fd) [asdf:https://gitlab.com/wt0f/asdf-fd](https://gitlab.com/wt0f/asdf-fd) |
+| fd | [aqua:sharkdp/fd](https://github.com/sharkdp/fd) [ubi:sharkdp/fd](https://github.com/sharkdp/fd) [asdf:https://gitlab.com/wt0f/asdf-fd](https://gitlab.com/wt0f/asdf-fd) |
 | ffmpeg | [asdf:acj/asdf-ffmpeg](https://github.com/acj/asdf-ffmpeg) |
 | figma-export | [ubi:RedMadRobot/figma-export](https://github.com/RedMadRobot/figma-export) [asdf:younke/asdf-figma-export](https://github.com/younke/asdf-figma-export) |
 | fillin | [aqua:itchyny/fillin](https://github.com/itchyny/fillin) [asdf:ouest/asdf-fillin](https://github.com/ouest/asdf-fillin) |
@@ -250,7 +250,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | func-e | [asdf:carnei-ro/asdf-func-e](https://github.com/carnei-ro/asdf-func-e) |
 | furyctl | [ubi:sighupio/furyctl](https://github.com/sighupio/furyctl) [asdf:sighupio/asdf-furyctl](https://github.com/sighupio/asdf-furyctl) |
 | fx | [aqua:antonmedv/fx](https://github.com/antonmedv/fx) [asdf:https://gitlab.com/wt0f/asdf-fx](https://gitlab.com/wt0f/asdf-fx) |
-| fzf | [ubi:junegunn/fzf](https://github.com/junegunn/fzf) [asdf:kompiro/asdf-fzf](https://github.com/kompiro/asdf-fzf) |
+| fzf | [aqua:junegunn/fzf](https://github.com/junegunn/fzf) [ubi:junegunn/fzf](https://github.com/junegunn/fzf) [asdf:kompiro/asdf-fzf](https://github.com/kompiro/asdf-fzf) |
 | gallery-dl | [asdf:iul1an/asdf-gallery-dl](https://github.com/iul1an/asdf-gallery-dl) |
 | gam | [ubi:GAM-team/GAM](https://github.com/GAM-team/GAM) [asdf:offbyone/asdf-gam](https://github.com/offbyone/asdf-gam) |
 | gator | [ubi:open-policy-agent/gatekeeper](https://github.com/open-policy-agent/gatekeeper) [asdf:MxNxPx/asdf-gator](https://github.com/MxNxPx/asdf-gator) |
@@ -810,7 +810,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | xcodegen | [asdf:younke/asdf-xcodegen](https://github.com/younke/asdf-xcodegen) |
 | xcodes | [asdf:younke/asdf-xcodes](https://github.com/younke/asdf-xcodes) |
 | xcresultparser | [asdf:MacPaw/asdf-xcresultparser](https://github.com/MacPaw/asdf-xcresultparser) |
-| xh | [ubi:ducaale/xh](https://github.com/ducaale/xh) [asdf:NeoHsu/asdf-xh](https://github.com/NeoHsu/asdf-xh) |
+| xh | [aqua:ducaale/xh](https://github.com/ducaale/xh) [ubi:ducaale/xh](https://github.com/ducaale/xh) [asdf:NeoHsu/asdf-xh](https://github.com/NeoHsu/asdf-xh) |
 | yadm | [asdf:particledecay/asdf-yadm](https://github.com/particledecay/asdf-yadm) |
 | yamlfmt | [aqua:google/yamlfmt](https://github.com/google/yamlfmt) [asdf:mise-plugins/asdf-yamlfmt](https://github.com/mise-plugins/asdf-yamlfmt) |
 | yamllint | [pipx:yamllint](https://pypi.org/project/yamllint) [asdf:ericcornelissen/asdf-yamllint](https://github.com/ericcornelissen/asdf-yamllint) |
