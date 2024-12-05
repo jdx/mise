@@ -55,13 +55,13 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | atmos | [aqua:cloudposse/atmos](https://github.com/cloudposse/atmos) [asdf:cloudposse/asdf-atmos](https://github.com/cloudposse/asdf-atmos) |
 | auto-doc | [asdf:looztra/asdf-auto-doc](https://github.com/looztra/asdf-auto-doc) |
 | aws-amplify | [ubi:aws-amplify/amplify-cli](https://github.com/aws-amplify/amplify-cli) [asdf:LozanoMatheus/asdf-aws-amplify-cli](https://github.com/LozanoMatheus/asdf-aws-amplify-cli) |
+| aws-cli | [aqua:aws/aws-cli](https://github.com/aws/aws-cli) [asdf:MetricMike/asdf-awscli](https://github.com/MetricMike/asdf-awscli) |
 | aws-copilot | [aqua:aws/copilot-cli](https://github.com/aws/copilot-cli) [asdf:NeoHsu/asdf-copilot](https://github.com/NeoHsu/asdf-copilot) |
 | aws-iam-authenticator | [aqua:kubernetes-sigs/aws-iam-authenticator](https://github.com/kubernetes-sigs/aws-iam-authenticator) [asdf:zekker6/asdf-aws-iam-authenticator](https://github.com/zekker6/asdf-aws-iam-authenticator) |
 | aws-nuke | [aqua:rebuy-de/aws-nuke](https://github.com/rebuy-de/aws-nuke) [asdf:bersalazar/asdf-aws-nuke](https://github.com/bersalazar/asdf-aws-nuke) |
 | aws-sam | [pipx:aws-sam-cli](https://pypi.org/project/aws-sam-cli) [asdf:amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp) |
 | aws-sso | [aqua:synfinatic/aws-sso-cli](https://github.com/synfinatic/aws-sso-cli) [asdf:adamcrews/asdf-aws-sso-cli](https://github.com/adamcrews/asdf-aws-sso-cli) |
 | aws-vault | [aqua:99designs/aws-vault](https://github.com/99designs/aws-vault) [asdf:karancode/asdf-aws-vault](https://github.com/karancode/asdf-aws-vault) |
-| awscli | [asdf:MetricMike/asdf-awscli](https://github.com/MetricMike/asdf-awscli) |
 | awscli-local | [asdf:paulo-ferraz-oliveira/asdf-awscli-local](https://github.com/paulo-ferraz-oliveira/asdf-awscli-local) |
 | awsebcli | [pipx:awsebcli](https://pypi.org/project/awsebcli) [asdf:amrox/asdf-pyapp](https://github.com/amrox/asdf-pyapp) |
 | awsls | [ubi:jckuester/awsls](https://github.com/jckuester/awsls) [asdf:chessmango/asdf-awsls](https://github.com/chessmango/asdf-awsls) |
