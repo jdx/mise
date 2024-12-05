@@ -181,8 +181,9 @@ node some_script.js
 
 :::
 
-The `hook-env` option is the one I would go with. It's a bit cleaner since you won't have the shims
-inside your PATH at all. If you do go with shims, it will need to be first so they get overridden.
+The only difference I can think of between these would be that using `hook-env` you will need to call
+it again if you change directories but with shims that won't be necessary. The shims directory will be
+removed by `mise activate` automatically so you won't need to worry about dealing with shims in your PATH.
 
 ## Performance
 
