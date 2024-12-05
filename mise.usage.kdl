@@ -17,7 +17,7 @@ flag "-C --cd" help="Change directory before running command" global=true {
 }
 flag "-n --dry-run" help="Dry run, don't actually do anything" hide=true global=true
 flag "--debug" help="Sets log level to debug" hide=true global=true
-flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" global=true {
+flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" var=true global=true {
     arg "<ENV>"
 }
 flag "-f --force" help="Force the operation" hide=true
@@ -31,7 +31,7 @@ flag "--log-level" hide=true global=true {
     }
 }
 flag "-p --prefix" hide=true
-flag "-P --profile" help="Set the profile (environment)" hide=true global=true {
+flag "-P --profile" help="Set the profile (environment)" var=true hide=true global=true {
     arg "<PROFILE>"
 }
 flag "-s --shell" hide=true {

@@ -222,15 +222,19 @@ description = "Tools defined in mise.toml that should be ignored"
 
 [env]
 env = "MISE_ENV"
-type = "String"
+type = "ListString"
+default = []
+parse_env = "list_by_comma"
 description = "Env to use for mise.<MISE_ENV>.toml files."
-optional = true
 docs = """
 Enables profile-specific config files such as `.mise.development.toml`.
 Use this for different env vars or different tool versions in
 development/staging/production environments. See
 [Configuration Environments](/configuration/environments) for more on how
 to use this feature.
+
+Multiple envs can be set by separating them with a comma, e.g. `MISE_ENV=ci,test`.
+They will be read in order, with the last one taking precedence.
 """
 
 [env_file]

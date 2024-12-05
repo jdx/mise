@@ -235,8 +235,12 @@
           }
         },
         "env": {
+          "default": [],
           "description": "Env to use for mise.<MISE_ENV>.toml files.",
-          "type": "string"
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "env_file": {
           "description": "Path to a file containing environment variables.",

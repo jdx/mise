@@ -233,8 +233,11 @@ impl Settings {
         if let Some(cd) = &cli.cd {
             s.cd = Some(cd.clone());
         }
-        if let Some(env) = cli.env.as_ref().or(cli.profile.as_ref()) {
-            s.env = Some(env.clone());
+        if cli.profile.is_some() {
+            s.env = cli.profile.clone();
+        }
+        if cli.env.is_some() {
+            s.env = cli.env.clone();
         }
         if cli.yes {
             s.yes = Some(true);
