@@ -96,7 +96,7 @@ pub struct Cli {
     pub debug: bool,
     /// Set the environment for loading `mise.<ENV>.toml`
     #[clap(short = 'E', long, global = true)]
-    pub env: Option<String>,
+    pub env: Option<Vec<String>>,
     /// Force the operation
     #[clap(long, short, hide = true)]
     pub force: bool,
@@ -111,8 +111,8 @@ pub struct Cli {
     #[clap(long, short, hide = true, overrides_with = "interleave")]
     pub prefix: bool,
     /// Set the profile (environment)
-    #[clap(short = 'P', long, global = true, hide = true)]
-    pub profile: Option<String>,
+    #[clap(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
+    pub profile: Option<Vec<String>>,
     #[clap(long, short, hide = true)]
     pub shell: Option<String>,
     /// Tool(s) to run in addition to what is in mise.toml files

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+echo "tools.dummy = '1'" >mise.toml
+echo "tools.dummy = '2'" >mise.test.toml
+echo "tools.dummy = '3'" >mise.ci.toml
+
+assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml 1"
+MISE_ENV=test assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.test.toml 2"
+MISE_ENV=ci assert "mise ls dummy" "dummy  3 (missing)  ~/workdir/mise.ci.toml 3"
+MISE_ENV=ci,test assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.test.toml 2"
+MISE_ENV=test,ci assert "mise ls dummy" "dummy  3 (missing)  ~/workdir/mise.ci.toml 3"

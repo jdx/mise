@@ -18,7 +18,7 @@ Shorthand for `mise task run <TASK>`.
 
 Change directory before running command
 
-### `-E --env <ENV>`
+### `-E --env... <ENV>`
 
 Set the environment for loading `mise.<ENV>.toml`
 

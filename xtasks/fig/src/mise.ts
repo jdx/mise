@@ -3145,7 +3145,7 @@ const completionSpec: Fig.Spec = {
                 "--env"
             ],
             "description": "Set the environment for loading `mise.<ENV>.toml`",
-            "isRepeatable": false,
+            "isRepeatable": true,
             "args": {
                 "name": "env",
                 "isOptional": false,

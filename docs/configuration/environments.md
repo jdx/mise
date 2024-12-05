@@ -26,3 +26,5 @@ Use `mise config` to see which files are being used.
 
 The rules around which file is written are different because we ultimately need to choose one. See
 the docs for [`mise use`](/cli/use.html) for more information.
+
+Multiple environments can be specified, e.g. `MISE_ENV=ci,test` with the last one taking precedence.
