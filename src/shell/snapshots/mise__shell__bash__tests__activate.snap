@@ -35,6 +35,36 @@ _mise_hook() {
 if [[ ";${PROMPT_COMMAND:-};" != *";_mise_hook;"* ]]; then
   PROMPT_COMMAND="_mise_hook${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi
+# shellcheck shell=bash
+export -a chpwd_functions
+function __zsh_like_cd()
+{
+  \typeset __zsh_like_cd_hook
+  if
+    builtin "$@"
+  then
+    for __zsh_like_cd_hook in chpwd "${chpwd_functions[@]}"
+    do
+      if \typeset -f "$__zsh_like_cd_hook" >/dev/null 2>&1
+      then "$__zsh_like_cd_hook" || break # finish on first failed hook
+      fi
+    done
+    true
+  else
+    return $?
+  fi
+}
+
+# shellcheck shell=bash
+[[ -n "${ZSH_VERSION:-}" ]] ||
+{
+  function cd()    { __zsh_like_cd cd    "$@" ; }
+  function popd()  { __zsh_like_cd popd  "$@" ; }
+  function pushd() { __zsh_like_cd pushd "$@" ; }
+}
+
+chpwd_functions+=(_mise_hook)
+_mise_hook
 if [ -z "${_mise_cmd_not_found:-}" ]; then
     _mise_cmd_not_found=1
     if [ -n "$(declare -f command_not_found_handle)" ]; then

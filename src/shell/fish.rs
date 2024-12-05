@@ -72,6 +72,8 @@ impl Shell for Fish {
 
                 functions --erase __mise_cd_hook;
             end;
+
+            __mise_env_eval
         "#});
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"

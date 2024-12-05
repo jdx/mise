@@ -10,22 +10,18 @@ use itertools::Itertools;
 
 /// Initializes mise in the current shell session
 ///
-/// This should go into your shell's rc file.
+/// This should go into your shell's rc file or login shell.
 /// Otherwise, it will only take effect in the current session.
-/// (e.g. ~/.zshrc, ~/.bashrc)
+/// (e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish)
 ///
-/// This is only intended to be used in interactive sessions, not scripts.
-/// mise is only capable of updating PATH when the prompt is displayed to the user.
-/// For non-interactive use-cases, use shims instead.
+/// Typically, this can be added with something like the following:
 ///
-/// Typically this can be added with something like the following:
-///
-///     echo 'eval "$(mise activate)"' >> ~/.zshrc
+///     echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 ///
 /// However, this requires that "mise" is in your PATH. If it is not, you need to
 /// specify the full path like this:
 ///
-///     echo 'eval "$(/path/to/mise activate)"' >> ~/.zshrc
+///     echo 'eval "$(/path/to/mise activate zsh)"' >> ~/.zshrc
 ///
 /// Customize status output with `status` settings.
 #[derive(Debug, clap::Args)]

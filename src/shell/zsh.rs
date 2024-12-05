@@ -53,6 +53,7 @@ impl Shell for Zsh {
               chpwd_functions=( _mise_hook ${{chpwd_functions[@]}} )
             fi
 
+            _mise_hook
             "#});
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"
