@@ -10,36 +10,77 @@ Here's my favorite features about mise's task runner:
 
 - building dependencies in parallel—by default with no configuration required
 - last-modified checking to avoid rebuilding when there are no changes—requires minimal config
-- `mise watch` to automatically rebuild on changes—no configuration required, but it helps
+- [mise watch](./running-tasks.html#watching-files) to automatically rebuild on changes—no configuration required, but it helps
 - ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack
   syntax highlighting and linting/checking support
 
 There are 2 ways to define tasks: [inside of `mise.toml` files](./toml-tasks.html) or as [standalone shell scripts](./file-tasks.html).
 
-## Task Environment Variables
+## Tasks in `mise.toml` files
 
-- `root` - the root of the project, defaults to the directory of the `mise.toml` file
+Tasks are defined in the `[tasks]` section of the `mise.toml` file.
+
+::: code-group
+
+```toml [mise.toml]
+[tasks.build]
+description = "Build the CLI"
+run = "cargo build"
+```
+
+:::
+
+You can then run the task with `mise run build` (or `mise build` if it doesn't conflict with an existing command).
+
+- See the [TOML tasks](./toml-tasks.html) for more information.
+- See [Running Tasks](./running-tasks.html) to learn how to run tasks.
+
+## File Tasks
+
+You can also define tasks as standalone shell scripts. All you have to do is to create an `executable` file in a specific directory like `mise-tasks`.
+
+::: code-group
+
+```sh [mise-tasks/build]
+#!/usr/bin/env bash
+#MISE description="Build the CLI"
+cargo build
+```
+
+:::
+
+You can then run the task with `mise run build` like for TOML tasks.
+See the [file tasks reference](./file-tasks.html) for more information.
 
 ## Task Configuration
 
-You can configure how tasks are used in mise with the `[task_config]` section of `mise.toml`:
+The `[task_config]` section of `mise.toml` allows you to customize how `mise` executes and organizes task.
+
+### Changing the default directory tasks are run from
 
 ```toml
 [task_config]
 # change the default directory tasks are run from
 dir = "{{cwd}}"
+```
 
+### Including toml tasks files or other directories of file tasks
+
+```toml
+[task_config]
 # add toml files containing toml tasks, or file tasks to include when looking for tasks
 includes = [
     "tasks.toml", # a task toml file
-    "mytasks"     # a directory containing file tasks
+    "mytasks"     # a directory containing file tasks (in addition to the default file tasks directories)
 ]
 ```
 
-If using a toml file for tasks, the file should be the same format as the `[tasks]` section of
-`mise.toml` but without the `[task]` prefix:
+If using included task toml files, note that they have a different format than the `mise.toml` file. They are just a list of tasks.
+The file should be the same format as the `[tasks]` section of `mise.toml` but without the `[task]` prefix:
 
-```toml
+::: code-group
+
+```toml [tasks.toml]
 task1 = "echo task1"
 task2 = "echo task2"
 task3 = "echo task3"
@@ -47,6 +88,10 @@ task3 = "echo task3"
 [task4]
 run = "echo task4"
 ```
+
+:::
+
+If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
 
 ## Vars
 
@@ -75,7 +120,7 @@ I don't want to turn all file tasks into tera templates just for this feature.
 The following environment variables are passed to the task:
 
 - `MISE_ORIGINAL_CWD`: The original working directory from where the task was run.
-- `MISE_CONFIG_ROOT`: The directory containing the `mise.toml` file where the task was defined.
+- `MISE_CONFIG_ROOT` or `root`: The directory containing the `mise.toml` file where the task was defined.
 - `MISE_PROJECT_ROOT`: The root of the project.
 - `MISE_TASK_NAME`: The name of the task being run.
 - `MISE_TASK_DIR`: The directory containing the task script.

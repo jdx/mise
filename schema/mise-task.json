@@ -1,0 +1,161 @@
+{
+  "$id": "https://mise.jdx.dev/schema/mise-task.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "mise-task-schema",
+  "type": "object",
+  "$defs": {
+    "task": {
+      "oneOf": [
+        {
+          "description": "script to run",
+          "type": "string"
+        },
+        {
+          "description": "script to run",
+          "items": {
+            "description": "script to run",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "alias": {
+              "oneOf": [
+                {
+                  "description": "alias for this task",
+                  "type": "string"
+                },
+                {
+                  "description": "alias for this task",
+                  "items": {
+                    "description": "alias for this task",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "depends": {
+              "description": "other tasks to run before this task",
+              "items": {
+                "description": "task to run before this task",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "wait_for": {
+              "description": "if these tasks run, wait for them to complete first",
+              "items": {
+                "description": "task to run before this task",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": {
+              "description": "description of task",
+              "type": "string"
+            },
+            "dir": {
+              "description": "directory to run script in, default is current working directory",
+              "type": "string"
+            },
+            "env": {
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "enum": [false],
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "description": "environment variables",
+              "type": "object"
+            },
+            "hide": {
+              "description": "do not display this task",
+              "type": "boolean"
+            },
+            "outputs": {
+              "description": "files created by this task",
+              "items": {
+                "description": "glob pattern or path to files created by this task",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "quiet": {
+              "description": "do not display mise information for this task",
+              "type": "boolean"
+            },
+            "raw": {
+              "description": "directly connect task to stdin/stdout/stderr",
+              "type": "boolean"
+            },
+            "run": {
+              "oneOf": [
+                {
+                  "description": "script to run",
+                  "type": "string"
+                },
+                {
+                  "description": "script to run",
+                  "items": {
+                    "description": "script to run",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "run_windows": {
+              "oneOf": [
+                {
+                  "description": "script to run on windows",
+                  "type": "string"
+                },
+                {
+                  "description": "script to run on windows",
+                  "items": {
+                    "description": "script to run on windows",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "file": {
+              "description": "Execute an external script",
+              "type": "string"
+            },
+            "sources": {
+              "description": "files that this task depends on",
+              "items": {
+                "description": "glob pattern or path to files that this task depends on",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "shell": {
+              "description": "specify a shell command to run the script with",
+              "type": "string",
+              "default": "sh -c"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",
+  "additionalProperties": {
+    "$ref": "#/$defs/task"
+  }
+}

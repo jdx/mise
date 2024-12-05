@@ -102,3 +102,17 @@ fs.writeFileSync("schema/mise.json.tmp", JSON.stringify(schema, null, 2));
 child_process.execSync("jq . < schema/mise.json.tmp > schema/mise.json");
 child_process.execSync("prettier --write schema/mise.json");
 fs.unlinkSync("schema/mise.json.tmp");
+
+const taskSchema = JSON.parse(
+  fs.readFileSync("schema/mise-task.json", "utf-8"),
+);
+taskSchema["$defs"].task = schema["$defs"].task;
+fs.writeFileSync(
+  "schema/mise-task.json.tmp",
+  JSON.stringify(taskSchema, null, 2),
+);
+child_process.execSync(
+  "jq . < schema/mise-task.json.tmp > schema/mise-task.json",
+);
+child_process.execSync("prettier --write schema/mise-task.json");
+fs.unlinkSync("schema/mise-task.json.tmp");
