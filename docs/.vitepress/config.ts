@@ -69,6 +69,7 @@ export default defineConfig({
               { text: "Ruby", link: "/lang/ruby" },
               { text: "Rust", link: "/lang/rust" },
               { text: "Swift", link: "/lang/swift" },
+              { text: "Zig", link: "/lang/zig" },
             ],
           },
           {
