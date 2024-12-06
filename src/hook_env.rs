@@ -129,7 +129,9 @@ pub fn build_watches(
 ) -> Result<HookEnvWatches> {
     let mut max_modtime = UNIX_EPOCH;
     for cf in get_watch_files(watch_files) {
-        max_modtime = std::cmp::max(cf.metadata()?.modified()?, max_modtime);
+        if let Ok(Ok(modified)) = cf.metadata().map(|m| m.modified()) {
+            max_modtime = std::cmp::max(modified, max_modtime);
+        }
     }
 
     Ok(HookEnvWatches {
