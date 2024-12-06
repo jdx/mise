@@ -4,12 +4,11 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
-use crate::{file, plugins};
+use crate::{file, github, plugins};
 use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
@@ -122,9 +121,7 @@ impl Backend for ZigPlugin {
     }
 
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        let releases: Vec<GithubRelease> =
-            HTTP_FETCH.json("https://api.github.com/repos/ziglang/zig/releases?per_page=100")?;
-        let versions = releases
+        let versions: Vec<String> = github::list_releases("ziglang/zig")?
             .into_iter()
             .map(|r| r.tag_name)
             .unique()
