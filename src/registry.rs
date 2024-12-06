@@ -21,6 +21,7 @@ pub struct RegistryTool {
     pub test: &'static Option<(&'static str, &'static str)>,
     pub os: &'static [&'static str],
     pub depends: &'static [&'static str],
+    pub idiomatic_files: &'static [&'static str],
 }
 
 impl RegistryTool {

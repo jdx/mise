@@ -900,6 +900,7 @@ temporal.backends = ["aqua:temporalio/temporal", "asdf:asdf-community/asdf-tempo
 temporalite.backends = ["asdf:eko/asdf-temporalite"]
 terradozer.backends = ["aqua:jckuester/terradozer", "asdf:chessmango/asdf-terradozer"]
 terraform.backends = ["aqua:hashicorp/terraform", "asdf:asdf-community/asdf-hashicorp", "vfox:enochchau/vfox-terraform"]
+terraform.idiomatic_files = [".terraform-version"]
 terraform.test = ["terraform version", "Terraform v{{version}}"]
 terraform-docs.backends = ["aqua:terraform-docs/terraform-docs", "asdf:looztra/asdf-terraform-docs"]
 terraform-ls.backends = ["aqua:hashicorp/terraform-ls", "asdf:asdf-community/asdf-hashicorp"]

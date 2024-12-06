@@ -55,6 +55,13 @@ fn load_tools() -> Arc<BackendMap> {
     time!("load_tools start");
     let core_tools = CORE_PLUGINS.values().cloned().collect::<Vec<ABackend>>();
     let mut tools = core_tools;
+    // add tools with idiomatic files so they get parsed even if no versions are installed
+    tools.extend(
+        REGISTRY
+            .values()
+            .filter(|rt| !rt.idiomatic_files.is_empty() && rt.is_supported_os())
+            .filter_map(|rt| arg_to_backend(rt.short.into())),
+    );
     time!("load_tools core");
     tools.extend(
         install_state::list_tools()
@@ -361,8 +368,11 @@ pub trait Backend: Debug + Send + Sync {
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
-    fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
-        Ok(vec![])
+    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+        Ok(REGISTRY
+            .get(self.id())
+            .map(|rt| rt.idiomatic_files.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default())
     }
     fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
         let contents = file::read_to_string(path)?;
