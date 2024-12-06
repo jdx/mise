@@ -186,5 +186,8 @@ const ARCH: &str = "unknown";
 #[cfg(macos)]
 const OS: &str = "apple-darwin";
 
+#[cfg(target_os = "freebsd")]
+const OS: &str = "unknown";
+
 #[cfg(not(macos))]
 const OS: &str = "unknown";
