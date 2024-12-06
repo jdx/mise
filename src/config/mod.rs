@@ -348,7 +348,7 @@ impl Config {
                 p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml"
             })
             .map(|p| {
-                self.load_task_file(p)
+                self.load_task_file(p, dir)
                     .wrap_err_with(|| format!("loading tasks in {}", display_path(p)))
             })
             .collect::<Result<Vec<_>>>()?
@@ -372,7 +372,7 @@ impl Config {
             .collect())
     }
 
-    fn load_task_file(&self, path: &Path) -> Result<Vec<Task>> {
+    fn load_task_file(&self, path: &Path, config_root: &Path) -> Result<Vec<Task>> {
         let raw = file::read_to_string(path)?;
         let mut tasks = toml::from_str::<Tasks>(&raw)
             .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?
@@ -380,6 +380,7 @@ impl Config {
         for (name, task) in &mut tasks {
             task.name = name.clone();
             task.config_source = path.to_path_buf();
+            task.config_root = Some(config_root.to_path_buf());
         }
         Ok(tasks.into_values().collect())
     }
