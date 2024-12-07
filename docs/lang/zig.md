@@ -22,7 +22,7 @@ The `zig` language server ([zls](https://github.com/zigtools/zls)) needs to be i
 You can install it with `mise`:
 
 ```sh
-mise use -g zls@0.13
+mise use -g zls
 ```
 
 Note that a tagged release of `Zig` should be used with the same tagged release of `ZLS`.
