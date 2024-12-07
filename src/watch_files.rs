@@ -34,6 +34,9 @@ pub fn execute_runs(ts: &Toolset) {
     }
     for (root, wf) in Config::get().watch_file_hooks().unwrap_or_default() {
         match has_matching_files(&root, &wf, &files) {
+            Ok(files) if files.is_empty() => {
+                continue;
+            }
             Ok(files) => {
                 if let Err(e) = execute(ts, &root, &wf.run, files) {
                     warn!("error executing watch_file hook: {e}");
