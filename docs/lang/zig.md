@@ -17,9 +17,12 @@ mise use -g zig@latest  # install latest zig
 See available versions with `mise ls-remote zig`.
 
 ## zig Language Server
-The `zig` language server ([zls](https://github.com/zigtools/zls)) needs to be installed separately. 
+
+The `zig` language server ([zls](https://github.com/zigtools/zls)) needs to be installed separately.
 You can install it with `mise`:
+
 ```sh
 mise use -g zls@0.13
 ```
+
 Note that a tagged release of `Zig` should be used with the same tagged release of `ZLS`.
