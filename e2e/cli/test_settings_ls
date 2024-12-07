@@ -17,19 +17,19 @@ assert_contains "mise settings --json" '{
 assert_contains "mise settings --toml" 'all_compile = false
 disable_backends = ["rust", "java"]'
 
-assert_contains "mise settings --json-extended" '{
-  "all_compile": {
-    "source": "~/workdir/mise.toml",
-    "value": false
+assert_contains "mise settings --json-extended" "{
+  \"all_compile\": {
+    \"source\": \"$HOME/workdir/mise.toml\",
+    \"value\": false
   },
-  "disable_backends": {
-    "source": "~/workdir/mise.toml",
-    "value": [
-      "rust",
-      "java"
+  \"disable_backends\": {
+    \"source\": \"$HOME/workdir/mise.toml\",
+    \"value\": [
+      \"rust\",
+      \"java\"
     ]
   }
-}'
+}"
 
 assert_contains "mise settings ls -T" "all_compile = false"
 echo "settings.python.venv_auto_create = false" >>mise.toml
