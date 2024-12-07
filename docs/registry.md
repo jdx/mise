@@ -828,6 +828,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | zephyr | [asdf:nsaunders/asdf-zephyr](https://github.com/nsaunders/asdf-zephyr) |
 | zig | [core:zig](https://mise.jdx.dev/lang/zig.html) |
 | zigmod | [ubi:nektro/zigmod](https://github.com/nektro/zigmod) [asdf:mise-plugins/asdf-zigmod](https://github.com/mise-plugins/asdf-zigmod) |
+| zls | [aqua:zigtools/zls](https://github.com/zigtools/zls) [ubi:zigtools/zls](https://github.com/zigtools/zls) |
 | zola | [ubi:getzola/zola](https://github.com/getzola/zola) [asdf:salasrod/asdf-zola](https://github.com/salasrod/asdf-zola) |
 | zoxide | [ubi:ajeetdsouza/zoxide](https://github.com/ajeetdsouza/zoxide) [asdf:nyrst/asdf-zoxide](https://github.com/nyrst/asdf-zoxide) |
 | zprint | [asdf:carlduevel/asdf-zprint](https://github.com/carlduevel/asdf-zprint) |
