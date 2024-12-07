@@ -117,10 +117,15 @@ pub fn remove(short: &str) {
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     match ba.backend_type() {
         BackendType::Core => {
-            CORE_PLUGINS.get(&ba.short).or_else(|| {
-                // this can happen if something like "corenode" is aliased to "core:node"
-                ba.full().strip_prefix("core:").and_then(|short| CORE_PLUGINS.get(short))
-            }).cloned()
+            CORE_PLUGINS
+                .get(&ba.short)
+                .or_else(|| {
+                    // this can happen if something like "corenode" is aliased to "core:node"
+                    ba.full()
+                        .strip_prefix("core:")
+                        .and_then(|short| CORE_PLUGINS.get(short))
+                })
+                .cloned()
         }
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
         BackendType::Asdf => Some(Arc::new(asdf::AsdfBackend::from_arg(ba))),
@@ -621,7 +626,7 @@ pub trait Backend: Debug + Send + Sync {
                 let mut cm = CacheManagerBuilder::new(
                     self.ba().cache_path.join("remote_versions.msgpack.z"),
                 )
-                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache());
+                .with_fresh_duration(SETTINGS.fetch_remote_versions_cache());
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
                     cm = cm
                         .with_fresh_file(plugin_path.clone())
