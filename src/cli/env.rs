@@ -1,4 +1,5 @@
 use eyre::Result;
+use std::collections::BTreeMap;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
@@ -20,6 +21,10 @@ pub struct Env {
     #[clap(long, short = 'J', overrides_with = "shell")]
     json: bool,
 
+    /// Output in JSON format with additional information (source, tool)
+    #[clap(long, overrides_with = "shell")]
+    json_extended: bool,
+
     /// Output in dotenv format
     #[clap(long, short = 'D', overrides_with = "shell")]
     dotenv: bool,
@@ -38,6 +43,8 @@ impl Env {
 
         if self.json {
             self.output_json(&config, ts)
+        } else if self.json_extended {
+            self.output_extended_json(&config, ts)
         } else if self.dotenv {
             self.output_dotenv(&config, ts)
         } else {
@@ -48,6 +55,61 @@ impl Env {
     fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
         let env = ts.env_with_path(config)?;
         miseprintln!("{}", serde_json::to_string_pretty(&env)?);
+        Ok(())
+    }
+
+    fn output_extended_json(&self, config: &Config, ts: Toolset) -> Result<()> {
+        let mut res = BTreeMap::new();
+
+        ts.env_with_path(config)?.iter().for_each(|(k, v)| {
+            res.insert(k.to_string(), BTreeMap::from([("value", v.to_string())]));
+        });
+
+        config.env_with_sources()?.iter().for_each(|(k, v)| {
+            res.insert(
+                k.to_string(),
+                BTreeMap::from([
+                    ("value", v.0.to_string()),
+                    ("source", v.1.to_string_lossy().into_owned()),
+                ]),
+            );
+        });
+
+        let tool_map: BTreeMap<String, String> = ts
+            .list_all_versions()?
+            .into_iter()
+            .map(|(b, tv)| {
+                (
+                    b.id().into(),
+                    tv.request
+                        .source()
+                        .path()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "".to_string()),
+                )
+            })
+            .collect();
+
+        ts.env_from_tools(config)
+            .iter()
+            .for_each(|(name, value, tool_id)| {
+                res.insert(
+                    name.to_string(),
+                    BTreeMap::from([
+                        ("value", value.to_string()),
+                        ("tool", tool_id.to_string()),
+                        (
+                            "source",
+                            tool_map
+                                .get(tool_id)
+                                .cloned()
+                                .unwrap_or_else(|| "unknown_source".to_string()),
+                        ),
+                    ]),
+                );
+            });
+
+        miseprintln!("{}", serde_json::to_string_pretty(&res)?);
         Ok(())
     }
 
