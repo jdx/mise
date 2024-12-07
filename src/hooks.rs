@@ -65,7 +65,7 @@ pub fn run_one_hook(ts: &Toolset, hook: Hooks) {
                 if !new.starts_with(&root) {
                     continue;
                 }
-                if old.starts_with(&root) {
+                if old.is_some_and(|old| old.starts_with(&root)) {
                     continue;
                 }
             }
@@ -74,7 +74,7 @@ pub fn run_one_hook(ts: &Toolset, hook: Hooks) {
                 if new.starts_with(&root) {
                     continue;
                 }
-                if !old.starts_with(&root) {
+                if old.is_some_and(|old| !old.starts_with(&root)) {
                     continue;
                 }
             }
@@ -110,7 +110,7 @@ fn execute(ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
         "MISE_PROJECT_ROOT".to_string(),
         root.to_string_lossy().to_string(),
     );
-    if let Some((old, _new)) = hook_env::dir_change() {
+    if let Some((Some(old), _new)) = hook_env::dir_change() {
         env.insert(
             "MISE_PREVIOUS_DIR".to_string(),
             old.to_string_lossy().to_string(),

@@ -64,11 +64,15 @@ pub fn should_exit_early(watch_files: impl IntoIterator<Item = WatchFilePattern>
     true
 }
 
-pub fn dir_change() -> Option<(PathBuf, PathBuf)> {
+pub fn dir_change() -> Option<(Option<PathBuf>, PathBuf)> {
     match (&*env::__MISE_DIR, &*dirs::CWD) {
         (Some(old), Some(new)) if old != new => {
             trace!("dir change: {:?} -> {:?}", old, new);
-            Some((old.clone(), new.clone()))
+            Some((Some(old.clone()), new.clone()))
+        }
+        (None, Some(new)) => {
+            trace!("dir change: None -> {:?}", new);
+            Some((None, new.clone()))
         }
         _ => None,
     }
