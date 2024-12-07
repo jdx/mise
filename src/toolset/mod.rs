@@ -519,20 +519,29 @@ impl Toolset {
         env.insert(PATH_KEY.to_string(), path_env.to_string());
         Ok(env)
     }
-    pub fn env(&self, config: &Config) -> Result<BTreeMap<String, String>> {
-        time!("env start");
-        let entries = self
-            .list_current_installed_versions()
+    pub fn env_from_tools(&self, config: &Config) -> Vec<(String, String, String)> {
+        self.list_current_installed_versions()
             .into_par_iter()
             .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
             .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
-                Ok(env) => env.into_iter().collect(),
+                Ok(env) => env
+                    .into_iter()
+                    .map(|(k, v)| (k, v, p.id().into()))
+                    .collect(),
                 Err(e) => {
                     warn!("Error running exec-env: {:#}", e);
                     Vec::new()
                 }
             })
-            .filter(|(k, _)| k.to_uppercase() != "PATH")
+            .filter(|(_, k, _)| k.to_uppercase() != "PATH")
+            .collect::<Vec<(String, String, String)>>()
+    }
+    pub fn env(&self, config: &Config) -> Result<BTreeMap<String, String>> {
+        time!("env start");
+        let entries = self
+            .env_from_tools(config)
+            .into_iter()
+            .map(|(k, v, _)| (k, v))
             .collect::<Vec<(String, String)>>();
         let add_paths = entries
             .iter()

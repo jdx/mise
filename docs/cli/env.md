@@ -21,6 +21,10 @@ Tool(s) to use
 
 Output in JSON format
 
+### `--json-extended`
+
+Output in JSON format with additional information (source, tool)
+
 ### `-D --dotenv`
 
 Output in dotenv format

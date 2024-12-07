@@ -1,9 +1,32 @@
 #!/usr/bin/env bash
 require_cmd jq
 
+cat >/tmp/.env-test <<EOF
+AAA=bbb
+EOF
+
 cat >.mise.toml <<EOF
+[tools]
+deno = "2"
+
 [env]
+_.file = '/tmp/.env-test'
 FOO = "bar"
 EOF
 
 assert "mise env --json dummy@latest | jq -r .FOO" "bar"
+
+assert "mise env --json-extended dummy@latest | jq -r '.FOO.value'" "bar"
+assert_contains "mise env --json-extended dummy@latest | jq -r '.FOO.source'" ".mise.toml"
+
+assert "mise env --json-extended dummy@latest | jq -r '.AAA.value'" "bbb"
+assert "mise env --json-extended dummy@latest | jq -r '.AAA.source'" "/tmp/.env-test"
+
+mise i
+assert "mise env --json-extended | jq -r '.DENO_INSTALL_ROOT.tool'" "deno"
+assert_contains "mise env --json-extended | jq -r '.DENO_INSTALL_ROOT.value'" ".deno"
+assert_contains "mise env --json-extended | jq -r '.DENO_INSTALL_ROOT.source'" ".mise.toml"
+
+assert_contains "mise env --json-extended go@1.23.4 | jq -r '.GOBIN.value'" "go/1.23.4/bin"
+assert_contains "mise env --json-extended go@1.23.4 | jq -r '.GOBIN.tool'" "go"
+assert_contains "mise env --json-extended go@1.23.4 | jq -r '.GOBIN.source'" ""

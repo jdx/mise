@@ -21,8 +21,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash, lock_file, plugins, versions_host};
 use backend_type::BackendType;
 use console::style;
-use eyre::Result;
-use eyre::{bail, eyre, WrapErr};
+use eyre::{bail, eyre, Result, WrapErr};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -117,7 +116,17 @@ pub fn remove(short: &str) {
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     match ba.backend_type() {
-        BackendType::Core => CORE_PLUGINS.get(&ba.short).cloned(),
+        BackendType::Core => {
+            CORE_PLUGINS
+                .get(&ba.short)
+                .or_else(|| {
+                    // this can happen if something like "corenode" is aliased to "core:node"
+                    ba.full()
+                        .strip_prefix("core:")
+                        .and_then(|short| CORE_PLUGINS.get(short))
+                })
+                .cloned()
+        }
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
         BackendType::Asdf => Some(Arc::new(asdf::AsdfBackend::from_arg(ba))),
         BackendType::Cargo => Some(Arc::new(cargo::CargoBackend::from_arg(ba))),

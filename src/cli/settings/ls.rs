@@ -116,7 +116,7 @@ impl SettingsLs {
                 toml_value_to_json_value(row.toml_value),
             );
             if let Some(source) = row.source {
-                entry.insert("source".to_string(), display_path(&source).into());
+                entry.insert("source".to_string(), source.to_string_lossy().into());
             }
             if let Some((key, subkey)) = row.key.split_once('.') {
                 let subtable = table
