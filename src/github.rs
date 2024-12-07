@@ -7,8 +7,7 @@ use reqwest::header::HeaderMap;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::RwLock;
-use std::sync::RwLockReadGuard;
+use std::sync::{RwLock, RwLockReadGuard};
 use xx::regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

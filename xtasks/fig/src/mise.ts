@@ -890,6 +890,13 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
+                        "--json-extended"
+                    ],
+                    "description": "Output in JSON format with additional information (source, tool)",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
                         "-D",
                         "--dotenv"
                     ],
