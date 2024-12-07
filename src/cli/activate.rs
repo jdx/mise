@@ -81,6 +81,7 @@ impl Activate {
     }
 
     fn activate(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
+        remove_shims(shell)?;
         let exe_dir = mise_bin.parent().unwrap();
         let mut flags = vec![];
         if self.quiet {
@@ -91,7 +92,6 @@ impl Activate {
         }
         miseprint!("{}", self.prepend_path(shell, exe_dir))?;
         miseprint!("{}", shell.activate(mise_bin, flags.join("")))?;
-        remove_shims(shell)?;
         Ok(())
     }
 
