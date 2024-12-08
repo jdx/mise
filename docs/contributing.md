@@ -112,7 +112,7 @@ in `~/.local/bin/@mise`:
 exec cargo run -q --all-features --manifest-path ~/src/mise/Cargo.toml -- "$@"
 ```
 
-::: note
+::: info
 Don't forget to change the manifest path to the correct path for your setup.
 :::
 
