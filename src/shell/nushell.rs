@@ -118,6 +118,12 @@ impl Shell for Nushell {
     }
 }
 
+impl Display for Nushell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "nu")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;

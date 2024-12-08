@@ -1,17 +1,17 @@
-use std::env::{join_paths, split_paths};
-use std::ops::Deref;
-use std::path::PathBuf;
-
 use console::truncate_str;
 use eyre::Result;
 use itertools::Itertools;
+use std::env::{join_paths, split_paths};
+use std::ops::Deref;
+use std::path::PathBuf;
 
 use crate::config::{Config, Settings};
 use crate::direnv::DirenvDiff;
 use crate::env::{PATH_KEY, TERM_WIDTH, __MISE_DIFF};
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
 use crate::hook_env::WatchFilePattern;
-use crate::shell::{get_shell, ShellType};
+use crate::hooks::Hooks;
+use crate::shell::{get_shell, Shell, ShellType};
 use crate::toolset::{Toolset, ToolsetBuilder};
 use crate::{dirs, env, hook_env, hooks, watch_files};
 
@@ -66,9 +66,41 @@ impl HookEnv {
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
         self.display_status(&config, &ts)?;
+
+        self.run_shell_hooks(&config, &*shell)?;
         hooks::run_all_hooks(&ts);
         watch_files::execute_runs(&ts);
 
+        Ok(())
+    }
+
+    fn run_shell_hooks(&self, config: &Config, shell: &dyn Shell) -> Result<()> {
+        let hooks = config.hooks()?;
+        for h in hooks::SCHEDULED_HOOKS.lock().unwrap().iter() {
+            let hooks = hooks
+                .iter()
+                .map(|(_p, hook)| hook)
+                .filter(|hook| hook.hook == *h && hook.shell == Some(shell.to_string()))
+                .collect_vec();
+            match *h {
+                Hooks::Enter => {
+                    for hook in hooks {
+                        miseprintln!("{}", hook.script);
+                    }
+                }
+                Hooks::Cd => {
+                    for hook in hooks {
+                        miseprintln!("{}", hook.script);
+                    }
+                }
+                Hooks::Leave => {
+                    for _hook in hooks {
+                        warn!("leave hook not yet implemented");
+                    }
+                }
+                _ => {}
+            }
+        }
         Ok(())
     }
 

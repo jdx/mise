@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use std::path::Path;
 
 use crate::config::Settings;
@@ -123,6 +124,12 @@ impl Shell for Fish {
 
     fn unset_env(&self, k: &str) -> String {
         format!("set -e {k}\n", k = escape(k.into()))
+    }
+}
+
+impl Display for Fish {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fish")
     }
 }
 

@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::path::Path;
 
 use indoc::formatdoc;
@@ -101,6 +102,12 @@ impl Shell for Bash {
 
     fn unset_env(&self, k: &str) -> String {
         format!("unset {k}\n", k = shell_escape::unix::escape(k.into()))
+    }
+}
+
+impl Display for Bash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "bash")
     }
 }
 
