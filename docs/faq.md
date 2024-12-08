@@ -129,7 +129,7 @@ wouldn't want to install a version that is already installed.
 - remove asdf from your shell rc file
 - Run `mise install` in a directory with an asdf `.tool-versions` file and mise will install the tools
 
-Note that `mise` does not consider `~/.tool-versions` files to be a global config file. `mise` uses a
+Note that `mise` does not consider `~/.tool-versions` files to be a global config file like `asdf` does. `mise` uses a
 `~/.config/mise/config.toml` file for global configuration.
 
 Here is an example script you can use to migrate your global `.tool-versions` file to mise:
