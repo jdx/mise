@@ -6,6 +6,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
 use crate::install_context::InstallContext;
+use crate::timeout;
 use crate::toolset::ToolVersion;
 
 #[derive(Debug)]
@@ -27,29 +28,34 @@ impl Backend for GoBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        let mut mod_path = Some(self.tool_name());
+        timeout::run_with_timeout(
+            || {
+                let mut mod_path = Some(self.tool_name());
 
-        while let Some(cur_mod_path) = mod_path {
-            let res = cmd!("go", "list", "-m", "-versions", "-json", &cur_mod_path)
-                .full_env(self.dependency_env()?)
-                .read();
-            if let Ok(raw) = res {
-                let res = serde_json::from_str::<GoModInfo>(&raw);
-                if let Ok(mut mod_info) = res {
-                    // remove the leading v from the versions
-                    mod_info.versions = mod_info
-                        .versions
-                        .into_iter()
-                        .map(|v| v.trim_start_matches('v').to_string())
-                        .collect();
-                    return Ok(mod_info.versions);
+                while let Some(cur_mod_path) = mod_path {
+                    let res = cmd!("go", "list", "-m", "-versions", "-json", &cur_mod_path)
+                        .full_env(self.dependency_env()?)
+                        .read();
+                    if let Ok(raw) = res {
+                        let res = serde_json::from_str::<GoModInfo>(&raw);
+                        if let Ok(mut mod_info) = res {
+                            // remove the leading v from the versions
+                            mod_info.versions = mod_info
+                                .versions
+                                .into_iter()
+                                .map(|v| v.trim_start_matches('v').to_string())
+                                .collect();
+                            return Ok(mod_info.versions);
+                        }
+                    };
+
+                    mod_path = trim_after_last_slash(cur_mod_path);
                 }
-            };
 
-            mod_path = trim_after_last_slash(cur_mod_path);
-        }
-
-        Ok(vec![])
+                Ok(vec![])
+            },
+            SETTINGS.fetch_remote_versions_timeout(),
+        )
     }
 
     fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {

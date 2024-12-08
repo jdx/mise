@@ -1,7 +1,9 @@
 # Comparison to asdf
 
 mise can be used as a drop-in replacement for asdf. It supports the same `.tool-versions` files that
-you may have used with asdf and uses asdf plugins. It will not, however, reuse existing asdf directories
+you may have used with asdf and can use asdf plugins through the [asdf backend](/dev-tools/backends/asdf.html).
+
+It will not, however, reuse existing asdf directories
 (so you'll need to either reinstall them or move them), and 100% compatibility is not a design goal.
 
 Casual users coming from asdf have generally found mise to just be a faster, easier to use asdf.

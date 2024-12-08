@@ -1,5 +1,8 @@
 # Tasks
 
+> Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](/tasks/) used
+> to build and test projects.
+
 You can define tasks in `mise.toml` files or as standalone shell scripts. These are useful for
 things like running linters, tests, builders, servers, and other tasks that are specific to a
 project. Of

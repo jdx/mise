@@ -9,7 +9,7 @@ use crate::ui::tree::TreeItem;
 use console::{truncate_str, Color};
 use either::Either;
 use eyre::{eyre, Result};
-use globset::Glob;
+use globset::GlobBuilder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use petgraph::prelude::*;
@@ -464,7 +464,10 @@ where
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
         let normalized = pat.split(':').collect::<PathBuf>();
-        let matcher = Glob::new(&normalized.to_string_lossy())?.compile_matcher();
+        let matcher = GlobBuilder::new(&normalized.to_string_lossy())
+            .literal_separator(true)
+            .build()?
+            .compile_matcher();
 
         Ok(self
             .iter()

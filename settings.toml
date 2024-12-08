@@ -295,7 +295,7 @@ cached. For "slow" commands like `mise ls-remote` or `mise install`:
 [fetch_remote_versions_timeout]
 env = "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT"
 type = "Duration"
-default = "10s"
+default = "5s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
 aliases = ["fetch_remote_version_timeout"]
 
@@ -391,7 +391,7 @@ description = "This is a list of config paths that mise will ignore."
 env = "MISE_JOBS"
 type = "Integer"
 rust_type = "usize"
-default = 4
+default = 8
 description = "How many jobs to run concurrently such as tool installs."
 
 [legacy_version_file]

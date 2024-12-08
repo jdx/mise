@@ -1,6 +1,3 @@
-use serde_json::Value;
-use std::fmt::Debug;
-
 use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -8,7 +5,10 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::install_context::InstallContext;
+use crate::timeout;
 use crate::toolset::ToolVersion;
+use serde_json::Value;
+use std::fmt::Debug;
 
 #[derive(Debug)]
 pub struct NPMBackend {
@@ -32,27 +32,38 @@ impl Backend for NPMBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
-            .full_env(self.dependency_env()?)
-            .read()?;
-        let versions: Vec<String> = serde_json::from_str(&raw)?;
-        Ok(versions)
+        timeout::run_with_timeout(
+            || {
+                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
+                    .full_env(self.dependency_env()?)
+                    .read()?;
+                let versions: Vec<String> = serde_json::from_str(&raw)?;
+                Ok(versions)
+            },
+            SETTINGS.fetch_remote_versions_timeout(),
+        )
     }
 
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
-        self.latest_version_cache
-            .get_or_try_init(|| {
-                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "dist-tags", "--json")
-                    .full_env(self.dependency_env()?)
-                    .read()?;
-                let dist_tags: Value = serde_json::from_str(&raw)?;
-                let latest = match dist_tags["latest"] {
-                    Value::String(ref s) => Some(s.clone()),
-                    _ => self.latest_version(Some("latest".into())).unwrap(),
-                };
-                Ok(latest)
-            })
-            .cloned()
+        timeout::run_with_timeout(
+            || {
+                self.latest_version_cache
+                    .get_or_try_init(|| {
+                        let raw =
+                            cmd!(NPM_PROGRAM, "view", self.tool_name(), "dist-tags", "--json")
+                                .full_env(self.dependency_env()?)
+                                .read()?;
+                        let dist_tags: Value = serde_json::from_str(&raw)?;
+                        let latest = match dist_tags["latest"] {
+                            Value::String(ref s) => Some(s.clone()),
+                            _ => self.latest_version(Some("latest".into())).unwrap(),
+                        };
+                        Ok(latest)
+                    })
+                    .cloned()
+            },
+            SETTINGS.fetch_remote_versions_timeout(),
+        )
     }
 
     fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {

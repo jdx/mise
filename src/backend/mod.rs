@@ -272,7 +272,7 @@ pub trait Backend: Debug + Send + Sync {
         let latest = match tv.latest_version() {
             Ok(latest) => latest,
             Err(e) => {
-                debug!(
+                warn!(
                     "Error getting latest version for {}: {:#}",
                     self.ba().to_string(),
                     e

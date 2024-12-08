@@ -1336,6 +1336,13 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
+                        "--outdated"
+                    ],
+                    "description": "Display whether a version is outdated",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
                         "-J",
                         "--json"
                     ],
@@ -3164,7 +3171,7 @@ const completionSpec: Fig.Spec = {
                 "-j",
                 "--jobs"
             ],
-            "description": "How many jobs to run in parallel [default: 4]",
+            "description": "How many jobs to run in parallel [default: 8]",
             "isRepeatable": false,
             "args": {
                 "name": "jobs",

@@ -36,6 +36,10 @@ Only show tool versions that are installed (Hides tools defined in mise.toml but
 
 Don't fetch information such as outdated versions
 
+### `--outdated`
+
+Display whether a version is outdated
+
 ### `-J --json`
 
 Output in JSON format

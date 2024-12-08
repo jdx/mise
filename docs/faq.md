@@ -125,9 +125,21 @@ wouldn't want to install a version that is already installed.
 
 ## How do I migrate from asdf?
 
-First, just install mise with `mise activate` as described in the [getting started guide](/getting-started)
-and remove asdf from your shell rc file. Then run `mise install` in a directory with an asdf `.tool-versions` file
-and mise will install the tools.
+- Install mise and set up `mise activate` as described in the [getting started guide](/getting-started)
+- remove asdf from your shell rc file
+- Run `mise install` in a directory with an asdf `.tool-versions` file and mise will install the tools
+
+Note that `mise` does not consider `~/.tool-versions` files to be a global config file like `asdf` does. `mise` uses a
+`~/.config/mise/config.toml` file for global configuration.
+
+Here is an example script you can use to migrate your global `.tool-versions` file to mise:
+
+```shell
+mv ~/.tool-versions ~/.tool-versions.bak
+cat ~/.tool-versions.bak | tr ' ' '@' | xargs -n2 mise use -g
+```
+
+Once you are comfortable with mise, you can remove the `.tool-versions.bak` file and [uninstall `asdf`](https://asdf-vm.com/manage/core.html#uninstall)
 
 ## How compatible is mise with asdf?
 

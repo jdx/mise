@@ -17,6 +17,7 @@ use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
 use crate::plugins::Script::{Download, ExecEnv, Install, ParseIdiomaticFile};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
+use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file};
@@ -236,18 +237,23 @@ impl Backend for AsdfBackend {
     }
 
     fn latest_stable_version(&self) -> Result<Option<String>> {
-        if !self.plugin.has_latest_stable_script() {
-            return self.latest_version(Some("latest".into()));
-        }
-        self.latest_stable_cache
-            .get_or_try_init(|| self.plugin.fetch_latest_stable())
-            .wrap_err_with(|| {
-                eyre!(
-                    "Failed fetching latest stable version for plugin {}",
-                    style(&self.name).blue().for_stderr(),
-                )
-            })
-            .cloned()
+        run_with_timeout(
+            || {
+                if !self.plugin.has_latest_stable_script() {
+                    return self.latest_version(Some("latest".into()));
+                }
+                self.latest_stable_cache
+                    .get_or_try_init(|| self.plugin.fetch_latest_stable())
+                    .wrap_err_with(|| {
+                        eyre!(
+                            "Failed fetching latest stable version for plugin {}",
+                            style(&self.name).blue().for_stderr(),
+                        )
+                    })
+                    .cloned()
+            },
+            SETTINGS.fetch_remote_versions_timeout(),
+        )
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
