@@ -22,7 +22,7 @@ flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" var=tru
 }
 flag "-f --force" help="Force the operation" hide=true
 flag "-i --interleave" help="Set the log output verbosity" hide=true
-flag "-j --jobs" help="How many jobs to run in parallel [default: 4]" global=true {
+flag "-j --jobs" help="How many jobs to run in parallel [default: 8]" global=true {
     arg "<JOBS>"
 }
 flag "--log-level" hide=true global=true {
@@ -685,6 +685,7 @@ It's a useful command to get the current state of your tools."#
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
     flag "-o --offline" help="Don't fetch information such as outdated versions"
+    flag "--outdated" help="Display whether a version is outdated"
     flag "-J --json" help="Output in JSON format"
     flag "-m --missing" help="Display missing tool versions"
     flag "--prefix" help="Display versions matching this prefix" {

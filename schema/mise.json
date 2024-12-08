@@ -270,7 +270,7 @@
           "type": "string"
         },
         "fetch_remote_versions_timeout": {
-          "default": "10s",
+          "default": "5s",
           "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
           "type": "string"
         },
@@ -338,7 +338,7 @@
           }
         },
         "jobs": {
-          "default": 4,
+          "default": 8,
           "description": "How many jobs to run concurrently such as tool installs.",
           "type": "number"
         },

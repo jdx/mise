@@ -24,7 +24,7 @@ Set the environment for loading `mise.<ENV>.toml`
 
 ### `-j --jobs <JOBS>`
 
-How many jobs to run in parallel [default: 4]
+How many jobs to run in parallel [default: 8]
 
 ### `-q --quiet`
 
