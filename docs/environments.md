@@ -1,5 +1,9 @@
 # Environments
 
+> Like [direnv](https://github.com/direnv/direnv) it
+manages [environment variables](/configuration#env---arbitrary-environment-variables) for
+different project directories.
+
 Use mise to specify environment variables used for different projects. Create a `mise.toml` file
 in the root of your project directory:
 
@@ -44,7 +48,7 @@ It can be a string or array and uses relative or absolute paths:
 _.file = '.env'
 ```
 
-::: note
+::: info
 This uses [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have problems with
 the way `env._.file` works, you will likely need to post an issue there,
 not to mise since there is not much mise can do about the way that crate works.
