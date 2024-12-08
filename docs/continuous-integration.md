@@ -45,14 +45,14 @@ jobs:
           version: 2023.12.0 # [default: latest] mise version to install
           install: true # [default: true] run `mise install`
           cache: true # [default: true] cache mise using GitHub's cache
-          # automatically write this .tool-versions file
           experimental: true # [default: false] enable experimental features
-          tool_versions: |
-            shellcheck 0.9.0
-          # or, if you prefer mise.toml format:
+          # automatically write this mise.toml file
           mise_toml: |
             [tools]
             shellcheck = "0.9.0"
+          # or, if you prefer .tool-versions:
+          tool_versions: |
+            shellcheck 0.9.0
       - run: shellcheck scripts/*.sh
 ```
 

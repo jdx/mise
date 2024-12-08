@@ -1,6 +1,6 @@
 # Tasks
 
-> Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](/tasks/) used
+> Like [make](https://www.gnu.org/software/make/manual/make.html) it manages _tasks_ used
 > to build and test projects.
 
 You can define tasks in `mise.toml` files or as standalone shell scripts. These are useful for

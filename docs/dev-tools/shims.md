@@ -118,7 +118,7 @@ $ which node
 ### Env vars and shims
 
 A downside of shims is the "mise environment" is only loaded when a shim is called. This means if you
-set an environment variable in `.mise.toml`, it will only be run when a shim is called. So the following
+set an environment variable in `mise.toml`, it will only be run when a shim is called. So the following
 only works under `mise activate`:
 
 ```sh
@@ -155,7 +155,7 @@ this isn't a problem.
 
 Some version managers modify the behavior of `cd`. That might seem like the ideal method of making a version
 manager, it has tons of gaps. It doesn't work if you use `pushd|popd` or other commands that modify PWD—though
-some shells have a "chpwd" hook that would. It doesn't run if you modify the `.mise.toml` file.
+some shells have a "chpwd" hook that would. It doesn't run if you modify the `mise.toml` file.
 
 The upside is that it doesn't run as frequently but since mise is written in rust the cost for executing
 mise is negligible (~4-5ms).

@@ -1,7 +1,7 @@
 # Environments
 
 > Like [direnv](https://github.com/direnv/direnv) it
-manages [environment variables](/configuration#env---arbitrary-environment-variables) for
+manages *environment variables* for
 different project directories.
 
 Use mise to specify environment variables used for different projects. Create a `mise.toml` file
