@@ -58,6 +58,8 @@ for (const match of stdout.split("\n")) {
         return `[${match[1]}:${match[2]}](https://pypi.org/project/${match[2]})`;
       } else if (match[1] === "go") {
         return `[${match[1]}:${match[2]}](https://pkg.go.dev/${match[2]})`;
+      } else if (match[1] === "spm") {
+        return `[${match[1]}:${match[2]}](https://github.com/${match[2]})`;
       } else if (match[1] === "ubi") {
         return `[${match[1]}:${match[2]}](https://github.com/${match[2]})`;
       } else if (match[1] === "aqua") {
