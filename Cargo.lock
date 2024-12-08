@@ -968,7 +968,7 @@ dependencies = [
  "pest_derive",
  "regex",
  "strum",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -983,9 +983,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "486f806e73c5707928240ddc295403b1b93c96a02038563881c4a2fd84b81ac4"
+checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "fiat-crypto"
@@ -2006,7 +2006,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.12.3"
+version = "2024.12.4"
 dependencies = [
  "base64",
  "built",
@@ -2085,7 +2085,7 @@ dependencies = [
  "tera",
  "terminal_size",
  "test-log",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tokio",
  "toml",
  "toml_edit",
@@ -2429,7 +2429,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b7cafe60d6cf8e62e1b9b2ea516a089c008945bb5a275416789e7db0bc199dc"
 dependencies = [
  "memchr",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "ucd-trie",
 ]
 
@@ -2633,7 +2633,7 @@ dependencies = [
  "rustc-hash",
  "rustls",
  "socket2",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
 ]
@@ -2652,7 +2652,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tinyvec",
  "tracing",
  "web-time",
@@ -3582,11 +3582,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.5"
+version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "643caef17e3128658ff44d85923ef2d28af81bb71e0d67bbfe1d76f19a73e053"
+checksum = "8fec2a1820ebd077e2b90c4df007bebf344cd394098a13c563957d0afc83ea47"
 dependencies = [
- "thiserror-impl 2.0.5",
+ "thiserror-impl 2.0.6",
 ]
 
 [[package]]
@@ -3602,9 +3602,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.5"
+version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "995d0bbc9995d1f19d28b7215a9352b0fc3cd3a2d2ec95c2cadc485cdedbcdde"
+checksum = "d65750cab40f4ff1929fb1ba509e9914eb756131cef4210da8d5d700d26f6312"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3874,7 +3874,7 @@ dependencies = [
  "serde",
  "strum",
  "tempfile",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "url",
  "which 7.0.0",
  "xz2",
@@ -4009,7 +4009,7 @@ dependencies = [
  "serde",
  "strum",
  "tera",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "versions",
  "xx",
 ]
@@ -4077,7 +4077,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tokio",
  "url",
  "xx",
@@ -4516,7 +4516,7 @@ dependencies = [
  "reqwest",
  "sha2",
  "tar",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tokio",
  "xz2",
  "zip",
@@ -4667,7 +4667,7 @@ dependencies = [
  "pbkdf2",
  "rand",
  "sha1",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "time",
  "zeroize",
  "zopfli",
