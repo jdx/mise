@@ -9,6 +9,8 @@
 This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
 when you commit changes to your repository.
 
+Staged files are passed to the task as `STAGED`.
+
 ## Flags
 
 ### `--hook <HOOK>`
