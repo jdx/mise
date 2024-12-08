@@ -8,7 +8,6 @@ use base64::prelude::*;
 use eyre::Result;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
-use globwalk::GlobWalkerBuilder;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
@@ -46,7 +45,13 @@ pub fn should_exit_early(watch_files: impl IntoIterator<Item = WatchFilePattern>
         hooks::schedule_hook(hooks::Hooks::Leave);
         return false;
     }
-    let watch_files = get_watch_files(watch_files);
+    let watch_files = match get_watch_files(watch_files) {
+        Ok(w) => w,
+        Err(e) => {
+            warn!("error getting watch files: {e}");
+            return false;
+        }
+    };
     match &*env::__MISE_WATCH {
         Some(watches) => {
             if have_files_been_modified(watches, watch_files) {
@@ -132,7 +137,7 @@ pub fn build_watches(
     watch_files: impl IntoIterator<Item = WatchFilePattern>,
 ) -> Result<HookEnvWatches> {
     let mut max_modtime = UNIX_EPOCH;
-    for cf in get_watch_files(watch_files) {
+    for cf in get_watch_files(watch_files)? {
         if let Ok(Ok(modified)) = cf.metadata().map(|m| m.modified()) {
             max_modtime = std::cmp::max(modified, max_modtime);
         }
@@ -149,7 +154,7 @@ pub fn build_watches(
 
 pub fn get_watch_files(
     watch_files: impl IntoIterator<Item = WatchFilePattern>,
-) -> BTreeSet<PathBuf> {
+) -> Result<BTreeSet<PathBuf>> {
     let mut watches = BTreeSet::new();
     if dirs::DATA.exists() {
         watches.insert(dirs::DATA.to_path_buf());
@@ -157,20 +162,13 @@ pub fn get_watch_files(
     for (root, patterns) in &watch_files.into_iter().chunk_by(|wfp| wfp.root.clone()) {
         if let Some(root) = root {
             let patterns = patterns.flat_map(|wfp| wfp.patterns).collect::<Vec<_>>();
-            let glob = GlobWalkerBuilder::from_patterns(root, &patterns)
-                .follow_links(true)
-                .build();
-            if let Ok(glob) = glob {
-                for entry in glob.flatten() {
-                    watches.insert(entry.path().to_path_buf());
-                }
-            }
+            watches.extend(watch_files::glob(&root, &patterns)?);
         } else {
             watches.extend(patterns.flat_map(|wfp| wfp.patterns).map(PathBuf::from));
         }
     }
 
-    watches
+    Ok(watches)
 }
 
 /// gets a hash of all MISE_ environment variables
