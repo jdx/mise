@@ -171,6 +171,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | cyclonedx | [aqua:CycloneDX/cyclonedx-cli](https://github.com/CycloneDX/cyclonedx-cli) [asdf:xeedio/asdf-cyclonedx](https://github.com/xeedio/asdf-cyclonedx) |
 | dagger | [aqua:dagger/dagger](https://github.com/dagger/dagger) [asdf:virtualstaticvoid/asdf-dagger](https://github.com/virtualstaticvoid/asdf-dagger) |
 | danger-js | [asdf:MontakOleg/asdf-danger-js](https://github.com/MontakOleg/asdf-danger-js) |
+| danger-swift | [asdf:msnazarow/asdf-danger-swift](https://github.com/msnazarow/asdf-danger-swift) |
 | dapr | [aqua:dapr/cli](https://github.com/dapr/cli) [asdf:asdf-community/asdf-dapr-cli](https://github.com/asdf-community/asdf-dapr-cli) |
 | dart | [asdf:PatOConnor43/asdf-dart](https://github.com/PatOConnor43/asdf-dart) [vfox:version-fox/vfox-dart](https://github.com/version-fox/vfox-dart) |
 | dasel | [aqua:TomWright/dasel](https://github.com/TomWright/dasel) [asdf:asdf-community/asdf-dasel](https://github.com/asdf-community/asdf-dasel) |
