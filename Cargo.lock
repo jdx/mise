@@ -968,7 +968,7 @@ dependencies = [
  "pest_derive",
  "regex",
  "strum",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
 ]
 
 [[package]]
@@ -2006,7 +2006,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.12.2"
+version = "2024.12.3"
 dependencies = [
  "base64",
  "built",
@@ -2085,7 +2085,7 @@ dependencies = [
  "tera",
  "terminal_size",
  "test-log",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
  "tokio",
  "toml",
  "toml_edit",
@@ -2429,7 +2429,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b7cafe60d6cf8e62e1b9b2ea516a089c008945bb5a275416789e7db0bc199dc"
 dependencies = [
  "memchr",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
  "ucd-trie",
 ]
 
@@ -2633,7 +2633,7 @@ dependencies = [
  "rustc-hash",
  "rustls",
  "socket2",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
  "tokio",
  "tracing",
 ]
@@ -2652,7 +2652,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
  "tinyvec",
  "tracing",
  "web-time",
@@ -3582,11 +3582,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.4"
+version = "2.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f49a1853cf82743e3b7950f77e0f4d622ca36cf4317cba00c767838bac8d490"
+checksum = "643caef17e3128658ff44d85923ef2d28af81bb71e0d67bbfe1d76f19a73e053"
 dependencies = [
- "thiserror-impl 2.0.4",
+ "thiserror-impl 2.0.5",
 ]
 
 [[package]]
@@ -3602,9 +3602,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.4"
+version = "2.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8381894bb3efe0c4acac3ded651301ceee58a15d47c2e34885ed1908ad667061"
+checksum = "995d0bbc9995d1f19d28b7215a9352b0fc3cd3a2d2ec95c2cadc485cdedbcdde"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3874,7 +3874,7 @@ dependencies = [
  "serde",
  "strum",
  "tempfile",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
  "url",
  "which 7.0.0",
  "xz2",
@@ -4009,7 +4009,7 @@ dependencies = [
  "serde",
  "strum",
  "tera",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
  "versions",
  "xx",
 ]
@@ -4077,7 +4077,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
  "tokio",
  "url",
  "xx",
@@ -4516,7 +4516,7 @@ dependencies = [
  "reqwest",
  "sha2",
  "tar",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
  "tokio",
  "xz2",
  "zip",
@@ -4667,7 +4667,7 @@ dependencies = [
  "pbkdf2",
  "rand",
  "sha1",
- "thiserror 2.0.4",
+ "thiserror 2.0.5",
  "time",
  "zeroize",
  "zopfli",
