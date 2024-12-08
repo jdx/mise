@@ -185,22 +185,7 @@ No extra setup is required for completions so long as [mise completions](/cli/co
 
 _See [Tasks](/tasks/) for more information on working with tasks._
 
-## Final Thoughts
-
-Dev tools, env vars, and tasks work together to make managing your development environment easier—especially
-when working with others. The goal is to have a consistent UX to interface with projects regardless of the
-programming languages or tools used on it.
-
-For further reading:
-
-- [Dev Tools](/dev-tools/) – A deeper overview of working with dev tools
-- [Environments](/environments) – A deeper overview of working with environment variables
-- [Tasks](/tasks/) – A deeper overview of working with tasks
-- [Configuration](/configuration) – More information on `mise.toml` files
-- [Settings](/configuration/settings) – All the configuration settings available in mise
-- [Backends](/dev-tools/backends/) – An index of all the backends available in mise
-- [Registry](/registry) – Every "shorthand" available for tools in mise like `node`, `terraform`, or `watchexec` which point to `core:node`, `asdf:asdf-community/asdf-hashicorp`, and `ubi:watchexec/watchexec` respectively
-- [CLI](/cli/) – The full list of commands available in mise
+## Common Commands
 
 Since there are a lot of commands available in mise, here are what I consider the most important:
 
@@ -221,3 +206,20 @@ Since there are a lot of commands available in mise, here are what I consider th
 - [`mise upgrade|up`](/cli/upgrade) – Upgrade tool versions.
 - [`mise use|u`](/cli/use) – Install and activate tools.
 - [`mise watch|w`](/cli/watch) – Watch for changes in a project and run tasks when they occur.
+
+## Final Thoughts
+
+Dev tools, env vars, and tasks work together to make managing your development environment easier—especially
+when working with others. The goal is to have a consistent UX to interface with projects regardless of the
+programming languages or tools used on it.
+
+For further reading:
+
+- [Dev Tools](/dev-tools/) – A deeper overview of working with dev tools
+- [Environments](/environments) – A deeper overview of working with environment variables
+- [Tasks](/tasks/) – A deeper overview of working with tasks
+- [Configuration](/configuration) – More information on `mise.toml` files
+- [Settings](/configuration/settings) – All the configuration settings available in mise
+- [Backends](/dev-tools/backends/) – An index of all the backends available in mise
+- [Registry](/registry) – Every "shorthand" available for tools in mise like `node`, `terraform`, or `watchexec` which point to `core:node`, `asdf:asdf-community/asdf-hashicorp`, and `ubi:watchexec/watchexec` respectively
+- [CLI](/cli/) – The full list of commands available in mise
