@@ -1,8 +1,8 @@
 # Dev Tools
 
 > _Like [asdf](https://asdf-vm.com) (or [nvm](https://github.com/nvm-sh/nvm)
-or [pyenv](https://github.com/pyenv/pyenv) but for any language), it manages dev tools like node,
-python, cmake, terraform, and [hundreds more](/registry.html)._
+> or [pyenv](https://github.com/pyenv/pyenv) but for any language), it manages dev tools like node,
+> python, cmake, terraform, and [hundreds more](/registry.html)._
 
 ::: tip
 New developer? Try reading the [Beginner's Guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4)
@@ -15,6 +15,7 @@ Once [activated](/getting-started.html#_2-activate-mise), mise will automaticall
 This means that if you have a project that requires Node.js 18 and another that requires Node.js 22, mise will automatically switch between them as you move between the two projects. See tools available for mise with in the [registry](/registry).
 
 To know which tool version to use, mise will typically look for a `mise.toml` file in the current directory and its parents. To get an idea of how tools are specified, here is an example of a [mise.toml](/configuration.html) file:
+
 ```toml
 [tools]
 node = '22'
@@ -46,7 +47,7 @@ See the [FAQ](/faq#what-does-mise-activate-do).
 
 After activating, every time your prompt displays it will call `mise hook-env` to fetch new
 environment variables.
-This should be very fast. It exits early if the directory wasn't changed or 
+This should be very fast. It exits early if the directory wasn't changed or
 `mise.toml`/`.tool-versions` files haven't been modified.
 
 `mise` modifies `PATH` ahead of time so the runtimes are called directly. This means that calling a tool has zero overhead and commands like `which node` returns the real path to the binary.
@@ -71,7 +72,7 @@ For some users, `mise use` might be the only command you need to learn. It will 
 
 ```shell
 > cd my-project
-> mise use node@22 
+> mise use node@22
 # download node, verify signature...
 mise node@22.12.0 ✓ installed
 mise ~/my-project/mise.toml tools: node@22.12.0 # mise.toml created/updated

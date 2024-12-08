@@ -133,6 +133,7 @@ Note that `mise` does not consider `~/.tool-versions` files to be a global confi
 `~/.config/mise/config.toml` file for global configuration.
 
 Here is an example script you can use to migrate your global `.tool-versions` file to mise:
+
 ```shell
 mv ~/.tool-versions ~/.tool-versions.bak
 cat ~/.tool-versions.bak | tr ' ' '@' | xargs -n2 mise use -g
