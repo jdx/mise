@@ -3,8 +3,9 @@ use crate::config::{Config, SETTINGS};
 use crate::dirs;
 use crate::toolset::Toolset;
 use eyre::Result;
-use globset::{Glob, GlobSetBuilder};
+use globset::{GlobBuilder, GlobSetBuilder};
 use itertools::Itertools;
+use rayon::prelude::*;
 use std::collections::BTreeSet;
 use std::iter::once;
 use std::path::{Path, PathBuf};
@@ -95,7 +96,7 @@ fn has_matching_files<'a>(
 ) -> Result<Vec<&'a PathBuf>> {
     let mut glob = GlobSetBuilder::new();
     for pattern in &wf.patterns {
-        match Glob::new(pattern) {
+        match GlobBuilder::new(pattern).literal_separator(true).build() {
             Ok(g) => {
                 glob.add(g);
             }
@@ -115,4 +116,46 @@ fn has_matching_files<'a>(
             }
         })
         .collect())
+}
+
+pub fn glob(root: &Path, patterns: &[String]) -> Result<Vec<PathBuf>> {
+    if patterns.is_empty() {
+        return Ok(vec![]);
+    }
+    let opts = glob::MatchOptions {
+        require_literal_separator: true,
+        ..Default::default()
+    };
+    Ok(patterns
+        .par_iter()
+        .map(|pattern| root.join(pattern).to_string_lossy().to_string())
+        .filter_map(|pattern| glob::glob_with(&pattern, opts).ok())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .flat_map(|paths| paths.filter_map(|p| p.ok()))
+        .collect())
+
+    // let mut overrides = ignore::overrides::OverrideBuilder::new(root);
+    // for pattern in patterns {
+    //     overrides.add(&format!("./{pattern}"))?;
+    // }
+    // let files = Arc::new(Mutex::new(vec![]));
+    // ignore::WalkBuilder::new(root)
+    //     .overrides(overrides.build()?)
+    //     .standard_filters(false)
+    //     .follow_links(true)
+    //     .build_parallel()
+    //     .run(|| {
+    //         let files = files.clone();
+    //         Box::new(move |entry| {
+    //             if let Ok(entry) = entry {
+    //                 let mut files = files.lock().unwrap();
+    //                 files.push(entry.path().to_path_buf());
+    //             }
+    //             WalkState::Continue
+    //         })
+    //     });
+    //
+    // let files = files.lock().unwrap();
+    // Ok(files.to_vec())
 }
