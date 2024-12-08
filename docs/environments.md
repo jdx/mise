@@ -44,9 +44,11 @@ It can be a string or array and uses relative or absolute paths:
 _.file = '.env'
 ```
 
-_This uses [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have problems with
+::: note
+This uses [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have problems with
 the way `env._.file` works, you will likely need to post an issue there,
-not to mise since there is not much mise can do about the way that crate works.\_
+not to mise since there is not much mise can do about the way that crate works.
+:::
 
 Or set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any
 directory.
