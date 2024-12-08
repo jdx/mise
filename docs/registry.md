@@ -4,6 +4,14 @@ editLink: false
 
 # Registry
 
+On this page, you will find a list of all tools which installable by `mise` by their name. For example, this means that you can install `github-cli` with `mise use github-cli` instead of `mise use aqua:cli/cli`.
+
+If a tool is not in the registry, you can still install it by specifying the full name of the tool. [Core tools](/core-tools.html) like `node`, `java`, `python` are marked with `core:`.
+
+::: tip
+Use [mise registry](/cli/registry.html) to see the same information in your terminal.
+:::
+
 In general, the preferred backend to use for new tools is the following:
 
 - [aqua](./dev-tools/backends/aqua.html) - offers the most features and security while not requiring plugins
