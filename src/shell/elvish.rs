@@ -1,8 +1,8 @@
+use std::fmt::Display;
 use std::path::Path;
 
-use indoc::formatdoc;
-
 use crate::shell::Shell;
+use indoc::formatdoc;
 
 #[derive(Default)]
 pub struct Elvish {}
@@ -81,6 +81,12 @@ impl Shell for Elvish {
 
     fn unset_env(&self, k: &str) -> String {
         format!("unset-env {k}\n", k = shell_escape::unix::escape(k.into()))
+    }
+}
+
+impl Display for Elvish {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "elvish")
     }
 }
 

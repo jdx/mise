@@ -2,7 +2,7 @@ use crate::cmd::cmd;
 use crate::config::{Config, SETTINGS};
 use crate::toolset::Toolset;
 use crate::{dirs, hook_env};
-use eyre::Result;
+use eyre::{eyre, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -35,7 +35,8 @@ pub enum Hooks {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Hook {
     pub hook: Hooks,
-    pub run: String,
+    pub script: String,
+    pub shell: Option<String>,
 }
 
 pub static SCHEDULED_HOOKS: Lazy<Mutex<IndexSet<Hooks>>> = Lazy::new(Default::default);
@@ -56,7 +57,7 @@ pub fn run_one_hook(ts: &Toolset, hook: Hooks) {
     let config = Config::get();
     let hooks = config.hooks().unwrap_or_default();
     for (root, h) in hooks {
-        if hook != h.hook {
+        if hook != h.hook || h.shell.is_some() {
             continue;
         }
         trace!("running hook {hook} in {root:?}");
@@ -86,6 +87,43 @@ pub fn run_one_hook(ts: &Toolset, hook: Hooks) {
     }
 }
 
+impl Hook {
+    pub fn from_toml(hook: Hooks, value: toml::Value) -> Result<Vec<Self>> {
+        match value {
+            toml::Value::String(run) => Ok(vec![Hook {
+                hook,
+                script: run,
+                shell: None,
+            }]),
+            toml::Value::Table(tbl) => {
+                let script = tbl
+                    .get("script")
+                    .ok_or_else(|| eyre!("missing `script` key"))?;
+                let script = script
+                    .as_str()
+                    .ok_or_else(|| eyre!("`run` must be a string"))?;
+                let shell = tbl
+                    .get("shell")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
+                Ok(vec![Hook {
+                    hook,
+                    script: script.to_string(),
+                    shell,
+                }])
+            }
+            toml::Value::Array(arr) => {
+                let mut hooks = vec![];
+                for v in arr {
+                    hooks.extend(Self::from_toml(hook, v)?);
+                }
+                Ok(hooks)
+            }
+            v => panic!("invalid hook value: {v}"),
+        }
+    }
+}
+
 fn execute(ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
     SETTINGS.ensure_experimental("hooks")?;
     #[cfg(unix)]
@@ -97,7 +135,7 @@ fn execute(ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
         .iter()
         .skip(1)
         .map(|s| s.as_str())
-        .chain(once(hook.run.as_str()))
+        .chain(once(hook.script.as_str()))
         .collect_vec();
     let mut env = ts.full_env()?;
     if let Some(cwd) = dirs::CWD.as_ref() {

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt::Display;
 use std::path::Path;
 
 use indoc::formatdoc;
@@ -135,6 +136,12 @@ impl Shell for Xonsh {
         "#,
             k = shell_escape::unix::escape(k.into()) // todo: drop illegal chars, not escape?
         )
+    }
+}
+
+impl Display for Xonsh {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "xonsh")
     }
 }
 

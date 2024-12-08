@@ -60,3 +60,30 @@ Hooks are executed with the following environment variables set:
 - `MISE_ORIGINAL_CWD`: The directory that the user is in.
 - `MISE_PROJECT_DIR`: The root directory of the project.
 - `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
+
+## Shell hooks
+
+Hooks can be executed in the current shell, for example if you'd like to add bash completions when entering a directory:
+
+```toml
+[hooks.enter]
+shell = "bash"
+script = "source completions.sh"
+```
+
+## Multiple hooks syntax
+
+You can use arrays to define multiple hooks in the same file:
+
+```toml
+[hooks]
+enter = [
+  "echo 'I entered the project'",
+  "echo 'I am in the project'"
+]
+
+[[hooks.cd]]
+script = "echo 'I changed directories'"
+[[hooks.cd]]
+script = "echo 'I also directories'"
+```

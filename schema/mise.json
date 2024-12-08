@@ -961,8 +961,34 @@
       "description": "hooks to run",
       "type": "object",
       "additionalProperties": {
-        "description": "script to run",
-        "type": "string"
+        "oneOf": [
+          {
+            "description": "script to run",
+            "type": "string"
+          },
+          {
+            "description": "script to run",
+            "items": {
+              "description": "script to run",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "script": {
+                "description": "script to run",
+                "type": "string"
+              },
+              "shell": {
+                "description": "specify the shell to run the script inside of",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ]
       }
     },
     "watch_files": {

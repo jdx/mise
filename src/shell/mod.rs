@@ -65,7 +65,7 @@ impl Display for ShellType {
     }
 }
 
-pub trait Shell {
+pub trait Shell: Display {
     fn activate(&self, exe: &Path, flags: String) -> String;
     fn deactivate(&self) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;

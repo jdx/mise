@@ -49,7 +49,7 @@ pub struct MiseToml {
     #[serde(skip)]
     doc: OnceCell<DocumentMut>,
     #[serde(default)]
-    hooks: IndexMap<Hooks, String>,
+    hooks: IndexMap<Hooks, toml::Value>,
     #[serde(default)]
     tools: IndexMap<BackendArg, MiseTomlToolList>,
     #[serde(default)]
@@ -455,13 +455,20 @@ impl ConfigFile for MiseToml {
     }
 
     fn hooks(&self) -> eyre::Result<Vec<Hook>> {
-        self.hooks
+        Ok(self
+            .hooks
             .iter()
-            .map(|(hook, run)| {
-                let run = self.parse_template(run)?;
-                Ok(Hook { hook: *hook, run })
+            .map(|(hook, val)| {
+                let mut hooks = Hook::from_toml(*hook, val.clone())?;
+                for hook in hooks.iter_mut() {
+                    hook.script = self.parse_template(&hook.script)?;
+                }
+                eyre::Ok(hooks)
             })
-            .collect()
+            .collect::<eyre::Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     fn vars(&self) -> eyre::Result<&IndexMap<String, String>> {
