@@ -33,7 +33,7 @@ mise-x64 use -g node@20
 ## Shebang
 
 You can specify a tool and its version in a shebang without needing to first
-setup `.tool-versions`/`mise.toml` config:
+set up a `mise.toml`/`.tool-versions` config:
 
 ```typescript
 #!/usr/bin/env -S mise x node@20 -- node

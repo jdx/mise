@@ -113,7 +113,7 @@ node = "https://github.com/my-org/mise-node.git#DEADBEEF" # supports specific gi
 ```
 
 If you simply want to install a plugin from a specific URL once, it's better to use
-`mise plugin install plugin <GIT_URL>`. Add this section to `.mise.toml` if you want
+`mise plugin install plugin <GIT_URL>`. Add this section to `mise.toml` if you want
 to share the plugin location/revision with other developers in your project.
 
 This is similar
@@ -146,13 +146,13 @@ min_version = '2024.11.1'
 
 ### `mise.toml` schema
 
-- You can find the JSON schema for `.mise.toml` [here](https://github.com/jdx/mise/blob/main/schema/mise.json) or at <https://mise.jdx.dev/schema/mise.json>.
+- You can find the JSON schema for `mise.toml` [here](https://github.com/jdx/mise/blob/main/schema/mise.json) or at <https://mise.jdx.dev/schema/mise.json>.
 - Some editors can load it automatically to provide autocompletion and validation for when editing a `mise.toml` file ([VSCode](https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings), [IntelliJ](https://www.jetbrains.com/help/idea/json.html#ws_json_using_schemas), [neovim](https://github.com/b0o/SchemaStore.nvim), etc.). It is also available in the [JSON schema store](https://www.schemastore.org/json/).
 - Note that for `included tasks` (see [task configuration](/tasks/#task-configuration), there is another schema: <https://mise.jdx.dev/schema/mise-task.json>)
 
 ## Global config: `~/.config/mise/config.toml`
 
-mise can be configured in `~/.config/mise/config.toml`. It's like local `.mise.toml` files except
+mise can be configured in `~/.config/mise/config.toml`. It's like local `mise.toml` files except
 that
 it is used for all directories.
 
@@ -216,8 +216,8 @@ setting defaults for all users.
 
 ## `.tool-versions`
 
-The `.tool-versions` file is asdf's config file and it can be used in mise just like `.mise.toml`.
-It isn't as flexible so it's recommended to use `.mise.toml` instead. It can be useful if you
+The `.tool-versions` file is asdf's config file and it can be used in mise just like `mise.toml`.
+It isn't as flexible so it's recommended to use `mise.toml` instead. It can be useful if you
 already have a lot of `.tool-versions` files or work on a team that uses asdf.
 
 Here is an example with all the supported syntax:
@@ -241,7 +241,7 @@ this file format.
 
 ## Scopes
 
-Both `.mise.toml` and `.tool-versions` support "scopes" which modify the behavior of the version:
+Both `mise.toml` and `.tool-versions` support "scopes" which modify the behavior of the version:
 
 - `ref:<SHA>` - compile from a vcs (usually git) ref
 - `prefix:<PREFIX>` - use the latest version that matches the prefix. Useful for Go since `1.20`
@@ -350,7 +350,7 @@ Uses [dotenvy](https://crates.io/crates/dotenvy) under the hood.
 ### `MISE_${PLUGIN}_VERSION`
 
 Set the version for a runtime. For example, `MISE_NODE_VERSION=20` will use <node@20.x> regardless
-of what is set in `.tool-versions`/`.mise.toml`.
+of what is set in `mise.toml`/`.tool-versions`.
 
 ### `MISE_TRUSTED_CONFIG_PATHS`
 

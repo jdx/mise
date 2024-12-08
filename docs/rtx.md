@@ -17,7 +17,7 @@ and `~/.config/rtx` to `~/.config/mise` (if the destination does not exist). Pyt
 installs will need to be reinstalled with `mise install`.
 
 `mise` will continue reading `.rtx.toml` files for some time but that eventually will
-be deprecated so please rename them to `.mise.toml`. `mise` will not read from `RTX_*`
+be deprecated so please rename them to `mise.toml`. `mise` will not read from `RTX_*`
 env vars so those will need to be changed to `MISE_*`. Anything using a local `.rtx` or
 `.config/rtx` directory will need to be moved to `.mise`/`.config/mise`.
 

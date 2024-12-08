@@ -1,18 +1,18 @@
 # FAQs
 
-## I don't want to put a `.tool-versions`/`mise.toml` file into my project since git shows it as an untracked file
+## I don't want to put a `mise.toml`/`.tool-versions` file into my project since git shows it as an untracked file
 
 Use [`mise.local.toml`](https://mise.jdx.dev/configuration.html#mise-toml) and put that into your global gitignore file. This file should never be committed.
 
-Or you can make git ignore these files in 3 different ways:
+If you really want to use a `mise.toml` or `.tool-versions`, here are 3 ways to make git ignore these files:
 
-- Adding `.tool-versions` to project's `.gitignore` file. This has the downside that you need to
-  commit the change to the ignore file.
-- Adding `.tool-versions` to project's `.git/info/exclude`. This file is local to your project so
+- Adding `mise.toml` to project's `.git/info/exclude`. This file is local to your project so
   there is no need to commit it.
-- Adding `.tool-versions` to global gitignore (`core.excludesFile`). This will cause git to
-  ignore `.tool-versions` files in all projects. You can explicitly add one to a project if needed
-  with `git add --force .tool-versions`.
+- Adding `mise.toml` to project's `.gitignore` file. This has the downside that you need to
+  commit the change to the ignore file.
+- Adding `mise.toml` to global gitignore (`core.excludesFile`). This will cause git to
+  ignore `mise.toml` files in all projects. You can explicitly add one to a project if needed
+  with `git add --force mise.toml`.
 
 ## What is the difference between "nodejs" and "node" (or "golang" and "go")?
 

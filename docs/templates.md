@@ -4,9 +4,9 @@ Templates in mise provide a powerful way to configure different aspects of
 your environment and project settings.
 You can define and use templates in the following locations:
 
-- `.tool-versions` files
 - Most `mise.toml` configuration values
   - The `mise.toml` file itself is not templated and must be valid toml
+- `.tool-versions` files
 - _(Submit a ticket if you want to see it used elsewhere!)_
 
 ## Template Rendering
@@ -107,7 +107,7 @@ These variables offer key information about the current environment:
 - `env: HashMap<String, String>` – Accesses current environment variables as
   a key-value map.
 - `cwd: PathBuf` – Points to the current working directory.
-- `config_root: PathBuf` – Locates the directory containing your `.mise.toml` file
+- `config_root: PathBuf` – Locates the directory containing your `mise.toml` file
   or the `.mise` configuration folder.
 - `mise_bin: String` - Points to the path to the current mise executable
 - `mise_pid: String` - Points to the pid of the current mise process
@@ -252,7 +252,6 @@ PROJECT_CONFIG = "{{ config_root | concat(with='bar.txt') | join_path }}"
 - `str | kebabcase -> String` – Converts a string to kebab-case
 - `str | lowercamelcase -> String` – Converts a string to lowerCamelCase
 - `str | uppercamelcase -> String` – Converts a string to UpperCamelCase
-- `str | shoutycamelcase -> String` – Converts a string to ShoutyCamelCase
 - `str | snakecase -> String` – Converts a string to snake_case
 - `str | shoutysnakecase -> String` – Converts a string to SHOUTY_SNAKE_CASE
 
