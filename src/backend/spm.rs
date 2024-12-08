@@ -203,6 +203,7 @@ struct SwiftPackageRepo {
 impl SwiftPackageRepo {
     /// Parse the slug or the full URL of a GitHub package repository.
     fn new(name: &str) -> Result<Self, eyre::Error> {
+        let name = name.strip_prefix("spm:").unwrap_or(name);
         let shorthand_regex = regex!(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+$");
         let shorthand_in_url_regex =
             regex!(r"https://github.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+)\.git");
