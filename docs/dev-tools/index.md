@@ -41,7 +41,7 @@ directory containing a `mise.toml`/`.tool-versions` file, mise will automaticall
 appropriate tool versions in `PATH`.
 
 ::: info
-mise does not modify `cd`. It actually runs every time the prompt is _displayed_.
+After activating, mise will update env vars like PATH whenever the directory is changed or the prompt is _displayed_.
 See the [FAQ](/faq#what-does-mise-activate-do).
 :::
 
