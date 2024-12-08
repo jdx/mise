@@ -103,7 +103,7 @@ pub struct Cli {
     /// Set the log output verbosity
     #[clap(long, short, hide = true, overrides_with = "prefix")]
     pub interleave: bool,
-    /// How many jobs to run in parallel [default: 4]
+    /// How many jobs to run in parallel [default: 8]
     #[clap(long, short, global = true, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
     #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum)]

@@ -52,6 +52,10 @@ pub struct Ls {
     #[clap(long, short)]
     offline: bool,
 
+    /// Display whether a version is outdated
+    #[clap(long)]
+    outdated: bool,
+
     /// Output in JSON format
     #[clap(long, short = 'J')]
     json: bool,
@@ -291,10 +295,10 @@ impl From<(&Ls, &dyn Backend, &ToolVersion, &ToolSource)> for VersionStatus {
         } else if !p.is_version_installed(tv, true) {
             VersionStatus::Missing(tv.version.clone())
         } else if !source.is_unknown() {
-            let outdated = if ls.offline {
-                false
-            } else {
+            let outdated = if ls.outdated {
                 p.is_version_outdated(tv)
+            } else {
+                false
             };
             VersionStatus::Active(tv.version.clone(), outdated)
         } else {

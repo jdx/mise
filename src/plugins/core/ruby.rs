@@ -15,7 +15,7 @@ use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file, plugins};
+use crate::{cmd, env, file, plugins, timeout};
 use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use xx::regex;
@@ -334,20 +334,25 @@ impl Backend for RubyPlugin {
         &self.ba
     }
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        if let Err(err) = self.update_build_tool(None) {
-            warn!("{err}");
-        }
-        let ruby_build_bin = self.ruby_build_bin();
-        let versions = plugins::core::run_fetch_task_with_timeout(move || {
-            let output = cmd!(ruby_build_bin, "--definitions").read()?;
-            let versions = output
-                .split('\n')
-                .sorted_by_cached_key(|s| regex!(r#"^\d"#).is_match(s)) // show matz ruby first
-                .map(|s| s.to_string())
-                .collect();
-            Ok(versions)
-        })?;
-        Ok(versions)
+        timeout::run_with_timeout(
+            || {
+                if let Err(err) = self.update_build_tool(None) {
+                    warn!("{err}");
+                }
+                let ruby_build_bin = self.ruby_build_bin();
+                let versions = plugins::core::run_fetch_task_with_timeout(move || {
+                    let output = cmd!(ruby_build_bin, "--definitions").read()?;
+                    let versions = output
+                        .split('\n')
+                        .sorted_by_cached_key(|s| regex!(r#"^\d"#).is_match(s)) // show matz ruby first
+                        .map(|s| s.to_string())
+                        .collect();
+                    Ok(versions)
+                })?;
+                Ok(versions)
+            },
+            SETTINGS.fetch_remote_versions_timeout(),
+        )
     }
 
     fn idiomatic_filenames(&self) -> Result<Vec<String>> {

@@ -1,4 +1,4 @@
-use crate::env;
+use crate::{env, timeout};
 use heck::ToKebabCase;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
@@ -10,7 +10,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::Config;
+use crate::config::{Config, SETTINGS};
 use crate::dirs;
 use crate::install_context::InstallContext;
 use crate::plugins::vfox_plugin::VfoxPlugin;
@@ -41,14 +41,19 @@ impl Backend for VfoxBackend {
     }
 
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        let (vfox, _log_rx) = self.plugin.vfox();
-        self.ensure_plugin_installed()?;
-        let versions = RUNTIME.block_on(vfox.list_available_versions(&self.pathname))?;
-        Ok(versions
-            .into_iter()
-            .rev()
-            .map(|v| v.version)
-            .collect::<Vec<String>>())
+        timeout::run_with_timeout(
+            || {
+                let (vfox, _log_rx) = self.plugin.vfox();
+                self.ensure_plugin_installed()?;
+                let versions = RUNTIME.block_on(vfox.list_available_versions(&self.pathname))?;
+                Ok(versions
+                    .into_iter()
+                    .rev()
+                    .map(|v| v.version)
+                    .collect::<Vec<String>>())
+            },
+            SETTINGS.fetch_remote_versions_timeout(),
+        )
     }
 
     fn install_version_(

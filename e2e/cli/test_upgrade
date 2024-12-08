@@ -29,7 +29,7 @@ rm -f .tool-versions
 echo "tools.dummy = 'prefix:1'" >mise.toml
 mise uninstall dummy --all
 mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0.0"
-assert "mise ls dummy" "dummy  1.0.0 (outdated)  ~/workdir/mise.toml prefix:1"
+assert "mise ls dummy --outdated" "dummy  1.0.0 (outdated)  ~/workdir/mise.toml prefix:1"
 assert "mise up -n" "Would uninstall dummy@1.0.0
 Would install dummy@1.1.0"
 mise up
