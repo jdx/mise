@@ -32,7 +32,8 @@ features:
 ---
 
 ## Powerful polyglot tool version manager
-Mise can manage multiple tools and runtimes like `node`, `python`, `java`, `go`, `ruby`, `terraform`, etc. in one place. 
+
+Mise can manage multiple tools and runtimes like `node`, `python`, `java`, `go`, `ruby`, `terraform`, etc. in one place.
 
 With a simple configuration file, you can specify which version of each tool to use. `mise` will automatically switch between different versions of tools based on the directory you're in.
 
@@ -41,15 +42,18 @@ With a simple configuration file, you can specify which version of each tool to 
 # mise go@1.x.x ✓ installed
 # mise node@22.x.x ✓ installed
 # mise python@3.x.x ✓ installed
-# mise ~/my-project/mise.toml tools: go@1.x.x, python@3.x.x, node@22.x.x                                                              
+# mise ~/my-project/mise.toml tools: go@1.x.x, python@3.x.x, node@22.x.x
 ```
+
 ::: code-group
+
 ```toml [mise.toml]
 [tools]
 node = "22"
 python = "3"
 go = "latest"
 ```
+
 :::
 
 ```shell
@@ -61,17 +65,21 @@ go = "latest"
 ```
 
 ## Manage environment variables
+
 Mise can manage environment variables for different project directories. Like `direnv`, it will automatically switch between different sets of environment variables as you move between projects.
 
 ```shell
 ~/my-project > mise env set FOO=bar
 ```
+
 ::: code-group
+
 ```toml [mise.toml]
 # ...
 [env]
 FOO = "bar"
 ```
+
 :::
 
 ```shell
@@ -85,6 +93,7 @@ echo $FOO
 Powerful task runner that can replace `make`, `just`, `npm scripts`, etc. leveraging tools and environment variables.
 
 ::: code-group
+
 ```toml [mise.toml]
 # ...
 [task.test]
@@ -94,7 +103,9 @@ run = "echo 'runing tests...'"
 run = "node -e 'console.log(process.version); console.log(process.env.FOO)'"
 depends = ["test"]
 ```
+
 :::
+
 ```shell
 > mise tasks ls
 # my_task     ~/.my-project/mise.toml
@@ -107,23 +118,30 @@ depends = ["test"]
 ```
 
 ## mise works with your existing setup
-You do not need to use `mise` for everything. You can use it only for `tool` or for `tasks`. 
-`mise` interoperates with your extisting setup! 
+
+You do not need to use `mise` for everything. You can use it only for `tool` or for `tasks`.
+`mise` interoperates with your extisting setup!
 
 ### Idiomatic files and asdf compatibility
+
 mise works with idiomatic files like `.nvmrc`, `.python-version`, etc. or asdf `.tool-versions` files.
 
 ::: code-group
+
 ```txt [.nvmrc]
 22
 ```
+
 ```txt [.python-version]
 3.13
 ```
+
 ```txt [.tool-versions]
 go 1.23.4
 ```
+
 :::
+
 ```shell
 > mise install
 # mise go@1.23.4 ✓ installed
@@ -132,14 +150,18 @@ go 1.23.4
 ```
 
 ### `.env` files support
+
 mise can load `.env` files.
+
 ```toml
 [env]
 _.file = ".env"
 ```
 
 ### Standalone file tasks
+
 mise also works with your existing shell scripts. Tasks can be as standalone files!
+
 ```shell
 > cat mise-tasks/build
 | #!/usr/bin/env bash
