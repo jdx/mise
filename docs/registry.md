@@ -247,7 +247,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | fluttergen | [ubi:FlutterGen/flutter_gen](https://github.com/FlutterGen/flutter_gen) [asdf:FlutterGen/asdf-fluttergen](https://github.com/FlutterGen/asdf-fluttergen) |
 | flux2 | [aqua:fluxcd/flux2](https://github.com/fluxcd/flux2) [asdf:tablexi/asdf-flux2](https://github.com/tablexi/asdf-flux2) |
 | fly | [aqua:concourse/concourse/fly](https://github.com/concourse/concourse/fly) [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
-| flyctl | [ubi:superfly/flyctl](https://github.com/superfly/flyctl) [asdf:chessmango/asdf-flyctl](https://github.com/chessmango/asdf-flyctl) |
+| flyctl | [aqua:superfly/flyctl](https://github.com/superfly/flyctl) [ubi:superfly/flyctl](https://github.com/superfly/flyctl) [asdf:chessmango/asdf-flyctl](https://github.com/chessmango/asdf-flyctl) |
 | flyway | [asdf:junminahn/asdf-flyway](https://github.com/junminahn/asdf-flyway) |
 | func-e | [asdf:carnei-ro/asdf-func-e](https://github.com/carnei-ro/asdf-func-e) |
 | furyctl | [ubi:sighupio/furyctl](https://github.com/sighupio/furyctl) [asdf:sighupio/asdf-furyctl](https://github.com/sighupio/asdf-furyctl) |
