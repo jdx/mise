@@ -6,6 +6,7 @@
 
 [tools]
 # ls-remote not available for aqua
+cowsay.backends = ["npm:cowsay"]
 1password.aliases = ["1password-cli", "op"]
 1password.backends = ["asdf:NeoHsu/asdf-1password-cli", "aqua:1password/cli"]
 # 1password.test = ["op --version", "{{version}}"] fails on CI for some reason
