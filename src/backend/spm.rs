@@ -103,7 +103,11 @@ impl SPMBackend {
         Ok(repo.dir)
     }
 
-    fn get_executable_names(&self, repo_dir: &PathBuf, tv: &ToolVersion) -> Result<Vec<String>, eyre::Error> {
+    fn get_executable_names(
+        &self,
+        repo_dir: &PathBuf,
+        tv: &ToolVersion,
+    ) -> Result<Vec<String>, eyre::Error> {
         let package_json = cmd!(
             "swift",
             "package",
