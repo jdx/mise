@@ -351,9 +351,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
-version = "0.4.38"
+version = "0.4.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a21f936df1771bf62b77f047b726c4625ff2e8aa607c01ec06e5a05bd8463401"
+checksum = "7e36cc9d416881d2e24f9a963be5fb1cd90966419ac844274161d10488b3e825"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -712,9 +712,9 @@ checksum = "da692b8d1080ea3045efaab14434d40468c3d8657e42abddfffca87b428f4c1b"
 
 [[package]]
 name = "demand"
-version = "1.2.4"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "911255fd44dad0c6b5675764410acef128715644cbb68e5fad6a503ead70db0a"
+checksum = "3f411dff701b92f8dd5169b550e256f6cffbb8b90b047c77c32efa3d9fa61d66"
 dependencies = [
  "console",
  "once_cell",
@@ -968,7 +968,7 @@ dependencies = [
  "pest_derive",
  "regex",
  "strum",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -983,9 +983,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "486f806e73c5707928240ddc295403b1b93c96a02038563881c4a2fd84b81ac4"
+checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "fiat-crypto"
@@ -1719,9 +1719,9 @@ dependencies = [
 
 [[package]]
 name = "kdl"
-version = "4.6.0"
+version = "4.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "062c875482ccb676fd40c804a40e3824d4464c18c364547456d1c8e8e951ae47"
+checksum = "3a18038fbecda667e7ea2101bdd02af754da5e17ca2887a7649b8f3fa809d8b8"
 dependencies = [
  "miette",
  "nom",
@@ -1759,9 +1759,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.167"
+version = "0.2.168"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09d6582e104315a817dff97f75133544b2e094ee22447d2acf4a74e189ba06fc"
+checksum = "5aaeb2981e0606ca11d79718f8bb01164f1d6ed75080182d3abf017e6d244b6d"
 
 [[package]]
 name = "libgit2-sys"
@@ -1942,21 +1942,21 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "miette"
-version = "5.10.0"
+version = "7.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59bb584eaeeab6bd0226ccf3509a69d7936d148cf3d036ad350abe35e8c6856e"
+checksum = "317f146e2eb7021892722af37cf1b971f0a70c8406f487e24952667616192c64"
 dependencies = [
+ "cfg-if",
  "miette-derive",
- "once_cell",
  "thiserror 1.0.69",
  "unicode-width 0.1.14",
 ]
 
 [[package]]
 name = "miette-derive"
-version = "5.10.0"
+version = "7.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49e7bc1560b95a3c4a25d03de42fe76ca718ab92d1a22a55b9b4cf67b3ae635c"
+checksum = "23c9b935fbe1d6cbd1dac857b54a688145e2d93f48db36010514d0f612d0ad67"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2085,7 +2085,7 @@ dependencies = [
  "tera",
  "terminal_size",
  "test-log",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tokio",
  "toml",
  "toml_edit",
@@ -2429,7 +2429,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b7cafe60d6cf8e62e1b9b2ea516a089c008945bb5a275416789e7db0bc199dc"
 dependencies = [
  "memchr",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "ucd-trie",
 ]
 
@@ -2633,7 +2633,7 @@ dependencies = [
  "rustc-hash",
  "rustls",
  "socket2",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
 ]
@@ -2652,7 +2652,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tinyvec",
  "tracing",
  "web-time",
@@ -2660,9 +2660,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5a626c6807713b15cac82a6acaccd6043c9a5408c24baae07611fec3f243da"
+checksum = "52cd4b1eff68bf27940dd39811292c49e007f4d0b4c357358dc9b0197be6b527"
 dependencies = [
  "cfg_aliases",
  "libc",
@@ -2902,15 +2902,15 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.41"
+version = "0.38.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7f649912bc1495e167a6edee79151c84b1bad49748cb4f1f1167f459f6224f6"
+checksum = "f93dc38ecbab2eb790ff964bb77fa94faf256fd3e73285fd7ba0903b76bedb85"
 dependencies = [
  "bitflags",
  "errno 0.3.10",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3582,11 +3582,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.5"
+version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "643caef17e3128658ff44d85923ef2d28af81bb71e0d67bbfe1d76f19a73e053"
+checksum = "8fec2a1820ebd077e2b90c4df007bebf344cd394098a13c563957d0afc83ea47"
 dependencies = [
- "thiserror-impl 2.0.5",
+ "thiserror-impl 2.0.6",
 ]
 
 [[package]]
@@ -3602,9 +3602,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.5"
+version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "995d0bbc9995d1f19d28b7215a9352b0fc3cd3a2d2ec95c2cadc485cdedbcdde"
+checksum = "d65750cab40f4ff1929fb1ba509e9914eb756131cef4210da8d5d700d26f6312"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3874,7 +3874,7 @@ dependencies = [
  "serde",
  "strum",
  "tempfile",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "url",
  "which 7.0.0",
  "xz2",
@@ -3993,9 +3993,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "1.3.4"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d43de343a2409b44516220610d6686e765fc3701e82ed4829d5f5e5faa431967"
+checksum = "9e94c6959099cfbc672b68392f9b9fe7fde12447c4550f5a36af1516a0277807"
 dependencies = [
  "clap",
  "heck 0.5.0",
@@ -4009,7 +4009,7 @@ dependencies = [
  "serde",
  "strum",
  "tera",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "versions",
  "xx",
 ]
@@ -4063,9 +4063,9 @@ dependencies = [
 
 [[package]]
 name = "vfox"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a909ee4afc8dccf80dae7b73581198b1204a0dbf7b22615f95bddd3e306a439"
+checksum = "d4c44e4ec114bba1eeed55bc3a47ced72545cd2ffa04ce0ec0bdba1fb535807d"
 dependencies = [
  "homedir",
  "indexmap 2.7.0",
@@ -4077,7 +4077,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tokio",
  "url",
  "xx",
@@ -4500,9 +4500,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "1.1.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf77a847b8a88b00563bb61a1041c90a8697bc23f0382eb1ecbe852098df351c"
+checksum = "f2c507cfdc3944bf23d0ef0fc39894bd05b566828bb961dbd1dc42e013d99f99"
 dependencies = [
  "bzip2",
  "duct",
@@ -4516,7 +4516,7 @@ dependencies = [
  "reqwest",
  "sha2",
  "tar",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "tokio",
  "xz2",
  "zip",
@@ -4667,7 +4667,7 @@ dependencies = [
  "pbkdf2",
  "rand",
  "sha1",
- "thiserror 2.0.5",
+ "thiserror 2.0.6",
  "time",
  "zeroize",
  "zopfli",
