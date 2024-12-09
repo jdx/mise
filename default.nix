@@ -48,5 +48,6 @@ rustPlatform.buildRustPackage {
     description = "The front-end to your dev env";
     homepage = "https://github.com/jdx/mise";
     license = licenses.mit;
+    mainProgram = "mise";
   };
 }
