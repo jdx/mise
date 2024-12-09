@@ -328,7 +328,6 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
 }
 
 #[cfg(windows)]
-//#[deprecated]
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     if let Err(err) = junction::create(target, link) {
         if err.kind() == std::io::ErrorKind::AlreadyExists {

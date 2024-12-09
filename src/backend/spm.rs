@@ -6,7 +6,7 @@ use crate::config::Settings;
 use crate::git::Git;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
-use crate::{file, github};
+use crate::{dirs, file, github};
 use eyre::WrapErr;
 use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
@@ -14,7 +14,6 @@ use serde_derive::Deserialize;
 use std::fmt::{self, Debug};
 use std::path::PathBuf;
 use url::Url;
-use walkdir::WalkDir;
 use xx::regex;
 
 #[derive(Debug)]
@@ -58,18 +57,20 @@ impl Backend for SPMBackend {
         };
         let repo_dir = self.clone_package_repo(ctx, &tv, &repo, &revision)?;
 
-        let executables = self.get_executable_names(&repo_dir)?;
+        let executables = self.get_executable_names(&repo_dir, &tv)?;
         if executables.is_empty() {
             return Err(eyre::eyre!("No executables found in the package"));
         }
+        let bin_path = tv.install_path().join("bin");
+        file::create_dir_all(&bin_path)?;
         for executable in executables {
-            let bin_path = self.build_executable(&executable, &repo_dir, ctx)?;
-            let install_bin_path = tv.install_path().join("bin");
-            self.copy_build_artifacts(&executable, &bin_path, &install_bin_path)?;
+            let exe_path = self.build_executable(&executable, &repo_dir, ctx, &tv)?;
+            file::make_symlink(&exe_path, &bin_path.join(executable))?;
         }
 
-        debug!("Cleaning up temporary files");
-        file::remove_all(&repo_dir)?;
+        // delete (huge) intermediate artifacts
+        file::remove_all(tv.install_path().join("repositories"))?;
+        file::remove_all(tv.cache_path())?;
 
         Ok(tv)
     }
@@ -87,7 +88,7 @@ impl SPMBackend {
         package_repo: &SwiftPackageRepo,
         revision: &str,
     ) -> Result<PathBuf, eyre::Error> {
-        let repo = Git::new(tv.cache_path().join(package_repo.dir_name(revision)));
+        let repo = Git::new(tv.cache_path().join("repo"));
         if !repo.exists() {
             debug!(
                 "Cloning swift package repo {} to {}",
@@ -102,13 +103,21 @@ impl SPMBackend {
         Ok(repo.dir)
     }
 
-    fn get_executable_names(&self, repo_dir: &PathBuf) -> Result<Vec<String>, eyre::Error> {
+    fn get_executable_names(
+        &self,
+        repo_dir: &PathBuf,
+        tv: &ToolVersion,
+    ) -> Result<Vec<String>, eyre::Error> {
         let package_json = cmd!(
             "swift",
             "package",
             "dump-package",
             "--package-path",
-            &repo_dir
+            &repo_dir,
+            "--scratch-path",
+            tv.install_path(),
+            "--cache-path",
+            dirs::CACHE.join("spm"),
         )
         .full_env(self.dependency_env()?)
         .read()?;
@@ -128,19 +137,25 @@ impl SPMBackend {
         executable: &str,
         repo_dir: &PathBuf,
         ctx: &InstallContext<'_>,
+        tv: &ToolVersion,
     ) -> Result<PathBuf, eyre::Error> {
         debug!("Building swift package");
-        let build_cmd = CmdLineRunner::new("swift")
+        CmdLineRunner::new("swift")
             .arg("build")
             .arg("--configuration")
             .arg("release")
             .arg("--product")
             .arg(executable)
+            .arg("--scratch-path")
+            .arg(tv.install_path())
             .arg("--package-path")
             .arg(repo_dir)
+            .arg("--cache-path")
+            .arg(dirs::CACHE.join("spm"))
             .with_pr(ctx.pr.as_ref())
-            .prepend_path(self.dependency_toolset()?.list_paths())?;
-        build_cmd.execute()?;
+            .prepend_path(self.dependency_toolset()?.list_paths())?
+            .execute()?;
+
         let bin_path = cmd!(
             "swift",
             "build",
@@ -150,45 +165,15 @@ impl SPMBackend {
             &executable,
             "--package-path",
             &repo_dir,
+            "--scratch-path",
+            tv.install_path(),
+            "--cache-path",
+            dirs::CACHE.join("spm"),
             "--show-bin-path"
         )
         .full_env(self.dependency_env()?)
         .read()?;
-        Ok(PathBuf::from(bin_path.trim().to_string()))
-    }
-
-    fn copy_build_artifacts(
-        &self,
-        executable: &str,
-        bin_path: &PathBuf,
-        install_bin_path: &PathBuf,
-    ) -> Result<(), eyre::Error> {
-        debug!(
-            "Copying binaries to install path: {}",
-            install_bin_path.display()
-        );
-        file::create_dir_all(install_bin_path)?;
-        file::copy(bin_path.join(executable), install_bin_path.join(executable))?;
-        WalkDir::new(bin_path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                let ext = e.path().extension().unwrap_or_default();
-                // TODO: support other platforms extensions
-                ext == "dylib" || ext == "bundle"
-            })
-            .try_for_each(|e| -> Result<(), eyre::Error> {
-                let rel_path = e.path().strip_prefix(bin_path)?;
-                let install_path = install_bin_path.join(rel_path);
-                file::create_dir_all(install_path.parent().unwrap())?;
-                if e.path().is_dir() {
-                    file::copy_dir_all(e.path(), &install_path)?;
-                } else {
-                    file::copy(e.path(), &install_path)?;
-                }
-                Ok(())
-            })?;
-        Ok(())
+        Ok(PathBuf::from(bin_path.trim().to_string()).join(executable))
     }
 }
 
@@ -224,10 +209,6 @@ impl SwiftPackageRepo {
             url,
             shorthand: shorthand.to_string(),
         })
-    }
-
-    fn dir_name(&self, revision: &str) -> String {
-        self.shorthand.replace('/', "-") + "@" + revision
     }
 }
 
