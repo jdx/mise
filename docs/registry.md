@@ -289,6 +289,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | go-sdk | [asdf:yacchi/asdf-go-sdk](https://github.com/yacchi/asdf-go-sdk) |
 | go-swagger | [aqua:go-swagger/go-swagger](https://github.com/go-swagger/go-swagger) [asdf:jfreeland/asdf-go-swagger](https://github.com/jfreeland/asdf-go-swagger) |
 | goconvey | [asdf:therounds-contrib/asdf-goconvey](https://github.com/therounds-contrib/asdf-goconvey) |
+| gocryptfs | [ubi:rfjakob/gocryptfs](https://github.com/rfjakob/gocryptfs) |
 | gofumpt | [ubi:mvdan/gofumpt](https://github.com/mvdan/gofumpt) [asdf:looztra/asdf-gofumpt](https://github.com/looztra/asdf-gofumpt) |
 | gohugo | [ubi:gohugoio/hugo](https://github.com/gohugoio/hugo) [asdf:nklmilojevic/asdf-hugo](https://github.com/nklmilojevic/asdf-hugo) |
 | gojq | [aqua:itchyny/gojq](https://github.com/itchyny/gojq) [asdf:jimmidyson/asdf-gojq](https://github.com/jimmidyson/asdf-gojq) |
