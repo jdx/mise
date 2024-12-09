@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 use xx::file;
 
-use crate::cli::{version, Cli};
+use crate::cli::Cli;
 
 /// internal command to generate markdown from help
 #[derive(Debug, clap::Args)]
@@ -14,8 +14,7 @@ pub struct RenderMangen {}
 
 impl RenderMangen {
     pub fn run(self) -> Result<()> {
-        let cli = Cli::command()
-            .disable_colored_help(true);
+        let cli = Cli::command().disable_colored_help(true);
 
         let man = clap_mangen::Man::new(cli);
         let mut buffer: Vec<u8> = Default::default();

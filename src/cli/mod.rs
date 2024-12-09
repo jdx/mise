@@ -142,7 +142,7 @@ pub struct Cli {
     /// Show extra output (use -vv for even more)
     #[clap(short='v', long, global=true, overrides_with="quiet", action=ArgAction::Count)]
     pub verbose: u8,
-    #[clap(long, short='V', hide=true)]
+    #[clap(long, short = 'V', hide = true)]
     pub version: bool,
     /// Answer yes to all confirmation prompts
     #[clap(short = 'y', long, global = true)]
