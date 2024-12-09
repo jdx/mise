@@ -61,27 +61,27 @@ Set WindowBar Colorful
 #Set Theme "Catppuccin Macchiato"
 
 Sleep 50ms
-Type 'echo "First, we will download/setup mise"' Enter Sleep 2s
-Type "http https://mise.jdx.dev/mise-latest-macos-arm64 > ~/bin/mise" Enter Sleep 2s
+Type 'echo "First, we will download/setup mise"' Enter Sleep 1s
+Type "curl https://mise.jdx.dev/mise-latest-macos-arm64 > ~/bin/mise" Enter Sleep 1s
 Type "chmod +x ~/bin/mise" Sleep 1s Enter Sleep 1s
-Type "mise -v" Sleep 1s Enter Sleep 1s
-Type 'eval "$(mise activate zsh)"' Sleep 1s Enter Sleep 2s
-Type 'echo "Ok, mise is ready to go now"' Enter Sleep 2s
+Type "mise version" Sleep 1s Enter Sleep 1s
+Type 'eval "$(mise activate zsh)"' Sleep 1s Enter Sleep 3s
+Type 'echo "Ok, mise is ready to go now"' Enter Sleep 3s
 
-Type 'echo "Now, we will install node@lts and make it the global default"' Enter Sleep 2s
-Type "mise use --global node@lts" Sleep 2s Enter Sleep 3s
-Type "node -v" Sleep 1s Enter Sleep 3s
+Type 'echo "Now, we will install node@lts and make it the global default"' Enter Sleep 3s
+Type "mise use --global node@lts" Sleep 3s Enter Sleep 4s
+Type "node -v" Sleep 1s Enter Sleep 4s
 Type "which node" Sleep 1s Enter Sleep 5s
-Type 'echo "Note that we get back the path to the real node here, not a shim"' Enter Sleep 2s
+Type 'echo "Note that we get back the path to the real node here, not a shim"' Enter Sleep 3s
 
-Type 'echo "Lets enter a project directory we will setup to use node@21"' Enter Sleep 2s
+Type 'echo "Lets enter a project directory we will set up to use node@21"' Enter Sleep 3s
 Type "cd ~/myproj" Sleep 1s Enter Sleep 1s
-Type "mise use node@21" Sleep 2s Enter Sleep 2s
-Type "node -v" Sleep 1s Enter Sleep 3s
-Type 'echo "As expected, now `node -v` is v21.x"' Enter Sleep 2s
+Type "mise use node@21" Sleep 3s Enter Sleep 3s
+Type "node -v" Sleep 1s Enter Sleep 4s
+Type 'echo "As expected, now `node -v` is v21.x"' Enter Sleep 3s
 
-Type 'echo "We will leave this directory and the node version will revert to the global LTS version"' Enter Sleep 2s
-Type "cd .." Sleep 1s Enter Sleep 2s
-Type "node -v" Sleep 1s Enter Sleep 3s
+Type 'echo "We will leave this directory and the node version will revert to the global LTS version"' Enter Sleep 3s
+Type "cd .." Sleep 1s Enter Sleep 3s
+Type "node -v" Sleep 1s Enter Sleep 4s
 
 Sleep 5s
