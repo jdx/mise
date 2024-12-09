@@ -539,6 +539,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | onyx | [asdf:jtakakura/asdf-onyx](https://github.com/jtakakura/asdf-onyx) |
 | opa | [aqua:open-policy-agent/opa](https://github.com/open-policy-agent/opa) [asdf:tochukwuvictor/asdf-opa](https://github.com/tochukwuvictor/asdf-opa) |
 | opam | [asdf:asdf-community/asdf-opam](https://github.com/asdf-community/asdf-opam) |
+| openbao | [ubi:openbao/openbao](https://github.com/openbao/openbao) |
 | openfaas-faas | [asdf:zekker6/asdf-faas-cli](https://github.com/zekker6/asdf-faas-cli) |
 | openresty | [asdf:smashedtoatoms/asdf-openresty](https://github.com/smashedtoatoms/asdf-openresty) |
 | opensearch | [asdf:randikabanura/asdf-opensearch](https://github.com/randikabanura/asdf-opensearch) |

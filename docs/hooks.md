@@ -71,6 +71,18 @@ shell = "bash"
 script = "source completions.sh"
 ```
 
+::: warning
+I feel this should be obvious but in case it's not, this isn't going to do any sort of cleanup
+when you _leave_ the directory like using `[env]` does in `mise.toml`. You're literally just
+executing shell code when you enter the directory which mise has no way to track at all.
+I don't think there is a solution to this problem and it's likely the reason direnv has never
+implemented something similar.
+
+I think in most situations this is probably fine, though worth keeping in mind.
+
+The leave hook (when it's implemented) will give you a way to manually reset the state.
+:::
+
 ## Multiple hooks syntax
 
 You can use arrays to define multiple hooks in the same file:
