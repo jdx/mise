@@ -159,6 +159,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | coredns | [ubi:coredns/coredns](https://github.com/coredns/coredns) [asdf:s3than/asdf-coredns](https://github.com/s3than/asdf-coredns) |
 | cosign | [aqua:sigstore/cosign](https://github.com/sigstore/cosign) [asdf:https://gitlab.com/wt0f/asdf-cosign](https://gitlab.com/wt0f/asdf-cosign) |
 | coursier | [ubi:coursier/coursier](https://github.com/coursier/coursier) [asdf:jiahuili430/asdf-coursier](https://github.com/jiahuili430/asdf-coursier) |
+| cowsay | [npm:cowsay](https://www.npmjs.com/package/cowsay) |
 | crane | [ubi:google/go-containerregistry](https://github.com/google/go-containerregistry) [asdf:dmpe/asdf-crane](https://github.com/dmpe/asdf-crane) |
 | crc | [asdf:sqtran/asdf-crc](https://github.com/sqtran/asdf-crc) |
 | credhub | [aqua:cloudfoundry/credhub-cli](https://github.com/cloudfoundry/credhub-cli) [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |

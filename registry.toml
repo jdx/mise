@@ -5,7 +5,6 @@
 # or a backend may be disabled via MISE_DISABLE_BACKENDS=ubi
 
 [tools]
-# ls-remote not available for aqua
 1password.aliases = ["1password-cli", "op"]
 1password.backends = ["asdf:NeoHsu/asdf-1password-cli", "aqua:1password/cli"]
 # 1password.test = ["op --version", "{{version}}"] fails on CI for some reason
@@ -231,6 +230,8 @@ coredns.test = ["coredns --version", "CoreDNS-{{version}}"]
 cosign.backends = ["aqua:sigstore/cosign", "asdf:https://gitlab.com/wt0f/asdf-cosign"]
 cosign.test = ["cosign version", "v{{version}}"]
 coursier.backends = ["ubi:coursier/coursier[exe=cs]", "asdf:jiahuili430/asdf-coursier"]
+# ls-remote not available for aqua
+cowsay.backends = ["npm:cowsay"]
 # coursier.test = ["cs version", "{{version}}"] flaky builds
 crane.backends = ["ubi:google/go-containerregistry[exe=crane]", "asdf:dmpe/asdf-crane"]
 crane.test = ["crane version", "{{version}}"]
