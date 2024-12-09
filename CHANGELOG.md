@@ -1,5 +1,40 @@
 # Changelog
 
+## [2024.12.4](https://github.com/jdx/mise/compare/v2024.12.3..v2024.12.4) - 2024-12-09
+
+### 🚀 Features
+
+- add staged files to `mise generate git-pre-commit` by [@jdx](https://github.com/jdx) in [#3410](https://github.com/jdx/mise/pull/3410)
+- shell hooks by [@jdx](https://github.com/jdx) in [#3414](https://github.com/jdx/mise/pull/3414)
+- added cowsay by [@jdx](https://github.com/jdx) in [#3420](https://github.com/jdx/mise/pull/3420)
+- add openbao by [@phyrog](https://github.com/phyrog) in [#3426](https://github.com/jdx/mise/pull/3426)
+- add gocryptfs by [@phyrog](https://github.com/phyrog) in [#3427](https://github.com/jdx/mise/pull/3427)
+- use aqua for flyctl by [@jdx](https://github.com/jdx) in [f7ed363](https://github.com/jdx/mise/commit/f7ed363b3eebb82e6242061e78f9ebfdf050d154)
+
+### 🐛 Bug Fixes
+
+- do not set debug mode when calling `mise -v` by [@jdx](https://github.com/jdx) in [#3418](https://github.com/jdx/mise/pull/3418)
+- issue with usage and arg completions by [@jdx](https://github.com/jdx) in [#3433](https://github.com/jdx/mise/pull/3433)
+
+### 📚 Documentation
+
+- Small documentation improvements by [@hverlin](https://github.com/hverlin) in [#3413](https://github.com/jdx/mise/pull/3413)
+- updated demo.gif by [@jdx](https://github.com/jdx) in [#3419](https://github.com/jdx/mise/pull/3419)
+
+### 🔍 Other Changes
+
+- Update walkthrough.md by [@jdx](https://github.com/jdx) in [c3aa2d0](https://github.com/jdx/mise/commit/c3aa2d0f0b5269e432fa78ba4545b0320be55826)
+- Update hooks.md by [@jdx](https://github.com/jdx) in [9c71e44](https://github.com/jdx/mise/commit/9c71e44cc12871cd69f2a4829390e912cb8519a8)
+- Update installing-mise.md by [@jdx](https://github.com/jdx) in [2cc97ca](https://github.com/jdx/mise/commit/2cc97ca317df356da19bc9b25fb37cc74d89b8a4)
+- update default.nix by [@minhtrancccp](https://github.com/minhtrancccp) in [#3430](https://github.com/jdx/mise/pull/3430)
+- Fix mention of slsa-verifier in documentation by [@will-ockmore](https://github.com/will-ockmore) in [#3435](https://github.com/jdx/mise/pull/3435)
+
+### New Contributors
+
+- @will-ockmore made their first contribution in [#3435](https://github.com/jdx/mise/pull/3435)
+- @minhtrancccp made their first contribution in [#3430](https://github.com/jdx/mise/pull/3430)
+- @phyrog made their first contribution in [#3427](https://github.com/jdx/mise/pull/3427)
+
 ## [2024.12.3](https://github.com/jdx/mise/compare/v2024.12.2..v2024.12.3) - 2024-12-08
 
 ### 🚀 Features
