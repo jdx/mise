@@ -7,6 +7,7 @@ use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
 use eyre::{bail, Result};
 use indexmap::{indexmap, IndexMap};
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
@@ -142,7 +143,9 @@ impl Settings {
                 settings.trace = true;
             }
         }
-        if settings.verbose {
+        let args = env::args().collect_vec();
+        // handle the special case of `mise -v` which should show version, not set verbose
+        if settings.verbose && !(args.len() == 2 && args[1] == "-v") {
             settings.quiet = false;
             if settings.log_level != "trace" {
                 settings.log_level = "debug".to_string();

@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH mise 1  "mise 2024.12.3"
+.TH mise 1  "mise "
 .SH NAME
 mise \- The front\-end to your dev env
 .SH SYNOPSIS
-\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-E\fR|\fB\-\-env\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fITASK\fR] [\fITASK_ARGS\fR] [\fIsubcommands\fR]
+\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-E\fR|\fB\-\-env\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-raw\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fITASK\fR] [\fITASK_ARGS\fR] [\fIsubcommands\fR]
 .SH DESCRIPTION
 .PP
 mise is a tool for managing runtime versions. https://github.com/jdx/mise
@@ -43,9 +43,6 @@ Answer yes to all confirmation prompts
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)
-.TP
-\fB\-V\fR, \fB\-\-version\fR
-Print version
 .TP
 [\fITASK\fR]
 Task to run.
@@ -209,7 +206,5 @@ Examples:
 
     $ mise settings                  Show settings in use
     $ mise settings color=0          Disable color by modifying global config file
-.SH VERSION
-v2024.12.3
 .SH AUTHORS
 Jeff Dickey <@jdx>

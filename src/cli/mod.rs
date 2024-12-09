@@ -75,7 +75,7 @@ pub enum LevelFilter {
 }
 
 #[derive(clap::Parser, Debug)]
-#[clap(name = "mise", version = &*version::VERSION, about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true)]
+#[clap(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true)]
 pub struct Cli {
     #[clap(subcommand)]
     pub command: Option<Commands>,
@@ -142,6 +142,8 @@ pub struct Cli {
     /// Show extra output (use -vv for even more)
     #[clap(short='v', long, global=true, overrides_with="quiet", action=ArgAction::Count)]
     pub verbose: u8,
+    #[clap(long, short='V', hide=true)]
+    pub version: bool,
     /// Answer yes to all confirmation prompts
     #[clap(short = 'y', long, global = true)]
     pub yes: bool,

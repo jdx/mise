@@ -50,6 +50,7 @@ flag "--no-timings" help="Hides elapsed time after each task completes" hide=tru
 }
 flag "--trace" help="Sets log level to trace" hide=true global=true
 flag "-v --verbose" help="Show extra output (use -vv for even more)" var=true global=true count=true
+flag "-V --version" hide=true
 flag "-y --yes" help="Answer yes to all confirmation prompts" global=true
 arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise task run <TASK>`."
 arg "[TASK_ARGS]..." help="Task arguments" var=true hide=true
