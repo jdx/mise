@@ -35,6 +35,12 @@ curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt > install.sh
 sh ./install.sh
 ```
 
+::: tip
+As long as you don't change the version with `MISE_VERSION`, the install script will be pinned to whatever the latest
+version was when it was downloaded with checksums inside the file. This makes downloading the file and putting it into
+a project a great way to ensure that anyone installing with that script fetches the exact same mise bin.
+:::
+
 or if you're allergic to `| sh`:
 
 ::: code-group
