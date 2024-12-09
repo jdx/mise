@@ -25,8 +25,6 @@ If not provided, the nearest mise.toml file will be used
 
 ### `-t --type <TYPE>`
 
-Set the value of a setting in a mise.toml file
-
 **Choices:**
 
 - `infer`
