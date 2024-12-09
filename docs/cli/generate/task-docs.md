@@ -33,6 +33,8 @@ root directory to search for tasks
 
 ### `-s --style <STYLE>`
 
+Generate documentation for tasks in a project
+
 **Choices:**
 
 - `simple`
