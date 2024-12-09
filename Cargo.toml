@@ -127,7 +127,7 @@ versions = { version = "6", features = ["serde"] }
 vfox = { version = "0.3", default-features = false }
 walkdir = "2"
 which = "7"
-xx = { version = "1", features = ["glob"] }
+xx = { version = "2", features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 

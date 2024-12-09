@@ -33,7 +33,7 @@ version = "0.6.0"
 version = "2.7.0"
 
 [tools."cargo:usage-cli"]
-version = "1.3.3"
+version = "1.4.0"
 
 [tools.cosign]
 version = "2.4.1"
@@ -55,7 +55,7 @@ jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea
 version = "0.43.0"
 
 [tools."npm:prettier"]
-version = "3.4.1"
+version = "3.4.2"
 
 [tools."pipx:toml-sort"]
 version = "0.24.2"

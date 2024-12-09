@@ -98,7 +98,10 @@ impl TasksLs {
     fn display_usage(&self, tasks: Vec<Task>) -> Result<()> {
         let mut usage = usage::Spec::default();
         for task in tasks {
-            let (task_spec, _) = task.parse_usage_spec(None)?;
+            let (mut task_spec, _) = task.parse_usage_spec(None)?;
+            for (name, complete) in task_spec.complete {
+                task_spec.cmd.complete.insert(name, complete);
+            }
             usage
                 .cmd
                 .subcommands
