@@ -107,7 +107,7 @@ impl Shell for Zsh {
 
 impl Display for Zsh {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Zsh")
+        write!(f, "zsh")
     }
 }
 
