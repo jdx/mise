@@ -109,11 +109,11 @@ Don't do this inside of scripts because mise may add a command in a future versi
 
 ## Software verification
 
-Install cosign, slsa-verify, and gpg (cosign and slsa-verify can be installed with mise) in order to verify tools automatically.
+Install cosign, slsa-verifier, and gpg (cosign and slsa-verifier can be installed with mise) in order to verify tools automatically.
 
 ```sh
 brew install gpg
-mise use -g cosign slsa-verify
+mise use -g cosign slsa-verifier
 ```
 
 ## [`mise up --bump`](/cli/upgrade.html)
