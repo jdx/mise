@@ -804,31 +804,26 @@ pub fn global_config_files() -> IndexSet<PathBuf> {
     {
         // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
         // because that's how the user overrides the default
-        let home_config = dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
-        if home_config.is_file() {
-            config_files.insert(home_config);
-        }
+        config_files.insert(dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()));
     };
-    let global_config = env::MISE_GLOBAL_CONFIG_FILE.clone();
-    let global_local_config = global_config.with_extension("local.toml");
-    for f in [global_config, global_local_config] {
-        if f.is_file() {
-            config_files.insert(f);
+    for p in file::ls(&dirs::CONFIG.join("conf.d")).unwrap_or_default() {
+        if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string()) {
+            if !file_name.starts_with(".") && file_name.ends_with(".toml") {
+                config_files.insert(p);
+            }
         }
     }
+    config_files.insert(env::MISE_GLOBAL_CONFIG_FILE.clone());
+    config_files.insert(env::MISE_GLOBAL_CONFIG_FILE.with_extension("local.toml"));
     for env in &*env::MISE_ENV {
-        let global_profile_files = vec![
+        config_files.extend(vec![
             dirs::CONFIG.join(format!("config.{env}.toml")),
             dirs::CONFIG.join(format!("config.{env}.local.toml")),
             dirs::CONFIG.join(format!("mise.{env}.toml")),
             dirs::CONFIG.join(format!("mise.{env}.local.toml")),
-        ];
-        for f in global_profile_files {
-            if f.is_file() {
-                config_files.insert(f);
-            }
-        }
+        ]);
     }
+    config_files = config_files.into_iter().filter(|p| p.is_file()).collect();
     *g = Some(config_files.clone());
     config_files
 }
