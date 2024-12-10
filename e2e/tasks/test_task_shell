@@ -11,3 +11,11 @@ EOF
 
 assert "mise run shell" "using shell bash"
 assert_fail "mise run shell-invalid" "invalid shell"
+
+cat <<EOF >mise.toml
+tasks.escapeme = "echo {{arg(name='a')}}"
+tasks.escapeme_var = "echo {{arg(name='a', var=true)}}"
+EOF
+
+assert "mise run escapeme 'hello world'" "hello world"
+assert "mise run escapeme_var hello 'world of mise'" "hello world of mise"

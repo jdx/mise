@@ -437,8 +437,7 @@ impl Run {
             file::make_executable(&file)?;
             self.exec(&file, args, task, env, prefix)
         } else {
-            let default_shell = self.clone_default_inline_shell()?;
-            let (program, args) = self.get_cmd_program_and_args(script, task, args, default_shell);
+            let (program, args) = self.get_cmd_program_and_args(script, task, args)?;
             self.exec_program(&program, &args, task, env, prefix)
         }
     }
@@ -460,8 +459,7 @@ impl Run {
             }
             return Ok((display, args.to_vec()));
         }
-        let default_shell = self.clone_default_file_shell()?;
-        let shell = self.get_shell(task, default_shell);
+        let shell = task.shell().unwrap_or(SETTINGS.default_file_shell()?);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
         full_args.push(display);
@@ -476,9 +474,8 @@ impl Run {
         script: &str,
         task: &Task,
         args: &[String],
-        default_shell: Vec<String>,
-    ) -> (String, Vec<String>) {
-        let shell = self.get_shell(task, default_shell);
+    ) -> Result<(String, Vec<String>)> {
+        let shell = task.shell().unwrap_or(self.clone_default_inline_shell()?);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
         let mut script = script.to_string();
@@ -493,46 +490,15 @@ impl Run {
             }
         }
         full_args.push(script);
-        (full_args[0].clone(), full_args[1..].to_vec())
+        Ok((full_args[0].clone(), full_args[1..].to_vec()))
     }
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
         if let Some(shell) = &self.shell {
             Ok(shell_words::split(shell)?)
-        } else if cfg!(windows) {
-            Ok(shell_words::split(
-                &SETTINGS.windows_default_inline_shell_args,
-            )?)
         } else {
-            Ok(shell_words::split(
-                &SETTINGS.unix_default_inline_shell_args,
-            )?)
+            SETTINGS.default_inline_shell()
         }
-    }
-
-    fn clone_default_file_shell(&self) -> Result<Vec<String>> {
-        if cfg!(windows) {
-            Ok(shell_words::split(
-                &SETTINGS.windows_default_file_shell_args,
-            )?)
-        } else {
-            Ok(shell_words::split(&SETTINGS.unix_default_file_shell_args)?)
-        }
-    }
-
-    fn get_shell(&self, task: &Task, default_shell: Vec<String>) -> Vec<String> {
-        let default_shell = default_shell.clone();
-        if let Some(shell) = task.shell.clone() {
-            let shell_cmd = shell
-                .split_whitespace()
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>();
-            if !shell_cmd.is_empty() && !shell_cmd[0].trim().is_empty() {
-                return shell_cmd;
-            }
-            warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c)");
-        }
-        default_shell
     }
 
     fn exec_file(
