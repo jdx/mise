@@ -269,7 +269,7 @@ impl TaskScriptParser {
         }
         let scripts = scripts
             .iter()
-            .map(|s| tera.render_str(s, &ctx).unwrap())
+            .map(|s| tera.render_str(s.trim(), &ctx).unwrap())
             .collect();
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
