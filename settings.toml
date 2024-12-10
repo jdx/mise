@@ -498,6 +498,7 @@ This also runs in shims if the terminal is interactive.
 
 [npm.bun]
 type = "Bool"
+env = "MISE_NPM_BUN"
 description = "Use bun instead of npm if bun is installed and on PATH."
 docs = """
 If true, mise will use `bun` instead of `npm` if

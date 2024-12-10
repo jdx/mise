@@ -24,7 +24,7 @@ defineProps(["setting", "level"]);
       Type: <code>{{ setting.type }}</code>
       <span v-if="setting.optional">(optional)</span>
     </li>
-    <li>
+    <li v-if="setting.env">
       Env: <code>{{ setting.env }}</code>
     </li>
     <li>
