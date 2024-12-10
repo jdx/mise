@@ -6,6 +6,7 @@ use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::HashMap;
+use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use usage::parse::ParseValue;
@@ -300,21 +301,6 @@ pub fn replace_template_placeholders_with_args(
     scripts: &[String],
     args: &[String],
 ) -> Result<Vec<String>> {
-    let shell_type: Option<ShellType> = task.shell().unwrap_or(SETTINGS.default_inline_shell()?)[0]
-        .parse()
-        .ok();
-    let escape = |v: &ParseValue| match v {
-        ParseValue::MultiString(_) => {
-            // these are already escaped
-            v.to_string()
-        }
-        _ => match shell_type {
-            Some(ShellType::Zsh | ShellType::Bash | ShellType::Fish) => {
-                shell_words::quote(&v.to_string()).to_string()
-            }
-            _ => v.to_string(),
-        },
-    };
     let args = vec!["".to_string()]
         .into_iter()
         .chain(args.iter().cloned())
@@ -323,6 +309,23 @@ pub fn replace_template_placeholders_with_args(
     let mut out = vec![];
     let re = regex!(r"MISE_TASK_ARG:(\w+):MISE_TASK_ARG");
     for script in scripts {
+        let shell_type: Option<ShellType> = shell_from_shebang(script)
+            .or(task.shell())
+            .unwrap_or(SETTINGS.default_inline_shell()?)[0]
+            .parse()
+            .ok();
+        let escape = |v: &ParseValue| match v {
+            ParseValue::MultiString(_) => {
+                // these are already escaped
+                v.to_string()
+            }
+            _ => match shell_type {
+                Some(ShellType::Zsh | ShellType::Bash | ShellType::Fish) => {
+                    shell_words::quote(&v.to_string()).to_string()
+                }
+                _ => v.to_string(),
+            },
+        };
         let mut script = script.clone();
         for (arg, value) in &m.args {
             script = script.replace(
@@ -344,6 +347,16 @@ pub fn replace_template_placeholders_with_args(
 
 pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
     !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty()
+}
+
+fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
+    let shebang = script.lines().next()?.strip_prefix("#!")?;
+    let shebang = shebang.strip_prefix("/usr/bin/env -S").unwrap_or(shebang);
+    let shebang = shebang.strip_prefix("/usr/bin/env").unwrap_or(shebang);
+    let mut parts = shebang.split_whitespace();
+    let shell = parts.next()?;
+    let args = parts.map(|s| s.to_string()).collect_vec();
+    Some(once(shell.to_string()).chain(args).collect())
 }
 
 #[cfg(test)]
