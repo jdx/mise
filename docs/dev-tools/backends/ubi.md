@@ -43,7 +43,7 @@ use the `exe` option to specify the executable name:
 
 ```toml
 [tools]
-"ubi:cli/cli" = { exe = "gh" } # github's cli
+"ubi:cli/cli" = { version = "latest", exe = "gh" } # github's cli
 ```
 
 ### `matching`
