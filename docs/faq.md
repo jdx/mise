@@ -77,10 +77,12 @@ and `mise deactivate` to work without wrapping them in `eval "$(mise shell)"`.
 
 ## Windows support?
 
-Very basic support for windows is currently available, however because Windows can't support the asdf
-backend, windows can use core, aqua, or vfox backends though.
+While mise runs great in WSL, native Windows is also supported, though via the use of shims until
+someone adds [powershell](https://github.com/jdx/mise/issues/3451) support.
 
-As of this writing, env var management and task execution are not yet supported on Windows.
+As you'll need to use shims, this means you won't have environment variables from mise.toml unless you run mise via
+[`mise x`](/cli/exec) or [`mise run`](/cli/run)—though that's actually how I use mise on my mac so
+for me that's my preferred workflow anyway.
 
 ## How do I use mise with http proxies?
 

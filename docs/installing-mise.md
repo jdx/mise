@@ -224,14 +224,36 @@ yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
 ```
 
-### Windows
+### Windows - scoop
+
+This is the recommended way to install mise on Windows. It will automatically add your shims to PATH.
+
+```sh
+scoop install mise
+```
+
+### Windows - chocolatey
+
+```sh
+choco install mise
+```
+
+### Windows - winget
+
+::: note
+winget is coming soon, follow <https://github.com/microsoft/winget-pkgs/pull/197444>
+:::
+
+```sh
+winget install mise
+```
+
+### Windows - manual
 
 Download the latest release from [GitHub](https://github.com/jdx/mise/releases) and add the binary
 to your PATH.
 
 If your shell does not support `mise activate`, you would want to edit PATH to include the shims directory (by default: `%LOCALAPPDATA%\mise\shims`).
-
-Note that Windows support is very minimal for now.
 
 ## Shells
 
