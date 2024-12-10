@@ -11,4 +11,4 @@ mkdir -p dist/mise/bin
 cp "target/$Target/release/mise.exe" dist/mise/bin/mise.exe
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
-Compress-Archive -Path dist/mise -DestinationPath "dist/$BaseName.zip"
+7z a -tzip "dist/$BaseName.zip" dist/mise
