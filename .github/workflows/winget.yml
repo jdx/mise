@@ -1,0 +1,23 @@
+name: Publish to WinGet
+on:
+  release:
+    types: [released]
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: jdx/winget-pkgs
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          fetch-depth: 0
+      - run: git config user.name mise-en-dev
+      - run: git config user.email release@mise.jdx.dev
+      - run: git remote add microsoft https://github.com/microsoft/winget-pkgs
+      - run: git pull --rebase microsoft main
+      - run: git push -f origin main
+      - uses: vedantmgoyal9/winget-releaser@main
+        with:
+          identifier: mise.jdx
+          max-versions-to-keep: 5
+          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
