@@ -272,7 +272,7 @@ impl Task {
         let (spec, scripts) = self.parse_usage_spec(cwd)?;
         if has_any_args_defined(&spec) {
             Ok(
-                replace_template_placeholders_with_args(&spec, &scripts, args)?
+                replace_template_placeholders_with_args(self, &spec, &scripts, args)?
                     .into_iter()
                     .map(|s| (s, vec![]))
                     .collect(),
@@ -346,6 +346,21 @@ impl Task {
 
     pub fn cf<'a>(&self, config: &'a Config) -> Option<&'a Box<dyn ConfigFile>> {
         config.config_files.get(&self.config_source)
+    }
+
+    pub fn shell(&self) -> Option<Vec<String>> {
+        self.shell.as_ref().and_then(|shell| {
+            let shell_cmd = shell
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>();
+            if shell_cmd.is_empty() || shell_cmd[0].trim().is_empty() {
+                warn!("invalid shell '{shell}', expected '<program> <argument>' (e.g. sh -c)");
+                None
+            } else {
+                Some(shell_cmd)
+            }
+        })
     }
 }
 

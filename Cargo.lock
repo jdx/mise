@@ -3993,9 +3993,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "1.4.0"
+version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e94c6959099cfbc672b68392f9b9fe7fde12447c4550f5a36af1516a0277807"
+checksum = "27ec81814b1b6f0170de712a56989f5156f95e7021368e21a05806898edb3b43"
 dependencies = [
  "clap",
  "heck 0.5.0",
@@ -4007,6 +4007,7 @@ dependencies = [
  "once_cell",
  "regex",
  "serde",
+ "shell-words",
  "strum",
  "tera",
  "thiserror 2.0.6",
@@ -4500,9 +4501,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "2.0.0"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2c507cfdc3944bf23d0ef0fc39894bd05b566828bb961dbd1dc42e013d99f99"
+checksum = "53ba8e1329637bfde9509cf8be1b3b9eed7c0130e60408a45f6d514a11f7974b"
 dependencies = [
  "bzip2",
  "duct",

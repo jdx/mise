@@ -1,7 +1,7 @@
+use crate::env;
 use std::fmt::{Display, Formatter};
 use std::path::Path;
-
-use crate::env;
+use std::str::FromStr;
 
 mod bash;
 mod elvish;
@@ -22,22 +22,11 @@ pub enum ShellType {
 
 impl ShellType {
     pub fn load() -> Option<ShellType> {
-        let shell = env::var("MISE_SHELL").or(env::var("SHELL")).ok()?;
-        if shell.ends_with("bash") {
-            Some(ShellType::Bash)
-        } else if shell.ends_with("elvish") {
-            Some(ShellType::Elvish)
-        } else if shell.ends_with("fish") {
-            Some(ShellType::Fish)
-        } else if shell.ends_with("nu") {
-            Some(ShellType::Nu)
-        } else if shell.ends_with("xonsh") {
-            Some(ShellType::Xonsh)
-        } else if shell.ends_with("zsh") {
-            Some(ShellType::Zsh)
-        } else {
-            None
-        }
+        env::var("MISE_SHELL")
+            .or(env::var("SHELL"))
+            .ok()?
+            .parse()
+            .ok()
     }
 
     pub fn as_shell(&self) -> Box<dyn Shell> {
@@ -61,6 +50,24 @@ impl Display for ShellType {
             Self::Nu => write!(f, "nu"),
             Self::Xonsh => write!(f, "xonsh"),
             Self::Zsh => write!(f, "zsh"),
+        }
+    }
+}
+
+impl FromStr for ShellType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.to_lowercase();
+        let s = s.rsplit_once('/').map(|(_, s)| s).unwrap_or(&s);
+        match s {
+            "bash" | "sh" => Ok(Self::Bash),
+            "elvish" => Ok(Self::Elvish),
+            "fish" => Ok(Self::Fish),
+            "nu" => Ok(Self::Nu),
+            "xonsh" => Ok(Self::Xonsh),
+            "zsh" => Ok(Self::Zsh),
+            _ => Err(format!("unsupported shell type: {s}")),
         }
     }
 }

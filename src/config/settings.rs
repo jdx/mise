@@ -393,6 +393,24 @@ impl Settings {
         let table = toml::from_str(&s)?;
         Ok(table)
     }
+
+    pub fn default_inline_shell(&self) -> Result<Vec<String>> {
+        let sa = if cfg!(windows) {
+            &SETTINGS.windows_default_inline_shell_args
+        } else {
+            &SETTINGS.unix_default_inline_shell_args
+        };
+        Ok(shell_words::split(sa)?)
+    }
+
+    pub fn default_file_shell(&self) -> Result<Vec<String>> {
+        let sa = if cfg!(windows) {
+            &SETTINGS.windows_default_file_shell_args
+        } else {
+            &SETTINGS.unix_default_file_shell_args
+        };
+        Ok(shell_words::split(sa)?)
+    }
 }
 
 impl Display for Settings {

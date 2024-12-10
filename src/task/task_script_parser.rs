@@ -1,4 +1,6 @@
-use crate::config::Config;
+use crate::config::{Config, SETTINGS};
+use crate::shell::ShellType;
+use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use eyre::Result;
 use indexmap::IndexMap;
@@ -6,6 +8,7 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use usage::parse::ParseValue;
 use xx::regex;
 
 pub struct TaskScriptParser {
@@ -292,10 +295,26 @@ impl TaskScriptParser {
 }
 
 pub fn replace_template_placeholders_with_args(
+    task: &Task,
     spec: &usage::Spec,
     scripts: &[String],
     args: &[String],
 ) -> Result<Vec<String>> {
+    let shell_type: Option<ShellType> = task.shell().unwrap_or(SETTINGS.default_inline_shell()?)[0]
+        .parse()
+        .ok();
+    let escape = |v: &ParseValue| match v {
+        ParseValue::MultiString(_) => {
+            // these are already escaped
+            v.to_string()
+        }
+        _ => match shell_type {
+            Some(ShellType::Zsh | ShellType::Bash | ShellType::Fish) => {
+                shell_words::quote(&v.to_string()).to_string()
+            }
+            _ => v.to_string(),
+        },
+    };
     let args = vec!["".to_string()]
         .into_iter()
         .chain(args.iter().cloned())
@@ -308,13 +327,13 @@ pub fn replace_template_placeholders_with_args(
         for (arg, value) in &m.args {
             script = script.replace(
                 &format!("MISE_TASK_ARG:{}:MISE_TASK_ARG", arg.name),
-                &value.to_string(),
+                &escape(value),
             );
         }
         for (flag, value) in &m.flags {
             script = script.replace(
                 &format!("MISE_TASK_ARG:{}:MISE_TASK_ARG", flag.name),
-                &value.to_string(),
+                &escape(value),
             );
         }
         script = re.replace_all(&script, "").to_string();
@@ -333,6 +352,7 @@ mod tests {
 
     #[test]
     fn test_task_parse_arg() {
+        let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(i=0, name='foo') }}".to_string()];
         let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
@@ -341,12 +361,14 @@ mod tests {
         assert_eq!(arg0.name, "foo");
 
         let scripts =
-            replace_template_placeholders_with_args(&spec, &scripts, &["abc".to_string()]).unwrap();
+            replace_template_placeholders_with_args(&task, &spec, &scripts, &["abc".to_string()])
+                .unwrap();
         assert_eq!(scripts, vec!["echo abc"]);
     }
 
     #[test]
     fn test_task_parse_arg_var() {
+        let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(var=true) }}".to_string()];
         let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
@@ -355,6 +377,7 @@ mod tests {
         assert_eq!(arg0.name, "0");
 
         let scripts = replace_template_placeholders_with_args(
+            &task,
             &spec,
             &scripts,
             &["abc".to_string(), "def".to_string()],
@@ -365,6 +388,7 @@ mod tests {
 
     #[test]
     fn test_task_parse_flag() {
+        let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ flag(name='foo') }}".to_string()];
         let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
@@ -373,13 +397,14 @@ mod tests {
         assert_eq!(&flag.name, "foo");
 
         let scripts =
-            replace_template_placeholders_with_args(&spec, &scripts, &["--foo".to_string()])
+            replace_template_placeholders_with_args(&task, &spec, &scripts, &["--foo".to_string()])
                 .unwrap();
         assert_eq!(scripts, vec!["echo true"]);
     }
 
     #[test]
     fn test_task_parse_option() {
+        let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ option(name='foo') }}".to_string()];
         let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
@@ -388,6 +413,7 @@ mod tests {
         assert_eq!(&option.name, "foo");
 
         let scripts = replace_template_placeholders_with_args(
+            &task,
             &spec,
             &scripts,
             &["--foo".to_string(), "abc".to_string()],

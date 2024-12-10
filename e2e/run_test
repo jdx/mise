@@ -58,6 +58,7 @@ within_isolated_env() {
     GITHUB_TOKEN="${GITHUB_TOKEN:-}" \
     GOPROXY="${GOPROXY:-}" \
     HOME="$TEST_HOME" \
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
     LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
     MISE_CACHE_DIR="$MISE_CACHE_DIR" \
     MISE_CACHE_PRUNE_AGE="0" \
