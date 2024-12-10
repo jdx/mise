@@ -9,6 +9,7 @@ use eyre::{eyre, Result};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::IndexMap;
 use once_cell::sync::Lazy;
+use path_absolutize::Absolutize;
 use serde_derive::Deserialize;
 use versions::Versioning;
 
@@ -17,7 +18,7 @@ use tool_versions::ToolVersions;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{AliasMap, Settings};
+use crate::config::{settings, AliasMap, Settings, SETTINGS};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
@@ -231,24 +232,66 @@ pub fn parse(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
     }
 }
 
+pub fn config_trust_root(path: &Path) -> PathBuf {
+    if settings::is_loaded() && SETTINGS.paranoid {
+        return path.to_path_buf();
+    }
+    let path = path
+        .absolutize()
+        .map(|p| p.to_path_buf())
+        .unwrap_or(path.to_path_buf());
+    let parts = path
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    const EMPTY: &str = "";
+    // let filename = parts.last().map(|p| p.as_str()).unwrap_or(EMPTY);
+    let parent = parts
+        .get(parts.len() - 2)
+        .map(|p| p.as_str())
+        .unwrap_or(EMPTY);
+    let grandparent = parts
+        .get(parts.len() - 3)
+        .map(|p| p.as_str())
+        .unwrap_or(EMPTY);
+    let cur_path = || path.parent().unwrap().to_path_buf();
+    let parent_path = || cur_path().parent().unwrap().to_path_buf();
+    let grandparent_path = || parent_path().parent().unwrap().to_path_buf();
+    let is_mise_dir = |d: &str| d == "mise" || d == ".mise";
+    if parent == "conf.d" && is_mise_dir(grandparent) {
+        grandparent_path()
+    } else if is_mise_dir(parent) {
+        if grandparent == ".config" {
+            grandparent_path()
+        } else {
+            parent_path()
+        }
+    } else {
+        cur_path()
+    }
+}
+
 pub fn trust_check(path: &Path) -> eyre::Result<()> {
+    static MUTEX: Mutex<()> = Mutex::new(());
+    let _lock = MUTEX.lock().unwrap(); // Prevent multiple checks at once so we don't prompt multiple times for the same path
+    let config_root = config_trust_root(path);
     let default_cmd = String::new();
     let args = env::ARGS.read().unwrap();
     let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
-    if is_trusted(path) || cmd == "trust" || cfg!(test) {
+    if is_trusted(&config_root) || is_trusted(path) || cmd == "trust" || cfg!(test) {
         return Ok(());
     }
-    if cmd != "hook-env" && !is_ignored(path) {
+    if cmd != "hook-env" && !is_ignored(&config_root) && !is_ignored(path) {
         let ans = prompt::confirm_with_all(format!(
-            "{} {} is not trusted. Trust it?",
+            "{} config files in {} are not trusted. Trust them?",
             style::eyellow("mise"),
-            style::epath(path)
+            style::epath(&config_root)
         ))?;
         if ans {
-            trust(path)?;
+            trust(&config_root)?;
             return Ok(());
         } else {
-            add_ignored(path.to_path_buf())?;
+            add_ignored(config_root.to_path_buf())?;
         }
     }
     Err(UntrustedConfig(path.into()))?
@@ -349,16 +392,18 @@ pub fn is_ignored(path: &Path) -> bool {
     }
 }
 
-pub fn trust(path: &Path) -> eyre::Result<()> {
+pub fn trust(path: &Path) -> Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
         file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
     }
-    let trust_hash_path = hashed_path.with_extension("hash");
-    let hash = hash::file_hash_sha256(path, None)?;
-    file::write(trust_hash_path, hash)?;
+    if SETTINGS.paranoid {
+        let trust_hash_path = hashed_path.with_extension("hash");
+        let hash = hash::file_hash_sha256(path, None)?;
+        file::write(trust_hash_path, hash)?;
+    }
     Ok(())
 }
 

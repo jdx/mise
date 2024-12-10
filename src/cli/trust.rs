@@ -1,12 +1,15 @@
 use std::path::PathBuf;
 
+use crate::config::config_file::config_trust_root;
 use crate::config::{
-    config_file, config_files_in_dir, ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES, SETTINGS,
+    config_file, config_files_in_dir, is_global_config, ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES,
+    SETTINGS,
 };
 use crate::file::{display_path, remove_file};
 use crate::{config, dirs, env, file};
 use clap::ValueHint;
 use eyre::Result;
+use itertools::Itertools;
 
 /// Marks a config file as trusted
 ///
@@ -89,13 +92,14 @@ impl Trust {
                 }
             },
         };
-        config_file::untrust(&path)?;
-        let path = path.canonicalize()?;
-        info!("untrusted {}", path.display());
+        let cfr = config_trust_root(&path);
+        config_file::untrust(&cfr)?;
+        let cfr = cfr.canonicalize()?;
+        info!("untrusted {}", cfr.display());
 
-        let trusted_via_settings = SETTINGS.trusted_config_paths().any(|p| path.starts_with(p));
+        let trusted_via_settings = SETTINGS.trusted_config_paths().any(|p| cfr.starts_with(p));
         if trusted_via_settings {
-            warn!("{path:?} is trusted via settings so it will still be trusted.");
+            warn!("{cfr:?} is trusted via settings so it will still be trusted.");
         }
 
         Ok(())
@@ -111,19 +115,20 @@ impl Trust {
                 }
             },
         };
-        config_file::add_ignored(path.clone())?;
-        let path = path.canonicalize()?;
-        info!("ignored {}", path.display());
+        let cfr = config_trust_root(&path);
+        config_file::add_ignored(cfr.clone())?;
+        let cfr = cfr.canonicalize()?;
+        info!("ignored {}", cfr.display());
 
-        let trusted_via_settings = SETTINGS.trusted_config_paths().any(|p| path.starts_with(p));
+        let trusted_via_settings = SETTINGS.trusted_config_paths().any(|p| cfr.starts_with(p));
         if trusted_via_settings {
-            warn!("{path:?} is trusted via settings so it will still be trusted.");
+            warn!("{cfr:?} is trusted via settings so it will still be trusted.");
         }
         Ok(())
     }
     fn trust(&self) -> Result<()> {
         let path = match self.config_file() {
-            Some(filename) => filename,
+            Some(filename) => config_trust_root(&filename),
             None => match self.get_next_untrusted() {
                 Some(path) => path,
                 None => {
@@ -133,8 +138,8 @@ impl Trust {
             },
         };
         config_file::trust(&path)?;
-        let path = path.canonicalize()?;
-        info!("trusted {}", path.display());
+        let cfr = path.canonicalize()?;
+        info!("trusted {}", cfr.display());
         Ok(())
     }
 
@@ -157,12 +162,18 @@ impl Trust {
     fn get_next_untrusted(&self) -> Option<PathBuf> {
         config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
             .into_iter()
-            .find(|p| !config_file::is_trusted(p))
+            .filter(|p| !is_global_config(p))
+            .map(|p| config_trust_root(&p))
+            .unique()
+            .find(|ctr| !config_file::is_trusted(ctr))
     }
 
     fn show(&self) -> Result<()> {
         let trusted = config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
             .into_iter()
+            .filter(|p| !is_global_config(p))
+            .map(|p| config_trust_root(&p))
+            .unique()
             .map(|p| (display_path(&p), config_file::is_trusted(&p)))
             .rev()
             .collect::<Vec<_>>();

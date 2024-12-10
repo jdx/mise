@@ -38,3 +38,9 @@ assert "mise cfg" ""
 assert "mise trust --all"
 assert "mise cfg" "~/workdir/mise.toml        dummy
 ~/workdir/subdir/mise.toml dummy"
+
+rm -rf "$MISE_STATE_DIR"
+export MISE_PARANOID=1
+assert "mise trust --all"
+assert "mise cfg" "~/workdir/mise.toml        dummy
+~/workdir/subdir/mise.toml dummy"

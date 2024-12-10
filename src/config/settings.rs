@@ -72,9 +72,9 @@ static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     s
 });
 
-// pub fn is_loaded() -> bool {
-//     BASE_SETTINGS.read().unwrap().is_some()
-// }
+pub fn is_loaded() -> bool {
+    BASE_SETTINGS.read().unwrap().is_some()
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct SettingsFile {
