@@ -16,7 +16,7 @@ use crate::backend::ABackend;
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::ConfigFile;
+use crate::config::config_file::{config_trust_root, ConfigFile};
 use crate::config::env_directive::EnvResults;
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
@@ -781,7 +781,7 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     config_files
         .into_iter()
         .unique_by(|p| file::desymlink_path(p))
-        .filter(|p| include_ignored || !config_file::is_ignored(p))
+        .filter(|p| include_ignored || !config_file::is_ignored(&config_trust_root(p)))
         .collect()
 }
 
