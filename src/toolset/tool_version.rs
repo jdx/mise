@@ -134,7 +134,13 @@ impl ToolVersion {
             ToolRequest::Sub { .. } => self.version.to_string(),
             ToolRequest::Ref { ref_: r, .. } => format!("ref-{}", r),
             ToolRequest::Path { path: p, .. } => format!("path-{}", hash_to_str(p)),
-            ToolRequest::System { .. } => "system".to_string(),
+            ToolRequest::System { .. } => {
+                deprecated!(
+                    "system_tool_version",
+                    "@system is deprecated, use MISE_DISABLE_TOOLS instead"
+                );
+                "system".to_string()
+            }
         }
         .replace([':', '/'], "-")
     }

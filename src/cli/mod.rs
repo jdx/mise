@@ -389,7 +389,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise use node@20</bold>               Use node-20.x in current project
     $ <bold>mise use -g node@20</bold>            Use node-20.x as default
     $ <bold>mise use node@latest</bold>           Use latest node in current directory
-    $ <bold>mise use -g node@system</bold>        Use system node everywhere unless overridden
 
     $ <bold>mise up --interactive</bold>          Show a menu to upgrade tools
 
