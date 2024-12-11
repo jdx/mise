@@ -101,7 +101,9 @@ pub struct Use {
 impl Use {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
-        let mut ts = ToolsetBuilder::new().build(&config)?;
+        let mut ts = ToolsetBuilder::new()
+            .with_global_only(self.global)
+            .build(&config)?;
         let mpr = MultiProgressReport::get();
         let mut cf = self.get_config_file()?;
         let mut resolve_options = ResolveOptions {
