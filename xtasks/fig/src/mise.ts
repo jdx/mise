@@ -980,8 +980,7 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
-                "format",
-                "fmt"
+                "format"
             ],
             "description": "Formats mise.toml",
             "options": [

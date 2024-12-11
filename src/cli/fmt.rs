@@ -5,14 +5,14 @@ use taplo::formatter::Options;
 
 /// Formats mise.toml
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias="fmt", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Format {
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Fmt {
     /// Format all files from the current directory
     #[clap(short, long)]
     pub all: bool,
 }
 
-impl Format {
+impl Fmt {
     pub fn run(self) -> eyre::Result<()> {
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let configs = if self.all {
