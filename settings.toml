@@ -817,9 +817,7 @@ docs = """
 
 Show a warning if tools are not installed when entering a directory with a `mise.toml` file.
 
-::: tip
 Disable tools with [`disable_tools`](#disable_tools).
-:::
 """
 
 [status.show_env]
