@@ -251,10 +251,7 @@ fn paths() -> String {
     if env::PATH_NON_PRISTINE.is_empty() {
         return "(empty)".to_string();
     }
-    return env::PATH_NON_PRISTINE
-        .iter()
-        .map(display_path)
-        .join("\n")
+    env::PATH_NON_PRISTINE.iter().map(display_path).join("\n")
 }
 
 fn render_config_files(config: &Config) -> String {
