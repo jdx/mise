@@ -73,7 +73,11 @@ impl Backend for RustPlugin {
     }
 
     fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec!["rust-toolchain.toml".into()])
+        if SETTINGS.experimental {
+            Ok(vec!["rust-toolchain.toml".into()])
+        } else {
+            Ok(vec![])
+        }
     }
 
     fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {

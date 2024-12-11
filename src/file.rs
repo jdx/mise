@@ -327,6 +327,18 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     Ok((target.to_path_buf(), link.to_path_buf()))
 }
 
+#[cfg(unix)]
+pub fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
+    make_symlink(target, link)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
+    copy(target, link)?;
+    Ok(())
+}
+
 #[cfg(windows)]
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     if let Err(err) = junction::create(target, link) {

@@ -1,4 +1,4 @@
-# Rust
+# Rust <Badge type="warning" text="experimental" />
 
 Rust/cargo can be installed which uses rustup under the hood. mise will install rustup if it is not
 already installed and add the requested targets. By default, mise uses the default location of rustup/cargo

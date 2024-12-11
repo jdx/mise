@@ -1,4 +1,4 @@
-# Swift
+# Swift <Badge type="warning" text="experimental" />
 
 Swift is supported for macos and linux.
 
