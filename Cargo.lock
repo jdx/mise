@@ -712,11 +712,13 @@ checksum = "da692b8d1080ea3045efaab14434d40468c3d8657e42abddfffca87b428f4c1b"
 
 [[package]]
 name = "demand"
-version = "1.3.0"
+version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f411dff701b92f8dd5169b550e256f6cffbb8b90b047c77c32efa3d9fa61d66"
+checksum = "eaa2c11e844048ceff84f99d2c85ebe2fd025fb89f21cf5378431c8e7458d71a"
 dependencies = [
  "console",
+ "fuzzy-matcher",
+ "itertools",
  "once_cell",
  "termcolor",
 ]
@@ -1129,6 +1131,15 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "fuzzy-matcher"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
+dependencies = [
+ "thread_local",
 ]
 
 [[package]]
