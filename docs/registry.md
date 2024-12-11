@@ -698,6 +698,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | stripe | [aqua:stripe/stripe-cli](https://github.com/stripe/stripe-cli) [asdf:offbyone/asdf-stripe](https://github.com/offbyone/asdf-stripe) |
 | stylua | [aqua:JohnnyMorganz/StyLua](https://github.com/JohnnyMorganz/StyLua) [asdf:jc00ke/asdf-stylua](https://github.com/jc00ke/asdf-stylua) |
 | sui | [asdf:placeholder-soft/asdf-sui](https://github.com/placeholder-soft/asdf-sui) |
+| superfile | [aqua:yorukot/superfile](https://github.com/yorukot/superfile) |
 | sver | [aqua:mitoma/sver](https://github.com/mitoma/sver) [asdf:robzr/asdf-sver](https://github.com/robzr/asdf-sver) |
 | svu | [aqua:caarlos0/svu](https://github.com/caarlos0/svu) [asdf:asdf-community/asdf-svu](https://github.com/asdf-community/asdf-svu) |
 | swag | [aqua:swaggo/swag](https://github.com/swaggo/swag) [asdf:behoof4mind/asdf-swag](https://github.com/behoof4mind/asdf-swag) |
