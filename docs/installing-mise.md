@@ -334,14 +334,15 @@ make sure they match)
 Add following to your `rc.elv`:
 
 ```shell
-var mise: = (eval &ns=[&] &on-end=$put~ (mise activate elvish | slurp))
+var mise: = (ns [&])
+eval (mise activate elvish | slurp) &ns=$mise: &on-end={|ns| set mise: = $ns }
 mise:activate
 ```
 
 Optionally alias `mise` to `mise:mise` for seamless integration of `mise {activate,deactivate,shell}`:
 
 ```shell
-fn mise {|@args| mise:mise $@args }
+edit:add-var mise~ {|@args| mise:mise $@args }
 ```
 
 ### Something else?
