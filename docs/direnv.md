@@ -5,6 +5,13 @@ they both analyze
 the current environment variables before and after their respective "hook" commands are run, they
 can sometimes conflict with each other.
 
+The official stance is you should not use direnv with mise. Issues arising
+from incompatibilities are not considered bugs. If mise has feature gaps
+that direnv resolves, please open an issue so we can close those gaps.
+While that's the official stance, the reality is mise and direnv usually
+will work together just fine despite this. It's only more advanced use-cases
+where problems arise.
+
 If you have an issue, it's likely to do with the ordering of PATH. This means it would
 really only be a problem if you were trying to manage the same tool with direnv and mise. For
 example,
@@ -16,29 +23,11 @@ A more typical usage of direnv would be to set some arbitrary environment variab
 unrelated
 binaries to PATH. In these cases, mise will not interfere with direnv.
 
-## mise inside of direnv (`use mise` in `.envrc`)
+## mise inside of direnv (`use mise` in `.envrc`) <Badge type="warning" text="deprecated" />
 
 ::: warning
-Update 2024-01-21: after `use mise` has been out for a while, the general impression I have is that
-while it technically functions fine,
-not many people use it because the DX is notably worse than either switching to mise entirely
-or using `mise activate` alongside direnv.
-
-The project direction of mise has changed since this was written and the new direction is for it
-to be capable of replacing direnv completely for any use-case. This likely won't end up as a drop-in
-replacement for direnv like with asdf, but solving the same problems in different ways.
-See [environments](/environments.html)
-for more details.
-
-I have had virtually no reports of problems with `use mise` in the year it has been out.
-This could be because virtually no one is using it, or it has been surprisingly stable. I genuinely
-don't know which. If you try it or use it regularly let me know.
-
-While I have no immediate plans or reasons to do this now, I could see this functionality being
-the target of a future deprecation. Not because it's a maintenance burden, but because it just
-hasn't
-seemed like a particularly useful solution and it may help focus mise on the functionality that does
-work for users.
+`use mise` is deprecated and no longer supported. If `mise activate` does
+not fit your use-case please post an issue.
 :::
 
 If you do encounter issues with `mise activate`, or just want to use direnv in an alternate way,
