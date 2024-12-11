@@ -1,16 +1,18 @@
-# direnv
+# direnv <Badge type="warning" text="deprecated" />
 
 [direnv](https://direnv.net) and mise both manage environment variables based on directory. Because
 they both analyze
 the current environment variables before and after their respective "hook" commands are run, they
 can sometimes conflict with each other.
 
+::: warning
 The official stance is you should not use direnv with mise. Issues arising
 from incompatibilities are not considered bugs. If mise has feature gaps
 that direnv resolves, please open an issue so we can close those gaps.
 While that's the official stance, the reality is mise and direnv usually
 will work together just fine despite this. It's only more advanced use-cases
 where problems arise.
+:::
 
 If you have an issue, it's likely to do with the ordering of PATH. This means it would
 really only be a problem if you were trying to manage the same tool with direnv and mise. For
@@ -23,7 +25,7 @@ A more typical usage of direnv would be to set some arbitrary environment variab
 unrelated
 binaries to PATH. In these cases, mise will not interfere with direnv.
 
-## mise inside of direnv (`use mise` in `.envrc`) <Badge type="warning" text="deprecated" />
+## mise inside of direnv (`use mise` in `.envrc`)
 
 ::: warning
 `use mise` is deprecated and no longer supported. If `mise activate` does

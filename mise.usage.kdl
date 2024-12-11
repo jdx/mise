@@ -311,7 +311,7 @@ This can be used to temporarily disable mise in a shell session."
     $ mise deactivate
 "
 }
-cmd "direnv" help="Output direnv function to use mise inside direnv" {
+cmd "direnv" hide=true help="Output direnv function to use mise inside direnv" {
     long_help r"Output direnv function to use mise inside direnv
 
 See https://mise.jdx.dev/direnv.html for more information
@@ -321,7 +321,7 @@ you should run this command after installing new plugins. Otherwise
 direnv may not know to update environment variables when idiomatic file versions change."
     cmd "envrc" hide=true help="[internal] This is an internal command that writes an envrc file\nfor direnv to consume."
     cmd "exec" hide=true help="[internal] This is an internal command that writes an envrc file\nfor direnv to consume."
-    cmd "activate" help="Output direnv function to use mise inside direnv" {
+    cmd "activate" hide=true help="Output direnv function to use mise inside direnv" {
         long_help r"Output direnv function to use mise inside direnv
 
 See https://mise.jdx.dev/direnv.html for more information

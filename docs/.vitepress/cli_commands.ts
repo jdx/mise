@@ -80,7 +80,7 @@ export const commands: { [key: string]: Command } = {
     hide: false,
   },
   direnv: {
-    hide: false,
+    hide: true,
     subcommands: {
       envrc: {
         hide: true,
@@ -89,7 +89,7 @@ export const commands: { [key: string]: Command } = {
         hide: true,
       },
       activate: {
-        hide: false,
+        hide: true,
       },
     },
   },
