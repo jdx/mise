@@ -642,6 +642,13 @@
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
         },
+        "task_auto_install": {
+          "description": "Instead of auto-installing all tools on `mise run`, only install these tools. Set to '[]' to disable the behavior entirely.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "task_disable_paths": {
           "default": [],
           "description": "Paths that mise will not look for tasks in.",
