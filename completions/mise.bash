@@ -6,12 +6,12 @@ _mise() {
         return 1
     fi
 
-    if [[ -z ${_usage_spec_mise_2024_12_5:-} ]]; then
-        _usage_spec_mise_2024_12_5="$(mise usage)"
+    if [[ -z ${_usage_spec_mise_2024_12_6:-} ]]; then
+        _usage_spec_mise_2024_12_6="$(mise usage)"
     fi
 
     # shellcheck disable=SC2207
-    COMPREPLY=( $(usage complete-word --shell bash -s "${_usage_spec_mise_2024_12_5}" --cword="$COMP_CWORD" -- "${COMP_WORDS[@]}" ) )
+    COMPREPLY=( $(usage complete-word --shell bash -s "${_usage_spec_mise_2024_12_6}" --cword="$COMP_CWORD" -- "${COMP_WORDS[@]}" ) )
     # shellcheck disable=SC2181
     if [[ $? -ne 0 ]]; then
         unset COMPREPLY
