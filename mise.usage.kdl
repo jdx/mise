@@ -424,7 +424,7 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     arg "[TOOL@VERSION]..." help="Tool(s) to start e.g.: node@20 python@3.10" var=true
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
-cmd "format" help="Formats mise.toml" {
+cmd "fmt" help="Formats mise.toml" {
     after_long_help r"Examples:
 
     $ mise format
