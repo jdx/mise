@@ -393,8 +393,9 @@ impl Backend for PythonPlugin {
             warn!("failed to get virtualenv: {e:#}");
         }
         if let Some(default_file) = &SETTINGS.python.default_packages_file {
+            let default_file = file::replace_path(default_file);
             if let Err(err) =
-                self.install_default_packages(&config, default_file, &tv, ctx.pr.as_ref())
+                self.install_default_packages(&config, &default_file, &tv, ctx.pr.as_ref())
             {
                 warn!("failed to install default python packages: {err:#}");
             }
