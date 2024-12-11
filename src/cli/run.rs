@@ -162,7 +162,10 @@ impl Run {
         time!("run init");
         let tmpdir = tempfile::tempdir()?;
         self.tmpdir = tmpdir.path().to_path_buf();
-        let task_list = self.get_task_lists()?;
+        let args = once(self.task.clone())
+            .chain(self.args.clone())
+            .collect_vec();
+        let task_list = get_task_lists(&args, true)?;
         time!("run get_task_lists");
         self.parallelize_tasks(task_list)?;
         time!("run done");
@@ -175,64 +178,6 @@ impl Run {
             .find(|s| s.get_name() == "run")
             .unwrap()
             .clone()
-    }
-
-    fn get_task_lists(&self) -> Result<Vec<Task>> {
-        once(&self.task)
-            .chain(self.args.iter())
-            .map(|s| vec![s.to_string()])
-            .coalesce(|a, b| {
-                if b == vec![":::".to_string()] {
-                    Err((a, b))
-                } else if a == vec![":::".to_string()] {
-                    Ok(b)
-                } else {
-                    Ok(a.into_iter().chain(b).collect_vec())
-                }
-            })
-            .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
-            .map(|(t, args)| {
-                // can be any of the following:
-                // - ./path/to/script
-                // - ~/path/to/script
-                // - /path/to/script
-                // - ../path/to/script
-                // - C:\path\to\script
-                // - .\path\to\script
-                if regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#).is_match(&t) {
-                    let path = PathBuf::from(&t);
-                    if path.exists() {
-                        let config_root = Config::get()
-                            .project_root
-                            .clone()
-                            .or_else(|| dirs::CWD.clone())
-                            .unwrap_or_default();
-                        let task = Task::from_path(&path, &PathBuf::new(), &config_root)?;
-                        return Ok(vec![task.with_args(args)]);
-                    }
-                }
-                let config = Config::get();
-                let tasks = config
-                    .tasks_with_aliases()?
-                    .get_matching(&t)?
-                    .into_iter()
-                    .cloned()
-                    .collect_vec();
-                if tasks.is_empty() {
-                    if t != "default" {
-                        self.err_no_task(&t)?;
-                    }
-
-                    Ok(vec![self.prompt_for_task()?])
-                } else {
-                    Ok(tasks
-                        .into_iter()
-                        .map(|t| t.clone().with_args(args.to_vec()))
-                        .collect())
-                }
-            })
-            .flatten_ok()
-            .collect()
     }
 
     fn parallelize_tasks(mut self, mut tasks: Vec<Task>) -> Result<()> {
@@ -609,28 +554,6 @@ impl Run {
         }
     }
 
-    fn prompt_for_task(&self) -> Result<Task> {
-        let config = Config::get();
-        let tasks = config.tasks()?;
-        ensure!(
-            !tasks.is_empty(),
-            "no tasks defined. see {url}",
-            url = style::eunderline("https://mise.jdx.dev/tasks/")
-        );
-        let mut s = Select::new("Tasks")
-            .description("Select a tasks to run")
-            .filterable(true);
-        for t in tasks.values().filter(|t| !t.hide) {
-            s = s.option(DemandOption::new(&t.name).description(&t.description));
-        }
-        ctrlc::show_cursor_after_ctrl_c();
-        let name = s.run()?;
-        match tasks.get(name) {
-            Some(task) => Ok((*task).clone()),
-            None => bail!("no tasks {} found", style::ered(name)),
-        }
-    }
-
     fn validate_task(&self, task: &Task) -> Result<()> {
         if let Some(path) = &task.file {
             if path.exists() && !file::is_executable(path) {
@@ -718,39 +641,6 @@ impl Run {
         }
         // TODO
         Ok(())
-    }
-
-    fn err_no_task(&self, name: &str) -> Result<()> {
-        if Config::get().tasks().is_ok_and(|t| t.is_empty()) {
-            bail!(
-                "no tasks defined in {}. Are you in a project directory?",
-                display_path(dirs::CWD.clone().unwrap_or_default())
-            );
-        }
-        if let Some(cwd) = &*dirs::CWD {
-            let includes = Config::get().task_includes_for_dir(cwd);
-            let path = includes
-                .iter()
-                .map(|d| d.join(name))
-                .find(|d| d.is_file() && !file::is_executable(d));
-            if let Some(path) = path {
-                if !cfg!(windows) {
-                    warn!(
-                        "no task {} found, but a non-executable file exists at {}",
-                        style::ered(name),
-                        display_path(&path)
-                    );
-                    let yn = prompt::confirm(
-                        "Mark this file as executable to allow it to be run as a task?",
-                    )?;
-                    if yn {
-                        file::make_executable(&path)?;
-                        info!("marked as executable, try running this task again");
-                    }
-                }
-            }
-        }
-        bail!("no task {} found", style::ered(name));
     }
 
     fn timings(&self) -> bool {
@@ -883,4 +773,116 @@ pub enum TaskOutput {
 fn trunc(msg: &str) -> String {
     let msg = msg.lines().next().unwrap_or_default();
     console::truncate_str(msg, *env::TERM_WIDTH, "…").to_string()
+}
+
+fn err_no_task(name: &str) -> Result<()> {
+    if Config::get().tasks().is_ok_and(|t| t.is_empty()) {
+        bail!(
+            "no tasks defined in {}. Are you in a project directory?",
+            display_path(dirs::CWD.clone().unwrap_or_default())
+        );
+    }
+    if let Some(cwd) = &*dirs::CWD {
+        let includes = Config::get().task_includes_for_dir(cwd);
+        let path = includes
+            .iter()
+            .map(|d| d.join(name))
+            .find(|d| d.is_file() && !file::is_executable(d));
+        if let Some(path) = path {
+            if !cfg!(windows) {
+                warn!(
+                    "no task {} found, but a non-executable file exists at {}",
+                    style::ered(name),
+                    display_path(&path)
+                );
+                let yn = prompt::confirm(
+                    "Mark this file as executable to allow it to be run as a task?",
+                )?;
+                if yn {
+                    file::make_executable(&path)?;
+                    info!("marked as executable, try running this task again");
+                }
+            }
+        }
+    }
+    bail!("no task {} found", style::ered(name));
+}
+
+fn prompt_for_task() -> Result<Task> {
+    let config = Config::get();
+    let tasks = config.tasks()?;
+    ensure!(
+        !tasks.is_empty(),
+        "no tasks defined. see {url}",
+        url = style::eunderline("https://mise.jdx.dev/tasks/")
+    );
+    let mut s = Select::new("Tasks")
+        .description("Select a tasks to run")
+        .filterable(true);
+    for t in tasks.values().filter(|t| !t.hide) {
+        s = s.option(DemandOption::new(&t.name).description(&t.description));
+    }
+    ctrlc::show_cursor_after_ctrl_c();
+    let name = s.run()?;
+    match tasks.get(name) {
+        Some(task) => Ok((*task).clone()),
+        None => bail!("no tasks {} found", style::ered(name)),
+    }
+}
+
+pub fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
+    args.iter()
+        .map(|s| vec![s.to_string()])
+        .coalesce(|a, b| {
+            if b == vec![":::".to_string()] {
+                Err((a, b))
+            } else if a == vec![":::".to_string()] {
+                Ok(b)
+            } else {
+                Ok(a.into_iter().chain(b).collect_vec())
+            }
+        })
+        .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
+        .map(|(t, args)| {
+            // can be any of the following:
+            // - ./path/to/script
+            // - ~/path/to/script
+            // - /path/to/script
+            // - ../path/to/script
+            // - C:\path\to\script
+            // - .\path\to\script
+            if regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#).is_match(&t) {
+                let path = PathBuf::from(&t);
+                if path.exists() {
+                    let config_root = Config::get()
+                        .project_root
+                        .clone()
+                        .or_else(|| dirs::CWD.clone())
+                        .unwrap_or_default();
+                    let task = Task::from_path(&path, &PathBuf::new(), &config_root)?;
+                    return Ok(vec![task.with_args(args)]);
+                }
+            }
+            let config = Config::get();
+            let tasks = config
+                .tasks_with_aliases()?
+                .get_matching(&t)?
+                .into_iter()
+                .cloned()
+                .collect_vec();
+            if tasks.is_empty() {
+                if t != "default" || !prompt {
+                    err_no_task(&t)?;
+                }
+
+                Ok(vec![prompt_for_task()?])
+            } else {
+                Ok(tasks
+                    .into_iter()
+                    .map(|t| t.clone().with_args(args.to_vec()))
+                    .collect())
+            }
+        })
+        .flatten_ok()
+        .collect()
 }

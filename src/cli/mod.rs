@@ -90,7 +90,7 @@ pub struct Cli {
     #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
     /// Dry run, don't actually do anything
-    #[clap(short = 'n', long, global = true, hide = true)]
+    #[clap(short = 'n', long, hide = true)]
     pub dry_run: bool,
     /// Sets log level to debug
     #[clap(long, global = true, hide = true)]
@@ -201,7 +201,7 @@ pub enum Commands {
     Usage(usage::Usage),
     Use(r#use::Use),
     Version(version::Version),
-    Watch(watch::Watch),
+    Watch(Box<watch::Watch>),
     Where(r#where::Where),
     Which(which::Which),
 

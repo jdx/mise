@@ -115,6 +115,6 @@ Answer yes to all confirmation prompts
 - [`mise upgrade [FLAGS] [TOOL@VERSION]...`](/cli/upgrade.md)
 - [`mise use [FLAGS] [TOOL@VERSION]...`](/cli/use.md)
 - [`mise version`](/cli/version.md)
-- [`mise watch [-t --task... <TASK>] [-g --glob... <GLOB>] [ARGS]...`](/cli/watch.md)
+- [`mise watch [FLAGS] [TASK] [ARGS]...`](/cli/watch.md)
 - [`mise where <TOOL@VERSION>`](/cli/where.md)
 - [`mise which [FLAGS] <BIN_NAME>`](/cli/which.md)
