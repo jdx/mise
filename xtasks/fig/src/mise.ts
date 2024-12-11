@@ -399,6 +399,13 @@ const completionSpec: Fig.Spec = {
                     ],
                     "description": "Suppress non-error messages",
                     "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--no-hook-env"
+                    ],
+                    "description": "Do not automatically call hook-env",
+                    "isRepeatable": false
                 }
             ],
             "args": [
