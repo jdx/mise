@@ -262,6 +262,18 @@
           "description": "Automatically install missing tools when running `mise x`.",
           "type": "boolean"
         },
+        "auto_install": {
+          "default": true,
+          "description": "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler.",
+          "type": "boolean"
+        },
+        "auto_install_disable_tools": {
+          "description": "List of tools to skip automatically installing when running `mise x`, `mise run`, or as part of the 'not found' handler.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "experimental": {
           "description": "Enable experimental mise features which are incomplete or unstable—breakings changes may occur",
           "type": "boolean"
@@ -645,13 +657,6 @@
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
         },
-        "task_auto_install": {
-          "description": "Instead of auto-installing all tools on `mise run`, only install these tools. Set to '[]' to disable the behavior entirely.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "task_disable_paths": {
           "default": [],
           "description": "Paths that mise will not look for tasks in.",
@@ -668,8 +673,7 @@
         "task_run_auto_install": {
           "default": true,
           "description": "Automatically install missing tools when executing tasks.",
-          "type": "boolean",
-          "deprecated": true
+          "type": "boolean"
         },
         "task_skip": {
           "default": [],

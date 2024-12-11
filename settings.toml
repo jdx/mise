@@ -108,6 +108,19 @@ This will also change the default global tool config to be `~/.tool-versions` in
 of `~/.config/mise/config.toml`.
 """
 
+[auto_install]
+env = "MISE_AUTO_INSTALL"
+type = "Bool"
+default = true
+description = "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler."
+
+[auto_install_disable_tools]
+env = "MISE_AUTO_INSTALL_DISABLE_TOOLS"
+type = "ListString"
+rust_type = "Vec<String>"
+optional = true
+description = "List of tools to skip automatically installing when running `mise x`, `mise run`, or as part of the 'not found' handler."
+
 [cache_prune_age]
 env = "MISE_CACHE_PRUNE_AGE"
 type = "Duration"
@@ -256,19 +269,6 @@ env = "MISE_EXEC_AUTO_INSTALL"
 type = "Bool"
 default = true
 description = "Automatically install missing tools when running `mise x`."
-
-[auto_install]
-env = "MISE_AUTO_INSTALL"
-type = "Bool"
-default = true
-description = "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler."
-
-[auto_install_disable_tools]
-env = "MISE_AUTO_INSTALL_DISABLE_TOOLS"
-type = "ListString"
-rust_type = "Vec<String>"
-optional = true
-description = "List of tools to skip automatically installing when running `mise x`, `mise run`, or as part of the 'not found' handler."
 
 [experimental]
 env = "MISE_EXPERIMENTAL"
