@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::args::EnvVarArg;
@@ -42,37 +43,17 @@ pub struct Set {
 
 impl Set {
     pub fn run(self) -> Result<()> {
-        let filename = if let Some(file) = &self.file {
-            file.clone()
-        } else if self.global {
-            config::global_config_path()
-        } else {
-            config::local_toml_config_path()
-        };
-
-        if self.remove.is_none() && self.env_vars.is_none() {
-            let rows = Config::get()
-                .env_with_sources()?
-                .iter()
-                .filter(|(_, (_, source))| {
-                    if self.file.is_some() {
-                        source == &filename
-                    } else {
-                        true
-                    }
-                })
-                .map(|(key, (value, source))| Row {
-                    key: key.clone(),
-                    value: value.clone(),
-                    source: display_path(source),
-                })
-                .collect::<Vec<_>>();
-            let mut table = tabled::Table::new(rows);
-            table::default_style(&mut table, false);
-            miseprintln!("{table}");
-            return Ok(());
+        match (&self.remove, &self.env_vars) {
+            (None, None) => {
+                return self.list_all();
+            }
+            (None, Some(env_vars)) if env_vars.iter().all(|ev| ev.value.is_none()) => {
+                return self.get();
+            }
+            _ => {}
         }
 
+        let filename = self.filename();
         let config = MiseToml::from_file(&filename).unwrap_or_default();
 
         let mut mise_toml = get_mise_toml(&filename)?;
@@ -104,6 +85,74 @@ impl Set {
         }
         mise_toml.save()
     }
+
+    fn list_all(self) -> Result<()> {
+        let env = self.cur_env()?;
+        let mut table = tabled::Table::new(env);
+        table::default_style(&mut table, false);
+        miseprintln!("{table}");
+        Ok(())
+    }
+
+    fn get(self) -> Result<()> {
+        let env = self.cur_env()?;
+        let filter = self.env_vars.unwrap();
+        let vars = filter
+            .iter()
+            .filter_map(|ev| {
+                env.iter()
+                    .find(|r| r.key == ev.key)
+                    .map(|r| (r.key.clone(), r.value.clone()))
+            })
+            .collect::<HashMap<String, String>>();
+        for eva in filter {
+            if let Some(value) = vars.get(&eva.key) {
+                miseprintln!("{value}");
+            } else {
+                bail!("Environment variable {} not found", eva.key);
+            }
+        }
+        Ok(())
+    }
+
+    fn cur_env(&self) -> Result<Vec<Row>> {
+        let rows = if let Some(file) = &self.file {
+            let config = MiseToml::from_file(file).unwrap_or_default();
+            config
+                .env_entries()?
+                .into_iter()
+                .filter_map(|ed| match ed {
+                    EnvDirective::Val(key, value) => Some(Row {
+                        key,
+                        value,
+                        source: display_path(file),
+                    }),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Config::get()
+                .env_with_sources()?
+                .iter()
+                .map(|(key, (value, source))| Row {
+                    key: key.clone(),
+                    value: value.clone(),
+                    source: display_path(source),
+                })
+                .collect()
+        };
+        Ok(rows)
+    }
+
+    fn filename(&self) -> PathBuf {
+        if let Some(file) = &self.file {
+            file.clone()
+        } else if self.global {
+            config::global_config_path()
+        } else {
+            config::local_toml_config_path()
+        }
+    }
 }
 
 fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
@@ -117,7 +166,7 @@ fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
     Ok(mise_toml)
 }
 
-#[derive(Tabled)]
+#[derive(Tabled, Debug, Clone)]
 struct Row {
     key: String,
     value: String,
