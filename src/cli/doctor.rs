@@ -51,6 +51,7 @@ impl Doctor {
         self.analyze_plugins();
 
         info::section("env_vars", mise_env_vars())?;
+        info::section("path", paths())?;
         self.analyze_settings()?;
 
         if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
@@ -244,6 +245,16 @@ fn mise_env_vars() -> String {
         return "(none)".to_string();
     }
     vars.iter().map(|(k, v)| format!("{k}={v}")).join("\n")
+}
+
+fn paths() -> String {
+    if env::PATH_NON_PRISTINE.is_empty() {
+        return "(empty)".to_string();
+    }
+    return env::PATH_NON_PRISTINE
+        .iter()
+        .map(display_path)
+        .join("\n")
 }
 
 fn render_config_files(config: &Config) -> String {
