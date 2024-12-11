@@ -21,19 +21,18 @@ use console::truncate_str;
 use eyre::{eyre, Result, WrapErr};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+pub use outdated_info::is_outdated_version;
+use outdated_info::OutdatedInfo;
 use rayon::prelude::*;
-use serde_derive::Serialize;
-use tabled::Tabled;
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
-use versions::{Mess, Version, Versioning};
-use xx::regex;
 
 mod builder;
 pub(crate) mod install_state;
+pub(crate) mod outdated_info;
 pub(crate) mod tool_request;
 mod tool_request_set;
 mod tool_source;
@@ -411,94 +410,23 @@ impl Toolset {
         self.list_current_versions()
             .into_iter()
             .filter_map(|(t, tv)| {
+                match t.outdated_info(&tv, bump) {
+                    Ok(Some(oi)) => return Some(oi),
+                    Ok(None) => {}
+                    Err(e) => {
+                        warn!("Error getting outdated info for {tv}: {e:#}");
+                        return None;
+                    }
+                }
                 if t.symlink_path(&tv).is_some() {
                     trace!("skipping symlinked version {tv}");
                     // do not consider symlinked versions to be outdated
                     return None;
                 }
-                // prefix is something like "temurin-" or "corretto-"
-                let prefix = regex!(r"^[a-zA-Z-]+-")
-                    .find(&tv.request.version())
-                    .map(|m| m.as_str().to_string());
-                let latest_result = if bump {
-                    t.latest_version(prefix.clone())
-                } else {
-                    tv.latest_version().map(Option::from)
-                };
-                let mut out = OutdatedInfo::new(tv.clone(), tv.request.source().clone());
-                out.current = if t.is_version_installed(&tv, true) {
-                    Some(tv.version.clone())
-                } else {
+                OutdatedInfo::resolve(tv.clone(), bump).unwrap_or_else(|e| {
+                    warn!("Error creating OutdatedInfo for {tv}: {e:#}");
                     None
-                };
-                out.latest = match latest_result {
-                    Ok(Some(latest)) => latest,
-                    Ok(None) => {
-                        warn!("Error getting latest version for {t}: no latest version found");
-                        return None;
-                    }
-                    Err(e) => {
-                        warn!("Error getting latest version for {t}: {e:#}");
-                        return None;
-                    }
-                };
-                if out
-                    .current
-                    .as_ref()
-                    .is_some_and(|c| !is_outdated_version(c, &out.latest))
-                {
-                    trace!("skipping up-to-date version {tv}");
-                    return None;
-                }
-                if bump {
-                    let prefix = prefix.unwrap_or_default();
-                    let old = tv.request.version();
-                    let old = old.strip_prefix(&prefix).unwrap_or_default();
-                    let new = out.latest.strip_prefix(&prefix).unwrap_or_default();
-                    if let Some(bumped_version) = check_semver_bump(old, new) {
-                        if bumped_version != tv.request.version() {
-                            out.bump = match out.tool_request.clone() {
-                                ToolRequest::Version {
-                                    version: _version,
-                                    backend,
-                                    options,
-                                    source,
-                                    os,
-                                } => {
-                                    out.tool_request = ToolRequest::Version {
-                                        backend,
-                                        options,
-                                        source,
-                                        version: format!("{prefix}{bumped_version}"),
-                                        os,
-                                    };
-                                    Some(out.tool_request.version())
-                                }
-                                ToolRequest::Prefix {
-                                    prefix: _prefix,
-                                    backend,
-                                    options,
-                                    source,
-                                    os,
-                                } => {
-                                    out.tool_request = ToolRequest::Prefix {
-                                        backend,
-                                        options,
-                                        source,
-                                        prefix: format!("{prefix}{bumped_version}"),
-                                        os,
-                                    };
-                                    Some(out.tool_request.version())
-                                }
-                                _ => {
-                                    warn!("upgrading non-version tool requests");
-                                    None
-                                }
-                            }
-                        }
-                    }
-                }
-                Some(out)
+                })
             })
             .collect()
     }
@@ -760,210 +688,12 @@ fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<ToolReque
     Ok(leaves)
 }
 
-pub fn is_outdated_version(current: &str, latest: &str) -> bool {
-    if let (Some(c), Some(l)) = (Version::new(current), Version::new(latest)) {
-        c.lt(&l)
-    } else {
-        current != latest
-    }
-}
-
-/// check if the new version is a bump from the old version and return the new version
-/// at the same specificity level as the old version
-/// used with `mise outdated --bump` to determine what new semver range to use
-/// given old: "20" and new: "21.2.3", return Some("21")
-fn check_semver_bump(old: &str, new: &str) -> Option<String> {
-    if let Some(("prefix", old_)) = old.split_once(':') {
-        return check_semver_bump(old_, new);
-    }
-    let old_chunks = chunkify_version(old);
-    let new_chunks = chunkify_version(new);
-    if !old_chunks.is_empty() && !new_chunks.is_empty() {
-        if old_chunks.len() > new_chunks.len() {
-            warn!(
-                "something weird happened with versioning, old: {old:?}, new: {new:?}",
-                old = old_chunks,
-                new = new_chunks,
-            );
-        }
-        let bump = new_chunks
-            .into_iter()
-            .take(old_chunks.len())
-            .collect::<Vec<_>>();
-        if bump == old_chunks {
-            None
-        } else {
-            Some(bump.join(""))
-        }
-    } else {
-        Some(new.to_string())
-    }
-}
-
-/// split a version number into chunks
-/// given v: "1.2-3a4" return ["1", ".2", "-3", "a4"]
-fn chunkify_version(v: &str) -> Vec<String> {
-    fn chunkify(m: &Mess, sep0: &str, chunks: &mut Vec<String>) {
-        for (i, chunk) in m.chunks.iter().enumerate() {
-            let sep = if i == 0 { sep0 } else { "." };
-            chunks.push(format!("{}{}", sep, chunk));
-        }
-        if let Some((next_sep, next_mess)) = &m.next {
-            chunkify(next_mess, next_sep.to_string().as_ref(), chunks)
-        }
-    }
-
-    let mut chunks = vec![];
-    // don't parse "latest", otherwise bump from latest to any version would have one chunk only
-    if v != "latest" {
-        if let Some(v) = Versioning::new(v) {
-            let m = match v {
-                Versioning::Ideal(sem_ver) => sem_ver.to_mess(),
-                Versioning::General(version) => version.to_mess(),
-                Versioning::Complex(mess) => mess,
-            };
-            chunkify(&m, "", &mut chunks);
-        }
-    }
-    chunks
-}
-
-#[derive(Debug, Serialize, Clone, Tabled)]
-pub struct OutdatedInfo {
-    pub name: String,
-    #[serde(skip)]
-    #[tabled(skip)]
-    pub tool_request: ToolRequest,
-    #[serde(skip)]
-    #[tabled(skip)]
-    pub tool_version: ToolVersion,
-    pub requested: String,
-    #[tabled(display_with("Self::display_current", self))]
-    pub current: Option<String>,
-    #[tabled(display_with("Self::display_bump", self))]
-    pub bump: Option<String>,
-    pub latest: String,
-    pub source: ToolSource,
-}
-
-impl OutdatedInfo {
-    fn new(tv: ToolVersion, source: ToolSource) -> Self {
-        Self {
-            name: tv.ba().short.to_string(),
-            current: None,
-            requested: tv.request.version(),
-            tool_request: tv.request.clone(),
-            tool_version: tv,
-            bump: None,
-            latest: "".to_string(),
-            source,
-        }
-    }
-
-    fn display_current(&self) -> String {
-        if let Some(current) = &self.current {
-            current.clone()
-        } else {
-            "[MISSING]".to_string()
-        }
-    }
-
-    fn display_bump(&self) -> String {
-        if let Some(bump) = &self.bump {
-            bump.clone()
-        } else {
-            "[NONE]".to_string()
-        }
-    }
-}
-
-impl Display for OutdatedInfo {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:<20} ", self.name)?;
-        if let Some(current) = &self.current {
-            write!(f, "{:<20} ", current)?;
-        } else {
-            write!(f, "{:<20} ", "MISSING")?;
-        }
-        write!(f, "-> {:<10} (", self.latest)?;
-        if let Some(bump) = &self.bump {
-            write!(f, "bump to {} in ", bump)?;
-        }
-        write!(f, "{})", self.source)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
     use test_log::test;
 
-    use super::{check_semver_bump, is_outdated_version, ToolVersionOptions};
-
-    #[test]
-    fn test_is_outdated_version() {
-        assert_eq!(is_outdated_version("1.10.0", "1.12.0"), true);
-        assert_eq!(is_outdated_version("1.12.0", "1.10.0"), false);
-
-        assert_eq!(
-            is_outdated_version("1.10.0-SNAPSHOT", "1.12.0-SNAPSHOT"),
-            true
-        );
-        assert_eq!(
-            is_outdated_version("1.12.0-SNAPSHOT", "1.10.0-SNAPSHOT"),
-            false
-        );
-
-        assert_eq!(
-            is_outdated_version("temurin-17.0.0", "temurin-17.0.1"),
-            true
-        );
-        assert_eq!(
-            is_outdated_version("temurin-17.0.1", "temurin-17.0.0"),
-            false
-        );
-    }
-
-    #[test]
-    fn test_check_semver_bump() {
-        std::assert_eq!(check_semver_bump("20", "20.0.0"), None);
-        std::assert_eq!(check_semver_bump("20.0", "20.0.0"), None);
-        std::assert_eq!(check_semver_bump("20.0.0", "20.0.0"), None);
-        std::assert_eq!(check_semver_bump("20", "21.0.0"), Some("21".to_string()));
-        std::assert_eq!(
-            check_semver_bump("20.0", "20.1.0"),
-            Some("20.1".to_string())
-        );
-        std::assert_eq!(
-            check_semver_bump("20.0.0", "20.0.1"),
-            Some("20.0.1".to_string())
-        );
-        std::assert_eq!(
-            check_semver_bump("20.0.1", "20.1"),
-            Some("20.1".to_string())
-        );
-        std::assert_eq!(
-            check_semver_bump("2024-09-16", "2024-10-21"),
-            Some("2024-10-21".to_string())
-        );
-        std::assert_eq!(
-            check_semver_bump("20.0a1", "20.0a2"),
-            Some("20.0a2".to_string())
-        );
-        std::assert_eq!(check_semver_bump("v20", "v20.0.0"), None);
-        std::assert_eq!(check_semver_bump("v20.0", "v20.0.0"), None);
-        std::assert_eq!(check_semver_bump("v20.0.0", "v20.0.0"), None);
-        std::assert_eq!(check_semver_bump("v20", "v21.0.0"), Some("v21".to_string()));
-        std::assert_eq!(
-            check_semver_bump("v20.0.0", "v20.0.1"),
-            Some("v20.0.1".to_string())
-        );
-        std::assert_eq!(
-            check_semver_bump("latest", "20.0.0"),
-            Some("20.0.0".to_string())
-        );
-    }
-
+    use super::ToolVersionOptions;
     #[test]
     fn test_tool_version_options() {
         let t = |input, f| {
