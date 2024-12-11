@@ -6,7 +6,7 @@ import { match } from "ts-pattern";
 type Element = {
   default: string | number | boolean;
   description: string;
-  deprecated: boolean;
+  deprecated?: boolean;
   type: string;
   enum?: string[];
   items?: {
@@ -18,7 +18,7 @@ type Props = {
   type: string;
   default: string | number | boolean;
   description: string;
-  deprecated: boolean;
+  deprecated: string;
   enum?: [string][];
 };
 
@@ -55,10 +55,12 @@ function buildElement(key: string, props: Props): Element {
   const ele: Element = {
     default: props.default,
     description: props.description,
-    deprecated: props.deprecated,
     type,
   };
 
+  if (props.deprecated) {
+    ele.deprecated = true;
+  }
   if (props.enum) {
     ele.enum = props.enum.map((e) => e[0]);
   }
@@ -87,6 +89,9 @@ for (const key in doc) {
         description: props.description,
         properties: {},
       };
+      if (props.deprecated) {
+        settings[key].deprecated = true;
+      }
       settings[key].properties[subkey] = buildElement(
         `${key}.${subkey}`,
         props[subkey],
