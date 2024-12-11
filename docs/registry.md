@@ -822,6 +822,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | yamlscript | [asdf:FeryET/asdf-yamlscript](https://github.com/FeryET/asdf-yamlscript) |
 | yarn | [asdf:mise-plugins/asdf-yarn](https://github.com/mise-plugins/asdf-yarn) |
 | yay | [asdf:aaaaninja/asdf-yay](https://github.com/aaaaninja/asdf-yay) |
+| yazi | [aqua:sxyazi/yazi](https://github.com/sxyazi/yazi) |
 | yj | [ubi:sclevine/yj](https://github.com/sclevine/yj) [asdf:ryodocx/asdf-yj](https://github.com/ryodocx/asdf-yj) |
 | yor | [aqua:bridgecrewio/yor](https://github.com/bridgecrewio/yor) [asdf:ordinaryexperts/asdf-yor](https://github.com/ordinaryexperts/asdf-yor) |
 | youtube-dl | [asdf:iul1an/asdf-youtube-dl](https://github.com/iul1an/asdf-youtube-dl) |
