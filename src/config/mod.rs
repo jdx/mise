@@ -770,7 +770,8 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
         .flat_map(|dir| {
             if env::MISE_IGNORED_CONFIG_PATHS
                 .iter()
-                .any(|p| dir.starts_with(p)) {
+                .any(|p| dir.starts_with(p))
+            {
                 vec![]
             } else {
                 config_filenames
