@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+ORIG_PATH="$PATH"
+eval "$(mise activate bash)"
+export PATH="/added:$PATH"
+
+assert "mise hook-env -s bash --trace" "" # checking early exit functions
+mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0.0/bin"
+echo "#!/usr/bin/env bash" >"$MISE_DATA_DIR/installs/dummy/1.0.0/bin/dummy"
+chmod +x "$MISE_DATA_DIR/installs/dummy/1.0.0/bin/dummy"
+echo "tools.dummy = '1'" >mise.toml
+assert_contains "mise hook-env -s bash --trace" "export PATH='/added:$MISE_DATA_DIR/installs/dummy/1.0.0/bin:"
+export MISE_ACTIVATE_AGGRESSIVE=1
+assert_contains "mise hook-env -s bash --trace" "export PATH='$MISE_DATA_DIR/installs/dummy/1.0.0/bin:/added:"

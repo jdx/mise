@@ -1,16 +1,17 @@
 use std::fmt::Display;
-use std::path::Path;
 
 use indoc::formatdoc;
 
 use crate::config::Settings;
-use crate::shell::Shell;
+use crate::shell::{ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Bash {}
 
 impl Shell for Bash {
-    fn activate(&self, exe: &Path, flags: String) -> String {
+    fn activate(&self, opts: ActivateOptions) -> String {
+        let exe = opts.exe;
+        let flags = opts.flags;
         let settings = Settings::get();
         let exe = exe.to_string_lossy();
         let mut out = formatdoc! {r#"
@@ -43,14 +44,21 @@ impl Shell for Bash {
               eval "$(mise hook-env{flags} -s bash)";
               return $previous_exit_status;
             }};
+            "#};
+        if !opts.no_hook_env {
+            out.push_str(&formatdoc! {r#"
             if [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook;"* ]]; then
               PROMPT_COMMAND="_mise_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
             fi
-            {}
-            {}
+            {chpwd_functions}
+            {chpwd_load}
             chpwd_functions+=(_mise_hook)
             _mise_hook
-            "#, include_str!("../assets/bash_zsh_support/chpwd/function.sh"), include_str!("../assets/bash_zsh_support/chpwd/load.sh")};
+            "#, 
+            chpwd_functions = include_str!("../assets/bash_zsh_support/chpwd/function.sh"),
+            chpwd_load = include_str!("../assets/bash_zsh_support/chpwd/load.sh")
+            });
+        }
         if settings.not_found_auto_install {
             out.push_str(&formatdoc! {r#"
             if [ -z "${{_mise_cmd_not_found:-}}" ]; then
@@ -114,6 +122,7 @@ impl Display for Bash {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
+    use std::path::Path;
     use test_log::test;
 
     use crate::test::replace_path;
@@ -124,7 +133,12 @@ mod tests {
     fn test_activate() {
         let bash = Bash::default();
         let exe = Path::new("/some/dir/mise");
-        assert_snapshot!(bash.activate(exe, " --status".into()));
+        let opts = ActivateOptions {
+            exe: exe.to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: false,
+        };
+        assert_snapshot!(bash.activate(opts));
     }
 
     #[test]

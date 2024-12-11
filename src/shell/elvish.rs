@@ -1,14 +1,15 @@
 use std::fmt::Display;
-use std::path::Path;
 
-use crate::shell::Shell;
+use crate::shell::{ActivateOptions, Shell};
 use indoc::formatdoc;
 
 #[derive(Default)]
 pub struct Elvish {}
 
 impl Shell for Elvish {
-    fn activate(&self, exe: &Path, flags: String) -> String {
+    fn activate(&self, opts: ActivateOptions) -> String {
+        let exe = opts.exe;
+        let flags = opts.flags;
         let exe = exe.to_string_lossy();
 
         formatdoc! {r#"
@@ -25,7 +26,7 @@ impl Shell for Elvish {
 
             fn activate {{
               set-env MISE_SHELL elvish
-              set hook-enabled = $true
+              set hook-enabled = ${hook_enabled}
               hook-env
             }}
 
@@ -55,7 +56,7 @@ impl Shell for Elvish {
               }}
               {exe} $@a
             }}
-            "#}
+            "#, hook_enabled = !opts.no_hook_env}
     }
 
     fn deactivate(&self) -> String {
@@ -93,6 +94,7 @@ impl Display for Elvish {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
+    use std::path::Path;
     use test_log::test;
 
     use crate::test::replace_path;
@@ -103,7 +105,12 @@ mod tests {
     fn test_hook_init() {
         let elvish = Elvish::default();
         let exe = Path::new("/some/dir/mise");
-        assert_snapshot!(elvish.activate(exe, " --status".into()));
+        let opts = ActivateOptions {
+            exe: exe.to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: false,
+        };
+        assert_snapshot!(elvish.activate(opts));
     }
 
     #[test]

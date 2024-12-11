@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 use std::fmt::Display;
-use std::path::Path;
 
 use indoc::formatdoc;
 
-use crate::shell::Shell;
+use crate::shell::{ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Xonsh {}
@@ -38,7 +37,9 @@ fn xonsh_escape_char(ch: char) -> Option<&'static str> {
 }
 
 impl Shell for Xonsh {
-    fn activate(&self, exe: &Path, flags: String) -> String {
+    fn activate(&self, opts: ActivateOptions) -> String {
+        let exe = opts.exe;
+        let flags = opts.flags;
         let exe = exe.display();
 
         // todo: xonsh doesn't update the environment that mise relies on with $PATH.add even with $UPDATE_OS_ENVIRON (github.com/xonsh/xonsh/issues/3207)
@@ -149,6 +150,7 @@ impl Display for Xonsh {
 mod tests {
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
 
     use crate::test::replace_path;
 
@@ -158,7 +160,12 @@ mod tests {
     fn test_hook_init() {
         let xonsh = Xonsh::default();
         let exe = Path::new("/some/dir/mise");
-        insta::assert_snapshot!(xonsh.activate(exe, " --status".into()));
+        let opts = ActivateOptions {
+            exe: exe.to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: false,
+        };
+        insta::assert_snapshot!(xonsh.activate(opts));
     }
 
     #[test]
