@@ -994,6 +994,23 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
+                "format",
+                "fmt"
+            ],
+            "description": "Formats mise.toml",
+            "options": [
+                {
+                    "name": [
+                        "-a",
+                        "--all"
+                    ],
+                    "description": "Format all files from the current directory",
+                    "isRepeatable": false
+                }
+            ]
+        },
+        {
+            "name": [
                 "generate",
                 "gen"
             ],

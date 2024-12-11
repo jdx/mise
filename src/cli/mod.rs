@@ -24,6 +24,7 @@ mod en;
 mod env;
 pub mod exec;
 mod external;
+mod format;
 mod generate;
 mod global;
 mod hook_env;
@@ -63,7 +64,6 @@ pub mod version;
 mod watch;
 mod r#where;
 mod r#which;
-mod format;
 
 #[derive(clap::ValueEnum, Debug, Clone, strum::Display)]
 #[strum(serialize_all = "kebab-case")]

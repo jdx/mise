@@ -424,6 +424,14 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     arg "[TOOL@VERSION]..." help="Tool(s) to start e.g.: node@20 python@3.10" var=true
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
+cmd "format" help="Formats mise.toml" {
+    alias "fmt"
+    after_long_help r"Examples:
+
+    $ mise format
+"
+    flag "-a --all" help="Format all files from the current directory"
+}
 cmd "generate" subcommand_required=true help="[experimental] Generate files for various tools/services" {
     alias "gen"
     alias "g" hide=true
