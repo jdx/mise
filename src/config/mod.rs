@@ -766,14 +766,21 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     let dirs = file::all_dirs().unwrap_or_default();
 
     let mut config_files = dirs
-        .iter()
+        .par_iter()
         .flat_map(|dir| {
-            config_filenames
+            if env::MISE_IGNORED_CONFIG_PATHS
                 .iter()
-                .rev()
-                .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+                .any(|p| dir.starts_with(p)) {
+                vec![]
+            } else {
+                config_filenames
+                    .iter()
+                    .rev()
+                    .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+                    .collect()
+            }
         })
-        .collect_vec();
+        .collect::<Vec<_>>();
 
     config_files.extend(global_config_files());
     config_files.extend(system_config_files());
