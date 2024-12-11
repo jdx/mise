@@ -107,8 +107,7 @@ These variables offer key information about the current environment:
 - `env: HashMap<String, String>` – Accesses current environment variables as
   a key-value map.
 - `cwd: PathBuf` – Points to the current working directory.
-- `config_root: PathBuf` – Locates the directory containing your `mise.toml` file
-  or the `.mise` configuration folder.
+- `config_root: PathBuf` – Locates the directory containing your `mise.toml` file, or in the case of something like `~/src/myproj/.config/mise.toml`, it will point to `~/src/myproj`.
 - `mise_bin: String` - Points to the path to the current mise executable
 - `mise_pid: String` - Points to the pid of the current mise process
 - `xdg_cache_home: PathBuf` - Points to the directory of XDG cache home

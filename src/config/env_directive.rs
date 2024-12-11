@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
 
 use crate::cmd::CmdLineRunner;
-use crate::config::config_file::trust_check;
+use crate::config::config_file::{config_root, trust_check};
 use crate::config::{Config, SETTINGS};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiff, EnvDiffOperation};
@@ -164,11 +164,7 @@ impl EnvResults {
             //     &directive,
             //     &source
             // );
-            let config_root = source
-                .parent()
-                .map(Path::to_path_buf)
-                .or_else(|| dirs::CWD.clone())
-                .unwrap_or_default();
+            let config_root = config_root(&source);
             ctx.insert("cwd", &*dirs::CWD);
             ctx.insert("config_root", &config_root);
             let env_vars = env
@@ -237,7 +233,8 @@ impl EnvResults {
                         {
                             r.env_scripts.push(p.clone());
                             let env_diff =
-                                EnvDiff::from_bash_script(&p, env_vars.clone()).unwrap_or_default();
+                                EnvDiff::from_bash_script(&p, &config_root, env_vars.clone())
+                                    .unwrap_or_default();
                             for p in env_diff.to_patches() {
                                 match p {
                                     EnvDiffOperation::Add(k, v)
@@ -481,7 +478,7 @@ mod tests {
             results.env_paths.into_iter().map(|p| replace_path(&p.display().to_string())).collect::<Vec<_>>(),
             @r#"
         [
-            "~/cwd/bin",
+            "~/bin",
             "/bin",
         ]
         "#
