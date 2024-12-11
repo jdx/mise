@@ -63,8 +63,6 @@ Answer yes to all confirmation prompts
 - [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
 - [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)
 - [`mise deactivate`](/cli/deactivate.md)
-- [`mise direnv <SUBCOMMAND>`](/cli/direnv.md)
-- [`mise direnv activate`](/cli/direnv/activate.md)
 - [`mise doctor`](/cli/doctor.md)
 - [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.md)
 - [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)

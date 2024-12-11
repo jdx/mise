@@ -824,20 +824,6 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
-                "direnv"
-            ],
-            "description": "Output direnv function to use mise inside direnv",
-            "subcommands": [
-                {
-                    "name": [
-                        "activate"
-                    ],
-                    "description": "Output direnv function to use mise inside direnv"
-                }
-            ]
-        },
-        {
-            "name": [
                 "doctor",
                 "dr"
             ],
