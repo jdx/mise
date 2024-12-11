@@ -108,20 +108,11 @@ It wouldn't be hard to add checksum support.
 Run a task when the source changes with `mise watch`:
 
 ```bash
-mise watch -t build
+mise watch build
 ```
 
-Currently this just shells out to watchexec-which you can install however you want including with mise: `mise use -g watchexec@latest`.
+Currently, this just shells out to watchexec-which you can install however you want including with mise: `mise use -g watchexec@latest`.
 This may change in the future.
-
-Arguments to `mise watch` will be forwarded onto watchexec. For example, to print diagnostic info:
-
-```bash
-mise watch -t build -- --print-events --verbose
-```
-
-See watchexec's help with `watchexec --help` or `mise watch -- --help` to see
-all of the options.
 
 ## `mise run` shorthand
 

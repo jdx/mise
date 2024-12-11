@@ -207,18 +207,18 @@ impl Watch {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise watch -t build</bold>
+    $ <bold>mise watch build</bold>
     Runs the "build" tasks. Will re-run the tasks when any of its sources change.
     Uses "sources" from the tasks definition to determine which files to watch.
 
-    $ <bold>mise watch -t build --glob src/**/*.rs</bold>
+    $ <bold>mise watch build --glob src/**/*.rs</bold>
     Runs the "build" tasks but specify the files to watch with a glob pattern.
     This overrides the "sources" from the tasks definition.
 
-    $ <bold>mise watch -t build --clear</bold>
+    $ <bold>mise watch build --clear</bold>
     Extra arguments are passed to watchexec. See `watchexec --help` for details.
 
-    $ <bold>mise watch -t serve --watch src --exts rs --restart</bold>
+    $ <bold>mise watch serve --watch src --exts rs --restart</bold>
     Starts an api server, watching for changes to "*.rs" files in "./src" and kills/restarts the server when they change.
 "#
 );

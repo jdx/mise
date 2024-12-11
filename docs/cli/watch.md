@@ -602,16 +602,16 @@ This shows the manual page for Watchexec, if the output is a terminal and the 'm
 
 Examples:
 
-    $ mise watch -t build
+    $ mise watch build
     Runs the "build" tasks. Will re-run the tasks when any of its sources change.
     Uses "sources" from the tasks definition to determine which files to watch.
 
-    $ mise watch -t build --glob src/**/*.rs
+    $ mise watch build --glob src/**/*.rs
     Runs the "build" tasks but specify the files to watch with a glob pattern.
     This overrides the "sources" from the tasks definition.
 
-    $ mise watch -t build --clear
+    $ mise watch build --clear
     Extra arguments are passed to watchexec. See `watchexec --help` for details.
 
-    $ mise watch -t serve --watch src --exts rs --restart
+    $ mise watch serve --watch src --exts rs --restart
     Starts an api server, watching for changes to "*.rs" files in "./src" and kills/restarts the server when they change.
