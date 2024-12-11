@@ -619,8 +619,7 @@ impl Run {
         );
         let mut s = Select::new("Tasks")
             .description("Select a tasks to run")
-            .filterable(true)
-            .filtering(true);
+            .filterable(true);
         for t in tasks.values().filter(|t| !t.hide) {
             s = s.option(DemandOption::new(&t.name).description(&t.description));
         }
