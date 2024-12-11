@@ -2,7 +2,8 @@ use std::collections::HashSet;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::toolset::{OutdatedInfo, ToolsetBuilder};
+use crate::toolset::outdated_info::OutdatedInfo;
+use crate::toolset::ToolsetBuilder;
 use crate::ui::table;
 use eyre::Result;
 use indexmap::IndexMap;

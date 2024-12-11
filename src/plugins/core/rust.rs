@@ -2,14 +2,18 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::backend::Backend;
+use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ToolVersion, Toolset};
+use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file, github, plugins};
 use eyre::Result;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct RustPlugin {
@@ -54,6 +58,10 @@ impl RustPlugin {
             .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)?)
             .prepend_path(self.list_bin_paths(tv)?)?
             .execute()
+    }
+
+    fn target_triple(&self, tv: &ToolVersion) -> String {
+        format!("{}-{}", tv.version, TARGET)
     }
 }
 
@@ -111,6 +119,19 @@ impl Backend for RustPlugin {
         Ok(tv)
     }
 
+    fn uninstall_version_impl(&self, pr: &dyn SingleReport, tv: &ToolVersion) -> Result<()> {
+        let mut env = self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)?;
+        env.remove("RUSTUP_TOOLCHAIN");
+        CmdLineRunner::new(RUSTUP_BIN)
+            .with_pr(pr)
+            .arg("toolchain")
+            .arg("uninstall")
+            .arg(&tv.version)
+            .prepend_path(self.list_bin_paths(tv)?)?
+            .envs(env)
+            .execute()
+    }
+
     fn list_bin_paths(&self, _tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         Ok(vec![cargo_bindir()])
     }
@@ -134,6 +155,31 @@ impl Backend for RustPlugin {
             ("RUSTUP_TOOLCHAIN".to_string(), toolchain),
         ]
         .into())
+    }
+
+    fn outdated_info(&self, tv: &ToolVersion, bump: bool) -> Result<Option<OutdatedInfo>> {
+        let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
+        if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
+            let oi = OutdatedInfo::resolve(tv.clone(), bump)?;
+            Ok(oi)
+        } else {
+            let mut cmd = cmd!(RUSTUP_BIN, "check").env("PATH", self.path_env_for_cmd(tv)?);
+            for (k, v) in self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)? {
+                cmd = cmd.env(k, v);
+            }
+            let out = cmd.read()?;
+            for line in out.lines() {
+                if line.starts_with(&self.target_triple(tv)) {
+                    if let Some(_cap) = v_re.captures(line) {
+                        // let requested = cap.get(1).unwrap().as_str().to_string();
+                        // let latest = cap.get(2).unwrap().as_str().to_string();
+                        let oi = OutdatedInfo::new(tv.clone(), tv.version.clone())?;
+                        return Ok(Some(oi));
+                    }
+                }
+            }
+            Ok(None)
+        }
     }
 }
 

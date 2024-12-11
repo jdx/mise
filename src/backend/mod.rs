@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
@@ -16,6 +17,7 @@ use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
 use crate::registry::REGISTRY;
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{install_state, is_outdated_version, ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash, lock_file, plugins, versions_host};
@@ -562,6 +564,15 @@ pub trait Backend: Debug + Send + Sync {
         install_state::incomplete_file_path(&tv.ba().short, &tv.tv_pathname())
     }
 
+    fn path_env_for_cmd(&self, tv: &ToolVersion) -> Result<OsString> {
+        let path = self
+            .list_bin_paths(tv)?
+            .into_iter()
+            .chain(self.dependency_toolset()?.list_paths())
+            .chain(env::PATH.clone());
+        Ok(env::join_paths(path)?)
+    }
+
     fn dependency_toolset(&self) -> eyre::Result<Toolset> {
         let config = Config::get();
         let dependencies = self
@@ -658,6 +669,10 @@ pub trait Backend: Debug + Send + Sync {
             tv.checksums.insert(filename, format!("sha256:{hash}"));
         }
         Ok(())
+    }
+
+    fn outdated_info(&self, _tv: &ToolVersion, _bump: bool) -> Result<Option<OutdatedInfo>> {
+        Ok(None)
     }
 }
 
