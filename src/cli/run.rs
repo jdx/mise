@@ -191,7 +191,6 @@ impl Run {
 
         ts.install_missing_versions(&InstallOptions {
             missing_args_only: !SETTINGS.task_run_auto_install,
-            missing_tools_auto_install: SETTINGS.task_auto_install.clone(),
             ..Default::default()
         })?;
         let mut env = ts.env_with_path(&Config::get())?;

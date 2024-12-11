@@ -60,7 +60,7 @@ pub struct InstallOptions {
     pub raw: bool,
     /// only install missing tools if passed as arguments
     pub missing_args_only: bool,
-    pub missing_tools_auto_install: Option<Vec<String>>,
+    pub auto_install_disable_tools: Option<Vec<String>>,
     pub resolve_options: ResolveOptions,
 }
 
@@ -71,7 +71,7 @@ impl Default for InstallOptions {
             raw: SETTINGS.raw,
             force: false,
             missing_args_only: true,
-            missing_tools_auto_install: None,
+            auto_install_disable_tools: SETTINGS.auto_install_disable_tools.clone(),
             resolve_options: Default::default(),
         }
     }
@@ -146,8 +146,8 @@ impl Toolset {
                     || matches!(self.versions[tv.ba()].source, ToolSource::Argument)
             })
             .filter(|tv| {
-                if let Some(missing_tools_auto_install) = &opts.missing_tools_auto_install {
-                    missing_tools_auto_install.contains(&tv.ba().short)
+                if let Some(tools) = &opts.auto_install_disable_tools {
+                    !tools.contains(&tv.ba().short)
                 } else {
                     true
                 }
@@ -568,6 +568,10 @@ impl Toolset {
                 .list_missing_versions()
                 .into_iter()
                 .filter(|tv| tv.ba() == plugin.ba())
+                .filter(|tv| match &SETTINGS.auto_install_disable_tools {
+                    Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
+                    None => true,
+                })
                 .map(|tv| tv.request)
                 .collect_vec();
             if !versions.is_empty() {
