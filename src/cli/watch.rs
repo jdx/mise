@@ -12,6 +12,9 @@ use crate::toolset::ToolsetBuilder;
 ///
 /// This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
 /// It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
+///
+/// Because this wraps watchexec, run `watchexec --help` to see what options are available. Arguments
+/// passed to `mise watch` are sent to watchexec. See https://github.com/watchexec/watchexec/tree/main/crates/cli
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "w", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Watch {
@@ -134,7 +137,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     Runs the "build" tasks but specify the files to watch with a glob pattern.
     This overrides the "sources" from the tasks definition.
 
-    $ <bold>mise run -t build --clear</bold>
+    $ <bold>mise watch -t build --clear</bold>
     Extra arguments are passed to watchexec. See `watchexec --help` for details.
+    
+    $ <bold>mise watch -t serve --watch src --exts rs --restart</bold>
+    Starts an api server, watching for changes to "*.rs" files in "./src" and kills/restarts the server when they change.
 "#
 );
