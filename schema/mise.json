@@ -1,6 +1,6 @@
 {
   "$id": "https://mise.jdx.dev/schema/mise.json",
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "http://json-schema.org/2019-09/schema#",
   "title": "mise",
   "type": "object",
   "$defs": {
@@ -148,12 +148,13 @@
         },
         "asdf": {
           "description": "use asdf as a default plugin backend",
-          "deprecated": "Use disable_backends instead.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "asdf_compat": {
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "cache_prune_age": {
           "default": "30d",
@@ -172,7 +173,8 @@
         },
         "cargo_binstall": {
           "description": "Use cargo-binstall instead of cargo install if available",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "cd": {
           "description": "Path to change to after launching mise",
@@ -215,8 +217,8 @@
         },
         "disable_default_shorthands": {
           "description": "Disables built-in shorthands to asdf/vfox plugins",
-          "deprecated": "Replaced with `disable_default_registry`",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "disable_hints": {
           "default": [],
@@ -243,7 +245,7 @@
           }
         },
         "env_file": {
-          "description": "Path to a file containing environment variables.",
+          "description": "Path to a file containing environment variables to automatically load.",
           "type": "string"
         },
         "erlang": {
@@ -299,8 +301,8 @@
         },
         "go_set_gopath": {
           "description": "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages.",
-          "deprecated": "Use env._go.set_goroot instead.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "go_set_goroot": {
           "default": true,
@@ -345,14 +347,14 @@
         "legacy_version_file": {
           "default": true,
           "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
-          "deprecated": "Use idiomatic_version_file instead.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "legacy_version_file_disable_tools": {
           "default": [],
           "description": "Specific tools to disable idiomatic version files for.",
-          "deprecated": "Use idiomatic_version_file_disable_tools instead.",
           "type": "array",
+          "deprecated": true,
           "items": {
             "type": "string"
           }
@@ -452,7 +454,8 @@
         },
         "profile": {
           "description": "Profile to use for mise.${MISE_PROFILE}.toml files.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "python": {
           "additionalProperties": false,
@@ -492,8 +495,8 @@
             },
             "venv_auto_create": {
               "description": "Automatically create virtualenvs for python tools.",
-              "deprecated": "Use env._python.venv instead.",
-              "type": "boolean"
+              "type": "boolean",
+              "deprecated": true
             },
             "venv_stdlib": {
               "description": "Prefer to use venv from Python's standard library.",
@@ -503,48 +506,48 @@
         },
         "python_compile": {
           "description": "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
-          "deprecated": "Use python.compile instead.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "python_default_packages_file": {
           "description": "Path to a file containing default python packages to install when installing python.",
-          "deprecated": "Use python.default_packages_file instead.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "python_patch_url": {
           "description": "URL to fetch python patches from.",
-          "deprecated": "Use python.patch_url instead.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "python_patches_directory": {
           "description": "Directory to fetch python patches from.",
-          "deprecated": "Use python.patch_url instead.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "python_precompiled_arch": {
           "description": "Specify the architecture to use for precompiled binaries.",
-          "deprecated": "Use python.precompiled_arch instead.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "python_precompiled_os": {
           "description": "Specify the OS to use for precompiled binaries.",
-          "deprecated": "Use python.precompiled_os instead.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "python_pyenv_repo": {
           "description": "URL to fetch pyenv from for compiling python.",
-          "deprecated": "Use python.pyenv_repo instead.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "python_venv_auto_create": {
           "description": "Automatically create virtualenvs for python tools.",
-          "deprecated": "Use env._python.venv instead.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "python_venv_stdlib": {
           "description": "Prefer to use venv from Python's standard library.",
-          "deprecated": "Use python.venv_stdlib instead.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "quiet": {
           "description": "Suppress all output except errors.",
@@ -665,7 +668,8 @@
         "task_run_auto_install": {
           "default": true,
           "description": "Automatically install missing tools when executing tasks.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "task_skip": {
           "default": [],
@@ -717,8 +721,8 @@
         },
         "vfox": {
           "description": "Use vfox as a default plugin backend instead of asdf.",
-          "deprecated": "Use disable_backends instead.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "windows_default_file_shell_args": {
           "default": "cmd /c",
