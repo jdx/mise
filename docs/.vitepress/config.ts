@@ -111,17 +111,18 @@ export default defineConfig({
           { text: "File Tasks", link: "/tasks/file-tasks" },
         ],
       },
-      { text: "FAQs", link: "/faq" },
-      { text: "Troubleshooting", link: "/troubleshooting" },
-      { text: "Tips & Tricks", link: "/tips-and-tricks" },
-      { text: "Cookbook", link: "/mise-cookbook" },
       {
         text: "About",
         items: [
           { text: "About mise", link: "/about" },
+          { text: "FAQs", link: "/faq" },
+          { text: "Troubleshooting", link: "/troubleshooting" },
+          { text: "Tips & Tricks", link: "/tips-and-tricks" },
+          { text: "Cookbook", link: "/mise-cookbook" },
           { text: "Team", link: "/team" },
-          { text: "Project Roadmap", link: "/project-roadmap" },
+          { text: "Roadmap", link: "/roadmap" },
           { text: "Contributing", link: "/contributing" },
+          { text: "External Resources", link: "/external-resources" },
         ],
       },
       {
