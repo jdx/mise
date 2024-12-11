@@ -619,9 +619,10 @@ impl Run {
         );
         let mut s = Select::new("Tasks")
             .description("Select a tasks to run")
-            .filterable(true);
+            .filterable(true)
+            .filtering(true);
         for t in tasks.values().filter(|t| !t.hide) {
-            s = s.option(DemandOption::new(&t.name));
+            s = s.option(DemandOption::new(&t.name).description(&t.description));
         }
         ctrlc::show_cursor_after_ctrl_c();
         let name = s.run()?;
