@@ -5,6 +5,7 @@ use crate::build_time::built_info;
 use crate::cli::version;
 use crate::cli::version::VERSION;
 use crate::config::Config;
+use crate::env::PATH_KEY;
 use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::core::CORE_PLUGINS;
@@ -17,6 +18,7 @@ use console::{pad_str, style, Alignment};
 use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
+use std::env::split_paths;
 use strum::IntoEnumIterator;
 
 /// Check mise installation for possible problems
@@ -51,7 +53,6 @@ impl Doctor {
         self.analyze_plugins();
 
         info::section("env_vars", mise_env_vars())?;
-        info::section("path", paths())?;
         self.analyze_settings()?;
 
         if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
@@ -140,6 +141,7 @@ impl Doctor {
             Ok(ts) => {
                 self.analyze_shims(&ts);
                 self.analyze_toolset(&ts)?;
+                self.analyze_paths(&ts)?;
             }
             Err(err) => self.errors.push(format!("failed to load toolset: {}", err)),
         }
@@ -209,6 +211,21 @@ impl Doctor {
             }
         }
     }
+
+    fn analyze_paths(&mut self, toolset: &Toolset) -> eyre::Result<()> {
+        let env = toolset.full_env()?;
+        let path = env
+            .get(&*PATH_KEY)
+            .ok_or_else(|| eyre::eyre!("Path not found"))?;
+        let paths = split_paths(path)
+            .collect::<Vec<std::path::PathBuf>>()
+            .into_iter()
+            .map(display_path)
+            .join("\n");
+
+        info::section("path", paths)?;
+        Ok(())
+    }
 }
 
 fn shims_on_path() -> bool {
@@ -245,13 +262,6 @@ fn mise_env_vars() -> String {
         return "(none)".to_string();
     }
     vars.iter().map(|(k, v)| format!("{k}={v}")).join("\n")
-}
-
-fn paths() -> String {
-    if env::PATH_NON_PRISTINE.is_empty() {
-        return "(empty)".to_string();
-    }
-    env::PATH_NON_PRISTINE.iter().map(display_path).join("\n")
 }
 
 fn render_config_files(config: &Config) -> String {
