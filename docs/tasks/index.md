@@ -123,7 +123,7 @@ I don't want to turn all file tasks into tera templates just for this feature.
 The following environment variables are passed to the task:
 
 - `MISE_ORIGINAL_CWD`: The original working directory from where the task was run.
-- `MISE_CONFIG_ROOT`: The directory containing the `mise.toml` file where the task was defined.
+- `MISE_CONFIG_ROOT`: The directory containing the `mise.toml` file where the task was defined or if the config path is something like `~/src/myproj/.config/mise.toml`, it will be `~/src/myproj`.
 - `MISE_PROJECT_ROOT` or `root`: The root of the project.
 - `MISE_TASK_NAME`: The name of the task being run.
 - `MISE_TASK_DIR`: The directory containing the task script.

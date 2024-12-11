@@ -58,7 +58,7 @@ impl EnvDiff {
         diff
     }
 
-    pub fn from_bash_script<T, U, V>(script: &Path, env: T) -> Result<Self>
+    pub fn from_bash_script<T, U, V>(script: &Path, dir: &Path, env: T) -> Result<Self>
     where
         T: IntoIterator<Item = (U, V)>,
         U: Into<OsString>,
@@ -75,6 +75,7 @@ impl EnvDiff {
                 export -p
             ", script = script.display()}
         )
+        .dir(dir)
         .full_env(&env)
         .read()?;
         let env: HashMap<String, String> = env
@@ -246,11 +247,11 @@ fn normalize_escape_sequences(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use insta::assert_debug_snapshot;
     use pretty_assertions::assert_str_eq;
     use test_log::test;
-
-    use super::*;
 
     #[test]
     fn test_diff() {
@@ -347,7 +348,8 @@ mod tests {
             .into_iter()
             .map(|(k, v)| (k.into(), v.into()))
             .collect::<Vec<(String, String)>>();
-        let ed = EnvDiff::from_bash_script(path.as_path(), orig).unwrap();
+        let cwd = dirs::CWD.clone().unwrap();
+        let ed = EnvDiff::from_bash_script(path.as_path(), &cwd, orig).unwrap();
         assert_debug_snapshot!(ed);
     }
 
