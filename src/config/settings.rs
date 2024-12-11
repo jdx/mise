@@ -179,6 +179,11 @@ impl Settings {
 
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
+        if !self.auto_install {
+            self.exec_auto_install = false;
+            self.not_found_auto_install = false;
+            self.task_run_auto_install = false;
+        }
         if let Some(false) = self.asdf {
             self.disable_backends.push("asdf".to_string());
         }

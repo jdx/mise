@@ -108,6 +108,19 @@ This will also change the default global tool config to be `~/.tool-versions` in
 of `~/.config/mise/config.toml`.
 """
 
+[auto_install]
+env = "MISE_AUTO_INSTALL"
+type = "Bool"
+default = true
+description = "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler."
+
+[auto_install_disable_tools]
+env = "MISE_AUTO_INSTALL_DISABLE_TOOLS"
+type = "ListString"
+rust_type = "Vec<String>"
+optional = true
+description = "List of tools to skip automatically installing when running `mise x`, `mise run`, or as part of the 'not found' handler."
+
 [cache_prune_age]
 env = "MISE_CACHE_PRUNE_AGE"
 type = "Duration"
@@ -844,14 +857,6 @@ type = "Path"
 optional = true
 description = "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var."
 
-[task_auto_install]
-env = "MISE_TASK_AUTO_INSTALL"
-type = "ListString"
-rust_type = "Vec<String>"
-parse_env = "list_by_comma"
-optional = true
-description = "Instead of auto-installing all tools on `mise run`, only install these tools. Set to '[]' to disable the behavior entirely."
-
 [task_disable_paths]
 env = "MISE_TASK_DISABLE_PATHS"
 type = "ListPath"
@@ -883,8 +888,6 @@ Change output style when executing tasks. This controls the output of `mise run`
 env = "MISE_TASK_RUN_AUTO_INSTALL"
 type = "Bool"
 default = true
-hide = true
-deprecated = "Use task_auto_install instead."
 description = "Automatically install missing tools when executing tasks."
 
 [task_skip]
