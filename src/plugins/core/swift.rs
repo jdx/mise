@@ -24,10 +24,7 @@ impl SwiftPlugin {
     }
 
     fn swift_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path()
-            .join("usr")
-            .join("bin")
-            .join(swift_bin_name())
+        tv.install_path().join("bin").join(swift_bin_name())
     }
 
     fn test_swift(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
@@ -61,6 +58,7 @@ impl SwiftPlugin {
     }
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
+        SETTINGS.ensure_experimental("swift")?;
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         let version = &tv.version;
         ctx.pr.set_message(format!("extract {filename}"));
@@ -94,6 +92,22 @@ impl SwiftPlugin {
                     strip_components: 1,
                 },
             )?;
+        }
+        Ok(())
+    }
+
+    fn symlink_bins(&self, tv: &ToolVersion) -> Result<()> {
+        let usr_bin = tv.install_path().join("usr").join("bin");
+        let bin_dir = tv.install_path().join("bin");
+        file::create_dir_all(&bin_dir)?;
+        for bin in file::ls(&usr_bin)? {
+            if !file::is_executable(&bin) {
+                continue;
+            }
+            let file_name = bin.file_name().unwrap().to_string_lossy().to_string();
+            if file_name.contains("swift") || file_name.contains("sourcekit") {
+                file::make_symlink_or_copy(&bin, &bin_dir.join(file_name))?;
+            }
         }
         Ok(())
     }
@@ -149,7 +163,11 @@ impl Backend for SwiftPlugin {
     }
 
     fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec![".swift-version".into()])
+        if SETTINGS.experimental {
+            Ok(vec![".swift-version".into()])
+        } else {
+            Ok(vec![])
+        }
     }
 
     fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
@@ -159,13 +177,10 @@ impl Backend for SwiftPlugin {
         }
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;
+        self.symlink_bins(&tv)?;
         self.verify(ctx, &tv)?;
 
         Ok(tv)
-    }
-
-    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        Ok(vec![tv.install_path().join("usr").join("bin")])
     }
 }
 
