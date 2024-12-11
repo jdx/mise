@@ -80,6 +80,7 @@ impl Install {
                 use_locked_version: true,
                 latest_versions: true,
             },
+            ..Default::default()
         }
     }
 

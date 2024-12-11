@@ -60,6 +60,7 @@ pub struct InstallOptions {
     pub raw: bool,
     /// only install missing tools if passed as arguments
     pub missing_args_only: bool,
+    pub missing_tools_auto_install: Option<Vec<String>>,
     pub resolve_options: ResolveOptions,
 }
 
@@ -70,6 +71,7 @@ impl Default for InstallOptions {
             raw: SETTINGS.raw,
             force: false,
             missing_args_only: true,
+            missing_tools_auto_install: None,
             resolve_options: Default::default(),
         }
     }
@@ -142,6 +144,13 @@ impl Toolset {
             .filter(|tv| {
                 !opts.missing_args_only
                     || matches!(self.versions[tv.ba()].source, ToolSource::Argument)
+            })
+            .filter(|tv| {
+                if let Some(missing_tools_auto_install) = &opts.missing_tools_auto_install {
+                    missing_tools_auto_install.contains(&tv.ba().short)
+                } else {
+                    true
+                }
             })
             .map(|tv| tv.request)
             .collect_vec();

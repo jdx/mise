@@ -869,10 +869,19 @@ docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 """
 
+[task_auto_install]
+env = "MISE_TASK_AUTO_INSTALL"
+type = "ListString"
+rust_type = "Vec<String>"
+parse_env = "list_by_comma"
+optional = true
+description = "Instead of auto-installing all tools on `mise run`, only install these tools. Set to '[]' to disable the behavior entirely."
+
 [task_run_auto_install]
 env = "MISE_TASK_RUN_AUTO_INSTALL"
 type = "Bool"
 default = true
+hide = true
 description = "Automatically install missing tools when executing tasks."
 
 [task_skip]
