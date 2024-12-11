@@ -1,8 +1,7 @@
 use std::fmt::{Display, Formatter};
-use std::path::Path;
 
 use crate::config::Settings;
-use crate::shell::Shell;
+use crate::shell::{ActivateOptions, Shell};
 use indoc::formatdoc;
 use shell_escape::unix::escape;
 
@@ -10,7 +9,9 @@ use shell_escape::unix::escape;
 pub struct Fish {}
 
 impl Shell for Fish {
-    fn activate(&self, exe: &Path, flags: String) -> String {
+    fn activate(&self, opts: ActivateOptions) -> String {
+        let exe = opts.exe;
+        let flags = opts.flags;
         let exe = exe.to_string_lossy();
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
@@ -49,7 +50,11 @@ impl Shell for Fish {
                 command {exe} "$command" $argv
               end
             end
+        "#});
 
+        if !opts.no_hook_env {
+            out.push_str(&formatdoc! {r#"
+            
             function __mise_env_eval --on-event fish_prompt --description {description};
                 {exe} hook-env{flags} -s fish | source;
 
@@ -76,6 +81,7 @@ impl Shell for Fish {
 
             __mise_env_eval
         "#});
+        }
         if Settings::get().not_found_auto_install {
             out.push_str(&formatdoc! {r#"
             if functions -q fish_command_not_found; and not functions -q __mise_fish_command_not_found
@@ -136,6 +142,7 @@ impl Display for Fish {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
+    use std::path::Path;
     use test_log::test;
 
     use crate::test::replace_path;
@@ -146,7 +153,12 @@ mod tests {
     fn test_activate() {
         let fish = Fish::default();
         let exe = Path::new("/some/dir/mise");
-        assert_snapshot!(fish.activate(exe, " --status".into()));
+        let opts = ActivateOptions {
+            exe: exe.to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: false,
+        };
+        assert_snapshot!(fish.activate(opts));
     }
 
     #[test]

@@ -215,7 +215,7 @@ pub fn parse_or_init(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
     Ok(cf)
 }
 
-pub fn parse(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
+pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
     if let Ok(settings) = Settings::try_get() {
         if settings.paranoid {
             trust_check(path)?;

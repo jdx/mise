@@ -1,9 +1,8 @@
 use std::fmt::Display;
-use std::path::Path;
 
 use indoc::formatdoc;
 
-use crate::shell::Shell;
+use crate::shell::{ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Nushell {}
@@ -33,7 +32,9 @@ impl Nushell {
 }
 
 impl Shell for Nushell {
-    fn activate(&self, exe: &Path, flags: String) -> String {
+    fn activate(&self, opts: ActivateOptions) -> String {
+        let exe = opts.exe;
+        let flags = opts.flags;
         let exe = exe.to_string_lossy().replace('\\', r#"\\"#);
 
         formatdoc! {r#"
@@ -127,6 +128,7 @@ impl Display for Nushell {
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
+    use std::path::Path;
     use test_log::test;
 
     use crate::test::replace_path;
@@ -137,7 +139,12 @@ mod tests {
     fn test_hook_init() {
         let nushell = Nushell::default();
         let exe = Path::new("/some/dir/mise");
-        assert_snapshot!(nushell.activate(exe, " --status".into()));
+        let opts = ActivateOptions {
+            exe: exe.to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: false,
+        };
+        assert_snapshot!(nushell.activate(opts));
     }
 
     #[test]

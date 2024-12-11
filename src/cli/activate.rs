@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::env::PATH_KEY;
 use crate::file::touch_dir;
 use crate::path_env::PathEnv;
-use crate::shell::{get_shell, Shell, ShellType};
+use crate::shell::{get_shell, ActivateOptions, Shell, ShellType};
 use crate::{dirs, env};
 use eyre::Result;
 use itertools::Itertools;
@@ -49,6 +49,15 @@ pub struct Activate {
     /// Suppress non-error messages
     #[clap(long, short)]
     quiet: bool,
+
+    /// Do not automatically call hook-env
+    ///
+    /// This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then
+    /// you can call `mise hook-env` manually which will output the env vars to stdout without actually
+    /// modifying the environment. That way you can do things like `mise hook-env --trace` to get more
+    /// information or just see the values that hook-env is outputting.
+    #[clap(long)]
+    no_hook_env: bool,
 }
 
 impl Activate {
@@ -91,7 +100,14 @@ impl Activate {
             flags.push(" --status");
         }
         miseprint!("{}", self.prepend_path(shell, exe_dir))?;
-        miseprint!("{}", shell.activate(mise_bin, flags.join("")))?;
+        miseprint!(
+            "{}",
+            shell.activate(ActivateOptions {
+                exe: mise_bin.to_path_buf(),
+                flags: flags.join(""),
+                no_hook_env: self.no_hook_env,
+            })
+        )?;
         Ok(())
     }
 

@@ -900,19 +900,27 @@ fn load_all_config_files(
         .collect_vec()
         .into_par_iter()
         .map(|f| {
-            let cf = parse_config_file(f, idiomatic_filenames).wrap_err_with(|| {
-                format!(
-                    "error parsing config file: {}",
-                    style::ebold(display_path(f))
-                )
-            })?;
+            let cf = match parse_config_file(f, idiomatic_filenames) {
+                Ok(cfg) => cfg,
+                Err(err) => {
+                    if err.to_string().contains("are not trusted.") {
+                        warn!("{err}");
+                        return Ok(None);
+                    }
+                    return Err(err.wrap_err(format!(
+                        "error parsing config file: {}",
+                        style::ebold(display_path(f))
+                    )));
+                }
+            };
             if let Err(err) = Tracker::track(f) {
                 warn!("tracking config: {err:#}");
             }
-            Ok((f.clone(), cf))
+            Ok(Some((f.clone(), cf)))
         })
         .collect::<Result<Vec<_>>>()?
         .into_iter()
+        .flatten()
         .collect())
 }
 

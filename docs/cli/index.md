@@ -44,7 +44,7 @@ Answer yes to all confirmation prompts
 
 ## Subcommands
 
-- [`mise activate [--shims] [-q --quiet] [SHELL_TYPE]`](/cli/activate.md)
+- [`mise activate [FLAGS] [SHELL_TYPE]`](/cli/activate.md)
 - [`mise alias [-p --plugin <PLUGIN>] [--no-header] <SUBCOMMAND>`](/cli/alias.md)
 - [`mise alias get <PLUGIN> <ALIAS>`](/cli/alias/get.md)
 - [`mise alias ls [--no-header] [TOOL]`](/cli/alias/ls.md)
