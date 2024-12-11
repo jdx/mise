@@ -153,7 +153,8 @@
         },
         "asdf_compat": {
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "cache_prune_age": {
           "default": "30d",
@@ -172,7 +173,8 @@
         },
         "cargo_binstall": {
           "description": "Use cargo-binstall instead of cargo install if available",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "cd": {
           "description": "Path to change to after launching mise",
@@ -243,7 +245,7 @@
           }
         },
         "env_file": {
-          "description": "Path to a file containing environment variables.",
+          "description": "Path to a file containing environment variables to automatically load.",
           "type": "string"
         },
         "erlang": {
@@ -452,7 +454,8 @@
         },
         "profile": {
           "description": "Profile to use for mise.${MISE_PROFILE}.toml files.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "python": {
           "additionalProperties": false,
@@ -665,7 +668,8 @@
         "task_run_auto_install": {
           "default": true,
           "description": "Automatically install missing tools when executing tasks.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "task_skip": {
           "default": [],
