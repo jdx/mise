@@ -425,7 +425,6 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
 cmd "format" help="Formats mise.toml" {
-    alias "fmt"
     after_long_help r"Examples:
 
     $ mise format

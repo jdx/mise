@@ -24,7 +24,7 @@ mod en;
 mod env;
 pub mod exec;
 mod external;
-mod format;
+mod fmt;
 mod generate;
 mod global;
 mod hook_env;
@@ -168,7 +168,7 @@ pub enum Commands {
     En(en::En),
     Env(env::Env),
     Exec(exec::Exec),
-    Format(format::Format),
+    Format(fmt::Fmt),
     Generate(generate::Generate),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
