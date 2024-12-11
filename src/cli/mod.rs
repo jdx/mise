@@ -63,6 +63,7 @@ pub mod version;
 mod watch;
 mod r#where;
 mod r#which;
+mod format;
 
 #[derive(clap::ValueEnum, Debug, Clone, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
@@ -167,6 +168,7 @@ pub enum Commands {
     En(en::En),
     Env(env::Env),
     Exec(exec::Exec),
+    Format(format::Format),
     Generate(generate::Generate),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
@@ -228,6 +230,7 @@ impl Commands {
             Self::En(cmd) => cmd.run(),
             Self::Env(cmd) => cmd.run(),
             Self::Exec(cmd) => cmd.run(),
+            Self::Format(cmd) => cmd.run(),
             Self::Generate(cmd) => cmd.run(),
             Self::Global(cmd) => cmd.run(),
             Self::HookEnv(cmd) => cmd.run(),
