@@ -41,7 +41,7 @@ pub use settings::SETTINGS;
 
 type AliasMap = IndexMap<String, Alias>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
-type EnvWithSources = IndexMap<String, (String, PathBuf)>;
+pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
 #[derive(Default)]
 pub struct Config {
