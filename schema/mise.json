@@ -655,6 +655,13 @@
           "type": "string",
           "enum": ["prefix", "interleave"]
         },
+        "task_auto_install": {
+          "description": "Instead of auto-installing all tools on `mise run`, only install these tools. Set to '[]' to disable the behavior entirely.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "task_run_auto_install": {
           "default": true,
           "description": "Automatically install missing tools when executing tasks.",
