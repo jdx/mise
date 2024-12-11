@@ -69,6 +69,7 @@ Answer yes to all confirmation prompts
 - [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.md)
 - [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)
 - [`mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`](/cli/exec.md)
+- [`mise format [-a --all]`](/cli/format.md)
 - [`mise generate <SUBCOMMAND>`](/cli/generate.md)
 - [`mise generate git-pre-commit [FLAGS]`](/cli/generate/git-pre-commit.md)
 - [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)

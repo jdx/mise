@@ -105,6 +105,9 @@ export const commands: { [key: string]: Command } = {
   exec: {
     hide: false,
   },
+  format: {
+    hide: false,
+  },
   generate: {
     hide: false,
     subcommands: {
