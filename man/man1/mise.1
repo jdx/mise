@@ -74,9 +74,6 @@ Manage config files
 mise\-deactivate(1)
 Disable mise for current shell session
 .TP
-mise\-direnv(1)
-Output direnv function to use mise inside direnv
-.TP
 mise\-doctor(1)
 Check mise installation for possible problems
 .TP
@@ -88,6 +85,9 @@ Exports env vars to activate mise a single time
 .TP
 mise\-exec(1)
 Execute a command with tool(s) set
+.TP
+mise\-fmt(1)
+Formats mise.toml
 .TP
 mise\-generate(1)
 [experimental] Generate files for various tools/services
@@ -192,7 +192,6 @@ Examples:
     $ mise use node@20               Use node\-20.x in current project
     $ mise use \-g node@20            Use node\-20.x as default
     $ mise use node@latest           Use latest node in current directory
-    $ mise use \-g node@system        Use system node everywhere unless overridden
 
     $ mise up \-\-interactive          Show a menu to upgrade tools
 

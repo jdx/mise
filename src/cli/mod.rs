@@ -24,6 +24,7 @@ mod en;
 mod env;
 pub mod exec;
 mod external;
+mod fmt;
 mod generate;
 mod global;
 mod hook_env;
@@ -89,7 +90,7 @@ pub struct Cli {
     #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
     /// Dry run, don't actually do anything
-    #[clap(short = 'n', long, global = true, hide = true)]
+    #[clap(short = 'n', long, hide = true)]
     pub dry_run: bool,
     /// Sets log level to debug
     #[clap(long, global = true, hide = true)]
@@ -167,6 +168,7 @@ pub enum Commands {
     En(en::En),
     Env(env::Env),
     Exec(exec::Exec),
+    Fmt(fmt::Fmt),
     Generate(generate::Generate),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
@@ -199,7 +201,7 @@ pub enum Commands {
     Usage(usage::Usage),
     Use(r#use::Use),
     Version(version::Version),
-    Watch(watch::Watch),
+    Watch(Box<watch::Watch>),
     Where(r#where::Where),
     Which(which::Which),
 
@@ -228,6 +230,7 @@ impl Commands {
             Self::En(cmd) => cmd.run(),
             Self::Env(cmd) => cmd.run(),
             Self::Exec(cmd) => cmd.run(),
+            Self::Fmt(cmd) => cmd.run(),
             Self::Generate(cmd) => cmd.run(),
             Self::Global(cmd) => cmd.run(),
             Self::HookEnv(cmd) => cmd.run(),
@@ -386,7 +389,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise use node@20</bold>               Use node-20.x in current project
     $ <bold>mise use -g node@20</bold>            Use node-20.x as default
     $ <bold>mise use node@latest</bold>           Use latest node in current directory
-    $ <bold>mise use -g node@system</bold>        Use system node everywhere unless overridden
 
     $ <bold>mise up --interactive</bold>          Show a menu to upgrade tools
 

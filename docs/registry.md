@@ -364,6 +364,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | jfrog-cli | [asdf:LozanoMatheus/asdf-jfrog-cli](https://github.com/LozanoMatheus/asdf-jfrog-cli) |
 | jib | [asdf:joschi/asdf-jib](https://github.com/joschi/asdf-jib) |
 | jiq | [aqua:fiatjaf/jiq](https://github.com/fiatjaf/jiq) [asdf:chessmango/asdf-jiq](https://github.com/chessmango/asdf-jiq) |
+| jj | [aqua:martinvonz/jj](https://github.com/martinvonz/jj) [ubi:martinvonz/jj](https://github.com/martinvonz/jj) |
 | jless | [aqua:PaulJuliusMartinez/jless](https://github.com/PaulJuliusMartinez/jless) [asdf:jc00ke/asdf-jless](https://github.com/jc00ke/asdf-jless) |
 | jmespath | [asdf:skyzyx/asdf-jmespath](https://github.com/skyzyx/asdf-jmespath) |
 | jmeter | [asdf:comdotlinux/asdf-jmeter](https://github.com/comdotlinux/asdf-jmeter) |
@@ -557,7 +558,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | packer | [aqua:hashicorp/packer](https://github.com/hashicorp/packer) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | pandoc | [asdf:Fbrisset/asdf-pandoc](https://github.com/Fbrisset/asdf-pandoc) |
 | patat | [asdf:airtonix/asdf-patat](https://github.com/airtonix/asdf-patat) |
-| pdm | [asdf:1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm) |
+| pdm | [pipx:pdm](https://pypi.org/project/pdm) [asdf:1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm) |
 | peco | [aqua:peco/peco](https://github.com/peco/peco) [asdf:asdf-community/asdf-peco](https://github.com/asdf-community/asdf-peco) |
 | periphery | [asdf:MontakOleg/asdf-periphery](https://github.com/MontakOleg/asdf-periphery) |
 | perl | [asdf:ouest/asdf-perl](https://github.com/ouest/asdf-perl) |
@@ -567,6 +568,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | pipelight | [asdf:kogeletey/asdf-pipelight](https://github.com/kogeletey/asdf-pipelight) |
 | pipenv | [asdf:mise-plugins/mise-pipenv](https://github.com/mise-plugins/mise-pipenv) |
 | pipx | [asdf:yozachar/asdf-pipx](https://github.com/yozachar/asdf-pipx) |
+| pitchfork | [ubi:jdx/pitchfork](https://github.com/jdx/pitchfork) |
 | pivnet | [aqua:pivotal-cf/pivnet-cli](https://github.com/pivotal-cf/pivnet-cli) [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
 | pkl | [aqua:apple/pkl](https://github.com/apple/pkl) [asdf:mise-plugins/asdf-pkl](https://github.com/mise-plugins/asdf-pkl) |
 | please | [aqua:thought-machine/please](https://github.com/thought-machine/please) [asdf:asdf-community/asdf-please](https://github.com/asdf-community/asdf-please) |
@@ -698,6 +700,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | stripe | [aqua:stripe/stripe-cli](https://github.com/stripe/stripe-cli) [asdf:offbyone/asdf-stripe](https://github.com/offbyone/asdf-stripe) |
 | stylua | [aqua:JohnnyMorganz/StyLua](https://github.com/JohnnyMorganz/StyLua) [asdf:jc00ke/asdf-stylua](https://github.com/jc00ke/asdf-stylua) |
 | sui | [asdf:placeholder-soft/asdf-sui](https://github.com/placeholder-soft/asdf-sui) |
+| superfile | [aqua:yorukot/superfile](https://github.com/yorukot/superfile) |
 | sver | [aqua:mitoma/sver](https://github.com/mitoma/sver) [asdf:robzr/asdf-sver](https://github.com/robzr/asdf-sver) |
 | svu | [aqua:caarlos0/svu](https://github.com/caarlos0/svu) [asdf:asdf-community/asdf-svu](https://github.com/asdf-community/asdf-svu) |
 | swag | [aqua:swaggo/swag](https://github.com/swaggo/swag) [asdf:behoof4mind/asdf-swag](https://github.com/behoof4mind/asdf-swag) |
@@ -731,7 +734,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | terraform-lsp | [aqua:juliosueiras/terraform-lsp](https://github.com/juliosueiras/terraform-lsp) [asdf:bartlomiejdanek/asdf-terraform-lsp](https://github.com/bartlomiejdanek/asdf-terraform-lsp) |
 | terraform-validator | [aqua:thazelart/terraform-validator](https://github.com/thazelart/terraform-validator) [asdf:looztra/asdf-terraform-validator](https://github.com/looztra/asdf-terraform-validator) |
 | terraformer | [aqua:GoogleCloudPlatform/terraformer](https://github.com/GoogleCloudPlatform/terraformer) [asdf:gr1m0h/asdf-terraformer](https://github.com/gr1m0h/asdf-terraformer) |
-| terragrunt | [aqua:gruntwork-io/terragrunt](https://github.com/gruntwork-io/terragrunt) [asdf:ohmer/asdf-terragrunt](https://github.com/ohmer/asdf-terragrunt) |
+| terragrunt | [aqua:gruntwork-io/terragrunt](https://github.com/gruntwork-io/terragrunt) [asdf:gruntwork-io/asdf-terragrunt](https://github.com/gruntwork-io/asdf-terragrunt) |
 | terramate | [aqua:terramate-io/terramate](https://github.com/terramate-io/terramate) [asdf:martinlindner/asdf-terramate](https://github.com/martinlindner/asdf-terramate) |
 | terrascan | [aqua:tenable/terrascan](https://github.com/tenable/terrascan) [asdf:hpdobrica/asdf-terrascan](https://github.com/hpdobrica/asdf-terrascan) |
 | tf-summarize | [aqua:dineshba/tf-summarize](https://github.com/dineshba/tf-summarize) [asdf:adamcrews/asdf-tf-summarize](https://github.com/adamcrews/asdf-tf-summarize) |
@@ -821,6 +824,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | yamlscript | [asdf:FeryET/asdf-yamlscript](https://github.com/FeryET/asdf-yamlscript) |
 | yarn | [asdf:mise-plugins/asdf-yarn](https://github.com/mise-plugins/asdf-yarn) |
 | yay | [asdf:aaaaninja/asdf-yay](https://github.com/aaaaninja/asdf-yay) |
+| yazi | [aqua:sxyazi/yazi](https://github.com/sxyazi/yazi) |
 | yj | [ubi:sclevine/yj](https://github.com/sclevine/yj) [asdf:ryodocx/asdf-yj](https://github.com/ryodocx/asdf-yj) |
 | yor | [aqua:bridgecrewio/yor](https://github.com/bridgecrewio/yor) [asdf:ordinaryexperts/asdf-yor](https://github.com/ordinaryexperts/asdf-yor) |
 | youtube-dl | [asdf:iul1an/asdf-youtube-dl](https://github.com/iul1an/asdf-youtube-dl) |

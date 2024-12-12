@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::cli::version::{ARCH, OS};
+use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
+use crate::config::SETTINGS;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion};
@@ -161,16 +162,17 @@ fn os() -> &'static str {
 }
 
 fn arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
+    let arch = SETTINGS.arch();
+    if arch == "x86_64" {
         "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
+    } else if arch == "aarch64" {
         "aarch64"
-    } else if cfg!(target_arch = "arm") {
+    } else if arch == "arm" {
         "armv7a"
-    } else if cfg!(target_arch = "riscv64") {
+    } else if arch == "riscv64" {
         "riscv64"
     } else {
-        &ARCH
+        arch
     }
 }
 

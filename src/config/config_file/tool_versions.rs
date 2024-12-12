@@ -8,7 +8,6 @@ use itertools::Itertools;
 use tera::Context;
 
 use crate::cli::args::BackendArg;
-use crate::config::config_file;
 use crate::config::config_file::ConfigFile;
 use crate::file;
 use crate::file::display_path;
@@ -56,11 +55,7 @@ impl ToolVersions {
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
         let dir = path.parent();
-        let s = if config_file::is_trusted(&path) {
-            get_tera(dir).render_str(s, &cf.context)?
-        } else {
-            s.to_string()
-        };
+        let s = get_tera(dir).render_str(s, &cf.context)?;
         for line in s.lines() {
             if !line.trim_start().starts_with('#') {
                 break;

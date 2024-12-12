@@ -142,7 +142,8 @@ impl AsdfBackend {
             sm.prepend_path(p);
         }
         let script = sm.get_script_path(&ExecEnv);
-        let ed = EnvDiff::from_bash_script(&script, &sm.env)?;
+        let dir = dirs::CWD.clone().unwrap_or_default();
+        let ed = EnvDiff::from_bash_script(&script, &dir, &sm.env)?;
         let env = ed
             .to_patches()
             .into_iter()

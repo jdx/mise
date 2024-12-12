@@ -13,9 +13,39 @@ assert "mise run shell" "using shell bash"
 assert_fail "mise run shell-invalid" "invalid shell"
 
 cat <<EOF >mise.toml
-tasks.escapeme = "echo {{arg(name='a')}}"
-tasks.escapeme_var = "echo {{arg(name='a', var=true)}}"
+tasks.escapeme = "echo \"{{arg(name='a')}}\""
+tasks.escapeme_var = "echo \"{{arg(name='a', var=true)}}\""
+tasks.bashshebang1 = """
+#!/usr/bin/env -S bash
+echo "{{arg(name='a')}}"
+echo "{{arg(name='b', var=true)}}"
+"""
+tasks.bashshebang2 = """
+#!/usr/bin/env bash
+echo "{{arg(name='a')}}"
+echo "{{arg(name='b', var=true)}}"
+"""
+tasks.bashshebang3 = """
+#!/bin/bash
+echo "{{arg(name='a')}}"
+echo "{{arg(name='b', var=true)}}"
+"""
+tasks.escapenode = """
+#!/usr/bin/env -S node
+console.log("{{arg(name='a')}}")
+console.log("{{arg(name='b', var=true)}}")
+"""
 EOF
 
-assert "mise run escapeme 'hello world'" "hello world"
-assert "mise run escapeme_var hello 'world of mise'" "hello world of mise"
+assert "mise run escapeme 'hello world'" "'hello world'"
+assert "mise run escapeme_var hello 'world of mise'" "hello 'world of mise'"
+assert "mise run bashshebang1 'a with space' hello 'world of mise'" "'a with space'
+hello 'world of mise'"
+assert "mise run bashshebang2 my_a hello 'world of mise'" "my_a
+hello 'world of mise'"
+assert "mise run bashshebang3 my_a hello 'world of mise'" "my_a
+hello 'world of mise'"
+assert "mise run escapenode my_a hello 'world of mise'" "my_a
+hello 'world of mise'"
+assert "mise run escapenode 'a with space' hello 'world of mise'" "a with space
+hello 'world of mise'"

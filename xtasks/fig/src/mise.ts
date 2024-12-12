@@ -399,6 +399,13 @@ const completionSpec: Fig.Spec = {
                     ],
                     "description": "Suppress non-error messages",
                     "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--no-hook-env"
+                    ],
+                    "description": "Do not automatically call hook-env",
+                    "isRepeatable": false
                 }
             ],
             "args": [
@@ -825,20 +832,6 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
-                "direnv"
-            ],
-            "description": "Output direnv function to use mise inside direnv",
-            "subcommands": [
-                {
-                    "name": [
-                        "activate"
-                    ],
-                    "description": "Output direnv function to use mise inside direnv"
-                }
-            ]
-        },
-        {
-            "name": [
                 "doctor",
                 "dr"
             ],
@@ -991,6 +984,22 @@ const completionSpec: Fig.Spec = {
                     "description": "Command string to execute (same as --command)",
                     "isOptional": true,
                     "isVariadic": true
+                }
+            ]
+        },
+        {
+            "name": [
+                "fmt"
+            ],
+            "description": "Formats mise.toml",
+            "options": [
+                {
+                    "name": [
+                        "-a",
+                        "--all"
+                    ],
+                    "description": "Format all files from the current directory",
+                    "isRepeatable": false
                 }
             ]
         },
@@ -3045,36 +3054,513 @@ const completionSpec: Fig.Spec = {
             "options": [
                 {
                     "name": [
-                        "-t",
-                        "--task"
+                        "-w",
+                        "--watch"
                     ],
-                    "description": "Tasks to run",
+                    "description": "Watch a specific file or directory",
                     "isRepeatable": true,
                     "args": {
-                        "name": "task",
+                        "name": "path",
                         "isOptional": false,
                         "isVariadic": false,
-                        "generators": simpleTaskGenerator
+                        "template": "filepaths"
                     }
                 },
                 {
                     "name": [
-                        "-g",
-                        "--glob"
+                        "-W",
+                        "--watch-non-recursive"
                     ],
-                    "description": "Files to watch\nDefaults to sources from the tasks(s)",
+                    "description": "Watch a specific directory, non-recursively",
                     "isRepeatable": true,
                     "args": {
-                        "name": "glob",
+                        "name": "path",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "template": "filepaths"
+                    }
+                },
+                {
+                    "name": [
+                        "-F",
+                        "--watch-file"
+                    ],
+                    "description": "Watch files and directories from a file",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "path",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "template": "filepaths"
+                    }
+                },
+                {
+                    "name": [
+                        "-c",
+                        "--clear"
+                    ],
+                    "description": "Clear screen before running command",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "mode",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "suggestions": [
+                            "clear",
+                            "reset"
+                        ]
+                    }
+                },
+                {
+                    "name": [
+                        "-o",
+                        "--on-busy-update"
+                    ],
+                    "description": "What to do when receiving events while the command is running",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "mode",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "suggestions": [
+                            "queue",
+                            "do-nothing",
+                            "restart",
+                            "signal"
+                        ]
+                    }
+                },
+                {
+                    "name": [
+                        "-r",
+                        "--restart"
+                    ],
+                    "description": "Restart the process if it's still running",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-s",
+                        "--signal"
+                    ],
+                    "description": "Send a signal to the process when it's still running",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "signal",
                         "isOptional": false,
                         "isVariadic": false
                     }
+                },
+                {
+                    "name": [
+                        "--stop-signal"
+                    ],
+                    "description": "Signal to send to stop the command",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "signal",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "--stop-timeout"
+                    ],
+                    "description": "Time to wait for the command to exit gracefully",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "timeout",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "--map-signal"
+                    ],
+                    "description": "Translate signals from the OS to signals to send to the command",
+                    "isRepeatable": true,
+                    "args": {
+                        "name": "signal:signal",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "-d",
+                        "--debounce"
+                    ],
+                    "description": "Time to wait for new events before taking action",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "timeout",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "--stdin-quit"
+                    ],
+                    "description": "Exit when stdin closes",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--no-vcs-ignore"
+                    ],
+                    "description": "Don't load gitignores",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--no-project-ignore"
+                    ],
+                    "description": "Don't load project-local ignores",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--no-global-ignore"
+                    ],
+                    "description": "Don't load global ignores",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--no-default-ignore"
+                    ],
+                    "description": "Don't use internal default ignores",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--no-discover-ignore"
+                    ],
+                    "description": "Don't discover ignore files at all",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--ignore-nothing"
+                    ],
+                    "description": "Don't ignore anything at all",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-p",
+                        "--postpone"
+                    ],
+                    "description": "Wait until first change before running command",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--delay-run"
+                    ],
+                    "description": "Sleep before running the command",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "duration",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "--poll"
+                    ],
+                    "description": "Poll for filesystem changes",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "interval",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "--shell"
+                    ],
+                    "description": "Use a different shell",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "shell",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "-n"
+                    ],
+                    "description": "Shorthand for '--shell=none'",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--emit-events-to"
+                    ],
+                    "description": "Configure event emission",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "mode",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "suggestions": [
+                            "environment",
+                            "stdio",
+                            "file",
+                            "json-stdio",
+                            "json-file",
+                            "none"
+                        ]
+                    }
+                },
+                {
+                    "name": [
+                        "--only-emit-events"
+                    ],
+                    "description": "Only emit events to stdout, run no commands",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-E",
+                        "--env"
+                    ],
+                    "description": "Add env vars to the command",
+                    "isRepeatable": true,
+                    "args": {
+                        "name": "key=value",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "--wrap-process"
+                    ],
+                    "description": "Configure how the process is wrapped",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "mode",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "suggestions": [
+                            "group",
+                            "session",
+                            "none"
+                        ]
+                    }
+                },
+                {
+                    "name": [
+                        "-N",
+                        "--notify"
+                    ],
+                    "description": "Alert when commands start and end",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--color"
+                    ],
+                    "description": "When to use terminal colours",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "mode",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "suggestions": [
+                            "auto",
+                            "always",
+                            "never"
+                        ]
+                    }
+                },
+                {
+                    "name": [
+                        "--timings"
+                    ],
+                    "description": "Print how long the command took to run",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-q",
+                        "--quiet"
+                    ],
+                    "description": "Don't print starting and stopping messages",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--bell"
+                    ],
+                    "description": "Ring the terminal bell on command completion",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--project-origin"
+                    ],
+                    "description": "Set the project origin",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "directory",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "template": "folders"
+                    }
+                },
+                {
+                    "name": [
+                        "--workdir"
+                    ],
+                    "description": "Set the working directory",
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "directory",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "template": "folders"
+                    }
+                },
+                {
+                    "name": [
+                        "-e",
+                        "--exts"
+                    ],
+                    "description": "Filename extensions to filter to",
+                    "isRepeatable": true,
+                    "args": {
+                        "name": "extensions",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "-f",
+                        "--filter"
+                    ],
+                    "description": "Filename patterns to filter to",
+                    "isRepeatable": true,
+                    "args": {
+                        "name": "pattern",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "--filter-file"
+                    ],
+                    "description": "Files to load filters from",
+                    "isRepeatable": true,
+                    "args": {
+                        "name": "path",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "template": "filepaths"
+                    }
+                },
+                {
+                    "name": [
+                        "-J",
+                        "--filter-prog"
+                    ],
+                    "description": "[experimental] Filter programs",
+                    "isRepeatable": true,
+                    "args": {
+                        "name": "expression",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "-i",
+                        "--ignore"
+                    ],
+                    "description": "Filename patterns to filter out",
+                    "isRepeatable": true,
+                    "args": {
+                        "name": "pattern",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
+                },
+                {
+                    "name": [
+                        "--ignore-file"
+                    ],
+                    "description": "Files to load ignores from",
+                    "isRepeatable": true,
+                    "args": {
+                        "name": "path",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "template": "filepaths"
+                    }
+                },
+                {
+                    "name": [
+                        "--fs-events"
+                    ],
+                    "description": "Filesystem events to filter to",
+                    "isRepeatable": true,
+                    "args": {
+                        "name": "events",
+                        "isOptional": false,
+                        "isVariadic": false,
+                        "suggestions": [
+                            "access",
+                            "create",
+                            "remove",
+                            "rename",
+                            "modify",
+                            "metadata"
+                        ]
+                    }
+                },
+                {
+                    "name": [
+                        "--no-meta"
+                    ],
+                    "description": "Don't emit fs events for metadata changes",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--print-events"
+                    ],
+                    "description": "Print events that trigger actions",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--manual"
+                    ],
+                    "description": "Show the manual page",
+                    "isRepeatable": false
                 }
             ],
             "args": [
                 {
+                    "name": "task",
+                    "description": "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2",
+                    "isOptional": true,
+                    "isVariadic": false,
+                    "generators": simpleTaskGenerator
+                },
+                {
                     "name": "args",
-                    "description": "Extra arguments",
+                    "description": "Task and arguments to run",
                     "isOptional": true,
                     "isVariadic": true
                 }

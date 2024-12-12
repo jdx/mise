@@ -71,6 +71,7 @@ impl Exec {
                 || !console::user_attended_stderr()
                 || *env::__MISE_SHIM,
             resolve_options: Default::default(),
+            ..Default::default()
         };
         measure!("install_arg_versions", {
             ts.install_missing_versions(&opts)?

@@ -91,7 +91,7 @@ fn have_files_been_modified(watches: &HookEnvWatches, watch_files: BTreeSet<Path
             let modtime = modtime
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
-                .as_secs();
+                .as_millis();
             if modtime > watches.latest_update {
                 trace!("file modified: {:?}", fp);
                 modified = true;
@@ -100,7 +100,7 @@ fn have_files_been_modified(watches: &HookEnvWatches, watch_files: BTreeSet<Path
         }
     }
     if !modified {
-        trace!("config files unmodified");
+        trace!("watch files unmodified");
     }
     modified
 }
@@ -114,7 +114,7 @@ fn have_mise_env_vars_been_modified(watches: &HookEnvWatches) -> bool {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct HookEnvWatches {
-    latest_update: u64,
+    latest_update: u128,
     env_var_hash: String,
 }
 
@@ -148,7 +148,7 @@ pub fn build_watches(
         latest_update: max_modtime
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs(),
+            .as_millis(),
     })
 }
 

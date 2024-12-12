@@ -543,24 +543,25 @@ fn os() -> &'static str {
 }
 
 fn arch() -> &'static str {
-    if cfg!(target_arch = "x86") {
+    let arch = SETTINGS.arch();
+    if arch == "x86" {
         "x86"
-    } else if cfg!(target_arch = "x86_64") {
+    } else if arch == "x86_64" {
         "x64"
-    } else if cfg!(target_arch = "arm") {
+    } else if arch == "arm" {
         if cfg!(target_feature = "v6") {
             "armv6l"
         } else {
             "armv7l"
         }
-    } else if cfg!(target_arch = "loongarch64") {
+    } else if arch == "loongarch64" {
         "loong64"
-    } else if cfg!(target_arch = "riscv64") {
+    } else if arch == "riscv64" {
         "riscv64"
-    } else if cfg!(target_arch = "aarch64") {
+    } else if arch == "aarch64" {
         "arm64"
     } else {
-        built_info::CFG_TARGET_ARCH
+        arch
     }
 }
 

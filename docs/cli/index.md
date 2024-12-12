@@ -44,7 +44,7 @@ Answer yes to all confirmation prompts
 
 ## Subcommands
 
-- [`mise activate [--shims] [-q --quiet] [SHELL_TYPE]`](/cli/activate.md)
+- [`mise activate [FLAGS] [SHELL_TYPE]`](/cli/activate.md)
 - [`mise alias [-p --plugin <PLUGIN>] [--no-header] <SUBCOMMAND>`](/cli/alias.md)
 - [`mise alias get <PLUGIN> <ALIAS>`](/cli/alias/get.md)
 - [`mise alias ls [--no-header] [TOOL]`](/cli/alias/ls.md)
@@ -63,12 +63,11 @@ Answer yes to all confirmation prompts
 - [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
 - [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)
 - [`mise deactivate`](/cli/deactivate.md)
-- [`mise direnv <SUBCOMMAND>`](/cli/direnv.md)
-- [`mise direnv activate`](/cli/direnv/activate.md)
 - [`mise doctor`](/cli/doctor.md)
 - [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.md)
 - [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)
 - [`mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`](/cli/exec.md)
+- [`mise fmt [-a --all]`](/cli/fmt.md)
 - [`mise generate <SUBCOMMAND>`](/cli/generate.md)
 - [`mise generate git-pre-commit [FLAGS]`](/cli/generate/git-pre-commit.md)
 - [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
@@ -116,6 +115,6 @@ Answer yes to all confirmation prompts
 - [`mise upgrade [FLAGS] [TOOL@VERSION]...`](/cli/upgrade.md)
 - [`mise use [FLAGS] [TOOL@VERSION]...`](/cli/use.md)
 - [`mise version`](/cli/version.md)
-- [`mise watch [-t --task... <TASK>] [-g --glob... <GLOB>] [ARGS]...`](/cli/watch.md)
+- [`mise watch [FLAGS] [TASK] [ARGS]...`](/cli/watch.md)
 - [`mise where <TOOL@VERSION>`](/cli/where.md)
 - [`mise which [FLAGS] <BIN_NAME>`](/cli/which.md)

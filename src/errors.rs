@@ -22,7 +22,7 @@ pub enum Error {
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
     #[error(
-        "Config file {} is not trusted.\nTrust it with `mise trust`.",
+        "Config files in {} are not trusted.\nTrust them with `mise trust`.",
         display_path(.0)
     )]
     UntrustedConfig(PathBuf),

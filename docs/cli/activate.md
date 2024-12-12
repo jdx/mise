@@ -1,6 +1,6 @@
 # `mise activate`
 
-- **Usage**: `mise activate [--shims] [-q --quiet] [SHELL_TYPE]`
+- **Usage**: `mise activate [FLAGS] [SHELL_TYPE]`
 - **Source code**: [`src/cli/activate.rs`](https://github.com/jdx/mise/blob/main/src/cli/activate.rs)
 
 Initializes mise in the current shell session
@@ -48,6 +48,12 @@ Effectively the same as:
 ### `-q --quiet`
 
 Suppress non-error messages
+
+### `--no-hook-env`
+
+Do not automatically call hook-env
+
+This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then you can call `mise hook-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook-env --trace` to get more information or just see the values that hook-env is outputting.
 
 Examples:
 

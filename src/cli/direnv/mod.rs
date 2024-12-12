@@ -15,7 +15,7 @@ mod exec;
 /// you should run this command after installing new plugins. Otherwise
 /// direnv may not know to update environment variables when idiomatic file versions change.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[clap(hide = true, verbatim_doc_comment)]
 pub struct Direnv {
     #[clap(subcommand)]
     command: Option<Commands>,

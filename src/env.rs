@@ -164,7 +164,8 @@ pub static __MISE_DIR: Lazy<Option<PathBuf>> = Lazy::new(|| {
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
 pub static __MISE_WATCH: Lazy<Option<HookEnvWatches>> = Lazy::new(|| match var("__MISE_WATCH") {
     Ok(raw) => deserialize_watches(raw)
-        .map_err(|e| warn!("Failed to deserialize __MISE_WATCH {e}"))
+        // TODO: enable this later when the bigint change goes out
+        .map_err(|e| debug!("Failed to deserialize __MISE_WATCH {e}"))
         .ok(),
     _ => None,
 });
@@ -293,6 +294,11 @@ pub static NVM_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("NVM_DIR").unwrap_or_else(|| HOME.join(".nvm")));
 pub static NODENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("NODENV_ROOT").unwrap_or_else(|| HOME.join(".nodenv")));
+
+#[cfg(unix)]
+pub const PATH_ENV_SEP: char = ':';
+#[cfg(windows)]
+pub const PATH_ENV_SEP: char = ';';
 
 fn get_env_diff() -> EnvDiff {
     let env = vars().collect::<HashMap<_, _>>();

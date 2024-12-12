@@ -12,6 +12,7 @@ use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
+use std::env::consts::ARCH;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -72,9 +73,9 @@ static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     s
 });
 
-// pub fn is_loaded() -> bool {
-//     BASE_SETTINGS.read().unwrap().is_some()
-// }
+pub fn is_loaded() -> bool {
+    BASE_SETTINGS.read().unwrap().is_some()
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct SettingsFile {
@@ -179,6 +180,11 @@ impl Settings {
 
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
+        if !self.auto_install {
+            self.exec_auto_install = false;
+            self.not_found_auto_install = false;
+            self.task_run_auto_install = false;
+        }
         if let Some(false) = self.asdf {
             self.disable_backends.push("asdf".to_string());
         }
@@ -410,6 +416,10 @@ impl Settings {
             &SETTINGS.unix_default_file_shell_args
         };
         Ok(shell_words::split(sa)?)
+    }
+
+    pub fn arch(&self) -> &str {
+        self.arch.as_deref().unwrap_or(ARCH)
     }
 }
 

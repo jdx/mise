@@ -5,13 +5,14 @@ use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::Config;
-use crate::env;
 use crate::errors::Error;
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
+use crate::{config, env};
 
 #[derive(Debug, Default)]
 pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
+    global_only: bool,
     default_to_latest: bool,
 }
 
@@ -27,6 +28,11 @@ impl ToolsetBuilder {
 
     pub fn with_default_to_latest(mut self, default_to_latest: bool) -> Self {
         self.default_to_latest = default_to_latest;
+        self
+    }
+
+    pub fn with_global_only(mut self, global_only: bool) -> Self {
+        self.global_only = global_only;
         self
     }
 
@@ -50,6 +56,9 @@ impl ToolsetBuilder {
 
     fn load_config_files(&self, config: &Config, ts: &mut Toolset) -> eyre::Result<()> {
         for cf in config.config_files.values().rev() {
+            if self.global_only && !config::is_global_config(cf.get_path()) {
+                continue;
+            }
             ts.merge(cf.to_toolset()?);
         }
         Ok(())

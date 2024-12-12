@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.12.4"
+version = "2024.12.7"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -110,6 +110,7 @@ siphasher = "1"
 strum = { version = "0.26", features = ["derive"] }
 sys-info = "0.9"
 tabled = { version = "0.17", features = ["ansi"] }
+taplo = "0.13"
 tar = "0.4"
 tempfile = "3"
 tera = "1"

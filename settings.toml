@@ -81,6 +81,17 @@ type = "Bool"
 default = true
 description = "Use SLSA to verify aqua tool signatures."
 
+[arch]
+env = "MISE_ARCH"
+type = "String"
+description = "Architecture to use for precompiled binaries."
+default_docs = '"x86_64" | "aarch64" | "arm" | "loongarch64" | "riscv64"'
+optional = true
+docs = """
+Architecture to use for precompiled binaries. This is used to determine which precompiled binaries
+to download. If unset, mise will use the system's architecture.
+"""
+
 [asdf]
 env = "MISE_ASDF"
 type = "Bool"
@@ -97,6 +108,7 @@ default to using an asdf plugin for cmake.
 env = "MISE_ASDF_COMPAT"
 type = "Bool"
 hide = true
+deprecated = "no longer supported"
 description = "set to true to ensure .tool-versions will be compatible with asdf"
 docs = """
 Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
@@ -106,6 +118,19 @@ as non-pinned versions.
 This will also change the default global tool config to be `~/.tool-versions` instead
 of `~/.config/mise/config.toml`.
 """
+
+[auto_install]
+env = "MISE_AUTO_INSTALL"
+type = "Bool"
+default = true
+description = "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler."
+
+[auto_install_disable_tools]
+env = "MISE_AUTO_INSTALL_DISABLE_TOOLS"
+type = "ListString"
+rust_type = "Vec<String>"
+optional = true
+description = "List of tools to skip automatically installing when running `mise x`, `mise run`, or as part of the 'not found' handler."
 
 [cache_prune_age]
 env = "MISE_CACHE_PRUNE_AGE"
@@ -139,6 +164,7 @@ mise use -g cargo-binstall
 [cargo_binstall]
 type = "Bool"
 hide = true
+deprecated = "Use cargo.binstall instead."
 optional = true
 description = "Use cargo-binstall instead of cargo install if available"
 
@@ -241,8 +267,7 @@ They will be read in order, with the last one taking precedence.
 env = "MISE_ENV_FILE"
 type = "Path"
 optional = true
-description = "Path to a file containing environment variables."
-hide = true
+description = "Path to a file containing environment variables to automatically load."
 
 [erlang.compile]
 env = "MISE_ERLANG_COMPILE"
@@ -576,6 +601,7 @@ env = "MISE_PROFILE"
 type = "String"
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
 optional = true
+deprecated = "Use MISE_ENV_FILE instead."
 hide = true
 
 [python.compile]
@@ -636,12 +662,24 @@ env = "MISE_PYTHON_UV_VENV_AUTO"
 type = "Bool"
 description = "Integrate with uv to automatically create/source venvs if uv.lock is present."
 
+[python.uv_venv_create_args]
+env = "MISE_PYTHON_UV_VENV_CREATE_ARGS"
+type = "String"
+optional = true
+description = "Arguments to pass to uv when creating a venv."
+
 [python.venv_auto_create]
 env = "MISE_PYTHON_VENV_AUTO_CREATE"
 type = "Bool"
 hide = true
 deprecated = "Use env._python.venv instead."
 description = "Automatically create virtualenvs for python tools."
+
+[python.venv_create_args]
+env = "MISE_PYTHON_VENV_CREATE_ARGS"
+type = "String"
+optional = true
+description = "Arguments to pass to python when creating a venv. (not used for uv venv creation)"
 
 [python.venv_stdlib]
 env = "MISE_VENV_STDLIB"
@@ -817,9 +855,7 @@ docs = """
 
 Show a warning if tools are not installed when entering a directory with a `mise.toml` file.
 
-::: tip
 Disable tools with [`disable_tools`](#disable_tools).
-:::
 """
 
 [status.show_env]

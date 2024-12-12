@@ -9,15 +9,16 @@ use eyre::{eyre, Result};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::IndexMap;
 use once_cell::sync::Lazy;
+use path_absolutize::Absolutize;
 use serde_derive::Deserialize;
-use versions::Versioning;
-
 use tool_versions::ToolVersions;
+use versions::Versioning;
+use xx::regex;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{AliasMap, Settings};
+use crate::config::{is_global_config, settings, AliasMap, Settings, SETTINGS};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
@@ -214,7 +215,7 @@ pub fn parse_or_init(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
     Ok(cf)
 }
 
-pub fn parse(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
+pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
     if let Ok(settings) = Settings::try_get() {
         if settings.paranoid {
             trust_check(path)?;
@@ -231,24 +232,91 @@ pub fn parse(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
     }
 }
 
+pub fn config_root(path: &Path) -> PathBuf {
+    if is_global_config(path) {
+        return env::HOME.to_path_buf();
+    }
+    let path = path
+        .absolutize()
+        .map(|p| p.to_path_buf())
+        .unwrap_or(path.to_path_buf());
+    let parts = path
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    const EMPTY: &str = "";
+    let filename = parts.last().map(|p| p.as_str()).unwrap_or(EMPTY);
+    let parent = parts
+        .iter()
+        .nth_back(1)
+        .map(|p| p.as_str())
+        .unwrap_or(EMPTY);
+    let grandparent = parts
+        .iter()
+        .nth_back(2)
+        .map(|p| p.as_str())
+        .unwrap_or(EMPTY);
+    let great_grandparent = parts
+        .iter()
+        .nth_back(3)
+        .map(|p| p.as_str())
+        .unwrap_or(EMPTY);
+    let parent_path = || path.parent().unwrap().to_path_buf();
+    let grandparent_path = || parent_path().parent().unwrap().to_path_buf();
+    let great_grandparent_path = || grandparent_path().parent().unwrap().to_path_buf();
+    let great_great_grandparent_path = || great_grandparent_path().parent().unwrap().to_path_buf();
+    let is_mise_dir = |d: &str| d == "mise" || d == ".mise";
+    let is_config_filename = |f: &str| {
+        f == "config.toml" || f == "config.local.toml" || regex!(r"config\..+\.toml").is_match(f)
+    };
+    if parent == "conf.d" && is_mise_dir(grandparent) {
+        if great_grandparent == ".config" {
+            great_great_grandparent_path()
+        } else {
+            great_grandparent_path()
+        }
+    } else if is_mise_dir(parent) && is_config_filename(filename) {
+        if grandparent == ".config" {
+            great_grandparent_path()
+        } else {
+            grandparent_path()
+        }
+    } else if parent == ".config" {
+        grandparent_path()
+    } else {
+        parent_path()
+    }
+}
+
+pub fn config_trust_root(path: &Path) -> PathBuf {
+    if settings::is_loaded() && SETTINGS.paranoid {
+        path.to_path_buf()
+    } else {
+        config_root(path)
+    }
+}
+
 pub fn trust_check(path: &Path) -> eyre::Result<()> {
+    static MUTEX: Mutex<()> = Mutex::new(());
+    let _lock = MUTEX.lock().unwrap(); // Prevent multiple checks at once so we don't prompt multiple times for the same path
+    let config_root = config_trust_root(path);
     let default_cmd = String::new();
     let args = env::ARGS.read().unwrap();
     let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
-    if is_trusted(path) || cmd == "trust" || cfg!(test) {
+    if is_trusted(&config_root) || is_trusted(path) || cmd == "trust" || cfg!(test) {
         return Ok(());
     }
-    if cmd != "hook-env" && !is_ignored(path) {
+    if cmd != "hook-env" && !is_ignored(&config_root) && !is_ignored(path) {
         let ans = prompt::confirm_with_all(format!(
-            "{} {} is not trusted. Trust it?",
+            "{} config files in {} are not trusted. Trust them?",
             style::eyellow("mise"),
-            style::epath(path)
+            style::epath(&config_root)
         ))?;
         if ans {
-            trust(path)?;
+            trust(&config_root)?;
             return Ok(());
         } else {
-            add_ignored(path.to_path_buf())?;
+            add_ignored(config_root.to_path_buf())?;
         }
     }
     Err(UntrustedConfig(path.into()))?
@@ -349,16 +417,18 @@ pub fn is_ignored(path: &Path) -> bool {
     }
 }
 
-pub fn trust(path: &Path) -> eyre::Result<()> {
+pub fn trust(path: &Path) -> Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
         file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
     }
-    let trust_hash_path = hashed_path.with_extension("hash");
-    let hash = hash::file_hash_sha256(path, None)?;
-    file::write(trust_hash_path, hash)?;
+    if SETTINGS.paranoid {
+        let trust_hash_path = hashed_path.with_extension("hash");
+        let hash = hash::file_hash_sha256(path, None)?;
+        file::write(trust_hash_path, hash)?;
+    }
     Ok(())
 }
 
@@ -498,5 +568,36 @@ mod tests {
             detect_config_file_type(Path::new("/foo/bar/.tool-versions.toml")),
             Some(ConfigFileType::MiseToml)
         );
+    }
+
+    #[test]
+    fn test_config_root() {
+        for p in &[
+            "/foo/bar/.config/mise/conf.d/config.toml",
+            "/foo/bar/.config/mise/conf.d/foo.toml",
+            "/foo/bar/.config/mise/config.local.toml",
+            "/foo/bar/.config/mise/config.toml",
+            "/foo/bar/.config/mise.local.toml",
+            "/foo/bar/.config/mise.toml",
+            "/foo/bar/.mise.env.toml",
+            "/foo/bar/.mise.local.toml",
+            "/foo/bar/.mise.toml",
+            "/foo/bar/.mise/conf.d/config.toml",
+            "/foo/bar/.mise/config.local.toml",
+            "/foo/bar/.mise/config.toml",
+            "/foo/bar/.tool-versions",
+            "/foo/bar/mise.env.toml",
+            "/foo/bar/mise.local.toml",
+            "/foo/bar/mise.toml",
+            "/foo/bar/mise/config.local.toml",
+            "/foo/bar/mise/config.toml",
+            "/foo/bar/.config/mise/config.env.toml",
+            "/foo/bar/.config/mise.env.toml",
+            "/foo/bar/.mise/config.env.toml",
+            "/foo/bar/.mise.env.toml",
+        ] {
+            println!("{}", p);
+            assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/bar"));
+        }
     }
 }

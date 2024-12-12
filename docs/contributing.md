@@ -3,6 +3,8 @@
 Before submitting a PR, unless it's something obvious, consider filing an issue or simply mention what you plan to do in the [Discord](https://discord.gg/UBa7pJUN7Z).
 PRs are often either rejected or need to change significantly after submission so make sure before you start working on something it won't be a wasted effort.
 
+Issues ideal for contributors can be found with the ["help wanted"](https://github.com/jdx/mise/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) and ["good first issue"](https://github.com/jdx/mise/labels/good%20first%20issue) labels. These are isssues that I feel are self-contained therefore don't require super in-depth understanding of the codebase or that require knowledge about something I don't understand very well myself.
+
 ## Dev Container
 
 There is a docker setup that makes development with mise easier. It is especially helpful for running the E2E tests.

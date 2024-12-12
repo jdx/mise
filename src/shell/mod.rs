@@ -1,6 +1,6 @@
 use crate::env;
 use std::fmt::{Display, Formatter};
-use std::path::Path;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 mod bash;
@@ -78,11 +78,17 @@ impl FromStr for ShellType {
 }
 
 pub trait Shell: Display {
-    fn activate(&self, exe: &Path, flags: String) -> String;
+    fn activate(&self, opts: ActivateOptions) -> String;
     fn deactivate(&self) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;
     fn prepend_env(&self, k: &str, v: &str) -> String;
     fn unset_env(&self, k: &str) -> String;
+}
+
+pub struct ActivateOptions {
+    pub exe: PathBuf,
+    pub flags: String,
+    pub no_hook_env: bool,
 }
 
 pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {

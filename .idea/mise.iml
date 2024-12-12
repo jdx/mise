@@ -34,6 +34,7 @@
       <excludeFolder url="file://$MODULE_DIR$/usage/docs/.vitepress/dist" />
       <excludeFolder url="file://$MODULE_DIR$/.dev" />
       <excludeFolder url="file://$MODULE_DIR$/docs/node_modules" />
+      <excludeFolder url="file://$MODULE_DIR$/aqua-registry" />
       <excludePattern pattern="*.log" />
     </content>
     <orderEntry type="inheritedJdk" />

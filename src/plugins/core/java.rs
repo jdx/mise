@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::cli::version::{ARCH, OS};
+use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::file::{TarFormat, TarOptions};
@@ -438,14 +438,15 @@ fn os() -> &'static str {
 }
 
 fn arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
+    let arch = SETTINGS.arch();
+    if arch == "x86_64" {
         "x86_64"
-    } else if cfg!(target_arch = "arm") {
+    } else if arch == "arm" {
         "arm32-vfp-hflt"
-    } else if cfg!(target_arch = "aarch64") {
+    } else if arch == "aarch64" {
         "aarch64"
     } else {
-        &ARCH
+        arch
     }
 }
 

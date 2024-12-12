@@ -16,7 +16,7 @@ use crate::backend::ABackend;
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::ConfigFile;
+use crate::config::config_file::{config_trust_root, ConfigFile};
 use crate::config::env_directive::EnvResults;
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
@@ -41,7 +41,7 @@ pub use settings::SETTINGS;
 
 type AliasMap = IndexMap<String, Alias>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
-type EnvWithSources = IndexMap<String, (String, PathBuf)>;
+pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
 #[derive(Default)]
 pub struct Config {
@@ -682,7 +682,6 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".config/mise.toml",
             ".mise/config.toml",
             "mise/config.toml",
-            ".mise/config.toml",
             ".rtx.toml",
             "mise.toml",
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
@@ -766,14 +765,22 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     let dirs = file::all_dirs().unwrap_or_default();
 
     let mut config_files = dirs
-        .iter()
+        .par_iter()
         .flat_map(|dir| {
-            config_filenames
+            if env::MISE_IGNORED_CONFIG_PATHS
                 .iter()
-                .rev()
-                .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+                .any(|p| dir.starts_with(p))
+            {
+                vec![]
+            } else {
+                config_filenames
+                    .iter()
+                    .rev()
+                    .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+                    .collect()
+            }
         })
-        .collect_vec();
+        .collect::<Vec<_>>();
 
     config_files.extend(global_config_files());
     config_files.extend(system_config_files());
@@ -781,7 +788,7 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     config_files
         .into_iter()
         .unique_by(|p| file::desymlink_path(p))
-        .filter(|p| include_ignored || !config_file::is_ignored(p))
+        .filter(|p| include_ignored || !config_file::is_ignored(&config_trust_root(p)))
         .collect()
 }
 
@@ -900,19 +907,27 @@ fn load_all_config_files(
         .collect_vec()
         .into_par_iter()
         .map(|f| {
-            let cf = parse_config_file(f, idiomatic_filenames).wrap_err_with(|| {
-                format!(
-                    "error parsing config file: {}",
-                    style::ebold(display_path(f))
-                )
-            })?;
+            let cf = match parse_config_file(f, idiomatic_filenames) {
+                Ok(cfg) => cfg,
+                Err(err) => {
+                    if err.to_string().contains("are not trusted.") {
+                        warn!("{err}");
+                        return Ok(None);
+                    }
+                    return Err(err.wrap_err(format!(
+                        "error parsing config file: {}",
+                        style::ebold(display_path(f))
+                    )));
+                }
+            };
             if let Err(err) = Tracker::track(f) {
                 warn!("tracking config: {err:#}");
             }
-            Ok((f.clone(), cf))
+            Ok(Some((f.clone(), cf)))
         })
         .collect::<Result<Vec<_>>>()?
         .into_iter()
+        .flatten()
         .collect())
 }
 

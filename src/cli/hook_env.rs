@@ -1,7 +1,7 @@
+use crate::env::{join_paths, split_paths, PATH_ENV_SEP};
 use console::truncate_str;
 use eyre::Result;
 use itertools::Itertools;
-use std::env::{join_paths, split_paths};
 use std::ops::Deref;
 use std::path::PathBuf;
 
@@ -138,18 +138,13 @@ impl HookEnv {
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
         let (pre, post) = match &*env::__MISE_ORIG_PATH {
-            Some(orig_path) => {
-                match full.split_once(&format!(
-                    "{}{orig_path}",
-                    if cfg!(windows) { ';' } else { ':' }
-                )) {
-                    Some((pre, post)) if !settings.activate_aggressive => (
-                        split_paths(pre).collect_vec(),
-                        split_paths(&format!("{orig_path}{post}")).collect_vec(),
-                    ),
-                    _ => (vec![], split_paths(&full).collect_vec()),
-                }
-            }
+            Some(orig_path) => match full.split_once(&format!("{PATH_ENV_SEP}{orig_path}")) {
+                Some((pre, post)) if !settings.activate_aggressive => (
+                    split_paths(pre).collect_vec(),
+                    split_paths(&format!("{orig_path}{post}")).collect_vec(),
+                ),
+                _ => (vec![], split_paths(&full).collect_vec()),
+            },
             None => (vec![], split_paths(&full).collect_vec()),
         };
 

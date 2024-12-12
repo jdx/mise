@@ -1,4 +1,4 @@
-# Project Roadmap
+# Roadmap
 
 Issues
 marked ["enhancements"](https://github.com/jdx/mise/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
