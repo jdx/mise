@@ -143,7 +143,11 @@ run = 'echo {{flag(name=("myflag")}}'
 
 ```toml
 [tasks.maybeClean]
-run = """if [ '{{flag(name='clean')}}' = 'true' ]; then echo 'cleaning' ; fi""",
+run = """
+if [ '{{flag(name='clean')}}' = 'true' ]; then
+  echo 'cleaning'
+fi
+"""
 # execute: mise run maybeClean --clean
 # runs: echo cleaning
 ```
@@ -170,7 +174,7 @@ deno = 'latest'
 
 [tasks.download_task]
 description = "Shows that you can use deno in a task"
-shell = 'deno eval'
+shell = 'deno eval' # or use a shebang: #!/usr/bin/env -S deno run
 run = """
 import ProgressBar from "jsr:@deno-library/progress";
 import { delay } from "jsr:@std/async";
