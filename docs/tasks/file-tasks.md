@@ -59,7 +59,7 @@ You can also use it to run the script with various programming languages.
 ```js [node]
 #!/usr/bin/env node
 
-console.log('Hello, World!')
+console.log("Hello, World!");
 ```
 
 ```python
@@ -71,8 +71,9 @@ print('Hello, World!')
 ```ts [deno]
 #!/usr/bin/env -S deno run --allow-env
 
-console.log(`PATH, ${Deno.env.get('PATH')}`)
+console.log(`PATH, ${Deno.env.get("PATH")}`);
 ```
+
 :::
 
 ## Editing tasks
