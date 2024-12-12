@@ -24,13 +24,11 @@ impl Shell for Pwsh {
                 $code = [System.Management.Automation.Language.Parser]::ParseInput($MyInvocation.Line.Substring($MyInvocation.OffsetInLine - 1), [ref]$null, [ref]$null)
                 $myLine = $code.Find({{ $args[0].CommandElements }}, $true).CommandElements | ForEach-Object {{ $_.ToString() }} | Join-String -Separator ' '
                 $command, [array]$arguments = Invoke-Expression ('Write-Output -- ' + $myLine)
-                if ($null -eq $arguments) {{ $arguments = @() }} 
-
-
-                if ($arguments.Lenght -eq 0) {{
+                
+                if ($null -eq $arguments) {{ 
                     & {exe}
                     return
-                }}
+                }} 
 
                 $command = $arguments[0]
                 $arguments = $arguments[1..$arguments.Length]
@@ -50,6 +48,11 @@ impl Shell for Pwsh {
                     }}
                     default {{
                         & {exe} $command $arguments
+                        $status = $LASTEXITCODE
+                        if ($(Test-Path -Path Function:\_mise_hook)){{
+                            _mise_hook
+                        }}
+                        pwsh -NoProfile -Command exit $status #Pass down exit code from mise after _mise_hook
                     }}
                 }}
             }}
