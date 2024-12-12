@@ -1854,7 +1854,9 @@ complete "new_plugin" run="mise plugins --all"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
 complete "setting" run="mise settings --keys"
-complete "task" run="mise tasks | awk '{print $1}'"
+complete "task" run=r#"
+mise tasks --json | jq '.[] | (.name | sub(":"; "\\\:")) + ":" + (.description | sub(":"; "\\\:"))'
+"# descriptions=true
 
 complete "tool@version" run=r#"
 cur="{{words[CURRENT]}}"
