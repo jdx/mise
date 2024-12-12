@@ -269,9 +269,9 @@ dependencies = [
 
 [[package]]
 name = "bstr"
-version = "1.11.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a68f1f47cdf0ec8ee4b941b2eee2a80cb796db73118c0dd09ac63fbe405be22"
+checksum = "786a307d683a5bf92e6fd5fd69a7eb613751668d1d8d67d802846dfe367c62c8"
 dependencies = [
  "memchr",
  "serde",
@@ -2086,7 +2086,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.12.6"
+version = "2024.12.7"
 dependencies = [
  "base64",
  "built",
