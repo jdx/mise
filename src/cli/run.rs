@@ -681,18 +681,15 @@ fn last_modified_path(
     root: impl AsRef<std::ffi::OsStr>,
     paths: &[&String],
 ) -> Result<Option<SystemTime>> {
-    let files = paths
-        .iter()
-        .map(|p| {
-            let base = Path::new(p);
+    let files = paths.iter().map(|p| {
+        let base = Path::new(p);
 
-            if base.is_relative() {
-                base.to_path_buf()
-            } else {
-                Path::new(&root).join(base)
-            }
-        })
-        .filter(|p| p.is_file());
+        if base.is_relative() {
+            base.to_path_buf()
+        } else {
+            Path::new(&root).join(base)
+        }
+    });
 
     last_modified_file(files)
 }
