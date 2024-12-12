@@ -9,7 +9,7 @@ use crate::git::Git;
 /// This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
 /// when you commit changes to your repository.
 ///
-/// Staged files are passed to the task as `STAGED`.
+/// Staged files are passed to the task via appended arguments
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
 pub struct GitPreCommit {
@@ -51,10 +51,23 @@ impl GitPreCommit {
     fn generate(&self) -> String {
         let task = &self.task;
         format!(
-            r#"#!/bin/sh
-STAGED="$(git diff-index --cached --name-only HEAD | tr ' ' '\ ' | tr '\n' ' ' | xargs)"
-export STAGED
-exec mise run {task}
+            r#"#! /bin/sh
+set -eu
+
+PIPE=$(mktemp -u "mise.{task}.XXXXXXXX")
+mkfifo -m 600 "${{PIPE}}"
+
+cleanup() {{
+  rm -f "${{PIPE}}"
+}}
+trap 'cleanup' EXIT INT TERM
+
+git diff-index --cached --name-only HEAD > "${{PIPE}}" &
+while read -r ARG; do
+  set -- "$@" "${{ARG}}"
+done < "${{PIPE}}"
+
+exec mise run "{task}" "$@"
 "#
         )
     }
