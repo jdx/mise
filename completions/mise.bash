@@ -3489,7 +3489,7 @@ _mise() {
 	local cur prev words cword was_split comp_args
     _comp_initialize -n : -- "$@" || return
     # shellcheck disable=SC2207
-	_comp_compgen -- -W "$(@usage complete-word --shell bash -s "${spec_variable}" --cword="$cword" -- "${words[@]}")"
+	_comp_compgen -- -W "$(usage complete-word --shell bash -s "${spec_variable}" --cword="$cword" -- "${words[@]}")"
 	_comp_ltrim_colon_completions "$cur"
     # shellcheck disable=SC2181
     if [[ $? -ne 0 ]]; then
