@@ -105,14 +105,14 @@ It wouldn't be hard to add checksum support.
 
 ## Watching files
 
-Run a task when the source changes with `mise watch`:
+Run a task when the source changes with [`mise watch`](/cli/watch.html)
 
 ```bash
 mise watch build
 ```
 
-Currently, this just shells out to watchexec-which you can install however you want including with mise: `mise use -g watchexec@latest`.
-This may change in the future.
+Currently, this just shells out to `watchexec` (which you can install however you want including with mise: `mise use -g watchexec@latest`.
+This may change in the future.)
 
 ## `mise run` shorthand
 
