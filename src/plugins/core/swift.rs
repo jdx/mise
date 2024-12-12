@@ -6,7 +6,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file, github, gpg, plugins};
+use crate::{file, github, gpg, plugins};
 use eyre::Result;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir_in;
@@ -229,9 +229,10 @@ fn extension() -> &'static str {
 }
 
 fn architecture() -> Option<&'static str> {
-    if cfg!(target_os = "linux") && !cfg!(target_arch = "x86_64") {
-        return Some(env::consts::ARCH);
-    } else if cfg!(windows) && cfg!(target_arch = "aarch64") {
+    let arch = SETTINGS.arch();
+    if cfg!(target_os = "linux") && arch != "x86_64" {
+        return Some(arch);
+    } else if cfg!(windows) && arch == "aarch64" {
         return Some("arm64");
     }
     None

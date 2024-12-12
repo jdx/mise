@@ -81,6 +81,17 @@ type = "Bool"
 default = true
 description = "Use SLSA to verify aqua tool signatures."
 
+[arch]
+env = "MISE_ARCH"
+type = "String"
+description = "Architecture to use for precompiled binaries."
+default_docs = '"x86_64" | "aarch64" | "arm" | "loongarch64" | "riscv64"'
+optional = true
+docs = """
+Architecture to use for precompiled binaries. This is used to determine which precompiled binaries
+to download. If unset, mise will use the system's architecture.
+"""
+
 [asdf]
 env = "MISE_ASDF"
 type = "Bool"

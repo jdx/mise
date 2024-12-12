@@ -158,6 +158,10 @@
             }
           }
         },
+        "arch": {
+          "description": "Architecture to use for precompiled binaries.",
+          "type": "string"
+        },
         "asdf": {
           "description": "use asdf as a default plugin backend",
           "type": "boolean",
