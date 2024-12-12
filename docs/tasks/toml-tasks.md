@@ -176,9 +176,11 @@ cargo clippy
 """
 ```
 
-Here are some examples of using `python` and `deno`:
+By using `shell` or `shebang`, you can run scripts in different languages:
 
-```toml
+::: code-group
+
+```toml [python]
 [tools]
 python = 'latest'
 
@@ -190,11 +192,37 @@ for i in range(10):
 """
 ```
 
-```toml
+```toml [node]
+[tools]
+node = 'lts'
+
+[tasks.node_task]
+shell = 'node -e'
+run = [
+  "console.log('First line')",
+  "console.log('Second line')",
+]
+```
+
+```toml [bun]
+[tools]
+bun = 'latest'
+
+[tasks.bun_shell]
+shell = "bun -e"
+run = """
+// https://bun.sh/docs/runtime/shell
+import { $ } from "bun";
+const response = await fetch("https://example.com");
+await $`cat < ${response} | wc -c`; // 1256
+"""
+```
+
+```toml [deno]
 [tools]
 deno = 'latest'
 
-[tasks.download_task]
+[tasks.deno_task]
 description = "Shows that you can use deno in a task"
 shell = 'deno eval' # or use a shebang: #!/usr/bin/env -S deno run
 run = """
@@ -215,11 +243,22 @@ async function download() {
 }
 await download();
 """
-# ❯ mise run download_task
+# ❯ mise run deno_task
 # [download_task] $ import ProgressBar from "jsr:@deno-library/progress";
 # Start download? [y/N] y
 # downloading: ...
 ```
+
+```toml [ruby]
+[tools]
+ruby = 'latest'
+
+[tasks.ruby_task]
+shell = 'ruby -e'
+run = "puts 'Hello, world!'"
+```
+
+:::
 
 ## Windows
 
