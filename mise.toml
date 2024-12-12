@@ -12,7 +12,7 @@ cargo-binstall = "1.10.15"
 "cargo:cargo-insta" = "latest"
 "cargo:cargo-show" = { version = "latest", os = ["linux", "macos"] }
 "cargo:git-cliff" = "latest"
-"cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
+"cargo:usage-cli" = "1.5.0"
 cosign = "latest"
 "jq" = "latest"
 "npm:markdownlint-cli" = "latest"

@@ -114,11 +114,15 @@ impl TasksLs {
     fn display_json(&self, tasks: Vec<Task>) -> Result<()> {
         let array_items = tasks
             .into_iter()
+            .filter(|t| self.hidden || !t.hide)
             .map(|task| {
                 let mut inner = serde_json::Map::new();
                 inner.insert("name".to_string(), task.name.into());
-                if self.extended {
-                    inner.insert("alias".to_string(), task.aliases.join(", ").into());
+                if !task.aliases.is_empty() {
+                    inner.insert("aliases".to_string(), task.aliases.join(", ").into());
+                }
+                if task.hide {
+                    inner.insert("hide".to_string(), task.hide.into());
                 }
                 inner.insert("description".to_string(), task.description.into());
                 inner.insert(
