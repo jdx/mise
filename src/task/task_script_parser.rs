@@ -58,7 +58,7 @@ impl TaskScriptParser {
                     let mut arg_order = arg_order.lock().unwrap();
                     if arg_order.contains_key(&name) {
                         trace!("already seen {name}");
-                        return Ok(tera::Value::String(template_key(name)))
+                        return Ok(tera::Value::String(template_key(name)));
                     }
                     arg_order.insert(name.clone(), i);
                     let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
@@ -291,7 +291,11 @@ impl TaskScriptParser {
             .unwrap()
             .iter()
             .cloned()
-            .sorted_by_key(|arg| arg_order.get(&arg.name).unwrap_or_else(|| panic!("missing arg order for {}", arg.name.as_str())))
+            .sorted_by_key(|arg| {
+                arg_order
+                    .get(&arg.name)
+                    .unwrap_or_else(|| panic!("missing arg order for {}", arg.name.as_str()))
+            })
             .collect();
         cmd.flags = input_flags.lock().unwrap().clone();
         let spec = usage::Spec {
@@ -391,18 +395,25 @@ mod tests {
     fn test_task_parse_multi_use_arg() {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
-        let scripts = vec!["echo {{ arg(name='foo') }}; echo {{ arg(name='bar') }}; echo {{ arg(name='foo') }}".to_string()];
+        let scripts = vec![
+            "echo {{ arg(name='foo') }}; echo {{ arg(name='bar') }}; echo {{ arg(name='foo') }}"
+                .to_string(),
+        ];
         let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
         assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG; echo MISE_TASK_ARG:bar:MISE_TASK_ARG; echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
         let arg0 = spec.cmd.args.first().unwrap();
-        let arg1 = spec.cmd.args.iter().nth(1).unwrap();
+        let arg1 = spec.cmd.args.get(1).unwrap();
         assert_eq!(arg0.name, "foo");
         assert_eq!(arg1.name, "bar");
         assert_eq!(spec.cmd.args.len(), 2);
 
-        let scripts =
-            replace_template_placeholders_with_args(&task, &spec, &scripts, &["abc".to_string(), "def".to_string()])
-                .unwrap();
+        let scripts = replace_template_placeholders_with_args(
+            &task,
+            &spec,
+            &scripts,
+            &["abc".to_string(), "def".to_string()],
+        )
+        .unwrap();
         assert_eq!(scripts, vec!["echo abc; echo def; echo abc"]);
     }
 
