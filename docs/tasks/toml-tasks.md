@@ -158,7 +158,7 @@ The value will be `true` if the flag is passed, and `false` otherwise.
 
 ## Shell
 
-You can specify a shell command to run the script with (default is `sh -c`).
+You can specify a shell command to run the script with (default is `sh -c`) or use a shebang:
 
 ```toml
 [tasks.lint]
@@ -166,7 +166,19 @@ shell = 'bash -c'
 run = "cargo clippy"
 ```
 
-Here is another example with `deno`:
+Here are some examples of using `python` and `deno`:
+
+```toml
+[tools]
+python = 'latest'
+
+[tasks.python_task]
+run = """
+#!/usr/bin/env -S python
+for i in range(10):
+    print(i)
+"""
+```
 
 ```toml
 [tools]
