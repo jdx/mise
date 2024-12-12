@@ -427,7 +427,7 @@ pub trait Backend: Debug + Send + Sync {
         for path in touch_dirs {
             let err = file::touch_dir(&path);
             if let Err(err) = err {
-                debug!("error touching config file: {:?} {:?}", path, err);
+                trace!("error touching config file: {:?} {:?}", path, err);
             }
         }
         if let Err(err) = file::remove_file(self.incomplete_file_path(&tv)) {
