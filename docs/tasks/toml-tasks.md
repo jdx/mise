@@ -153,6 +153,7 @@ run = """if [ '{{flag(name='clean')}}' = 'true' ]; then echo 'cleaning' ; fi""",
 The value will be `true` if the flag is passed, and `false` otherwise.
 
 ## Shell
+
 You can specify a shell command to run the script with (default is `sh -c`).
 
 ```toml
@@ -162,6 +163,7 @@ run = "cargo clippy"
 ```
 
 Here is another example with `deno`:
+
 ```toml
 [tools]
 deno = 'latest'
