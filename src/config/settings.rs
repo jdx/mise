@@ -12,6 +12,7 @@ use once_cell::sync::Lazy;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
+use std::env::consts::ARCH;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -415,6 +416,10 @@ impl Settings {
             &SETTINGS.unix_default_file_shell_args
         };
         Ok(shell_words::split(sa)?)
+    }
+
+    pub fn arch(&self) -> &str {
+        self.arch.as_deref().unwrap_or(ARCH)
     }
 }
 

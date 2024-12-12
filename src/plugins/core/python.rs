@@ -460,9 +460,10 @@ fn python_arch() -> &'static str {
     if let Some(arch) = &SETTINGS.python.precompiled_arch {
         return arch.as_str();
     }
+    let arch = SETTINGS.arch();
     if cfg!(windows) {
         "x86_64"
-    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    } else if cfg!(linux) && arch == "x86_64" {
         if cfg!(target_feature = "avx512f") {
             "x86_64_v4"
         } else if cfg!(target_feature = "avx2") {
@@ -473,7 +474,7 @@ fn python_arch() -> &'static str {
             "x86_64"
         }
     } else {
-        built_info::CFG_TARGET_ARCH
+        arch
     }
 }
 

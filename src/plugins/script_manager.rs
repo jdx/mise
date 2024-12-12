@@ -10,7 +10,7 @@ use indexmap::indexmap;
 use once_cell::sync::Lazy;
 
 use crate::cmd::{cmd, CmdLineRunner};
-use crate::config::Settings;
+use crate::config::{Settings, SETTINGS};
 use crate::env::PATH_KEY;
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
@@ -167,10 +167,15 @@ impl ScriptManager {
     pub fn run_by_line(&self, script: &Script, pr: &dyn SingleReport) -> Result<()> {
         let path = self.get_script_path(script);
         pr.set_message(display_path(&path));
-        let cmd = CmdLineRunner::new(path.clone())
-            .with_pr(pr)
-            .env_clear()
-            .envs(&self.env);
+        let mut cmd = CmdLineRunner::new(path.clone());
+        if let Some(arch) = &SETTINGS.arch {
+            if arch == "x86_64" && cfg!(macos) {
+                cmd = CmdLineRunner::new("/usr/bin/arch")
+                    .arg("-x86_64")
+                    .arg(path.clone());
+            }
+        }
+        let cmd = cmd.with_pr(pr).env_clear().envs(&self.env);
         if let Err(e) = cmd.execute() {
             let status = match e.downcast_ref::<Error>() {
                 Some(ScriptFailed(_, status)) => *status,
