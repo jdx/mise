@@ -153,7 +153,7 @@ run = """if [ '{{flag(name='clean')}}' = 'true' ]; then echo 'cleaning' ; fi""",
 The value will be `true` if the flag is passed, and `false` otherwise.
 
 ## Shell
-Specify a shell command to run the script with (default is `sh -c`)
+You can specify a shell command to run the script with (default is `sh -c`).
 
 ```toml
 [tasks.lint]
