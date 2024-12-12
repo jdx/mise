@@ -6,7 +6,7 @@ snapshot_kind: text
 ---
 $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = $__mise_pwsh_original_chpwd_function
 Remove-Variable __mise_pwsh_original_chpwd_function -ErrorAction SilentlyContinue
-Remove-Item function:_mise_hook
+Remove-Item function:_mise_hook -ErrorAction SilentlyContinue
 Remove-Item function:mise
 Remove-Item -Path Env:/MISE_SHELL
 Remove-Item -Path Env:/__MISE_WATCH

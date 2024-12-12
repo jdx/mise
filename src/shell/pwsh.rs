@@ -1,53 +1,17 @@
 use std::borrow::Cow;
 use std::fmt::Display;
-use std::path::Path;
 
 use indoc::formatdoc;
 
-use crate::shell::Shell;
+use crate::shell::{ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Pwsh {}
 
-fn powershell_escape(s: Cow<str>) -> Cow<str> {
-    let needs_escape = s.is_empty();
-
-    if !needs_escape {
-        return s;
-    }
-
-    let mut es = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    loop {
-        match chars.next() {
-            Some('\t') => {
-                es.push_str("`t");
-            }
-            Some('\n') => {
-                es.push_str("`n");
-            }
-            Some('\r') => {
-                es.push_str("`r");
-            }
-            Some('\'') => {
-                es.push_str("`'");
-            }
-            Some('`') => {
-                es.push_str("``");
-            }
-            Some(c) => {
-                es.push(c);
-            }
-            None => {
-                break;
-            }
-        }
-    }
-    es.into()
-}
-
 impl Shell for Pwsh {
-    fn activate(&self, exe: &Path, flags: String) -> String {
+    fn activate(&self, opts: ActivateOptions) -> String {
+        let exe = opts.exe;
+        let flags = opts.flags;
         let exe = exe.to_string_lossy();
         let mut out = String::new();
 
@@ -89,6 +53,10 @@ impl Shell for Pwsh {
                     }}
                 }}
             }}
+            "#});
+
+        if !opts.no_hook_env {
+            out.push_str(&formatdoc! {r#"
 
             function _mise_hook {{
                 & {exe} hook-env{flags} -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
@@ -107,6 +75,7 @@ impl Shell for Pwsh {
 
             _mise_hook
             "#});
+        }
         out
     }
 
@@ -114,7 +83,7 @@ impl Shell for Pwsh {
         formatdoc! {r#"
         $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = $__mise_pwsh_original_chpwd_function
         Remove-Variable __mise_pwsh_original_chpwd_function -ErrorAction SilentlyContinue
-        Remove-Item function:_mise_hook
+        Remove-Item function:_mise_hook -ErrorAction SilentlyContinue
         Remove-Item function:mise
         Remove-Item -Path Env:/MISE_SHELL
         Remove-Item -Path Env:/__MISE_WATCH
@@ -146,9 +115,47 @@ impl Display for Pwsh {
     }
 }
 
+fn powershell_escape(s: Cow<str>) -> Cow<str> {
+    let needs_escape = s.is_empty();
+
+    if !needs_escape {
+        return s;
+    }
+
+    let mut es = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    loop {
+        match chars.next() {
+            Some('\t') => {
+                es.push_str("`t");
+            }
+            Some('\n') => {
+                es.push_str("`n");
+            }
+            Some('\r') => {
+                es.push_str("`r");
+            }
+            Some('\'') => {
+                es.push_str("`'");
+            }
+            Some('`') => {
+                es.push_str("``");
+            }
+            Some(c) => {
+                es.push(c);
+            }
+            None => {
+                break;
+            }
+        }
+    }
+    es.into()
+}
+
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
+    use std::path::Path;
     use test_log::test;
 
     use crate::test::replace_path;
@@ -159,7 +166,12 @@ mod tests {
     fn test_activate() {
         let pwsh = Pwsh::default();
         let exe = Path::new("/some/dir/mise");
-        assert_snapshot!(pwsh.activate(exe, " --status".into()));
+        let opts = ActivateOptions {
+            exe: exe.to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: false,
+        };
+        assert_snapshot!(pwsh.activate(opts));
     }
 
     #[test]
