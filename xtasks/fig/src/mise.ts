@@ -413,7 +413,8 @@ const completionSpec: Fig.Spec = {
                         "fish",
                         "nu",
                         "xonsh",
-                        "zsh"
+                        "zsh",
+                        "pwsh"
                     ]
                 }
             ]
@@ -920,7 +921,8 @@ const completionSpec: Fig.Spec = {
                             "fish",
                             "nu",
                             "xonsh",
-                            "zsh"
+                            "zsh",
+                            "pwsh"
                         ]
                     }
                 }

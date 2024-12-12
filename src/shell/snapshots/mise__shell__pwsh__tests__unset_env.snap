@@ -1,7 +1,7 @@
 ---
 source: src/shell/pwsh.rs
-assertion_line: 181
+assertion_line: 178
 expression: "Pwsh::default().unset_env(\"FOO\")"
 snapshot_kind: text
 ---
-$Env:FOO=""
+Remove-Item -Path Env:/FOO

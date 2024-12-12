@@ -1,5 +1,5 @@
-use std::fmt::Display;
 use std::borrow::Cow;
+use std::fmt::Display;
 use std::path::Path;
 
 use indoc::formatdoc;
@@ -10,14 +10,8 @@ use crate::shell::Shell;
 pub struct Pwsh {}
 
 fn powershell_escape(s: Cow<str>) -> Cow<str> {
-    let mut needs_escape = s.is_empty();
+    let needs_escape = s.is_empty();
 
-    for ch in s.chars() {
-        match ch {
-            '"' | '`' | '\'' | ' ' => needs_escape = true,
-            _ => {}
-        }
-    }
     if !needs_escape {
         return s;
     }
@@ -35,6 +29,12 @@ fn powershell_escape(s: Cow<str>) -> Cow<str> {
             Some('\r') => {
                 es.push_str("`r");
             }
+            Some('\'') => {
+                es.push_str("`'");
+            }
+            Some('`') => {
+                es.push_str("``");
+            }
             Some(c) => {
                 es.push(c);
             }
@@ -42,9 +42,7 @@ fn powershell_escape(s: Cow<str>) -> Cow<str> {
                 break;
             }
         }
-
     }
-    es.push('"');
     es.into()
 }
 
@@ -54,7 +52,7 @@ impl Shell for Pwsh {
         let mut out = String::new();
 
         out.push_str(&formatdoc! {r#"
-            $env:MISE_SHELL = "pwsh"
+            $env:MISE_SHELL = 'pwsh'
             $env:__MISE_ORIG_PATH = $env:PATH
 
             function mise {{
@@ -73,13 +71,13 @@ impl Shell for Pwsh {
                 $command = $arguments[0]
                 $arguments = $arguments[1..$arguments.Length]
 
-                if ($arguments -contains "--help") {{
+                if ($arguments -contains '--help') {{
                     return & {exe} $command $arguments 
                 }}
 
                 switch ($command) {{
-                    {{ $_ -in "deactivate", "shell", "sh" }} {{
-                        if ($arguments -contains "-h" -or $arguments -contains "--help") {{
+                    {{ $_ -in 'deactivate', 'shell', 'sh' }} {{
+                        if ($arguments -contains '-h' -or $arguments -contains '--help') {{
                             & {exe} $command $arguments
                         }}
                         else {{
@@ -116,29 +114,29 @@ impl Shell for Pwsh {
         formatdoc! {r#"
         $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = $__mise_pwsh_original_chpwd_function
         Remove-Variable __mise_pwsh_original_chpwd_function -ErrorAction SilentlyContinue
-        Remove-Item function:_mise_hook -ErrorAction SilentlyContinue
-        Remove-Item function:mise -ErrorAction SilentlyContinue
-        $Env:MISE_SHELL=""
-        $Env:__MISE_WATCH=""
-        $Env:__MISE_DIFF=""
+        Remove-Item function:_mise_hook
+        Remove-Item function:mise
+        Remove-Item -Path Env:/MISE_SHELL
+        Remove-Item -Path Env:/__MISE_WATCH
+        Remove-Item -Path Env:/__MISE_DIFF
         "#}
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
         let k = powershell_escape(k.into());
         let v = powershell_escape(v.into());
-        format!("$Env:{k}=\"{v}\"\n")
+        format!("$Env:{k}='{v}'\n")
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
         let k = powershell_escape(k.into());
         let v = powershell_escape(v.into());
-        format!("$Env:{k}=\"{v}$([IO.Path]::PathSeparator)\" + $env:{k}\n")
+        format!("$Env:{k}='{v}'+[IO.Path]::PathSeparator+$env:{k}\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
         let k = powershell_escape(k.into());
-        format!("$Env:{k}=\"\"\n")
+        format!("Remove-Item -Path Env:/{k}\n")
     }
 }
 

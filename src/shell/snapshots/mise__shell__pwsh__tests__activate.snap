@@ -1,10 +1,10 @@
 ---
 source: src/shell/pwsh.rs
-assertion_line: 164
+assertion_line: 162
 expression: "pwsh.activate(exe, \" --status\".into())"
 snapshot_kind: text
 ---
-$env:MISE_SHELL = "pwsh"
+$env:MISE_SHELL = 'pwsh'
 $env:__MISE_ORIG_PATH = $env:PATH
 
 function mise {
@@ -23,13 +23,13 @@ function mise {
     $command = $arguments[0]
     $arguments = $arguments[1..$arguments.Length]
 
-    if ($arguments -contains "--help") {
+    if ($arguments -contains '--help') {
         return & /some/dir/mise $command $arguments 
     }
 
     switch ($command) {
-        { $_ -in "deactivate", "shell", "sh" } {
-            if ($arguments -contains "-h" -or $arguments -contains "--help") {
+        { $_ -in 'deactivate', 'shell', 'sh' } {
+            if ($arguments -contains '-h' -or $arguments -contains '--help') {
                 & /some/dir/mise $command $arguments
             }
             else {

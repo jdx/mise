@@ -1,7 +1,7 @@
 ---
 source: src/shell/pwsh.rs
-assertion_line: 176
+assertion_line: 173
 expression: "replace_path(&pwsh.prepend_env(\"PATH\", \"/some/dir:/2/dir\"))"
 snapshot_kind: text
 ---
-$Env:PATH="/some/dir:/2/dir$([IO.Path]::PathSeparator)" + $env:PATH
+$Env:PATH='/some/dir:/2/dir'+[IO.Path]::PathSeparator+$env:PATH
