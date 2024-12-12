@@ -558,7 +558,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | packer | [aqua:hashicorp/packer](https://github.com/hashicorp/packer) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | pandoc | [asdf:Fbrisset/asdf-pandoc](https://github.com/Fbrisset/asdf-pandoc) |
 | patat | [asdf:airtonix/asdf-patat](https://github.com/airtonix/asdf-patat) |
-| pdm | [asdf:1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm) |
+| pdm | [pipx:pdm](https://pypi.org/project/pdm) [asdf:1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm) |
 | peco | [aqua:peco/peco](https://github.com/peco/peco) [asdf:asdf-community/asdf-peco](https://github.com/asdf-community/asdf-peco) |
 | periphery | [asdf:MontakOleg/asdf-periphery](https://github.com/MontakOleg/asdf-periphery) |
 | perl | [asdf:ouest/asdf-perl](https://github.com/ouest/asdf-perl) |
