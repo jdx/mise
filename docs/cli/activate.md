@@ -34,6 +34,7 @@ Shell type to generate the script for
 - `nu`
 - `xonsh`
 - `zsh`
+- `pwsh`
 
 ## Flags
 
