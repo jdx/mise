@@ -21,7 +21,7 @@ impl Shell for Pwsh {
 
             function mise {{
 
-                $code = [System.Management.Automation.Language.Parser]::ParseInput($MyInvocation.Line.Substring($MyInvocation.OffsetInLine - 1), [ref]$null, [ref]$null)
+                $code = [System.Management.Automation.Language.Parser]::ParseInput($MyInvocation.Statement.Substring($MyInvocation.OffsetInLine - 1), [ref]$null, [ref]$null)
                 $myLine = $code.Find({{ $args[0].CommandElements }}, $true).CommandElements | ForEach-Object {{ $_.ToString() }} | Join-String -Separator ' '
                 $command, [array]$arguments = Invoke-Expression ('Write-Output -- ' + $myLine)
                 
