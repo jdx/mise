@@ -31,11 +31,13 @@ impl TaskScriptParser {
         scripts: &[String],
     ) -> Result<(Vec<String>, usage::Spec)> {
         let mut tera = self.get_tera();
+        let arg_order = Arc::new(Mutex::new(HashMap::new()));
         let input_args = Arc::new(Mutex::new(vec![]));
         let template_key = |name| format!("MISE_TASK_ARG:{name}:MISE_TASK_ARG");
         tera.register_function("arg", {
             {
                 let input_args = input_args.clone();
+                let arg_order = arg_order.clone();
                 move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
                     let i = args
                         .get("i")
@@ -53,6 +55,12 @@ impl TaskScriptParser {
                         .get("name")
                         .map(|n| n.as_str().unwrap().to_string())
                         .unwrap_or(i.to_string());
+                    let mut arg_order = arg_order.lock().unwrap();
+                    if arg_order.contains_key(&name) {
+                        trace!("already seen {name}");
+                        return Ok(tera::Value::String(template_key(name)));
+                    }
+                    arg_order.insert(name.clone(), i);
                     let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
                     let help = args.get("help").map(|r| r.to_string());
                     let help_long = args.get("help_long").map(|r| r.to_string());
@@ -91,7 +99,7 @@ impl TaskScriptParser {
                         choices,
                     };
                     arg.usage = arg.usage();
-                    input_args.lock().unwrap().push((i, arg));
+                    input_args.lock().unwrap().push(arg);
                     Ok(tera::Value::String(template_key(name)))
                 }
             }
@@ -277,13 +285,17 @@ impl TaskScriptParser {
             .collect();
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
+        let arg_order = arg_order.lock().unwrap();
         cmd.args = input_args
             .lock()
             .unwrap()
             .iter()
             .cloned()
-            .sorted_by_key(|(i, _)| *i)
-            .map(|(_, arg)| arg)
+            .sorted_by_key(|arg| {
+                arg_order
+                    .get(&arg.name)
+                    .unwrap_or_else(|| panic!("missing arg order for {}", arg.name.as_str()))
+            })
             .collect();
         cmd.flags = input_flags.lock().unwrap().clone();
         let spec = usage::Spec {
@@ -377,6 +389,32 @@ mod tests {
             replace_template_placeholders_with_args(&task, &spec, &scripts, &["abc".to_string()])
                 .unwrap();
         assert_eq!(scripts, vec!["echo abc"]);
+    }
+
+    #[test]
+    fn test_task_parse_multi_use_arg() {
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+        let scripts = vec![
+            "echo {{ arg(name='foo') }}; echo {{ arg(name='bar') }}; echo {{ arg(name='foo') }}"
+                .to_string(),
+        ];
+        let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
+        assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG; echo MISE_TASK_ARG:bar:MISE_TASK_ARG; echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
+        let arg0 = spec.cmd.args.first().unwrap();
+        let arg1 = spec.cmd.args.get(1).unwrap();
+        assert_eq!(arg0.name, "foo");
+        assert_eq!(arg1.name, "bar");
+        assert_eq!(spec.cmd.args.len(), 2);
+
+        let scripts = replace_template_placeholders_with_args(
+            &task,
+            &spec,
+            &scripts,
+            &["abc".to_string(), "def".to_string()],
+        )
+        .unwrap();
+        assert_eq!(scripts, vec!["echo abc; echo def; echo abc"]);
     }
 
     #[test]
