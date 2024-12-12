@@ -156,14 +156,23 @@ fi
 
 The value will be `true` if the flag is passed, and `false` otherwise.
 
-## Shell
-
-You can specify a shell command to run the script with (default is `sh -c`) or use a shebang:
+## Shell / Shebang
+You can specify a shell command to run the script with (default is [`sh -c`](/configuration/settings.html#unix_default_inline_shell_args) or [`cmd /c`](/configuration/settings.html#windows_default_inline_shell_args)) or use a shebang:
 
 ```toml
 [tasks.lint]
 shell = 'bash -c'
 run = "cargo clippy"
+```
+
+or use a shebang:
+
+```toml
+[tasks.lint]
+run = """
+#!/usr/bin/env bash
+cargo clippy
+"""
 ```
 
 Here are some examples of using `python` and `deno`:
