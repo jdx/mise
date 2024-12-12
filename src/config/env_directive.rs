@@ -87,6 +87,9 @@ pub enum EnvDirective {
     PythonVenv {
         path: PathBuf,
         create: bool,
+        python: Option<String>,
+        uv_create_args: Option<Vec<String>>,
+        python_create_args: Option<Vec<String>>,
     },
     Module(String, toml::Value),
 }
@@ -112,10 +115,25 @@ impl Display for EnvDirective {
             EnvDirective::Path(path) => write!(f, "path_add {}", display_path(path)),
             EnvDirective::Source(path) => write!(f, "source {}", display_path(path)),
             EnvDirective::Module(name, _) => write!(f, "module {}", name),
-            EnvDirective::PythonVenv { path, create } => {
+            EnvDirective::PythonVenv {
+                path,
+                create,
+                python,
+                uv_create_args,
+                python_create_args,
+            } => {
                 write!(f, "python venv path={}", display_path(path))?;
                 if *create {
                     write!(f, " create")?;
+                }
+                if let Some(python) = python {
+                    write!(f, " python={}", python)?;
+                }
+                if let Some(args) = uv_create_args {
+                    write!(f, " uv_create_args={:?}", args)?;
+                }
+                if let Some(args) = python_create_args {
+                    write!(f, " python_create_args={:?}", args)?;
                 }
                 Ok(())
             }
@@ -251,7 +269,13 @@ impl EnvResults {
                         }
                     }
                 }
-                EnvDirective::PythonVenv { path, create } => {
+                EnvDirective::PythonVenv {
+                    path,
+                    create,
+                    python,
+                    uv_create_args,
+                    python_create_args,
+                } => {
                     trace!("python venv: {} create={create}", display_path(&path));
                     trust_check(&source)?;
                     let venv = r.parse_template(&ctx, &source, path.to_string_lossy().as_ref())?;
@@ -278,14 +302,44 @@ impl EnvResults {
                             let use_uv = !SETTINGS.python.venv_stdlib && has_uv_bin;
                             let cmd = if use_uv {
                                 info!("creating venv with uv at: {}", display_path(&venv));
-                                CmdLineRunner::new("uv").args(["venv", &venv.to_string_lossy()])
+                                let extra = SETTINGS
+                                    .python
+                                    .uv_venv_create_args
+                                    .as_ref()
+                                    .and_then(|a| match shell_words::split(a) {
+                                        Ok(a) => Some(a),
+                                        Err(err) => {
+                                            warn!("failed to split uv_venv_create_args: {}", err);
+                                            None
+                                        }
+                                    })
+                                    .or(uv_create_args)
+                                    .unwrap_or_default();
+                                let mut cmd = CmdLineRunner::new("uv")
+                                    .args(["venv", &venv.to_string_lossy()]);
+                                if let Some(python) = python {
+                                    cmd = cmd.args(["--python", &python]);
+                                }
+                                cmd.args(extra)
                             } else {
                                 info!("creating venv with stdlib at: {}", display_path(&venv));
-                                CmdLineRunner::new("python3").args([
-                                    "-m",
-                                    "venv",
-                                    &venv.to_string_lossy(),
-                                ])
+                                let extra = SETTINGS
+                                    .python
+                                    .venv_create_args
+                                    .as_ref()
+                                    .and_then(|a| match shell_words::split(a) {
+                                        Ok(a) => Some(a),
+                                        Err(err) => {
+                                            warn!("failed to split venv_create_args: {}", err);
+                                            None
+                                        }
+                                    })
+                                    .or(python_create_args)
+                                    .unwrap_or_default();
+                                let bin = format!("python{}", python.unwrap_or("3".into()));
+                                CmdLineRunner::new(bin)
+                                    .args(["-m", "venv", &venv.to_string_lossy()])
+                                    .args(extra)
                             }
                             .envs(&env_vars)
                             .env(
@@ -460,6 +514,9 @@ mod tests {
                     EnvDirective::PythonVenv {
                         path: PathBuf::from("/"),
                         create: false,
+                        python: None,
+                        uv_create_args: None,
+                        python_create_args: None,
                     },
                     Default::default(),
                 ),
@@ -467,6 +524,9 @@ mod tests {
                     EnvDirective::PythonVenv {
                         path: PathBuf::from("./"),
                         create: false,
+                        python: None,
+                        uv_create_args: None,
+                        python_create_args: None,
                     },
                     Default::default(),
                 ),

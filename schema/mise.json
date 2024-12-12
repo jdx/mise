@@ -77,6 +77,18 @@
                         "path": {
                           "description": "path to python virtual environment to use",
                           "type": "string"
+                        },
+                        "python": {
+                          "description": "python version to use",
+                          "type": "string"
+                        },
+                        "python_create_args": {
+                          "description": "additional arguments to pass to python when creating a virtual environment",
+                          "type": "string"
+                        },
+                        "uv_create_args": {
+                          "description": "additional arguments to pass to uv when creating a virtual environment",
+                          "type": "string"
                         }
                       },
                       "required": ["path"],
@@ -505,10 +517,18 @@
               "description": "Integrate with uv to automatically create/source venvs if uv.lock is present.",
               "type": "boolean"
             },
+            "uv_venv_create_args": {
+              "description": "Arguments to pass to uv when creating a venv.",
+              "type": "string"
+            },
             "venv_auto_create": {
               "description": "Automatically create virtualenvs for python tools.",
               "type": "boolean",
               "deprecated": true
+            },
+            "venv_create_args": {
+              "description": "Arguments to pass to python when creating a venv. (not used for uv venv creation)",
+              "type": "string"
             },
             "venv_stdlib": {
               "description": "Prefer to use venv from Python's standard library.",
