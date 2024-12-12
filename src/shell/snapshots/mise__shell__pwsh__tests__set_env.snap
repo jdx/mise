@@ -1,0 +1,7 @@
+---
+source: src/shell/pwsh.rs
+assertion_line: 170
+expression: "Pwsh::default().set_env(\"FOO\", \"1\")"
+snapshot_kind: text
+---
+$Env:FOO="1"

@@ -1,0 +1,13 @@
+---
+source: src/shell/pwsh.rs
+assertion_line: 191
+expression: replace_path(&deactivate)
+snapshot_kind: text
+---
+$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = $__mise_pwsh_original_chpwd_function
+Remove-Variable __mise_pwsh_original_chpwd_function -ErrorAction SilentlyContinue
+Remove-Item function:_mise_hook -ErrorAction SilentlyContinue
+Remove-Item function:mise -ErrorAction SilentlyContinue
+$Env:MISE_SHELL=""
+$Env:__MISE_WATCH=""
+$Env:__MISE_DIFF=""

@@ -58,10 +58,6 @@ impl Shell for Pwsh {
             $env:__MISE_ORIG_PATH = $env:PATH
 
             function mise {{
-                param (
-                    [Parameter(ValueFromRemainingArguments = $true)]
-                    [string[]] $arg
-                )
 
                 $code = [System.Management.Automation.Language.Parser]::ParseInput($MyInvocation.Line.Substring($MyInvocation.OffsetInLine - 1), [ref]$null, [ref]$null)
                 $myLine = $code.Find({{ $args[0].CommandElements }}, $true).CommandElements | ForEach-Object {{ $_.ToString() }} | Join-String -Separator ' '
@@ -78,8 +74,7 @@ impl Shell for Pwsh {
                 $arguments = $arguments[1..$arguments.Length]
 
                 if ($arguments -contains "--help") {{
-                    & {exe} $command $arguments
-                    return $LASTEXITCODE
+                    return & {exe} $command $arguments 
                 }}
 
                 switch ($command) {{
@@ -88,7 +83,7 @@ impl Shell for Pwsh {
                             & {exe} $command $arguments
                         }}
                         else {{
-                            . (& {exe} $command $arguments | Out-String)
+                            & {exe} $command $arguments | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
                         }}
                     }}
                     default {{
@@ -98,7 +93,7 @@ impl Shell for Pwsh {
             }}
 
             function _mise_hook {{
-                & {exe} hook-env{flags} -s pwsh | Out-String | Invoke-Expression
+                & {exe} hook-env{flags} -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
             }}
 
             if (-not $__mise_pwsh_original_chpwd_function){{
@@ -120,30 +115,30 @@ impl Shell for Pwsh {
     fn deactivate(&self) -> String {
         formatdoc! {r#"
         $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = $__mise_pwsh_original_chpwd_function
-        Remove-Variable __mise_pwsh_original_chpwd_function
-        Remove-Item function:_mise_hook
-        Remove-Item function:mise
-        Remove-Item env:MISE_SHELL
-        Remove-Item env:__MISE_WATCH
-        Remove-Item env:__MISE_DIFF
+        Remove-Variable __mise_pwsh_original_chpwd_function -ErrorAction SilentlyContinue
+        Remove-Item function:_mise_hook -ErrorAction SilentlyContinue
+        Remove-Item function:mise -ErrorAction SilentlyContinue
+        $Env:MISE_SHELL=""
+        $Env:__MISE_WATCH=""
+        $Env:__MISE_DIFF=""
         "#}
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
         let k = powershell_escape(k.into());
         let v = powershell_escape(v.into());
-        format!("$env:{k}=\"{v}\"\n")
+        format!("$Env:{k}=\"{v}\"\n")
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
         let k = powershell_escape(k.into());
         let v = powershell_escape(v.into());
-        format!("$env:{k}=\"{v}\" + $env:{k}`n")
+        format!("$Env:{k}=\"{v}$([IO.Path]::PathSeparator)\" + $env:{k}\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
         let k = powershell_escape(k.into());
-        format!("Remove-Item env:{k}`n")
+        format!("$Env:{k}=\"\"\n")
     }
 }
 
