@@ -692,6 +692,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             struct EnvDirectivePythonVenv {
                                 path: PathBuf,
                                 create: bool,
+                                python: Option<String>,
+                                uv_create_args: Option<Vec<String>>,
+                                python_create_args: Option<Vec<String>>,
                             }
 
                             #[derive(Deserialize, Default)]
@@ -739,6 +742,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                             Ok(EnvDirectivePythonVenv {
                                                 path: v.into(),
                                                 create: false,
+                                                python: None,
+                                                uv_create_args: None,
+                                                python_create_args: None,
                                             })
                                         }
 
@@ -751,6 +757,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         {
                                             let mut path = None;
                                             let mut create = false;
+                                            let mut python = None;
+                                            let mut uv_create_args = None;
+                                            let mut python_create_args = None;
                                             while let Some(key) = map.next_key::<String>()? {
                                                 match key.as_str() {
                                                     "path" => {
@@ -758,6 +767,16 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                                     }
                                                     "create" => {
                                                         create = map.next_value()?;
+                                                    }
+                                                    "python" => {
+                                                        python = Some(map.next_value()?);
+                                                    }
+                                                    "uv_create_args" => {
+                                                        uv_create_args = Some(map.next_value()?);
+                                                    }
+                                                    "python_create_args" => {
+                                                        python_create_args =
+                                                            Some(map.next_value()?);
                                                     }
                                                     _ => {
                                                         return Err(de::Error::unknown_field(
@@ -769,7 +788,13 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                             }
                                             let path = path
                                                 .ok_or_else(|| de::Error::missing_field("path"))?;
-                                            Ok(EnvDirectivePythonVenv { path, create })
+                                            Ok(EnvDirectivePythonVenv {
+                                                path,
+                                                create,
+                                                python,
+                                                uv_create_args,
+                                                python_create_args,
+                                            })
                                         }
                                     }
 
@@ -800,6 +825,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 env.push(EnvDirective::PythonVenv {
                                     path: venv.path,
                                     create: venv.create,
+                                    python: venv.python,
+                                    uv_create_args: venv.uv_create_args,
+                                    python_create_args: venv.python_create_args,
                                 });
                             }
                         }

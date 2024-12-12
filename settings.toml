@@ -651,12 +651,24 @@ env = "MISE_PYTHON_UV_VENV_AUTO"
 type = "Bool"
 description = "Integrate with uv to automatically create/source venvs if uv.lock is present."
 
+[python.uv_venv_create_args]
+env = "MISE_PYTHON_UV_VENV_CREATE_ARGS"
+type = "String"
+optional = true
+description = "Arguments to pass to uv when creating a venv."
+
 [python.venv_auto_create]
 env = "MISE_PYTHON_VENV_AUTO_CREATE"
 type = "Bool"
 hide = true
 deprecated = "Use env._python.venv instead."
 description = "Automatically create virtualenvs for python tools."
+
+[python.venv_create_args]
+env = "MISE_PYTHON_VENV_CREATE_ARGS"
+type = "String"
+optional = true
+description = "Arguments to pass to python when creating a venv. (not used for uv venv creation)"
 
 [python.venv_stdlib]
 env = "MISE_VENV_STDLIB"
