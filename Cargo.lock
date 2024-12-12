@@ -2086,7 +2086,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.12.7"
+version = "2024.12.8"
 dependencies = [
  "base64",
  "built",
@@ -3176,9 +3176,9 @@ dependencies = [
 
 [[package]]
 name = "semver"
-version = "1.0.23"
+version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
+checksum = "3cb6eb87a131f756572d7fb904f6e7b68633f09cca868c5df1c4b8d1a694bbba"
 
 [[package]]
 name = "serde"
@@ -4132,9 +4132,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "1.5.0"
+version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4701de4e469b03f107de4e8c101076d554e52df2a7fb95172d4fee3f302fb66f"
+checksum = "a4dd38cc136165d851bfdd1fe20a89079c5192dbcedd5d008f48c39a20079ba7"
 dependencies = [
  "clap",
  "heck 0.5.0",
@@ -4640,9 +4640,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "2.0.2"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53ba8e1329637bfde9509cf8be1b3b9eed7c0130e60408a45f6d514a11f7974b"
+checksum = "43e8a6586de03e05832a7e364b3b94fb86ae16bbaa881f3e7998c4e66c6b900f"
 dependencies = [
  "bzip2",
  "duct",
