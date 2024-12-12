@@ -1,5 +1,31 @@
 # Changelog
 
+## [2024.12.8](https://github.com/jdx/mise/compare/v2024.12.7..v2024.12.8) - 2024-12-12
+
+### 🚀 Features
+
+- **(registry)** use pipx for pdm by [@risu729](https://github.com/risu729) in [#3504](https://github.com/jdx/mise/pull/3504)
+- added pitchfork by [@jdx](https://github.com/jdx) in [bac731e](https://github.com/jdx/mise/commit/bac731e47f00245ce13e7eec5716509704519d71)
+
+### 🐛 Bug Fixes
+
+- Adds support for multi-use args by [@bnorick](https://github.com/bnorick) in [#3505](https://github.com/jdx/mise/pull/3505)
+- make task completion script POSIX by [@jdx](https://github.com/jdx) in [b92b560](https://github.com/jdx/mise/commit/b92b5603bb23d55b58e7ee8effe8d6293036c5a9)
+
+### 📚 Documentation
+
+- Add more examples for toml tasks by [@hverlin](https://github.com/hverlin) in [#3491](https://github.com/jdx/mise/pull/3491)
+
+### 🔍 Other Changes
+
+- Fix README link. by [@biggusbeetus](https://github.com/biggusbeetus) in [#3502](https://github.com/jdx/mise/pull/3502)
+- use main branch for winget by [@jdx](https://github.com/jdx) in [b4036cf](https://github.com/jdx/mise/commit/b4036cf0d10f6ccd8758b0bebc341963c8777d2e)
+
+### New Contributors
+
+- @bnorick made their first contribution in [#3505](https://github.com/jdx/mise/pull/3505)
+- @biggusbeetus made their first contribution in [#3502](https://github.com/jdx/mise/pull/3502)
+
 ## [2024.12.7](https://github.com/jdx/mise/compare/v2024.12.6..v2024.12.7) - 2024-12-12
 
 ### 🚀 Features
@@ -28,6 +54,10 @@
 ### 📚 Documentation
 
 - updated `mise watch` docs to drop the `-t` by [@jdx](https://github.com/jdx) in [8ea6226](https://github.com/jdx/mise/commit/8ea622688cb01a0a0a2805692b38a4a7f1340ce5)
+
+### 🔍 Other Changes
+
+- move debug log to trace by [@jdx](https://github.com/jdx) in [5c6c884](https://github.com/jdx/mise/commit/5c6c884cf51e704d1c8c347790ec30b30b0f401e)
 
 ### New Contributors
 
