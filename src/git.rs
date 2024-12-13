@@ -70,11 +70,15 @@ impl Git {
         gitref: &str,
     ) -> Result<(String, String)> {
         let mut fetch_options = get_fetch_options()?;
-        let mut remote = repo.find_remote("origin")?;
+        let remote_name = "origin";
+        let mut remote = repo.find_remote(remote_name)?;
         remote.fetch(&[gitref], Some(&mut fetch_options), None)?;
         let prev_rev = self.current_sha()?;
-        let (obj, reference) = repo.revparse_ext(gitref)?;
+        let refname = format!("{remote_name}/{gitref}");
+        let (obj, reference) = repo.revparse_ext(&refname)?;
         repo.checkout_tree(&obj, None)?;
+        let commit = obj.peel_to_commit()?;
+        repo.branch(gitref, &commit, true)?;
         if let Some(reference) = reference.and_then(|r| r.name().map(|s| s.to_string())) {
             repo.set_head(&reference)?;
         }
