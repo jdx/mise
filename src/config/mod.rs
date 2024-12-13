@@ -296,7 +296,7 @@ impl Config {
         let mut system_tasks = None;
         rayon::scope(|s| {
             s.spawn(|_| {
-                file_tasks = Some(self.load_file_tasks_recursively());
+                file_tasks = Some(self.load_local_tasks());
             });
             global_tasks = Some(self.load_global_tasks());
             system_tasks = Some(self.load_system_tasks());
@@ -339,8 +339,7 @@ impl Config {
         let configs = self.configs_at_root(dir);
         let config_tasks = configs
             .par_iter()
-            .flat_map(|cf| cf.tasks())
-            .cloned()
+            .flat_map(|cf| self.load_config_tasks(&Some(*cf), dir))
             .collect::<Vec<_>>();
         let includes = self.task_includes_for_dir(dir);
         let extra_tasks = includes
@@ -386,7 +385,7 @@ impl Config {
         Ok(tasks.into_values().collect())
     }
 
-    fn load_file_tasks_recursively(&self) -> Result<Vec<Task>> {
+    fn load_local_tasks(&self) -> Result<Vec<Task>> {
         let file_tasks = file::all_dirs()?
             .into_iter()
             .filter(|d| {
@@ -410,7 +409,7 @@ impl Config {
         let cf = self.config_files.get(&*env::MISE_GLOBAL_CONFIG_FILE);
         let config_root = cf.and_then(|cf| cf.project_root()).unwrap_or(&*env::HOME);
         Ok(self
-            .load_config_tasks(&cf)
+            .load_config_tasks(&cf.map(|cf| cf.as_ref()), config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, config_root))
             .collect())
@@ -423,17 +422,23 @@ impl Config {
             .map(|p| p.to_path_buf())
             .unwrap_or_default();
         Ok(self
-            .load_config_tasks(&cf)
+            .load_config_tasks(&cf.map(|cf| cf.as_ref()), &config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, &config_root))
             .collect())
     }
 
-    fn load_config_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
+    fn load_config_tasks(&self, cf: &Option<&dyn ConfigFile>, config_root: &Path) -> Vec<Task> {
         cf.map(|cf| cf.tasks())
             .unwrap_or_default()
             .into_iter()
             .cloned()
+            .map(|mut t| {
+                if let Err(err) = t.render(config_root) {
+                    warn!("rendering task: {err:?}");
+                }
+                t
+            })
             .collect()
     }
 

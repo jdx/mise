@@ -69,8 +69,9 @@ impl TasksInfo {
         if !task.sources.is_empty() {
             info::inline_section("Sources", task.sources.join(", "))?;
         }
-        if !task.outputs.is_empty() {
-            info::inline_section("Outputs", task.outputs.join(", "))?;
+        let outputs = task.outputs.paths(task);
+        if !outputs.is_empty() {
+            info::inline_section("Outputs", outputs.join(", "))?;
         }
         if let Some(file) = &task.file {
             info::inline_section("File", display_path(file))?;

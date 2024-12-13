@@ -92,9 +92,6 @@ pub struct Cli {
     /// Dry run, don't actually do anything
     #[clap(short = 'n', long, hide = true)]
     pub dry_run: bool,
-    /// Sets log level to debug
-    #[clap(long, global = true, hide = true)]
-    pub debug: bool,
     /// Set the environment for loading `mise.<ENV>.toml`
     #[clap(short = 'E', long, global = true)]
     pub env: Option<Vec<String>>,
@@ -107,8 +104,6 @@ pub struct Cli {
     /// How many jobs to run in parallel [default: 8]
     #[clap(long, short, global = true, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
-    #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum)]
-    pub log_level: Option<LevelFilter>,
     #[clap(long, short, hide = true, overrides_with = "interleave")]
     pub prefix: bool,
     /// Set the profile (environment)
@@ -126,15 +121,9 @@ pub struct Cli {
         env = "MISE_QUIET"
     )]
     pub tool: Vec<ToolArg>,
-    /// Suppress non-error messages
-    #[clap(short = 'q', long, global = true, overrides_with = "verbose")]
-    pub quiet: bool,
     /// Read/write directly to stdin/stdout/stderr instead of by line
     #[clap(long, global = true)]
     pub raw: bool,
-    /// Suppress all task output and mise non-error messages
-    #[clap(long)]
-    pub silent: bool,
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
@@ -146,17 +135,36 @@ pub struct Cli {
     #[clap(long, alias = "no-timing", hide = true, verbatim_doc_comment)]
     pub no_timings: bool,
 
-    /// Sets log level to trace
-    #[clap(long, global = true, hide = true)]
-    pub trace: bool,
-    /// Show extra output (use -vv for even more)
-    #[clap(short='v', long, global=true, overrides_with="quiet", action=ArgAction::Count)]
-    pub verbose: u8,
     #[clap(long, short = 'V', hide = true)]
     pub version: bool,
     /// Answer yes to all confirmation prompts
     #[clap(short = 'y', long, global = true)]
     pub yes: bool,
+
+    #[clap(flatten)]
+    pub global_output_flags: CliGlobalOutputFlags,
+}
+
+#[derive(Debug, clap::Args)]
+#[group(multiple = false)]
+pub struct CliGlobalOutputFlags {
+    /// Sets log level to debug
+    #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "trace", "verbose", "silent", "log_level"])]
+    pub debug: bool,
+    #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides_with_all = &["quiet", "trace", "verbose", "silent", "debug"])]
+    pub log_level: Option<LevelFilter>,
+    /// Suppress non-error messages
+    #[clap(short = 'q', long, global = true, overrides_with_all = &["silent", "trace", "verbose", "debug", "log_level"])]
+    pub quiet: bool,
+    /// Suppress all task output and mise non-error messages
+    #[clap(long, global = true, overrides_with_all = &["quiet", "trace", "verbose", "debug", "log_level"])]
+    pub silent: bool,
+    /// Sets log level to trace
+    #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "silent", "verbose", "debug", "log_level"])]
+    pub trace: bool,
+    /// Show extra output (use -vv for even more)
+    #[clap(short='v', long, global=true, action=ArgAction::Count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
+    pub verbose: u8,
 }
 
 #[derive(Debug, Subcommand, strum::Display)]
@@ -349,8 +357,8 @@ impl Cli {
                         output: run::TaskOutput::Prefix,
                         prefix: self.prefix,
                         shell: self.shell,
-                        quiet: self.quiet,
-                        silent: self.silent,
+                        quiet: self.global_output_flags.quiet,
+                        silent: self.global_output_flags.silent,
                         raw: self.raw,
                         timings: self.timings,
                         tmpdir: Default::default(),
