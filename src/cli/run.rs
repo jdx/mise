@@ -286,13 +286,13 @@ impl Run {
     fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
-            if !self.quiet {
+            if !self.quiet && !task.quiet {
                 eprintln!("{prefix} skipping task");
             }
             return Ok(());
         }
         if !self.force && self.sources_are_fresh(task)? {
-            if !self.quiet {
+            if !self.quiet && !task.quiet {
                 eprintln!("{prefix} sources up-to-date, skipping");
             }
             return Ok(());
@@ -368,7 +368,7 @@ impl Run {
                 .bright()
                 .to_string(),
         );
-        if !self.quiet {
+        if !self.quiet && !task.quiet {
             eprintln!("{prefix} {cmd}");
         }
 
@@ -467,7 +467,7 @@ impl Run {
 
         let cmd = format!("{} {}", display_path(file), args.join(" "));
         let cmd = trunc(&style::ebold(format!("$ {cmd}")).bright().to_string());
-        if !self.quiet {
+        if !self.quiet && !task.quiet {
             eprintln!("{prefix} {cmd}");
         }
 
