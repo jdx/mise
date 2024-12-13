@@ -12,8 +12,8 @@ Note that you can include additional directories using the [task_config](/tasks/
 
 Here is an example of a file task that builds a Rust CLI:
 
-```bash
-#!/usr/bin/env bash
+```bash [mise-tasks/build]
+#!/usr/bin/env bash 
 #MISE description="Build the CLI"
 cargo build
 ```
@@ -122,7 +122,7 @@ However, for completions to work, the `usage` CLI must be installed and availabl
 
 Here is an example of a file task that builds a Rust CLI using some of the features of usage:
 
-```bash
+```bash [mise-tasks/build]
 #!/usr/bin/env bash
 set -e
 

@@ -23,15 +23,11 @@ There are 2 ways to define tasks: [inside of `mise.toml` files](./toml-tasks.htm
 
 Tasks are defined in the `[tasks]` section of the `mise.toml` file.
 
-::: code-group
-
 ```toml [mise.toml]
 [tasks.build]
 description = "Build the CLI"
 run = "cargo build"
 ```
-
-:::
 
 You can then run the task with `mise run build` (or `mise build` if it doesn't conflict with an existing command).
 
@@ -42,15 +38,11 @@ You can then run the task with `mise run build` (or `mise build` if it doesn't c
 
 You can also define tasks as standalone shell scripts. All you have to do is to create an `executable` file in a specific directory like `mise-tasks`.
 
-::: code-group
-
 ```sh [mise-tasks/build]
 #!/usr/bin/env bash
 #MISE description="Build the CLI"
 cargo build
 ```
-
-:::
 
 You can then run the task with `mise run build` like for TOML tasks.
 See the [file tasks reference](./file-tasks.html) for more information.

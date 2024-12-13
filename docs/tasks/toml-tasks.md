@@ -228,6 +228,26 @@ for i in range(10):
 '''
 ```
 
+```toml [python + uv]
+[tools]
+uv = 'latest'
+
+[tasks.python_uv_task]
+run = """
+#!/usr/bin/env -S uv run --script
+# /// script
+# dependencies = ["requests<3", "rich"]
+# ///
+
+import requests
+from rich.pretty import pprint
+
+resp = requests.get("https://peps.python.org/api/peps.json")
+data = resp.json()
+pprint([(k, v["title"]) for k, v in data.items()][:10])
+"""
+```
+
 ```toml [node]
 [tools]
 node = 'lts'
