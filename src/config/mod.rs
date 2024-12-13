@@ -528,7 +528,7 @@ impl Config {
                     if SelfUpdate::is_available() {
                         bail!(
                             "mise version {min} is required, but you are using {cur}\n\
-                            Run `mise self update` to update mise",
+                            Run `mise self-update` to update mise",
                         );
                     } else {
                         bail!("mise version {min} is required, but you are using {cur}");
