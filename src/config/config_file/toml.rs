@@ -38,7 +38,7 @@ impl<'a> TomlParser<'a> {
     }
     pub fn parse_array<T>(&self, key: &str) -> eyre::Result<Option<Vec<T>>>
     where
-        T: Default + From<String>,
+        T: From<String>,
     {
         self.table
             .get(key)

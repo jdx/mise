@@ -841,6 +841,11 @@ node = "https://github.com/my-org/mise-node.git"
 
 """
 
+[silent]
+env = "MISE_SILENT"
+type = "Bool"
+description = "Suppress all `mise run|watch` output except errors—including what tasks output."
+
 [status.missing_tools]
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"
@@ -891,6 +896,7 @@ description = "Paths that mise will not look for tasks in."
 [task_output]
 env = "MISE_TASK_OUTPUT"
 type = "String"
+rust_type = "crate::cli::run::TaskOutput"
 optional = true
 description = "Change output style when executing tasks."
 enum = [

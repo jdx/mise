@@ -1,4 +1,5 @@
 use eyre::{bail, Result};
+use itertools::Itertools;
 use serde_json::json;
 
 use crate::config::Config;
@@ -57,7 +58,10 @@ impl TasksInfo {
             info::inline_section("Properties", properties.join(", "))?;
         }
         if !task.depends.is_empty() {
-            info::inline_section("Depends on", task.depends.join(", "))?;
+            info::inline_section("Depends on", task.depends.iter().join(", "))?;
+        }
+        if !task.depends_post.is_empty() {
+            info::inline_section("Depends post", task.depends_post.iter().join(", "))?;
         }
         if let Some(dir) = &task.dir {
             info::inline_section("Directory", display_path(dir))?;
@@ -91,7 +95,8 @@ impl TasksInfo {
             "aliases": task.aliases.join(", "),
             "description": task.description.to_string(),
             "source": task.config_source,
-            "depends": task.depends.join(", "),
+            "depends": task.depends.iter().join(", "),
+            "depends_post": task.depends_post.iter().join(", "),
             "env": task.env,
             "dir": task.dir,
             "hide": task.hide,

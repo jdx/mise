@@ -42,6 +42,12 @@ Show extra output (use -vv for even more)
 
 Answer yes to all confirmation prompts
 
+## Flags
+
+### `--silent`
+
+Suppress all task output and mise non-error messages
+
 ## Subcommands
 
 - [`mise activate [FLAGS] [SHELL_TYPE]`](/cli/activate.md)
