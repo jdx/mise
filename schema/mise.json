@@ -650,6 +650,10 @@
           "description": "Path to a file containing custom tool shorthands.",
           "type": "string"
         },
+        "silent": {
+          "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
+          "type": "boolean"
+        },
         "status": {
           "additionalProperties": false,
           "properties": {
@@ -815,8 +819,40 @@
             "depends": {
               "description": "other tasks to run before this task",
               "items": {
-                "description": "task to run before this task",
-                "type": "string"
+                "oneOf": [
+                  {
+                    "description": "task with args to run before this task",
+                    "type": "string"
+                  },
+                  {
+                    "description": "task with args to run before this task",
+                    "items": {
+                      "description": "task name and args",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "depends_post": {
+              "description": "other tasks to run after this task",
+              "items": {
+                "oneOf": [
+                  {
+                    "description": "task with args to run after this task",
+                    "type": "string"
+                  },
+                  {
+                    "description": "task with args to run after this task",
+                    "items": {
+                      "description": "task name and args",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                ]
               },
               "type": "array"
             },

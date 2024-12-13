@@ -42,6 +42,7 @@ flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files 
 }
 flag "-q --quiet" help="Suppress non-error messages" global=true
 flag "--raw" help="Read/write directly to stdin/stdout/stderr instead of by line" global=true
+flag "--silent" help="Suppress all task output and mise non-error messages"
 flag "--timings" help="Shows elapsed time after each task completes" hide=true {
     long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
 }
@@ -1019,6 +1020,7 @@ The name of the script will be the name of the tasks.
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
     flag "-q --quiet" help="Don't show extra output"
+    flag "-S --silent" help="Don't show any output except for errors"
     mount run="mise tasks --usage"
 }
 cmd "self-update" help="Updates mise itself." {
@@ -1392,6 +1394,7 @@ The name of the script will be the name of the tasks.
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }
         flag "-q --quiet" help="Don't show extra output"
+        flag "-S --silent" help="Don't show any output except for errors"
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
         mount run="mise tasks --usage"

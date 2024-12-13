@@ -45,8 +45,8 @@ mod render_help;
 #[cfg(feature = "clap_mangen")]
 mod render_mangen;
 mod reshim;
-mod run;
-pub(crate) mod self_update;
+pub mod run;
+pub mod self_update;
 mod set;
 mod settings;
 mod shell;
@@ -118,7 +118,13 @@ pub struct Cli {
     pub shell: Option<String>,
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
-    #[clap(short, long, hide = true, value_name = "TOOL@VERSION")]
+    #[clap(
+        short,
+        long,
+        hide = true,
+        value_name = "TOOL@VERSION",
+        env = "MISE_QUIET"
+    )]
     pub tool: Vec<ToolArg>,
     /// Suppress non-error messages
     #[clap(short = 'q', long, global = true, overrides_with = "verbose")]
@@ -126,6 +132,9 @@ pub struct Cli {
     /// Read/write directly to stdin/stdout/stderr instead of by line
     #[clap(long, global = true)]
     pub raw: bool,
+    /// Suppress all task output and mise non-error messages
+    #[clap(long)]
+    pub silent: bool,
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
@@ -341,6 +350,7 @@ impl Cli {
                         prefix: self.prefix,
                         shell: self.shell,
                         quiet: self.quiet,
+                        silent: self.silent,
                         raw: self.raw,
                         timings: self.timings,
                         tmpdir: Default::default(),

@@ -103,6 +103,10 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 
 Don't show extra output
 
+### `-S --silent`
+
+Don't show any output except for errors
+
 Examples:
 
     # Runs the "lint" tasks. This needs to either be defined in mise.toml

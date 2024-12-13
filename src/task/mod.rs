@@ -25,12 +25,14 @@ use std::{ffi, fmt, path};
 use xx::regex;
 
 mod deps;
+mod task_dep;
 mod task_script_parser;
 
 use crate::config::config_file::ConfigFile;
 use crate::file::display_path;
 use crate::ui::style;
 pub use deps::Deps;
+use task_dep::TaskDep;
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
 pub struct Task {
@@ -46,10 +48,12 @@ pub struct Task {
     pub cf: Option<Arc<dyn ConfigFile>>,
     #[serde(skip)]
     pub config_root: Option<PathBuf>,
-    #[serde(default)]
-    pub depends: Vec<String>,
-    #[serde(default)]
-    pub wait_for: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    pub depends: Vec<TaskDep>,
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    pub depends_post: Vec<TaskDep>,
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    pub wait_for: Vec<TaskDep>,
     #[serde(default)]
     pub env: BTreeMap<String, EitherStringOrIntOrBool>,
     #[serde(default)]
@@ -66,6 +70,8 @@ pub struct Task {
     pub shell: Option<String>,
     #[serde(default)]
     pub quiet: bool,
+    #[serde(default)]
+    pub silent: bool,
 
     // normal type
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -166,6 +172,7 @@ impl Task {
         task.sources = p.parse_array("sources")?.unwrap_or_default();
         task.outputs = p.parse_array("outputs")?.unwrap_or_default();
         task.depends = p.parse_array("depends")?.unwrap_or_default();
+        task.depends_post = p.parse_array("depends_post")?.unwrap_or_default();
         task.wait_for = p.parse_array("wait_for")?.unwrap_or_default();
         task.dir = p.parse_str("dir")?;
         task.env = p.parse_env("env")?.unwrap_or_default();
@@ -186,19 +193,6 @@ impl Task {
         project_root.join("mise-tasks")
     }
 
-    // pub fn args(&self) -> impl Iterator<Item = String> {
-    //     if let Some(script) = &self.script {
-    //         // TODO: cli_args
-    //         vec!["-c".to_string(), script.to_string()].into_iter()
-    //     } else {
-    //         self.args
-    //             .iter()
-    //             .chain(self.cli_args.iter())
-    //             .cloned()
-    //             .collect_vec()
-    //             .into_iter()
-    //     }
-    // }
     pub fn with_args(mut self, args: Vec<String>) -> Self {
         self.args = args;
         self
@@ -216,41 +210,52 @@ impl Task {
         }
     }
 
-    pub fn all_depends<'a>(&self, config: &'a Config) -> Result<Vec<&'a Task>> {
+    pub fn all_depends(&self) -> Result<Vec<Task>> {
+        let config = Config::get();
         let tasks = config.tasks_with_aliases()?;
-        let mut depends: Vec<&Task> = self
+        let mut depends: Vec<Task> = self
             .depends
             .iter()
-            .map(|pat| match_tasks(&tasks, pat))
+            .chain(self.depends_post.iter())
+            .map(|td| match_tasks(&tasks, td))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
         for dep in depends.clone() {
-            depends.extend(dep.all_depends(config)?);
+            depends.extend(dep.all_depends()?);
         }
         Ok(depends)
     }
 
-    pub fn resolve_depends<'a>(
-        &self,
-        config: &'a Config,
-        tasks_to_run: &[&Task],
-    ) -> Result<Vec<&'a Task>> {
-        let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().copied().collect();
+    pub fn resolve_depends(&self, tasks_to_run: &[Task]) -> Result<(Vec<Task>, Vec<Task>)> {
+        let config = Config::get();
+        let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
         let tasks = config.tasks_with_aliases()?;
-        self.wait_for
+        let depends = self
+            .depends
             .iter()
-            .map(|pat| match_tasks(&tasks, pat))
+            .map(|td| match_tasks(&tasks, td))
             .flatten_ok()
-            .filter_ok(|t| tasks_to_run.contains(*t))
-            .chain(
-                self.depends
-                    .iter()
-                    .map(|pat| match_tasks(&tasks, pat))
-                    .flatten_ok(),
-            )
+            .collect_vec();
+        let wait_for = self
+            .wait_for
+            .iter()
+            .map(|td| match_tasks(&tasks, td))
+            .flatten_ok()
+            .filter_ok(|t| tasks_to_run.contains(t))
+            .collect_vec();
+        let depends_post = tasks_to_run
+            .iter()
+            .flat_map(|t| t.depends_post.iter().map(|td| match_tasks(&tasks, td)))
+            .flatten_ok()
             .filter_ok(|t| t.name != self.name)
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        let depends = depends
+            .into_iter()
+            .chain(wait_for)
+            .filter_ok(|t| t.name != self.name)
+            .collect::<Result<_>>()?;
+        Ok((depends, depends_post))
     }
 
     pub fn parse_usage_spec(&self, cwd: Option<PathBuf>) -> Result<(usage::Spec, Vec<String>)> {
@@ -276,7 +281,8 @@ impl Task {
             && spec.cmd.before_help_long.is_none()
             && !self.depends.is_empty()
         {
-            spec.cmd.before_help_long = Some(format!("- Depends: {}", self.depends.join(", ")));
+            spec.cmd.before_help_long =
+                Some(format!("- Depends: {}", self.depends.iter().join(", ")));
         }
         spec.cmd.usage = spec.cmd.usage();
         Ok((spec, scripts))
@@ -401,10 +407,18 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
         .join(":"))
 }
 
-fn match_tasks<'a>(tasks: &BTreeMap<String, &'a Task>, pat: &str) -> Result<Vec<&'a Task>> {
-    let matches = tasks.get_matching(pat)?.into_iter().cloned().collect_vec();
+fn match_tasks(tasks: &BTreeMap<String, &Task>, td: &TaskDep) -> Result<Vec<Task>> {
+    let matches = tasks
+        .get_matching(&td.task)?
+        .into_iter()
+        .map(|t| {
+            let mut t = (*t).clone();
+            t.args = td.args.clone();
+            t
+        })
+        .collect_vec();
     if matches.is_empty() {
-        return Err(eyre!("task not found: {pat}"));
+        return Err(eyre!("task not found: {td}"));
     };
 
     Ok(matches)
@@ -420,6 +434,7 @@ impl Default for Task {
             cf: None,
             config_root: None,
             depends: vec![],
+            depends_post: vec![],
             wait_for: vec![],
             env: BTreeMap::new(),
             dir: None,
@@ -428,6 +443,7 @@ impl Default for Task {
             sources: vec![],
             outputs: vec![],
             shell: None,
+            silent: false,
             run: vec![],
             run_windows: vec![],
             args: vec![],
@@ -462,13 +478,17 @@ impl PartialOrd for Task {
 
 impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.name.cmp(&other.name)
+        match self.name.cmp(&other.name) {
+            Ordering::Equal => self.args.cmp(&other.args),
+            o => o,
+        }
     }
 }
 
 impl Hash for Task {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
+        self.args.iter().for_each(|arg| arg.hash(state));
     }
 }
 
@@ -479,7 +499,7 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
         if let Some(w) = self.0.node_weight(self.1) {
             miseprint!("{}", w.name)?;
         }
-        std::io::Result::Ok(())
+        Ok(())
     }
 
     fn children(&self) -> Cow<[Self::Child]> {

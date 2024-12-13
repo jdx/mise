@@ -1907,6 +1907,14 @@ const completionSpec: Fig.Spec = {
                     ],
                     "description": "Don't show extra output",
                     "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-S",
+                        "--silent"
+                    ],
+                    "description": "Don't show any output except for errors",
+                    "isRepeatable": false
                 }
             ],
             "generateSpec": usageGenerateSpec(["mise tasks --usage"]),
@@ -2591,6 +2599,14 @@ const completionSpec: Fig.Spec = {
                                 "--quiet"
                             ],
                             "description": "Don't show extra output",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-S",
+                                "--silent"
+                            ],
+                            "description": "Don't show any output except for errors",
                             "isRepeatable": false
                         }
                     ],
@@ -3687,6 +3703,13 @@ const completionSpec: Fig.Spec = {
                 "--raw"
             ],
             "description": "Read/write directly to stdin/stdout/stderr instead of by line",
+            "isRepeatable": false
+        },
+        {
+            "name": [
+                "--silent"
+            ],
+            "description": "Suppress all task output and mise non-error messages",
             "isRepeatable": false
         },
         {

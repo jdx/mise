@@ -133,8 +133,12 @@ pub struct Run {
     pub no_timings: bool,
 
     /// Don't show extra output
-    #[clap(long, short, verbatim_doc_comment)]
+    #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
     pub quiet: bool,
+
+    /// Don't show any output except for errors
+    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    pub silent: bool,
 
     #[clap(skip)]
     pub is_linear: bool,
@@ -210,12 +214,7 @@ impl Run {
 
         let num_tasks = tasks.all().count();
         self.is_linear = tasks.is_linear();
-        if let Some(task) = tasks.all().next() {
-            self.output = self.output(task)?;
-            if let TaskOutput::Quiet = self.output {
-                self.quiet = true;
-            }
-        }
+        self.output = self.output(None);
 
         let tasks = Mutex::new(tasks);
         let timer = std::time::Instant::now();
@@ -286,13 +285,13 @@ impl Run {
     fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
-            if !self.quiet && !task.quiet {
+            if !self.quiet(Some(task)) {
                 eprintln!("{prefix} skipping task");
             }
             return Ok(());
         }
         if !self.force && self.sources_are_fresh(task)? {
-            if !self.quiet && !task.quiet {
+            if !self.quiet(Some(task)) {
                 eprintln!("{prefix} sources up-to-date, skipping");
             }
             return Ok(());
@@ -368,7 +367,7 @@ impl Run {
                 .bright()
                 .to_string(),
         );
-        if !self.quiet && !task.quiet {
+        if !self.quiet(Some(task)) {
             eprintln!("{prefix} {cmd}");
         }
 
@@ -467,7 +466,7 @@ impl Run {
 
         let cmd = format!("{} {}", display_path(file), args.join(" "));
         let cmd = trunc(&style::ebold(format!("$ {cmd}")).bright().to_string());
-        if !self.quiet && !task.quiet {
+        if !self.quiet(Some(task)) {
             eprintln!("{prefix} {cmd}");
         }
 
@@ -498,15 +497,18 @@ impl Run {
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
-            .raw(self.raw(task));
+            .raw(self.raw(Some(task)));
         cmd.with_pass_signals();
-        match self.output {
+        match self.output(Some(task)) {
             TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
             TaskOutput::Quiet | TaskOutput::Interleave => {
                 cmd = cmd
                     .stdin(Stdio::inherit())
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit())
+            }
+            TaskOutput::Silent => {
+                cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
         }
         let dir = self.cwd(task)?;
@@ -526,24 +528,38 @@ impl Run {
         Ok(())
     }
 
-    fn output(&self, task: &Task) -> Result<TaskOutput> {
-        if self.quiet {
-            Ok(TaskOutput::Quiet)
+    fn output(&self, task: Option<&Task>) -> TaskOutput {
+        if self.silent(task) {
+            TaskOutput::Silent
+        } else if self.quiet(task) {
+            TaskOutput::Quiet
         } else if self.prefix {
-            Ok(TaskOutput::Prefix)
+            TaskOutput::Prefix
         } else if self.interleave {
-            Ok(TaskOutput::Interleave)
-        } else if let Some(output) = &SETTINGS.task_output {
-            Ok(output.parse()?)
+            TaskOutput::Interleave
+        } else if let Some(output) = SETTINGS.task_output {
+            output
         } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
-            Ok(TaskOutput::Interleave)
+            TaskOutput::Interleave
         } else {
-            Ok(TaskOutput::Prefix)
+            TaskOutput::Prefix
         }
     }
 
-    fn raw(&self, task: &Task) -> bool {
-        self.raw || task.raw || SETTINGS.raw
+    fn silent(&self, task: Option<&Task>) -> bool {
+        self.silent || SETTINGS.silent || self.output.is_silent() || task.is_some_and(|t| t.silent)
+    }
+
+    fn quiet(&self, task: Option<&Task>) -> bool {
+        self.quiet
+            || SETTINGS.quiet
+            || self.output.is_quiet()
+            || task.is_some_and(|t| t.quiet)
+            || self.silent(task)
+    }
+
+    fn raw(&self, task: Option<&Task>) -> bool {
+        self.raw || SETTINGS.raw || task.is_some_and(|t| t.raw)
     }
 
     fn jobs(&self) -> usize {
@@ -633,7 +649,8 @@ impl Run {
             Ok(Config::get()
                 .project_root
                 .clone()
-                .unwrap_or_else(|| env::current_dir().unwrap()))
+                .or_else(|| dirs::CWD.clone())
+                .unwrap_or_default())
         }
     }
 
@@ -646,7 +663,7 @@ impl Run {
     }
 
     fn timings(&self) -> bool {
-        !self.quiet
+        !self.quiet(None)
             && !self.no_timings
             && SETTINGS
                 .task_timings
@@ -760,13 +777,25 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 "#
 );
 
-#[derive(Debug, Default, PartialEq, strum::EnumString)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    strum::EnumString,
+    strum::EnumIs,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum TaskOutput {
     #[default]
     Prefix,
     Interleave,
     Quiet,
+    Silent,
 }
 
 fn trunc(msg: &str) -> String {

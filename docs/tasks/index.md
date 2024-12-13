@@ -55,69 +55,6 @@ cargo build
 You can then run the task with `mise run build` like for TOML tasks.
 See the [file tasks reference](./file-tasks.html) for more information.
 
-## Task Configuration
-
-The `[task_config]` section of `mise.toml` allows you to customize how `mise` executes and organizes task.
-
-### Changing the default directory tasks are run from
-
-```toml
-[task_config]
-# change the default directory tasks are run from
-dir = "{{cwd}}"
-```
-
-### Including toml tasks files or other directories of file tasks
-
-```toml
-[task_config]
-# add toml files containing toml tasks, or file tasks to include when looking for tasks
-includes = [
-    "tasks.toml", # a task toml file
-    "mytasks"     # a directory containing file tasks (in addition to the default file tasks directories)
-]
-```
-
-If using included task toml files, note that they have a different format than the `mise.toml` file. They are just a list of tasks.
-The file should be the same format as the `[tasks]` section of `mise.toml` but without the `[task]` prefix:
-
-::: code-group
-
-```toml [tasks.toml]
-task1 = "echo task1"
-task2 = "echo task2"
-task3 = "echo task3"
-
-[task4]
-run = "echo task4"
-```
-
-:::
-
-If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
-
-## Vars
-
-Vars are variables that can be shared between tasks like environment variables but they are not
-passed as environment variables to the scripts. They are defined in the `vars` section of the
-`mise.toml` file.
-
-```toml
-[vars]
-e2e_args = '--headless'
-
-[tasks.test]
-run = './scripts/test-e2e.sh {{vars.e2e_args}}'
-```
-
-Like most configuration in mise, vars can be defined across several files. So for example, you could
-put some vars in your global mise config `~/.config/mise/config.toml`, use them in a task at
-`~/src/work/myproject/mise.toml`. You can also override those vars in "later" config files such
-as `~/src/work/myproject/mise.local.toml` and they will be used inside tasks of any config file.
-
-As of this writing vars are only supported in TOML tasks. I want to add support for file tasks, but
-I don't want to turn all file tasks into tera templates just for this feature.
-
 ## Environment variables passed to tasks
 
 The following environment variables are passed to the task:
