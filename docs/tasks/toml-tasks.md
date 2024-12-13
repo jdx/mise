@@ -137,13 +137,7 @@ You can hide a task from the list of available tasks by setting `hide = true`:
 ```toml
 [tasks.cleancache]
 run = "rm -rf .cache"
-hide = true # hide this task from mise tasks / mise run
-```
-
-Note that if you want to see hidden tasks, you can use the `--hidden` flag:
-
-```shell
-mise tasks ls --hidden
+hide = true # hide this task from mise tasks ls / mise run
 ```
 
 ## alias
@@ -208,7 +202,7 @@ shell = 'bash -c'
 run = "cargo clippy"
 ```
 
-or use a `shebang`:
+or use a shebang:
 
 ```toml
 [tasks.lint]
@@ -308,7 +302,7 @@ puts 'Hello, ruby!'
 ::: details What's a shebang? What's the difference between `#!/usr/bin/env` and `#!/usr/bin/env -S`
 
 A shebang is the character sequence `#!` at the beginning of a script file that tells the system which program should be used to interpret/execute the script.
-The [env command](https://manpages.ubuntu.com/manpages/jammy/man1/env.1.html) comes from GNU Coreutils.
+The [env command](https://manpages.ubuntu.com/manpages/jammy/man1/env.1.html) comes from GNU Coreutils. `mise` does not use `env` but will behave similarly.
 
 For example, `#!/usr/bin/env python` will run the script with the Python interpreter found in the `PATH`.
 
@@ -316,7 +310,7 @@ The `-S` flag allows passing multiple arguments to the interpreter.
 It treats the rest of the line as a single argument string to be split.
 
 This is useful when you need to specify interpreter flags or options.
-Example: `#!/usr/bin/env -S python -u` will run Python with unbuffered output
+Example: `#!/usr/bin/env -S python -u` will run Python with unbuffered output.
 
 :::
 
