@@ -46,7 +46,7 @@ mod render_help;
 mod render_mangen;
 mod reshim;
 mod run;
-mod self_update;
+pub(crate) mod self_update;
 mod set;
 mod settings;
 mod shell;
