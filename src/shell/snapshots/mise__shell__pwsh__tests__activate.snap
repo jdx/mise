@@ -1,6 +1,6 @@
 ---
 source: src/shell/pwsh.rs
-assertion_line: 177
+assertion_line: 186
 expression: pwsh.activate(opts)
 snapshot_kind: text
 ---
@@ -46,17 +46,29 @@ function mise {
 }
 
 function _mise_hook {
-    & /some/dir/mise hook-env --status -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+    if ($env:MISE_SHELL -eq "pwsh"){
+        & /some/dir/mise hook-env --status -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+    }
 }
 
-if (-not $__mise_pwsh_original_chpwd_function){
-    $Global:__mise_pwsh_original_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
+if (-not $__mise_pwsh_previous_chpwd_function){
+    $Global:__mise_pwsh_previous_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
 
     if ($__mise_original_pwsh_chpwd_function) {
-        $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = [Delegate]::Combine($__mise_pwsh_original_chpwd_function, {_mise_hook})
+        $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = [Delegate]::Combine($__mise_pwsh_previous_chpwd_function, {_mise_hook})
     }
     else {
         $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = {_mise_hook}
+    }
+}
+
+if (-not $__mise_pwsh_previous_prompt_function){
+    $global:__mise_pwsh_previous_prompt_function=prompt
+    function global:prompt {
+        if (Test-Path -Path Function:\_mise_hook){
+            _mise_hook
+        }
+        $__mise_pwsh_previous_prompt_function
     }
 }
 

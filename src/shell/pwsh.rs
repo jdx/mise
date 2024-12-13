@@ -62,17 +62,29 @@ impl Shell for Pwsh {
             out.push_str(&formatdoc! {r#"
 
             function _mise_hook {{
-                & {exe} hook-env{flags} -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                if ($env:MISE_SHELL -eq "pwsh"){{
+                    & {exe} hook-env{flags} -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                }}
             }}
 
-            if (-not $__mise_pwsh_original_chpwd_function){{
-                $Global:__mise_pwsh_original_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
+            if (-not $__mise_pwsh_previous_chpwd_function){{
+                $Global:__mise_pwsh_previous_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
 
                 if ($__mise_original_pwsh_chpwd_function) {{
-                    $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = [Delegate]::Combine($__mise_pwsh_original_chpwd_function, {{_mise_hook}})
+                    $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = [Delegate]::Combine($__mise_pwsh_previous_chpwd_function, {{_mise_hook}})
                 }}
                 else {{
                     $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = {{_mise_hook}}
+                }}
+            }}
+
+            if (-not $__mise_pwsh_previous_prompt_function){{
+                $global:__mise_pwsh_previous_prompt_function=prompt
+                function global:prompt {{
+                    if (Test-Path -Path Function:\_mise_hook){{
+                        _mise_hook
+                    }}
+                    $__mise_pwsh_previous_prompt_function
                 }}
             }}
 
@@ -84,9 +96,6 @@ impl Shell for Pwsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = $__mise_pwsh_original_chpwd_function
-        Remove-Variable __mise_pwsh_original_chpwd_function -ErrorAction SilentlyContinue
-        Remove-Item function:_mise_hook -ErrorAction SilentlyContinue
         Remove-Item function:mise
         Remove-Item -Path Env:/MISE_SHELL
         Remove-Item -Path Env:/__MISE_WATCH
