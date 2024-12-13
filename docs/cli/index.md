@@ -56,7 +56,7 @@ Answer yes to all confirmation prompts
 - [`mise cache <SUBCOMMAND>`](/cli/cache.md)
 - [`mise cache clear [PLUGIN]...`](/cli/cache/clear.md)
 - [`mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`](/cli/cache/prune.md)
-- [`mise completion [SHELL]`](/cli/completion.md)
+- [`mise completion [--include-bash-completion-lib] [SHELL]`](/cli/completion.md)
 - [`mise config [--no-header] [-J --json] <SUBCOMMAND>`](/cli/config.md)
 - [`mise config generate [-o --output <OUTPUT>]`](/cli/config/generate.md)
 - [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
