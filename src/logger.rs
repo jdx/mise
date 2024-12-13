@@ -28,12 +28,17 @@ impl log::Log for Logger {
             if let Some(log_file) = &self.log_file {
                 let mut log_file = log_file.lock().unwrap();
                 let out = self.render(record, self.file_level);
-                let _ = writeln!(log_file, "{}", console::strip_ansi_codes(&out));
+                if !out.is_empty() {
+                    let _ = writeln!(log_file, "{}", console::strip_ansi_codes(&out));
+                }
             }
         }
         if record.level() <= self.term_level {
             ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                eprintln!("{}", self.render(record, self.term_level));
+                let out = self.render(record, self.term_level);
+                if !out.is_empty() {
+                    eprintln!("{}", self.render(record, self.term_level));
+                }
             });
         }
     }
@@ -72,15 +77,19 @@ impl Logger {
         match level {
             LevelFilter::Off => "".to_string(),
             LevelFilter::Trace => {
+                let level = record.level();
+                let file = record.file().unwrap_or("<unknown>");
+                if level == LevelFilter::Trace && file.contains("/expr-lang-") {
+                    return "".to_string();
+                };
                 let meta = ui::style::edim(format!(
                     "{thread_id:>2} [{file}:{line}]",
                     thread_id = thread_id(),
-                    file = record.file().unwrap_or("<unknown>"),
                     line = record.line().unwrap_or(0),
                 ));
                 format!(
                     "{level} {meta} {args}",
-                    level = self.styled_level(record.level()),
+                    level = self.styled_level(level),
                     args = record.args()
                 )
             }

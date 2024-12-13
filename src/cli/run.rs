@@ -574,7 +574,9 @@ impl Run {
             return Ok(false);
         }
         let run = || -> Result<bool> {
-            let sources = self.get_last_modified(&self.cwd(task)?, &task.sources)?;
+            let mut sources = task.sources.clone();
+            sources.push(task.config_source.to_string_lossy().to_string());
+            let sources = self.get_last_modified(&self.cwd(task)?, &sources)?;
             let outputs = self.get_last_modified(&self.cwd(task)?, &task.outputs)?;
             trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {
@@ -583,7 +585,7 @@ impl Run {
             }
         };
         Ok(run().unwrap_or_else(|err| {
-            warn!("sources_are_fresh: {err}");
+            warn!("sources_are_fresh: {err:?}");
             false
         }))
     }
@@ -677,17 +679,13 @@ fn is_glob_pattern(path: &str) -> bool {
     path.chars().any(|c| glob_chars.contains(&c))
 }
 
-fn last_modified_path(
-    root: impl AsRef<std::ffi::OsStr>,
-    paths: &[&String],
-) -> Result<Option<SystemTime>> {
+fn last_modified_path(root: &Path, paths: &[&String]) -> Result<Option<SystemTime>> {
     let files = paths.iter().map(|p| {
         let base = Path::new(p);
-
         if base.is_relative() {
-            base.to_path_buf()
-        } else {
             Path::new(&root).join(base)
+        } else {
+            base.to_path_buf()
         }
     });
 
@@ -727,7 +725,11 @@ fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option
     Ok(files
         .into_iter()
         .unique()
-        .map(|p| p.metadata().map_err(|err| eyre!(err)))
+        .filter(|p| p.exists())
+        .map(|p| {
+            p.metadata()
+                .map_err(|err| eyre!("{}: {}", display_path(p), err))
+        })
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .map(|m| m.modified().map_err(|err| eyre!(err)))

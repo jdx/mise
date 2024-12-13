@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.test]
+run = 'cat input > test.txt && echo done'
+sources = ['input']
+outputs = ['test.txt']
+EOF
+echo "hello world" >input
+
+mkdir subdir && cd subdir || exit 1
+assert "mise -q test" "done"
+assert_not_contains "mise -q test" "done"
+touch ../input
+assert "mise -q test" "done"
+touch ../test.txt
+assert_not_contains "mise -q test" "done"
+touch ../mise.toml
+assert "mise -q test" "done"
+
+cat <<EOF >mise.toml
+[tasks.hi]
+sources = ["o*"]
+outputs = ["newer"]
+run = "echo hi"
+EOF
+
+touch older
+sleep 0.001
+touch newer
+mkdir subdir && cd subdir || exit 1
+assert_empty "mise -q hi"
+assert_empty "mise -q hi"
+touch ../older
+assert "mise -q hi" "hi"
