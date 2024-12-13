@@ -13,7 +13,7 @@ Note that you can include additional directories using the [task_config](/tasks/
 Here is an example of a file task that builds a Rust CLI:
 
 ```bash [mise-tasks/build]
-#!/usr/bin/env bash 
+#!/usr/bin/env bash
 #MISE description="Build the CLI"
 cargo build
 ```
