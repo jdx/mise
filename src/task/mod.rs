@@ -64,6 +64,8 @@ pub struct Task {
     pub outputs: Vec<String>,
     #[serde(default)]
     pub shell: Option<String>,
+    #[serde(default)]
+    pub quiet: bool,
 
     // normal type
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -414,6 +416,7 @@ impl Default for Task {
             run_windows: vec![],
             args: vec![],
             file: None,
+            quiet: false,
         }
     }
 }

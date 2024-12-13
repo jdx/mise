@@ -323,7 +323,7 @@ run = 'echo "Enter your name:"; read name; echo "Hello, $name!"'
 
 ## quiet
 
-Set `quiet = false` to supress mise additional output.
+Set `quiet = true` to suppress mise additional output.
 
 ## Arguments
 
