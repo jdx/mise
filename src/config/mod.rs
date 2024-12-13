@@ -1,4 +1,4 @@
-use eyre::{ensure, eyre, Context, Result};
+use eyre::{bail, eyre, Context, Result};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
@@ -33,6 +33,7 @@ pub mod env_directive;
 pub mod settings;
 pub mod tracking;
 
+use crate::cli::self_update::SelfUpdate;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
 use crate::plugins::PluginType;
@@ -521,12 +522,18 @@ impl Config {
         for cf in self.config_files.values() {
             if let Some(min) = cf.min_version() {
                 let cur = &*version::V;
-                ensure!(
-                    cur >= min,
-                    "mise version {} is required, but you are using {}",
-                    style::eyellow(min),
-                    style::eyellow(cur)
-                );
+                if cur < min {
+                    let min = style::eyellow(min);
+                    let cur = style::eyellow(cur);
+                    if SelfUpdate::is_available() {
+                        bail!(
+                            "mise version {min} is required, but you are using {cur}\n\
+                            Run `mise self update` to update mise",
+                        );
+                    } else {
+                        bail!("mise version {min} is required, but you are using {cur}");
+                    }
+                }
             }
         }
         Ok(())
