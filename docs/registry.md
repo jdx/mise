@@ -106,6 +106,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | cargo-make | [ubi:sagiegurari/cargo-make](https://github.com/sagiegurari/cargo-make) [asdf:mise-plugins/asdf-cargo-make](https://github.com/mise-plugins/asdf-cargo-make) |
 | carp | [ubi:carp-lang/Carp](https://github.com/carp-lang/Carp) [asdf:susurri/asdf-carp](https://github.com/susurri/asdf-carp) |
 | carthage | [asdf:younke/asdf-carthage](https://github.com/younke/asdf-carthage) |
+| cblite | [asdf:JinfengLy/asdf-cblite](https://github.com/JinfengLy/asdf-cblite) |
 | ccache | [ubi:ccache/ccache](https://github.com/ccache/ccache) [asdf:asdf-community/asdf-ccache](https://github.com/asdf-community/asdf-ccache) |
 | certstrap | [ubi:square/certstrap](https://github.com/square/certstrap) [asdf:carnei-ro/asdf-certstrap](https://github.com/carnei-ro/asdf-certstrap) |
 | cf | [asdf:mattysweeps/asdf-cf](https://github.com/mattysweeps/asdf-cf) |
@@ -242,6 +243,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | fission | [aqua:fission/fission](https://github.com/fission/fission) [asdf:virtualstaticvoid/asdf-fission](https://github.com/virtualstaticvoid/asdf-fission) |
 | flamingo | [ubi:flux-subsystem-argo/flamingo](https://github.com/flux-subsystem-argo/flamingo) [asdf:log2/asdf-flamingo](https://github.com/log2/asdf-flamingo) |
 | flarectl | [ubi:cloudflare/cloudflare-go](https://github.com/cloudflare/cloudflare-go) [asdf:mise-plugins/asdf-flarectl](https://github.com/mise-plugins/asdf-flarectl) |
+| flashlight | [asdf:bitfrost/asdf-flashlight](https://github.com/bitfrost/asdf-flashlight) |
 | flatc | [ubi:google/flatbuffers](https://github.com/google/flatbuffers) [asdf:TheOpenDictionary/asdf-flatc](https://github.com/TheOpenDictionary/asdf-flatc) |
 | flutter | [asdf:oae/asdf-flutter](https://github.com/oae/asdf-flutter) [vfox:version-fox/vfox-flutter](https://github.com/version-fox/vfox-flutter) |
 | fluttergen | [ubi:FlutterGen/flutter_gen](https://github.com/FlutterGen/flutter_gen) [asdf:FlutterGen/asdf-fluttergen](https://github.com/FlutterGen/asdf-fluttergen) |
