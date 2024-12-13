@@ -1,11 +1,11 @@
 use crate::config::config_file::toml::{deserialize_arr, TomlParser};
 use crate::config::Config;
-use crate::file;
 use crate::task::task_script_parser::{
     has_any_args_defined, replace_template_placeholders_with_args, TaskScriptParser,
 };
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::ui::tree::TreeItem;
+use crate::{dirs, file};
 use console::{truncate_str, Color};
 use either::Either;
 use eyre::{eyre, Result};
@@ -120,7 +120,17 @@ impl Debug for EitherStringOrIntOrBool {
 }
 
 impl Task {
+    pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
+        Ok(Self {
+            name: name_from_path(prefix, path)?,
+            config_source: path.to_path_buf(),
+            config_root: Some(config_root.to_path_buf()),
+            ..Default::default()
+        })
+    }
+
     pub fn from_path(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
+        let mut task = Task::new(path, prefix, config_root)?;
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
@@ -145,29 +155,35 @@ impl Task {
         let p = TomlParser::new(&info, get_tera(Some(config_root)), tera_ctx);
         // trace!("task info: {:#?}", info);
 
-        let task = Task {
-            name: name_from_path(prefix, path)?,
-            config_source: path.to_path_buf(),
-            config_root: Some(config_root.to_path_buf()),
-            hide: !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default(),
-            aliases: p
-                .parse_array("alias")?
-                .or(p.parse_array("aliases")?)
-                .or(p.parse_str("alias")?.map(|s| vec![s]))
-                .or(p.parse_str("aliases")?.map(|s| vec![s]))
-                .unwrap_or_default(),
-            description: p.parse_str("description")?.unwrap_or_default(),
-            sources: p.parse_array("sources")?.unwrap_or_default(),
-            outputs: p.parse_array("outputs")?.unwrap_or_default(),
-            depends: p.parse_array("depends")?.unwrap_or_default(),
-            wait_for: p.parse_array("wait_for")?.unwrap_or_default(),
-            dir: p.parse_str("dir")?,
-            env: p.parse_env("env")?.unwrap_or_default(),
-            file: Some(path.to_path_buf()),
-            shell: p.parse_str("shell")?,
-            ..Default::default()
-        };
+        task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
+        task.aliases = p
+            .parse_array("alias")?
+            .or(p.parse_array("aliases")?)
+            .or(p.parse_str("alias")?.map(|s| vec![s]))
+            .or(p.parse_str("aliases")?.map(|s| vec![s]))
+            .unwrap_or_default();
+        task.description = p.parse_str("description")?.unwrap_or_default();
+        task.sources = p.parse_array("sources")?.unwrap_or_default();
+        task.outputs = p.parse_array("outputs")?.unwrap_or_default();
+        task.depends = p.parse_array("depends")?.unwrap_or_default();
+        task.wait_for = p.parse_array("wait_for")?.unwrap_or_default();
+        task.dir = p.parse_str("dir")?;
+        task.env = p.parse_env("env")?.unwrap_or_default();
+        task.file = Some(path.to_path_buf());
+        task.shell = p.parse_str("shell")?;
         Ok(task)
+    }
+
+    pub fn task_dir() -> PathBuf {
+        let config = Config::get();
+        let cwd = dirs::CWD.clone().unwrap_or_default();
+        let project_root = config.project_root.clone().unwrap_or(cwd);
+        for dir in config.task_includes_for_dir(&project_root) {
+            if dir.is_dir() && project_root.join(&dir).exists() {
+                return project_root.join(dir);
+            }
+        }
+        project_root.join("mise-tasks")
     }
 
     // pub fn args(&self) -> impl Iterator<Item = String> {

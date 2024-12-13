@@ -1,8 +1,8 @@
-use eyre::Result;
-
 use crate::config::Config;
 use crate::task::Task;
-use crate::{env, file};
+use crate::{dirs, env, file};
+use eyre::Result;
+use indoc::formatdoc;
 
 /// Edit a tasks with $EDITOR
 ///
@@ -22,22 +22,22 @@ pub struct TasksEdit {
 impl TasksEdit {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
+        let cwd = dirs::CWD.clone().unwrap_or_default();
+        let project_root = config.project_root.clone().unwrap_or(cwd);
+        let path = Task::task_dir().join(&self.task);
 
         let task = config
             .tasks_with_aliases()?
             .remove(&self.task)
             .cloned()
+            .or_else(|| Task::from_path(&path, path.parent().unwrap(), &project_root).ok())
             .map_or_else(
-                || {
-                    let project_root = config.project_root.clone().unwrap_or(env::current_dir()?);
-                    let path = project_root.join(".mise").join("tasks").join(&self.task);
-                    Task::from_path(&path, path.parent().unwrap(), &project_root)
-                },
+                || Task::new(&path, path.parent().unwrap(), &project_root),
                 Ok,
             )?;
         let file = &task.config_source;
         if !file.exists() {
-            file::create(file)?;
+            file::write(file, default_task())?;
             file::make_executable(file)?;
         }
         if self.path {
@@ -48,6 +48,15 @@ impl TasksEdit {
 
         Ok(())
     }
+}
+
+fn default_task() -> String {
+    formatdoc!(
+        r#"#!/usr/bin/env bash
+        set -euxo pipefail
+
+        "#
+    )
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
