@@ -1,3 +1,6 @@
+use crate::cmd::cmd;
+use crate::config::Config;
+use crate::toolset::ToolsetBuilder;
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
 use eyre::Result;
@@ -23,6 +26,13 @@ pub struct Completion {
     /// https://usage.jdx.dev
     #[clap(long, verbatim_doc_comment, hide = true)]
     usage: bool,
+
+    /// Include the bash completion library in the bash completion script
+    ///
+    /// This is required for completions to work in bash, but it is not included by default
+    /// you may source it separately or enable this flag to include it in the script.
+    #[clap(long, verbatim_doc_comment)]
+    include_bash_completion_lib: bool,
 }
 
 impl Completion {
@@ -42,19 +52,23 @@ impl Completion {
         Ok(())
     }
 
-    fn call_usage(&self, shell: Shell) -> std::io::Result<String> {
-        cmd!(
-            "usage",
-            "generate",
-            "completion",
+    fn call_usage(&self, shell: Shell) -> Result<String> {
+        let toolset = ToolsetBuilder::new().build(&Config::get())?;
+        let mut args = vec![
+            "generate".into(),
+            "completion".into(),
             shell.to_string(),
-            "mise",
-            "--usage-cmd",
-            "mise usage",
-            "--cache-key",
-            env!("CARGO_PKG_VERSION")
-        )
-        .read()
+            "mise".into(),
+            "--usage-cmd".into(),
+            "mise usage".into(),
+            "--cache-key".into(),
+            env!("CARGO_PKG_VERSION").into(),
+        ];
+        if self.include_bash_completion_lib {
+            args.push("--include-bash-completion-lib".into());
+        }
+        let output = cmd("usage", args).full_env(toolset.full_env()?).read()?;
+        Ok(output)
     }
 
     fn prerendered(&self, shell: Shell) -> String {

@@ -439,6 +439,7 @@ impl Toolset {
             })
             .collect()
     }
+    /// returns env_with_path but also with the existing env vars from the system
     pub fn full_env(&self) -> Result<BTreeMap<String, String>> {
         let mut env = env::PRISTINE_ENV
             .clone()
@@ -447,6 +448,7 @@ impl Toolset {
         env.extend(self.env_with_path(&Config::get())?);
         Ok(env)
     }
+    /// the full mise environment including all tool paths
     pub fn env_with_path(&self, config: &Config) -> Result<BTreeMap<String, String>> {
         let mut env = self.env(config)?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());

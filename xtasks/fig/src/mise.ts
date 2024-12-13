@@ -652,6 +652,15 @@ const completionSpec: Fig.Spec = {
                 "completion"
             ],
             "description": "Generate shell completions",
+            "options": [
+                {
+                    "name": [
+                        "--include-bash-completion-lib"
+                    ],
+                    "description": "Include the bash completion library in the bash completion script",
+                    "isRepeatable": false
+                }
+            ],
             "args": [
                 {
                     "name": "shell",

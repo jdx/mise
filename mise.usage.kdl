@@ -218,6 +218,9 @@ cmd "completion" help="Generate shell completions" {
     flag "--usage" help="Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first." hide=true {
         long_help "Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first.\n\nThis requires the `usage` CLI to be installed.\nhttps://usage.jdx.dev"
     }
+    flag "--include-bash-completion-lib" help="Include the bash completion library in the bash completion script" {
+        long_help "Include the bash completion library in the bash completion script\n\nThis is required for completions to work in bash, but it is not included by default\nyou may source it separately or enable this flag to include it in the script."
+    }
     arg "[SHELL]" help="Shell type to generate completions for" {
         choices "bash" "fish" "zsh"
     }
