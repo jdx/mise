@@ -47,7 +47,7 @@ opt-level = 3
 
 [dependencies]
 base64 = "0.22"
-bzip2 = "0.4"
+bzip2 = "0.5"
 calm_io = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 ci_info = "0.14"

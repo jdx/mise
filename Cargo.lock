@@ -322,6 +322,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bzip2"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bafdbf26611df8c14810e268ddceda071c297570a5fb360ceddf617fe417ef58"
+dependencies = [
+ "bzip2-sys",
+ "libc",
+]
+
+[[package]]
 name = "bzip2-sys"
 version = "0.1.11+1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2090,7 +2100,7 @@ version = "2024.12.8"
 dependencies = [
  "base64",
  "built",
- "bzip2",
+ "bzip2 0.5.0",
  "calm_io",
  "cfg_aliases",
  "chrono",
@@ -4001,7 +4011,7 @@ checksum = "62cddbea2772c6d00b7d951dfd3fd8ba39f2479219769f36fec91d29f2ee602d"
 dependencies = [
  "anyhow",
  "binstall-tar",
- "bzip2",
+ "bzip2 0.4.4",
  "document-features",
  "flate2",
  "itertools 0.13.0",
@@ -4644,7 +4654,7 @@ version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43e8a6586de03e05832a7e364b3b94fb86ae16bbaa881f3e7998c4e66c6b900f"
 dependencies = [
- "bzip2",
+ "bzip2 0.4.4",
  "duct",
  "filetime",
  "flate2",
@@ -4793,7 +4803,7 @@ checksum = "99d52293fc86ea7cf13971b3bb81eb21683636e7ae24c729cdaf1b7c4157a352"
 dependencies = [
  "aes",
  "arbitrary",
- "bzip2",
+ "bzip2 0.4.4",
  "constant_time_eq",
  "crc32fast",
  "crossbeam-utils",
