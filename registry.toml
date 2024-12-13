@@ -344,6 +344,7 @@ flamingo.backends = ["ubi:flux-subsystem-argo/flamingo", "asdf:log2/asdf-flaming
 flamingo.test = ["flamingo -v", "flamingo version {{version}}"]
 flarectl.backends = ["ubi:cloudflare/cloudflare-go[exe=flarectl]", "asdf:mise-plugins/asdf-flarectl"]
 flarectl.test = ["flarectl --version", "flarectl version {{version}}"]
+flashlight.backends = ["asdf:bitfrost/asdf-flashlight"]
 flatc.backends = ["ubi:google/flatbuffers[exe=flatc]", "asdf:TheOpenDictionary/asdf-flatc"]
 flatc.test = ["flatc --version", "flatc version {{version}}"]
 flutter.backends = ["asdf:oae/asdf-flutter", "vfox:version-fox/vfox-flutter"]
