@@ -113,6 +113,7 @@ export default defineConfig({
           { text: "Running Tasks", link: "/tasks/running-tasks" },
           { text: "TOML Tasks", link: "/tasks/toml-tasks" },
           { text: "File Tasks", link: "/tasks/file-tasks" },
+          { text: "Task Configuration", link: "/tasks/task-configuration" },
         ],
       },
       {
