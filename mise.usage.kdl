@@ -1573,6 +1573,9 @@ In the following order:
 
 Use the `--global` flag to use the global config file instead."#
     after_long_help r"Examples:
+    
+    # run with no arguments to use the interactive selector
+    $ mise use
 
     # set the current version of node to 20.x in mise.toml of current directory
     # will write the fuzzy version (e.g.: 20)

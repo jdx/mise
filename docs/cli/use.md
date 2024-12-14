@@ -85,6 +85,12 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 Examples:
 
 ```
+
+# run with no arguments to use the interactive selector
+$ mise use
+```
+
+```
 # set the current version of node to 20.x in mise.toml of current directory
 # will write the fuzzy version (e.g.: 20)
 $ mise use node@20

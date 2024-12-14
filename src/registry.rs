@@ -4,6 +4,7 @@ use crate::config::SETTINGS;
 use once_cell::sync::Lazy;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env::consts::OS;
+use std::fmt::Display;
 use std::iter::Iterator;
 use strum::IntoEnumIterator;
 use url::Url;
@@ -15,6 +16,7 @@ pub static REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> =
 #[derive(Debug, Clone)]
 pub struct RegistryTool {
     pub short: &'static str,
+    pub description: Option<&'static str>,
     pub backends: Vec<&'static str>,
     #[allow(unused)]
     pub aliases: &'static [&'static str],
@@ -113,4 +115,10 @@ fn url_like(s: &str) -> bool {
         || s.starts_with("git@")
         || s.starts_with("ssh://")
         || s.starts_with("git://")
+}
+
+impl Display for RegistryTool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.short)
+    }
 }
