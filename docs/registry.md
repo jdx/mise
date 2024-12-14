@@ -69,6 +69,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | awsweeper | [ubi:jckuester/awsweeper](https://github.com/jckuester/awsweeper) [asdf:chessmango/asdf-awsweeper](https://github.com/chessmango/asdf-awsweeper) |
 | azure | [asdf:EcoMind/asdf-azure-cli](https://github.com/EcoMind/asdf-azure-cli) |
 | azure-functions-core-tools | [asdf:daveneeley/asdf-azure-functions-core-tools](https://github.com/daveneeley/asdf-azure-functions-core-tools) |
+| azure-kubelogin | [aqua:Azure/kubelogin](https://github.com/Azure/kubelogin) [asdf:sechmann/asdf-kubelogin](https://github.com/sechmann/asdf-kubelogin) |
 | babashka | [ubi:babashka/babashka](https://github.com/babashka/babashka) [asdf:pitch-io/asdf-babashka](https://github.com/pitch-io/asdf-babashka) |
 | balena | [ubi:balena-io/balena-cli](https://github.com/balena-io/balena-cli) [asdf:boatkit-io/asdf-balena-cli](https://github.com/boatkit-io/asdf-balena-cli) |
 | bashbot | [aqua:mathew-fleisch/bashbot](https://github.com/mathew-fleisch/bashbot) [asdf:mathew-fleisch/asdf-bashbot](https://github.com/mathew-fleisch/asdf-bashbot) |
@@ -432,7 +433,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | kubectx | [aqua:ahmetb/kubectx](https://github.com/ahmetb/kubectx) [asdf:https://gitlab.com/wt0f/asdf-kubectx](https://gitlab.com/wt0f/asdf-kubectx) |
 | kubefedctl | [asdf:kvokka/asdf-kubefedctl](https://github.com/kvokka/asdf-kubefedctl) |
 | kubefirst | [asdf:Claywd/asdf-kubefirst](https://github.com/Claywd/asdf-kubefirst) |
-| kubelogin | [aqua:Azure/kubelogin](https://github.com/Azure/kubelogin) [asdf:sechmann/asdf-kubelogin](https://github.com/sechmann/asdf-kubelogin) |
+| kubelogin | [aqua:int128/kubelogin](https://github.com/int128/kubelogin) |
 | kubemqctl | [aqua:kubemq-io/kubemqctl](https://github.com/kubemq-io/kubemqctl) [asdf:johnlayton/asdf-kubemqctl](https://github.com/johnlayton/asdf-kubemqctl) |
 | kubent | [asdf:virtualstaticvoid/asdf-kubent](https://github.com/virtualstaticvoid/asdf-kubent) |
 | kubergrunt | [aqua:gruntwork-io/kubergrunt](https://github.com/gruntwork-io/kubergrunt) [asdf:NeoHsu/asdf-kubergrunt](https://github.com/NeoHsu/asdf-kubergrunt) |
