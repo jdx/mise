@@ -53,7 +53,15 @@ impl Client {
             .zstd(true)
     }
 
-    pub async fn get<U: IntoUrl>(&self, url: U) -> Result<Response> {
+    pub fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
+        let url = url.into_url().unwrap();
+        RUNTIME.block_on(async {
+            let resp = self.get_async(url.clone()).await?;
+            Ok(resp.bytes().await?)
+        })
+    }
+
+    pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let get = |url: Url| async move {
             debug!("GET {}", &url);
             let mut req = self.reqwest.get(url.clone());
@@ -113,7 +121,7 @@ impl Client {
     pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         let mut url = url.into_url().unwrap();
         let text = RUNTIME.block_on(async {
-            let resp = self.get(url.clone()).await?;
+            let resp = self.get_async(url.clone()).await?;
             Ok::<String, eyre::Error>(resp.text().await?)
         })?;
         if text.starts_with("<!DOCTYPE html>") {
@@ -133,7 +141,7 @@ impl Client {
     {
         let url = url.into_url().unwrap();
         let (json, headers) = RUNTIME.block_on(async {
-            let resp = self.get(url).await?;
+            let resp = self.get_async(url).await?;
             let headers = resp.headers().clone();
             Ok::<(T, HeaderMap), eyre::Error>((resp.json().await?, headers))
         })?;
@@ -157,7 +165,7 @@ impl Client {
         debug!("GET Downloading {} to {}", &url, display_path(path));
 
         RUNTIME.block_on(async {
-            let mut resp = self.get(url).await?;
+            let mut resp = self.get_async(url).await?;
             if let Some(length) = resp.content_length() {
                 if let Some(pr) = pr {
                     pr.set_length(length);
