@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+assert "mise tool gh --backend" "aqua:cli/cli"
+cat <<EOF >mise.toml
+[tools.gh]
+version = "1.0.0"
+EOF
+cat <<EOF >mise.lock
+[tools.gh]
+version = "1.0.0"
+backend = "ubi:cli/cli[exe=gh]"
+EOF
+assert "mise tool gh --backend" "ubi:cli/cli[exe=gh]"
