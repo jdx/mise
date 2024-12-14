@@ -60,7 +60,7 @@ impl Client {
             Ok(resp.bytes().await?)
         })
     }
-    
+
     pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let get = |url: Url| async move {
             debug!("GET {}", &url);

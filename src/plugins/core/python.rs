@@ -12,13 +12,13 @@ use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, dirs, file, plugins};
 use eyre::{bail, eyre};
+use flate2::read::GzDecoder;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use std::collections::BTreeMap;
-use std::io::{Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use flate2::read::GzDecoder;
 use versions::Versioning;
 use xx::regex;
 
