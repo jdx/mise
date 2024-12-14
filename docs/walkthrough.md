@@ -26,11 +26,7 @@ node -v
 
 And you'll also note that you now have a `mise.toml` file with the following content:
 
-```shell
-cat mise.toml
-```
-
-```toml
+```toml [mise.toml]
 [tools]
 node = "22"
 ```
@@ -140,7 +136,7 @@ test = "npm test"
 
 Or in a `mise-tasks` directory as a standalone file, such as `mise-tasks/build`:
 
-```bash
+```bash [mise-tasks/build]
 #!/bin/bash
 npm run build
 ```
@@ -162,7 +158,7 @@ mise is paired with [usage](https://usage.jdx.dev) which provides lots of featur
 
 Here is an example of a task with usage spec:
 
-```bash
+```bash [mise-tasks/users]
 #!/bin/bash
 #USAGE flag "-f --force" "Force the greeting to be displayed"
 #USAGE flag "-u --user <user>" "The user to greet"

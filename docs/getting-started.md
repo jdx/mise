@@ -97,11 +97,7 @@ node -v
 
 Note that when you ran `mise use --global node@22`, `mise` updated the global `mise` configuration.
 
-```shell
-cat ~/.config/mise/config.toml
-```
-
-```toml
+```toml [~/.config/mise/config.toml]
 [tools]
 node = "22"
 ```
