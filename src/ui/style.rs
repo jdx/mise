@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use crate::env::TERM_WIDTH;
 use crate::file::display_path;
 use console::{style, StyledObject};
 
@@ -64,16 +63,8 @@ pub fn nstyle<D>(val: D) -> StyledObject<D> {
     style(val).for_stdout()
 }
 
-pub fn nblue<D>(val: D) -> StyledObject<D> {
-    nstyle(val).blue()
-}
-
 pub fn ncyan<D>(val: D) -> StyledObject<D> {
     nstyle(val).cyan()
-}
-
-pub fn nbold<D>(val: D) -> StyledObject<D> {
-    nstyle(val).bold()
 }
 
 pub fn nunderline<D>(val: D) -> StyledObject<D> {
@@ -90,9 +81,4 @@ pub fn nred<D>(val: D) -> StyledObject<D> {
 
 pub fn ndim<D>(val: D) -> StyledObject<D> {
     nstyle(val).dim()
-}
-
-#[allow(unused)]
-pub fn truncate_str(s: impl AsRef<str>) -> String {
-    console::truncate_str(s.as_ref(), *TERM_WIDTH - 14, "…").to_string()
 }

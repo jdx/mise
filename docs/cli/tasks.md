@@ -12,7 +12,7 @@ Manage tasks
 
 Task name to get info of
 
-## Flags
+## Global Flags
 
 ### `--no-header`
 

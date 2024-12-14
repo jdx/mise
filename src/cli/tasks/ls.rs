@@ -1,13 +1,11 @@
-use console::truncate_str;
+use comfy_table::{Attribute, Cell, Row};
 use eyre::Result;
 use itertools::Itertools;
-use tabled::Tabled;
 
 use crate::config::Config;
-use crate::file::display_path;
+use crate::file::{display_path, display_rel_path};
 use crate::task::Task;
-use crate::ui::info::trim_line_end_whitespace;
-use crate::ui::{style, table};
+use crate::ui::table::MiseTable;
 
 /// List available tasks to execute
 /// These may be included from the config file or from the project's .mise/tasks directory
@@ -20,30 +18,30 @@ use crate::ui::{style, table};
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TasksLs {
     /// Do not print table header
-    #[clap(long, alias = "no-headers", verbatim_doc_comment)]
+    #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
     pub no_header: bool,
 
     /// Show all columns
-    #[clap(short = 'x', long, verbatim_doc_comment)]
+    #[clap(short = 'x', long, global = true, verbatim_doc_comment)]
     pub extended: bool,
 
     /// Show hidden tasks
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, global = true, verbatim_doc_comment)]
     pub hidden: bool,
 
     /// Sort by column. Default is name.
-    #[clap(long, value_name = "COLUMN", verbatim_doc_comment)]
+    #[clap(long, global = true, value_name = "COLUMN", verbatim_doc_comment)]
     pub sort: Option<SortColumn>,
 
     /// Sort order. Default is asc.
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, global = true, verbatim_doc_comment)]
     pub sort_order: Option<SortOrder>,
 
     /// Output in JSON format
-    #[clap(short = 'J', long, verbatim_doc_comment)]
+    #[clap(short = 'J', global = true, long, verbatim_doc_comment)]
     pub json: bool,
 
-    #[clap(long, hide = true)]
+    #[clap(long, global = true, hide = true)]
     pub usage: bool,
 }
 
@@ -83,16 +81,18 @@ impl TasksLs {
     }
 
     fn display(&self, tasks: Vec<Task>) -> Result<()> {
-        let rows = tasks.iter().map(|t| t.into()).collect::<Vec<Row>>();
-        let mut table = tabled::Table::new(rows);
-        table::default_style(&mut table, self.no_header);
-        // hide columns alias
-        if !self.extended {
-            table::disable_columns(&mut table, vec![1]);
+        let mut table = MiseTable::new(
+            self.no_header,
+            if self.extended {
+                &["Name", "Aliases", "Source", "Description"]
+            } else {
+                &["Name", "Description"]
+            },
+        );
+        for task in tasks {
+            table.add_row(self.task_to_row(&task));
         }
-        let table = format!("{table}");
-        miseprintln!("{}", trim_line_end_whitespace(&table));
-        Ok(())
+        table.print()
     }
 
     fn display_usage(&self, tasks: Vec<Task>) -> Result<()> {
@@ -117,7 +117,7 @@ impl TasksLs {
             .filter(|t| self.hidden || !t.hide)
             .map(|task| {
                 let mut inner = serde_json::Map::new();
-                inner.insert("name".to_string(), task.name.into());
+                inner.insert("name".to_string(), task.display_name().into());
                 if !task.aliases.is_empty() {
                     inner.insert("aliases".to_string(), task.aliases.join(", ").into());
                 }
@@ -149,37 +149,16 @@ impl TasksLs {
             _ => cmp,
         }
     }
-}
 
-#[derive(Tabled)]
-#[tabled(rename_all = "PascalCase")]
-struct Row {
-    name: String,
-    alias: String,
-    description: String,
-    // command: String,
-    source: String,
-}
-
-impl From<&Task> for Row {
-    fn from(task: &Task) -> Self {
-        // let cmd = tasks.command_string().unwrap_or_default();
-        Self {
-            name: style::nbold(&task.name).bright().to_string(),
-            alias: style::ndim(&task.aliases.join(", ")).dim().to_string(),
-            description: style::nblue(truncate(&task.description, 40)).to_string(),
-            // command: style::ndim(truncate(&cmd, 20)).dim().to_string(),
-            source: display_path(&task.config_source),
+    fn task_to_row(&self, task: &Task) -> Row {
+        let mut row = vec![Cell::new(task.display_name()).add_attribute(Attribute::Bold)];
+        if self.extended {
+            row.push(Cell::new(task.aliases.join(", ")));
+            row.push(Cell::new(display_rel_path(&task.config_source)));
         }
+        row.push(Cell::new(&task.description).add_attribute(Attribute::Dim));
+        row.into()
     }
-}
-
-fn first_line(s: &str) -> &str {
-    s.lines().next().unwrap_or_default()
-}
-
-fn truncate(s: &str, len: usize) -> String {
-    first_line(&truncate_str(s, len, "…")).to_string()
 }
 
 // TODO: fill this out

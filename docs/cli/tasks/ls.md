@@ -11,7 +11,7 @@ So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tas
 ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 tasks will override the global ones if they have the same name.
 
-## Flags
+## Global Flags
 
 ### `--no-header`
 

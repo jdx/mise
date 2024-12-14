@@ -182,6 +182,23 @@ impl Task {
         Ok(task)
     }
 
+    /// prints the task name without an extension
+    pub fn display_name(&self) -> String {
+        self.name
+            .rsplitn(2, '.')
+            .last()
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    pub fn is_match(&self, pat: &str) -> bool {
+        if self.name == pat || self.aliases.contains(&pat.to_string()) {
+            return true;
+        }
+        let pat = pat.rsplitn(2, '.').last().unwrap_or_default();
+        self.name == pat || self.aliases.contains(&pat.to_string())
+    }
+
     pub fn task_dir() -> PathBuf {
         let config = Config::get();
         let cwd = dirs::CWD.clone().unwrap_or_default();

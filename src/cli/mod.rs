@@ -342,7 +342,11 @@ impl Cli {
             Ok(cmd)
         } else {
             if let Some(task) = self.task {
-                if Config::get().tasks()?.contains_key(&task) {
+                if Config::get()
+                    .tasks()?
+                    .iter()
+                    .any(|(_, t)| t.is_match(&task))
+                {
                     return Ok(Commands::Run(run::Run {
                         task,
                         args: self.task_args.unwrap_or_default(),

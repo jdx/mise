@@ -1234,21 +1234,21 @@ cmd "tasks" help="Manage tasks" {
 
     $ mise tasks ls
 "
-    flag "--no-header" help="Do not print table header"
-    flag "-x --extended" help="Show all columns"
-    flag "--hidden" help="Show hidden tasks"
-    flag "--sort" help="Sort by column. Default is name." {
+    flag "--no-header" help="Do not print table header" global=true
+    flag "-x --extended" help="Show all columns" global=true
+    flag "--hidden" help="Show hidden tasks" global=true
+    flag "--sort" help="Sort by column. Default is name." global=true {
         arg "<COLUMN>" {
             choices "name" "alias" "description" "source"
         }
     }
-    flag "--sort-order" help="Sort order. Default is asc." {
+    flag "--sort-order" help="Sort order. Default is asc." global=true {
         arg "<SORT_ORDER>" {
             choices "asc" "desc"
         }
     }
-    flag "-J --json" help="Output in JSON format"
-    flag "--usage" hide=true
+    flag "-J --json" help="Output in JSON format" global=true
+    flag "--usage" hide=true global=true
     arg "[TASK]" help="Task name to get info of"
     cmd "deps" help="Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
@@ -1322,21 +1322,21 @@ tasks will override the global ones if they have the same name."
 
     $ mise tasks ls
 "
-        flag "--no-header" help="Do not print table header"
-        flag "-x --extended" help="Show all columns"
-        flag "--hidden" help="Show hidden tasks"
-        flag "--sort" help="Sort by column. Default is name." {
+        flag "--no-header" help="Do not print table header" global=true
+        flag "-x --extended" help="Show all columns" global=true
+        flag "--hidden" help="Show hidden tasks" global=true
+        flag "--sort" help="Sort by column. Default is name." global=true {
             arg "<COLUMN>" {
                 choices "name" "alias" "description" "source"
             }
         }
-        flag "--sort-order" help="Sort order. Default is asc." {
+        flag "--sort-order" help="Sort order. Default is asc." global=true {
             arg "<SORT_ORDER>" {
                 choices "asc" "desc"
             }
         }
-        flag "-J --json" help="Output in JSON format"
-        flag "--usage" hide=true
+        flag "-J --json" help="Output in JSON format" global=true
+        flag "--usage" hide=true global=true
     }
     cmd "run" help="Run task(s)" {
         alias "r"

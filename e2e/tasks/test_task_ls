@@ -29,7 +29,12 @@ cat <<'EOF' >mytasks/filetask2
 EOF
 chmod +x mytasks/filetask2
 
-assert "mise task ls" "filetask2         ~/workdir/mytasks/filetask2
-lint              ~/workdir/mise.toml
-test              ~/workdir/tasks.toml
-test-with-args    ~/workdir/tasks.toml"
+assert "mise task ls" "filetask2
+lint
+test
+test-with-args"
+
+assert "mise task -x ls" "filetask2          ./mytasks/filetask2
+lint               ./mise.toml
+test               ./tasks.toml
+test-with-args     ./tasks.toml"
