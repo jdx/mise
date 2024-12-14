@@ -1,11 +1,14 @@
+use crate::env::TERM_WIDTH;
+use crate::Result;
+use comfy_table::{Attribute, Cell, Color, ContentArrangement, Row};
 use console::style;
+use itertools::Itertools;
 use tabled::settings::object::{Columns, Rows};
 use tabled::settings::peaker::PriorityMax;
 use tabled::settings::width::{MinWidth, Wrap};
 use tabled::settings::{Format, Margin, Modify, Padding, Remove, Settings, Style, Width};
 use tabled::Table;
-
-use crate::env::TERM_WIDTH;
+use xx::regex;
 
 type SettingPriority = Settings<Settings, Wrap<usize, PriorityMax>>;
 type SettingMinWidth = Settings<SettingPriority, MinWidth>;
@@ -41,5 +44,55 @@ pub fn default_style(table: &mut Table, no_headers: bool) {
 pub fn disable_columns(table: &mut Table, col_idxs: Vec<usize>) {
     for idx in col_idxs {
         table.with(Remove::column(Columns::single(idx)));
+    }
+}
+
+pub struct MiseTable {
+    table: comfy_table::Table,
+    truncate: bool,
+}
+
+impl MiseTable {
+    pub fn new(no_header: bool, headers: &[&str]) -> Self {
+        let mut table = comfy_table::Table::new();
+        table
+            .load_preset(comfy_table::presets::NOTHING)
+            .set_content_arrangement(ContentArrangement::Dynamic);
+        if !no_header && console::user_attended() {
+            let headers = headers.iter().map(Self::header).collect_vec();
+            table.set_header(headers);
+        }
+        Self {
+            table,
+            truncate: false,
+        }
+    }
+
+    pub fn truncate(&mut self, truncate: bool) -> &mut Self {
+        self.truncate = truncate;
+        self
+    }
+
+    fn header(title: impl ToString) -> Cell {
+        Cell::new(title)
+            .add_attribute(Attribute::Italic)
+            .fg(Color::Magenta)
+    }
+
+    pub fn add_row(&mut self, row: impl Into<Row>) {
+        let mut row = row.into();
+        row.max_height(1);
+        self.table.add_row(row);
+    }
+
+    pub fn print(&self) -> Result<()> {
+        let table = self.table.to_string();
+        // trim first character, skipping color characters
+        let re = regex!(r"^(\x{1b}[^ ]*\d+m) ");
+        for line in table.lines() {
+            let line = re.replacen(line.trim(), 1, "$1");
+            println!("{}", line);
+        }
+        Ok(())
     }
 }

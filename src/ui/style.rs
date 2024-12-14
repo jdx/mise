@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use console::{style, StyledObject};
-
+use crate::env::TERM_WIDTH;
 use crate::file::display_path;
+use console::{style, StyledObject};
 
 pub fn ereset() -> String {
     if console::colors_enabled_stderr() {
@@ -90,4 +90,9 @@ pub fn nred<D>(val: D) -> StyledObject<D> {
 
 pub fn ndim<D>(val: D) -> StyledObject<D> {
     nstyle(val).dim()
+}
+
+#[allow(unused)]
+pub fn truncate_str(s: impl AsRef<str>) -> String {
+    console::truncate_str(s.as_ref(), *TERM_WIDTH - 14, "…").to_string()
 }

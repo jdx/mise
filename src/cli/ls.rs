@@ -1,14 +1,11 @@
-use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
-use std::sync::Arc;
-
-use console::style;
+use comfy_table::{Attribute, Cell, Color};
 use eyre::{ensure, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;
 use serde_derive::Serialize;
-use tabled::{Table, Tabled};
+use std::path::PathBuf;
+use std::sync::Arc;
 use versions::Versioning;
 
 use crate::backend::Backend;
@@ -16,7 +13,7 @@ use crate::cli::args::BackendArg;
 use crate::config;
 use crate::config::Config;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
-use crate::ui::table;
+use crate::ui::table::MiseTable;
 
 /// List installed and active tool versions
 ///
@@ -139,10 +136,6 @@ impl Ls {
     }
 
     fn display_user(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        // let data = runtimes
-        //     .into_iter()
-        //     .map(|(plugin, tv, source)| (plugin.to_string(), tv.to_string()))
-        //     .collect_vec();
         let rows = runtimes
             .into_par_iter()
             .map(|(ls, p, tv, source)| Row {
@@ -159,10 +152,17 @@ impl Ls {
                 },
             })
             .collect::<Vec<_>>();
-        let mut table = Table::new(rows);
-        table::default_style(&mut table, self.no_header);
-        miseprintln!("{}", table.to_string());
-        Ok(())
+        let mut table = MiseTable::new(self.no_header, &["Path", "Tools"]);
+        for r in rows {
+            let row = vec![
+                r.display_tool(),
+                r.display_version(),
+                r.display_source(),
+                r.display_requested(),
+            ];
+            table.add_row(row);
+        }
+        table.truncate(true).print()
     }
 
     fn get_runtime_list(&self, config: &Config) -> Result<Vec<RuntimeRow>> {
@@ -227,33 +227,52 @@ struct JSONToolVersion {
 
 type RuntimeRow<'a> = (&'a Ls, Arc<dyn Backend>, ToolVersion, ToolSource);
 
-#[derive(Tabled)]
-#[tabled(rename_all = "PascalCase")]
 struct Row {
-    #[tabled(display_with = "Self::display_tool")]
     tool: Arc<dyn Backend>,
     version: VersionStatus,
-    #[tabled(rename = "Config Source", display_with = "Self::display_source")]
     source: Option<ToolSource>,
-    #[tabled(display_with = "Self::display_option")]
     requested: Option<String>,
 }
 
 impl Row {
-    fn display_option(arg: &Option<String>) -> String {
-        match arg {
-            Some(s) => s.clone(),
-            None => String::new(),
+    fn display_tool(&self) -> Cell {
+        Cell::new(&self.tool).fg(Color::Blue)
+    }
+    fn display_version(&self) -> Cell {
+        match &self.version {
+            VersionStatus::Active(version, outdated) => {
+                if *outdated {
+                    Cell::new(format!("{version} (outdated)"))
+                        .fg(Color::Yellow)
+                        .add_attribute(Attribute::Bold)
+                } else {
+                    Cell::new(version).fg(Color::Green)
+                }
+            }
+            VersionStatus::Inactive(version) => Cell::new(version).add_attribute(Attribute::Dim),
+            VersionStatus::Missing(version) => Cell::new(format!("{version} (missing)"))
+                .fg(Color::Red)
+                .add_attribute(Attribute::CrossedOut),
+            VersionStatus::Symlink(version, active) => {
+                let mut cell = Cell::new(format!("{version} (symlink)"));
+                if !*active {
+                    cell = cell.add_attribute(Attribute::Dim);
+                }
+                cell
+            }
         }
     }
-    fn display_tool(tool: &Arc<dyn Backend>) -> String {
-        style(tool).blue().to_string()
-    }
-    fn display_source(source: &Option<ToolSource>) -> String {
-        match source {
+    fn display_source(&self) -> Cell {
+        Cell::new(match &self.source {
             Some(source) => source.to_string(),
             None => String::new(),
-        }
+        })
+    }
+    fn display_requested(&self) -> Cell {
+        Cell::new(match &self.requested {
+            Some(s) => s.clone(),
+            None => String::new(),
+        })
     }
 }
 
@@ -303,44 +322,6 @@ impl From<(&Ls, &dyn Backend, &ToolVersion, &ToolSource)> for VersionStatus {
             VersionStatus::Active(tv.version.clone(), outdated)
         } else {
             VersionStatus::Inactive(tv.version.clone())
-        }
-    }
-}
-
-impl Display for VersionStatus {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VersionStatus::Active(version, outdated) => {
-                if *outdated {
-                    write!(
-                        f,
-                        "{} {}",
-                        style(version).yellow(),
-                        style("(outdated)").yellow()
-                    )
-                } else {
-                    write!(f, "{}", style(version).green())
-                }
-            }
-            VersionStatus::Inactive(version) => write!(f, "{}", style(version).dim()),
-            VersionStatus::Missing(version) => write!(
-                f,
-                "{} {}",
-                style(version).strikethrough().red(),
-                style("(missing)").red()
-            ),
-            VersionStatus::Symlink(version, active) => {
-                write!(
-                    f,
-                    "{} {}",
-                    if *active {
-                        style(version)
-                    } else {
-                        style(version).dim()
-                    },
-                    style("(symlink)").dim()
-                )
-            }
         }
     }
 }

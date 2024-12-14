@@ -736,7 +736,8 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
-                        "ls"
+                        "ls",
+                        "list"
                     ],
                     "description": "List config files currently in use",
                     "options": [

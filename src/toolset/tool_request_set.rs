@@ -48,7 +48,7 @@ impl ToolRequestSet {
             .collect()
     }
 
-    pub fn list_plugins(&self) -> Vec<&BackendArg> {
+    pub fn list_tools(&self) -> Vec<&BackendArg> {
         self.tools.keys().collect()
     }
 
