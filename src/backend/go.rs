@@ -74,10 +74,12 @@ impl Backend for GoBackend {
         // try "v" prefix if the version starts with semver
         let use_v = regex!(r"^\d+\.\d+\.\d+").is_match(&tv.version);
 
-        if use_v && install(format!("v{}", tv.version)).is_err() {
-            warn!("Failed to install, trying again without added 'v' prefix");
-        } else {
-            return Ok(tv);
+        if use_v {
+            if install(format!("v{}", tv.version)).is_err() {
+                warn!("Failed to install, trying again without added 'v' prefix");
+            } else {
+                return Ok(tv);
+            }
         }
 
         install(tv.version.clone())?;
