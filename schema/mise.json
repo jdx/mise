@@ -509,7 +509,6 @@
               "type": "string"
             },
             "precompiled_flavor": {
-              "default": "install_only_stripped",
               "description": "Specify the flavor to use for precompiled binaries.",
               "type": "string"
             },
