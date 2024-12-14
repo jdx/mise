@@ -333,7 +333,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         if ans {
             trust(&config_root)?;
             return Ok(());
-        } else {
+        } else if console::user_attended_stderr() {
             add_ignored(config_root.to_path_buf())?;
         }
     }

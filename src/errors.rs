@@ -22,7 +22,7 @@ pub enum Error {
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
     #[error(
-        "Config files in {} are not trusted.\nTrust them with `mise trust`.",
+        "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
         display_path(.0)
     )]
     UntrustedConfig(PathBuf),
