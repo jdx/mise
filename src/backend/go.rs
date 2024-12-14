@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -8,6 +6,8 @@ use crate::config::SETTINGS;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
+use std::fmt::Debug;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct GoBackend {
@@ -61,13 +61,6 @@ impl Backend for GoBackend {
     fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
         SETTINGS.ensure_experimental("go backend")?;
 
-        let version = if tv.version.starts_with("v") {
-            warn!("usage of a 'v' prefix in the version is discouraged");
-            tv.version.to_string().replacen("v", "", 1)
-        } else {
-            tv.version.to_string()
-        };
-
         let install = |v| {
             CmdLineRunner::new("go")
                 .arg("install")
@@ -78,10 +71,16 @@ impl Backend for GoBackend {
                 .execute()
         };
 
-        if install(format!("v{}", version)).is_err() {
+        // try "v" prefix if the version starts with semver
+        let use_v = regex!(r"^\d+\.\d+\.\d+").is_match(&tv.version);
+
+        if use_v && install(format!("v{}", tv.version)).is_err() {
             warn!("Failed to install, trying again without added 'v' prefix");
-            install(version)?;
+        } else {
+            return Ok(tv);
         }
+
+        install(tv.version.clone())?;
 
         Ok(tv)
     }
