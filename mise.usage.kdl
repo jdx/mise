@@ -255,9 +255,13 @@ cmd "config" help="Manage config files" {
         arg "[KEY]" help="The path of the config to display"
     }
     cmd "ls" help="List config files currently in use" {
+        alias "list"
         after_long_help r"Examples:
 
     $ mise config ls
+    Path                        Tools
+    ~/.config/mise/config.toml  pitchfork
+    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-edit, cargo:cargo-insta
 "
         flag "--no-header" help="Do not print table header"
         flag "-J --json" help="Output in JSON format"
