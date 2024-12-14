@@ -30,11 +30,17 @@ e.g.: `mise which npm --tool=node@20`
 
 Examples:
 
-    $ mise which node
-    /home/username/.local/share/mise/installs/node/20.0.0/bin/node
+```
+$ mise which node
+/home/username/.local/share/mise/installs/node/20.0.0/bin/node
+```
 
-    $ mise which node --plugin
-    node
+```
+$ mise which node --plugin
+node
+```
 
-    $ mise which node --version
-    20.0.0
+```
+$ mise which node --version
+20.0.0
+```

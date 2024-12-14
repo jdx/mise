@@ -26,4 +26,6 @@ Use the local config file instead of the global one
 
 Examples:
 
-    mise settings idiomatic_version_file=true
+```
+mise settings idiomatic_version_file=true
+```

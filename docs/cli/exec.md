@@ -41,11 +41,17 @@ Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
 Examples:
 
-    $ mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
-    $ mise x node@20 -- node ./app.js     # shorter alias
+```
+mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
+mise x node@20 -- node ./app.js     # shorter alias
+```
 
-    # Specify command as a string:
-    $ mise exec node@20 python@3.11 --command "node -v && python -V"
+```
+# Specify command as a string:
+$ mise exec node@20 python@3.11 --command "node -v && python -V"
+```
 
-    # Run a command in a different directory:
-    $ mise x -C /path/to/project node@20 -- node ./app.js
+```
+# Run a command in a different directory:
+$ mise x -C /path/to/project node@20 -- node ./app.js
+```

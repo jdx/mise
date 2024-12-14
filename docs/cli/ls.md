@@ -58,26 +58,32 @@ Don't display headers
 
 Examples:
 
-    $ mise ls
-    node    20.0.0 ~/src/myapp/.tool-versions latest
-    python  3.11.0 ~/.tool-versions           3.10
-    python  3.10.0
+```
+$ mise ls
+node    20.0.0 ~/src/myapp/.tool-versions latest
+python  3.11.0 ~/.tool-versions           3.10
+python  3.10.0
+```
 
-    $ mise ls --current
-    node    20.0.0 ~/src/myapp/.tool-versions 20
-    python  3.11.0 ~/.tool-versions           3.11.0
+```
+$ mise ls --current
+node    20.0.0 ~/src/myapp/.tool-versions 20
+python  3.11.0 ~/.tool-versions           3.11.0
+```
 
-    $ mise ls --json
+```
+$ mise ls --json
+{
+  "node": [
     {
-      "node": [
-        {
-          "version": "20.0.0",
-          "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
-          "source": {
-            "type": "mise.toml",
-            "path": "/Users/jdx/mise.toml"
-          }
-        }
-      ],
-      "python": [...]
+      "version": "20.0.0",
+      "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
+      "source": {
+        "type": "mise.toml",
+        "path": "/Users/jdx/mise.toml"
+      }
     }
+  ],
+  "python": [...]
+}
+```

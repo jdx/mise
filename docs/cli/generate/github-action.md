@@ -24,6 +24,8 @@ write to .github/workflows/$name.yml
 
 Examples:
 
-    mise generate github-action --write --task=ci
-    git commit -m "feat: add new feature"
-    git push # runs `mise run ci` on GitHub
+```
+mise generate github-action --write --task=ci
+git commit -m "feat: add new feature"
+git push # runs `mise run ci` on GitHub
+```

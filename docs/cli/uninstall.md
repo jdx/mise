@@ -26,11 +26,17 @@ Do not actually delete anything
 
 Examples:
 
-    # will uninstall specific version
-    $ mise uninstall node@18.0.0
+```
+# will uninstall specific version
+$ mise uninstall node@18.0.0
+```
 
-    # will uninstall the current node version (if only one version is installed)
-    $ mise uninstall node
+```
+# will uninstall the current node version (if only one version is installed)
+$ mise uninstall node
+```
 
-    # will uninstall all installed versions of node
-    $ mise uninstall --all node@18.0.0 # will uninstall all node versions
+```
+# will uninstall all installed versions of node
+$ mise uninstall --all node@18.0.0 # will uninstall all node versions
+```

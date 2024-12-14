@@ -28,11 +28,17 @@ Set the environment variable in the global config file
 
 Examples:
 
-    $ mise set NODE_ENV=production
+```
+mise set NODE_ENV=production
+```
 
-    $ mise set NODE_ENV
-    production
+```
+$ mise set NODE_ENV
+production
+```
 
-    $ mise set
-    key       value       source
-    NODE_ENV  production  ~/.config/mise/config.toml
+```
+$ mise set
+key       value       source
+NODE_ENV  production  ~/.config/mise/config.toml
+```

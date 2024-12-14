@@ -10,8 +10,10 @@ These can come from user config or from plugins in `bin/list-aliases`.
 
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
-    [alias.node.versions]
-    lts = "22.0.0"
+```
+[alias.node.versions]
+lts = "22.0.0"
+```
 
 ## Arguments
 
@@ -27,5 +29,7 @@ Don't show table header
 
 Examples:
 
-    $ mise aliases
-    node  lts-jod      22
+```
+$ mise aliases
+node  lts-jod      22
+```

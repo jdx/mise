@@ -60,4 +60,6 @@ Output in JSON format
 
 Examples:
 
-    mise tasks ls
+```
+mise tasks ls
+```

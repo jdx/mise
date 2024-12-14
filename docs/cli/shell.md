@@ -34,6 +34,8 @@ Removes a previously set version
 
 Examples:
 
-    $ mise shell node@20
-    $ node -v
-    v20.0.0
+```
+$ mise shell node@20
+$ node -v
+v20.0.0
+```

@@ -317,25 +317,27 @@ set of events Watchexec handles. Here's an example of a folder being created on 
 
 ```json
   {
-    "tags": [
-      {
-        "kind": "path",
-        "absolute": "/home/user/your/new-folder",
-        "filetype": "dir"
-      },
-      {
-        "kind": "fs",
-        "simple": "create",
-        "full": "Create(Folder)"
-      },
-      {
-        "kind": "source",
-        "source": "filesystem",
-      }
-    ],
-    "metadata": {
-      "notify-backend": "inotify"
-    }
+```
+"tags": [
+  {
+    "kind": "path",
+    "absolute": "/home/user/your/new-folder",
+    "filetype": "dir"
+  },
+  {
+    "kind": "fs",
+    "simple": "create",
+    "full": "Create(Folder)"
+  },
+  {
+    "kind": "source",
+    "source": "filesystem",
+  }
+],
+"metadata": {
+  "notify-backend": "inotify"
+}
+```
   }
 ```
 
@@ -343,23 +345,25 @@ The fields are as follows:
 
   - `tags`, structured event data.
   - `tags[].kind`, which can be:
-    * 'path', along with:
-      + `absolute`, an absolute path.
-      + `filetype`, a file type if known ('dir', 'file', 'symlink', 'other').
-    * 'fs':
-      + `simple`, the "simple" event type ('access', 'create', 'modify', 'remove', or 'other').
-      + `full`, the "full" event type, which is too complex to fully describe here, but looks like 'General(Precise(Specific))'.
-    * 'source', along with:
-      + `source`, the source of the event ('filesystem', 'keyboard', 'mouse', 'os', 'time', 'internal').
-    * 'keyboard', along with:
-      + `keycode`. Currently only the value 'eof' is supported.
-    * 'process', for events caused by processes:
-      + `pid`, the process ID.
-    * 'signal', for signals sent to Watchexec:
-      + `signal`, the normalised signal name ('hangup', 'interrupt', 'quit', 'terminate', 'user1', 'user2').
-    * 'completion', for when a command ends:
-      + `disposition`, the exit disposition ('success', 'error', 'signal', 'stop', 'exception', 'continued').
-      + `code`, the exit, signal, stop, or exception code.
+```
+* 'path', along with:
+  + `absolute`, an absolute path.
+  + `filetype`, a file type if known ('dir', 'file', 'symlink', 'other').
+* 'fs':
+  + `simple`, the "simple" event type ('access', 'create', 'modify', 'remove', or 'other').
+  + `full`, the "full" event type, which is too complex to fully describe here, but looks like 'General(Precise(Specific))'.
+* 'source', along with:
+  + `source`, the source of the event ('filesystem', 'keyboard', 'mouse', 'os', 'time', 'internal').
+* 'keyboard', along with:
+  + `keycode`. Currently only the value 'eof' is supported.
+* 'process', for events caused by processes:
+  + `pid`, the process ID.
+* 'signal', for signals sent to Watchexec:
+  + `signal`, the normalised signal name ('hangup', 'interrupt', 'quit', 'terminate', 'user1', 'user2').
+* 'completion', for when a command ends:
+  + `disposition`, the exit disposition ('success', 'error', 'signal', 'stop', 'exception', 'continued').
+  + `code`, the exit, signal, stop, or exception code.
+```
   - `metadata`, additional information about the event.
 
 The 'json-stdio' mode will emit JSON events to the standard input of the command, one per
@@ -602,16 +606,24 @@ This shows the manual page for Watchexec, if the output is a terminal and the 'm
 
 Examples:
 
-    $ mise watch build
-    Runs the "build" tasks. Will re-run the tasks when any of its sources change.
-    Uses "sources" from the tasks definition to determine which files to watch.
+```
+$ mise watch build
+Runs the "build" tasks. Will re-run the tasks when any of its sources change.
+Uses "sources" from the tasks definition to determine which files to watch.
+```
 
-    $ mise watch build --glob src/**/*.rs
-    Runs the "build" tasks but specify the files to watch with a glob pattern.
-    This overrides the "sources" from the tasks definition.
+```
+$ mise watch build --glob src/**/*.rs
+Runs the "build" tasks but specify the files to watch with a glob pattern.
+This overrides the "sources" from the tasks definition.
+```
 
-    $ mise watch build --clear
-    Extra arguments are passed to watchexec. See `watchexec --help` for details.
+```
+$ mise watch build --clear
+Extra arguments are passed to watchexec. See `watchexec --help` for details.
+```
 
-    $ mise watch serve --watch src --exts rs --restart
-    Starts an api server, watching for changes to "*.rs" files in "./src" and kills/restarts the server when they change.
+```
+$ mise watch serve --watch src --exts rs --restart
+Starts an api server, watching for changes to "*.rs" files in "./src" and kills/restarts the server when they change.
+```

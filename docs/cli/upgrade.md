@@ -51,23 +51,37 @@ Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
 Examples:
 
-    # Upgrades node to the latest version matching the range in mise.toml
-    $ mise upgrade node
+```
+# Upgrades node to the latest version matching the range in mise.toml
+$ mise upgrade node
+```
 
-    # Upgrades node to the latest version and bumps the version in mise.toml
-    $ mise upgrade node --bump
+```
+# Upgrades node to the latest version and bumps the version in mise.toml
+$ mise upgrade node --bump
+```
 
-    # Upgrades all tools to the latest versions
-    $ mise upgrade
+```
+# Upgrades all tools to the latest versions
+$ mise upgrade
+```
 
-    # Upgrades all tools to the latest versions and bumps the version in mise.toml
-    $ mise upgrade --bump
+```
+# Upgrades all tools to the latest versions and bumps the version in mise.toml
+$ mise upgrade --bump
+```
 
-    # Just print what would be done, don't actually do it
-    $ mise upgrade --dry-run
+```
+# Just print what would be done, don't actually do it
+$ mise upgrade --dry-run
+```
 
-    # Upgrades node and python to the latest versions
-    $ mise upgrade node python
+```
+# Upgrades node and python to the latest versions
+$ mise upgrade node python
+```
 
-    # Show a multiselect menu to choose which tools to upgrade
-    $ mise upgrade --interactive
+```
+# Show a multiselect menu to choose which tools to upgrade
+$ mise upgrade --interactive
+```

@@ -24,4 +24,6 @@ Remove all plugins
 
 Examples:
 
-    mise uninstall node
+```
+mise uninstall node
+```
