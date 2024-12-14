@@ -1,5 +1,6 @@
 use crate::cmd::cmd;
-use crate::config::{Config, SETTINGS};
+use crate::config::{config_file, Config, SETTINGS};
+use crate::shell::Shell;
 use crate::toolset::Toolset;
 use crate::{dirs, hook_env};
 use eyre::{eyre, Result};
@@ -7,7 +8,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use std::iter::once;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 #[derive(
@@ -46,42 +47,65 @@ pub fn schedule_hook(hook: Hooks) {
     mu.insert(hook);
 }
 
-pub fn run_all_hooks(ts: &Toolset) {
+pub fn run_all_hooks(ts: &Toolset, shell: &dyn Shell) {
     let mut mu = SCHEDULED_HOOKS.lock().unwrap();
     for hook in mu.drain(..) {
-        run_one_hook(ts, hook);
+        run_one_hook(ts, hook, Some(shell));
     }
 }
 
-pub fn run_one_hook(ts: &Toolset, hook: Hooks) {
+static ALL_HOOKS: Lazy<Vec<(PathBuf, Hook)>> = Lazy::new(|| {
     let config = Config::get();
-    let hooks = config.hooks().unwrap_or_default();
-    for (root, h) in hooks {
-        if hook != h.hook || h.shell.is_some() {
+    let mut hooks = config.hooks().cloned().unwrap_or_default();
+    let cur_configs = config.config_files.keys().cloned().collect::<IndexSet<_>>();
+    let prev_configs = &hook_env::CUR_SESSION.loaded_configs;
+    let old_configs = prev_configs.difference(&cur_configs);
+    for p in old_configs {
+        if let Ok(cf) = config_file::parse(p) {
+            if let Ok(h) = cf.hooks() {
+                hooks.extend(h.into_iter().map(|h| (cf.config_root(), h)));
+            }
+        }
+    }
+    hooks
+});
+
+pub fn run_one_hook(ts: &Toolset, hook: Hooks, shell: Option<&dyn Shell>) {
+    for (root, h) in &*ALL_HOOKS {
+        if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
             continue;
         }
         trace!("running hook {hook} in {root:?}");
         match (hook, hook_env::dir_change()) {
             (Hooks::Enter, Some((old, new))) => {
-                if !new.starts_with(&root) {
+                if !root.starts_with(&new) {
                     continue;
                 }
-                if old.is_some_and(|old| old.starts_with(&root)) {
+                if !new.starts_with(root) {
+                    continue;
+                }
+                if old.as_ref().is_some_and(|old| old.starts_with(root)) {
                     continue;
                 }
             }
             (Hooks::Leave, Some((old, new))) => {
-                warn!("leave hook not yet implemented");
-                if new.starts_with(&root) {
+                if new.starts_with(root) {
                     continue;
                 }
-                if old.is_some_and(|old| !old.starts_with(&root)) {
+                if old.as_ref().is_some_and(|old| !old.starts_with(root)) {
+                    continue;
+                }
+            }
+            (Hooks::Cd, Some((_old, new))) => {
+                if !new.starts_with(root) {
                     continue;
                 }
             }
             _ => {}
         }
-        if let Err(e) = execute(ts, &root, &h) {
+        if h.shell.is_some() {
+            println!("{}", h.script);
+        } else if let Err(e) = execute(ts, root, h) {
             warn!("error executing hook: {e}");
         }
     }

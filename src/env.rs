@@ -1,7 +1,6 @@
 use crate::cli::args::{ENV_ARG, PROFILE_ARG};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
 use crate::file::replace_path;
-use crate::hook_env::{deserialize_watches, HookEnvWatches};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
@@ -154,21 +153,7 @@ pub static MISE_TIMINGS: Lazy<u8> = Lazy::new(|| var_u8("MISE_TIMINGS"));
 pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
-/// the directory where hook-env was last run from
-/// prefixed with ":" so it does not conflict with zsh's auto_name_dirs feature
-pub static __MISE_DIR: Lazy<Option<PathBuf>> = Lazy::new(|| {
-    var("__MISE_DIR")
-        .map(|d| PathBuf::from(d.strip_prefix(":").unwrap_or(&d)))
-        .ok()
-});
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
-pub static __MISE_WATCH: Lazy<Option<HookEnvWatches>> = Lazy::new(|| match var("__MISE_WATCH") {
-    Ok(raw) => deserialize_watches(raw)
-        // TODO: enable this later when the bigint change goes out
-        .map_err(|e| debug!("Failed to deserialize __MISE_WATCH {e}"))
-        .ok(),
-    _ => None,
-});
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
