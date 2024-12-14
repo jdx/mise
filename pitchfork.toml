@@ -1,0 +1,3 @@
+[daemons.docs]
+run = "mise run docs"
+auto = ["stop"]
