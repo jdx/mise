@@ -110,6 +110,10 @@ User to run as
 
 - **Usage**: `filetask.bat`
 
+## `install-dev`
+
+- **Usage**: `install-dev`
+
 ## `lint`
 
 - Depends: lint:*
