@@ -414,6 +414,11 @@ impl Task {
                 *a = tera.render_str(a, &tera_ctx)?;
             }
         }
+        for v in self.env.values_mut() {
+            if let EitherStringOrIntOrBool(Either::Left(s)) = v {
+                *s = tera.render_str(s, &tera_ctx)?;
+            }
+        }
         if let Some(dir) = &mut self.dir {
             *dir = tera.render_str(dir, &tera_ctx)?;
         }
