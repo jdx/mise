@@ -18,6 +18,7 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, prompt, style, time};
 use crate::{dirs, env, exit, file, ui};
 use clap::{CommandFactory, ValueHint};
+use console::Term;
 use crossbeam_channel::{select, unbounded};
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
@@ -865,10 +866,15 @@ fn prompt_for_task() -> Result<Task> {
         s = s.option(DemandOption::new(&t.name).description(&t.description));
     }
     ctrlc::show_cursor_after_ctrl_c();
-    let name = s.run()?;
-    match tasks.get(name) {
-        Some(task) => Ok((*task).clone()),
-        None => bail!("no tasks {} found", style::ered(name)),
+    match s.run() {
+        Ok(name) => match tasks.get(name) {
+            Some(task) => Ok(task.clone()),
+            None => bail!("no tasks {} found", style::ered(name)),
+        },
+        Err(err) => {
+            Term::stderr().show_cursor()?;
+            Err(eyre!(err))
+        }
     }
 }
 

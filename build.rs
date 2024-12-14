@@ -78,6 +78,9 @@ fn codegen_registry() {
                 os
             })
             .unwrap_or_default();
+        let description = info
+            .get("description")
+            .map(|d| d.as_str().unwrap().to_string());
         let depends = info
             .get("depends")
             .map(|depends| {
@@ -102,7 +105,10 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
+            description = description
+                .map(|d| format!("Some(\"{}\")", d))
+                .unwrap_or("None".to_string()),
             backends = fulls.join("\", \""),
             aliases = aliases
                 .iter()
