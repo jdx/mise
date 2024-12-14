@@ -3482,8 +3482,8 @@ _mise() {
         return 1
     fi
 
-    if [[ -z ${_usage_spec_mise_2024_12_8:-} ]]; then
-        _usage_spec_mise_2024_12_8="$(mise usage)"
+    if [[ -z ${_usage_spec_mise_2024_12_9:-} ]]; then
+        _usage_spec_mise_2024_12_9="$(mise usage)"
     fi
 
 	local cur prev words cword was_split comp_args
