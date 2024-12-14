@@ -53,6 +53,7 @@ mod migrate;
 mod path_env;
 mod plugins;
 mod rand;
+mod redactions;
 mod registry;
 pub(crate) mod result;
 mod runtime_symlinks;
@@ -69,6 +70,7 @@ mod ui;
 mod uv;
 mod versions_host;
 mod watch_files;
+mod wildcard;
 
 pub(crate) use crate::exit::exit;
 pub(crate) use crate::result::Result;

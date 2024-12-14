@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[env]
+SECRET = "my_secret"
+
+[tasks.a]
+run = 'echo secret: \$SECRET'
+
+[redactions]
+env = ["SECRET"]
+EOF
+
+assert "mise run a" "secret: [redacted]"
+
+cat <<EOF >mise.toml
+[tasks.a]
+run = 'echo secret: {{ vars.secret }}'
+
+[redactions]
+vars = ["secret"]
+
+[vars]
+secret = "my_secret"
+EOF
+
+assert "mise run a" "secret: [redacted]"
+
+cat <<EOF >mise.toml
+[env]
+SECRET_FOO = "my_secret_wild"
+
+[tasks.a]
+run = 'echo secret: \$SECRET_FOO'
+
+[redactions]
+env = ["SECRET*"]
+EOF
+
+assert "mise run a" "secret: [redacted]"

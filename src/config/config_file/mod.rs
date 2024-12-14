@@ -23,7 +23,9 @@ use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
 use crate::hooks::Hook;
+use crate::redactions::Redactions;
 use crate::task::Task;
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
@@ -65,6 +67,9 @@ pub trait ConfigFile: Debug + Send + Sync {
             None => None,
         }
     }
+    fn config_root(&self) -> PathBuf {
+        config_root(self.get_path())
+    }
     fn plugins(&self) -> eyre::Result<HashMap<String, String>> {
         Ok(Default::default())
     }
@@ -87,6 +92,14 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn aliases(&self) -> eyre::Result<AliasMap> {
         Ok(Default::default())
     }
+
+    fn tera(&self) -> (tera::Tera, tera::Context) {
+        let tera = get_tera(Some(&self.config_root()));
+        let mut ctx = BASE_CONTEXT.clone();
+        ctx.insert("config_root", &self.config_root());
+        (tera, ctx)
+    }
+
     fn task_config(&self) -> &TaskConfig {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
@@ -94,6 +107,11 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn vars(&self) -> Result<&IndexMap<String, String>> {
         static DEFAULT_VARS: Lazy<IndexMap<String, String>> = Lazy::new(IndexMap::new);
         Ok(&DEFAULT_VARS)
+    }
+
+    fn redactions(&self) -> &Redactions {
+        static DEFAULT_REDACTIONS: Lazy<Redactions> = Lazy::new(Redactions::default);
+        &DEFAULT_REDACTIONS
     }
 
     fn watch_files(&self) -> Result<Vec<WatchFile>> {

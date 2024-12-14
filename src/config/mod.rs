@@ -37,7 +37,9 @@ use crate::cli::self_update::SelfUpdate;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
 use crate::plugins::PluginType;
+use crate::redactions::Redactions;
 use crate::watch_files::WatchFile;
+use crate::wildcard::Wildcard;
 pub use settings::SETTINGS;
 
 type AliasMap = IndexMap<String, Alias>;
@@ -54,6 +56,7 @@ pub struct Config {
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
+    redactions: OnceCell<IndexSet<String>>,
     shorthands: OnceLock<Shorthands>,
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
@@ -621,6 +624,48 @@ impl Config {
             .chain(env_results.env_scripts.iter().map(|p| p.as_path().into()))
             .chain(SETTINGS.env_files().iter().map(|p| p.as_path().into()))
             .collect())
+    }
+
+    pub fn redactions(&self) -> Result<&IndexSet<String>> {
+        self.redactions.get_or_try_init(|| {
+            let mut redactions = Redactions::default();
+            for cf in self.config_files.values() {
+                let r = cf.redactions();
+                if !r.is_empty() {
+                    let mut r = r.clone();
+                    let (tera, ctx) = cf.tera();
+                    r.render(&mut tera.clone(), &ctx)?;
+                    redactions.merge(r);
+                }
+            }
+            if redactions.is_empty() {
+                return Ok(Default::default());
+            }
+
+            let ts = self.get_toolset()?;
+            let env = ts.full_env()?;
+
+            let env_matcher = Wildcard::new(redactions.env.clone());
+            let var_matcher = Wildcard::new(redactions.vars.clone());
+
+            let env_vals = env
+                .into_iter()
+                .filter(|(k, _)| env_matcher.match_any(k))
+                .map(|(_, v)| v);
+            let var_vals = self
+                .vars
+                .iter()
+                .filter(|(k, _)| var_matcher.match_any(k))
+                .map(|(_, v)| v.to_string());
+            Ok(env_vals.chain(var_vals).collect())
+        })
+    }
+
+    pub fn redact(&self, mut input: String) -> Result<String> {
+        for redaction in self.redactions()? {
+            input = input.replace(redaction, "[redacted]");
+        }
+        Ok(input)
     }
 }
 
