@@ -148,7 +148,11 @@ The venv will need to be created manually with `python -m venv /path/to/venv` un
 Free-threaded python can be installed via python-build by running the following:
 
 ```bash
-MISE_PYTHON_COMPILE=1 PYTHON_BUILD_FREE_THREADING=1 mise install
+MISE_PYTHON_COMPILE=0 MISE_PYTHON_PRECOMPILED_FLAVOR=freethreaded+pgo-full mise install python
 ```
 
-Currently, they are not supported with precompiled binaries.
+Or to compile with python-build:
+
+```bash
+MISE_PYTHON_COMPILE=1 PYTHON_BUILD_FREE_THREADING=1 mise install python
+```

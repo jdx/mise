@@ -4,7 +4,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
-use crate::file::{display_path, TarFormat, TarOptions};
+use crate::file::{display_path, TarOptions};
 use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -33,6 +33,7 @@ impl PythonPlugin {
                 ba.cache_path.join("precompiled.msgpack.z"),
             )
             .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .with_cache_key(python_precompiled_platform())
             .build(),
             ba,
         }
@@ -92,9 +93,7 @@ impl PythonPlugin {
                 // using http is not a security concern and enabling tls makes mise significantly slower
                 false => HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled"),
             }?;
-            let arch = python_arch();
-            let os = python_os();
-            let platform = format!("{arch}-{os}");
+            let platform = python_precompiled_platform();
             // order by version, whether it is a release candidate, date, and in the preferred order of install types
             let rank = |v: &str, date: &str, name: &str| {
                 let rc = if regex!(r"rc\d+$").is_match(v) { 0 } else { 1 };
@@ -149,12 +148,8 @@ impl PythonPlugin {
                             "mise settings python.compile=1"
                         );
                     }
-                    let arch = python_arch();
-                    let os = python_os();
-                    bail!(
-                        "no precompiled python found for {} on {arch}-{os}",
-                        tv.version
-                    );
+                    let platform = python_precompiled_platform();
+                    bail!("no precompiled python found for {tv} on {platform}");
                 }
                 let available = precompiled_versions.iter().map(|(v, _, _)| v).collect_vec();
                 if available.is_empty() {
@@ -195,11 +190,19 @@ impl PythonPlugin {
             &tarball_path,
             &install,
             &TarOptions {
-                format: TarFormat::TarGz,
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
+                ..Default::default()
             },
         )?;
+        if !install.join("bin").exists() {
+            // debug builds of indygreg binaries have a different structure
+            for entry in file::ls(&install.join("install"))? {
+                let filename = entry.file_name().unwrap();
+                file::remove_all(install.join(filename))?;
+                file::rename(&entry, install.join(filename))?;
+            }
+        }
         #[cfg(unix)]
         file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
         Ok(())
@@ -475,6 +478,16 @@ fn python_arch() -> &'static str {
         }
     } else {
         arch
+    }
+}
+
+fn python_precompiled_platform() -> String {
+    let os = python_os();
+    let arch = python_arch();
+    if let Some(flavor) = &SETTINGS.python.precompiled_flavor {
+        format!("{arch}-{os}-{flavor}")
+    } else {
+        format!("{arch}-{os}")
     }
 }
 

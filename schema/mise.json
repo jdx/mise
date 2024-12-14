@@ -508,6 +508,10 @@
               "description": "Specify the architecture to use for precompiled binaries.",
               "type": "string"
             },
+            "precompiled_flavor": {
+              "description": "Specify the flavor to use for precompiled binaries.",
+              "type": "string"
+            },
             "precompiled_os": {
               "description": "Specify the OS to use for precompiled binaries.",
               "type": "string"
