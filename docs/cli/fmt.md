@@ -13,4 +13,6 @@ Format all files from the current directory
 
 Examples:
 
-    mise format
+```
+mise format
+```

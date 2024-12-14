@@ -21,5 +21,7 @@ If not provided, the nearest mise.toml file will be used
 
 Examples:
 
-    $ mise toml get tools.python
-    3.12
+```
+$ mise toml get tools.python
+3.12
+```

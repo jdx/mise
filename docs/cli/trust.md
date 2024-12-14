@@ -41,8 +41,12 @@ Does not trust or untrust any files.
 
 Examples:
 
-    # trusts ~/some_dir/mise.toml
-    $ mise trust ~/some_dir/mise.toml
+```
+# trusts ~/some_dir/mise.toml
+$ mise trust ~/some_dir/mise.toml
+```
 
-    # trusts mise.toml in the current or parent directory
-    $ mise trust
+```
+# trusts mise.toml in the current or parent directory
+$ mise trust
+```

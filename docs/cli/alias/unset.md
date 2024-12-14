@@ -20,4 +20,6 @@ The alias to remove
 
 Examples:
 
-    mise alias unset node lts-jod
+```
+mise alias unset node lts-jod
+```

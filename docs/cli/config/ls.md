@@ -18,7 +18,9 @@ Output in JSON format
 
 Examples:
 
-    $ mise config ls
-    Path                        Tools
-    ~/.config/mise/config.toml  pitchfork
-    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-edit, cargo:cargo-insta
+```
+$ mise config ls
+Path                        Tools
+~/.config/mise/config.toml  pitchfork
+~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-edit, cargo:cargo-insta
+```

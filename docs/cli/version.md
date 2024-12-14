@@ -12,7 +12,9 @@ If the version is out of date, it will display a warning.
 
 Examples:
 
-    mise version
-    mise --version
-    mise -v
-    mise -V
+```
+mise version
+mise --version
+mise -v
+mise -V
+```

@@ -27,10 +27,14 @@ Hide aliased tools
 
 Examples:
 
-    $ mise registry
-    node    core:node
-    poetry  asdf:mise-plugins/mise-poetry
-    ubi     cargo:ubi-cli
+```
+$ mise registry
+node    core:node
+poetry  asdf:mise-plugins/mise-poetry
+ubi     cargo:ubi-cli
+```
 
-    $ mise registry poetry
-    asdf:mise-plugins/mise-poetry
+```
+$ mise registry poetry
+asdf:mise-plugins/mise-poetry
+```

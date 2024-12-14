@@ -336,7 +336,9 @@ impl Task {
 
     pub fn render_markdown(&self, dir: &Path) -> Result<String> {
         let (spec, _) = self.parse_usage_spec(Some(dir.to_path_buf()))?;
-        let ctx = usage::docs::markdown::MarkdownRenderer::new(&spec).with_header_level(2);
+        let ctx = usage::docs::markdown::MarkdownRenderer::new(spec)
+            .with_replace_pre_with_code_fences(true)
+            .with_header_level(2);
         Ok(ctx.render_spec()?)
     }
 

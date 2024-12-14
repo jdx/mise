@@ -21,5 +21,7 @@ Display the path to the tasks instead of editing it
 
 Examples:
 
-    mise tasks edit build
-    mise tasks edit test
+```
+mise tasks edit build
+mise tasks edit test
+```

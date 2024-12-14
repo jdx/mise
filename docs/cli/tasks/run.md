@@ -14,21 +14,25 @@ files have changed.
 Tasks can be defined in mise.toml or as standalone scripts.
 In mise.toml, tasks take this form:
 
-    [tasks.build]
-    run = "npm run build"
-    sources = ["src/**/*.ts"]
-    outputs = ["dist/**/*.js"]
+```
+[tasks.build]
+run = "npm run build"
+sources = ["src/**/*.ts"]
+outputs = ["dist/**/*.js"]
+```
 
 Alternatively, tasks can be defined as standalone scripts.
 These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
 `.config/mise/tasks`.
 The name of the script will be the name of the tasks.
 
-    $ cat .mise/tasks/build<<EOF
-    #!/usr/bin/env bash
-    npm run build
-    EOF
-    $ mise run build
+```
+$ cat .mise/tasks/build&lt;&lt;EOF
+#!/usr/bin/env bash
+npm run build
+EOF
+$ mise run build
+```
 
 ## Arguments
 
@@ -109,19 +113,29 @@ Don't show any output except for errors
 
 Examples:
 
-    # Runs the "lint" tasks. This needs to either be defined in mise.toml
-    # or as a standalone script. See the project README for more information.
-    $ mise run lint
+```
+# Runs the "lint" tasks. This needs to either be defined in mise.toml
+# or as a standalone script. See the project README for more information.
+$ mise run lint
+```
 
-    # Forces the "build" tasks to run even if its sources are up-to-date.
-    $ mise run build --force
+```
+# Forces the "build" tasks to run even if its sources are up-to-date.
+$ mise run build --force
+```
 
-    # Run "test" with stdin/stdout/stderr all connected to the current terminal.
-    # This forces `--jobs=1` to prevent interleaving of output.
-    $ mise run test --raw
+```
+# Run "test" with stdin/stdout/stderr all connected to the current terminal.
+# This forces `--jobs=1` to prevent interleaving of output.
+$ mise run test --raw
+```
 
-    # Runs the "lint", "test", and "check" tasks in parallel.
-    $ mise run lint ::: test ::: check
+```
+# Runs the "lint", "test", and "check" tasks in parallel.
+$ mise run lint ::: test ::: check
+```
 
-    # Execute multiple tasks each with their own arguments.
-    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+```
+# Execute multiple tasks each with their own arguments.
+$ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+```

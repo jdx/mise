@@ -33,8 +33,6 @@ root directory to search for tasks
 
 ### `-s --style <STYLE>`
 
-Generate documentation for tasks in a project
-
 **Choices:**
 
 - `simple`
@@ -42,4 +40,6 @@ Generate documentation for tasks in a project
 
 Examples:
 
-    mise generate task-docs
+```
+mise generate task-docs
+```

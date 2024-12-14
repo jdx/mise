@@ -29,7 +29,9 @@ If no version is specified, it will default to @latest
 
 Tool options can be set with this syntax:
 
-    mise use ubi:BurntSushi/ripgrep[exe=rg]
+```
+mise use ubi:BurntSushi/ripgrep[exe=rg]
+```
 
 ## Flags
 
@@ -82,16 +84,24 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 
 Examples:
 
-    # set the current version of node to 20.x in mise.toml of current directory
-    # will write the fuzzy version (e.g.: 20)
-    $ mise use node@20
+```
+# set the current version of node to 20.x in mise.toml of current directory
+# will write the fuzzy version (e.g.: 20)
+$ mise use node@20
+```
 
-    # set the current version of node to 20.x in ~/.config/mise/config.toml
-    # will write the precise version (e.g.: 20.0.0)
-    $ mise use -g --pin node@20
+```
+# set the current version of node to 20.x in ~/.config/mise/config.toml
+# will write the precise version (e.g.: 20.0.0)
+$ mise use -g --pin node@20
+```
 
-    # sets .mise.local.toml (which is intended not to be committed to a project)
-    $ mise use --env local node@20
+```
+# sets .mise.local.toml (which is intended not to be committed to a project)
+$ mise use --env local node@20
+```
 
-    # sets .mise.staging.toml (which is used if MISE_ENV=staging)
-    $ mise use --env staging node@20
+```
+# sets .mise.staging.toml (which is used if MISE_ENV=staging)
+$ mise use --env staging node@20
+```

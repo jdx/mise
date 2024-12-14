@@ -17,10 +17,14 @@ e.g.: <https://github.com/asdf-vm/asdf-nodejs.git>
 
 Examples:
 
-    $ mise plugins ls
-    node
-    ruby
+```
+$ mise plugins ls
+node
+ruby
+```
 
-    $ mise plugins ls --urls
-    node    https://github.com/asdf-vm/asdf-nodejs.git
-    ruby    https://github.com/asdf-vm/asdf-ruby.git
+```
+$ mise plugins ls --urls
+node    https://github.com/asdf-vm/asdf-nodejs.git
+ruby    https://github.com/asdf-vm/asdf-ruby.git
+```
