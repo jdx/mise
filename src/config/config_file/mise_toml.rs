@@ -21,6 +21,7 @@ use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap};
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
+use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
@@ -54,6 +55,8 @@ pub struct MiseToml {
     tools: IndexMap<BackendArg, MiseTomlToolList>,
     #[serde(default)]
     plugins: HashMap<String, String>,
+    #[serde(default)]
+    redactions: Redactions,
     #[serde(default)]
     task_config: TaskConfig,
     #[serde(default)]
@@ -438,6 +441,10 @@ impl ConfigFile for MiseToml {
         &self.task_config
     }
 
+    fn redactions(&self) -> &Redactions {
+        &self.redactions
+    }
+
     fn watch_files(&self) -> eyre::Result<Vec<WatchFile>> {
         self.watch_files
             .iter()
@@ -534,6 +541,7 @@ impl Clone for MiseToml {
             doc: self.doc.clone(),
             hooks: self.hooks.clone(),
             tools: self.tools.clone(),
+            redactions: self.redactions.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
             task_config: self.task_config.clone(),

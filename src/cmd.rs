@@ -11,6 +11,7 @@ use std::thread;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
+use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
@@ -100,6 +101,7 @@ pub struct CmdLineRunner<'a> {
     pr: Option<&'a dyn SingleReport>,
     stdin: Option<String>,
     prefix: String,
+    redactions: IndexSet<String>,
     raw: bool,
     pass_signals: bool,
 }
@@ -126,6 +128,7 @@ impl<'a> CmdLineRunner<'a> {
             pr: None,
             stdin: None,
             prefix: String::new(),
+            redactions: Default::default(),
             raw: false,
             pass_signals: false,
         }
@@ -171,6 +174,13 @@ impl<'a> CmdLineRunner<'a> {
 
     pub fn stderr<T: Into<Stdio>>(mut self, cfg: T) -> Self {
         self.cmd.stderr(cfg);
+        self
+    }
+
+    pub fn redact(mut self, redactions: impl IntoIterator<Item = String>) -> Self {
+        for r in redactions {
+            self.redactions.insert(r);
+        }
         self
     }
 
@@ -337,11 +347,11 @@ impl<'a> CmdLineRunner<'a> {
         for line in rx {
             match line {
                 ChildProcessOutput::Stdout(line) => {
-                    self.on_stdout(&line);
+                    self.on_stdout(line.clone());
                     combined_output.push(line);
                 }
                 ChildProcessOutput::Stderr(line) => {
-                    self.on_stderr(&line);
+                    self.on_stderr(line.clone());
                     combined_output.push(line);
                 }
                 ChildProcessOutput::ExitStatus(s) => {
@@ -377,11 +387,15 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    fn on_stdout(&self, line: &str) {
+    fn on_stdout(&self, mut line: String) {
+        line = self
+            .redactions
+            .iter()
+            .fold(line, |acc, r| acc.replace(r, "[redacted]"));
         let _lock = OUTPUT_LOCK.lock().unwrap();
         if let Some(pr) = self.pr {
             if !line.trim().is_empty() {
-                pr.set_message(line.into())
+                pr.set_message(line)
             }
         } else if console::colors_enabled() {
             println!("{}{line}\x1b[0m", self.prefix);
@@ -390,12 +404,16 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    fn on_stderr(&self, line: &str) {
+    fn on_stderr(&self, mut line: String) {
+        line = self
+            .redactions
+            .iter()
+            .fold(line, |acc, r| acc.replace(r, "[redacted]"));
         let _lock = OUTPUT_LOCK.lock().unwrap();
         match self.pr {
             Some(pr) => {
                 if !line.trim().is_empty() {
-                    pr.println(line.into())
+                    pr.println(line)
                 }
             }
             None => {
