@@ -68,23 +68,29 @@ impl Shell for Pwsh {
             }}
 
             if (-not $__mise_pwsh_previous_chpwd_function){{
+                $_mise_chpwd_hook = [EventHandler[System.Management.Automation.LocationChangedEventArgs]] {{
+                    param([object] $source, [System.Management.Automation.LocationChangedEventArgs] $eventArgs)
+                    end {{
+                        _mise_hook
+                    }}
+                }};
                 $Global:__mise_pwsh_previous_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
 
                 if ($__mise_original_pwsh_chpwd_function) {{
-                    $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = [Delegate]::Combine($__mise_pwsh_previous_chpwd_function, {{_mise_hook}})
+                    $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = [Delegate]::Combine($__mise_pwsh_previous_chpwd_function, $_mise_chpwd_hook)
                 }}
                 else {{
-                    $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = {{_mise_hook}}
+                    $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = $_mise_chpwd_hook
                 }}
             }}
 
             if (-not $__mise_pwsh_previous_prompt_function){{
-                $global:__mise_pwsh_previous_prompt_function=prompt
+                $global:__mise_pwsh_previous_prompt_function=$function:prompt
                 function global:prompt {{
                     if (Test-Path -Path Function:\_mise_hook){{
                         _mise_hook
                     }}
-                    $__mise_pwsh_previous_prompt_function
+                    & $__mise_pwsh_previous_prompt_function
                 }}
             }}
 
