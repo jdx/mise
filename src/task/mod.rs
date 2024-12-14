@@ -27,14 +27,16 @@ use xx::regex;
 mod deps;
 mod task_dep;
 mod task_script_parser;
+pub mod task_sources;
 
 use crate::config::config_file::ConfigFile;
 use crate::file::display_path;
 use crate::ui::style;
 pub use deps::Deps;
 use task_dep::TaskDep;
+use task_sources::TaskOutputs;
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Task {
     #[serde(skip)]
     pub name: String,
@@ -65,7 +67,7 @@ pub struct Task {
     #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default)]
-    pub outputs: Vec<String>,
+    pub outputs: TaskOutputs,
     #[serde(default)]
     pub shell: Option<String>,
     #[serde(default)]
@@ -156,28 +158,27 @@ impl Task {
                 map
             });
         let info = toml::Value::Table(info);
-        let mut tera_ctx = BASE_CONTEXT.clone();
-        tera_ctx.insert("config_root", &config_root);
-        let p = TomlParser::new(&info, get_tera(Some(config_root)), tera_ctx);
+        let p = TomlParser::new(&info);
         // trace!("task info: {:#?}", info);
 
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.aliases = p
-            .parse_array("alias")?
-            .or(p.parse_array("aliases")?)
-            .or(p.parse_str("alias")?.map(|s| vec![s]))
-            .or(p.parse_str("aliases")?.map(|s| vec![s]))
+            .parse_array("alias")
+            .or(p.parse_array("aliases"))
+            .or(p.parse_str("alias").map(|s| vec![s]))
+            .or(p.parse_str("aliases").map(|s| vec![s]))
             .unwrap_or_default();
-        task.description = p.parse_str("description")?.unwrap_or_default();
-        task.sources = p.parse_array("sources")?.unwrap_or_default();
-        task.outputs = p.parse_array("outputs")?.unwrap_or_default();
-        task.depends = p.parse_array("depends")?.unwrap_or_default();
-        task.depends_post = p.parse_array("depends_post")?.unwrap_or_default();
-        task.wait_for = p.parse_array("wait_for")?.unwrap_or_default();
-        task.dir = p.parse_str("dir")?;
+        task.description = p.parse_str("description").unwrap_or_default();
+        task.sources = p.parse_array("sources").unwrap_or_default();
+        task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
+        task.depends = p.parse_array("depends").unwrap_or_default();
+        task.depends_post = p.parse_array("depends_post").unwrap_or_default();
+        task.wait_for = p.parse_array("wait_for").unwrap_or_default();
+        task.dir = p.parse_str("dir");
         task.env = p.parse_env("env")?.unwrap_or_default();
         task.file = Some(path.to_path_buf());
-        task.shell = p.parse_str("shell")?;
+        task.shell = p.parse_str("shell");
+        task.render(config_root)?;
         Ok(task)
     }
 
@@ -338,13 +339,19 @@ impl Task {
     }
 
     pub fn dir(&self) -> Result<Option<PathBuf>> {
-        let render = |dir| {
-            let mut tera = get_tera(self.config_root.as_deref());
-            let mut ctx = BASE_CONTEXT.clone();
-            if let Some(config_root) = &self.config_root {
-                ctx.insert("config_root", config_root);
-            }
-            let dir = tera.render_str(dir, &ctx)?;
+        let config = Config::get();
+        if let Some(dir) = &self.dir {
+            Ok(Some(PathBuf::from(dir)))
+        } else if let Some(dir) = self
+            .cf(&config)
+            .as_ref()
+            .and_then(|cf| cf.task_config().dir.clone())
+        {
+            let config_root = self.config_root.clone().unwrap_or_default();
+            let mut tera = get_tera(Some(&config_root));
+            let mut tera_ctx = BASE_CONTEXT.clone();
+            tera_ctx.insert("config_root", &config_root);
+            let dir = tera.render_str(&dir, &tera_ctx)?;
             let dir = file::replace_path(&dir);
             if dir.is_absolute() {
                 Ok(Some(dir.to_path_buf()))
@@ -353,16 +360,6 @@ impl Task {
             } else {
                 Ok(Some(dir.clone()))
             }
-        };
-        let config = Config::get();
-        if let Some(dir) = &self.dir {
-            render(dir)
-        } else if let Some(dir) = self
-            .cf(&config)
-            .as_ref()
-            .and_then(|cf| cf.task_config().dir.clone())
-        {
-            render(&dir)
         } else {
             Ok(self.config_root.clone())
         }
@@ -385,6 +382,42 @@ impl Task {
                 Some(shell_cmd)
             }
         })
+    }
+
+    pub fn render(&mut self, config_root: &Path) -> Result<()> {
+        let mut tera = get_tera(Some(config_root));
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("config_root", &config_root);
+        for a in &mut self.aliases {
+            *a = tera.render_str(a, &tera_ctx)?;
+        }
+        self.description = tera.render_str(&self.description, &tera_ctx)?;
+        for s in &mut self.sources {
+            *s = tera.render_str(s, &tera_ctx)?;
+        }
+        self.outputs.render(&mut tera, &tera_ctx)?;
+        for d in &mut self.depends {
+            d.task = tera.render_str(&d.task, &tera_ctx)?;
+            for a in &mut d.args {
+                *a = tera.render_str(a, &tera_ctx)?;
+            }
+        }
+        for d in &mut self.depends_post {
+            d.task = tera.render_str(&d.task, &tera_ctx)?;
+            for a in &mut d.args {
+                *a = tera.render_str(a, &tera_ctx)?;
+            }
+        }
+        for d in &mut self.wait_for {
+            d.task = tera.render_str(&d.task, &tera_ctx)?;
+            for a in &mut d.args {
+                *a = tera.render_str(a, &tera_ctx)?;
+            }
+        }
+        if let Some(dir) = &mut self.dir {
+            *dir = tera.render_str(dir, &tera_ctx)?;
+        }
+        Ok(())
     }
 }
 
@@ -441,7 +474,7 @@ impl Default for Task {
             hide: false,
             raw: false,
             sources: vec![],
-            outputs: vec![],
+            outputs: Default::default(),
             shell: None,
             silent: false,
             run: vec![],
@@ -489,6 +522,13 @@ impl Hash for Task {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         self.args.iter().for_each(|arg| arg.hash(state));
+    }
+}
+
+impl Eq for Task {}
+impl PartialEq for Task {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.args == other.args
     }
 }
 

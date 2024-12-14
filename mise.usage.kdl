@@ -16,7 +16,6 @@ flag "-C --cd" help="Change directory before running command" global=true {
     arg "<DIR>"
 }
 flag "-n --dry-run" help="Dry run, don't actually do anything" hide=true
-flag "--debug" help="Sets log level to debug" hide=true global=true
 flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" var=true global=true {
     arg "<ENV>"
 }
@@ -24,11 +23,6 @@ flag "-f --force" help="Force the operation" hide=true
 flag "-i --interleave" help="Set the log output verbosity" hide=true
 flag "-j --jobs" help="How many jobs to run in parallel [default: 8]" global=true {
     arg "<JOBS>"
-}
-flag "--log-level" hide=true global=true {
-    arg "<LEVEL>" {
-        choices "trace" "debug" "info" "warning" "error"
-    }
 }
 flag "-p --prefix" hide=true
 flag "-P --profile" help="Set the profile (environment)" var=true hide=true global=true {
@@ -40,19 +34,25 @@ flag "-s --shell" hide=true {
 flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=true hide=true {
     arg "<TOOL@VERSION>"
 }
-flag "-q --quiet" help="Suppress non-error messages" global=true
 flag "--raw" help="Read/write directly to stdin/stdout/stderr instead of by line" global=true
-flag "--silent" help="Suppress all task output and mise non-error messages"
 flag "--timings" help="Shows elapsed time after each task completes" hide=true {
     long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
 }
 flag "--no-timings" help="Hides elapsed time after each task completes" hide=true {
     long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
 }
-flag "--trace" help="Sets log level to trace" hide=true global=true
-flag "-v --verbose" help="Show extra output (use -vv for even more)" var=true global=true count=true
 flag "-V --version" hide=true
 flag "-y --yes" help="Answer yes to all confirmation prompts" global=true
+flag "--debug" help="Sets log level to debug" hide=true global=true
+flag "--log-level" hide=true global=true {
+    arg "<LEVEL>" {
+        choices "trace" "debug" "info" "warning" "error"
+    }
+}
+flag "-q --quiet" help="Suppress non-error messages" global=true
+flag "--silent" help="Suppress all task output and mise non-error messages" global=true
+flag "--trace" help="Sets log level to trace" hide=true global=true
+flag "-v --verbose" help="Show extra output (use -vv for even more)" var=true global=true count=true
 arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise task run <TASK>`."
 arg "[TASK_ARGS]..." help="Task arguments" var=true hide=true
 cmd "activate" help="Initializes mise in the current shell session" {
@@ -351,6 +351,17 @@ cmd "doctor" help="Check mise installation for possible problems" {
     $ mise doctor
     [WARN] plugin node is not installed
 "
+    cmd "path" help="Print the current PATH entries mise is providing" {
+        after_long_help r"Examples:
+
+    Get the current PATH entries mise is providing
+    $ mise path
+    /home/user/.local/share/mise/installs/node/24.0.0/bin
+    /home/user/.local/share/mise/installs/rust/1.90.0/bin
+    /home/user/.local/share/mise/installs/python/3.10.0/bin
+"
+        flag "-f --full" help="Print all entries including those not provided by mise"
+    }
 }
 cmd "en" help="[experimental] starts a new shell with the mise environment built from the current configuration" {
     long_help r"[experimental] starts a new shell with the mise environment built from the current configuration

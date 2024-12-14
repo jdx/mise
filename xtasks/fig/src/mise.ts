@@ -843,7 +843,25 @@ const completionSpec: Fig.Spec = {
                 "doctor",
                 "dr"
             ],
-            "description": "Check mise installation for possible problems"
+            "description": "Check mise installation for possible problems",
+            "subcommands": [
+                {
+                    "name": [
+                        "path"
+                    ],
+                    "description": "Print the current PATH entries mise is providing",
+                    "options": [
+                        {
+                            "name": [
+                                "-f",
+                                "--full"
+                            ],
+                            "description": "Print all entries including those not provided by mise",
+                            "isRepeatable": false
+                        }
+                    ]
+                }
+            ]
         },
         {
             "name": [
@@ -3692,17 +3710,25 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
-                "-q",
-                "--quiet"
+                "--raw"
             ],
-            "description": "Suppress non-error messages",
+            "description": "Read/write directly to stdin/stdout/stderr instead of by line",
             "isRepeatable": false
         },
         {
             "name": [
-                "--raw"
+                "-y",
+                "--yes"
             ],
-            "description": "Read/write directly to stdin/stdout/stderr instead of by line",
+            "description": "Answer yes to all confirmation prompts",
+            "isRepeatable": false
+        },
+        {
+            "name": [
+                "-q",
+                "--quiet"
+            ],
+            "description": "Suppress non-error messages",
             "isRepeatable": false
         },
         {
@@ -3719,14 +3745,6 @@ const completionSpec: Fig.Spec = {
             ],
             "description": "Show extra output (use -vv for even more)",
             "isRepeatable": true
-        },
-        {
-            "name": [
-                "-y",
-                "--yes"
-            ],
-            "description": "Answer yes to all confirmation prompts",
-            "isRepeatable": false
         }
     ],
     "args": [

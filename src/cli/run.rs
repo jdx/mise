@@ -586,14 +586,15 @@ impl Run {
     }
 
     fn sources_are_fresh(&self, task: &Task) -> Result<bool> {
-        if task.sources.is_empty() && task.outputs.is_empty() {
+        let outputs = task.outputs.paths(task);
+        if task.sources.is_empty() && outputs.is_empty() {
             return Ok(false);
         }
         let run = || -> Result<bool> {
             let mut sources = task.sources.clone();
             sources.push(task.config_source.to_string_lossy().to_string());
             let sources = self.get_last_modified(&self.cwd(task)?, &sources)?;
-            let outputs = self.get_last_modified(&self.cwd(task)?, &task.outputs)?;
+            let outputs = self.get_last_modified(&self.cwd(task)?, &outputs)?;
             trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {
                 (Some(sources), Some(outputs)) => Ok(sources < outputs),
@@ -658,7 +659,12 @@ impl Run {
         if task.sources.is_empty() {
             return Ok(());
         }
-        // TODO
+        if task.outputs.is_auto() {
+            for p in task.outputs.paths(task) {
+                debug!("touching auto output file: {p}");
+                file::touch_file(&PathBuf::from(&p))?;
+            }
+        }
         Ok(())
     }
 

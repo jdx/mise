@@ -265,3 +265,9 @@ run end-to-end tests
 - **Usage**: `test:unit`
 
 run unit tests
+
+## `xxx`
+
+- **Usage**: `xxx`
+
+a task for testing

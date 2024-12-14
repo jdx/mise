@@ -33,3 +33,17 @@ assert_empty "mise -q hi"
 assert_empty "mise -q hi"
 touch ../older
 assert "mise -q hi" "hi"
+
+cat <<EOF >mise.toml
+[tasks.hi]
+sources = ["{{cwd}}/input"]
+outputs = { auto = true }
+run = "echo hi"
+EOF
+
+mkdir subdir && cd subdir || exit 1
+assert "mise -q hi" "hi"
+assert_empty "mise -q hi"
+touch input
+assert "mise -q hi" "hi"
+assert_empty "mise -q hi"

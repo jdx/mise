@@ -4,39 +4,31 @@ use std::str::FromStr;
 
 use either::Either;
 use serde::de;
-use tera::{Context, Tera};
 
 use crate::task::{EitherIntOrBool, EitherStringOrIntOrBool};
 
 pub struct TomlParser<'a> {
     table: &'a toml::Value,
-    tera: Tera,
-    tera_ctx: Context,
 }
 
 impl<'a> TomlParser<'a> {
-    pub fn new(table: &'a toml::Value, tera: Tera, tera_ctx: Context) -> Self {
-        Self {
-            table,
-            tera,
-            tera_ctx,
-        }
+    pub fn new(table: &'a toml::Value) -> Self {
+        Self { table }
     }
 
-    pub fn parse_str<T>(&self, key: &str) -> eyre::Result<Option<T>>
+    pub fn parse_str<T>(&self, key: &str) -> Option<T>
     where
         T: From<String>,
     {
         self.table
             .get(key)
             .and_then(|value| value.as_str())
-            .map(|s| self.render_tmpl(s))
-            .transpose()
+            .map(|value| value.to_string().into())
     }
     pub fn parse_bool(&self, key: &str) -> Option<bool> {
         self.table.get(key).and_then(|value| value.as_bool())
     }
-    pub fn parse_array<T>(&self, key: &str) -> eyre::Result<Option<Vec<T>>>
+    pub fn parse_array<T>(&self, key: &str) -> Option<Vec<T>>
     where
         T: From<String>,
     {
@@ -46,10 +38,9 @@ impl<'a> TomlParser<'a> {
             .map(|array| {
                 array
                     .iter()
-                    .filter_map(|value| value.as_str().map(|v| self.render_tmpl(v)))
-                    .collect::<eyre::Result<Vec<T>>>()
+                    .filter_map(|value| value.as_str().map(|v| v.to_string().into()))
+                    .collect::<Vec<T>>()
             })
-            .transpose()
     }
     pub fn parse_env(
         &self,
@@ -64,9 +55,7 @@ impl<'a> TomlParser<'a> {
                     .map(|(key, value)| {
                         let v = value
                             .as_str()
-                            .map(|v| {
-                                Ok(EitherStringOrIntOrBool(Either::Left(self.render_tmpl(v)?)))
-                            })
+                            .map(|v| Ok(EitherStringOrIntOrBool(Either::Left(v.to_string()))))
                             .or_else(|| {
                                 value.as_integer().map(|v| {
                                     Ok(EitherStringOrIntOrBool(Either::Left(v.to_string())))
@@ -87,14 +76,6 @@ impl<'a> TomlParser<'a> {
                     .collect::<eyre::Result<_>>()
             })
             .transpose()
-    }
-
-    fn render_tmpl<T>(&self, tmpl: &str) -> eyre::Result<T>
-    where
-        T: From<String>,
-    {
-        let tmpl = self.tera.clone().render_str(tmpl, &self.tera_ctx)?;
-        Ok(tmpl.into())
     }
 }
 

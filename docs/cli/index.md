@@ -26,27 +26,25 @@ Set the environment for loading `mise.<ENV>.toml`
 
 How many jobs to run in parallel [default: 8]
 
-### `-q --quiet`
-
-Suppress non-error messages
-
 ### `--raw`
 
 Read/write directly to stdin/stdout/stderr instead of by line
-
-### `-v --verbose...`
-
-Show extra output (use -vv for even more)
 
 ### `-y --yes`
 
 Answer yes to all confirmation prompts
 
-## Flags
+### `-q --quiet`
+
+Suppress non-error messages
 
 ### `--silent`
 
 Suppress all task output and mise non-error messages
+
+### `-v --verbose...`
+
+Show extra output (use -vv for even more)
 
 ## Subcommands
 
@@ -69,7 +67,8 @@ Suppress all task output and mise non-error messages
 - [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
 - [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)
 - [`mise deactivate`](/cli/deactivate.md)
-- [`mise doctor`](/cli/doctor.md)
+- [`mise doctor <SUBCOMMAND>`](/cli/doctor.md)
+- [`mise doctor path [-f --full]`](/cli/doctor/path.md)
 - [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.md)
 - [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)
 - [`mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`](/cli/exec.md)
