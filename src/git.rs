@@ -64,40 +64,40 @@ impl Git {
         self.dir.join(".git").is_dir()
     }
 
-    pub fn update_libgit2(
-        &self,
-        repo: &git2::Repository,
-        gitref: &str,
-    ) -> Result<(String, String)> {
-        let mut fetch_options = get_fetch_options()?;
-        let remote_name = "origin";
-        let mut remote = repo.find_remote(remote_name)?;
-        remote.fetch(&[gitref], Some(&mut fetch_options), None)?;
-        let prev_rev = self.current_sha()?;
-        let refname = format!("{remote_name}/{gitref}");
-        let (obj, reference) = repo.revparse_ext(&refname)?;
-        repo.checkout_tree(&obj, None)?;
-        let commit = obj.peel_to_commit()?;
-        repo.branch(gitref, &commit, true)?;
-        if let Some(reference) = reference.and_then(|r| r.name().map(|s| s.to_string())) {
-            repo.set_head(&reference)?;
-        }
-        let post_rev = self.current_sha()?;
-        touch_dir(&self.dir)?;
-        Ok((prev_rev, post_rev))
-    }
+    // pub fn update_libgit2(
+    //     &self,
+    //     repo: &git2::Repository,
+    //     gitref: &str,
+    // ) -> Result<(String, String)> {
+    //     let mut fetch_options = get_fetch_options()?;
+    //     let remote_name = "origin";
+    //     let mut remote = repo.find_remote(remote_name)?;
+    //     remote.fetch(&[gitref], Some(&mut fetch_options), None)?;
+    //     let prev_rev = self.current_sha()?;
+    //     let refname = format!("{remote_name}/{gitref}");
+    //     let (obj, reference) = repo.revparse_ext(&refname)?;
+    //     repo.checkout_tree(&obj, None)?;
+    //     let commit = obj.peel_to_commit()?;
+    //     repo.branch(gitref, &commit, true)?;
+    //     if let Some(reference) = reference.and_then(|r| r.name().map(|s| s.to_string())) {
+    //         repo.set_head(&reference)?;
+    //     }
+    //     let post_rev = self.current_sha()?;
+    //     touch_dir(&self.dir)?;
+    //     Ok((prev_rev, post_rev))
+    // }
 
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
         let gitref = gitref.map_or_else(|| self.current_branch(), Ok)?;
         debug!("updating {} to {}", self.dir.display(), gitref);
-        if SETTINGS.libgit2 {
-            if let Ok(repo) = self.repo() {
-                match self.update_libgit2(repo, &gitref) {
-                    Ok(res) => return Ok(res),
-                    Err(err) => warn!("libgit2 failed: {err}"),
-                }
-            }
-        }
+        // if SETTINGS.libgit2 {
+        //     if let Ok(repo) = self.repo() {
+        //         match self.update_libgit2(repo, &gitref) {
+        //             Ok(res) => return Ok(res),
+        //             Err(err) => warn!("libgit2 failed: {err}"),
+        //         }
+        //     }
+        // }
         let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
         {
             Ok(res) => {
