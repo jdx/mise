@@ -1,5 +1,6 @@
 [tools.actionlint]
 version = "1.7.4"
+backend = "ubi:rhysd/actionlint"
 
 [tools.actionlint.checksums]
 actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
@@ -8,6 +9,7 @@ actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5c
 
 [tools.bun]
 version = "1.1.38"
+backend = "core:bun"
 
 [tools.bun.checksums]
 "bun-darwin-aarch64.zip" = "sha256:bbc6fb0e7bb99e7e95001ba05105cf09d0b79c06941d9f6ee3d0b34dc1541590"
@@ -15,6 +17,7 @@ version = "1.1.38"
 
 [tools.cargo-binstall]
 version = "1.10.15"
+backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
 "cargo-binstall-aarch64-apple-darwin.zip" = "sha256:0afb56acd834d7b0bc9a5293963da04abe48923d90f374bed98068b313a48f2c"
@@ -22,21 +25,27 @@ version = "1.10.15"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.0"
+backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
 version = "1.41.1"
+backend = "cargo:cargo-insta"
 
 [tools."cargo:cargo-show"]
 version = "0.6.0"
+backend = "cargo:cargo-show"
 
 [tools."cargo:git-cliff"]
 version = "2.7.0"
+backend = "cargo:git-cliff"
 
 [tools."cargo:usage-cli"]
 version = "1.5.2"
+backend = "cargo:usage-cli"
 
 [tools.cosign]
 version = "2.4.1"
+backend = "aqua:sigstore/cosign"
 
 [tools.cosign.checksums]
 cosign-darwin-arm64 = "sha256:13343856b69f70388c4fe0b986a31dde5958e444b41be22d785d3dc5e1a9cc62"
@@ -45,6 +54,7 @@ cosign-linux-amd64 = "sha256:8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c0
 
 [tools.jq]
 version = "1.7.1"
+backend = "aqua:jqlang/jq"
 
 [tools.jq.checksums]
 jq-linux-amd64 = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5"
@@ -53,21 +63,26 @@ jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea
 
 [tools."npm:markdownlint-cli"]
 version = "0.43.0"
+backend = "npm:markdownlint-cli"
 
 [tools."npm:prettier"]
 version = "3.4.2"
+backend = "npm:prettier"
 
 [tools."pipx:toml-sort"]
 version = "0.24.2"
+backend = "pipx:toml-sort"
 
 [tools.pre-commit]
 version = "4.0.1"
+backend = "aqua:pre-commit/pre-commit"
 
 [tools.pre-commit.checksums]
 "pre-commit-4.0.1.pyz" = "sha256:f3e65c943795be7879e7ea2beda248321b6c8ae851dabc785522a432fb8ce003"
 
 [tools.ripgrep]
 version = "14.1.1"
+backend = "aqua:BurntSushi/ripgrep"
 
 [tools.ripgrep.checksums]
 "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz" = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
@@ -76,6 +91,7 @@ version = "14.1.1"
 
 [tools.shellcheck]
 version = "0.10.0"
+backend = "aqua:koalaman/shellcheck"
 
 [tools.shellcheck.checksums]
 shellcheck-linux-x86_64 = "sha256:f35ae15a4677945428bdfe61ccc297490d89dd1e544cc06317102637638c6deb"
@@ -85,12 +101,14 @@ shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f
 
 [tools.shfmt]
 version = "3.10.0"
+backend = "aqua:mvdan/sh"
 
 [tools.shfmt.checksums]
 "shfmt_v3.10.0_linux_amd64" = "sha256:1f57a384d59542f8fac5f503da1f3ea44242f46dff969569e80b524d64b71dbc"
 
 [tools.slsa-verifier]
 version = "2.6.0"
+backend = "ubi:slsa-framework/slsa-verifier"
 
 [tools.slsa-verifier.checksums]
 slsa-verifier-linux-x86_64 = "sha256:1c9c0d6a272063f3def6d233fa3372adbaff1f5a3480611a07c744e73246b62d"
@@ -99,6 +117,7 @@ slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff54546
 
 [tools.wait-for-gh-rate-limit]
 version = "0.1.8"
+backend = "ubi:jdx/wait-for-gh-rate-limit"
 
 [tools.wait-for-gh-rate-limit.checksums]
 wait-for-gh-rate-limit-linux-x86_64 = "sha256:a3e7e966a8d681f30bb7887e471740607074ab7f28580dd926efc307b0d35c20"
