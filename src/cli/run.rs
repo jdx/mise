@@ -366,9 +366,9 @@ impl Run {
         let cmd = style::ebold(format!("$ {script} {args}", args = args.join(" ")))
             .bright()
             .to_string();
-        let cmd = trunc(&config.redact(cmd)?);
         if !self.quiet(Some(task)) {
-            eprintln!("{prefix} {cmd}");
+            let msg = format!("{prefix} {}", config.redact(cmd)?);
+            eprintln!("{}", trunc(&msg));
         }
 
         if script.starts_with("#!") {
@@ -465,11 +465,11 @@ impl Run {
             }
         }
 
-        let cmd = format!("{} {}", display_path(file), args.join(" "));
-        let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
-        let cmd = trunc(&config.redact(cmd)?);
         if !self.quiet(Some(task)) {
-            eprintln!("{prefix} {cmd}");
+            let cmd = format!("{} {}", display_path(file), args.join(" "));
+            let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
+            let cmd = trunc(&format!("{prefix} {}", config.redact(cmd)?));
+            eprintln!("{cmd}");
         }
 
         self.exec(file, &args, task, &env, prefix)
