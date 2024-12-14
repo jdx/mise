@@ -214,6 +214,14 @@ pub fn display_path<P: AsRef<Path>>(path: P) -> String {
     }
 }
 
+pub fn display_rel_path<P: AsRef<Path>>(path: P) -> String {
+    let path = path.as_ref();
+    match path.strip_prefix(dirs::CWD.as_ref().unwrap()) {
+        Ok(rel) => format!("./{}", rel.display()),
+        Err(_) => display_path(path),
+    }
+}
+
 /// replaces $HOME in a string with "~" and $PATH with "$PATH", generally used to clean up output
 /// after it is rendered
 pub fn replace_paths_in_string<S: Display>(input: S) -> String {

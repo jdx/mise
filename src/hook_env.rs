@@ -8,14 +8,31 @@ use base64::prelude::*;
 use eyre::Result;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
+use indexmap::IndexSet;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
 
+use crate::config::Config;
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches};
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, env, hooks, watch_files};
+
+pub static CUR_SESSION: Lazy<HookEnvSession> = Lazy::new(|| {
+    env::var("__MISE_SESSION")
+        .ok()
+        .and_then(|s| {
+            deserialize(s)
+                .map_err(|err| {
+                    warn!("error deserializing __MISE_SESSION: {err}");
+                    err
+                })
+                .ok()
+        })
+        .unwrap_or_default()
+});
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct WatchFilePattern {
@@ -52,25 +69,18 @@ pub fn should_exit_early(watch_files: impl IntoIterator<Item = WatchFilePattern>
             return false;
         }
     };
-    match &*env::__MISE_WATCH {
-        Some(watches) => {
-            if have_files_been_modified(watches, watch_files) {
-                return false;
-            }
-            if have_mise_env_vars_been_modified(watches) {
-                return false;
-            }
-        }
-        None => {
-            return false;
-        }
-    };
+    if have_files_been_modified(watch_files) {
+        return false;
+    }
+    if have_mise_env_vars_been_modified() {
+        return false;
+    }
     trace!("early-exit");
     true
 }
 
 pub fn dir_change() -> Option<(Option<PathBuf>, PathBuf)> {
-    match (&*env::__MISE_DIR, &*dirs::CWD) {
+    match (&CUR_SESSION.dir, &*dirs::CWD) {
         (Some(old), Some(new)) if old != new => {
             trace!("dir change: {:?} -> {:?}", old, new);
             Some((Some(old.clone()), new.clone()))
@@ -83,7 +93,7 @@ pub fn dir_change() -> Option<(Option<PathBuf>, PathBuf)> {
     }
 }
 
-fn have_files_been_modified(watches: &HookEnvWatches, watch_files: BTreeSet<PathBuf>) -> bool {
+fn have_files_been_modified(watch_files: BTreeSet<PathBuf>) -> bool {
     // check the files to see if they've been altered
     let mut modified = false;
     for fp in &watch_files {
@@ -92,7 +102,7 @@ fn have_files_been_modified(watches: &HookEnvWatches, watch_files: BTreeSet<Path
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_millis();
-            if modtime > watches.latest_update {
+            if modtime > CUR_SESSION.latest_update {
                 trace!("file modified: {:?}", fp);
                 modified = true;
                 watch_files::add_modified_file(fp.clone());
@@ -105,26 +115,30 @@ fn have_files_been_modified(watches: &HookEnvWatches, watch_files: BTreeSet<Path
     modified
 }
 
-fn have_mise_env_vars_been_modified(watches: &HookEnvWatches) -> bool {
-    if get_mise_env_vars_hashed() != watches.env_var_hash {
+fn have_mise_env_vars_been_modified() -> bool {
+    if get_mise_env_vars_hashed() != CUR_SESSION.env_var_hash {
         return true;
     }
     false
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct HookEnvWatches {
-    latest_update: u128,
+pub struct HookEnvSession {
+    pub loaded_tools: IndexSet<String>,
+    pub loaded_configs: IndexSet<PathBuf>,
+    pub config_paths: IndexSet<PathBuf>,
+    dir: Option<PathBuf>,
     env_var_hash: String,
+    latest_update: u128,
 }
 
-pub fn serialize_watches(watches: &HookEnvWatches) -> Result<String> {
+pub fn serialize<T: serde::Serialize>(obj: &T) -> Result<String> {
     let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
-    gz.write_all(&rmp_serde::to_vec_named(watches)?)?;
+    gz.write_all(&rmp_serde::to_vec_named(obj)?)?;
     Ok(BASE64_STANDARD_NO_PAD.encode(gz.finish()?))
 }
 
-pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
+pub fn deserialize<T: serde::de::DeserializeOwned>(raw: String) -> Result<T> {
     let mut writer = Vec::new();
     let mut decoder = ZlibDecoder::new(writer);
     let bytes = BASE64_STANDARD_NO_PAD.decode(raw)?;
@@ -133,9 +147,10 @@ pub fn deserialize_watches(raw: String) -> Result<HookEnvWatches> {
     Ok(rmp_serde::from_slice(&writer[..])?)
 }
 
-pub fn build_watches(
+pub fn build_session(
     watch_files: impl IntoIterator<Item = WatchFilePattern>,
-) -> Result<HookEnvWatches> {
+) -> Result<HookEnvSession> {
+    let config = Config::get();
     let mut max_modtime = UNIX_EPOCH;
     for cf in get_watch_files(watch_files)? {
         if let Ok(Ok(modified)) = cf.metadata().map(|m| m.modified()) {
@@ -143,8 +158,23 @@ pub fn build_watches(
         }
     }
 
-    Ok(HookEnvWatches {
+    let config_paths = if let Ok(paths) = config.path_dirs() {
+        paths.iter().cloned().collect()
+    } else {
+        IndexSet::new()
+    };
+
+    Ok(HookEnvSession {
+        dir: dirs::CWD.clone(),
         env_var_hash: get_mise_env_vars_hashed(),
+        loaded_configs: config.config_files.keys().cloned().collect(),
+        loaded_tools: config
+            .get_toolset()?
+            .list_current_versions()
+            .into_iter()
+            .map(|(_, tv)| tv.to_string())
+            .collect(),
+        config_paths,
         latest_update: max_modtime
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()

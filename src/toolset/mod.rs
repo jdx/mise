@@ -208,7 +208,7 @@ impl Toolset {
         if versions.is_empty() {
             return Ok(vec![]);
         }
-        hooks::run_one_hook(self, Hooks::Preinstall);
+        hooks::run_one_hook(self, Hooks::Preinstall, None);
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
         let mut installed = vec![];
@@ -248,7 +248,7 @@ impl Toolset {
                 }
             }
         }
-        hooks::run_one_hook(self, Hooks::Postinstall);
+        hooks::run_one_hook(self, Hooks::Postinstall, None);
         Ok(installed)
     }
 

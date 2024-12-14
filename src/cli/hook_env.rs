@@ -1,19 +1,19 @@
+use crate::config::{Config, Settings};
+use crate::direnv::DirenvDiff;
 use crate::env::{join_paths, split_paths, PATH_ENV_SEP};
+use crate::env::{PATH_KEY, TERM_WIDTH, __MISE_DIFF};
+use crate::env_diff::{EnvDiff, EnvDiffOperation};
+use crate::file::display_rel_path;
+use crate::hook_env::{WatchFilePattern, CUR_SESSION};
+use crate::shell::{get_shell, ShellType};
+use crate::toolset::Toolset;
+use crate::{env, hook_env, hooks, watch_files};
 use console::truncate_str;
 use eyre::Result;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use std::ops::Deref;
 use std::path::PathBuf;
-
-use crate::config::{Config, Settings};
-use crate::direnv::DirenvDiff;
-use crate::env::{PATH_KEY, TERM_WIDTH, __MISE_DIFF};
-use crate::env_diff::{EnvDiff, EnvDiffOperation};
-use crate::hook_env::WatchFilePattern;
-use crate::hooks::Hooks;
-use crate::shell::{get_shell, Shell, ShellType};
-use crate::toolset::{Toolset, ToolsetBuilder};
-use crate::{dirs, env, hook_env, hooks, watch_files};
 
 /// [internal] called by activate hook to update env vars directory change
 #[derive(Debug, clap::Args)]
@@ -42,7 +42,7 @@ impl HookEnv {
             return Ok(());
         }
         time!("should_exit_early false");
-        let ts = ToolsetBuilder::new().build(&config)?;
+        let ts = config.get_toolset()?;
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;
         let mut env = ts.env(&config)?;
@@ -60,61 +60,36 @@ impl HookEnv {
         let settings = Settings::try_get()?;
         patches.extend(self.build_path_operations(&settings, &paths, &__MISE_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
-        patches.push(self.build_watch_operation(watch_files.clone())?);
-        patches.push(self.build_dir_operation()?);
+        patches.push(self.build_session_operation(watch_files.clone())?);
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
-        self.display_status(&config, &ts)?;
+        self.display_status(&config, ts)?;
 
-        self.run_shell_hooks(&config, &*shell)?;
-        hooks::run_all_hooks(&ts);
-        watch_files::execute_runs(&ts);
+        hooks::run_all_hooks(ts, &*shell);
+        watch_files::execute_runs(ts);
 
-        Ok(())
-    }
-
-    fn run_shell_hooks(&self, config: &Config, shell: &dyn Shell) -> Result<()> {
-        let hooks = config.hooks()?;
-        for h in hooks::SCHEDULED_HOOKS.lock().unwrap().iter() {
-            let hooks = hooks
-                .iter()
-                .map(|(_p, hook)| hook)
-                .filter(|hook| hook.hook == *h && hook.shell == Some(shell.to_string()))
-                .collect_vec();
-            match *h {
-                Hooks::Enter => {
-                    for hook in hooks {
-                        miseprintln!("{}", hook.script);
-                    }
-                }
-                Hooks::Cd => {
-                    for hook in hooks {
-                        miseprintln!("{}", hook.script);
-                    }
-                }
-                Hooks::Leave => {
-                    for _hook in hooks {
-                        warn!("leave hook not yet implemented");
-                    }
-                }
-                _ => {}
-            }
-        }
         Ok(())
     }
 
     fn display_status(&self, config: &Config, ts: &Toolset) -> Result<()> {
         let settings = Settings::get();
         if self.status || settings.status.show_tools {
-            let installed_versions = ts
+            let prev = &CUR_SESSION.loaded_tools;
+            let cur = ts
                 .list_current_installed_versions()
                 .into_iter()
                 .rev()
                 .map(|(_, tv)| format!("{}@{}", tv.short(), tv.version))
-                .collect_vec();
-            if !installed_versions.is_empty() {
-                let status = installed_versions.into_iter().rev().join(" ");
+                .collect::<IndexSet<_>>();
+            let removed = prev.difference(&cur).collect::<IndexSet<_>>();
+            let new = cur.difference(prev).collect::<IndexSet<_>>();
+            if !new.is_empty() {
+                let status = new.into_iter().map(|t| format!("+{t}")).rev().join(" ");
+                info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
+            }
+            if !removed.is_empty() {
+                let status = removed.into_iter().map(|t| format!("-{t}")).rev().join(" ");
                 info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
             }
         }
@@ -123,6 +98,27 @@ impl HookEnv {
             if !env_diff.is_empty() {
                 let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
                 info!("{}", truncate_str(&env_diff, TERM_WIDTH.max(60) - 5, "…"));
+            }
+            let new_paths: IndexSet<PathBuf> = config
+                .path_dirs()
+                .map(|p| p.iter().cloned().collect())
+                .unwrap_or_default();
+            let old_paths = &CUR_SESSION.config_paths;
+            let removed_paths = old_paths.difference(&new_paths).collect::<IndexSet<_>>();
+            let added_paths = new_paths.difference(old_paths).collect::<IndexSet<_>>();
+            if !added_paths.is_empty() {
+                let status = added_paths
+                    .iter()
+                    .map(|p| format!("+{}", display_rel_path(p)))
+                    .join(" ");
+                info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
+            }
+            if !removed_paths.is_empty() {
+                let status = removed_paths
+                    .iter()
+                    .map(|p| format!("-{}", display_rel_path(p)))
+                    .join(" ");
+                info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
             }
         }
         ts.notify_if_versions_missing();
@@ -199,29 +195,14 @@ impl HookEnv {
         ))
     }
 
-    /// set the directory where hook-env was last run from
-    /// prefixed with ":" so it does not conflict with zsh's auto_name_dirs feature
-    fn build_dir_operation(&self) -> Result<EnvDiffOperation> {
-        Ok(EnvDiffOperation::Add(
-            "__MISE_DIR".into(),
-            format!(
-                ":{}",
-                dirs::CWD
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_default()
-            ),
-        ))
-    }
-
-    fn build_watch_operation(
+    fn build_session_operation(
         &self,
         watch_files: impl IntoIterator<Item = WatchFilePattern>,
     ) -> Result<EnvDiffOperation> {
-        let watches = hook_env::build_watches(watch_files)?;
+        let session = hook_env::build_session(watch_files)?;
         Ok(EnvDiffOperation::Add(
-            "__MISE_WATCH".into(),
-            hook_env::serialize_watches(&watches)?,
+            "__MISE_SESSION".into(),
+            hook_env::serialize(&session)?,
         ))
     }
 }

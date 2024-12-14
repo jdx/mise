@@ -94,7 +94,7 @@ impl Shell for Bash {
             unset mise
             unset MISE_SHELL
             unset __MISE_DIFF
-            unset __MISE_WATCH
+            unset __MISE_SESSION
         "#}
     }
 

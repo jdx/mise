@@ -58,6 +58,7 @@ pub struct Config {
     env_with_sources: OnceCell<EnvWithSources>,
     redactions: OnceCell<IndexSet<String>>,
     shorthands: OnceLock<Shorthands>,
+    hooks: OnceCell<Vec<(PathBuf, Hook)>>,
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
@@ -572,19 +573,21 @@ impl Config {
         Ok(env_results)
     }
 
-    pub fn hooks(&self) -> Result<Vec<(PathBuf, Hook)>> {
-        self.config_files
-            .values()
-            .map(|cf| Ok((cf.project_root(), cf.hooks()?)))
-            .filter_map_ok(|(root, hooks)| root.map(|r| (r.to_path_buf(), hooks)))
-            .map_ok(|(root, hooks)| {
-                hooks
-                    .into_iter()
-                    .map(|h| (root.clone(), h))
-                    .collect::<Vec<_>>()
-            })
-            .flatten_ok()
-            .collect()
+    pub fn hooks(&self) -> Result<&Vec<(PathBuf, Hook)>> {
+        self.hooks.get_or_try_init(|| {
+            self.config_files
+                .values()
+                .map(|cf| Ok((cf.project_root(), cf.hooks()?)))
+                .filter_map_ok(|(root, hooks)| root.map(|r| (r.to_path_buf(), hooks)))
+                .map_ok(|(root, hooks)| {
+                    hooks
+                        .into_iter()
+                        .map(|h| (root.clone(), h))
+                        .collect::<Vec<_>>()
+                })
+                .flatten_ok()
+                .collect()
+        })
     }
 
     pub fn watch_file_hooks(&self) -> Result<IndexSet<(PathBuf, WatchFile)>> {
