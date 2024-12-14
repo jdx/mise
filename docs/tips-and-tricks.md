@@ -5,10 +5,10 @@ An assortment of helpful tips for using `mise`.
 ## macOS Rosetta
 
 If you have a need to run tools as x86_64 on Apple Silicon, this can be done with mise however you'll currently
-need to use the x86_64 version of mise itself. There is an [outstanding issue](https://github.com/jdx/mise/issues/405)
-to support this with an env var like MISE_ARCH=x86_64 to make it more seamless.
+need to use the x86_64 version of mise itself. A common reason for doing this is to support compiling node <=14.
 
-A common reason for doing this is to support compiling node <=14.
+You can do this either with the [`MISE_ARCH`](https://mise.jdx.dev/configuration/settings.html#arch)
+setting or by using a dedicated rosetta mise bin as described below:
 
 First, you'll need a copy of mise that's built for x86_64:
 
