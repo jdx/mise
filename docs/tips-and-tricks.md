@@ -60,6 +60,25 @@ calling `curl https://mise.run` dynamically—though of course this means it wil
 the version of mise that was current when the script was created.
 :::
 
+## Installation via zsh zinit
+
+[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH, wich this snippet you will get mise (and usage for shell completion):
+
+```sh
+zinit as="command" lucid from="gh-r" for \
+    id-as="usage" \
+    atpull="%atclone" \
+    jdx/usage
+    #atload='eval "$(mise activate zsh)"' \
+
+zinit as="command" lucid from="gh-r" for \
+    id-as="mise" mv="mise* -> mise" \
+    atclone="./mise* completion zsh > _mise" \
+    atpull="%atclone" \
+    atload='eval "$(mise activate zsh)"' \
+    jdx/mise
+```
+
 ## CI/CD
 
 Using mise in CI/CD is a great way to synchronize tool versions for dev/build.
