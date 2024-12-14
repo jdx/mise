@@ -121,6 +121,9 @@ run = "mise tasks run docker:mise run test:e2e"
 ["test:shuffle"]
 run = "cargo +nightly test --all-features -- -Z unstable-options --shuffle"
 
+[install-dev]
+run = "cargo install --path . --debug"
+
 [xxx]
 hide = true
 run = "echo xxx"
