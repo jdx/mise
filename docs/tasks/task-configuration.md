@@ -122,7 +122,7 @@ run = [
 ### `dir`
 
 - **Type**: `string`
-- **Default**: `{{config_root}}` - the directory containing `mise.toml`, or in the case of something like `~/src/myproj/.config/mise.toml`, it will be `~/src/myproj`.
+- **Default**: <code v-pre>"{{ config_root }}"</code> - the directory containing `mise.toml`, or in the case of something like `~/src/myproj/.config/mise.toml`, it will be `~/src/myproj`.
 
 The directory to run the task from. The most common way this is used is when you want the task to execute
 in the user's current directory:
