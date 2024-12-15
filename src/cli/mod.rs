@@ -129,6 +129,11 @@ pub struct Cli {
     /// Default to always show with `MISE_TASK_TIMINGS=1`
     #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
     pub timings: bool,
+    /// Do not load any config files
+    ///
+    /// Can also use `MISE_NO_CONFIG=1`
+    #[clap(long)]
+    pub no_config: bool,
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`

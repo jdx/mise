@@ -3747,6 +3747,13 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
+                "--no-config"
+            ],
+            "description": "Do not load any config files",
+            "isRepeatable": false
+        },
+        {
+            "name": [
                 "-y",
                 "--yes"
             ],

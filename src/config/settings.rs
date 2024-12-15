@@ -421,6 +421,16 @@ impl Settings {
     pub fn arch(&self) -> &str {
         self.arch.as_deref().unwrap_or(ARCH)
     }
+
+    pub fn no_config() -> bool {
+        *env::MISE_NO_CONFIG
+            || env::ARGS
+                .read()
+                .unwrap()
+                .iter()
+                .take_while(|a| *a != "--")
+                .any(|a| a == "--no-config")
+    }
 }
 
 impl Display for Settings {

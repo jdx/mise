@@ -4,7 +4,7 @@
 .SH NAME
 mise \- The front\-end to your dev env
 .SH SYNOPSIS
-\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-E\fR|\fB\-\-env\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-raw\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-silent\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fITASK\fR] [\fITASK_ARGS\fR] [\fIsubcommands\fR]
+\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-E\fR|\fB\-\-env\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-raw\fR] [\fB\-\-no\-config\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-silent\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fITASK\fR] [\fITASK_ARGS\fR] [\fIsubcommands\fR]
 .SH DESCRIPTION
 .PP
 mise is a tool for managing runtime versions. https://github.com/jdx/mise
@@ -31,6 +31,12 @@ May also be specified with the \fBMISE_JOBS\fR environment variable.
 .TP
 \fB\-\-raw\fR
 Read/write directly to stdin/stdout/stderr instead of by line
+.TP
+\fB\-\-no\-config\fR
+Do not load any config files
+.RS
+May also be specified with the \fBMISE_NO_CONFIG\fR environment variable.
+.RE
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
 Answer yes to all confirmation prompts

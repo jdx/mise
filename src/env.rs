@@ -57,6 +57,7 @@ pub static XDG_STATE_HOME: Lazy<PathBuf> =
 
 /// always display "friendly" errors even in debug mode
 pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FRIENDLY_ERROR"));
+pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
 pub static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
 pub static MISE_CONFIG_DIR: Lazy<PathBuf> =

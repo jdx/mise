@@ -46,6 +46,12 @@ Suppress all task output and mise non-error messages
 
 Show extra output (use -vv for even more)
 
+## Flags
+
+### `--no-config`
+
+Do not load any config files
+
 ## Subcommands
 
 - [`mise activate [FLAGS] [SHELL_TYPE]`](/cli/activate.md)
