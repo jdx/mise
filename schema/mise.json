@@ -682,6 +682,10 @@
             "gpg_verify": {
               "description": "Use gpg to verify swift tool signatures.",
               "type": "boolean"
+            },
+            "platform": {
+              "description": "Override the platform to use for precompiled binaries.",
+              "type": "string"
             }
           }
         },
