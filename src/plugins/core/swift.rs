@@ -203,6 +203,9 @@ fn platform_directory() -> String {
 }
 
 fn platform() -> String {
+    if let Some(platform) = &SETTINGS.swift.platform {
+        return platform.clone();
+    }
     if cfg!(macos) {
         "osx".to_string()
     } else if cfg!(windows) {
@@ -210,11 +213,15 @@ fn platform() -> String {
     } else if let Ok(os_release) = &*os_release::OS_RELEASE {
         if os_release.id == "amzn" {
             format!("amazonlinux{}", os_release.version_id)
+        } else if os_release.id == "ubi" {
+            "ubi9".to_string() // only 9 is available
+        } else if os_release.id == "fedora" {
+            "fedora39".to_string() // only 39 is available
         } else {
             format!("{}{}", os_release.id, os_release.version_id)
         }
     } else {
-        "ubi".to_string()
+        "ubi9".to_string()
     }
 }
 
