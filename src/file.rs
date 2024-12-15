@@ -288,7 +288,7 @@ pub fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
     for entry in dir.read_dir()? {
         let entry = entry?;
         let ft = entry.file_type()?;
-        if ft.is_dir() || (ft.is_symlink() && entry.path().read_link()?.is_dir()) {
+        if ft.is_dir() || (ft.is_symlink() && entry.path().is_dir()) {
             output.insert(entry.file_name().into_string().unwrap());
         }
     }

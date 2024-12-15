@@ -19,7 +19,7 @@ pub struct SyncNode {
 }
 
 #[derive(Debug, clap::Args)]
-#[group(required = true)]
+#[group(required = true, multiple = true)]
 pub struct SyncNodeType {
     /// Get tool versions from Homebrew
     #[clap(long)]
