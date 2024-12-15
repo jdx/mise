@@ -290,12 +290,18 @@ impl EnvResults {
                             .into_iter()
                             .chain(env::split_paths(&env_vars[&*PATH_KEY]))
                             .collect::<Vec<_>>();
-                        if ts
+                        let missing = ts
                             .list_missing_versions()
                             .iter()
-                            .any(|tv| tv.ba().tool_name == "python")
-                        {
-                            debug!("python not installed, skipping venv creation");
+                            .any(|tv| tv.ba().tool_name == "python");
+                        if missing {
+                            warn!(
+                                "no venv found at: {p}\n\n\
+                                mise will automatically create the venv once all requested python versions are installed.\n\
+                                To install the missing python versions and create the venv, please run:\n\
+                                mise install",
+                                p = display_path(&venv)
+                            );
                         } else {
                             let has_uv_bin =
                                 ts.which("uv").is_some() || which_non_pristine("uv").is_some();
@@ -355,7 +361,8 @@ impl EnvResults {
                             "VIRTUAL_ENV".into(),
                             (venv.to_string_lossy().to_string(), Some(source.clone())),
                         );
-                    } else {
+                    } else if !create {
+                        // The create "no venv found" warning is handled elsewhere
                         warn!(
                             "no venv found at: {p}\n\n\
                             To create a virtualenv manually, run:\n\
