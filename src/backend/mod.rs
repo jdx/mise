@@ -154,6 +154,9 @@ pub trait Backend: Debug + Send + Sync {
         BackendType::Core
     }
     fn ba(&self) -> &BackendArg;
+    fn description(&self) -> Option<String> {
+        None
+    }
     fn get_plugin_type(&self) -> Option<PluginType> {
         None
     }

@@ -2,7 +2,7 @@ use crate::aqua::aqua_template;
 use crate::backend::aqua;
 use crate::backend::aqua::{arch, os};
 use crate::config::SETTINGS;
-use crate::duration::DAILY;
+use crate::duration::{DAILY, WEEKLY};
 use crate::git::Git;
 use crate::{dirs, file, hashmap, http};
 use expr::{Context, Parser, Program, Value};
@@ -208,7 +208,7 @@ impl AquaRegistry {
 }
 
 fn fetch_latest_repo(repo: &Git) -> Result<()> {
-    if file::modified_duration(&repo.dir)? < DAILY {
+    if file::modified_duration(&repo.dir)? < WEEKLY {
         return Ok(());
     }
     info!("updating aqua registry repo");
