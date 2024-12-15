@@ -18,9 +18,11 @@ touch mise.lock
 assert "mise use dummy@1 tiny@1"
 assert "cat mise.lock" '[tools.dummy]
 version = "1.0.0"
+backend = "asdf:dummy"
 
 [tools.tiny]
-version = "1.0.0"'
+version = "1.0.0"
+backend = "asdf:tiny"'
 assert "mise tool dummy --requested" "1"
 assert "mise tool tiny --requested" "1"
 assert "mise tool dummy --active" "1.0.0"
@@ -29,9 +31,11 @@ assert "mise tool tiny --active" "1.0.0"
 assert "mise use dummy@latest"
 assert "cat mise.lock" '[tools.dummy]
 version = "2.0.0"
+backend = "asdf:dummy"
 
 [tools.tiny]
-version = "1.0.0"'
+version = "1.0.0"
+backend = "asdf:tiny"'
 assert "mise tool dummy --requested" "latest"
 assert "mise tool tiny --requested" "1"
 assert "mise tool dummy --active" "2.0.0"

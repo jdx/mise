@@ -26,4 +26,6 @@ Use the local config file instead of the global one
 
 Examples:
 
-    mise settings add disable_hints python_multi
+```
+mise settings add disable_hints python_multi
+```

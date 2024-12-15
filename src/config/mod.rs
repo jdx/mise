@@ -1,4 +1,4 @@
-use eyre::{ensure, eyre, Context, Result};
+use eyre::{bail, eyre, Context, Result};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use once_cell::sync::{Lazy, OnceCell};
@@ -33,27 +33,33 @@ pub mod env_directive;
 pub mod settings;
 pub mod tracking;
 
+use crate::cli::self_update::SelfUpdate;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
 use crate::plugins::PluginType;
+use crate::redactions::Redactions;
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::watch_files::WatchFile;
+use crate::wildcard::Wildcard;
 pub use settings::SETTINGS;
 
 type AliasMap = IndexMap<String, Alias>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
 pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
-#[derive(Default)]
 pub struct Config {
     pub config_files: ConfigMap,
     pub project_root: Option<PathBuf>,
     pub all_aliases: AliasMap,
     pub repo_urls: HashMap<String, String>,
     pub vars: IndexMap<String, String>,
+    pub tera_ctx: tera::Context,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
+    redactions: OnceCell<IndexSet<String>>,
     shorthands: OnceLock<Shorthands>,
+    hooks: OnceCell<Vec<(PathBuf, Hook)>>,
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
@@ -100,13 +106,31 @@ impl Config {
         let config_files = load_all_config_files(&config_paths, &idiomatic_files)?;
         time!("load config_files");
 
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        let vars_results = load_vars(tera_ctx.clone(), &config_files)?;
+        let vars = vars_results
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        tera_ctx.insert("vars", &vars);
+
         let mut config = Self {
             aliases: load_aliases(&config_files)?,
             project_root: get_project_root(&config_files),
             repo_urls: load_plugins(&config_files)?,
-            vars: load_vars(&config_files)?,
+            tera_ctx,
+            vars,
             config_files,
-            ..Default::default()
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            redactions: OnceCell::new(),
+            shorthands: OnceLock::new(),
+            hooks: OnceCell::new(),
+            tasks: OnceCell::new(),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
         };
         time!("load build");
 
@@ -180,7 +204,7 @@ impl Config {
             Ok(env)
         })
     }
-    pub fn env_results(&self) -> eyre::Result<&EnvResults> {
+    pub fn env_results(&self) -> Result<&EnvResults> {
         self.env.get_or_try_init(|| self.load_env())
     }
     pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
@@ -295,7 +319,7 @@ impl Config {
         let mut system_tasks = None;
         rayon::scope(|s| {
             s.spawn(|_| {
-                file_tasks = Some(self.load_file_tasks_recursively());
+                file_tasks = Some(self.load_local_tasks());
             });
             global_tasks = Some(self.load_global_tasks());
             system_tasks = Some(self.load_system_tasks());
@@ -338,8 +362,7 @@ impl Config {
         let configs = self.configs_at_root(dir);
         let config_tasks = configs
             .par_iter()
-            .flat_map(|cf| cf.tasks())
-            .cloned()
+            .flat_map(|cf| self.load_config_tasks(&Some(*cf), dir))
             .collect::<Vec<_>>();
         let includes = self.task_includes_for_dir(dir);
         let extra_tasks = includes
@@ -385,7 +408,7 @@ impl Config {
         Ok(tasks.into_values().collect())
     }
 
-    fn load_file_tasks_recursively(&self) -> Result<Vec<Task>> {
+    fn load_local_tasks(&self) -> Result<Vec<Task>> {
         let file_tasks = file::all_dirs()?
             .into_iter()
             .filter(|d| {
@@ -409,7 +432,7 @@ impl Config {
         let cf = self.config_files.get(&*env::MISE_GLOBAL_CONFIG_FILE);
         let config_root = cf.and_then(|cf| cf.project_root()).unwrap_or(&*env::HOME);
         Ok(self
-            .load_config_tasks(&cf)
+            .load_config_tasks(&cf.map(|cf| cf.as_ref()), config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, config_root))
             .collect())
@@ -422,17 +445,23 @@ impl Config {
             .map(|p| p.to_path_buf())
             .unwrap_or_default();
         Ok(self
-            .load_config_tasks(&cf)
+            .load_config_tasks(&cf.map(|cf| cf.as_ref()), &config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, &config_root))
             .collect())
     }
 
-    fn load_config_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>) -> Vec<Task> {
+    fn load_config_tasks(&self, cf: &Option<&dyn ConfigFile>, config_root: &Path) -> Vec<Task> {
         cf.map(|cf| cf.tasks())
             .unwrap_or_default()
             .into_iter()
             .cloned()
+            .map(|mut t| {
+                if let Err(err) = t.render(config_root) {
+                    warn!("rendering task: {err:?}");
+                }
+                t
+            })
             .collect()
     }
 
@@ -521,18 +550,24 @@ impl Config {
         for cf in self.config_files.values() {
             if let Some(min) = cf.min_version() {
                 let cur = &*version::V;
-                ensure!(
-                    cur >= min,
-                    "mise version {} is required, but you are using {}",
-                    style::eyellow(min),
-                    style::eyellow(cur)
-                );
+                if cur < min {
+                    let min = style::eyellow(min);
+                    let cur = style::eyellow(cur);
+                    if SelfUpdate::is_available() {
+                        bail!(
+                            "mise version {min} is required, but you are using {cur}\n\
+                            Run `mise self-update` to update mise",
+                        );
+                    } else {
+                        bail!("mise version {min} is required, but you are using {cur}");
+                    }
+                }
             }
         }
         Ok(())
     }
 
-    fn load_env(&self) -> eyre::Result<EnvResults> {
+    fn load_env(&self) -> Result<EnvResults> {
         time!("load_env start");
         let entries = self
             .config_files
@@ -547,7 +582,7 @@ impl Config {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(&env::PRISTINE_ENV, entries)?;
+        let env_results = EnvResults::resolve(self.tera_ctx.clone(), &env::PRISTINE_ENV, entries)?;
         time!("load_env done");
         if log::log_enabled!(log::Level::Trace) {
             trace!("{env_results:#?}");
@@ -557,19 +592,21 @@ impl Config {
         Ok(env_results)
     }
 
-    pub fn hooks(&self) -> Result<Vec<(PathBuf, Hook)>> {
-        self.config_files
-            .values()
-            .map(|cf| Ok((cf.project_root(), cf.hooks()?)))
-            .filter_map_ok(|(root, hooks)| root.map(|r| (r.to_path_buf(), hooks)))
-            .map_ok(|(root, hooks)| {
-                hooks
-                    .into_iter()
-                    .map(|h| (root.clone(), h))
-                    .collect::<Vec<_>>()
-            })
-            .flatten_ok()
-            .collect()
+    pub fn hooks(&self) -> Result<&Vec<(PathBuf, Hook)>> {
+        self.hooks.get_or_try_init(|| {
+            self.config_files
+                .values()
+                .map(|cf| Ok((cf.project_root(), cf.hooks()?)))
+                .filter_map_ok(|(root, hooks)| root.map(|r| (r.to_path_buf(), hooks)))
+                .map_ok(|(root, hooks)| {
+                    hooks
+                        .into_iter()
+                        .map(|h| (root.clone(), h))
+                        .collect::<Vec<_>>()
+                })
+                .flatten_ok()
+                .collect()
+        })
     }
 
     pub fn watch_file_hooks(&self) -> Result<IndexSet<(PathBuf, WatchFile)>> {
@@ -609,6 +646,55 @@ impl Config {
             .chain(env_results.env_scripts.iter().map(|p| p.as_path().into()))
             .chain(SETTINGS.env_files().iter().map(|p| p.as_path().into()))
             .collect())
+    }
+
+    fn tera(&self, config_root: &Path) -> (tera::Tera, tera::Context) {
+        let tera = get_tera(Some(config_root));
+        let mut ctx = self.tera_ctx.clone();
+        ctx.insert("config_root", &config_root);
+        (tera, ctx)
+    }
+
+    pub fn redactions(&self) -> Result<&IndexSet<String>> {
+        self.redactions.get_or_try_init(|| {
+            let mut redactions = Redactions::default();
+            for cf in self.config_files.values() {
+                let r = cf.redactions();
+                if !r.is_empty() {
+                    let mut r = r.clone();
+                    let (tera, ctx) = self.tera(&cf.config_root());
+                    r.render(&mut tera.clone(), &ctx)?;
+                    redactions.merge(r);
+                }
+            }
+            if redactions.is_empty() {
+                return Ok(Default::default());
+            }
+
+            let ts = self.get_toolset()?;
+            let env = ts.full_env()?;
+
+            let env_matcher = Wildcard::new(redactions.env.clone());
+            let var_matcher = Wildcard::new(redactions.vars.clone());
+
+            let env_vals = env
+                .into_iter()
+                .filter(|(k, _)| env_matcher.match_any(k))
+                .map(|(_, v)| v);
+            let var_vals = self
+                .vars
+                .iter()
+                .filter(|(k, _)| var_matcher.match_any(k))
+                .map(|(_, v)| v.to_string());
+            Ok(env_vals.chain(var_vals).collect())
+        })
+    }
+
+    pub fn redact(&self, mut input: String) -> Result<String> {
+        for redaction in self.redactions()? {
+            input = input.replace(redaction, "[redacted]");
+        }
+        Ok(input)
     }
 }
 
@@ -762,6 +848,9 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
 }
 
 pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> Vec<PathBuf> {
+    if Settings::no_config() {
+        return vec![];
+    }
     let dirs = file::all_dirs().unwrap_or_default();
 
     let mut config_files = dirs
@@ -978,15 +1067,27 @@ fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
     Ok(plugins)
 }
 
-fn load_vars(config_files: &ConfigMap) -> Result<IndexMap<String, String>> {
-    let mut vars = IndexMap::new();
-    for config_file in config_files.values() {
-        for (k, v) in config_file.vars()?.clone() {
-            vars.insert(k, v);
-        }
+fn load_vars(ctx: tera::Context, config_files: &ConfigMap) -> Result<EnvResults> {
+    time!("load_vars start");
+    let entries = config_files
+        .iter()
+        .rev()
+        .map(|(source, cf)| {
+            cf.vars_entries()
+                .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    let vars_results = EnvResults::resolve(ctx, &env::PRISTINE_ENV, entries)?;
+    time!("load_vars done");
+    if log::log_enabled!(log::Level::Trace) {
+        trace!("{vars_results:#?}");
+    } else {
+        debug!("{vars_results:?}");
     }
-    trace!("load_vars: {}", vars.len());
-    Ok(vars)
+    Ok(vars_results)
 }
 
 impl Debug for Config {
@@ -1013,6 +1114,12 @@ impl Debug for Config {
         if let Some(env_results) = self.env.get() {
             if !env_results.env_files.is_empty() {
                 s.field("Path Dirs", &env_results.env_paths);
+            }
+            if !env_results.env_scripts.is_empty() {
+                s.field("Scripts", &env_results.env_scripts);
+            }
+            if !env_results.env_files.is_empty() {
+                s.field("Files", &env_results.env_files);
             }
         }
         if !self.aliases.is_empty() {

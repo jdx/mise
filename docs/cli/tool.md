@@ -21,6 +21,10 @@ Output in JSON format
 
 Only show backend field
 
+### `--description`
+
+Only show description field
+
 ### `--installed`
 
 Only show installed versions
@@ -43,10 +47,12 @@ Only show tool options
 
 Examples:
 
-    $ mise tool node
-    Backend:            core
-    Installed Versions: 20.0.0 22.0.0
-    Active Version:     20.0.0
-    Requested Version:  20
-    Config Source:      ~/.config/mise/mise.toml
-    Tool Options:       [none]
+```
+$ mise tool node
+Backend:            core
+Installed Versions: 20.0.0 22.0.0
+Active Version:     20.0.0
+Requested Version:  20
+Config Source:      ~/.config/mise/mise.toml
+Tool Options:       [none]
+```

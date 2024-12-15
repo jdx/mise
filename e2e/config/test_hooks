@@ -4,9 +4,9 @@ cat <<EOF >mise.toml
 [tools]
 dummy = 'latest'
 [hooks]
-enter = 'echo ENTER'
-#leave = 'echo LEAVE'
-cd = 'echo CD'
+enter = 'echo HOOK-ENTER'
+leave = 'echo HOOK-LEAVE'
+cd = 'echo HOOK-CD'
 preinstall = 'echo PREINSTALL'
 postinstall = 'echo POSTINSTALL'
 EOF
@@ -15,17 +15,21 @@ assert_contains "mise i 2>&1" "PREINSTALL"
 assert_contains "mise i dummy@1 2>&1" "POSTINSTALL"
 
 eval "$(mise hook-env)"
-assert_not_contains "mise hook-env 2>&1" "CD"
-assert_not_contains "mise hook-env 2>&1" "ENTER"
+assert_not_contains "mise hook-env 2>&1" "HOOK-CD"
+assert_not_contains "mise hook-env 2>&1" "HOOK-ENTER"
+assert_not_contains "mise hook-env 2>&1" "HOOK-LEAVE"
 pushd .. || exit 1
-assert_not_contains "mise hook-env 2>&1" "CD"
-assert_not_contains "mise hook-env 2>&1" "ENTER"
+assert_not_contains "mise hook-env 2>&1" "HOOK-CD"
+assert_not_contains "mise hook-env 2>&1" "HOOK-ENTER"
+assert_contains "mise hook-env 2>&1" "HOOK-LEAVE"
 eval "$(mise hook-env)"
 popd || exit 1
-assert_contains "mise hook-env 2>&1" "CD"
-assert_contains "mise hook-env 2>&1" "ENTER"
+assert_contains "mise hook-env 2>&1" "HOOK-CD"
+assert_contains "mise hook-env 2>&1" "HOOK-ENTER"
+assert_not_contains "mise hook-env 2>&1" "HOOK-LEAVE"
 eval "$(mise hook-env)"
 mkdir foo
 cd foo || exit 1
-assert_contains "mise hook-env 2>&1" "CD"
-assert_not_contains "mise hook-env 2>&1" "ENTER"
+assert_contains "mise hook-env 2>&1" "HOOK-CD"
+assert_not_contains "mise hook-env 2>&1" "HOOK-ENTER"
+assert_not_contains "mise hook-env 2>&1" "HOOK-LEAVE"

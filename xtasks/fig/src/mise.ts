@@ -653,6 +653,15 @@ const completionSpec: Fig.Spec = {
                 "completion"
             ],
             "description": "Generate shell completions",
+            "options": [
+                {
+                    "name": [
+                        "--include-bash-completion-lib"
+                    ],
+                    "description": "Include the bash completion library in the bash completion script",
+                    "isRepeatable": false
+                }
+            ],
             "args": [
                 {
                     "name": "shell",
@@ -728,7 +737,8 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
-                        "ls"
+                        "ls",
+                        "list"
                     ],
                     "description": "List config files currently in use",
                     "options": [
@@ -835,7 +845,25 @@ const completionSpec: Fig.Spec = {
                 "doctor",
                 "dr"
             ],
-            "description": "Check mise installation for possible problems"
+            "description": "Check mise installation for possible problems",
+            "subcommands": [
+                {
+                    "name": [
+                        "path"
+                    ],
+                    "description": "Print the current PATH entries mise is providing",
+                    "options": [
+                        {
+                            "name": [
+                                "-f",
+                                "--full"
+                            ],
+                            "description": "Print all entries including those not provided by mise",
+                            "isRepeatable": false
+                        }
+                    ]
+                }
+            ]
         },
         {
             "name": [
@@ -1900,6 +1928,14 @@ const completionSpec: Fig.Spec = {
                     ],
                     "description": "Don't show extra output",
                     "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "-S",
+                        "--silent"
+                    ],
+                    "description": "Don't show any output except for errors",
+                    "isRepeatable": false
                 }
             ],
             "generateSpec": usageGenerateSpec(["mise tasks --usage"]),
@@ -2264,7 +2300,7 @@ const completionSpec: Fig.Spec = {
             "name": [
                 "sync"
             ],
-            "description": "Add tool versions from external tools to mise",
+            "description": "Synchronize tools from other version managers with mise",
             "subcommands": [
                 {
                     "name": [
@@ -2306,6 +2342,28 @@ const completionSpec: Fig.Spec = {
                                 "--pyenv"
                             ],
                             "description": "Get tool versions from pyenv",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "--uv"
+                            ],
+                            "description": "Sync tool versions with uv (2-way sync)",
+                            "isRepeatable": false
+                        }
+                    ]
+                },
+                {
+                    "name": [
+                        "ruby"
+                    ],
+                    "description": "Symlinks all ruby tool versions from an external tool into mise",
+                    "options": [
+                        {
+                            "name": [
+                                "--brew"
+                            ],
+                            "description": "Get tool versions from Homebrew",
                             "isRepeatable": false
                         }
                     ]
@@ -2585,6 +2643,14 @@ const completionSpec: Fig.Spec = {
                             ],
                             "description": "Don't show extra output",
                             "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-S",
+                                "--silent"
+                            ],
+                            "description": "Don't show any output except for errors",
+                            "isRepeatable": false
                         }
                     ],
                     "args": [
@@ -2701,6 +2767,13 @@ const completionSpec: Fig.Spec = {
                         "--backend"
                     ],
                     "description": "Only show backend field",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--description"
+                    ],
+                    "description": "Only show description field",
                     "isRepeatable": false
                 },
                 {
@@ -3669,6 +3742,28 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
+                "--raw"
+            ],
+            "description": "Read/write directly to stdin/stdout/stderr instead of by line",
+            "isRepeatable": false
+        },
+        {
+            "name": [
+                "--no-config"
+            ],
+            "description": "Do not load any config files",
+            "isRepeatable": false
+        },
+        {
+            "name": [
+                "-y",
+                "--yes"
+            ],
+            "description": "Answer yes to all confirmation prompts",
+            "isRepeatable": false
+        },
+        {
+            "name": [
                 "-q",
                 "--quiet"
             ],
@@ -3677,9 +3772,9 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
-                "--raw"
+                "--silent"
             ],
-            "description": "Read/write directly to stdin/stdout/stderr instead of by line",
+            "description": "Suppress all task output and mise non-error messages",
             "isRepeatable": false
         },
         {
@@ -3689,14 +3784,6 @@ const completionSpec: Fig.Spec = {
             ],
             "description": "Show extra output (use -vv for even more)",
             "isRepeatable": true
-        },
-        {
-            "name": [
-                "-y",
-                "--yes"
-            ],
-            "description": "Answer yes to all confirmation prompts",
-            "isRepeatable": false
         }
     ],
     "args": [

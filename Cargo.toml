@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.12.7"
+version = "2024.12.11"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -47,7 +47,7 @@ opt-level = 3
 
 [dependencies]
 base64 = "0.22"
-bzip2 = "0.4"
+bzip2 = "0.5"
 calm_io = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 ci_info = "0.14"
@@ -55,6 +55,7 @@ clap = { version = "4", features = ["env", "derive", "string"] }
 clap_mangen = { version = "0.2", optional = true }
 color-eyre = "0.6"
 color-print = "0.3"
+comfy-table = "7.1.3"
 confique = { version = "0.3", default-features = false }
 console = "0.15"
 contracts = "0.6"
@@ -96,6 +97,7 @@ rayon = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "zstd"] }
 rmp-serde = "1"
+rops = {version="0.1", default-features = false, features = ["aes-gcm", "sha2", "yaml", "json", "age"]}
 serde = "1"
 serde_derive = "1"
 serde_ignored = "0.1"
@@ -131,6 +133,7 @@ which = "7"
 xx = { version = "2", features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+zstd = "0.13"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"

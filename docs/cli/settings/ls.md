@@ -41,10 +41,14 @@ Output in TOML format
 
 Examples:
 
-    $ mise settings ls
-    idiomatic_version_file = false
-    ...
+```
+$ mise settings ls
+idiomatic_version_file = false
+...
+```
 
-    $ mise settings ls python
-    default_packages_file = "~/.default-python-packages"
-    ...
+```
+$ mise settings ls python
+default_packages_file = "~/.default-python-packages"
+...
+```

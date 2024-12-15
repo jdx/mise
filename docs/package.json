@@ -13,6 +13,7 @@
   "dependencies": {
     "@types/markdown-it": "^14.1.2",
     "markdown-it": "^14.1.0",
-    "toml": "^3.0.0"
+    "toml": "^3.0.0",
+    "vitepress-plugin-group-icons": "^1.3.1"
   }
 }

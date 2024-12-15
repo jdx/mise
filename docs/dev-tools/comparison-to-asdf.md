@@ -9,7 +9,7 @@ It will not, however, reuse existing asdf directories
 Casual users coming from asdf have generally found mise to just be a faster, easier to use asdf.
 
 :::tip
-Make sure you have a look at [environments](/environments.html) and [tasks](/tasks/) which
+Make sure you have a look at [environments](/environments/) and [tasks](/tasks/) which
 are major portions of mise that have no asdf equivalent.
 :::
 
@@ -113,7 +113,7 @@ used and so we default to mise-style. While there aren't many of these, asdf-com
 as a "best-effort" in order to make transitioning from asdf feel familiar for those users who can
 rely on their muscle memory. Ensuring asdf-syntax works with everything is not a design goal.
 
-## Extra backends <Badge type="warning" text="experimental" />
+## Extra backends
 
 mise has support for backends other than asdf plugins. For example you can install CLIs
 directly from cargo and npm:

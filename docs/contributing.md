@@ -181,7 +181,7 @@ mise -v
 ```sh
 docker run -ti --rm fedora
 dnf install -y dnf-plugins-core
-dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
 dnf install -y mise
 mise -v
 ```

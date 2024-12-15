@@ -45,7 +45,9 @@ Shell type to generate environment variables for
 
 Examples:
 
-    eval "$(mise env -s bash)"
-    eval "$(mise env -s zsh)"
-    mise env -s fish | source
-    execx($(mise env -s xonsh))
+```
+eval "$(mise env -s bash)"
+eval "$(mise env -s zsh)"
+mise env -s fish | source
+execx($(mise env -s xonsh))
+```

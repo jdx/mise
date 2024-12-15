@@ -93,8 +93,8 @@ impl Shell for Zsh {
         unset -f _mise_hook
         unset -f mise
         unset MISE_SHELL
-        unset __MISE_WATCH
         unset __MISE_DIFF
+        unset __MISE_SESSION
         "#}
     }
 

@@ -10,7 +10,9 @@ The full list is here: <https://github.com/jdx/mise/blob/main/registry.toml>
 
 Examples:
 
-    mise plugins ls-remote
+```
+mise plugins ls-remote
+```
 
 ## Flags
 

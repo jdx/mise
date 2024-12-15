@@ -1,3 +1,5 @@
+mod path;
+
 use crate::exit;
 
 use crate::backend::backend_type::BackendType;
@@ -25,14 +27,31 @@ use strum::IntoEnumIterator;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Doctor {
+    #[clap(subcommand)]
+    subcommand: Option<Commands>,
     #[clap(skip)]
     errors: Vec<String>,
     #[clap(skip)]
     warnings: Vec<String>,
 }
 
+#[derive(Debug, clap::Subcommand)]
+pub enum Commands {
+    Path(path::Path),
+}
+
 impl Doctor {
-    pub fn run(mut self) -> eyre::Result<()> {
+    pub fn run(self) -> eyre::Result<()> {
+        if let Some(cmd) = self.subcommand {
+            match cmd {
+                Commands::Path(cmd) => cmd.run(),
+            }
+        } else {
+            self.doctor()
+        }
+    }
+
+    fn doctor(mut self) -> eyre::Result<()> {
         info::inline_section("version", &*VERSION)?;
         #[cfg(unix)]
         info::inline_section("activated", yn(env::is_activated()))?;

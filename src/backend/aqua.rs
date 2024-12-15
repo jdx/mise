@@ -31,6 +31,13 @@ impl Backend for AquaBackend {
         BackendType::Aqua
     }
 
+    fn description(&self) -> Option<String> {
+        AQUA_REGISTRY
+            .package(&self.ba.tool_name)
+            .ok()
+            .and_then(|p| p.description.clone())
+    }
+
     fn ba(&self) -> &BackendArg {
         &self.ba
     }
@@ -79,11 +86,7 @@ impl Backend for AquaBackend {
         }
     }
 
-    fn install_version_(
-        &self,
-        ctx: &InstallContext,
-        mut tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion> {
+    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
         let mut v = format!("v{}", tv.version);
         let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v)?;
         if let Some(prefix) = &pkg.version_prefix {

@@ -10,6 +10,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use toml_edit::DocumentMut;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,6 +22,7 @@ pub struct Lockfile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockfileTool {
     pub version: String,
+    pub backend: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub checksums: BTreeMap<String, String>,
 }
@@ -69,6 +71,7 @@ impl Lockfile {
             let mut lockfile = toml::Table::new();
             lockfile.insert("tools".to_string(), tools.into());
             let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
+            let content = format(content.parse()?);
             file::write(path, content)?;
         }
         Ok(())
@@ -241,6 +244,7 @@ impl TryFrom<toml::Value> for LockfileTool {
         let tool = match value {
             toml::Value::String(v) => LockfileTool {
                 version: v,
+                backend: Default::default(),
                 checksums: Default::default(),
             },
             toml::Value::Table(mut t) => {
@@ -257,6 +261,11 @@ impl TryFrom<toml::Value> for LockfileTool {
                         .map(|v| v.try_into())
                         .transpose()?
                         .unwrap_or_default(),
+                    backend: t
+                        .remove("backend")
+                        .map(|v| v.try_into())
+                        .transpose()?
+                        .unwrap_or_default(),
                     checksums,
                 }
             }
@@ -270,6 +279,9 @@ impl LockfileTool {
     fn into_toml_value(self) -> toml::Value {
         let mut table = toml::Table::new();
         table.insert("version".to_string(), self.version.into());
+        if let Some(backend) = self.backend {
+            table.insert("backend".to_string(), backend.into());
+        }
         if !self.checksums.is_empty() {
             table.insert("checksums".to_string(), self.checksums.into());
         }
@@ -283,8 +295,38 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
             .iter()
             .map(|tv| LockfileTool {
                 version: tv.version.clone(),
+                backend: Some(tv.ba().full()),
                 checksums: tv.checksums.clone(),
             })
             .collect()
     }
+}
+
+fn format(mut doc: DocumentMut) -> String {
+    if let Some(tools) = doc.get_mut("tools") {
+        for (_k, v) in tools.as_table_mut().unwrap().iter_mut() {
+            match v {
+                toml_edit::Item::ArrayOfTables(art) => {
+                    for t in art.iter_mut() {
+                        t.sort_values_by(|a, _, b, _| {
+                            if a == "version" {
+                                return std::cmp::Ordering::Less;
+                            }
+                            a.to_string().cmp(&b.to_string())
+                        });
+                    }
+                }
+                toml_edit::Item::Table(t) => {
+                    t.sort_values_by(|a, _, b, _| {
+                        if a == "version" {
+                            return std::cmp::Ordering::Less;
+                        }
+                        a.to_string().cmp(&b.to_string())
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    doc.to_string()
 }

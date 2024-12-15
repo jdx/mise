@@ -5,7 +5,7 @@ use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{install_state, parse_tool_options, ToolVersionOptions};
-use crate::{backend, config, dirs, registry};
+use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{bail, Result};
 use heck::ToKebabCase;
@@ -138,6 +138,11 @@ impl BackendArg {
             if let Some(url) = Config::get().repo_urls.get(short) {
                 deprecated!("config_plugins", "[plugins] section of mise.toml is deprecated. Use [alias] instead. https://mise.jdx.dev/dev-tools/aliases.html");
                 return format!("asdf:{url}");
+            }
+            if let Some(lt) = lockfile::get_locked_version(None, short, "").unwrap_or_default() {
+                if let Some(backend) = lt.backend {
+                    return backend;
+                }
             }
         }
         if let Some(full) = &self.full {

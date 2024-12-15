@@ -11,12 +11,16 @@ Otherwise, it will only take effect in the current session.
 
 Typically, this can be added with something like the following:
 
-    echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+```
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+```
 
 However, this requires that "mise" is in your PATH. If it is not, you need to
 specify the full path like this:
 
-    echo 'eval "$(/path/to/mise activate zsh)"' >> ~/.zshrc
+```
+echo 'eval "$(/path/to/mise activate zsh)"' >> ~/.zshrc
+```
 
 Customize status output with `status` settings.
 
@@ -43,7 +47,9 @@ Shell type to generate the script for
 Use shims instead of modifying PATH
 Effectively the same as:
 
-    PATH="$HOME/.local/share/mise/shims:$PATH"
+```
+PATH="$HOME/.local/share/mise/shims:$PATH"
+```
 
 ### `-q --quiet`
 
@@ -57,7 +63,9 @@ This can be helpful for debugging mise. If you run `eval "$(mise activate --no-h
 
 Examples:
 
-    eval "$(mise activate bash)"
-    eval "$(mise activate zsh)"
-    mise activate fish | source
-    execx($(mise activate xonsh))
+```
+eval "$(mise activate bash)"
+eval "$(mise activate zsh)"
+mise activate fish | source
+execx($(mise activate xonsh))
+```

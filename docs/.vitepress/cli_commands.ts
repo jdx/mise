@@ -95,6 +95,11 @@ export const commands: { [key: string]: Command } = {
   },
   doctor: {
     hide: false,
+    subcommands: {
+      path: {
+        hide: false,
+      },
+    },
   },
   en: {
     hide: false,
@@ -232,6 +237,9 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
       python: {
+        hide: false,
+      },
+      ruby: {
         hide: false,
       },
     },

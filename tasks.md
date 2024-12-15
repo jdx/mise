@@ -110,6 +110,10 @@ User to run as
 
 - **Usage**: `filetask.bat`
 
+## `install-dev`
+
+- **Usage**: `install-dev`
+
 ## `lint`
 
 - Depends: lint:*
@@ -265,3 +269,13 @@ run end-to-end tests
 - **Usage**: `test:unit`
 
 run unit tests
+
+## `update-descriptions`
+
+- **Usage**: `update-descriptions`
+
+## `xxx`
+
+- **Usage**: `xxx`
+
+a task for testing

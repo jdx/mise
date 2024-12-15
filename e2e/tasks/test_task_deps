@@ -16,10 +16,10 @@ assert "mise run d" "a
 c
 d"
 
-assert "mise run d ::: b" "[a] a
-[b] b
-[c] c
-[d] d"
+assert "mise run d ::: b" "a
+b
+c
+d"
 
 cat <<EOF >mise.toml
 [tasks."hello:1"]

@@ -32,6 +32,8 @@ Prune only unused versions of tools
 
 Examples:
 
-    $ mise prune --dry-run
-    rm -rf ~/.local/share/mise/versions/node/20.0.0
-    rm -rf ~/.local/share/mise/versions/node/20.0.1
+```
+$ mise prune --dry-run
+rm -rf ~/.local/share/mise/versions/node/20.0.0
+rm -rf ~/.local/share/mise/versions/node/20.0.1
+```

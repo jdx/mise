@@ -1,8 +1,7 @@
 use std::path::Path;
 
-use console::{style, StyledObject};
-
 use crate::file::display_path;
+use console::{style, StyledObject};
 
 pub fn ereset() -> String {
     if console::colors_enabled_stderr() {
@@ -64,16 +63,8 @@ pub fn nstyle<D>(val: D) -> StyledObject<D> {
     style(val).for_stdout()
 }
 
-pub fn nblue<D>(val: D) -> StyledObject<D> {
-    nstyle(val).blue()
-}
-
 pub fn ncyan<D>(val: D) -> StyledObject<D> {
     nstyle(val).cyan()
-}
-
-pub fn nbold<D>(val: D) -> StyledObject<D> {
-    nstyle(val).bold()
 }
 
 pub fn nunderline<D>(val: D) -> StyledObject<D> {

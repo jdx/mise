@@ -7,7 +7,6 @@ use std::sync::{Mutex, Once};
 
 use eyre::{eyre, Result};
 use idiomatic_version::IdiomaticVersionFile;
-use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use path_absolutize::Absolutize;
 use serde_derive::Deserialize;
@@ -23,6 +22,7 @@ use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
 use crate::hooks::Hook;
+use crate::redactions::Redactions;
 use crate::task::Task;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
@@ -65,10 +65,16 @@ pub trait ConfigFile: Debug + Send + Sync {
             None => None,
         }
     }
-    fn plugins(&self) -> eyre::Result<HashMap<String, String>> {
+    fn config_root(&self) -> PathBuf {
+        config_root(self.get_path())
+    }
+    fn plugins(&self) -> Result<HashMap<String, String>> {
         Ok(Default::default())
     }
-    fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
+    fn env_entries(&self) -> Result<Vec<EnvDirective>> {
+        Ok(Default::default())
+    }
+    fn vars_entries(&self) -> Result<Vec<EnvDirective>> {
         Ok(Default::default())
     }
     fn tasks(&self) -> Vec<&Task> {
@@ -87,13 +93,15 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn aliases(&self) -> eyre::Result<AliasMap> {
         Ok(Default::default())
     }
+
     fn task_config(&self) -> &TaskConfig {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
     }
-    fn vars(&self) -> Result<&IndexMap<String, String>> {
-        static DEFAULT_VARS: Lazy<IndexMap<String, String>> = Lazy::new(IndexMap::new);
-        Ok(&DEFAULT_VARS)
+
+    fn redactions(&self) -> &Redactions {
+        static DEFAULT_REDACTIONS: Lazy<Redactions> = Lazy::new(Redactions::default);
+        &DEFAULT_REDACTIONS
     }
 
     fn watch_files(&self) -> Result<Vec<WatchFile>> {
@@ -315,7 +323,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         if ans {
             trust(&config_root)?;
             return Ok(());
-        } else {
+        } else if console::user_attended_stderr() {
             add_ignored(config_root.to_path_buf())?;
         }
     }

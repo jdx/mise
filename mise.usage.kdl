@@ -16,7 +16,6 @@ flag "-C --cd" help="Change directory before running command" global=true {
     arg "<DIR>"
 }
 flag "-n --dry-run" help="Dry run, don't actually do anything" hide=true
-flag "--debug" help="Sets log level to debug" hide=true global=true
 flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" var=true global=true {
     arg "<ENV>"
 }
@@ -24,11 +23,6 @@ flag "-f --force" help="Force the operation" hide=true
 flag "-i --interleave" help="Set the log output verbosity" hide=true
 flag "-j --jobs" help="How many jobs to run in parallel [default: 8]" global=true {
     arg "<JOBS>"
-}
-flag "--log-level" hide=true global=true {
-    arg "<LEVEL>" {
-        choices "trace" "debug" "info" "warning" "error"
-    }
 }
 flag "-p --prefix" hide=true
 flag "-P --profile" help="Set the profile (environment)" var=true hide=true global=true {
@@ -40,18 +34,28 @@ flag "-s --shell" hide=true {
 flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=true hide=true {
     arg "<TOOL@VERSION>"
 }
-flag "-q --quiet" help="Suppress non-error messages" global=true
 flag "--raw" help="Read/write directly to stdin/stdout/stderr instead of by line" global=true
 flag "--timings" help="Shows elapsed time after each task completes" hide=true {
     long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
 }
+flag "--no-config" help="Do not load any config files" {
+    long_help "Do not load any config files\n\nCan also use `MISE_NO_CONFIG=1`"
+}
 flag "--no-timings" help="Hides elapsed time after each task completes" hide=true {
     long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
 }
-flag "--trace" help="Sets log level to trace" hide=true global=true
-flag "-v --verbose" help="Show extra output (use -vv for even more)" var=true global=true count=true
 flag "-V --version" hide=true
 flag "-y --yes" help="Answer yes to all confirmation prompts" global=true
+flag "--debug" help="Sets log level to debug" hide=true global=true
+flag "--log-level" hide=true global=true {
+    arg "<LEVEL>" {
+        choices "trace" "debug" "info" "warning" "error"
+    }
+}
+flag "-q --quiet" help="Suppress non-error messages" global=true
+flag "--silent" help="Suppress all task output and mise non-error messages" global=true
+flag "--trace" help="Sets log level to trace" hide=true global=true
+flag "-v --verbose" help="Show extra output (use -vv for even more)" var=true global=true count=true
 arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise task run <TASK>`."
 arg "[TASK_ARGS]..." help="Task arguments" var=true hide=true
 cmd "activate" help="Initializes mise in the current shell session" {
@@ -218,6 +222,9 @@ cmd "completion" help="Generate shell completions" {
     flag "--usage" help="Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first." hide=true {
         long_help "Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first.\n\nThis requires the `usage` CLI to be installed.\nhttps://usage.jdx.dev"
     }
+    flag "--include-bash-completion-lib" help="Include the bash completion library in the bash completion script" {
+        long_help "Include the bash completion library in the bash completion script\n\nThis is required for completions to work in bash, but it is not included by default\nyou may source it separately or enable this flag to include it in the script."
+    }
     arg "[SHELL]" help="Shell type to generate completions for" {
         choices "bash" "fish" "zsh"
     }
@@ -251,9 +258,13 @@ cmd "config" help="Manage config files" {
         arg "[KEY]" help="The path of the config to display"
     }
     cmd "ls" help="List config files currently in use" {
+        alias "list"
         after_long_help r"Examples:
 
     $ mise config ls
+    Path                        Tools
+    ~/.config/mise/config.toml  pitchfork
+    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-edit, cargo:cargo-insta
 "
         flag "--no-header" help="Do not print table header"
         flag "-J --json" help="Output in JSON format"
@@ -347,6 +358,17 @@ cmd "doctor" help="Check mise installation for possible problems" {
     $ mise doctor
     [WARN] plugin node is not installed
 "
+    cmd "path" help="Print the current PATH entries mise is providing" {
+        after_long_help r"Examples:
+
+    Get the current PATH entries mise is providing
+    $ mise path
+    /home/user/.local/share/mise/installs/node/24.0.0/bin
+    /home/user/.local/share/mise/installs/rust/1.90.0/bin
+    /home/user/.local/share/mise/installs/python/3.10.0/bin
+"
+        flag "-f --full" help="Print all entries including those not provided by mise"
+    }
 }
 cmd "en" help="[experimental] starts a new shell with the mise environment built from the current configuration" {
     long_help r"[experimental] starts a new shell with the mise environment built from the current configuration
@@ -538,6 +560,7 @@ cmd "hook-env" hide=true help="[internal] called by activate hook to update env 
             choices "bash" "elvish" "fish" "nu" "xonsh" "zsh" "pwsh"
         }
     }
+    flag "-f --force" help="Skip early exit check"
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
     flag "-q --quiet" help="Hide warnings such as when a tool is not installed"
 }
@@ -1016,6 +1039,7 @@ The name of the script will be the name of the tasks.
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
     flag "-q --quiet" help="Don't show extra output"
+    flag "-S --silent" help="Don't show any output except for errors"
     mount run="mise tasks --usage"
 }
 cmd "self-update" help="Updates mise itself." {
@@ -1179,11 +1203,13 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
     flag "-u --unset" help="Removes a previously set version"
     arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
 }
-cmd "sync" subcommand_required=true help="Add tool versions from external tools to mise" {
+cmd "sync" subcommand_required=true help="Synchronize tools from other version managers with mise" {
     cmd "node" help="Symlinks all tool versions from an external tool into mise" {
         long_help r"Symlinks all tool versions from an external tool into mise
 
-For example, use this to import all Homebrew node installs into mise"
+For example, use this to import all Homebrew node installs into mise
+
+This won't overwrite any existing installs but will overwrite any existing symlinks"
         after_long_help r"Examples:
 
     $ brew install node@18 node@20
@@ -1197,14 +1223,32 @@ For example, use this to import all Homebrew node installs into mise"
     cmd "python" help="Symlinks all tool versions from an external tool into mise" {
         long_help r"Symlinks all tool versions from an external tool into mise
 
-For example, use this to import all pyenv installs into mise"
+For example, use this to import all pyenv installs into mise
+
+This won't overwrite any existing installs but will overwrite any existing symlinks"
         after_long_help r"Examples:
 
     $ pyenv install 3.11.0
     $ mise sync python --pyenv
     $ mise use -g python@3.11.0 - uses pyenv-provided python
+    
+    $ uv python install 3.11.0
+    $ mise install python@3.10.0
+    $ mise sync python --uv
+    $ mise x python@3.11.0 -- python -V - uses uv-provided python
+    $ uv run -p 3.10.0 -- python -V - uses mise-provided python
 "
-        flag "--pyenv" help="Get tool versions from pyenv" required=true
+        flag "--pyenv" help="Get tool versions from pyenv"
+        flag "--uv" help="Sync tool versions with uv (2-way sync)"
+    }
+    cmd "ruby" help="Symlinks all ruby tool versions from an external tool into mise" {
+        after_long_help r"Examples:
+
+    $ brew install ruby
+    $ mise sync ruby --brew
+    $ mise use -g ruby - Use the latest version of Ruby installed by Homebrew
+"
+        flag "--brew" help="Get tool versions from Homebrew"
     }
 }
 cmd "tasks" help="Manage tasks" {
@@ -1214,21 +1258,21 @@ cmd "tasks" help="Manage tasks" {
 
     $ mise tasks ls
 "
-    flag "--no-header" help="Do not print table header"
-    flag "-x --extended" help="Show all columns"
-    flag "--hidden" help="Show hidden tasks"
-    flag "--sort" help="Sort by column. Default is name." {
+    flag "--no-header" help="Do not print table header" global=true
+    flag "-x --extended" help="Show all columns" global=true
+    flag "--hidden" help="Show hidden tasks" global=true
+    flag "--sort" help="Sort by column. Default is name." global=true {
         arg "<COLUMN>" {
             choices "name" "alias" "description" "source"
         }
     }
-    flag "--sort-order" help="Sort order. Default is asc." {
+    flag "--sort-order" help="Sort order. Default is asc." global=true {
         arg "<SORT_ORDER>" {
             choices "asc" "desc"
         }
     }
-    flag "-J --json" help="Output in JSON format"
-    flag "--usage" hide=true
+    flag "-J --json" help="Output in JSON format" global=true
+    flag "--usage" hide=true global=true
     arg "[TASK]" help="Task name to get info of"
     cmd "deps" help="Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
@@ -1302,21 +1346,21 @@ tasks will override the global ones if they have the same name."
 
     $ mise tasks ls
 "
-        flag "--no-header" help="Do not print table header"
-        flag "-x --extended" help="Show all columns"
-        flag "--hidden" help="Show hidden tasks"
-        flag "--sort" help="Sort by column. Default is name." {
+        flag "--no-header" help="Do not print table header" global=true
+        flag "-x --extended" help="Show all columns" global=true
+        flag "--hidden" help="Show hidden tasks" global=true
+        flag "--sort" help="Sort by column. Default is name." global=true {
             arg "<COLUMN>" {
                 choices "name" "alias" "description" "source"
             }
         }
-        flag "--sort-order" help="Sort order. Default is asc." {
+        flag "--sort-order" help="Sort order. Default is asc." global=true {
             arg "<SORT_ORDER>" {
                 choices "asc" "desc"
             }
         }
-        flag "-J --json" help="Output in JSON format"
-        flag "--usage" hide=true
+        flag "-J --json" help="Output in JSON format" global=true
+        flag "--usage" hide=true global=true
     }
     cmd "run" help="Run task(s)" {
         alias "r"
@@ -1389,6 +1433,7 @@ The name of the script will be the name of the tasks.
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }
         flag "-q --quiet" help="Don't show extra output"
+        flag "-S --silent" help="Don't show any output except for errors"
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" default="default"
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" var=true
         mount run="mise tasks --usage"
@@ -1420,6 +1465,7 @@ cmd "tool" help="Gets information about a tool" {
 "
     flag "-J --json" help="Output in JSON format"
     flag "--backend" help="Only show backend field"
+    flag "--description" help="Only show description field"
     flag "--installed" help="Only show installed versions"
     flag "--active" help="Only show active versions"
     flag "--requested" help="Only show requested versions"
@@ -1552,6 +1598,9 @@ In the following order:
 
 Use the `--global` flag to use the global config file instead."#
     after_long_help r"Examples:
+    
+    # run with no arguments to use the interactive selector
+    $ mise use
 
     # set the current version of node to 20.x in mise.toml of current directory
     # will write the fuzzy version (e.g.: 20)
@@ -1855,7 +1904,7 @@ complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
 complete "setting" run="mise settings --keys"
 complete "task" run=r#"
-mise tasks --json | jq '.[] | (.name | sub(":"; "\\\:")) + ":" + (.description | sub(":"; "\\\:"))'
+mise tasks --json | jq '.[] | (.name | sub(":"; "\\:")) + ":" + (.description | sub(":"; "\\:"))'
 "# descriptions=true
 
 complete "tool@version" run=r#"

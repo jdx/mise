@@ -19,28 +19,32 @@ Output in JSON format
 
 Examples:
 
-    $ mise tasks info
-    Name: test
-    Aliases: t
-    Description: Test the application
-    Source: ~/src/myproj/mise.toml
+```
+$ mise tasks info
+Name: test
+Aliases: t
+Description: Test the application
+Source: ~/src/myproj/mise.toml
+```
 
-    $ mise tasks info test --json
-    {
-      "name": "test",
-      "aliases": "t",
-      "description": "Test the application",
-      "source": "~/src/myproj/mise.toml",
-      "depends": [],
-      "env": {},
-      "dir": null,
-      "hide": false,
-      "raw": false,
-      "sources": [],
-      "outputs": [],
-      "run": [
-        "echo \"testing!\""
-      ],
-      "file": null,
-      "usage_spec": {}
-    }
+```
+$ mise tasks info test --json
+{
+  "name": "test",
+  "aliases": "t",
+  "description": "Test the application",
+  "source": "~/src/myproj/mise.toml",
+  "depends": [],
+  "env": {},
+  "dir": null,
+  "hide": false,
+  "raw": false,
+  "sources": [],
+  "outputs": [],
+  "run": [
+    "echo \"testing!\""
+  ],
+  "file": null,
+  "usage_spec": {}
+}
+```

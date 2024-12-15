@@ -1,7 +1,6 @@
 use crate::cli::args::{ENV_ARG, PROFILE_ARG};
-use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
+use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
-use crate::hook_env::{deserialize_watches, HookEnvWatches};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
@@ -58,6 +57,7 @@ pub static XDG_STATE_HOME: Lazy<PathBuf> =
 
 /// always display "friendly" errors even in debug mode
 pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FRIENDLY_ERROR"));
+pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
 pub static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
 pub static MISE_CONFIG_DIR: Lazy<PathBuf> =
@@ -154,25 +154,11 @@ pub static MISE_TIMINGS: Lazy<u8> = Lazy::new(|| var_u8("MISE_TIMINGS"));
 pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
-/// the directory where hook-env was last run from
-/// prefixed with ":" so it does not conflict with zsh's auto_name_dirs feature
-pub static __MISE_DIR: Lazy<Option<PathBuf>> = Lazy::new(|| {
-    var("__MISE_DIR")
-        .map(|d| PathBuf::from(d.strip_prefix(":").unwrap_or(&d)))
-        .ok()
-});
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
-pub static __MISE_WATCH: Lazy<Option<HookEnvWatches>> = Lazy::new(|| match var("__MISE_WATCH") {
-    Ok(raw) => deserialize_watches(raw)
-        // TODO: enable this later when the bigint change goes out
-        .map_err(|e| debug!("Failed to deserialize __MISE_WATCH {e}"))
-        .ok(),
-    _ => None,
-});
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
-pub static PRISTINE_ENV: Lazy<HashMap<String, String>> =
+pub static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
 pub static PATH_KEY: Lazy<String> = Lazy::new(|| {
     vars()
@@ -227,6 +213,9 @@ pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
+pub static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("UV_PYTHON_INSTALL_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("uv").join("python"))
+});
 
 // node
 pub static MISE_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
@@ -360,10 +349,7 @@ pub fn var_path(key: &str) -> Option<PathBuf> {
 
 /// this returns the environment as if __MISE_DIFF was reversed.
 /// putting the shell back into a state before hook-env was run
-fn get_pristine_env(
-    mise_diff: &EnvDiff,
-    orig_env: HashMap<String, String>,
-) -> HashMap<String, String> {
+fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
     let patches = mise_diff.reverse().to_patches();
     let mut env = apply_patches(&orig_env, &patches);
 
@@ -389,10 +375,7 @@ fn get_pristine_env(
     env
 }
 
-fn apply_patches(
-    env: &HashMap<String, String>,
-    patches: &EnvDiffPatches,
-) -> HashMap<String, String> {
+fn apply_patches(env: &EnvMap, patches: &EnvDiffPatches) -> EnvMap {
     let mut new_env = env.clone();
     for patch in patches {
         match patch {
@@ -483,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_apply_patches() {
-        let mut env = HashMap::new();
+        let mut env = EnvMap::new();
         env.insert("foo".into(), "bar".into());
         env.insert("baz".into(), "qux".into());
         let patches = vec![

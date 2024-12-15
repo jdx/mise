@@ -1,9 +1,8 @@
 use crate::config::{Config, SETTINGS};
 use crate::shell::ShellType;
 use crate::task::Task;
-use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::tera::get_tera;
 use eyre::Result;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::iter::once;
@@ -271,14 +270,9 @@ impl TaskScriptParser {
                 }
             }
         });
-        let mut ctx = BASE_CONTEXT.clone();
+        let config = Config::get();
+        let mut ctx = config.tera_ctx.clone();
         ctx.insert("config_root", config_root);
-        let mut vars = IndexMap::new();
-        ctx.insert("vars", &vars);
-        for (k, v) in &Config::get().vars {
-            vars.insert(k.clone(), tera.render_str(v, &ctx).unwrap());
-            ctx.insert("vars", &vars);
-        }
         let scripts = scripts
             .iter()
             .map(|s| tera.render_str(s.trim(), &ctx).unwrap())

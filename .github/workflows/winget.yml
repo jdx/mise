@@ -14,8 +14,8 @@ jobs:
       - run: git config user.name mise-en-dev
       - run: git config user.email release@mise.jdx.dev
       - run: git remote add microsoft https://github.com/microsoft/winget-pkgs
-      - run: git pull --rebase microsoft main
-      - run: git push -f origin main
+      - run: git pull --rebase microsoft master
+      - run: git push -f origin master
       - uses: vedantmgoyal9/winget-releaser@main
         with:
           identifier: mise.jdx

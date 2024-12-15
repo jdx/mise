@@ -10,6 +10,7 @@ use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
+use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::file::display_path;
 use crate::http::HTTP;
@@ -18,6 +19,7 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, prompt, style, time};
 use crate::{dirs, env, exit, file, ui};
 use clap::{CommandFactory, ValueHint};
+use console::Term;
 use crossbeam_channel::{select, unbounded};
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
@@ -133,8 +135,12 @@ pub struct Run {
     pub no_timings: bool,
 
     /// Don't show extra output
-    #[clap(long, short, verbatim_doc_comment)]
+    #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
     pub quiet: bool,
+
+    /// Don't show any output except for errors
+    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    pub silent: bool,
 
     #[clap(skip)]
     pub is_linear: bool,
@@ -210,12 +216,7 @@ impl Run {
 
         let num_tasks = tasks.all().count();
         self.is_linear = tasks.is_linear();
-        if let Some(task) = tasks.all().next() {
-            self.output = self.output(task)?;
-            if let TaskOutput::Quiet = self.output {
-                self.quiet = true;
-            }
-        }
+        self.output = self.output(None);
 
         let tasks = Mutex::new(tasks);
         let timer = std::time::Instant::now();
@@ -286,13 +287,13 @@ impl Run {
     fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
-            if !self.quiet {
+            if !self.quiet(Some(task)) {
                 eprintln!("{prefix} skipping task");
             }
             return Ok(());
         }
         if !self.force && self.sources_are_fresh(task)? {
-            if !self.quiet {
+            if !self.quiet(Some(task)) {
                 eprintln!("{prefix} sources up-to-date, skipping");
             }
             return Ok(());
@@ -325,7 +326,7 @@ impl Run {
             .filter(|(_, v)| v.0 == Either::Right(EitherIntOrBool(Either::Right(false))))
             .map(|(k, _)| k)
             .collect::<HashSet<_>>();
-        let env: BTreeMap<String, String> = env
+        let env: EnvMap = env
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .chain(string_env)
@@ -362,14 +363,14 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
+        let config = Config::get();
         let script = script.trim_start();
-        let cmd = trunc(
-            &style::ebold(format!("$ {script} {args}", args = args.join(" ")))
-                .bright()
-                .to_string(),
-        );
-        if !self.quiet {
-            eprintln!("{prefix} {cmd}");
+        let cmd = style::ebold(format!("$ {script} {args}", args = args.join(" ")))
+            .bright()
+            .to_string();
+        if !self.quiet(Some(task)) {
+            let msg = format!("{prefix} {}", config.redact(cmd)?);
+            eprintln!("{}", trunc(&msg));
         }
 
         if script.starts_with("#!") {
@@ -453,6 +454,7 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
+        let config = Config::get();
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
@@ -465,10 +467,11 @@ impl Run {
             }
         }
 
-        let cmd = format!("{} {}", display_path(file), args.join(" "));
-        let cmd = trunc(&style::ebold(format!("$ {cmd}")).bright().to_string());
-        if !self.quiet {
-            eprintln!("{prefix} {cmd}");
+        if !self.quiet(Some(task)) {
+            let cmd = format!("{} {}", display_path(file), args.join(" "));
+            let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
+            let cmd = trunc(&format!("{prefix} {}", config.redact(cmd)?));
+            eprintln!("{cmd}");
         }
 
         self.exec(file, &args, task, &env, prefix)
@@ -494,19 +497,27 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
+        let config = Config::get();
         let program = program.to_executable();
+        let redactions = config.redactions()?;
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
-            .raw(self.raw(task));
+            .redact(redactions.clone())
+            .raw(self.raw(Some(task)));
         cmd.with_pass_signals();
-        match self.output {
+        match self.output(Some(task)) {
             TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
+            TaskOutput::Silent => {
+                cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             TaskOutput::Quiet | TaskOutput::Interleave => {
-                cmd = cmd
-                    .stdin(Stdio::inherit())
-                    .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit())
+                if redactions.is_empty() {
+                    cmd = cmd
+                        .stdin(Stdio::inherit())
+                        .stdout(Stdio::inherit())
+                        .stderr(Stdio::inherit())
+                }
             }
         }
         let dir = self.cwd(task)?;
@@ -526,24 +537,38 @@ impl Run {
         Ok(())
     }
 
-    fn output(&self, task: &Task) -> Result<TaskOutput> {
-        if self.quiet {
-            Ok(TaskOutput::Quiet)
+    fn output(&self, task: Option<&Task>) -> TaskOutput {
+        if self.silent(task) {
+            TaskOutput::Silent
+        } else if self.quiet(task) {
+            TaskOutput::Quiet
         } else if self.prefix {
-            Ok(TaskOutput::Prefix)
+            TaskOutput::Prefix
         } else if self.interleave {
-            Ok(TaskOutput::Interleave)
-        } else if let Some(output) = &SETTINGS.task_output {
-            Ok(output.parse()?)
+            TaskOutput::Interleave
+        } else if let Some(output) = SETTINGS.task_output {
+            output
         } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
-            Ok(TaskOutput::Interleave)
+            TaskOutput::Interleave
         } else {
-            Ok(TaskOutput::Prefix)
+            TaskOutput::Prefix
         }
     }
 
-    fn raw(&self, task: &Task) -> bool {
-        self.raw || task.raw || SETTINGS.raw
+    fn silent(&self, task: Option<&Task>) -> bool {
+        self.silent || SETTINGS.silent || self.output.is_silent() || task.is_some_and(|t| t.silent)
+    }
+
+    fn quiet(&self, task: Option<&Task>) -> bool {
+        self.quiet
+            || SETTINGS.quiet
+            || self.output.is_quiet()
+            || task.is_some_and(|t| t.quiet)
+            || self.silent(task)
+    }
+
+    fn raw(&self, task: Option<&Task>) -> bool {
+        self.raw || SETTINGS.raw || task.is_some_and(|t| t.raw)
     }
 
     fn jobs(&self) -> usize {
@@ -570,12 +595,15 @@ impl Run {
     }
 
     fn sources_are_fresh(&self, task: &Task) -> Result<bool> {
-        if task.sources.is_empty() && task.outputs.is_empty() {
+        let outputs = task.outputs.paths(task);
+        if task.sources.is_empty() && outputs.is_empty() {
             return Ok(false);
         }
         let run = || -> Result<bool> {
-            let sources = self.get_last_modified(&self.cwd(task)?, &task.sources)?;
-            let outputs = self.get_last_modified(&self.cwd(task)?, &task.outputs)?;
+            let mut sources = task.sources.clone();
+            sources.push(task.config_source.to_string_lossy().to_string());
+            let sources = self.get_last_modified(&self.cwd(task)?, &sources)?;
+            let outputs = self.get_last_modified(&self.cwd(task)?, &outputs)?;
             trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {
                 (Some(sources), Some(outputs)) => Ok(sources < outputs),
@@ -583,7 +611,7 @@ impl Run {
             }
         };
         Ok(run().unwrap_or_else(|err| {
-            warn!("sources_are_fresh: {err}");
+            warn!("sources_are_fresh: {err:?}");
             false
         }))
     }
@@ -631,7 +659,8 @@ impl Run {
             Ok(Config::get()
                 .project_root
                 .clone()
-                .unwrap_or_else(|| env::current_dir().unwrap()))
+                .or_else(|| dirs::CWD.clone())
+                .unwrap_or_default())
         }
     }
 
@@ -639,12 +668,17 @@ impl Run {
         if task.sources.is_empty() {
             return Ok(());
         }
-        // TODO
+        if task.outputs.is_auto() {
+            for p in task.outputs.paths(task) {
+                debug!("touching auto output file: {p}");
+                file::touch_file(&PathBuf::from(&p))?;
+            }
+        }
         Ok(())
     }
 
     fn timings(&self) -> bool {
-        !self.quiet
+        !self.quiet(None)
             && !self.no_timings
             && SETTINGS
                 .task_timings
@@ -677,17 +711,13 @@ fn is_glob_pattern(path: &str) -> bool {
     path.chars().any(|c| glob_chars.contains(&c))
 }
 
-fn last_modified_path(
-    root: impl AsRef<std::ffi::OsStr>,
-    paths: &[&String],
-) -> Result<Option<SystemTime>> {
+fn last_modified_path(root: &Path, paths: &[&String]) -> Result<Option<SystemTime>> {
     let files = paths.iter().map(|p| {
         let base = Path::new(p);
-
         if base.is_relative() {
-            base.to_path_buf()
-        } else {
             Path::new(&root).join(base)
+        } else {
+            base.to_path_buf()
         }
     });
 
@@ -727,7 +757,11 @@ fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option
     Ok(files
         .into_iter()
         .unique()
-        .map(|p| p.metadata().map_err(|err| eyre!(err)))
+        .filter(|p| p.exists())
+        .map(|p| {
+            p.metadata()
+                .map_err(|err| eyre!("{}: {}", display_path(p), err))
+        })
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .map(|m| m.modified().map_err(|err| eyre!(err)))
@@ -758,13 +792,25 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 "#
 );
 
-#[derive(Debug, Default, PartialEq, strum::EnumString)]
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    strum::EnumString,
+    strum::EnumIs,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum TaskOutput {
     #[default]
     Prefix,
     Interleave,
     Quiet,
+    Silent,
 }
 
 fn trunc(msg: &str) -> String {
@@ -814,16 +860,26 @@ fn prompt_for_task() -> Result<Task> {
         url = style::eunderline("https://mise.jdx.dev/tasks/")
     );
     let mut s = Select::new("Tasks")
-        .description("Select a tasks to run")
+        .description("Select a task to run")
+        .filtering(true)
         .filterable(true);
     for t in tasks.values().filter(|t| !t.hide) {
-        s = s.option(DemandOption::new(&t.name).description(&t.description));
+        s = s.option(
+            DemandOption::new(&t.name)
+                .label(&t.display_name())
+                .description(&t.description),
+        );
     }
     ctrlc::show_cursor_after_ctrl_c();
-    let name = s.run()?;
-    match tasks.get(name) {
-        Some(task) => Ok((*task).clone()),
-        None => bail!("no tasks {} found", style::ered(name)),
+    match s.run() {
+        Ok(name) => match tasks.get(name) {
+            Some(task) => Ok(task.clone()),
+            None => bail!("no tasks {} found", style::ered(name)),
+        },
+        Err(err) => {
+            Term::stderr().show_cursor()?;
+            Err(eyre!(err))
+        }
     }
 }
 

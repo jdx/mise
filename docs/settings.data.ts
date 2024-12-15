@@ -14,7 +14,7 @@ export default {
     function buildElement(key, props) {
       let type = props.type;
       type = type.replaceAll("PathBuf", "String");
-      let default_ = props.default;
+      let default_ = props.default_docs ?? props.default;
       if (default_ === undefined && type === "Bool" && !props.optional) {
         default_ = false;
       }
@@ -42,7 +42,7 @@ export default {
         deprecated: props.deprecated,
         enum: props.enum,
         env: props.env,
-        optional: props.optional,
+        optional: !props.default_docs && props.optional,
         type,
       };
       return ele;

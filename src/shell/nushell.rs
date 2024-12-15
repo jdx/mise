@@ -51,7 +51,7 @@ impl Shell for Nushell {
           def --env add-hook [field: cell-path new_hook: any] {{
             let old_config = $env.config? | default {{}}
             let old_hooks = $old_config | get $field --ignore-errors | default []
-            $env.config = ($old_config | upsert $field ($old_hooks ++ $new_hook))
+            $env.config = ($old_config | upsert $field ($old_hooks ++ [$new_hook]))
           }}
 
           def "parse vars" [] {{
@@ -77,7 +77,11 @@ impl Shell for Nushell {
           def --env "update-env" [] {{
             for $var in $in {{
               if $var.op == "set" {{
-                load-env {{($var.name): $var.value}}
+                if $var.name == 'PATH' {{
+                  $env.PATH = ($var.value | split row (char esep))
+                }} else {{
+                  load-env {{($var.name): $var.value}}
+                }}
               }} else if $var.op == "hide" {{
                 hide-env $var.name
               }}

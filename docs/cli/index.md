@@ -26,21 +26,33 @@ Set the environment for loading `mise.<ENV>.toml`
 
 How many jobs to run in parallel [default: 8]
 
+### `--raw`
+
+Read/write directly to stdin/stdout/stderr instead of by line
+
+### `-y --yes`
+
+Answer yes to all confirmation prompts
+
 ### `-q --quiet`
 
 Suppress non-error messages
 
-### `--raw`
+### `--silent`
 
-Read/write directly to stdin/stdout/stderr instead of by line
+Suppress all task output and mise non-error messages
 
 ### `-v --verbose...`
 
 Show extra output (use -vv for even more)
 
-### `-y --yes`
+## Flags
 
-Answer yes to all confirmation prompts
+### `--no-config`
+
+Do not load any config files
+
+Can also use `MISE_NO_CONFIG=1`
 
 ## Subcommands
 
@@ -56,14 +68,15 @@ Answer yes to all confirmation prompts
 - [`mise cache <SUBCOMMAND>`](/cli/cache.md)
 - [`mise cache clear [PLUGIN]...`](/cli/cache/clear.md)
 - [`mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`](/cli/cache/prune.md)
-- [`mise completion [SHELL]`](/cli/completion.md)
+- [`mise completion [--include-bash-completion-lib] [SHELL]`](/cli/completion.md)
 - [`mise config [--no-header] [-J --json] <SUBCOMMAND>`](/cli/config.md)
 - [`mise config generate [-o --output <OUTPUT>]`](/cli/config/generate.md)
 - [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
 - [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
 - [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)
 - [`mise deactivate`](/cli/deactivate.md)
-- [`mise doctor`](/cli/doctor.md)
+- [`mise doctor <SUBCOMMAND>`](/cli/doctor.md)
+- [`mise doctor path [-f --full]`](/cli/doctor/path.md)
 - [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.md)
 - [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)
 - [`mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`](/cli/exec.md)
@@ -101,7 +114,8 @@ Answer yes to all confirmation prompts
 - [`mise shell [FLAGS] [TOOL@VERSION]...`](/cli/shell.md)
 - [`mise sync <SUBCOMMAND>`](/cli/sync.md)
 - [`mise sync node [FLAGS]`](/cli/sync/node.md)
-- [`mise sync python <--pyenv>`](/cli/sync/python.md)
+- [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)
+- [`mise sync ruby [--brew]`](/cli/sync/ruby.md)
 - [`mise tasks [FLAGS] [TASK] <SUBCOMMAND>`](/cli/tasks.md)
 - [`mise tasks deps [--hidden] [--dot] [TASKS]...`](/cli/tasks/deps.md)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)

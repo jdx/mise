@@ -1,17 +1,14 @@
 use crate::config::config_file::ConfigFile;
 use crate::config::Config;
 use crate::file::display_path;
-use crate::ui::table;
-use console::style;
+use crate::ui::table::MiseTable;
+use comfy_table::{Attribute, Cell};
 use eyre::Result;
 use itertools::Itertools;
-use tabled::settings::object::Columns;
-use tabled::settings::{Modify, Width};
-use tabled::Tabled;
 
 /// List config files currently in use
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(visible_alias="list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigLs {
     /// Do not print table header
     #[clap(long, alias = "no-headers", verbatim_doc_comment)]
@@ -33,17 +30,27 @@ impl ConfigLs {
     }
 
     fn display(&self) -> Result<()> {
-        let rows = Config::get()
+        let config = Config::get();
+        let configs = config
             .config_files
             .values()
             .rev()
-            .map(|cf| cf.as_ref().into())
-            .collect::<Vec<Row>>();
-        let mut table = tabled::Table::new(rows);
-        table::default_style(&mut table, self.no_header);
-        table.with(Modify::new(Columns::last()).with(Width::truncate(40).suffix("…")));
-        miseprintln!("{table}");
-        Ok(())
+            .map(|cf| cf.as_ref())
+            .collect_vec();
+        let mut table = MiseTable::new(self.no_header, &["Path", "Tools"]);
+        for cfg in configs {
+            let ts = cfg.to_tool_request_set().unwrap();
+            let tools = ts.list_tools().into_iter().join(", ");
+            let tools = if tools.is_empty() {
+                Cell::new("(none)")
+                    .add_attribute(Attribute::Italic)
+                    .add_attribute(Attribute::Dim)
+            } else {
+                Cell::new(tools).add_attribute(Attribute::Dim)
+            };
+            table.add_row(vec![Cell::new(display_path(cfg.get_path())), tools]);
+        }
+        table.truncate(true).print()
     }
 
     fn display_json(&self) -> Result<()> {
@@ -60,7 +67,7 @@ impl ConfigLs {
                 let plugins = c
                     .to_tool_request_set()
                     .unwrap()
-                    .list_plugins()
+                    .list_tools()
                     .into_iter()
                     .map(|s| serde_json::Value::String(s.to_string()))
                     .collect::<Vec<serde_json::Value>>();
@@ -74,34 +81,12 @@ impl ConfigLs {
     }
 }
 
-fn format_tools_cell(s: String) -> String {
-    match s.is_empty() {
-        true => style("(none)").italic().dim().to_string(),
-        false => style(s).dim().to_string(),
-    }
-}
-
-#[derive(Tabled)]
-#[tabled(rename_all = "PascalCase")]
-struct Row {
-    path: String,
-    tools: String,
-}
-
-impl From<&dyn ConfigFile> for Row {
-    fn from(cf: &dyn ConfigFile) -> Self {
-        let path = display_path(cf.get_path());
-        let ts = cf.to_tool_request_set().unwrap();
-        let plugins = ts.list_plugins().into_iter().join(", ");
-        let tools = format_tools_cell(plugins);
-        Self { path, tools }
-    }
-}
-
-// TODO: fill this out
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise config ls</bold>
+    Path                        Tools
+    ~/.config/mise/config.toml  pitchfork
+    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-edit, cargo:cargo-insta
 "#
 );

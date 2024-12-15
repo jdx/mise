@@ -26,11 +26,7 @@ node -v
 
 And you'll also note that you now have a `mise.toml` file with the following content:
 
-```shell
-cat mise.toml
-```
-
-```toml
+```toml [mise.toml]
 [tools]
 node = "22"
 ```
@@ -126,7 +122,7 @@ _.path = "./node_modules/.bin"
 This will add `./node_modules/.bin` to the PATH for the project—with "." here referring to the directory
 the `mise.toml` file is in so if you enter a subdirectory, it will still work.
 
-_See [Environments](/environments) for more information on working with environment variables._
+_See [Environments](/environments/) for more information on working with environment variables._
 
 ## Tasks
 
@@ -140,7 +136,7 @@ test = "npm test"
 
 Or in a `mise-tasks` directory as a standalone file, such as `mise-tasks/build`:
 
-```bash
+```bash [mise-tasks/build]
 #!/bin/bash
 npm run build
 ```
@@ -162,7 +158,7 @@ mise is paired with [usage](https://usage.jdx.dev) which provides lots of featur
 
 Here is an example of a task with usage spec:
 
-```bash
+```bash [mise-tasks/users]
 #!/bin/bash
 #USAGE flag "-f --force" "Force the greeting to be displayed"
 #USAGE flag "-u --user <user>" "The user to greet"
@@ -216,7 +212,7 @@ programming languages or tools used on it.
 For further reading:
 
 - [Dev Tools](/dev-tools/) – A deeper overview of working with dev tools
-- [Environments](/environments) – A deeper overview of working with environment variables
+- [Environments](/environments/) – A deeper overview of working with environment variables
 - [Tasks](/tasks/) – A deeper overview of working with tasks
 - [Configuration](/configuration) – More information on `mise.toml` files
 - [Settings](/configuration/settings) – All the configuration settings available in mise

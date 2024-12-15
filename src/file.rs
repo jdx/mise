@@ -214,6 +214,14 @@ pub fn display_path<P: AsRef<Path>>(path: P) -> String {
     }
 }
 
+pub fn display_rel_path<P: AsRef<Path>>(path: P) -> String {
+    let path = path.as_ref();
+    match path.strip_prefix(dirs::CWD.as_ref().unwrap()) {
+        Ok(rel) => format!("./{}", rel.display()),
+        Err(_) => display_path(path),
+    }
+}
+
 /// replaces $HOME in a string with "~" and $PATH with "$PATH", generally used to clean up output
 /// after it is rendered
 pub fn replace_paths_in_string<S: Display>(input: S) -> String {
@@ -280,7 +288,7 @@ pub fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
     for entry in dir.read_dir()? {
         let entry = entry?;
         let ft = entry.file_type()?;
-        if ft.is_dir() || (ft.is_symlink() && entry.path().read_link()?.is_dir()) {
+        if ft.is_dir() || (ft.is_symlink() && entry.path().is_dir()) {
             output.insert(entry.file_name().into_string().unwrap());
         }
     }
@@ -586,12 +594,15 @@ pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
 #[derive(Default, Clone, Copy, strum::EnumString, strum::Display)]
 pub enum TarFormat {
     #[default]
+    Auto,
     #[strum(serialize = "tar.gz")]
     TarGz,
     #[strum(serialize = "tar.xz")]
     TarXz,
     #[strum(serialize = "tar.bz2")]
     TarBz2,
+    #[strum(serialize = "tar.zst")]
+    TarZst,
 }
 
 #[derive(Default)]
@@ -609,12 +620,7 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
-    let f = File::open(archive)?;
-    let tar: Box<dyn std::io::Read> = match opts.format {
-        TarFormat::TarGz => Box::new(GzDecoder::new(f)),
-        TarFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
-        TarFormat::TarBz2 => Box::new(bzip2::read::BzDecoder::new(f)),
-    };
+    let tar = open_tar(opts.format, archive)?;
     let err = || {
         let archive = display_path(archive);
         let dest = display_path(dest);
@@ -656,6 +662,22 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     //     pr.set_position(total);
     // }
     Ok(())
+}
+
+fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
+    let f = File::open(archive)?;
+    Ok(match format {
+        TarFormat::TarGz => Box::new(GzDecoder::new(f)),
+        TarFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
+        TarFormat::TarBz2 => Box::new(bzip2::read::BzDecoder::new(f)),
+        TarFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
+        TarFormat::Auto => match archive.extension().and_then(|s| s.to_str()) {
+            Some("xz") => open_tar(TarFormat::TarXz, archive)?,
+            Some("bz2") => open_tar(TarFormat::TarBz2, archive)?,
+            Some("zst") => open_tar(TarFormat::TarZst, archive)?,
+            _ => open_tar(TarFormat::TarGz, archive)?,
+        },
+    })
 }
 
 pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {

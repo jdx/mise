@@ -92,8 +92,8 @@ impl Shell for Xonsh {
             del os.environ['MISE_SHELL']
             del XSH.env['__MISE_DIFF']
             del os.environ['__MISE_DIFF']
-            del XSH.env['__MISE_WATCH']
-            del os.environ['__MISE_WATCH']
+            del XSH.env['__MISE_SESSION']
+            del os.environ['__MISE_SESSION']
             "#}
     }
 

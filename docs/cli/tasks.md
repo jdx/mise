@@ -12,7 +12,7 @@ Manage tasks
 
 Task name to get info of
 
-## Flags
+## Global Flags
 
 ### `--no-header`
 
@@ -60,4 +60,6 @@ Output in JSON format
 
 Examples:
 
-    mise tasks ls
+```
+mise tasks ls
+```

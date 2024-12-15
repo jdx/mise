@@ -28,6 +28,10 @@ pub struct ToolInfoFilter {
     #[clap(long)]
     backend_: bool,
 
+    /// Only show description field
+    #[clap(long)]
+    description: bool,
+
     /// Only show installed versions
     #[clap(long)]
     installed: bool,
@@ -56,8 +60,10 @@ impl Tool {
         let tvl = ts.versions.get(&self.backend);
         let tv = tvl.map(|tvl| tvl.versions.first().unwrap());
         let ba = tv.map(|tv| tv.ba()).unwrap_or_else(|| &self.backend);
+        let backend = ba.backend().ok();
         let info = ToolInfo {
             backend: ba.full(),
+            description: backend.and_then(|b| b.description()),
             installed_versions: ts
                 .list_installed_versions()?
                 .into_iter()
@@ -90,6 +96,8 @@ impl Tool {
     fn output_json(&self, info: ToolInfo) -> Result<()> {
         if self.filter.backend_ {
             miseprintln!("{}", serde_json::to_string_pretty(&info.backend)?);
+        } else if self.filter.description {
+            miseprintln!("{}", serde_json::to_string_pretty(&info.description)?);
         } else if self.filter.installed {
             miseprintln!(
                 "{}",
@@ -115,6 +123,12 @@ impl Tool {
     fn output_user(&self, info: ToolInfo) -> Result<()> {
         if self.filter.backend_ {
             miseprintln!("{}", info.backend);
+        } else if self.filter.description {
+            if let Some(description) = info.description {
+                miseprintln!("{}", description);
+            } else {
+                miseprintln!("[none]");
+            }
         } else if self.filter.installed {
             miseprintln!("{}", info.installed_versions.join(" "));
         } else if self.filter.active {
@@ -146,6 +160,9 @@ impl Tool {
         } else {
             let mut table = vec![];
             table.push(("Backend:", info.backend));
+            if let Some(description) = info.description {
+                table.push(("Description:", description));
+            }
             table.push(("Installed Versions:", info.installed_versions.join(" ")));
             if let Some(active_versions) = info.active_versions {
                 table.push(("Active Version:", active_versions.join(" ")));
@@ -179,6 +196,7 @@ impl Tool {
 #[derive(Serialize)]
 struct ToolInfo {
     backend: String,
+    description: Option<String>,
     installed_versions: Vec<String>,
     requested_versions: Option<Vec<String>>,
     active_versions: Option<Vec<String>>,

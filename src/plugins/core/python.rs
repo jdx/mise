@@ -4,16 +4,19 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
-use crate::file::{display_path, TarFormat, TarOptions};
+use crate::file::{display_path, TarOptions};
 use crate::git::Git;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, file, plugins};
+use crate::{cmd, dirs, file, plugins};
 use eyre::{bail, eyre};
+use flate2::read::GzDecoder;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use versions::Versioning;
@@ -22,20 +25,12 @@ use xx::regex;
 #[derive(Debug)]
 pub struct PythonPlugin {
     ba: BackendArg,
-    precompiled_cache: CacheManager<Vec<(String, String, String)>>,
 }
 
 impl PythonPlugin {
     pub fn new() -> Self {
         let ba = plugins::core::new_backend_arg("python");
-        Self {
-            precompiled_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("precompiled.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .build(),
-            ba,
-        }
+        Self { ba }
     }
 
     fn python_build_path(&self) -> PathBuf {
@@ -86,15 +81,26 @@ impl PythonPlugin {
     }
 
     fn fetch_precompiled_remote_versions(&self) -> eyre::Result<&Vec<(String, String, String)>> {
-        self.precompiled_cache.get_or_try_init(|| {
-            let raw = match SETTINGS.paranoid {
-                true => HTTP_FETCH.get_text("https://mise-versions.jdx.dev/python-precompiled"),
-                // using http is not a security concern and enabling tls makes mise significantly slower
-                false => HTTP_FETCH.get_text("http://mise-versions.jdx.dev/python-precompiled"),
-            }?;
+        static PRECOMPILED_CACHE: Lazy<CacheManager<Vec<(String, String, String)>>> =
+            Lazy::new(|| {
+                CacheManagerBuilder::new(dirs::CACHE.join("python").join("precompiled.msgpack.z"))
+                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .with_cache_key(python_precompiled_platform())
+                    .build()
+            });
+        PRECOMPILED_CACHE.get_or_try_init(|| {
             let arch = python_arch();
             let os = python_os();
-            let platform = format!("{arch}-{os}");
+            let url_path = format!("python-precompiled-{arch}-{os}.gz");
+            let rsp = match SETTINGS.paranoid {
+                true => HTTP_FETCH.get_bytes(format!("https://mise-versions.jdx.dev/{url_path}")),
+                // using http is not a security concern and enabling tls makes mise significantly slower
+                false => HTTP_FETCH.get_bytes(format!("http://mise-versions.jdx.dev/{url_path}")),
+            }?;
+            let mut decoder = GzDecoder::new(rsp.as_ref());
+            let mut raw = String::new();
+            decoder.read_to_string(&mut raw)?;
+            let platform = python_precompiled_platform();
             // order by version, whether it is a release candidate, date, and in the preferred order of install types
             let rank = |v: &str, date: &str, name: &str| {
                 let rc = if regex!(r"rc\d+$").is_match(v) { 0 } else { 1 };
@@ -149,12 +155,8 @@ impl PythonPlugin {
                             "mise settings python.compile=1"
                         );
                     }
-                    let arch = python_arch();
-                    let os = python_os();
-                    bail!(
-                        "no precompiled python found for {} on {arch}-{os}",
-                        tv.version
-                    );
+                    let platform = python_precompiled_platform();
+                    bail!("no precompiled python found for {tv} on {platform}");
                 }
                 let available = precompiled_versions.iter().map(|(v, _, _)| v).collect_vec();
                 if available.is_empty() {
@@ -195,11 +197,19 @@ impl PythonPlugin {
             &tarball_path,
             &install,
             &TarOptions {
-                format: TarFormat::TarGz,
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
+                ..Default::default()
             },
         )?;
+        if !install.join("bin").exists() {
+            // debug builds of indygreg binaries have a different structure
+            for entry in file::ls(&install.join("install"))? {
+                let filename = entry.file_name().unwrap();
+                file::remove_all(install.join(filename))?;
+                file::rename(&entry, install.join(filename))?;
+            }
+        }
         #[cfg(unix)]
         file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
         Ok(())
@@ -475,6 +485,16 @@ fn python_arch() -> &'static str {
         }
     } else {
         arch
+    }
+}
+
+fn python_precompiled_platform() -> String {
+    let os = python_os();
+    let arch = python_arch();
+    if let Some(flavor) = &SETTINGS.python.precompiled_flavor {
+        format!("{arch}-{os}-{flavor}")
+    } else {
+        format!("{arch}-{os}")
     }
 }
 

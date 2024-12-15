@@ -5,10 +5,10 @@ An assortment of helpful tips for using `mise`.
 ## macOS Rosetta
 
 If you have a need to run tools as x86_64 on Apple Silicon, this can be done with mise however you'll currently
-need to use the x86_64 version of mise itself. There is an [outstanding issue](https://github.com/jdx/mise/issues/405)
-to support this with an env var like MISE_ARCH=x86_64 to make it more seamless.
+need to use the x86_64 version of mise itself. A common reason for doing this is to support compiling node <=14.
 
-A common reason for doing this is to support compiling node <=14.
+You can do this either with the [`MISE_ARCH`](https://mise.jdx.dev/configuration/settings.html#arch)
+setting or by using a dedicated rosetta mise bin as described below:
 
 First, you'll need a copy of mise that's built for x86_64:
 
@@ -44,7 +44,9 @@ console.log(`Running node: ${process.version}`);
 This can also be useful in environments where mise isn't activated
 (such as a non-interactive session).
 
-You can also download the <https://mise.run> script to use in a project bootstrap script:
+## Bootstrap script
+
+You can download the <https://mise.run> script to use in a project bootstrap script:
 
 ```sh
 curl https://mise.run > setup-mise.sh
@@ -57,6 +59,25 @@ This file contains checksums so it's more secure to commit it into your project 
 calling `curl https://mise.run` dynamically—though of course this means it will only fetch
 the version of mise that was current when the script was created.
 :::
+
+## Installation via zsh zinit
+
+[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH, wich this snippet you will get mise (and usage for shell completion):
+
+```sh
+zinit as="command" lucid from="gh-r" for \
+    id-as="usage" \
+    atpull="%atclone" \
+    jdx/usage
+    #atload='eval "$(mise activate zsh)"' \
+
+zinit as="command" lucid from="gh-r" for \
+    id-as="mise" mv="mise* -> mise" \
+    atclone="./mise* completion zsh > _mise" \
+    atpull="%atclone" \
+    atload='eval "$(mise activate zsh)"' \
+    jdx/mise
+```
 
 ## CI/CD
 

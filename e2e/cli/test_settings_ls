@@ -19,15 +19,15 @@ disable_backends = ["rust", "java"]'
 
 assert_contains "mise settings --json-extended" "{
   \"all_compile\": {
-    \"source\": \"$HOME/workdir/mise.toml\",
-    \"value\": false
+    \"value\": false,
+    \"source\": \"$HOME/workdir/mise.toml\"
   },
   \"disable_backends\": {
-    \"source\": \"$HOME/workdir/mise.toml\",
     \"value\": [
       \"rust\",
       \"java\"
-    ]
+    ],
+    \"source\": \"$HOME/workdir/mise.toml\"
   }
 }"
 

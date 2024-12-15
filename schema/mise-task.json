@@ -40,8 +40,40 @@
             "depends": {
               "description": "other tasks to run before this task",
               "items": {
-                "description": "task to run before this task",
-                "type": "string"
+                "oneOf": [
+                  {
+                    "description": "task with args to run before this task",
+                    "type": "string"
+                  },
+                  {
+                    "description": "task with args to run before this task",
+                    "items": {
+                      "description": "task name and args",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "depends_post": {
+              "description": "other tasks to run after this task",
+              "items": {
+                "oneOf": [
+                  {
+                    "description": "task with args to run after this task",
+                    "type": "string"
+                  },
+                  {
+                    "description": "task with args to run after this task",
+                    "items": {
+                      "description": "task name and args",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                ]
               },
               "type": "array"
             },

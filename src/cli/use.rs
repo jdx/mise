@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use console::style;
-use eyre::Result;
+use console::{style, Term};
+use eyre::{eyre, Result};
 use itertools::Itertools;
 use path_absolutize::Absolutize;
 
@@ -12,9 +12,11 @@ use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
 use crate::file::display_path;
+use crate::registry::REGISTRY;
 use crate::toolset::{
     InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder,
 };
+use crate::ui::ctrlc;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, env, file};
 
@@ -41,11 +43,7 @@ pub struct Use {
     /// Tool options can be set with this syntax:
     ///
     ///     mise use ubi:BurntSushi/ripgrep[exe=rg]
-    #[clap(
-        value_name = "TOOL@VERSION",
-        verbatim_doc_comment,
-        required_unless_present = "remove"
-    )]
+    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Force reinstall even if already installed
@@ -99,7 +97,10 @@ pub struct Use {
 }
 
 impl Use {
-    pub fn run(self) -> Result<()> {
+    pub fn run(mut self) -> Result<()> {
+        if self.tool.is_empty() && self.remove.is_empty() {
+            self.tool = vec![self.tool_selector()?];
+        }
         let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new()
             .with_global_only(self.global)
@@ -249,6 +250,29 @@ impl Use {
         );
         Ok(())
     }
+
+    fn tool_selector(&self) -> Result<ToolArg> {
+        let mut s = demand::Select::new("Tools")
+            .description("Select a tool to install")
+            .filtering(true)
+            .filterable(true);
+        for rt in REGISTRY.values().unique_by(|r| r.short) {
+            if let Some(backend) = rt.backends().first() {
+                // TODO: populate registry with descriptions from aqua and other sources
+                // TODO: use the backend from the lockfile if available
+                let description = rt.description.unwrap_or(backend);
+                s = s.option(demand::DemandOption::new(rt).description(description));
+            }
+        }
+        ctrlc::show_cursor_after_ctrl_c();
+        match s.run() {
+            Ok(rt) => rt.short.parse(),
+            Err(err) => {
+                Term::stderr().show_cursor()?;
+                Err(eyre!(err))
+            }
+        }
+    }
 }
 
 fn config_file_from_dir(p: &Path) -> PathBuf {
@@ -270,6 +294,9 @@ fn config_file_from_dir(p: &Path) -> PathBuf {
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
+    
+    # run with no arguments to use the interactive selector
+    $ <bold>mise use</bold>
 
     # set the current version of node to 20.x in mise.toml of current directory
     # will write the fuzzy version (e.g.: 20)

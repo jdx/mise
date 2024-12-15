@@ -12,23 +12,27 @@ assert "mise where tiny" "$MISE_DATA_DIR/installs/tiny/1.0.0"
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
 assert "cat mise.lock" '[tools.tiny]
-version = "1.0.0"'
+version = "1.0.0"
+backend = "asdf:tiny"'
 
 assert "mise use tiny@1"
 assert "cat mise.lock" '[tools.tiny]
-version = "1.0.0"'
+version = "1.0.0"
+backend = "asdf:tiny"'
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
 
 assert "mise up tiny"
 assert "cat mise.lock" '[tools.tiny]
-version = "1.1.0"'
+version = "1.1.0"
+backend = "asdf:tiny"'
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.1.0"
 
 assert "mise up tiny --bump"
 assert "cat mise.lock" '[tools.tiny]
-version = "3.1.0"'
+version = "3.1.0"
+backend = "asdf:tiny"'
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "3"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "3.1.0"
 
@@ -36,9 +40,11 @@ echo 'tools.tiny = "1.0.0"' >mise.lock
 assert "mise use tiny@1 tiny@2"
 assert "cat mise.lock" '[[tools.tiny]]
 version = "1.0.0"
+backend = "asdf:tiny"
 
 [[tools.tiny]]
-version = "2.1.0"'
+version = "2.1.0"
+backend = "asdf:tiny"'
 assert "mise uninstall --all tiny"
 assert "mise install tiny"
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"

@@ -27,5 +27,7 @@ write to .git/hooks/pre-commit and make it executable
 
 Examples:
 
-    mise generate git-pre-commit --write --task=pre-commit
-    git commit -m "feat: add new feature" # runs `mise run pre-commit`
+```
+mise generate git-pre-commit --write --task=pre-commit
+git commit -m "feat: add new feature" # runs `mise run pre-commit`
+```

@@ -21,6 +21,7 @@ use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap};
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
+use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::Task;
 use crate::tera::{get_tera, BASE_CONTEXT};
@@ -55,13 +56,15 @@ pub struct MiseToml {
     #[serde(default)]
     plugins: HashMap<String, String>,
     #[serde(default)]
+    redactions: Redactions,
+    #[serde(default)]
     task_config: TaskConfig,
     #[serde(default)]
     tasks: Tasks,
     #[serde(default)]
     watch_files: Vec<WatchFile>,
     #[serde(default)]
-    vars: IndexMap<String, String>,
+    vars: EnvList,
     #[serde(default)]
     settings: SettingsPartial,
 }
@@ -187,14 +190,23 @@ impl MiseToml {
     }
 
     pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) -> eyre::Result<()> {
-        let env_tbl = self
+        let mut env_tbl = self
             .doc_mut()?
             .entry("env")
             .or_insert_with(table)
             .as_table_mut()
             .unwrap();
-        let key = get_key_with_decor(env_tbl, key);
-        env_tbl.insert_formatted(&key, toml_edit::value(value));
+        let key_parts = key.split('.').collect_vec();
+        for (i, k) in key_parts.iter().enumerate() {
+            if i == key_parts.len() - 1 {
+                let k = get_key_with_decor(env_tbl, k);
+                env_tbl.insert_formatted(&k, toml_edit::value(value));
+                break;
+            } else if !env_tbl.contains_key(k) {
+                env_tbl.insert_formatted(&Key::from(*k), toml_edit::table());
+            }
+            env_tbl = env_tbl.get_mut(k).unwrap().as_table_mut().unwrap();
+        }
         Ok(())
     }
 
@@ -279,6 +291,10 @@ impl ConfigFile for MiseToml {
             .chain(env_entries)
             .collect::<Vec<_>>();
         Ok(all)
+    }
+
+    fn vars_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
+        Ok(self.vars.0.clone())
     }
 
     fn tasks(&self) -> Vec<&Task> {
@@ -438,6 +454,10 @@ impl ConfigFile for MiseToml {
         &self.task_config
     }
 
+    fn redactions(&self) -> &Redactions {
+        &self.redactions
+    }
+
     fn watch_files(&self) -> eyre::Result<Vec<WatchFile>> {
         self.watch_files
             .iter()
@@ -469,10 +489,6 @@ impl ConfigFile for MiseToml {
             .into_iter()
             .flatten()
             .collect())
-    }
-
-    fn vars(&self) -> eyre::Result<&IndexMap<String, String>> {
-        Ok(&self.vars)
     }
 }
 
@@ -534,6 +550,7 @@ impl Clone for MiseToml {
             doc: self.doc.clone(),
             hooks: self.hooks.clone(),
             tools: self.tools.clone(),
+            redactions: self.redactions.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
             task_config: self.task_config.clone(),

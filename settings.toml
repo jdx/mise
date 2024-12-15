@@ -572,6 +572,8 @@ passing `--fuzzy` on the command line.
 env = "MISE_PIPX_UVX"
 type = "Bool"
 description = "Use uvx instead of pipx if uv is installed and on PATH."
+optional = true
+default_docs = "true"
 docs = """
 If true, mise will use `uvx` instead of `pipx` if
 [`uv`](https://docs.astral.sh/uv/) is installed and on PATH.
@@ -640,6 +642,18 @@ type = "String"
 optional = true
 description = "Specify the architecture to use for precompiled binaries."
 default_docs = '"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"'
+
+[python.precompiled_flavor]
+env = "MISE_PYTHON_PRECOMPILED_FLAVOR"
+type = "String"
+optional = true
+default_docs = "install_only_stripped"
+description = "Specify the flavor to use for precompiled binaries."
+docs = """
+Specify the flavor to use for precompiled binaries.
+
+Options are available here: <https://gregoryszorc.com/docs/python-build-standalone/main/running.html>
+"""
 
 [python.precompiled_os]
 env = "MISE_PYTHON_PRECOMPILED_OS"
@@ -841,6 +855,30 @@ node = "https://github.com/my-org/mise-node.git"
 
 """
 
+[silent]
+env = "MISE_SILENT"
+type = "Bool"
+description = "Suppress all `mise run|watch` output except errors—including what tasks output."
+
+[sops.age_key]
+env = "MISE_SOPS_AGE_KEY"
+type = "String"
+optional = true
+description = "The age private key to use for sops secret decryption."
+
+[sops.age_key_file]
+env = "MISE_SOPS_AGE_KEY_FILE"
+type = "Path"
+optional = true
+default_docs = "~/.config/mise/age.key"
+description = "Path to the age private key file to use for sops secret decryption."
+
+[sops.age_recipients]
+env = "MISE_SOPS_AGE_RECIPIENTS"
+type = "String"
+optional = true
+description = "The age public keys to use for sops secret encryption."
+
 [status.missing_tools]
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"
@@ -874,6 +912,13 @@ type = "Bool"
 optional = true
 description = "Use gpg to verify swift tool signatures."
 
+[swift.platform]
+env = "MISE_SWIFT_PLATFORM"
+type = "String"
+optional = true
+description = "Override the platform to use for precompiled binaries."
+default_docs = '"osx" | "windows10" | "ubuntu20.04" | "ubuntu22.04" | "ubuntu24.04" | "amazonlinux2" | "ubi9" | "fedora39"'
+
 [system_config_file]
 env = "MISE_SYSTEM_CONFIG_FILE"
 type = "Path"
@@ -891,6 +936,7 @@ description = "Paths that mise will not look for tasks in."
 [task_output]
 env = "MISE_TASK_OUTPUT"
 type = "String"
+rust_type = "crate::cli::run::TaskOutput"
 optional = true
 description = "Change output style when executing tasks."
 enum = [

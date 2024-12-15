@@ -90,7 +90,7 @@ Install additional components.
 
 ```toml
 [tools]
-"pipx:harlequin" = { extras = "postgres,s3" }
+"pipx:harlequin" = { version = "latest", extras = "postgres,s3" }
 ```
 
 ### `pipx_args`
@@ -99,7 +99,7 @@ Additional arguments to pass to `pipx` when installing the package.
 
 ```toml
 [tools]
-"pipx:black" = { pipx_args = "--preinstall" }
+"pipx:black" = { version = "latest", pipx_args = "--preinstall" }
 ```
 
 ### `uvx_args`
@@ -108,5 +108,5 @@ Additional arguments to pass to `uvx` when installing the package.
 
 ```toml
 [tools]
-"pipx:ansible-core" = { uvx_args = "--with ansible" }
+"pipx:ansible-core" = { version = "latest", uvx_args = "--with ansible" }
 ```

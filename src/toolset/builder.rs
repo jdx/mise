@@ -1,10 +1,9 @@
-use std::collections::BTreeMap;
-
 use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::Config;
+use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
 use crate::{config, env};
@@ -64,11 +63,7 @@ impl ToolsetBuilder {
         Ok(())
     }
 
-    fn load_runtime_env(
-        &self,
-        ts: &mut Toolset,
-        env: BTreeMap<String, String>,
-    ) -> eyre::Result<()> {
+    fn load_runtime_env(&self, ts: &mut Toolset, env: EnvMap) -> eyre::Result<()> {
         for (k, v) in env {
             if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
                 let plugin_name = k

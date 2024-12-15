@@ -1,5 +1,9 @@
-import { defineConfig, type TransfomContext } from "vitepress";
+import { defineConfig } from "vitepress";
 import { Command, commands } from "./cli_commands";
+import {
+  groupIconMdPlugin,
+  groupIconVitePlugin,
+} from "vitepress-plugin-group-icons";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -16,7 +20,7 @@ export default defineConfig({
     outline: "deep",
     nav: [
       { text: "Dev Tools", link: "/dev-tools/" },
-      { text: "Environments", link: "/environments" },
+      { text: "Environments", link: "/environments/" },
       { text: "Tasks", link: "/tasks/" },
     ],
     sidebar: [
@@ -98,6 +102,7 @@ export default defineConfig({
         text: "Environments",
         items: [
           { text: "Environment variables", link: "/environments/" },
+          { text: "Secrets", link: "/environments/secrets" },
           { text: "Hooks", link: "/hooks" },
           { text: "direnv", link: "/direnv" },
         ],
@@ -109,6 +114,7 @@ export default defineConfig({
           { text: "Running Tasks", link: "/tasks/running-tasks" },
           { text: "TOML Tasks", link: "/tasks/toml-tasks" },
           { text: "File Tasks", link: "/tasks/file-tasks" },
+          { text: "Task Configuration", link: "/tasks/task-configuration" },
         ],
       },
       {
@@ -171,9 +177,22 @@ export default defineConfig({
     },
   },
   markdown: {
-    // languages: [
-    //   "elisp"
-    // ]
+    config(md) {
+      md.use(groupIconMdPlugin);
+    },
+  },
+  vite: {
+    plugins: [
+      groupIconVitePlugin({
+        customIcon: {
+          ".toml": "vscode-icons:file-type-toml",
+          brew: "logos:homebrew",
+          python: "logos:python",
+          node: "logos:nodejs",
+          ruby: "logos:ruby",
+        },
+      }),
+    ],
   },
   head: [
     [

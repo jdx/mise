@@ -1,3 +1,5 @@
+#:schema ./schema/mise-task.json
+
 clean = "cargo clean"
 release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"
@@ -33,7 +35,7 @@ run = [
     "mise usage > mise.usage.kdl",
     "mise generate task-docs > tasks.md",
     "rm -rf docs/cli && mkdir -p docs/cli",
-    "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --html-encode --file mise.usage.kdl",
+    "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
     "markdownlint --fix docs/cli",
 ]
 
@@ -118,3 +120,11 @@ run = "mise tasks run docker:mise run test:e2e"
 
 ["test:shuffle"]
 run = "cargo +nightly test --all-features -- -Z unstable-options --shuffle"
+
+[install-dev]
+run = "cargo install --path . --debug"
+
+[xxx]
+hide = true
+run = "echo xxx"
+description = "a task for testing"

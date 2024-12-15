@@ -508,6 +508,10 @@
               "description": "Specify the architecture to use for precompiled binaries.",
               "type": "string"
             },
+            "precompiled_flavor": {
+              "description": "Specify the flavor to use for precompiled binaries.",
+              "type": "string"
+            },
             "precompiled_os": {
               "description": "Specify the OS to use for precompiled binaries.",
               "type": "string"
@@ -650,6 +654,27 @@
           "description": "Path to a file containing custom tool shorthands.",
           "type": "string"
         },
+        "silent": {
+          "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
+          "type": "boolean"
+        },
+        "sops": {
+          "additionalProperties": false,
+          "properties": {
+            "age_key": {
+              "description": "The age private key to use for sops secret decryption.",
+              "type": "string"
+            },
+            "age_key_file": {
+              "description": "Path to the age private key file to use for sops secret decryption.",
+              "type": "string"
+            },
+            "age_recipients": {
+              "description": "The age public keys to use for sops secret encryption.",
+              "type": "string"
+            }
+          }
+        },
         "status": {
           "additionalProperties": false,
           "properties": {
@@ -674,6 +699,10 @@
             "gpg_verify": {
               "description": "Use gpg to verify swift tool signatures.",
               "type": "boolean"
+            },
+            "platform": {
+              "description": "Override the platform to use for precompiled binaries.",
+              "type": "string"
             }
           }
         },
@@ -815,8 +844,40 @@
             "depends": {
               "description": "other tasks to run before this task",
               "items": {
-                "description": "task to run before this task",
-                "type": "string"
+                "oneOf": [
+                  {
+                    "description": "task with args to run before this task",
+                    "type": "string"
+                  },
+                  {
+                    "description": "task with args to run before this task",
+                    "items": {
+                      "description": "task name and args",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "depends_post": {
+              "description": "other tasks to run after this task",
+              "items": {
+                "oneOf": [
+                  {
+                    "description": "task with args to run after this task",
+                    "type": "string"
+                  },
+                  {
+                    "description": "task with args to run after this task",
+                    "items": {
+                      "description": "task name and args",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                ]
               },
               "type": "array"
             },
@@ -931,6 +992,47 @@
     "vars": {
       "description": "variables to set",
       "type": "object",
+      "properties": {
+        "_": {
+          "description": "vars modules",
+          "additionalProperties": true,
+          "properties": {
+            "file": {
+              "oneOf": [
+                {
+                  "description": "dotenv file to load",
+                  "type": "string"
+                },
+                {
+                  "description": "dotenv files to load",
+                  "items": {
+                    "description": "dotenv file to load",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "source": {
+              "oneOf": [
+                {
+                  "description": "bash script to load",
+                  "type": "string"
+                },
+                {
+                  "description": "bash scripts to load",
+                  "items": {
+                    "description": "bash script to load",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
       "additionalProperties": {
         "description": "value of variable",
         "type": "string"

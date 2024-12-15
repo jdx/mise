@@ -12,6 +12,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, SETTINGS};
 use crate::dirs;
+use crate::env_diff::EnvMap;
 use crate::install_context::InstallContext;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::plugins::{Plugin, PluginType};
@@ -23,7 +24,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 pub struct VfoxBackend {
     ba: BackendArg,
     plugin: Box<VfoxPlugin>,
-    exec_env_cache: RwLock<HashMap<String, CacheManager<BTreeMap<String, String>>>>,
+    exec_env_cache: RwLock<HashMap<String, CacheManager<EnvMap>>>,
     pathname: String,
 }
 
@@ -83,12 +84,7 @@ impl Backend for VfoxBackend {
         Ok(env::split_paths(&path).collect())
     }
 
-    fn exec_env(
-        &self,
-        _config: &Config,
-        _ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> eyre::Result<BTreeMap<String, String>> {
+    fn exec_env(&self, _config: &Config, _ts: &Toolset, tv: &ToolVersion) -> eyre::Result<EnvMap> {
         Ok(self
             ._exec_env(tv)?
             .into_iter()

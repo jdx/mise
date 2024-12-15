@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.build]
+run = 'echo build'
+[tasks.all]
+depends = ['build a', 'build b', 'build c']
+EOF
+assert "mise run all | sort" "[build] build a
+[build] build b
+[build] build c"
+
+cat <<EOF >mise.toml
+[tasks.build1]
+run = 'echo build'
+[tasks.build2]
+depends = ['build1 a']
+run = 'echo build'
+[tasks.all]
+depends = ['build1 a', 'build2 b']
+run = "echo all"
+EOF
+assert "mise run all" "build a
+build b
+all"

@@ -10,7 +10,7 @@ use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, SETTINGS};
-use crate::env_diff::{EnvDiff, EnvDiffOperation};
+use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
 use crate::plugins::asdf_plugin::AsdfPlugin;
@@ -136,7 +136,7 @@ impl AsdfBackend {
         };
         Ok(bin_paths)
     }
-    fn fetch_exec_env(&self, ts: &Toolset, tv: &ToolVersion) -> Result<BTreeMap<String, String>> {
+    fn fetch_exec_env(&self, ts: &Toolset, tv: &ToolVersion) -> Result<EnvMap> {
         let mut sm = self.script_man_for_tv(tv)?;
         for p in ts.list_paths() {
             sm.prepend_path(p);
@@ -358,12 +358,7 @@ impl Backend for AsdfBackend {
             .collect())
     }
 
-    fn exec_env(
-        &self,
-        config: &Config,
-        ts: &Toolset,
-        tv: &ToolVersion,
-    ) -> eyre::Result<BTreeMap<String, String>> {
+    fn exec_env(&self, config: &Config, ts: &Toolset, tv: &ToolVersion) -> eyre::Result<EnvMap> {
         if matches!(tv.request, ToolRequest::System { .. }) {
             return Ok(BTreeMap::new());
         }

@@ -63,7 +63,7 @@ impl Shell for Elvish {
         formatdoc! {r#"
             unset-env MISE_SHELL
             unset-env __MISE_DIFF
-            unset-env __MISE_WATCH
+            unset-env __MISE_SESSION
         "#}
     }
 

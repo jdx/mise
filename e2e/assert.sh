@@ -99,6 +99,16 @@ assert_matches() {
   fi
 }
 
+assert_empty() {
+  local actual
+  actual="$(quiet_assert_succeed "$1")"
+  if [[ -z "$actual" ]]; then
+    ok "[$1] output is empty"
+  else
+    fail "[$1] expected empty output but got '$actual'"
+  fi
+}
+
 require_cmd() {
   if ! type -p "$1" >/dev/null; then
     title="E2E test $TEST_NAME aborted" err "'$1' is required but was not found in PATH"
