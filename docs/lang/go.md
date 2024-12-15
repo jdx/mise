@@ -76,6 +76,14 @@ Sets `GOPATH` to `~/.local/share/mise/go/installs/[VERSION]/packages`. This reta
 asdf and older mise versions. There is no known reason for this to be enabled but it is available
 (for now) just in case anyone relies on it.
 
+### `go_set_goroot`
+
+- Type: `bool`
+- Env: `MISE_GO_SET_GOROOT`
+- Default: `true`
+
+Sets `GOROOT` to `~/.local/share/mise/installs/go/[VERSION]`
+
 ### `go_skip_checksum`
 
 - Type: `bool`
