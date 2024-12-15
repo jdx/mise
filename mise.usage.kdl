@@ -38,6 +38,9 @@ flag "--raw" help="Read/write directly to stdin/stdout/stderr instead of by line
 flag "--timings" help="Shows elapsed time after each task completes" hide=true {
     long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
 }
+flag "--no-config" help="Do not load any config files" {
+    long_help "Do not load any config files\n\nCan also use `MISE_NO_CONFIG=1`"
+}
 flag "--no-timings" help="Hides elapsed time after each task completes" hide=true {
     long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
 }

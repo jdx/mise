@@ -822,6 +822,9 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
 }
 
 pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> Vec<PathBuf> {
+    if Settings::no_config() {
+        return vec![];
+    }
     let dirs = file::all_dirs().unwrap_or_default();
 
     let mut config_files = dirs
