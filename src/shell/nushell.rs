@@ -77,7 +77,11 @@ impl Shell for Nushell {
           def --env "update-env" [] {{
             for $var in $in {{
               if $var.op == "set" {{
-                load-env {{($var.name): $var.value}}
+                if $var.name == 'PATH' {{
+                  $env.PATH = ($var.value | split row (char esep))
+                }} else {{
+                  load-env {{($var.name): $var.value}}
+                }}
               }} else if $var.op == "hide" {{
                 hide-env $var.name
               }}
