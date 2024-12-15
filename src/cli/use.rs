@@ -256,7 +256,7 @@ impl Use {
             .description("Select a tasks to run")
             .filtering(true)
             .filterable(true);
-        for rt in REGISTRY.values() {
+        for rt in REGISTRY.values().unique_by(|r| r.short) {
             if let Some(backend) = rt.backends().first() {
                 // TODO: populate registry with descriptions from aqua and other sources
                 // TODO: use the backend from the lockfile if available

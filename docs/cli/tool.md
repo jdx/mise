@@ -21,6 +21,10 @@ Output in JSON format
 
 Only show backend field
 
+### `--description`
+
+Only show description field
+
 ### `--installed`
 
 Only show installed versions

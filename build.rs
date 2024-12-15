@@ -107,7 +107,7 @@ fn codegen_registry() {
         let rt = format!(
             r#"RegistryTool{{short: "{short}", description: {description}, backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
             description = description
-                .map(|d| format!("Some(\"{}\")", d))
+                .map(|d| format!("Some(r###\"{}\"###)", d))
                 .unwrap_or("None".to_string()),
             backends = fulls.join("\", \""),
             aliases = aliases

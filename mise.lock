@@ -39,6 +39,10 @@ backend = "cargo:cargo-show"
 version = "2.7.0"
 backend = "cargo:git-cliff"
 
+[tools."cargo:toml-cli"]
+version = "0.2.3"
+backend = "cargo:toml-cli"
+
 [tools."cargo:usage-cli"]
 version = "1.6.0"
 backend = "cargo:usage-cli"
