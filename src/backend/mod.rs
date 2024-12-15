@@ -293,11 +293,7 @@ pub trait Backend: Debug + Send + Sync {
             _ => None,
         }
     }
-    fn create_symlink(
-        &self,
-        version: &str,
-        target: &Path,
-    ) -> Result<Option<(PathBuf, PathBuf)>> {
+    fn create_symlink(&self, version: &str, target: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
         let link = self.ba().installs_path.join(version);
         if link.exists() {
             return Ok(None);

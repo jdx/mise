@@ -38,10 +38,10 @@ impl SyncNode {
     pub fn run(self) -> Result<()> {
         if self._type.brew {
             self.run_brew()?;
-        } 
+        }
         if self._type.nvm {
             self.run_nvm()?;
-        } 
+        }
         if self._type.nodenv {
             self.run_nodenv()?;
         }
@@ -120,7 +120,10 @@ impl SyncNode {
             if v.starts_with(".") {
                 continue;
             }
-            if node.create_symlink(&v, &nodenv_versions_path.join(&v))?.is_some() {
+            if node
+                .create_symlink(&v, &nodenv_versions_path.join(&v))?
+                .is_some()
+            {
                 miseprintln!("Synced node@{} from nodenv", v);
             }
         }

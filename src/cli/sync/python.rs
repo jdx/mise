@@ -1,6 +1,6 @@
-use std::env::consts::{ARCH, OS};
 use eyre::Result;
 use itertools::sorted;
+use std::env::consts::{ARCH, OS};
 
 use crate::env::PYENV_ROOT;
 use crate::{backend, config, dirs, env, file};
@@ -8,7 +8,7 @@ use crate::{backend, config, dirs, env, file};
 /// Symlinks all tool versions from an external tool into mise
 ///
 /// For example, use this to import all pyenv installs into mise
-/// 
+///
 /// This won't overwrite any existing installs but will overwrite any existing symlinks
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
@@ -16,7 +16,7 @@ pub struct SyncPython {
     /// Get tool versions from pyenv
     #[clap(long)]
     pyenv: bool,
-    
+
     /// Sync tool versions with uv (2-way sync)
     #[clap(long)]
     uv: bool,
@@ -32,7 +32,7 @@ impl SyncPython {
         }
         config::rebuild_shims_and_runtime_symlinks(&[])
     }
-    
+
     fn pyenv(&self) -> Result<()> {
         let python = backend::get(&"python".into()).unwrap();
 
@@ -54,17 +54,17 @@ impl SyncPython {
         }
         Ok(())
     }
-    
+
     fn uv(&self) -> Result<()> {
         let python = backend::get(&"python".into()).unwrap();
         let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
         let installed_python_versions_path = dirs::INSTALLS.join("python");
-        
+
         file::remove_symlinks_with_target_prefix(
             &installed_python_versions_path,
             uv_versions_path,
         )?;
-        
+
         let subdirs = file::dir_subdirs(uv_versions_path)?;
         for name in sorted(subdirs) {
             if name.starts_with(".") {
@@ -72,11 +72,14 @@ impl SyncPython {
             }
             // name is like cpython-3.13.1-macos-aarch64-none
             let v = name.split('-').nth(1).unwrap();
-            if python.create_symlink(v, &uv_versions_path.join(&name))?.is_some() {
+            if python
+                .create_symlink(v, &uv_versions_path.join(&name))?
+                .is_some()
+            {
                 miseprintln!("Synced python@{v} from uv to mise");
             }
         }
-        
+
         let subdirs = file::dir_subdirs(&installed_python_versions_path)?;
         for v in sorted(subdirs) {
             if v.starts_with(".") {
