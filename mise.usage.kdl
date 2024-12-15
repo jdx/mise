@@ -1441,6 +1441,7 @@ cmd "tool" help="Gets information about a tool" {
 "
     flag "-J --json" help="Output in JSON format"
     flag "--backend" help="Only show backend field"
+    flag "--description" help="Only show description field"
     flag "--installed" help="Only show installed versions"
     flag "--active" help="Only show active versions"
     flag "--requested" help="Only show requested versions"

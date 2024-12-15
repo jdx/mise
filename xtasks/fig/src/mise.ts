@@ -2747,6 +2747,13 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
+                        "--description"
+                    ],
+                    "description": "Only show description field",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
                         "--installed"
                     ],
                     "description": "Only show installed versions",

@@ -27,7 +27,7 @@ pub struct ToolInfoFilter {
     /// Only show backend field
     #[clap(long)]
     backend_: bool,
-    
+
     /// Only show description field
     #[clap(long)]
     description: bool,
