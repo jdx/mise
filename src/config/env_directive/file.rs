@@ -1,7 +1,7 @@
 use crate::config::env_directive::EnvResults;
 use crate::file::display_path;
 use crate::{file, sops, Result};
-use eyre::{eyre, WrapErr};
+use eyre::{bail, eyre, WrapErr};
 use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, YamlFileFormat};
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ struct Env<V> {
     #[serde(default)]
     sops: IndexMap<String, V>,
     #[serde(flatten)]
-    env: EnvMap,
+    env: IndexMap<String, V>,
 }
 
 impl EnvResults {
@@ -38,6 +38,7 @@ impl EnvResults {
             let new_vars = match ext.as_str() {
                 "json" => Self::json(&p, parse_template)?,
                 "yaml" => Self::yaml(&p, parse_template)?,
+                "toml" => unimplemented!("toml"),
                 _ => Self::dotenv(&p)?,
             };
             for (k, v) in new_vars {
@@ -59,7 +60,20 @@ impl EnvResults {
                 let raw = sops::decrypt::<_, JsonFileFormat>(&raw, parse_template)?;
                 f = serde_json::from_str(&raw).wrap_err_with(errfn)?;
             }
-            Ok(f.env)
+            f.env
+                .into_iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k,
+                        match v {
+                            serde_json::Value::String(s) => s,
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            _ => bail!("unsupported json value: {v:?}"),
+                        },
+                    ))
+                })
+                .collect()
         } else {
             Ok(EnvMap::new())
         }
@@ -76,7 +90,20 @@ impl EnvResults {
                 let raw = sops::decrypt::<_, YamlFileFormat>(&raw, parse_template)?;
                 f = serde_yaml::from_str(&raw).wrap_err_with(errfn)?;
             }
-            Ok(f.env)
+            f.env
+                .into_iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k,
+                        match v {
+                            serde_yaml::Value::String(s) => s,
+                            serde_yaml::Value::Number(n) => n.to_string(),
+                            serde_yaml::Value::Bool(b) => b.to_string(),
+                            _ => bail!("unsupported yaml value: {v:?}"),
+                        },
+                    ))
+                })
+                .collect()
         } else {
             Ok(EnvMap::new())
         }

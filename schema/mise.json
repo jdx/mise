@@ -992,6 +992,47 @@
     "vars": {
       "description": "variables to set",
       "type": "object",
+      "properties": {
+        "_": {
+          "description": "vars modules",
+          "additionalProperties": true,
+          "properties": {
+            "file": {
+              "oneOf": [
+                {
+                  "description": "dotenv file to load",
+                  "type": "string"
+                },
+                {
+                  "description": "dotenv files to load",
+                  "items": {
+                    "description": "dotenv file to load",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "source": {
+              "oneOf": [
+                {
+                  "description": "bash script to load",
+                  "type": "string"
+                },
+                {
+                  "description": "bash scripts to load",
+                  "items": {
+                    "description": "bash script to load",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
       "additionalProperties": {
         "description": "value of variable",
         "type": "string"
