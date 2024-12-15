@@ -1,5 +1,5 @@
 use crate::cli::args::{ENV_ARG, PROFILE_ARG};
-use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches};
+use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -157,7 +157,7 @@ pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORI
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
-pub static PRISTINE_ENV: Lazy<HashMap<String, String>> =
+pub static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
 pub static PATH_KEY: Lazy<String> = Lazy::new(|| {
     vars()
@@ -348,10 +348,7 @@ pub fn var_path(key: &str) -> Option<PathBuf> {
 
 /// this returns the environment as if __MISE_DIFF was reversed.
 /// putting the shell back into a state before hook-env was run
-fn get_pristine_env(
-    mise_diff: &EnvDiff,
-    orig_env: HashMap<String, String>,
-) -> HashMap<String, String> {
+fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
     let patches = mise_diff.reverse().to_patches();
     let mut env = apply_patches(&orig_env, &patches);
 
@@ -377,10 +374,7 @@ fn get_pristine_env(
     env
 }
 
-fn apply_patches(
-    env: &HashMap<String, String>,
-    patches: &EnvDiffPatches,
-) -> HashMap<String, String> {
+fn apply_patches(env: &EnvMap, patches: &EnvDiffPatches) -> EnvMap {
     let mut new_env = env.clone();
     for patch in patches {
         match patch {
@@ -471,7 +465,7 @@ mod tests {
 
     #[test]
     fn test_apply_patches() {
-        let mut env = HashMap::new();
+        let mut env = EnvMap::new();
         env.insert("foo".into(), "bar".into());
         env.insert("baz".into(), "qux".into());
         let patches = vec![

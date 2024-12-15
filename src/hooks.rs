@@ -58,7 +58,7 @@ static ALL_HOOKS: Lazy<Vec<(PathBuf, Hook)>> = Lazy::new(|| {
     let config = Config::get();
     let mut hooks = config.hooks().cloned().unwrap_or_default();
     let cur_configs = config.config_files.keys().cloned().collect::<IndexSet<_>>();
-    let prev_configs = &hook_env::CUR_SESSION.loaded_configs;
+    let prev_configs = &hook_env::PREV_SESSION.loaded_configs;
     let old_configs = prev_configs.difference(&cur_configs);
     for p in old_configs {
         if let Ok(cf) = config_file::parse(p) {

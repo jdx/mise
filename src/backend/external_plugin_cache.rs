@@ -2,18 +2,19 @@ use crate::backend::asdf::AsdfBackend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Config;
 use crate::dirs;
+use crate::env_diff::EnvMap;
 use crate::hash::hash_to_str;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolRequest, ToolVersion};
 use eyre::{eyre, WrapErr};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::env;
 use std::sync::RwLock;
 
 #[derive(Debug, Default)]
 pub struct ExternalPluginCache {
     list_bin_paths: RwLock<HashMap<ToolRequest, CacheManager<Vec<String>>>>,
-    exec_env: RwLock<HashMap<ToolRequest, CacheManager<BTreeMap<String, String>>>>,
+    exec_env: RwLock<HashMap<ToolRequest, CacheManager<EnvMap>>>,
 }
 
 impl ExternalPluginCache {
@@ -51,9 +52,9 @@ impl ExternalPluginCache {
         plugin: &AsdfBackend,
         tv: &ToolVersion,
         fetch: F,
-    ) -> eyre::Result<BTreeMap<String, String>>
+    ) -> eyre::Result<EnvMap>
     where
-        F: FnOnce() -> eyre::Result<BTreeMap<String, String>>,
+        F: FnOnce() -> eyre::Result<EnvMap>,
     {
         let mut w = self.exec_env.write().unwrap();
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {

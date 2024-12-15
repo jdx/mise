@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::fmt::Debug;
 use std::io::prelude::*;
@@ -32,9 +32,10 @@ pub enum EnvDiffOperation {
 }
 
 pub type EnvDiffPatches = Vec<EnvDiffOperation>;
+pub type EnvMap = BTreeMap<String, String>;
 
 impl EnvDiff {
-    pub fn new<T>(original: &HashMap<String, String>, additions: T) -> EnvDiff
+    pub fn new<T>(original: &EnvMap, additions: T) -> EnvDiff
     where
         T: IntoIterator<Item = (String, String)>,
     {
@@ -78,12 +79,12 @@ impl EnvDiff {
         .dir(dir)
         .full_env(&env)
         .read()?;
-        let env: HashMap<String, String> = env
+        let env: EnvMap = env
             .into_iter()
             .map(|(k, v)| (k.into_string().unwrap(), v.into_string().unwrap()))
             .collect();
 
-        let mut additions = HashMap::new();
+        let mut additions = EnvMap::new();
         let mut cur_key = None;
         for line in out.lines() {
             match line.strip_prefix("declare -x ") {
@@ -300,12 +301,16 @@ mod tests {
         "#);
     }
 
-    fn new_from_hashmap() -> HashMap<String, String> {
-        HashMap::from([("a", "1"), ("b", "2")].map(|(k, v)| (k.into(), v.into())))
+    fn new_from_hashmap() -> EnvMap {
+        [("a", "1"), ("b", "2")]
+            .map(|(k, v)| (k.into(), v.into()))
+            .into()
     }
 
-    fn new_to_hashmap() -> HashMap<String, String> {
-        HashMap::from([("a", "1"), ("b", "3"), ("c", "4")].map(|(k, v)| (k.into(), v.into())))
+    fn new_to_hashmap() -> EnvMap {
+        [("a", "1"), ("b", "3"), ("c", "4")]
+            .map(|(k, v)| (k.into(), v.into()))
+            .into()
     }
 
     #[test]
