@@ -239,6 +239,9 @@ export const commands: { [key: string]: Command } = {
       python: {
         hide: false,
       },
+      ruby: {
+        hide: false,
+      },
     },
   },
   tasks: {

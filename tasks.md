@@ -270,6 +270,10 @@ run end-to-end tests
 
 run unit tests
 
+## `update-descriptions`
+
+- **Usage**: `update-descriptions`
+
 ## `xxx`
 
 - **Usage**: `xxx`

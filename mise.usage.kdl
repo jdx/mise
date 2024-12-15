@@ -1199,11 +1199,13 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
     flag "-u --unset" help="Removes a previously set version"
     arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
 }
-cmd "sync" subcommand_required=true help="Add tool versions from external tools to mise" {
+cmd "sync" subcommand_required=true help="Synchronize tools from other version managers with mise" {
     cmd "node" help="Symlinks all tool versions from an external tool into mise" {
         long_help r"Symlinks all tool versions from an external tool into mise
 
-For example, use this to import all Homebrew node installs into mise"
+For example, use this to import all Homebrew node installs into mise
+
+This won't overwrite any existing installs but will overwrite any existing symlinks"
         after_long_help r"Examples:
 
     $ brew install node@18 node@20
@@ -1217,14 +1219,32 @@ For example, use this to import all Homebrew node installs into mise"
     cmd "python" help="Symlinks all tool versions from an external tool into mise" {
         long_help r"Symlinks all tool versions from an external tool into mise
 
-For example, use this to import all pyenv installs into mise"
+For example, use this to import all pyenv installs into mise
+
+This won't overwrite any existing installs but will overwrite any existing symlinks"
         after_long_help r"Examples:
 
     $ pyenv install 3.11.0
     $ mise sync python --pyenv
     $ mise use -g python@3.11.0 - uses pyenv-provided python
+    
+    $ uv python install 3.11.0
+    $ mise install python@3.10.0
+    $ mise sync python --uv
+    $ mise x python@3.11.0 -- python -V - uses uv-provided python
+    $ uv run -p 3.10.0 -- python -V - uses mise-provided python
 "
-        flag "--pyenv" help="Get tool versions from pyenv" required=true
+        flag "--pyenv" help="Get tool versions from pyenv"
+        flag "--uv" help="Sync tool versions with uv (2-way sync)"
+    }
+    cmd "ruby" help="Symlinks all ruby tool versions from an external tool into mise" {
+        after_long_help r"Examples:
+
+    $ brew install ruby
+    $ mise sync ruby --brew
+    $ mise use -g ruby - Use the latest version of Ruby installed by Homebrew
+"
+        flag "--brew" help="Get tool versions from Homebrew"
     }
 }
 cmd "tasks" help="Manage tasks" {
@@ -1441,6 +1461,7 @@ cmd "tool" help="Gets information about a tool" {
 "
     flag "-J --json" help="Output in JSON format"
     flag "--backend" help="Only show backend field"
+    flag "--description" help="Only show description field"
     flag "--installed" help="Only show installed versions"
     flag "--active" help="Only show active versions"
     flag "--requested" help="Only show requested versions"
@@ -1573,6 +1594,9 @@ In the following order:
 
 Use the `--global` flag to use the global config file instead."#
     after_long_help r"Examples:
+    
+    # run with no arguments to use the interactive selector
+    $ mise use
 
     # set the current version of node to 20.x in mise.toml of current directory
     # will write the fuzzy version (e.g.: 20)

@@ -46,15 +46,11 @@ impl HookEnv {
         let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;
         let mut env = ts.env(&config)?;
-        let env_path = env.remove(&*PATH_KEY);
+        env.remove(&*PATH_KEY);
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, env);
         let mut patches = diff.to_patches();
 
-        let mut paths = config.path_dirs()?.clone();
-        if let Some(p) = env_path {
-            paths.extend(split_paths(&p).collect_vec());
-        }
-        paths.extend(ts.list_paths()); // load the active runtime paths
+        let paths = ts.list_final_paths()?;
         diff.path.clone_from(&paths); // update __MISE_DIFF with the new paths for the next run
 
         let settings = Settings::try_get()?;

@@ -12,6 +12,7 @@ cargo-binstall = "1.10.15"
 "cargo:cargo-insta" = "latest"
 "cargo:cargo-show" = { version = "latest", os = ["linux", "macos"] }
 "cargo:git-cliff" = "latest"
+"cargo:toml-cli" = "latest"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
 cosign = "latest"
 "jq" = "latest"

@@ -152,7 +152,7 @@ impl Ls {
                 },
             })
             .collect::<Vec<_>>();
-        let mut table = MiseTable::new(self.no_header, &["Path", "Tools"]);
+        let mut table = MiseTable::new(self.no_header, &["Tool", "Version", "Source", "Requested"]);
         for r in rows {
             let row = vec![
                 r.display_tool(),

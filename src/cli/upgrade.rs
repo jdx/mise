@@ -7,8 +7,9 @@ use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{config, ui};
+use console::Term;
 use demand::DemandOption;
-use eyre::{Context, Result};
+use eyre::{eyre, Context, Result};
 
 /// Upgrades outdated tools
 ///
@@ -186,7 +187,13 @@ impl Upgrade {
         for out in outdated {
             ms = ms.option(DemandOption::new(out.clone()));
         }
-        Ok(ms.run()?.into_iter().collect())
+        match ms.run() {
+            Ok(selected) => Ok(selected.into_iter().collect()),
+            Err(e) => {
+                Term::stderr().show_cursor()?;
+                Err(eyre!(e))
+            }
+        }
     }
 }
 

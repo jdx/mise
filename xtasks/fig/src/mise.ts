@@ -2298,7 +2298,7 @@ const completionSpec: Fig.Spec = {
             "name": [
                 "sync"
             ],
-            "description": "Add tool versions from external tools to mise",
+            "description": "Synchronize tools from other version managers with mise",
             "subcommands": [
                 {
                     "name": [
@@ -2340,6 +2340,28 @@ const completionSpec: Fig.Spec = {
                                 "--pyenv"
                             ],
                             "description": "Get tool versions from pyenv",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "--uv"
+                            ],
+                            "description": "Sync tool versions with uv (2-way sync)",
+                            "isRepeatable": false
+                        }
+                    ]
+                },
+                {
+                    "name": [
+                        "ruby"
+                    ],
+                    "description": "Symlinks all ruby tool versions from an external tool into mise",
+                    "options": [
+                        {
+                            "name": [
+                                "--brew"
+                            ],
+                            "description": "Get tool versions from Homebrew",
                             "isRepeatable": false
                         }
                     ]
@@ -2743,6 +2765,13 @@ const completionSpec: Fig.Spec = {
                         "--backend"
                     ],
                     "description": "Only show backend field",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--description"
+                    ],
+                    "description": "Only show description field",
                     "isRepeatable": false
                 },
                 {
