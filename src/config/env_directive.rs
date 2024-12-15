@@ -8,6 +8,7 @@ use heck::ToKebabCase;
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
 
+use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::{config_root, trust_check};
 use crate::config::{Config, SETTINGS};
@@ -17,7 +18,7 @@ use crate::file::{display_path, which_non_pristine};
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::ToolsetBuilder;
-use crate::{dirs, env};
+use crate::{backend, dirs, env};
 
 #[derive(Debug, Clone)]
 pub enum PathEntry {
@@ -290,11 +291,27 @@ impl EnvResults {
                             .into_iter()
                             .chain(env::split_paths(&env_vars[&*PATH_KEY]))
                             .collect::<Vec<_>>();
-                        let missing = ts
-                            .list_missing_versions()
-                            .iter()
-                            .any(|tv| tv.ba().tool_name == "python");
-                        if missing {
+                        let ba = BackendArg::from("python");
+                        let installed = ts
+                            .versions
+                            .get(&ba)
+                            .and_then(|tv| {
+                                // if a python version is specified, check if that version is installed
+                                // otherwise use the first since that's what `python3` will refer to
+                                if let Some(v) = &python {
+                                    tv.versions.iter().find(|t| t.version.starts_with(v))
+                                } else {
+                                    tv.versions.first()
+                                }
+                            })
+                            .map(|tv| {
+                                let backend = backend::get(&ba).unwrap();
+                                backend.is_version_installed(tv, false)
+                            })
+                            // if no version is specified, we're assuming python3 is provided outside of mise
+                            // so return "true" here
+                            .unwrap_or(true);
+                        if !installed {
                             warn!(
                                 "no venv found at: {p}\n\n\
                                 mise will automatically create the venv once all requested python versions are installed.\n\
