@@ -679,6 +679,10 @@
         "swift": {
           "additionalProperties": false,
           "properties": {
+            "platform": {
+              "description": "Override the platform to use for precompiled binaries.",
+              "type": "string"
+            },
             "gpg_verify": {
               "description": "Use gpg to verify swift tool signatures.",
               "type": "boolean"
