@@ -97,6 +97,7 @@ rayon = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "zstd"] }
 rmp-serde = "1"
+rops = {version="0.1", default-features = false, features = ["aes-gcm", "sha2", "yaml", "json", "age"]}
 serde = "1"
 serde_derive = "1"
 serde_ignored = "0.1"

@@ -572,6 +572,8 @@ passing `--fuzzy` on the command line.
 env = "MISE_PIPX_UVX"
 type = "Bool"
 description = "Use uvx instead of pipx if uv is installed and on PATH."
+optional = true
+default_docs = "true"
 docs = """
 If true, mise will use `uvx` instead of `pipx` if
 [`uv`](https://docs.astral.sh/uv/) is installed and on PATH.
@@ -855,6 +857,25 @@ node = "https://github.com/my-org/mise-node.git"
 env = "MISE_SILENT"
 type = "Bool"
 description = "Suppress all `mise run|watch` output except errors—including what tasks output."
+
+[sops.age_key]
+env = "MISE_SOPS_AGE_KEY"
+type = "String"
+optional = true
+description = "The age private key to use for sops secret decryption."
+
+[sops.age_key_file]
+env = "MISE_SOPS_AGE_KEY_FILE"
+type = "Path"
+optional = true
+default_docs = "~/.config/mise/age.key"
+description = "Path to the age private key file to use for sops secret decryption."
+
+[sops.age_recipients]
+env = "MISE_SOPS_AGE_RECIPIENTS"
+type = "String"
+optional = true
+description = "The age public keys to use for sops secret encryption."
 
 [status.missing_tools]
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"

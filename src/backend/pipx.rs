@@ -87,7 +87,7 @@ impl Backend for PIPXBackend {
             .parse::<PipxRequest>()?
             .pipx_request(&tv.version, &tv.request.options());
 
-        if SETTINGS.pipx.uvx {
+        if self.uv_is_installed() && SETTINGS.pipx.uvx != Some(false) {
             ctx.pr
                 .set_message(format!("uv tool install {pipx_request}"));
             let mut cmd = Self::uvx_cmd(
@@ -141,7 +141,7 @@ impl PIPXBackend {
             .into_iter()
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
             .collect_vec();
-        if SETTINGS.pipx.uvx {
+        if SETTINGS.pipx.uvx != Some(false) {
             let pr = MultiProgressReport::get().add("reinstalling pipx tools with uvx");
             for (b, tv) in pipx_tools {
                 for (cmd, tool) in &[
@@ -202,6 +202,10 @@ impl PIPXBackend {
             .prepend_path(ts.list_paths())?
             .prepend_path(vec![tv.install_path().join("bin")])?
             .prepend_path(b.dependency_toolset()?.list_paths())
+    }
+
+    fn uv_is_installed(&self) -> bool {
+        self.dependency_which("uv").is_some()
     }
 }
 
