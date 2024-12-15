@@ -1,3 +1,4 @@
+use crate::config::Settings;
 use std::borrow::Cow;
 use std::fmt::Display;
 
@@ -20,7 +21,7 @@ impl Shell for Pwsh {
             $env:__MISE_ORIG_PATH = $env:PATH
 
             function mise {{
-
+                # Read line directly from input to workaround powershell input parsing for functions
                 $code = [System.Management.Automation.Language.Parser]::ParseInput($MyInvocation.Statement.Substring($MyInvocation.OffsetInLine - 1), [ref]$null, [ref]$null)
                 $myLine = $code.Find({{ $args[0].CommandElements }}, $true).CommandElements | ForEach-Object {{ $_.ToString() }} | Join-String -Separator ' '
                 $command, [array]$arguments = Invoke-Expression ('Write-Output -- ' + $myLine)
@@ -52,7 +53,8 @@ impl Shell for Pwsh {
                         if ($(Test-Path -Path Function:\_mise_hook)){{
                             _mise_hook
                         }}
-                        pwsh -NoProfile -Command exit $status #Pass down exit code from mise after _mise_hook
+                        # Pass down exit code from mise after _mise_hook
+                        pwsh -NoProfile -Command exit $status 
                     }}
                 }}
             }}
@@ -61,40 +63,81 @@ impl Shell for Pwsh {
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
 
-            function _mise_hook {{
+            function Global:_mise_hook {{
                 if ($env:MISE_SHELL -eq "pwsh"){{
-                    & {exe} hook-env{flags} -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                    & {exe} hook-env{flags} $args -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
                 }}
             }}
 
-            if (-not $__mise_pwsh_previous_chpwd_function){{
-                $_mise_chpwd_hook = [EventHandler[System.Management.Automation.LocationChangedEventArgs]] {{
-                    param([object] $source, [System.Management.Automation.LocationChangedEventArgs] $eventArgs)
-                    end {{
-                        _mise_hook
+            function __enable_mise_chpwd{{
+                if (-not $__mise_pwsh_chpwd){{
+                    $Global:__mise_pwsh_chpwd= $true
+                    $_mise_chpwd_hook = [EventHandler[System.Management.Automation.LocationChangedEventArgs]] {{
+                        param([object] $source, [System.Management.Automation.LocationChangedEventArgs] $eventArgs)
+                        end {{
+                            _mise_hook
+                        }}
+                    }};
+                    $__mise_pwsh_previous_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
+
+                    if ($__mise_original_pwsh_chpwd_function) {{
+                        $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = [Delegate]::Combine($__mise_pwsh_previous_chpwd_function, $_mise_chpwd_hook)
                     }}
-                }};
-                $Global:__mise_pwsh_previous_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
-
-                if ($__mise_original_pwsh_chpwd_function) {{
-                    $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = [Delegate]::Combine($__mise_pwsh_previous_chpwd_function, $_mise_chpwd_hook)
-                }}
-                else {{
-                    $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = $_mise_chpwd_hook
-                }}
-            }}
-
-            if (-not $__mise_pwsh_previous_prompt_function){{
-                $global:__mise_pwsh_previous_prompt_function=$function:prompt
-                function global:prompt {{
-                    if (Test-Path -Path Function:\_mise_hook){{
-                        _mise_hook
+                    else {{
+                        $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = $_mise_chpwd_hook
                     }}
-                    & $__mise_pwsh_previous_prompt_function
                 }}
             }}
+            __enable_mise_chpwd
+            Remove-Item -Path Function:/__enable_mise_chpwd
+
+            function __enable_mise_prompt {{
+                if (-not $__mise_pwsh_previous_prompt_function){{
+                    $Global:__mise_pwsh_previous_prompt_function=$function:prompt
+                    function global:prompt {{
+                        if (Test-Path -Path Function:\_mise_hook){{
+                            _mise_hook
+                        }}
+                        & $__mise_pwsh_previous_prompt_function
+                    }}
+                }}
+            }}
+            __enable_mise_prompt
+            Remove-Item -Path Function:/__enable_mise_prompt
 
             _mise_hook
+            "#});
+        }
+        if Settings::get().not_found_auto_install {
+            out.push_str(&formatdoc! {r#"
+            if (-not $__mise_pwsh_command_not_found){{
+                $Global:__mise_pwsh_command_not_found= $true
+                function __enable_mise_command_not_found {{
+                    $_mise_pwsh_cmd_not_found_hook = [EventHandler[System.Management.Automation.CommandLookupEventArgs]] {{
+                        param([object] $Name, [System.Management.Automation.CommandLookupEventArgs] $eventArgs)
+                        end {{
+                            if ([Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems()[-1].CommandLine -match ([regex]::Escape($Name))) {{
+                                if (& {exe} hook-not-found -s pwsh -- $Name){{
+                                    _mise_hook
+                                    if (Get-Command $Name -ErrorAction SilentlyContinue){{
+                                        $EventArgs.Command = Get-Command $Name
+                                        $EventArgs.StopSearch = $true
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                    $current_command_not_found_function = $ExecutionContext.SessionState.InvokeCommand.CommandNotFoundAction
+                    if ($current_command_not_found_function) {{
+                        $ExecutionContext.SessionState.InvokeCommand.CommandNotFoundAction = [Delegate]::Combine($current_command_not_found_function, $_mise_pwsh_cmd_not_found_hook)
+                    }}
+                    else {{
+                        $ExecutionContext.SessionState.InvokeCommand.CommandNotFoundAction = $_mise_pwsh_cmd_not_found_hook
+                    }}
+                }}
+                __enable_mise_command_not_found
+                Remove-Item -Path Function:/__enable_mise_command_not_found
+            }}
             "#});
         }
         out
