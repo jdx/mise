@@ -860,11 +860,15 @@ fn prompt_for_task() -> Result<Task> {
         url = style::eunderline("https://mise.jdx.dev/tasks/")
     );
     let mut s = Select::new("Tasks")
-        .description("Select a tasks to run")
+        .description("Select a task to run")
         .filtering(true)
         .filterable(true);
     for t in tasks.values().filter(|t| !t.hide) {
-        s = s.option(DemandOption::new(&t.name).description(&t.description));
+        s = s.option(
+            DemandOption::new(&t.name)
+                .label(&t.display_name())
+                .description(&t.description),
+        );
     }
     ctrlc::show_cursor_after_ctrl_c();
     match s.run() {
