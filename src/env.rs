@@ -212,6 +212,9 @@ pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
+pub static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("UV_PYTHON_INSTALL_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("uv").join("python"))
+});
 
 // node
 pub static MISE_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {

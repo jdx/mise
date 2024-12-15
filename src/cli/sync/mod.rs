@@ -5,7 +5,7 @@ mod node;
 mod python;
 
 #[derive(Debug, clap::Args)]
-#[clap(about = "Add tool versions from external tools to mise")]
+#[clap(about = "Synchronize tools from other version managers with mise")]
 pub struct Sync {
     #[clap(subcommand)]
     command: Commands,

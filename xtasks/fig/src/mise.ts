@@ -2298,7 +2298,7 @@ const completionSpec: Fig.Spec = {
             "name": [
                 "sync"
             ],
-            "description": "Add tool versions from external tools to mise",
+            "description": "Synchronize tools from other version managers with mise",
             "subcommands": [
                 {
                     "name": [
@@ -2340,6 +2340,13 @@ const completionSpec: Fig.Spec = {
                                 "--pyenv"
                             ],
                             "description": "Get tool versions from pyenv",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "--uv"
+                            ],
+                            "description": "Sync tool versions with uv (2-way sync)",
                             "isRepeatable": false
                         }
                     ]
