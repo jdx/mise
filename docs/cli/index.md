@@ -52,6 +52,8 @@ Show extra output (use -vv for even more)
 
 Do not load any config files
 
+Can also use `MISE_NO_CONFIG=1`
+
 ## Subcommands
 
 - [`mise activate [FLAGS] [SHELL_TYPE]`](/cli/activate.md)
