@@ -74,4 +74,4 @@ export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
-<Settings child="sops" :level="3" />
+<Settings child="sops" :level="4" />

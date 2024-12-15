@@ -650,6 +650,8 @@ optional = true
 default_docs = "install_only_stripped"
 description = "Specify the flavor to use for precompiled binaries."
 docs = """
+Specify the flavor to use for precompiled binaries.
+
 Options are available here: <https://gregoryszorc.com/docs/python-build-standalone/main/running.html>
 """
 
