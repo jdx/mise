@@ -10,6 +10,7 @@ use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
+use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::file::display_path;
 use crate::http::HTTP;
@@ -325,7 +326,7 @@ impl Run {
             .filter(|(_, v)| v.0 == Either::Right(EitherIntOrBool(Either::Right(false))))
             .map(|(k, _)| k)
             .collect::<HashSet<_>>();
-        let env: BTreeMap<String, String> = env
+        let env: EnvMap = env
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .chain(string_env)

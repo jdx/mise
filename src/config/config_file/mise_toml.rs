@@ -190,14 +190,23 @@ impl MiseToml {
     }
 
     pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) -> eyre::Result<()> {
-        let env_tbl = self
+        let mut env_tbl = self
             .doc_mut()?
             .entry("env")
             .or_insert_with(table)
             .as_table_mut()
             .unwrap();
-        let key = get_key_with_decor(env_tbl, key);
-        env_tbl.insert_formatted(&key, toml_edit::value(value));
+        let key_parts = key.split('.').collect_vec();
+        for (i, k) in key_parts.iter().enumerate() {
+            if i == key_parts.len() - 1 {
+                let k = get_key_with_decor(env_tbl, k);
+                env_tbl.insert_formatted(&k, toml_edit::value(value));
+                break;
+            } else if !env_tbl.contains_key(k) {
+                env_tbl.insert_formatted(&Key::from(*k), toml_edit::table());
+            }
+            env_tbl = env_tbl.get_mut(k).unwrap().as_table_mut().unwrap();
+        }
         Ok(())
     }
 

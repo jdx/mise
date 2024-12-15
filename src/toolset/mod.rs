@@ -9,6 +9,7 @@ use crate::cli::args::BackendArg;
 use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
 use crate::config::Config;
 use crate::env::{PATH_KEY, TERM_WIDTH};
+use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::hooks::Hooks;
 use crate::install_context::InstallContext;
@@ -440,16 +441,13 @@ impl Toolset {
             .collect()
     }
     /// returns env_with_path but also with the existing env vars from the system
-    pub fn full_env(&self) -> Result<BTreeMap<String, String>> {
-        let mut env = env::PRISTINE_ENV
-            .clone()
-            .into_iter()
-            .collect::<BTreeMap<_, _>>();
+    pub fn full_env(&self) -> Result<EnvMap> {
+        let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         env.extend(self.env_with_path(&Config::get())?);
         Ok(env)
     }
     /// the full mise environment including all tool paths
-    pub fn env_with_path(&self, config: &Config) -> Result<BTreeMap<String, String>> {
+    pub fn env_with_path(&self, config: &Config) -> Result<EnvMap> {
         let mut env = self.env(config)?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         for p in self.list_final_paths()? {
@@ -475,7 +473,7 @@ impl Toolset {
             .filter(|(_, k, _)| k.to_uppercase() != "PATH")
             .collect::<Vec<(String, String, String)>>()
     }
-    pub fn env(&self, config: &Config) -> Result<BTreeMap<String, String>> {
+    pub fn env(&self, config: &Config) -> Result<EnvMap> {
         time!("env start");
         let entries = self
             .env_from_tools(config)
@@ -487,7 +485,7 @@ impl Toolset {
             .filter(|(k, _)| k == "MISE_ADD_PATH" || k == "RTX_ADD_PATH")
             .map(|(_, v)| v)
             .join(":");
-        let mut entries: BTreeMap<String, String> = entries
+        let mut entries: EnvMap = entries
             .into_iter()
             .filter(|(k, _)| k != "RTX_ADD_PATH")
             .filter(|(k, _)| k != "MISE_ADD_PATH")

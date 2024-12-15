@@ -13,7 +13,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::config_file::{config_root, trust_check};
 use crate::config::{Config, SETTINGS};
 use crate::env::PATH_KEY;
-use crate::env_diff::{EnvDiff, EnvDiffOperation};
+use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::file::{display_path, which_non_pristine};
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::tera::{get_tera, BASE_CONTEXT};
@@ -151,10 +151,7 @@ pub struct EnvResults {
 }
 
 impl EnvResults {
-    pub fn resolve(
-        initial: &HashMap<String, String>,
-        input: Vec<(EnvDirective, PathBuf)>,
-    ) -> eyre::Result<Self> {
+    pub fn resolve(initial: &EnvMap, input: Vec<(EnvDirective, PathBuf)>) -> eyre::Result<Self> {
         let mut ctx = BASE_CONTEXT.clone();
         // trace!("resolve: input: {:#?}", &input);
         let mut env = initial
@@ -489,7 +486,7 @@ mod tests {
 
     #[test]
     fn test_env_path() {
-        let mut env = HashMap::new();
+        let mut env = EnvMap::new();
         env.insert("A".to_string(), "1".to_string());
         env.insert("B".to_string(), "2".to_string());
         let results = EnvResults::resolve(
@@ -530,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_venv_path() {
-        let env = HashMap::new();
+        let env = EnvMap::new();
         let results = EnvResults::resolve(
             &env,
             vec![

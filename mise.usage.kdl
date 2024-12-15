@@ -557,6 +557,7 @@ cmd "hook-env" hide=true help="[internal] called by activate hook to update env 
             choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
         }
     }
+    flag "-f --force" help="Skip early exit check"
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
     flag "-q --quiet" help="Hide warnings such as when a tool is not installed"
 }
