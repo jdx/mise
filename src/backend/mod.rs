@@ -297,7 +297,7 @@ pub trait Backend: Debug + Send + Sync {
         &self,
         version: &str,
         target: &Path,
-    ) -> eyre::Result<Option<(PathBuf, PathBuf)>> {
+    ) -> Result<Option<(PathBuf, PathBuf)>> {
         let link = self.ba().installs_path.join(version);
         if link.exists() {
             return Ok(None);

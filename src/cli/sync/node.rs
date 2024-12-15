@@ -9,6 +9,8 @@ use crate::{backend, cmd, config, dirs, file};
 /// Symlinks all tool versions from an external tool into mise
 ///
 /// For example, use this to import all Homebrew node installs into mise
+///
+/// This won't overwrite any existing installs but will overwrite any existing symlinks
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SyncNode {
@@ -36,15 +38,17 @@ impl SyncNode {
     pub fn run(self) -> Result<()> {
         if self._type.brew {
             self.run_brew()?;
-        } else if self._type.nvm {
+        } 
+        if self._type.nvm {
             self.run_nvm()?;
-        } else if self._type.nodenv {
+        } 
+        if self._type.nodenv {
             self.run_nodenv()?;
         }
         Ok(())
     }
 
-    fn run_brew(self) -> Result<()> {
+    fn run_brew(&self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
@@ -54,18 +58,22 @@ impl SyncNode {
 
         let subdirs = file::dir_subdirs(&brew_prefix)?;
         for entry in sorted(subdirs) {
+            if entry.starts_with(".") {
+                continue;
+            }
             if !entry.starts_with("node@") {
                 continue;
             }
             let v = entry.trim_start_matches("node@");
-            node.create_symlink(v, &brew_prefix.join(&entry))?;
-            miseprintln!("Synced node@{} from Homebrew", v);
+            if node.create_symlink(v, &brew_prefix.join(&entry))?.is_some() {
+                miseprintln!("Synced node@{} from Homebrew", v);
+            }
         }
 
         config::rebuild_shims_and_runtime_symlinks(&[])
     }
 
-    fn run_nvm(self) -> Result<()> {
+    fn run_nvm(&self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
 
         let nvm_versions_path = NVM_DIR.join("versions").join("node");
@@ -80,6 +88,9 @@ impl SyncNode {
         let mut created = vec![];
         let subdirs = file::dir_subdirs(&nvm_versions_path)?;
         for entry in sorted(subdirs) {
+            if entry.starts_with(".") {
+                continue;
+            }
             let v = entry.trim_start_matches('v');
             let symlink = node.create_symlink(v, &nvm_versions_path.join(&entry))?;
             if let Some(symlink) = symlink {
@@ -96,7 +107,7 @@ impl SyncNode {
         config::rebuild_shims_and_runtime_symlinks(&[])
     }
 
-    fn run_nodenv(self) -> Result<()> {
+    fn run_nodenv(&self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
 
         let nodenv_versions_path = NODENV_ROOT.join("versions");
@@ -106,8 +117,12 @@ impl SyncNode {
 
         let subdirs = file::dir_subdirs(&nodenv_versions_path)?;
         for v in sorted(subdirs) {
-            node.create_symlink(&v, &nodenv_versions_path.join(&v))?;
-            miseprintln!("Synced node@{} from nodenv", v);
+            if v.starts_with(".") {
+                continue;
+            }
+            if node.create_symlink(&v, &nodenv_versions_path.join(&v))?.is_some() {
+                miseprintln!("Synced node@{} from nodenv", v);
+            }
         }
 
         config::rebuild_shims_and_runtime_symlinks(&[])
