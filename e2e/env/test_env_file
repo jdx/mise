@@ -21,7 +21,7 @@ cat <<'EOF' >mise.toml
 [env]
 _.file = ['a', 'b.json']
 EOF
-echo 'export A=1'>a
-echo '{"B": 2}'>b.json
+echo 'export A=1' >a
+echo '{"B": 2}' >b.json
 assert "mise env | grep -v PATH" "export A=1
 export B=2"
