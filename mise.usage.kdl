@@ -1237,6 +1237,15 @@ This won't overwrite any existing installs but will overwrite any existing symli
         flag "--pyenv" help="Get tool versions from pyenv"
         flag "--uv" help="Sync tool versions with uv (2-way sync)"
     }
+    cmd "ruby" help="Symlinks all ruby tool versions from an external tool into mise" {
+        after_long_help r"Examples:
+
+    $ brew install ruby
+    $ mise sync ruby --brew
+    $ mise use -g ruby - Use the latest version of Ruby installed by Homebrew
+"
+        flag "--brew" help="Get tool versions from Homebrew"
+    }
 }
 cmd "tasks" help="Manage tasks" {
     alias "t"

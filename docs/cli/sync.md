@@ -9,3 +9,4 @@ Synchronize tools from other version managers with mise
 
 - [`mise sync node [FLAGS]`](/cli/sync/node.md)
 - [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)
+- [`mise sync ruby [--brew]`](/cli/sync/ruby.md)
