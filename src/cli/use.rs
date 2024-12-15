@@ -252,8 +252,8 @@ impl Use {
     }
 
     fn tool_selector(&self) -> Result<ToolArg> {
-        let mut s = demand::Select::new("Select a tool to install")
-            .description("Select a tasks to run")
+        let mut s = demand::Select::new("Tools")
+            .description("Select a tool to install")
             .filtering(true)
             .filterable(true);
         for rt in REGISTRY.values().unique_by(|r| r.short) {
