@@ -38,6 +38,7 @@ use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
 use crate::plugins::PluginType;
 use crate::redactions::Redactions;
+use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
 pub use settings::SETTINGS;
@@ -46,13 +47,13 @@ type AliasMap = IndexMap<String, Alias>;
 type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
 pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
-#[derive(Default)]
 pub struct Config {
     pub config_files: ConfigMap,
     pub project_root: Option<PathBuf>,
     pub all_aliases: AliasMap,
     pub repo_urls: HashMap<String, String>,
     pub vars: IndexMap<String, String>,
+    pub tera_ctx: tera::Context,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
@@ -105,13 +106,31 @@ impl Config {
         let config_files = load_all_config_files(&config_paths, &idiomatic_files)?;
         time!("load config_files");
 
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        let vars_results = load_vars(tera_ctx.clone(), &config_files)?;
+        let vars = vars_results
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        tera_ctx.insert("vars", &vars);
+
         let mut config = Self {
             aliases: load_aliases(&config_files)?,
             project_root: get_project_root(&config_files),
             repo_urls: load_plugins(&config_files)?,
-            vars: load_vars(&config_files)?,
+            tera_ctx,
+            vars,
             config_files,
-            ..Default::default()
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            redactions: OnceCell::new(),
+            shorthands: OnceLock::new(),
+            hooks: OnceCell::new(),
+            tasks: OnceCell::new(),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
         };
         time!("load build");
 
@@ -185,7 +204,7 @@ impl Config {
             Ok(env)
         })
     }
-    pub fn env_results(&self) -> eyre::Result<&EnvResults> {
+    pub fn env_results(&self) -> Result<&EnvResults> {
         self.env.get_or_try_init(|| self.load_env())
     }
     pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
@@ -548,7 +567,7 @@ impl Config {
         Ok(())
     }
 
-    fn load_env(&self) -> eyre::Result<EnvResults> {
+    fn load_env(&self) -> Result<EnvResults> {
         time!("load_env start");
         let entries = self
             .config_files
@@ -563,7 +582,7 @@ impl Config {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(&env::PRISTINE_ENV, entries)?;
+        let env_results = EnvResults::resolve(self.tera_ctx.clone(), &env::PRISTINE_ENV, entries)?;
         time!("load_env done");
         if log::log_enabled!(log::Level::Trace) {
             trace!("{env_results:#?}");
@@ -629,6 +648,13 @@ impl Config {
             .collect())
     }
 
+    fn tera(&self, config_root: &Path) -> (tera::Tera, tera::Context) {
+        let tera = get_tera(Some(config_root));
+        let mut ctx = self.tera_ctx.clone();
+        ctx.insert("config_root", &config_root);
+        (tera, ctx)
+    }
+
     pub fn redactions(&self) -> Result<&IndexSet<String>> {
         self.redactions.get_or_try_init(|| {
             let mut redactions = Redactions::default();
@@ -636,7 +662,7 @@ impl Config {
                 let r = cf.redactions();
                 if !r.is_empty() {
                     let mut r = r.clone();
-                    let (tera, ctx) = cf.tera();
+                    let (tera, ctx) = self.tera(&cf.config_root());
                     r.render(&mut tera.clone(), &ctx)?;
                     redactions.merge(r);
                 }
@@ -1041,15 +1067,27 @@ fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
     Ok(plugins)
 }
 
-fn load_vars(config_files: &ConfigMap) -> Result<IndexMap<String, String>> {
-    let mut vars = IndexMap::new();
-    for config_file in config_files.values() {
-        for (k, v) in config_file.vars()?.clone() {
-            vars.insert(k, v);
-        }
+fn load_vars(ctx: tera::Context, config_files: &ConfigMap) -> Result<EnvResults> {
+    time!("load_vars start");
+    let entries = config_files
+        .iter()
+        .rev()
+        .map(|(source, cf)| {
+            cf.vars_entries()
+                .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    let vars_results = EnvResults::resolve(ctx, &env::PRISTINE_ENV, entries)?;
+    time!("load_vars done");
+    if log::log_enabled!(log::Level::Trace) {
+        trace!("{vars_results:#?}");
+    } else {
+        debug!("{vars_results:?}");
     }
-    trace!("load_vars: {}", vars.len());
-    Ok(vars)
+    Ok(vars_results)
 }
 
 impl Debug for Config {
@@ -1076,6 +1114,12 @@ impl Debug for Config {
         if let Some(env_results) = self.env.get() {
             if !env_results.env_files.is_empty() {
                 s.field("Path Dirs", &env_results.env_paths);
+            }
+            if !env_results.env_scripts.is_empty() {
+                s.field("Scripts", &env_results.env_scripts);
+            }
+            if !env_results.env_files.is_empty() {
+                s.field("Files", &env_results.env_files);
             }
         }
         if !self.aliases.is_empty() {

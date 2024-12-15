@@ -146,17 +146,18 @@ impl EnvResults {
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
+    use super::*;
     use crate::config::env_directive::EnvDirective;
+    use crate::tera::BASE_CONTEXT;
     use crate::test::replace_path;
     use insta::assert_debug_snapshot;
     use test_log::test;
-
-    use super::*;
 
     #[test]
     fn test_venv_path() {
         let env = EnvMap::new();
         let results = EnvResults::resolve(
+            BASE_CONTEXT.clone(),
             &env,
             vec![
                 (

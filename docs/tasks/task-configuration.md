@@ -361,3 +361,12 @@ e2e_args = '--headless'
 [tasks.test]
 run = './scripts/test-e2e.sh {{vars.e2e_args}}'
 ```
+
+Like `[env]`, vars can also be read in as a file:
+
+```toml
+[vars]
+_.file = ".env"
+```
+
+[Secrets](/environments/secrets) are also supported as vars.

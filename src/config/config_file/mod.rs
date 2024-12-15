@@ -7,7 +7,6 @@ use std::sync::{Mutex, Once};
 
 use eyre::{eyre, Result};
 use idiomatic_version::IdiomaticVersionFile;
-use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use path_absolutize::Absolutize;
 use serde_derive::Deserialize;
@@ -25,7 +24,6 @@ use crate::hash::hash_to_str;
 use crate::hooks::Hook;
 use crate::redactions::Redactions;
 use crate::task::Task;
-use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
@@ -70,10 +68,13 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn config_root(&self) -> PathBuf {
         config_root(self.get_path())
     }
-    fn plugins(&self) -> eyre::Result<HashMap<String, String>> {
+    fn plugins(&self) -> Result<HashMap<String, String>> {
         Ok(Default::default())
     }
-    fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
+    fn env_entries(&self) -> Result<Vec<EnvDirective>> {
+        Ok(Default::default())
+    }
+    fn vars_entries(&self) -> Result<Vec<EnvDirective>> {
         Ok(Default::default())
     }
     fn tasks(&self) -> Vec<&Task> {
@@ -93,20 +94,9 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(Default::default())
     }
 
-    fn tera(&self) -> (tera::Tera, tera::Context) {
-        let tera = get_tera(Some(&self.config_root()));
-        let mut ctx = BASE_CONTEXT.clone();
-        ctx.insert("config_root", &self.config_root());
-        (tera, ctx)
-    }
-
     fn task_config(&self) -> &TaskConfig {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
-    }
-    fn vars(&self) -> Result<&IndexMap<String, String>> {
-        static DEFAULT_VARS: Lazy<IndexMap<String, String>> = Lazy::new(IndexMap::new);
-        Ok(&DEFAULT_VARS)
     }
 
     fn redactions(&self) -> &Redactions {

@@ -8,7 +8,7 @@ use crate::config::config_file::{config_root, trust_check};
 use crate::dirs;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::tera::get_tera;
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
@@ -141,6 +141,7 @@ impl Display for EnvDirective {
     }
 }
 
+#[derive(Default)]
 pub struct EnvResults {
     pub env: IndexMap<String, (String, PathBuf)>,
     pub env_remove: BTreeSet<String>,
@@ -150,8 +151,11 @@ pub struct EnvResults {
 }
 
 impl EnvResults {
-    pub fn resolve(initial: &EnvMap, input: Vec<(EnvDirective, PathBuf)>) -> eyre::Result<Self> {
-        let mut ctx = BASE_CONTEXT.clone();
+    pub fn resolve(
+        mut ctx: tera::Context,
+        initial: &EnvMap,
+        input: Vec<(EnvDirective, PathBuf)>,
+    ) -> eyre::Result<Self> {
         // trace!("resolve: input: {:#?}", &input);
         let mut env = initial
             .iter()

@@ -2,7 +2,7 @@ use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::registry::REGISTRY;
-use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::tera::get_tera;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
@@ -129,7 +129,8 @@ impl TestTool {
             return Ok(());
         };
         let backend = tv.backend()?;
-        let env = ts.env_with_path(&Config::get())?;
+        let config = Config::get();
+        let env = ts.env_with_path(&config)?;
         let mut which_parts = cmd.split_whitespace().collect::<Vec<_>>();
         let cmd = which_parts.remove(0);
         let mut which_cmd = backend.which(&tv, cmd)?.unwrap_or(PathBuf::from(cmd));
@@ -170,7 +171,7 @@ impl TestTool {
             }
             None => return Err(eyre!("command failed: terminated by signal")),
         }
-        let mut ctx = BASE_CONTEXT.clone();
+        let mut ctx = config.tera_ctx.clone();
         ctx.insert("version", &tv.version);
         let mut tera = get_tera(dirs::CWD.as_ref().map(|d| d.as_path()));
         let expected = tera.render_str(expected, &ctx)?;
