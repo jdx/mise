@@ -2350,6 +2350,21 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ]
+                },
+                {
+                    "name": [
+                        "ruby"
+                    ],
+                    "description": "Symlinks all ruby tool versions from an external tool into mise",
+                    "options": [
+                        {
+                            "name": [
+                                "--brew"
+                            ],
+                            "description": "Get tool versions from Homebrew",
+                            "isRepeatable": false
+                        }
+                    ]
                 }
             ]
         },
