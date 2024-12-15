@@ -64,7 +64,7 @@ pub struct MiseToml {
     #[serde(default)]
     watch_files: Vec<WatchFile>,
     #[serde(default)]
-    vars: IndexMap<String, String>,
+    vars: EnvList,
     #[serde(default)]
     settings: SettingsPartial,
 }
@@ -293,6 +293,10 @@ impl ConfigFile for MiseToml {
         Ok(all)
     }
 
+    fn vars_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
+        Ok(self.vars.0.clone())
+    }
+
     fn tasks(&self) -> Vec<&Task> {
         self.tasks.0.values().collect()
     }
@@ -485,10 +489,6 @@ impl ConfigFile for MiseToml {
             .into_iter()
             .flatten()
             .collect())
-    }
-
-    fn vars(&self) -> eyre::Result<&IndexMap<String, String>> {
-        Ok(&self.vars)
     }
 }
 

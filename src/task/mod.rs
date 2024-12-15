@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::task::task_script_parser::{
     has_any_args_defined, replace_template_placeholders_with_args, TaskScriptParser,
 };
-use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, file};
 use console::{truncate_str, Color};
@@ -368,7 +368,7 @@ impl Task {
         {
             let config_root = self.config_root.clone().unwrap_or_default();
             let mut tera = get_tera(Some(&config_root));
-            let mut tera_ctx = BASE_CONTEXT.clone();
+            let mut tera_ctx = config.tera_ctx.clone();
             tera_ctx.insert("config_root", &config_root);
             let dir = tera.render_str(&dir, &tera_ctx)?;
             let dir = file::replace_path(&dir);
@@ -404,8 +404,9 @@ impl Task {
     }
 
     pub fn render(&mut self, config_root: &Path) -> Result<()> {
+        let config = Config::get();
         let mut tera = get_tera(Some(config_root));
-        let mut tera_ctx = BASE_CONTEXT.clone();
+        let mut tera_ctx = config.tera_ctx.clone();
         tera_ctx.insert("config_root", &config_root);
         for a in &mut self.aliases {
             *a = tera.render_str(a, &tera_ctx)?;

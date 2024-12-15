@@ -4,5 +4,17 @@ cat <<EOF >mise.toml
 tasks.a.run = "echo foo: {{vars.foo}}"
 vars.foo = "bar"
 EOF
-
 assert "mise run a" "foo: bar"
+
+cat <<EOF >mise.toml
+tasks.a.run = "echo foo: {{vars.foo}}"
+vars.foo = "{{cwd}}"
+EOF
+assert "mise run a" "foo: $(pwd)"
+
+echo '{ "SECRET": "123" }' >.env.json
+cat <<EOF >mise.toml
+tasks.a.run = "echo foo: {{vars.SECRET}}"
+vars._.file = ".env.json"
+EOF
+assert "mise run a" "foo: 123"
