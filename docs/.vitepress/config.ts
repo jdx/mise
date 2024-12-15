@@ -20,7 +20,7 @@ export default defineConfig({
     outline: "deep",
     nav: [
       { text: "Dev Tools", link: "/dev-tools/" },
-      { text: "Environments", link: "/environments" },
+      { text: "Environments", link: "/environments/" },
       { text: "Tasks", link: "/tasks/" },
     ],
     sidebar: [
@@ -102,6 +102,7 @@ export default defineConfig({
         text: "Environments",
         items: [
           { text: "Environment variables", link: "/environments/" },
+          { text: "Secrets", link: "/environments/secrets" },
           { text: "Hooks", link: "/hooks" },
           { text: "direnv", link: "/direnv" },
         ],

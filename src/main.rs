@@ -60,6 +60,7 @@ mod runtime_symlinks;
 mod shell;
 mod shims;
 mod shorthands;
+mod sops;
 pub(crate) mod task;
 pub(crate) mod tera;
 pub(crate) mod timeout;

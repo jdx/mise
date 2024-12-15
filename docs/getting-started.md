@@ -65,7 +65,7 @@ echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ## 3. Using `mise`
 
 :::info
-Of course, if using mise solely for [environment management](/environments)
+Of course, if using mise solely for [environment management](/environments/)
 or [running tasks](/tasks/)
 this step is not necessary. You can use it to make sure `mise` is correctly setup.
 :::

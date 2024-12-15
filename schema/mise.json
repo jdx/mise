@@ -658,6 +658,23 @@
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
         },
+        "sops": {
+          "additionalProperties": false,
+          "properties": {
+            "age_key": {
+              "description": "The age private key to use for sops secret decryption.",
+              "type": "string"
+            },
+            "age_key_file": {
+              "description": "Path to the age private key file to use for sops secret decryption.",
+              "type": "string"
+            },
+            "age_recipients": {
+              "description": "The age public keys to use for sops secret encryption.",
+              "type": "string"
+            }
+          }
+        },
         "status": {
           "additionalProperties": false,
           "properties": {

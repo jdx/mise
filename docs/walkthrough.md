@@ -122,7 +122,7 @@ _.path = "./node_modules/.bin"
 This will add `./node_modules/.bin` to the PATH for the project—with "." here referring to the directory
 the `mise.toml` file is in so if you enter a subdirectory, it will still work.
 
-_See [Environments](/environments) for more information on working with environment variables._
+_See [Environments](/environments/) for more information on working with environment variables._
 
 ## Tasks
 
@@ -212,7 +212,7 @@ programming languages or tools used on it.
 For further reading:
 
 - [Dev Tools](/dev-tools/) – A deeper overview of working with dev tools
-- [Environments](/environments) – A deeper overview of working with environment variables
+- [Environments](/environments/) – A deeper overview of working with environment variables
 - [Tasks](/tasks/) – A deeper overview of working with tasks
 - [Configuration](/configuration) – More information on `mise.toml` files
 - [Settings](/configuration/settings) – All the configuration settings available in mise

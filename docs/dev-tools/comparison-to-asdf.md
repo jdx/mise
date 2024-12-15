@@ -9,7 +9,7 @@ It will not, however, reuse existing asdf directories
 Casual users coming from asdf have generally found mise to just be a faster, easier to use asdf.
 
 :::tip
-Make sure you have a look at [environments](/environments.html) and [tasks](/tasks/) which
+Make sure you have a look at [environments](/environments/) and [tasks](/tasks/) which
 are major portions of mise that have no asdf equivalent.
 :::
 

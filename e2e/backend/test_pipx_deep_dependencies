@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016,SC2034
+export MISE_PIPX_UVX=0
 
 # Create system "tools" that always fail and push them to the front of PATH
 cat >"$HOME/bin/fail" <<'EOF'

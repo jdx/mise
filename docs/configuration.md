@@ -91,7 +91,7 @@ See [Tools](/dev-tools/).
 
 ### `[env]` - Arbitrary Environment Variables
 
-See [environments](/environments).
+See [environments](/environments/).
 
 ### `[tasks.*]` - Run files or shell scripts
 

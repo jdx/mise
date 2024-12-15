@@ -198,7 +198,7 @@ impl Settings {
             self.cargo.binstall = cargo_binstall;
         }
         if let Some(pipx_uvx) = self.pipx_uvx {
-            self.pipx.uvx = pipx_uvx;
+            self.pipx.uvx = Some(pipx_uvx);
         }
         if let Some(python_compile) = self.python_compile {
             self.python.compile = Some(python_compile);
