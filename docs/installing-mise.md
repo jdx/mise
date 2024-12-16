@@ -253,12 +253,6 @@ chocolatey version is currently outdated.
 choco install mise
 ```
 
-### Windows - WinGet
-
-```sh
-winget install jdx.mise
-```
-
 ### Windows - manual
 
 Download the latest release from [GitHub](https://github.com/jdx/mise/releases) and add the binary
