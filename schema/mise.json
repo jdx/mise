@@ -294,6 +294,28 @@
           "description": "Enable experimental mise features which are incomplete or unstable—breakings changes may occur",
           "type": "boolean"
         },
+        "sops": {
+          "additionalProperties": false,
+          "properties": {
+            "rops": {
+              "default": true,
+              "description": "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops.",
+              "type": "boolean"
+            },
+            "age_key": {
+              "description": "The age private key to use for sops secret decryption.",
+              "type": "string"
+            },
+            "age_key_file": {
+              "description": "Path to the age private key file to use for sops secret decryption.",
+              "type": "string"
+            },
+            "age_recipients": {
+              "description": "The age public keys to use for sops secret encryption.",
+              "type": "string"
+            }
+          }
+        },
         "fetch_remote_versions_cache": {
           "default": "1h",
           "description": "How long to cache remote versions for tools.",
@@ -657,23 +679,6 @@
         "silent": {
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
-        },
-        "sops": {
-          "additionalProperties": false,
-          "properties": {
-            "age_key": {
-              "description": "The age private key to use for sops secret decryption.",
-              "type": "string"
-            },
-            "age_key_file": {
-              "description": "Path to the age private key file to use for sops secret decryption.",
-              "type": "string"
-            },
-            "age_recipients": {
-              "description": "The age public keys to use for sops secret encryption.",
-              "type": "string"
-            }
-          }
         },
         "status": {
           "additionalProperties": false,

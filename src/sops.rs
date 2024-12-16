@@ -68,7 +68,17 @@ where
     } else {
         // TODO: this won't work right if sops is coming from mise since tools won't have been loaded
         // TODO: this obviously won't work on windows
-        cmd!("sops", "--input-type", format, "--output-type", format, "-d", "/dev/stdin").stdin_bytes(input.as_bytes()).read()?
+        cmd!(
+            "sops",
+            "--input-type",
+            format,
+            "--output-type",
+            format,
+            "-d",
+            "/dev/stdin"
+        )
+        .stdin_bytes(input.as_bytes())
+        .read()?
     };
 
     if let Some(age) = prev_age {

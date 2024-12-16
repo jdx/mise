@@ -304,12 +304,6 @@ a particular feature you'd like to try. Also, if something isn't working
 right, try disabling it if you can.
 """
 
-[sops.rops]
-env = "MISE_SOPS_ROPS"
-type = "Bool"
-default = true
-description = "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops."
-
 [fetch_remote_versions_cache]
 env = "MISE_FETCH_REMOTE_VERSIONS_CACHE"
 type = "Duration"
@@ -884,6 +878,12 @@ env = "MISE_SOPS_AGE_RECIPIENTS"
 type = "String"
 optional = true
 description = "The age public keys to use for sops secret encryption."
+
+[sops.rops]
+env = "MISE_SOPS_ROPS"
+type = "Bool"
+default = true
+description = "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops."
 
 [status.missing_tools]
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
