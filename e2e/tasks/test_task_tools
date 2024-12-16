@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.a]
+tools = { tiny = "1" }
+run = "rtx-tiny"
+[tasks.b]
+depends = ["a"]
+tools = { tiny = "2" }
+run = "rtx-tiny"
+EOF
+
+assert "mise run b" "rtx-tiny: v1.1.0 args:
+rtx-tiny: v1.2.0 args:"

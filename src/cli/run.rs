@@ -191,22 +191,20 @@ impl Run {
 
         ctrlc::exit_on_ctrl_c(false);
 
+        let mut all_tools = self.tool.clone();
+        for t in &tasks {
+            for (k, v) in &t.tools {
+                all_tools.push(format!("{}@{}", k, v).parse()?);
+            }
+        }
         let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
+            .with_args(&all_tools)
             .build(&Config::get())?;
 
         ts.install_missing_versions(&InstallOptions {
             missing_args_only: !SETTINGS.task_run_auto_install,
             ..Default::default()
         })?;
-        let mut env = ts.env_with_path(&Config::get())?;
-        if let Some(cwd) = &*dirs::CWD {
-            env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
-        }
-        if let Some(root) = Config::get().project_root.clone() {
-            env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
-            env.insert("root".into(), root.display().to_string());
-        }
 
         self.fetch_tasks(&mut tasks)?;
         let tasks = Deps::new(tasks)?;
@@ -234,7 +232,7 @@ impl Run {
                     let tx_err = tx_err;
                     if !self.is_stopping() {
                         trace!("running task: {task}");
-                        if let Err(err) = self.run_task(&env, &task) {
+                        if let Err(err) = self.run_task(&task) {
                             let status = Error::get_exit_status(&err);
                             if !self.is_stopping() && status.is_none() {
                                 // only show this if it's the first failure, or we haven't killed all the remaining tasks
@@ -284,7 +282,7 @@ impl Run {
         Ok(())
     }
 
-    fn run_task(&self, env: &BTreeMap<String, String>, task: &Task) -> Result<()> {
+    fn run_task(&self, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
@@ -299,7 +297,20 @@ impl Run {
             return Ok(());
         }
 
-        let mut env = env.clone();
+        let config = Config::get();
+        let mut tools = self.tool.clone();
+        for (k, v) in &task.tools {
+            tools.push(format!("{}@{}", k, v).parse()?);
+        }
+        let ts = ToolsetBuilder::new().with_args(&tools).build(&config)?;
+        let mut env = ts.env_with_path(&config)?;
+        if let Some(cwd) = &*dirs::CWD {
+            env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
+        }
+        if let Some(root) = Config::get().project_root.clone() {
+            env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
+            env.insert("root".into(), root.display().to_string());
+        }
         env.insert("MISE_TASK_NAME".into(), task.name.clone());
         let task_file = task.file.as_ref().unwrap_or(&task.config_source);
         env.insert("MISE_TASK_FILE".into(), task_file.display().to_string());

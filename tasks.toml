@@ -126,5 +126,6 @@ run = "cargo install --path . --debug"
 
 [xxx]
 hide = true
-run = "echo xxx"
+tools = { gh = "2.60.0" }
+run = "gh --version"
 description = "a task for testing"

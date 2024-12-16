@@ -42,6 +42,12 @@ impl<'a> TomlParser<'a> {
                     .collect::<Vec<T>>()
             })
     }
+    pub fn parse_table(&self, key: &str) -> Option<BTreeMap<String, toml::Value>> {
+        self.table
+            .get(key)
+            .and_then(|value| value.as_table())
+            .map(|table| table.clone().into_iter().collect())
+    }
     pub fn parse_env(
         &self,
         key: &str,
