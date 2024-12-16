@@ -13,9 +13,9 @@ aapt2.test = ["aapt2 version", "Android Asset Packaging Tool (aapt)"]
 act.backends = ["aqua:nektos/act", "ubi:nektos/act", "asdf:gr1m0h/asdf-act"]
 act.test = ["act --version", "act version {{version}}"]
 action-validator.backends = [
-    "aqua:mpalmer/action-validator",
-    "ubi:mpalmer/action-validator",
-    "asdf:mpalmer/action-validator"
+  "aqua:mpalmer/action-validator",
+  "ubi:mpalmer/action-validator",
+  "asdf:mpalmer/action-validator",
 ]
 action-validator.os = ["linux", "macos"]
 action-validator.test = [
@@ -58,8 +58,8 @@ alp.test = ["alp --version", "{{version}}"]
 amass.backends = ["ubi:owasp-amass/amass", "asdf:dhoeric/asdf-amass"]
 amass.test = ["amass -version", "v{{version}}"]
 amazon-ecr-credential-helper.backends = [
-    "aqua:awslabs/amazon-ecr-credential-helper",
-    "asdf:dex4er/asdf-amazon-ecr-credential-helper"
+  "aqua:awslabs/amazon-ecr-credential-helper",
+  "asdf:dex4er/asdf-amazon-ecr-credential-helper",
 ]
 # this isn't working with pipx yet since it is missing ansible
 # ansible-base.backends = ["pipx:ansible-base[with=ansible]", "asdf:amrox/asdf-pyapp"]
@@ -106,8 +106,8 @@ aws-cli.test = ["aws --version", "aws-cli/{{version}}"]
 aws-cli.os = ["linux", "macos"]
 aws-copilot.backends = ["aqua:aws/copilot-cli", "asdf:NeoHsu/asdf-copilot"]
 aws-iam-authenticator.backends = [
-    "aqua:kubernetes-sigs/aws-iam-authenticator",
-    "asdf:zekker6/asdf-aws-iam-authenticator"
+  "aqua:kubernetes-sigs/aws-iam-authenticator",
+  "asdf:zekker6/asdf-aws-iam-authenticator",
 ]
 aws-nuke.backends = ["aqua:rebuy-de/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
 aws-sam.aliases = ["aws-sam-cli"]
@@ -1225,24 +1225,13 @@ pre-commit.backends = [
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
 promtool.backends = ["asdf:asdf-community/asdf-promtool"]
 protobuf.backends = ["vfox:ahai-code/vfox-protobuf"]
-protoc.backends = [
-    "aqua:protocolbuffers/protobuf/protoc",
-    "asdf:paxosglobal/asdf-protoc"
-]
-protoc-gen-connect-go.backends = [
-    "asdf:dylanrayboss/asdf-protoc-gen-connect-go"
-]
-protoc-gen-go.backends = [
-    "aqua:protocolbuffers/protobuf-go/protoc-gen-go",
-    "asdf:pbr0ck3r/asdf-protoc-gen-go"
-]
-protoc-gen-go-grpc.backends = [
-    "aqua:grpc/grpc-go/protoc-gen-go-grpc",
-    "asdf:pbr0ck3r/asdf-protoc-gen-go-grpc"
-]
+protoc.backends = ["aqua:protocolbuffers/protobuf/protoc", "asdf:paxosglobal/asdf-protoc"]
+protoc-gen-connect-go.backends = ["asdf:dylanrayboss/asdf-protoc-gen-connect-go"]
+protoc-gen-go.backends = ["aqua:protocolbuffers/protobuf-go/protoc-gen-go", "asdf:pbr0ck3r/asdf-protoc-gen-go"]
+protoc-gen-go-grpc.backends = ["aqua:grpc/grpc-go/protoc-gen-go-grpc", "asdf:pbr0ck3r/asdf-protoc-gen-go-grpc"]
 protoc-gen-go-grpc.test = [
-    "protoc-gen-go-grpc --version",
-    "protoc-gen-go-grpc"
+  "protoc-gen-go-grpc --version",
+  "protoc-gen-go-grpc",
 ] # TODO: use version_prefix and put version back in
 protoc-gen-grpc-web.backends = ["asdf:pbr0ck3r/asdf-protoc-gen-grpc-web"]
 protoc-gen-js.backends = ["asdf:pbr0ck3r/asdf-protoc-gen-js"]
@@ -1294,9 +1283,9 @@ richgo.backends = ["aqua:kyoh86/richgo", "asdf:paxosglobal/asdf-richgo"]
 riff.backends = ["asdf:abinet/asdf-riff"]
 ripgrep.aliases = ["rg"]
 ripgrep.backends = [
-    "aqua:BurntSushi/ripgrep",
-    "ubi:BurntSushi/ripgrep[exe=rg]",
-    "asdf:https://gitlab.com/wt0f/asdf-ripgrep"
+  "aqua:BurntSushi/ripgrep",
+  "ubi:BurntSushi/ripgrep[exe=rg]",
+  "asdf:https://gitlab.com/wt0f/asdf-ripgrep",
 ]
 ripgrep.test = ["rg --version", "ripgrep {{version}}"]
 ripgrep.description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
@@ -1645,8 +1634,8 @@ yarn.backends = ["asdf:mise-plugins/asdf-yarn"]
 yay.backends = ["asdf:aaaaninja/asdf-yay"]
 yazi.backends = ["aqua:sxyazi/yazi"]
 yazi.test = [
-    "yazi -V",
-    ""
+  "yazi -V",
+  "",
 ] # Version is in format Yazi {{version}} (buildid DATE) so it failed Yazi 0.4.1 (2275719 2024-12-10)
 yj.backends = ["ubi:sclevine/yj", "asdf:ryodocx/asdf-yj"]
 yor.backends = ["aqua:bridgecrewio/yor", "asdf:ordinaryexperts/asdf-yor"]

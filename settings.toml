@@ -946,14 +946,14 @@ rust_type = "crate::cli::run::TaskOutput"
 optional = true
 description = "Change output style when executing tasks."
 enum = [
-    [
-        "prefix",
-        "(default if jobs > 1) print by line with the prefix of the task name"
-    ],
-    [
-        "interleave",
-        "(default if jobs == 1 or all tasks run sequentially) print output as it comes in"
-    ]
+  [
+    "prefix",
+    "(default if jobs > 1) print by line with the prefix of the task name",
+  ],
+  [
+    "interleave",
+    "(default if jobs == 1 or all tasks run sequentially) print output as it comes in",
+  ],
 ]
 docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
