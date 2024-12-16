@@ -224,7 +224,12 @@ yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
 ```
 
-### Windows - scoop
+### Windows - Scoop
+
+> [!NOTE]
+> We're currently waiting for mise to be merged to the Scoop main bucket:
+>
+> - <https://github.com/ScoopInstaller/Main/pull/6374>
 
 This is the recommended way to install mise on Windows. It will automatically add your shims to PATH.
 
@@ -232,17 +237,18 @@ This is the recommended way to install mise on Windows. It will automatically ad
 scoop install mise
 ```
 
-### Windows - chocolatey
+### Windows - Chocolatey
 
 ```sh
 choco install mise
 ```
 
-### Windows - winget
+### Windows - WinGet
 
-::: note
-winget is coming soon, follow <https://github.com/microsoft/winget-pkgs/pull/197444>
-:::
+> [!NOTE]
+> We're currently waiting for mise to be merged to WinGet-pkgs:
+>
+> - <https://github.com/microsoft/winget-pkgs/pull/197444>
 
 ```sh
 winget install mise
