@@ -169,3 +169,12 @@ mise config set tools.node.version 20
 mise config set tools.node.postinstall 'corepack enable'
 mise install
 ```
+
+### `install_env`
+
+`install_env` is a special option that can be used to set environment variables during tool installation:
+
+```toml
+[tools]
+teleport-ent = { version = "11.3.11", install_env = { TELEPORT_ENT_ARCH = "amd64" } }
+```

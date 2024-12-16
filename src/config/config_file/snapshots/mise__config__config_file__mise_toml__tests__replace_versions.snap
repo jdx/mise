@@ -12,7 +12,10 @@ Toolset {
                 Version {
                     backend: BackendArg(node),
                     version: "16.0.1",
-                    options: {},
+                    options: ToolVersionOptions {
+                        env: {},
+                        opts: {},
+                    },
                     source: MiseToml(
                         "/tmp/.mise.toml",
                     ),
@@ -21,7 +24,10 @@ Toolset {
                 Version {
                     backend: BackendArg(node),
                     version: "18.0.1",
-                    options: {},
+                    options: ToolVersionOptions {
+                        env: {},
+                        opts: {},
+                    },
                     source: MiseToml(
                         "/tmp/.mise.toml",
                     ),

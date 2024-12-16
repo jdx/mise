@@ -41,18 +41,37 @@ mod tool_source;
 mod tool_version;
 mod tool_version_list;
 
-pub type ToolVersionOptions = BTreeMap<String, String>;
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct ToolVersionOptions {
+    pub env: BTreeMap<String, String>,
+    #[serde(flatten)]
+    pub opts: BTreeMap<String, String>,
+}
+
+impl ToolVersionOptions {
+    pub fn is_empty(&self) -> bool {
+        self.env.is_empty() && self.opts.is_empty()
+    }
+
+    pub fn get(&self, key: &str) -> Option<&String> {
+        self.opts.get(key)
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.opts.contains_key(key)
+    }
+}
 
 pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
-    let mut opts = ToolVersionOptions::new();
+    let mut tvo = ToolVersionOptions::default();
     for opt in s.split(',') {
         let (k, v) = opt.split_once('=').unwrap_or((opt, ""));
         if k.is_empty() {
             continue;
         }
-        opts.insert(k.to_string(), v.to_string());
+        tvo.opts.insert(k.to_string(), v.to_string());
     }
-    opts
+    tvo
 }
 
 #[derive(Debug)]
@@ -762,23 +781,29 @@ mod tests {
             let opts = super::parse_tool_options(input);
             assert_eq!(opts, f);
         };
-        t("", ToolVersionOptions::new());
+        t("", ToolVersionOptions::default());
         t(
             "exe=rg",
-            [("exe".to_string(), "rg".to_string())]
-                .iter()
-                .cloned()
-                .collect(),
+            ToolVersionOptions {
+                opts: [("exe".to_string(), "rg".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect(),
+                ..Default::default()
+            },
         );
         t(
             "exe=rg,match=musl",
-            [
-                ("exe".to_string(), "rg".to_string()),
-                ("match".to_string(), "musl".to_string()),
-            ]
-            .iter()
-            .cloned()
-            .collect(),
+            ToolVersionOptions {
+                opts: [
+                    ("exe".to_string(), "rg".to_string()),
+                    ("match".to_string(), "musl".to_string()),
+                ]
+                .iter()
+                .cloned()
+                .collect(),
+                ..Default::default()
+            },
         );
     }
 }

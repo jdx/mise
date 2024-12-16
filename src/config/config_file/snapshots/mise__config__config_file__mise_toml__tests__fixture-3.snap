@@ -9,7 +9,10 @@ ToolRequestSet {
             Version {
                 backend: BackendArg(terraform),
                 version: "1.0.0",
-                options: {},
+                options: ToolVersionOptions {
+                    env: {},
+                    opts: {},
+                },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
@@ -20,7 +23,10 @@ ToolRequestSet {
             Version {
                 backend: BackendArg(node),
                 version: "18",
-                options: {},
+                options: ToolVersionOptions {
+                    env: {},
+                    opts: {},
+                },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
@@ -29,7 +35,10 @@ ToolRequestSet {
             Prefix {
                 backend: BackendArg(node),
                 prefix: "20",
-                options: {},
+                options: ToolVersionOptions {
+                    env: {},
+                    opts: {},
+                },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
@@ -39,7 +48,10 @@ ToolRequestSet {
                 backend: BackendArg(node),
                 ref_: "master",
                 ref_type: "ref",
-                options: {},
+                options: ToolVersionOptions {
+                    env: {},
+                    opts: {},
+                },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
@@ -48,7 +60,10 @@ ToolRequestSet {
             Path {
                 backend: BackendArg(node),
                 path: "~/.nodes/18",
-                options: {},
+                options: ToolVersionOptions {
+                    env: {},
+                    opts: {},
+                },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
@@ -59,7 +74,10 @@ ToolRequestSet {
             Prefix {
                 backend: BackendArg(jq),
                 prefix: "1.6",
-                options: {},
+                options: ToolVersionOptions {
+                    env: {},
+                    opts: {},
+                },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
@@ -70,7 +88,10 @@ ToolRequestSet {
             Version {
                 backend: BackendArg(shellcheck),
                 version: "0.9.0",
-                options: {},
+                options: ToolVersionOptions {
+                    env: {},
+                    opts: {},
+                },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
@@ -81,8 +102,11 @@ ToolRequestSet {
             Version {
                 backend: BackendArg(python),
                 version: "3.10.0",
-                options: {
-                    "venv": ".venv",
+                options: ToolVersionOptions {
+                    env: {},
+                    opts: {
+                        "venv": ".venv",
+                    },
                 },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
@@ -92,7 +116,10 @@ ToolRequestSet {
             Version {
                 backend: BackendArg(python),
                 version: "3.9.0",
-                options: {},
+                options: ToolVersionOptions {
+                    env: {},
+                    opts: {},
+                },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
