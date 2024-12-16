@@ -11,4 +11,4 @@ run = "rtx-tiny"
 EOF
 
 assert "mise run b" "rtx-tiny: v1.1.0 args:
-rtx-tiny: v1.2.0 args:"
+rtx-tiny: v2.1.0 args:"

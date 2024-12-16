@@ -191,8 +191,18 @@ impl Run {
 
         ctrlc::exit_on_ctrl_c(false);
 
+        self.fetch_tasks(&mut tasks)?;
+        let tasks = Deps::new(tasks)?;
+        for task in tasks.all() {
+            self.validate_task(task)?;
+        }
+
+        let num_tasks = tasks.all().count();
+        self.is_linear = tasks.is_linear();
+        self.output = self.output(None);
+
         let mut all_tools = self.tool.clone();
-        for t in &tasks {
+        for t in tasks.all() {
             for (k, v) in &t.tools {
                 all_tools.push(format!("{}@{}", k, v).parse()?);
             }
@@ -205,16 +215,6 @@ impl Run {
             missing_args_only: !SETTINGS.task_run_auto_install,
             ..Default::default()
         })?;
-
-        self.fetch_tasks(&mut tasks)?;
-        let tasks = Deps::new(tasks)?;
-        for task in tasks.all() {
-            self.validate_task(task)?;
-        }
-
-        let num_tasks = tasks.all().count();
-        self.is_linear = tasks.is_linear();
-        self.output = self.output(None);
 
         let tasks = Mutex::new(tasks);
         let timer = std::time::Instant::now();

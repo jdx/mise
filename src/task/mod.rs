@@ -182,7 +182,10 @@ impl Task {
         task.env = p.parse_env("env")?.unwrap_or_default();
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
-        task.tools = p.parse_table("tools").map(|t| t.into_iter().map(|(k, v)| (k, v.to_string())).collect()).unwrap_or_default();
+        task.tools = p
+            .parse_table("tools")
+            .map(|t| t.into_iter().map(|(k, v)| (k, v.to_string())).collect())
+            .unwrap_or_default();
         task.render(config_root)?;
         Ok(task)
     }
@@ -633,7 +636,7 @@ mod tests {
                 Path::new(".mise/tasks"),
                 Path::new(dirs::CWD.as_ref().unwrap()),
             )
-                .unwrap();
+            .unwrap();
             assert_eq!(t.name, name);
             assert_eq!(t.aliases, aliases);
         }
