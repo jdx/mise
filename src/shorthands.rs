@@ -76,7 +76,10 @@ mod tests {
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
         let shorthands = get_shorthands(&settings);
-        assert_str_eq!(shorthands["elixir"][0], "asdf:mise-plugins/mise-elixir");
+        assert_str_eq!(
+            shorthands["ephemeral-postgres"][0],
+            "asdf:smashedtoatoms/asdf-ephemeral-postgres"
+        );
         assert_str_eq!(shorthands["node"][0], "https://node");
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
     }
