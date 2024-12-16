@@ -4,7 +4,7 @@ This will show you how to install mise and get started with it. This is a suitab
 
 ## 1. Install `mise` CLI
 
-See [installing mise](/installing-mise) for other ways to install mise (`apt`, `yum`, `nix`, etc.).
+See [installing mise](/installing-mise) for other ways to install mise (`macport`, `apt`, `yum`, `nix`, etc.).
 
 :::tabs key:installing-mise
 == Linux/macOS
@@ -117,15 +117,38 @@ echo 'eval "$(/opt/homebrew/bin/mise activate bash)"' >> ~/.bashrc
 echo 'eval "$(/opt/homebrew/bin/mise activate zsh)"' >> ~/.zshrc
 ```
 
-- Activation will be handled automatically if you use **fish** shell and installed via **homebrew**. This can be disabled with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`.
+- Activation will be handled automatically if you use `fish` shell and installed via `homebrew`. This can be disabled with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`.
 - Make sure you restart your shell session after modifying your rc file in order for it to take effect.-
-  == Windows
 
-Only shims are supported for now. When using `scoop` or `winget`, the shims are automatically added to your `PATH`.
+== Windows
+
+Only shims are supported for now on Windows.
+
+- When using `scoop`, the shims are automatically added to your `PATH`.
+- With `winget`, Add this directory to PATH: `<homedir>\AppData\Local\mise\shims`.
+
+  ```powershell
+  $shimPath = "$env:USERPROFILE\AppData\Local\mise\shims"
+  $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+  $newPath = $currentPath + ";" + $shimPath
+  [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+  ```
 
 == Debian/Ubuntu (apt)
 
-TODO
+::: code-group
+
+```sh [bash]
+echo 'eval "$(mise activate bash)"' >> ~/.bashrc
+```
+
+```sh [zsh]
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+```
+
+```sh [fish]
+echo 'mise activate fish | source' >> ~/.config/fish/config.fish
+```
 
 :::
 

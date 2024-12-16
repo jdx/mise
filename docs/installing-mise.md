@@ -360,6 +360,10 @@ I'd be happy to help you get yours integrated.
 
 ## Autocompletion
 
+::: tip
+Some installation methods automatically install autocompletion scripts.
+:::
+
 The [`mise completion`](/cli/completion.html) command can generate autocompletion scripts for your shell.
 This requires `usage` to be installed. If you don't have it, install it with:
 
