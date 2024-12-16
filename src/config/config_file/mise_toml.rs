@@ -851,7 +851,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     python: venv.python,
                                     uv_create_args: venv.uv_create_args,
                                     python_create_args: venv.python_create_args,
-                                    options: Default::default(),
+                                    options: EnvDirectiveOptions { tools: true },
                                 });
                             }
                         }
