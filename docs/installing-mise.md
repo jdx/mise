@@ -229,7 +229,7 @@ yum install -y mise
 > [!NOTE]
 > We're currently waiting for mise to be merged to the Scoop main bucket:
 >
-> * <https://github.com/ScoopInstaller/Main/pull/6374>
+> - <https://github.com/ScoopInstaller/Main/pull/6374>
 
 This is the recommended way to install mise on Windows. It will automatically add your shims to PATH.
 
@@ -248,7 +248,7 @@ choco install mise
 > [!NOTE]
 > We're currently waiting for mise to be merged to WinGet-pkgs:
 >
-> * <https://github.com/microsoft/winget-pkgs/pull/197444>
+> - <https://github.com/microsoft/winget-pkgs/pull/197444>
 
 ```sh
 winget install mise
