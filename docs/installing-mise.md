@@ -245,11 +245,6 @@ choco install mise
 
 ### Windows - WinGet
 
-> [!NOTE]
-> We're currently waiting for mise to be merged to WinGet-pkgs:
->
-> - <https://github.com/microsoft/winget-pkgs/pull/197444>
-
 ```sh
 winget install mise
 ```
