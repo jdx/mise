@@ -544,14 +544,21 @@ impl Toolset {
         }
         let config = Config::get();
         let mut env = self.env(&config)?;
-        env.insert(
-            PATH_KEY.to_string(),
-            env::join_paths(paths.iter())?.to_string_lossy().to_string(),
-        );
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in paths.clone().into_iter() {
+            path_env.add(p);
+        }
+        env.insert(PATH_KEY.to_string(), path_env.to_string());
         let mut ctx = config.tera_ctx.clone();
         ctx.insert("env", &env);
-        paths.extend(self.load_post_env(ctx, &env)?.env_paths);
-        Ok(paths.into_iter().collect())
+        // these are returned in order, but we need to run the post_env stuff last and then put the results in the front
+        let paths = self
+            .load_post_env(ctx, &env)?
+            .env_paths
+            .into_iter()
+            .chain(paths)
+            .collect();
+        Ok(paths)
     }
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_installed_versions()
