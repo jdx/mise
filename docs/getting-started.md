@@ -6,6 +6,9 @@ This will show you how to install mise and get started with it. This is a suitab
 
 See [installing mise](/installing-mise) for other ways to install mise (`apt`, `yum`, `nix`, etc.).
 
+:::tabs key:installing-mise
+== Linux/macOS
+
 ```shell
 curl https://mise.run | sh
 ```
@@ -18,13 +21,54 @@ You can verify the installation by running:
 # mise 2024.x.x
 ```
 
-::: info
-
 - `~/.local/bin` does not need to be in `PATH`. mise will automatically add its own directory to `PATH`
   when activated.
 - mise respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like
   to change these locations.
-  :::
+
+== Brew
+Using [brew](https://brew.sh/) package manager
+
+```shell
+brew install mise
+```
+
+== Windows
+::: code-group
+
+```shell
+winget install jdx.mise
+```
+
+```shell
+scoop install mise
+```
+
+== Debian/Ubuntu (apt)
+
+For installation on Ubuntu/Debian:
+
+::: code-group
+
+```sh [amd64]
+sudo apt update -y && sudo apt install -y gpg sudo wget curl
+sudo install -dm 755 /etc/apt/keyrings
+wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=amd64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
+sudo apt update
+sudo apt install -y mise
+```
+
+```sh [arm64]
+sudo apt update -y && apt install -y gpg sudo wget curl
+sudo install -dm 755 /etc/apt/keyrings
+wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
+sudo apt update
+sudo apt install -y mise
+```
+
+:::
 
 ## 2. Activate `mise`
 
@@ -36,10 +80,9 @@ Now that `mise` is installed, you can optionally activate it or add its [shims](
 For interactive shells, `mise activate` is recommended. In non-interactive sessions, like CI/CD, IDEs, and scripts, using `shims` might work best. You can also not use any and call `mise exec/run` directly instead.
 See [this guide](dev-tools/shims.md) for more information.
 
-:::info
-Activation may be handled automatically if you use fish shell and installed via homebrew. This
-can be disabled with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`.
-:::
+:::tabs key:installing-mise
+
+== Linux/macOS
 
 ::: code-group
 
@@ -61,6 +104,30 @@ echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
   this uses `~/.local/bin/mise` as the binary location since that's what <https://mise.run> uses by
   default. If you've
   installed mise by some other means it may be on `PATH` or somewhere different.
+
+== Brew
+
+::: code-group
+
+```sh [bash]
+echo 'eval "$(/opt/homebrew/bin/mise activate bash)"' >> ~/.bashrc
+```
+
+```sh [zsh]
+echo 'eval "$(/opt/homebrew/bin/mise activate zsh)"' >> ~/.zshrc
+```
+
+- Activation will be handled automatically if you use **fish** shell and installed via **homebrew**. This can be disabled with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`.
+- Make sure you restart your shell session after modifying your rc file in order for it to take effect.-
+  == Windows
+
+Only shims are supported for now. When using `scoop` or `winget`, the shims are automatically added to your `PATH`.
+
+== Debian/Ubuntu (apt)
+
+TODO
+
+:::
 
 ## 3. Using `mise`
 
