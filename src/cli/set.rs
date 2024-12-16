@@ -68,7 +68,7 @@ impl Set {
             if env_vars.len() == 1 && env_vars[0].value.is_none() {
                 let key = &env_vars[0].key;
                 match config.env_entries()?.into_iter().find_map(|ev| match ev {
-                    EnvDirective::Val(k, v) if &k == key => Some(v),
+                    EnvDirective::Val(k, v, _) if &k == key => Some(v),
                     _ => None,
                 }) {
                     Some(value) => miseprintln!("{value}"),
@@ -122,7 +122,7 @@ impl Set {
                 .env_entries()?
                 .into_iter()
                 .filter_map(|ed| match ed {
-                    EnvDirective::Val(key, value) => Some(Row {
+                    EnvDirective::Val(key, value, _) => Some(Row {
                         key,
                         value,
                         source: display_path(file),

@@ -18,19 +18,21 @@ struct Env<V> {
 }
 
 impl EnvResults {
+    #[allow(clippy::too_many_arguments)]
     pub fn file(
         ctx: &mut tera::Context,
+        tera: &mut tera::Tera,
         env: &mut IndexMap<String, (String, Option<PathBuf>)>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
         config_root: &Path,
-        input: PathBuf,
+        input: String,
     ) -> Result<()> {
-        let s = r.parse_template(ctx, source, input.to_string_lossy().as_ref())?;
+        let s = r.parse_template(ctx, tera, source, &input)?;
         for p in xx::file::glob(normalize_path(config_root, s.into())).unwrap_or_default() {
             r.env_files.push(p.clone());
-            let parse_template = |s: String| r.parse_template(ctx, source, &s);
+            let parse_template = |s: String| r.parse_template(ctx, tera, source, &s);
             let ext = p
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())
@@ -51,7 +53,7 @@ impl EnvResults {
 
     fn json<PT>(p: &Path, parse_template: PT) -> Result<EnvMap>
     where
-        PT: Fn(String) -> Result<String>,
+        PT: FnMut(String) -> Result<String>,
     {
         let errfn = || eyre!("failed to parse json file: {}", display_path(p));
         if let Ok(raw) = file::read_to_string(p) {
@@ -81,7 +83,7 @@ impl EnvResults {
 
     fn yaml<PT>(p: &Path, parse_template: PT) -> Result<EnvMap>
     where
-        PT: Fn(String) -> Result<String>,
+        PT: FnMut(String) -> Result<String>,
     {
         let errfn = || eyre!("failed to parse yaml file: {}", display_path(p));
         if let Ok(raw) = file::read_to_string(p) {

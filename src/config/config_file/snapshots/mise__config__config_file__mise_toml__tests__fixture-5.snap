@@ -8,6 +8,9 @@ MiseToml(~/fixtures/.mise.toml): ToolRequestSet: terraform@1.0.0 node@18 node@pr
         Val(
             "NODE_ENV",
             "production",
+            EnvDirectiveOptions {
+                tools: false,
+            },
         ),
     ],
     alias: {

@@ -1,7 +1,3 @@
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::{Debug, Formatter};
-use std::path::{Path, PathBuf};
-
 use eyre::{eyre, WrapErr};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -9,14 +5,18 @@ use once_cell::sync::OnceCell;
 use serde::de::Visitor;
 use serde::{de, Deserializer};
 use serde_derive::Deserialize;
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Debug, Display, Formatter};
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use tera::Context as TeraContext;
 use toml_edit::{table, value, Array, DocumentMut, InlineTable, Item, Key, Value};
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::config_file::toml::{deserialize_arr, deserialize_path_entry_arr};
+use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::{config_trust_root, trust, trust_check, ConfigFile, TaskConfig};
-use crate::config::env_directive::{EnvDirective, PathEntry};
+use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap};
 use crate::file::{create_dir_all, display_path};
@@ -40,11 +40,11 @@ pub struct MiseToml {
     #[serde(skip)]
     path: PathBuf,
     #[serde(default, alias = "dotenv", deserialize_with = "deserialize_arr")]
-    env_file: Vec<PathBuf>,
+    env_file: Vec<String>,
     #[serde(default)]
     env: EnvList,
     #[serde(default, deserialize_with = "deserialize_arr")]
-    env_path: Vec<PathEntry>,
+    env_path: Vec<String>,
     #[serde(default)]
     alias: AliasMap,
     #[serde(skip)]
@@ -77,6 +77,12 @@ pub struct MiseTomlTool {
     pub tt: ToolVersionType,
     pub os: Option<Vec<String>>,
     pub options: Option<ToolVersionOptions>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MiseTomlEnvDirective {
+    pub value: String,
+    pub options: EnvDirectiveOptions,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -278,12 +284,12 @@ impl ConfigFile for MiseToml {
         let path_entries = self
             .env_path
             .iter()
-            .map(|p| EnvDirective::Path(p.clone()))
+            .map(|p| EnvDirective::Path(p.clone(), Default::default()))
             .collect_vec();
         let env_files = self
             .env_file
             .iter()
-            .map(|p| EnvDirective::File(p.clone()))
+            .map(|p| EnvDirective::File(p.clone(), Default::default()))
             .collect_vec();
         let all = path_entries
             .into_iter()
@@ -707,7 +713,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                     match key.as_str() {
                         "_" | "mise" => {
                             struct EnvDirectivePythonVenv {
-                                path: PathBuf,
+                                path: String,
                                 create: bool,
                                 python: Option<String>,
                                 uv_create_args: Option<Vec<String>>,
@@ -723,12 +729,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
 
                             #[derive(Deserialize)]
                             struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_path_entry_arr")]
-                                path: Vec<PathEntry>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
-                                file: Vec<PathBuf>,
+                                path: Vec<MiseTomlEnvDirective>,
                                 #[serde(default, deserialize_with = "deserialize_arr")]
-                                source: Vec<PathBuf>,
+                                file: Vec<MiseTomlEnvDirective>,
+                                #[serde(default, deserialize_with = "deserialize_arr")]
+                                source: Vec<MiseTomlEnvDirective>,
                                 #[serde(default)]
                                 python: EnvDirectivePython,
                                 #[serde(flatten)]
@@ -826,17 +832,17 @@ impl<'de> de::Deserialize<'de> for EnvList {
 
                             let directives = map.next_value::<EnvDirectives>()?;
                             // TODO: parse these in the order they're defined somehow
-                            for path in directives.path {
-                                env.push(EnvDirective::Path(path));
+                            for d in directives.path {
+                                env.push(EnvDirective::Path(d.value, d.options));
                             }
-                            for file in directives.file {
-                                env.push(EnvDirective::File(file));
+                            for d in directives.file {
+                                env.push(EnvDirective::File(d.value, d.options));
                             }
-                            for source in directives.source {
-                                env.push(EnvDirective::Source(source));
+                            for d in directives.source {
+                                env.push(EnvDirective::Source(d.value, d.options));
                             }
                             for (key, value) in directives.other {
-                                env.push(EnvDirective::Module(key, value));
+                                env.push(EnvDirective::Module(key, value, Default::default()));
                             }
                             if let Some(venv) = directives.python.venv {
                                 env.push(EnvDirective::PythonVenv {
@@ -845,6 +851,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     python: venv.python,
                                     uv_create_args: venv.uv_create_args,
                                     python_create_args: venv.python_create_args,
+                                    options: Default::default(),
                                 });
                             }
                         }
@@ -853,18 +860,33 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Int(i64),
                                 Str(String),
                                 Bool(bool),
+                                Map { value: Box<Val>, tools: bool },
+                            }
+                            impl Display for Val {
+                                fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+                                    match self {
+                                        Val::Int(i) => write!(f, "{}", i),
+                                        Val::Str(s) => write!(f, "{}", s),
+                                        Val::Bool(b) => write!(f, "{}", b),
+                                        Val::Map { value, tools } => {
+                                            write!(f, "{}", value)?;
+                                            if *tools {
+                                                write!(f, " tools")?;
+                                            }
+                                            Ok(())
+                                        }
+                                    }
+                                }
                             }
 
                             impl<'de> de::Deserialize<'de> for Val {
-                                fn deserialize<D>(
-                                    deserializer: D,
-                                ) -> std::result::Result<Self, D::Error>
+                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                                 where
-                                    D: de::Deserializer<'de>,
+                                    D: Deserializer<'de>,
                                 {
                                     struct ValVisitor;
 
-                                    impl Visitor<'_> for ValVisitor {
+                                    impl<'de> Visitor<'de> for ValVisitor {
                                         type Value = Val;
                                         fn expecting(
                                             &self,
@@ -878,12 +900,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         where
                                             E: de::Error,
                                         {
-                                            match v {
-                                                true => Err(de::Error::custom(
-                                                    "env values cannot be true",
-                                                )),
-                                                false => Ok(Val::Bool(v)),
-                                            }
+                                            Ok(Val::Bool(v))
                                         }
 
                                         fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
@@ -899,6 +916,46 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         {
                                             Ok(Val::Str(v.to_string()))
                                         }
+
+                                        fn visit_map<A>(
+                                            self,
+                                            mut map: A,
+                                        ) -> Result<Self::Value, A::Error>
+                                        where
+                                            A: de::MapAccess<'de>,
+                                        {
+                                            let mut value: Option<Val> = None;
+                                            let mut tools = None;
+                                            while let Some((key, val)) =
+                                                map.next_entry::<String, Val>()?
+                                            {
+                                                match key.as_str() {
+                                                    "value" => {
+                                                        value = Some(val);
+                                                    }
+                                                    "tools" => {
+                                                        tools = Some(val);
+                                                    }
+                                                    _ => {
+                                                        return Err(de::Error::unknown_field(
+                                                            &key,
+                                                            &["value", "tools"],
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                            let value = value
+                                                .ok_or_else(|| de::Error::missing_field("value"))?;
+                                            let tools = if let Some(Val::Bool(tools)) = tools {
+                                                tools
+                                            } else {
+                                                false
+                                            };
+                                            Ok(Val::Map {
+                                                value: Box::new(value),
+                                                tools,
+                                            })
+                                        }
                                     }
 
                                     deserializer.deserialize_any(ValVisitor)
@@ -908,12 +965,27 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             let value = map.next_value::<Val>()?;
                             match value {
                                 Val::Int(i) => {
-                                    env.push(EnvDirective::Val(key, i.to_string()));
+                                    env.push(EnvDirective::Val(
+                                        key,
+                                        i.to_string(),
+                                        Default::default(),
+                                    ));
                                 }
                                 Val::Str(s) => {
-                                    env.push(EnvDirective::Val(key, s));
+                                    env.push(EnvDirective::Val(key, s, Default::default()));
                                 }
-                                Val::Bool(_b) => env.push(EnvDirective::Rm(key)),
+                                Val::Bool(true) => env.push(EnvDirective::Val(
+                                    key,
+                                    "true".into(),
+                                    Default::default(),
+                                )),
+                                Val::Bool(false) => {
+                                    env.push(EnvDirective::Rm(key, Default::default()))
+                                }
+                                Val::Map { value, tools } => {
+                                    let opts = EnvDirectiveOptions { tools };
+                                    env.push(EnvDirective::Val(key, value.to_string(), opts));
+                                }
                             }
                         }
                     }
@@ -1025,6 +1097,71 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
         }
 
         deserializer.deserialize_any(MiseTomlToolListVisitor)
+    }
+}
+
+impl FromStr for MiseTomlEnvDirective {
+    type Err = eyre::Report;
+
+    fn from_str(s: &str) -> eyre::Result<Self> {
+        Ok(MiseTomlEnvDirective {
+            value: s.into(),
+            options: Default::default(),
+        })
+    }
+}
+
+impl<'de> de::Deserialize<'de> for MiseTomlEnvDirective {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct MiseTomlEnvDirectiveVisitor;
+
+        impl<'de> Visitor<'de> for MiseTomlEnvDirectiveVisitor {
+            type Value = MiseTomlEnvDirective;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("env directive")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(MiseTomlEnvDirective {
+                    value: v.into(),
+                    options: Default::default(),
+                })
+            }
+
+            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut options: EnvDirectiveOptions = Default::default();
+                let mut value = None;
+                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
+                    match k.as_str() {
+                        "value" => {
+                            value = Some(v.as_str().unwrap().to_string());
+                        }
+                        "tools" => {
+                            options.tools = v.as_bool().unwrap();
+                        }
+                        _ => {
+                            return Err(de::Error::custom("invalid key"));
+                        }
+                    }
+                }
+                if let Some(value) = value {
+                    Ok(MiseTomlEnvDirective { value, options })
+                } else {
+                    Err(de::Error::custom("missing value"))
+                }
+            }
+        }
+
+        deserializer.deserialize_any(MiseTomlEnvDirectiveVisitor)
     }
 }
 

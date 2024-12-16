@@ -16,13 +16,14 @@ impl EnvResults {
     #[allow(clippy::too_many_arguments)]
     pub fn venv(
         ctx: &mut tera::Context,
+        tera: &mut tera::Tera,
         env: &mut IndexMap<String, (String, Option<PathBuf>)>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
         config_root: &Path,
         env_vars: EnvMap,
-        path: PathBuf,
+        path: String,
         create: bool,
         python: Option<String>,
         uv_create_args: Option<Vec<String>>,
@@ -30,7 +31,7 @@ impl EnvResults {
     ) -> Result<()> {
         trace!("python venv: {} create={create}", display_path(&path));
         trust_check(source)?;
-        let venv = r.parse_template(ctx, source, path.to_string_lossy().as_ref())?;
+        let venv = r.parse_template(ctx, tera, source, &path)?;
         let venv = normalize_path(config_root, venv.into());
         if !venv.exists() && create {
             // TODO: the toolset stuff doesn't feel like it's in the right place here
@@ -162,25 +163,28 @@ mod tests {
             vec![
                 (
                     EnvDirective::PythonVenv {
-                        path: PathBuf::from("/"),
+                        path: "/".into(),
                         create: false,
                         python: None,
                         uv_create_args: None,
                         python_create_args: None,
+                        options: Default::default(),
                     },
                     Default::default(),
                 ),
                 (
                     EnvDirective::PythonVenv {
-                        path: PathBuf::from("./"),
+                        path: "./".into(),
                         create: false,
                         python: None,
                         uv_create_args: None,
                         python_create_args: None,
+                        options: Default::default(),
                     },
                     Default::default(),
                 ),
             ],
+            false,
         )
         .unwrap();
         // expect order to be reversed as it processes directives from global to dir specific
