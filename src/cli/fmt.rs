@@ -27,7 +27,10 @@ impl Fmt {
             bail!("No config file found in current directory");
         }
         for p in configs {
-            if !p.file_name().is_some_and(|f| f.to_string_lossy().ends_with("toml")) {
+            if !p
+                .file_name()
+                .is_some_and(|f| f.to_string_lossy().ends_with("toml"))
+            {
                 continue;
             }
             let toml = file::read_to_string(&p)?;
@@ -65,25 +68,23 @@ impl Fmt {
 
 fn sort(toml: String) -> Result<String> {
     let mut doc: toml_edit::DocumentMut = toml.parse()?;
-    let order = |k: String| {
-        match k.as_str() {
-            "min_version" => 0,
-            "env_file" => 1,
-            "env_path" => 2,
-            "_" => 3,
-            "env" => 4,
-            "vars" => 5,
-            "hooks" => 6,
-            "watch_files" => 7,
-            "tools" => 8,
-            "tasks" => 10,
-            "task_config" => 11,
-            "redactions" => 12,
-            "alias" => 13,
-            "plugins" => 14,
-            "settings" => 15,
-            _ => 9,
-        }
+    let order = |k: String| match k.as_str() {
+        "min_version" => 0,
+        "env_file" => 1,
+        "env_path" => 2,
+        "_" => 3,
+        "env" => 4,
+        "vars" => 5,
+        "hooks" => 6,
+        "watch_files" => 7,
+        "tools" => 8,
+        "tasks" => 10,
+        "task_config" => 11,
+        "redactions" => 12,
+        "alias" => 13,
+        "plugins" => 14,
+        "settings" => 15,
+        _ => 9,
     };
     doc.sort_values_by(|a, _, b, _| order(a.to_string()).cmp(&order(b.to_string())));
     Ok(doc.to_string())
