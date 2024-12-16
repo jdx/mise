@@ -26,7 +26,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | aapt2 | [asdf:ronnnnn/asdf-aapt2](https://github.com/ronnnnn/asdf-aapt2) |
 | act | [aqua:nektos/act](https://github.com/nektos/act) [ubi:nektos/act](https://github.com/nektos/act) [asdf:gr1m0h/asdf-act](https://github.com/gr1m0h/asdf-act) |
 | action-validator | [aqua:mpalmer/action-validator](https://github.com/mpalmer/action-validator) [ubi:mpalmer/action-validator](https://github.com/mpalmer/action-validator) [asdf:mpalmer/action-validator](https://github.com/mpalmer/action-validator) |
-| actionlint | [ubi:rhysd/actionlint](https://github.com/rhysd/actionlint) [asdf:crazy-matt/asdf-actionlint](https://github.com/crazy-matt/asdf-actionlint) |
+| actionlint | [aqua:rhysd/actionlint](https://github.com/rhysd/actionlint) [ubi:rhysd/actionlint](https://github.com/rhysd/actionlint) [asdf:crazy-matt/asdf-actionlint](https://github.com/crazy-matt/asdf-actionlint) |
 | adr-tools | [aqua:npryce/adr-tools](https://github.com/npryce/adr-tools) [asdf:https://gitlab.com/td7x/asdf/adr-tools](https://gitlab.com/td7x/asdf/adr-tools) |
 | ag | [asdf:koketani/asdf-ag](https://github.com/koketani/asdf-ag) |
 | age | [aqua:FiloSottile/age](https://github.com/FiloSottile/age) [asdf:threkk/asdf-age](https://github.com/threkk/asdf-age) |
@@ -628,6 +628,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | ripgrep | [aqua:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [ubi:BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) [asdf:https://gitlab.com/wt0f/asdf-ripgrep](https://gitlab.com/wt0f/asdf-ripgrep) |
 | ripgrep-all | [aqua:phiresky/ripgrep-all](https://github.com/phiresky/ripgrep-all) |
 | ripsecret | [aqua:sirwart/ripsecrets](https://github.com/sirwart/ripsecrets) [asdf:https://github.com/boris-smidt-klarrio/asdf-ripsecrets](https://github.com/boris-smidt-klarrio/asdf-ripsecrets) |
+| ripsecrets | [aqua:sirwart/ripsecrets](https://github.com/sirwart/ripsecrets) [asdf:https://github.com/boris-smidt-klarrio/asdf-ripsecrets](https://github.com/boris-smidt-klarrio/asdf-ripsecrets) |
 | rke | [aqua:rancher/rke](https://github.com/rancher/rke) [asdf:particledecay/asdf-rke](https://github.com/particledecay/asdf-rke) |
 | rlwrap | [asdf:asdf-community/asdf-rlwrap](https://github.com/asdf-community/asdf-rlwrap) |
 | rome | [asdf:kichiemon/asdf-rome](https://github.com/kichiemon/asdf-rome) |
@@ -776,7 +777,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | upctl | [aqua:UpCloudLtd/upcloud-cli](https://github.com/UpCloudLtd/upcloud-cli) |
 | updatecli | [aqua:updatecli/updatecli](https://github.com/updatecli/updatecli) [asdf:updatecli/asdf-updatecli](https://github.com/updatecli/asdf-updatecli) |
 | upt | [asdf:ORCID/asdf-upt](https://github.com/ORCID/asdf-upt) |
-| upx | [asdf:jimmidyson/asdf-upx](https://github.com/jimmidyson/asdf-upx) |
+| upx | [aqua:upx/upx](https://github.com/upx/upx) [asdf:jimmidyson/asdf-upx](https://github.com/jimmidyson/asdf-upx) |
 | usage | [ubi:jdx/usage](https://github.com/jdx/usage) [asdf:jdx/mise-usage](https://github.com/jdx/mise-usage) |
 | usql | [aqua:xo/usql](https://github.com/xo/usql) [asdf:itspngu/asdf-usql](https://github.com/itspngu/asdf-usql) |
 | uv | [aqua:astral-sh/uv](https://github.com/astral-sh/uv) [asdf:asdf-community/asdf-uv](https://github.com/asdf-community/asdf-uv) |
