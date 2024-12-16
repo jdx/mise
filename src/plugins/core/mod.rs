@@ -63,7 +63,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         // Arc::new(ErlangPlugin::new()),
-        // Arc::new(ElixirPlugin::new()),
+        Arc::new(ElixirPlugin::new()),
         Arc::new(GoPlugin::new()),
         Arc::new(JavaPlugin::new()),
         Arc::new(NodePlugin::new()),
