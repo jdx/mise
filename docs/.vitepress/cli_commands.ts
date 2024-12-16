@@ -247,6 +247,9 @@ export const commands: { [key: string]: Command } = {
   tasks: {
     hide: false,
     subcommands: {
+      add: {
+        hide: false,
+      },
       deps: {
         hide: false,
       },

@@ -1278,6 +1278,49 @@ cmd "tasks" help="Manage tasks" {
     flag "-J --json" help="Output in JSON format" global=true
     flag "--usage" hide=true global=true
     arg "[TASK]" help="Task name to get info of"
+    cmd "add" help="Create a new task" {
+        after_long_help r#"Examples:
+
+    $ mise task add pre-commit --depends "test" --depends "render" -- echo pre-commit
+"#
+        flag "--description" help="Description of the task" {
+            arg "<DESCRIPTION>"
+        }
+        flag "-a --alias" help="Other names for the task" var=true {
+            arg "<ALIAS>"
+        }
+        flag "--depends-post" help="Dependencies to run after the task runs" var=true {
+            arg "<DEPENDS_POST>"
+        }
+        flag "-w --wait-for" help="Wait for these tasks to complete if they are to run" var=true {
+            arg "<WAIT_FOR>"
+        }
+        flag "-D --dir" help="Run the task in a specific directory" {
+            arg "<DIR>"
+        }
+        flag "-H --hide" help="Hide the task from `mise task` and completions"
+        flag "-r --raw" help="Directly connect stdin/stdout/stderr"
+        flag "-s --sources" help="Glob patterns of files this task uses as input" var=true {
+            arg "<SOURCES>"
+        }
+        flag "--outputs" help="Glob patterns of files this task creates, to skip if they are not modified" var=true {
+            arg "<OUTPUTS>"
+        }
+        flag "--shell" help="Run the task in a specific shell" {
+            arg "<SHELL>"
+        }
+        flag "-q --quiet" help="Do not print the command before running"
+        flag "--silent" help="Do not print the command or its output"
+        flag "-d --depends" help="Add dependencies to the task" var=true {
+            arg "<DEPENDS>"
+        }
+        flag "--run-windows" help="Command to run on windows" {
+            arg "<RUN_WINDOWS>"
+        }
+        flag "-f --file" help="Create a file task instead of a toml task"
+        arg "<TASK>" help="Tasks name to add"
+        arg "<RUN>..." var=true
+    }
     cmd "deps" help="Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
 
