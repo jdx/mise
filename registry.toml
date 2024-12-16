@@ -92,7 +92,8 @@ balena.backends = ["ubi:balena-io/balena-cli[exe=balena]", "asdf:boatkit-io/asdf
 # balena.test = ["balena -v", "{{version}}"] # times out on windows in CI
 bashbot.backends = ["aqua:mathew-fleisch/bashbot", "asdf:mathew-fleisch/asdf-bashbot"]
 bashly.backends = ["asdf:pcrockett/asdf-bashly"]
-bat.backends = ["aqua:sharkdp/bat", "ubi:sharkdp/bat", "asdf:https://gitlab.com/wt0f/asdf-bat"]
+# aqua is available but uses cargo
+bat.backends = ["ubi:sharkdp/bat", "asdf:https://gitlab.com/wt0f/asdf-bat"]
 bat.test = ["bat --version", "bat {{version}}"]
 bat-extras.backends = ["asdf:vhdirk/asdf-bat-extras"]
 bats.backends = ["aqua:bats-core/bats-core", "asdf:timgluz/asdf-bats"]

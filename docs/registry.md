@@ -74,7 +74,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | balena | [ubi:balena-io/balena-cli](https://github.com/balena-io/balena-cli) [asdf:boatkit-io/asdf-balena-cli](https://github.com/boatkit-io/asdf-balena-cli) |
 | bashbot | [aqua:mathew-fleisch/bashbot](https://github.com/mathew-fleisch/bashbot) [asdf:mathew-fleisch/asdf-bashbot](https://github.com/mathew-fleisch/asdf-bashbot) |
 | bashly | [asdf:pcrockett/asdf-bashly](https://github.com/pcrockett/asdf-bashly) |
-| bat | [aqua:sharkdp/bat](https://github.com/sharkdp/bat) [ubi:sharkdp/bat](https://github.com/sharkdp/bat) [asdf:https://gitlab.com/wt0f/asdf-bat](https://gitlab.com/wt0f/asdf-bat) |
+| bat | [ubi:sharkdp/bat](https://github.com/sharkdp/bat) [asdf:https://gitlab.com/wt0f/asdf-bat](https://gitlab.com/wt0f/asdf-bat) |
 | bat-extras | [asdf:vhdirk/asdf-bat-extras](https://github.com/vhdirk/asdf-bat-extras) |
 | bats | [aqua:bats-core/bats-core](https://github.com/bats-core/bats-core) [asdf:timgluz/asdf-bats](https://github.com/timgluz/asdf-bats) |
 | bazel | [ubi:bazelbuild/bazel](https://github.com/bazelbuild/bazel) [asdf:rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel) |
