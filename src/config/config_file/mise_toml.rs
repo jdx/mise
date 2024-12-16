@@ -362,7 +362,7 @@ impl ConfigFile for MiseToml {
             } else {
                 let mut table = InlineTable::new();
                 table.insert("version", versions[0].version().into());
-                for (k, v) in versions[0].options() {
+                for (k, v) in versions[0].options().opts {
                     table.insert(k, v.into());
                 }
                 tools.insert_formatted(&key, table.into());
@@ -376,7 +376,7 @@ impl ConfigFile for MiseToml {
                 } else {
                     let mut table = InlineTable::new();
                     table.insert("version", v.to_string().into());
-                    for (k, v) in tr.options() {
+                    for (k, v) in tr.options().opts {
                         table.insert(k, v.clone().into());
                     }
                     arr.push(table);
@@ -417,7 +417,7 @@ impl ConfigFile for MiseToml {
             for tool in &tvp.0 {
                 let version = self.parse_template(&tool.tt.to_string())?;
                 let mut tvr = if let Some(mut options) = tool.options.clone() {
-                    for v in options.values_mut() {
+                    for v in options.opts.values_mut() {
                         *v = self.parse_template(v)?;
                     }
                     ToolRequest::new_opts(ba.clone(), &version, options, source.clone())?
@@ -1040,7 +1040,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
             where
                 M: de::MapAccess<'de>,
             {
-                let mut options: BTreeMap<String, String> = Default::default();
+                let mut options: ToolVersionOptions = Default::default();
                 let mut os: Option<Vec<String>> = None;
                 let mut tt: Option<ToolVersionType> = None;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
@@ -1062,21 +1062,44 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                 );
                             }
                             toml::Value::String(s) => {
-                                options.insert(k, s);
+                                options.opts.insert(k, s);
                             }
                             _ => {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
+                        "install_env" => match v {
+                            toml::Value::Table(env) => {
+                                for (k, v) in env {
+                                    match v {
+                                        toml::Value::Boolean(v) => {
+                                            options.env.insert(k, v.to_string());
+                                        }
+                                        toml::Value::Integer(v) => {
+                                            options.env.insert(k, v.to_string());
+                                        }
+                                        toml::Value::String(v) => {
+                                            options.env.insert(k, v);
+                                        }
+                                        _ => {
+                                            return Err(de::Error::custom("invalid value type"));
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                return Err(de::Error::custom("env must be a table"));
+                            }
+                        },
                         _ => match v {
                             toml::Value::Boolean(v) => {
-                                options.insert(k, v.to_string());
+                                options.opts.insert(k, v.to_string());
                             }
                             toml::Value::Integer(v) => {
-                                options.insert(k, v.to_string());
+                                options.opts.insert(k, v.to_string());
                             }
                             toml::Value::String(v) => {
-                                options.insert(k, v);
+                                options.opts.insert(k, v);
                             }
                             _ => {
                                 return Err(de::Error::custom("invalid value type"));
@@ -1196,7 +1219,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
             where
                 M: de::MapAccess<'de>,
             {
-                let mut options: BTreeMap<String, String> = Default::default();
+                let mut options: ToolVersionOptions = Default::default();
                 let mut os: Option<Vec<String>> = None;
                 let mut tt = ToolVersionType::System;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
@@ -1216,14 +1239,37 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                                 );
                             }
                             toml::Value::String(s) => {
-                                options.insert(k, s);
+                                options.opts.insert(k, s);
                             }
                             _ => {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
+                        "install_env" => match v {
+                            toml::Value::Table(env) => {
+                                for (k, v) in env {
+                                    match v {
+                                        toml::Value::Boolean(v) => {
+                                            options.env.insert(k, v.to_string());
+                                        }
+                                        toml::Value::Integer(v) => {
+                                            options.env.insert(k, v.to_string());
+                                        }
+                                        toml::Value::String(v) => {
+                                            options.env.insert(k, v);
+                                        }
+                                        _ => {
+                                            return Err(de::Error::custom("invalid value type"));
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                return Err(de::Error::custom("env must be a table"));
+                            }
+                        },
                         _ => {
-                            options.insert(k, v.as_str().unwrap().to_string());
+                            options.opts.insert(k, v.as_str().unwrap().to_string());
                         }
                     }
                 }
