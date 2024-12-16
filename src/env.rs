@@ -200,11 +200,8 @@ pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
 pub static TEST_TRANCHE: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE") as usize);
 pub static TEST_TRANCHE_COUNT: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE_COUNT") as usize);
 
-pub static CLICOLOR_FORCE: Lazy<Option<bool>> = Lazy::new(|| {
-    var("CLICOLOR_FORCE")
-        .ok()
-        .and_then(|v| Some(v != "0"))
-});
+pub static CLICOLOR_FORCE: Lazy<Option<bool>> =
+    Lazy::new(|| var("CLICOLOR_FORCE").ok().map(|v| v != "0"));
 
 pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
     if *CLICOLOR_FORCE == Some(true) {
