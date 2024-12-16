@@ -3,12 +3,11 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 
-use crate::cmd::cmd;
 use crate::config::config_file::{config_root, trust_check};
 use crate::dirs;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::tera::get_tera;
+use crate::tera::{get_tera, tera_exec};
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
 
@@ -150,27 +149,15 @@ impl EnvResults {
                 continue;
             }
             let mut tera = get_tera(source.parent());
-            tera.register_function("exec", {
-                let source = source.clone();
-                let env = env.clone();
-                move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
-                    match args.get("command") {
-                        Some(tera::Value::String(command)) => {
-                            let env = env::PRISTINE_ENV
-                                .iter()
-                                .map(|(k, v)| (k.clone(), v.clone()))
-                                .chain(env.iter().map(|(k, (v, _))| (k.to_string(), v.to_string())))
-                                .collect::<EnvMap>();
-                            let result = cmd("bash", ["-c", command])
-                                .full_env(&env)
-                                .dir(config_root(&source))
-                                .read()?;
-                            Ok(tera::Value::String(result))
-                        }
-                        _ => Err("exec command must be a string".into()),
-                    }
-                }
-            });
+            tera.register_function(
+                "exec",
+                tera_exec(
+                    source.parent().map(|d| d.to_path_buf()),
+                    env.iter()
+                        .map(|(k, (v, _))| (k.clone(), v.clone()))
+                        .collect(),
+                ),
+            );
             // trace!(
             //     "resolve: directive: {:?}, source: {:?}",
             //     &directive,

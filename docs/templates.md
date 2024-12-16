@@ -164,6 +164,18 @@ An example of function using `exec`:
 current = "{{ exec(command='node --version') }}"
 ```
 
+### Exec Options
+
+The `exec` function supports the following options:
+
+- `command: String` – [required] The command to run.
+- `cache_key: String` – The cache key to store the result.
+  If the cache key is provided, the result will be cached and reused
+  for subsequent calls.
+- `cache_duration: String` – The duration to cache the result.
+  The duration is in seconds, minutes, hours, days, or weeks.
+  e.g. `cache_duration="1d"` will cache the result for 1 day.
+
 ### Filters
 
 Tera offers many [built-in filters](https://keats.github.io/tera/docs/#built-in-filters).

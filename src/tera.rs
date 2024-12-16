@@ -11,8 +11,10 @@ use rand::thread_rng;
 use tera::{Context, Tera, Value};
 use versions::{Requirement, Versioning};
 
+use crate::cache::CacheManagerBuilder;
 use crate::cmd::cmd;
-use crate::{env, hash};
+use crate::env_diff::EnvMap;
+use crate::{dirs, env, hash};
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
@@ -297,24 +299,66 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
 pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
-    tera.register_function(
-        "exec",
-        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-            match args.get("command") {
-                Some(Value::String(command)) => {
-                    let mut cmd = cmd("bash", ["-c", command]).full_env(&*env::PRISTINE_ENV);
-                    if let Some(dir) = &dir {
-                        cmd = cmd.dir(dir);
-                    }
-                    let result = cmd.read()?;
-                    Ok(Value::String(result))
-                }
-                _ => Err("exec command must be a string".into()),
-            }
-        },
-    );
+    tera.register_function("exec", tera_exec(dir, env::PRISTINE_ENV.clone()));
 
     tera
+}
+
+pub fn tera_exec(
+    dir: Option<PathBuf>,
+    env: EnvMap,
+) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
+    move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+        let cache = match args.get("cache_key") {
+            Some(Value::String(cache)) => Some(cache),
+            None => None,
+            _ => return Err("exec cache_key must be a string".into()),
+        };
+        let cache_duration = match args.get("cache_duration") {
+            Some(Value::String(duration)) => match humantime::parse_duration(&duration.to_string())
+            {
+                Ok(duration) => Some(duration),
+                Err(e) => return Err(format!("exec cache_duration: {}", e).into()),
+            },
+            None => None,
+            _ => return Err("exec cache_duration must be an integer".into()),
+        };
+        match args.get("command") {
+            Some(Value::String(command)) => {
+                let mut cmd = cmd("bash", ["-c", command]).full_env(&env);
+                if let Some(dir) = &dir {
+                    cmd = cmd.dir(dir);
+                }
+                let result = if cache.is_some() || cache_duration.is_some() {
+                    let cachehash = hash::hash_sha256_to_str(
+                        &(dir
+                            .as_ref()
+                            .map(|d| d.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                            + command),
+                    )[..8]
+                        .to_string();
+                    let mut cacheman =
+                        CacheManagerBuilder::new(dirs::CACHE.join("exec").join(cachehash));
+                    if let Some(cache) = cache {
+                        cacheman = cacheman.with_cache_key(cache.clone());
+                    }
+                    if let Some(cache_duration) = cache_duration {
+                        cacheman = cacheman.with_fresh_duration(Some(cache_duration));
+                    }
+                    let cache = cacheman.build();
+                    match cache.get_or_try_init(|| Ok(cmd.read()?)) {
+                        Ok(result) => result.clone(),
+                        Err(e) => return Err(format!("exec command: {}", e).into()),
+                    }
+                } else {
+                    cmd.read()?
+                };
+                Ok(Value::String(result))
+            }
+            _ => Err("exec command must be a string".into()),
+        }
+    }
 }
 
 #[cfg(test)]
