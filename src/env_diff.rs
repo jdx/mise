@@ -70,6 +70,7 @@ impl EnvDiff {
         let bash_path = file::which("bash").unwrap_or("/bin/bash".into());
         let out = cmd!(
             bash_path,
+            "--noprofile",
             "-c",
             indoc::formatdoc! {"
                 . {script}
