@@ -7,6 +7,7 @@ mod deps;
 mod edit;
 mod info;
 mod ls;
+mod add;
 
 /// Manage tasks
 #[derive(Debug, clap::Args)]
@@ -24,6 +25,7 @@ pub struct Tasks {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Add(add::TasksAdd),
     Deps(deps::TasksDeps),
     Edit(edit::TasksEdit),
     Info(info::TasksInfo),
@@ -34,6 +36,7 @@ enum Commands {
 impl Commands {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::Add(cmd) => cmd.run(),
             Self::Deps(cmd) => cmd.run(),
             Self::Edit(cmd) => cmd.run(),
             Self::Info(cmd) => cmd.run(),
