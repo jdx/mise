@@ -218,7 +218,7 @@ impl Config {
             .get_or_try_init(|| ToolRequestSetBuilder::new().build())
     }
 
-    pub fn get_toolset(&self) -> eyre::Result<&Toolset> {
+    pub fn get_toolset(&self) -> Result<&Toolset> {
         self.toolset.get_or_try_init(|| {
             let mut ts = Toolset::from(self.get_tool_request_set()?.clone());
             ts.resolve()?;

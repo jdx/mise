@@ -57,7 +57,7 @@ impl EnvResults {
         if let Ok(raw) = file::read_to_string(p) {
             let mut f: Env<serde_json::Value> = serde_json::from_str(&raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
-                let raw = sops::decrypt::<_, JsonFileFormat>(&raw, parse_template)?;
+                let raw = sops::decrypt::<_, JsonFileFormat>(&raw, parse_template, "json")?;
                 f = serde_json::from_str(&raw).wrap_err_with(errfn)?;
             }
             f.env
@@ -87,7 +87,7 @@ impl EnvResults {
         if let Ok(raw) = file::read_to_string(p) {
             let mut f: Env<serde_yaml::Value> = serde_yaml::from_str(&raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
-                let raw = sops::decrypt::<_, YamlFileFormat>(&raw, parse_template)?;
+                let raw = sops::decrypt::<_, YamlFileFormat>(&raw, parse_template, "yaml")?;
                 f = serde_yaml::from_str(&raw).wrap_err_with(errfn)?;
             }
             f.env

@@ -672,6 +672,11 @@
             "age_recipients": {
               "description": "The age public keys to use for sops secret encryption.",
               "type": "string"
+            },
+            "rops": {
+              "default": true,
+              "description": "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops.",
+              "type": "boolean"
             }
           }
         },
