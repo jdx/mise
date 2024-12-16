@@ -1,4 +1,5 @@
 use crate::env;
+use std::cmp::PartialEq;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -17,12 +18,12 @@ mod path;
 mod source;
 mod venv;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct EnvDirectiveOptions {
     pub(crate) tools: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
@@ -144,10 +145,27 @@ impl EnvResults {
             }
         };
         let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
-        for (directive, source) in input.clone() {
-            if directive.options().tools != tools {
-                continue;
-            }
+        let last_python_venv = input.iter().rev().find_map(|(d, _)| match d {
+            EnvDirective::PythonVenv { .. } => Some(d),
+            _ => None,
+        });
+        let input = input
+            .iter()
+            .fold(Vec::new(), |mut acc, (directive, source)| {
+                // remove directives that need tools if we're not processing tool directives, or vice versa
+                if directive.options().tools != tools {
+                    return acc;
+                }
+                if let Some(d) = &last_python_venv {
+                    if matches!(directive, EnvDirective::PythonVenv { .. }) && **d != *directive {
+                        // skip venv directives if it's not the last one
+                        return acc;
+                    }
+                }
+                acc.push((directive.clone(), source.clone()));
+                acc
+            });
+        for (directive, source) in input {
             let mut tera = get_tera(source.parent());
             tera.register_function(
                 "exec",
