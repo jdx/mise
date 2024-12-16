@@ -222,7 +222,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | ejson | [aqua:Shopify/ejson](https://github.com/Shopify/ejson) [asdf:cipherstash/asdf-ejson](https://github.com/cipherstash/asdf-ejson) |
 | eksctl | [aqua:eksctl-io/eksctl](https://github.com/eksctl-io/eksctl) [asdf:elementalvoid/asdf-eksctl](https://github.com/elementalvoid/asdf-eksctl) |
 | elasticsearch | [asdf:asdf-community/asdf-elasticsearch](https://github.com/asdf-community/asdf-elasticsearch) |
-| elixir | [asdf:mise-plugins/mise-elixir](https://github.com/mise-plugins/mise-elixir) [vfox:version-fox/vfox-elixir](https://github.com/version-fox/vfox-elixir) |
+| elixir | [core:elixir](https://mise.jdx.dev/lang/elixir.html) |
 | elixir-ls | [asdf:juantascon/asdf-elixir-ls](https://github.com/juantascon/asdf-elixir-ls) |
 | elm | [ubi:elm/compiler](https://github.com/elm/compiler) [asdf:asdf-community/asdf-elm](https://github.com/asdf-community/asdf-elm) |
 | emsdk | [asdf:RobLoach/asdf-emsdk](https://github.com/RobLoach/asdf-emsdk) |

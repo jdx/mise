@@ -12,6 +12,7 @@ use crate::env;
 use crate::env::PATH_KEY;
 use crate::plugins::core::bun::BunPlugin;
 use crate::plugins::core::deno::DenoPlugin;
+use crate::plugins::core::elixir::ElixirPlugin;
 #[cfg(unix)]
 use crate::plugins::core::erlang::ErlangPlugin;
 use crate::plugins::core::go::GoPlugin;
@@ -27,6 +28,7 @@ use crate::toolset::ToolVersion;
 
 mod bun;
 mod deno;
+mod elixir;
 #[cfg(unix)]
 mod erlang;
 mod go;
@@ -45,6 +47,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     let plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
+        Arc::new(ElixirPlugin::new()),
         Arc::new(ErlangPlugin::new()),
         Arc::new(GoPlugin::new()),
         Arc::new(JavaPlugin::new()),
@@ -60,6 +63,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(BunPlugin::new()),
         Arc::new(DenoPlugin::new()),
         // Arc::new(ErlangPlugin::new()),
+        // Arc::new(ElixirPlugin::new()),
         Arc::new(GoPlugin::new()),
         Arc::new(JavaPlugin::new()),
         Arc::new(NodePlugin::new()),
