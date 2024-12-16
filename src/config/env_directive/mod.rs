@@ -1,9 +1,9 @@
+use crate::env;
 use std::collections::{BTreeSet, HashMap};
-use std::env;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
+use crate::cmd::cmd;
 use crate::config::config_file::{config_root, trust_check};
 use crate::dirs;
 use crate::env_diff::EnvMap;
@@ -11,7 +11,6 @@ use crate::file::display_path;
 use crate::tera::get_tera;
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer};
 
 mod file;
 mod module;
@@ -19,84 +18,51 @@ mod path;
 mod source;
 mod venv;
 
-#[derive(Debug, Clone)]
-pub enum PathEntry {
-    Normal(PathBuf),
-    Lazy(PathBuf),
-}
-
-impl From<&str> for PathEntry {
-    fn from(s: &str) -> Self {
-        let pb = PathBuf::from(s);
-        Self::Normal(pb)
-    }
-}
-
-impl FromStr for PathEntry {
-    type Err = eyre::Error;
-
-    fn from_str(s: &str) -> eyre::Result<Self> {
-        let pb = PathBuf::from_str(s)?;
-        Ok(Self::Normal(pb))
-    }
-}
-
-impl AsRef<Path> for PathEntry {
-    #[inline]
-    fn as_ref(&self) -> &Path {
-        match self {
-            PathEntry::Normal(pb) => pb.as_ref(),
-            PathEntry::Lazy(pb) => pb.as_ref(),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for PathEntry {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
-        #[derive(Debug, Deserialize)]
-        struct MapPathEntry {
-            value: PathBuf,
-        }
-
-        #[derive(Debug, Deserialize)]
-        #[serde(untagged)]
-        enum Helper {
-            Normal(PathBuf),
-            Lazy(MapPathEntry),
-        }
-
-        Ok(match Helper::deserialize(deserializer)? {
-            Helper::Normal(value) => Self::Normal(value),
-            Helper::Lazy(this) => Self::Lazy(this.value),
-        })
-    }
+#[derive(Debug, Clone, Default)]
+pub struct EnvDirectiveOptions {
+    pub(crate) tools: bool,
 }
 
 #[derive(Debug, Clone)]
 pub enum EnvDirective {
     /// simple key/value pair
-    Val(String, String),
+    Val(String, String, EnvDirectiveOptions),
     /// remove a key
-    Rm(String),
+    Rm(String, EnvDirectiveOptions),
     /// dotenv file
-    File(PathBuf),
+    File(String, EnvDirectiveOptions),
     /// add a path to the PATH
-    Path(PathEntry),
+    Path(String, EnvDirectiveOptions),
     /// run a bash script and apply the resulting env diff
-    Source(PathBuf),
+    Source(String, EnvDirectiveOptions),
     PythonVenv {
-        path: PathBuf,
+        path: String,
         create: bool,
         python: Option<String>,
         uv_create_args: Option<Vec<String>>,
         python_create_args: Option<Vec<String>>,
+        options: EnvDirectiveOptions,
     },
-    Module(String, toml::Value),
+    Module(String, toml::Value, EnvDirectiveOptions),
+}
+
+impl EnvDirective {
+    pub fn options(&self) -> &EnvDirectiveOptions {
+        match self {
+            EnvDirective::Val(_, _, opts)
+            | EnvDirective::Rm(_, opts)
+            | EnvDirective::File(_, opts)
+            | EnvDirective::Path(_, opts)
+            | EnvDirective::Source(_, opts)
+            | EnvDirective::PythonVenv { options: opts, .. }
+            | EnvDirective::Module(_, _, opts) => opts,
+        }
+    }
 }
 
 impl From<(String, String)> for EnvDirective {
     fn from((k, v): (String, String)) -> Self {
-        Self::Val(k, v)
+        Self::Val(k, v, Default::default())
     }
 }
 
@@ -109,18 +75,19 @@ impl From<(String, i64)> for EnvDirective {
 impl Display for EnvDirective {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EnvDirective::Val(k, v) => write!(f, "{k}={v}"),
-            EnvDirective::Rm(k) => write!(f, "unset {k}"),
-            EnvDirective::File(path) => write!(f, "dotenv {}", display_path(path)),
-            EnvDirective::Path(path) => write!(f, "path_add {}", display_path(path)),
-            EnvDirective::Source(path) => write!(f, "source {}", display_path(path)),
-            EnvDirective::Module(name, _) => write!(f, "module {}", name),
+            EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
+            EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
+            EnvDirective::File(path, _) => write!(f, "dotenv {}", display_path(path)),
+            EnvDirective::Path(path, _) => write!(f, "path_add {}", display_path(path)),
+            EnvDirective::Source(path, _) => write!(f, "source {}", display_path(path)),
+            EnvDirective::Module(name, _, _) => write!(f, "module {}", name),
             EnvDirective::PythonVenv {
                 path,
                 create,
                 python,
                 uv_create_args,
                 python_create_args,
+                ..
             } => {
                 write!(f, "python venv path={}", display_path(path))?;
                 if *create {
@@ -155,6 +122,7 @@ impl EnvResults {
         mut ctx: tera::Context,
         initial: &EnvMap,
         input: Vec<(EnvDirective, PathBuf)>,
+        tools: bool,
     ) -> eyre::Result<Self> {
         // trace!("resolve: input: {:#?}", &input);
         let mut env = initial
@@ -176,8 +144,33 @@ impl EnvResults {
                 _ => p.to_path_buf(),
             }
         };
-        let mut paths: Vec<(PathEntry, PathBuf)> = Vec::new();
+        let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
         for (directive, source) in input.clone() {
+            if directive.options().tools != tools {
+                continue;
+            }
+            let mut tera = get_tera(source.parent());
+            tera.register_function("exec", {
+                let source = source.clone();
+                let env = env.clone();
+                move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
+                    match args.get("command") {
+                        Some(tera::Value::String(command)) => {
+                            let env = env::PRISTINE_ENV
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .chain(env.iter().map(|(k, (v, _))| (k.to_string(), v.to_string())))
+                                .collect::<EnvMap>();
+                            let result = cmd("bash", ["-c", command])
+                                .full_env(&env)
+                                .dir(config_root(&source))
+                                .read()?;
+                            Ok(tera::Value::String(result))
+                        }
+                        _ => Err("exec command must be a string".into()),
+                    }
+                }
+            });
             // trace!(
             //     "resolve: directive: {:?}, source: {:?}",
             //     &directive,
@@ -193,22 +186,23 @@ impl EnvResults {
             ctx.insert("env", &env_vars);
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
-                EnvDirective::Val(k, v) => {
-                    let v = r.parse_template(&ctx, &source, &v)?;
+                EnvDirective::Val(k, v, _opts) => {
+                    let v = r.parse_template(&ctx, &mut tera, &source, &v)?;
                     r.env_remove.remove(&k);
                     // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
                     env.insert(k, (v, Some(source.clone())));
                 }
-                EnvDirective::Rm(k) => {
+                EnvDirective::Rm(k, _opts) => {
                     env.shift_remove(&k);
                     r.env_remove.insert(k);
                 }
-                EnvDirective::Path(input_str) => {
-                    Self::path(&mut ctx, &mut r, &mut paths, source, input_str)?;
+                EnvDirective::Path(input_str, _opts) => {
+                    Self::path(&mut ctx, &mut tera, &mut r, &mut paths, source, input_str)?;
                 }
-                EnvDirective::File(input) => {
+                EnvDirective::File(input, _opts) => {
                     Self::file(
                         &mut ctx,
+                        &mut tera,
                         &mut env,
                         &mut r,
                         normalize_path,
@@ -217,9 +211,10 @@ impl EnvResults {
                         input,
                     )?;
                 }
-                EnvDirective::Source(input) => {
+                EnvDirective::Source(input, _opts) => {
                     Self::source(
                         &mut ctx,
+                        &mut tera,
                         &mut env,
                         &mut r,
                         normalize_path,
@@ -235,9 +230,11 @@ impl EnvResults {
                     python,
                     uv_create_args,
                     python_create_args,
+                    options: _opts,
                 } => {
                     Self::venv(
                         &mut ctx,
+                        &mut tera,
                         &mut env,
                         &mut r,
                         normalize_path,
@@ -251,7 +248,7 @@ impl EnvResults {
                         python_create_args,
                     )?;
                 }
-                EnvDirective::Module(name, value) => {
+                EnvDirective::Module(name, value, _opts) => {
                     Self::module(&mut r, source, name, &value)?;
                 }
             };
@@ -268,21 +265,14 @@ impl EnvResults {
         }
         // trace!("resolve: paths: {:#?}", &paths);
         // trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
-        for (entry, source) in paths {
+        for (p, source) in paths {
             // trace!("resolve: entry: {:?}, source: {}", &entry, display_path(source));
             let config_root = source
                 .parent()
                 .map(Path::to_path_buf)
                 .or_else(|| dirs::CWD.clone())
                 .unwrap_or_default();
-            let s = match entry {
-                PathEntry::Normal(pb) => pb.to_string_lossy().to_string(),
-                PathEntry::Lazy(pb) => {
-                    // trace!("resolve: s: {:?}", &s);
-                    r.parse_template(&ctx, &source, pb.to_string_lossy().as_ref())?
-                }
-            };
-            env::split_paths(&s)
+            env::split_paths(&p)
                 .map(|s| normalize_path(&config_root, s))
                 .for_each(|p| r.env_paths.push(p.clone()));
         }
@@ -292,6 +282,7 @@ impl EnvResults {
     fn parse_template(
         &self,
         ctx: &tera::Context,
+        tera: &mut tera::Tera,
         path: &Path,
         input: &str,
     ) -> eyre::Result<String> {
@@ -299,8 +290,7 @@ impl EnvResults {
             return Ok(input.to_string());
         }
         trust_check(path)?;
-        let dir = path.parent();
-        let output = get_tera(dir)
+        let output = tera
             .render_str(input, ctx)
             .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         Ok(output)

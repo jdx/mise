@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt::Formatter;
 use std::str::FromStr;
 
 use either::Either;
-use serde::de;
+use serde::{de, Deserialize};
 
 use crate::task::{EitherIntOrBool, EitherStringOrIntOrBool};
 
@@ -88,14 +88,14 @@ impl<'a> TomlParser<'a> {
 pub fn deserialize_arr<'de, D, T>(deserializer: D) -> eyre::Result<Vec<T>, D::Error>
 where
     D: de::Deserializer<'de>,
-    T: FromStr,
+    T: FromStr + Deserialize<'de>,
     <T as FromStr>::Err: std::fmt::Display,
 {
     struct ArrVisitor<T>(std::marker::PhantomData<T>);
 
     impl<'de, T> de::Visitor<'de> for ArrVisitor<T>
     where
-        T: FromStr,
+        T: FromStr + Deserialize<'de>,
         <T as FromStr>::Err: std::fmt::Display,
     {
         type Value = Vec<T>;
@@ -121,49 +121,16 @@ where
             }
             Ok(v)
         }
+
+        fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            Ok(vec![Deserialize::deserialize(
+                de::value::MapAccessDeserializer::new(map),
+            )?])
+        }
     }
 
     deserializer.deserialize_any(ArrVisitor(std::marker::PhantomData))
-}
-
-pub fn deserialize_path_entry_arr<'de, D, T>(deserializer: D) -> eyre::Result<Vec<T>, D::Error>
-where
-    D: de::Deserializer<'de>,
-    T: FromStr + Debug + serde::Deserialize<'de>,
-    <T as FromStr>::Err: std::fmt::Display,
-{
-    struct PathEntryArrVisitor<T>(std::marker::PhantomData<T>);
-
-    impl<'de, T> de::Visitor<'de> for PathEntryArrVisitor<T>
-    where
-        T: FromStr + Debug + serde::Deserialize<'de>,
-        <T as FromStr>::Err: std::fmt::Display,
-    {
-        type Value = Vec<T>;
-        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("path entry or array of path entries")
-        }
-
-        fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            let v = v.parse().map_err(de::Error::custom)?;
-            Ok(vec![v])
-        }
-
-        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
-        where
-            S: de::SeqAccess<'de>,
-        {
-            let mut v = vec![];
-            while let Some(entry) = seq.next_element::<T>()? {
-                trace!("visit_seq: entry: {:?}", entry);
-                v.push(entry);
-            }
-            Ok(v)
-        }
-    }
-
-    deserializer.deserialize_any(PathEntryArrVisitor(std::marker::PhantomData))
 }

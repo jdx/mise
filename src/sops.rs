@@ -9,9 +9,9 @@ use rops::file::RopsFile;
 use std::env;
 use std::sync::{Mutex, OnceLock};
 
-pub fn decrypt<PT, F>(input: &str, parse_template: PT, format: &str) -> result::Result<String>
+pub fn decrypt<PT, F>(input: &str, mut parse_template: PT, format: &str) -> result::Result<String>
 where
-    PT: Fn(String) -> result::Result<String>,
+    PT: FnMut(String) -> result::Result<String>,
     F: rops::file::format::FileFormat,
 {
     static AGE_KEY: OnceLock<Option<String>> = OnceLock::new();

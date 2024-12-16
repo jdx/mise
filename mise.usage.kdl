@@ -359,6 +359,7 @@ cmd "doctor" help="Check mise installation for possible problems" {
     [WARN] plugin node is not installed
 "
     cmd "path" help="Print the current PATH entries mise is providing" {
+        alias "paths" hide=true
         after_long_help r"Examples:
 
     Get the current PATH entries mise is providing

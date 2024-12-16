@@ -9,14 +9,23 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
         Val(
             "foo",
             "bar",
+            EnvDirectiveOptions {
+                tools: false,
+            },
         ),
         Val(
             "foo2",
             "qux\\nquux",
+            EnvDirectiveOptions {
+                tools: false,
+            },
         ),
         Val(
             "foo3",
             "qux\nquux",
+            EnvDirectiveOptions {
+                tools: false,
+            },
         ),
     ],
 }

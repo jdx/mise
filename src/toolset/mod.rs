@@ -6,6 +6,7 @@ use std::{panic, thread};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
+use crate::config::env_directive::EnvResults;
 use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
 use crate::config::Config;
 use crate::env::{PATH_KEY, TERM_WIDTH};
@@ -454,6 +455,14 @@ impl Toolset {
             path_env.add(p);
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
+        let mut ctx = config.tera_ctx.clone();
+        ctx.insert("env", &env);
+        env.extend(
+            self.load_post_env(ctx, &env)?
+                .env
+                .into_iter()
+                .map(|(k, v)| (k, v.0)),
+        );
         Ok(env)
     }
     pub fn env_from_tools(&self, config: &Config) -> Vec<(String, String, String)> {
@@ -533,6 +542,15 @@ impl Toolset {
         for p in self.list_paths() {
             paths.insert(p);
         }
+        let config = Config::get();
+        let mut env = self.env(&config)?;
+        env.insert(
+            PATH_KEY.to_string(),
+            env::join_paths(paths.iter())?.to_string_lossy().to_string(),
+        );
+        let mut ctx = config.tera_ctx.clone();
+        ctx.insert("env", &env);
+        paths.extend(self.load_post_env(ctx, &env)?.env_paths);
         Ok(paths.into_iter().collect())
     }
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
@@ -632,6 +650,30 @@ impl Toolset {
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
         !ba.is_os_supported() || SETTINGS.disable_tools().contains(&ba.short)
+    }
+
+    fn load_post_env(&self, ctx: tera::Context, env: &EnvMap) -> Result<EnvResults> {
+        let config = Config::get();
+        let entries = config
+            .config_files
+            .iter()
+            .rev()
+            .map(|(source, cf)| {
+                cf.env_entries()
+                    .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        // trace!("load_env: entries: {:#?}", entries);
+        let env_results = EnvResults::resolve(ctx, env, entries, true)?;
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("{env_results:#?}");
+        } else {
+            debug!("{env_results:?}");
+        }
+        Ok(env_results)
     }
 }
 
