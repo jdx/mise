@@ -3,11 +3,11 @@ use eyre::Result;
 
 use crate::cli::run;
 
+mod add;
 mod deps;
 mod edit;
 mod info;
 mod ls;
-mod add;
 
 /// Manage tasks
 #[derive(Debug, clap::Args)]

@@ -2377,6 +2377,194 @@ const completionSpec: Fig.Spec = {
             "subcommands": [
                 {
                     "name": [
+                        "add"
+                    ],
+                    "description": "Create a new task",
+                    "options": [
+                        {
+                            "name": [
+                                "--description"
+                            ],
+                            "description": "Description of the task",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "description",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
+                                "-a",
+                                "--alias"
+                            ],
+                            "description": "Other names for the task",
+                            "isRepeatable": true,
+                            "args": {
+                                "name": "alias",
+                                "isOptional": false,
+                                "isVariadic": false,
+                                "generators": aliasGenerator
+                            }
+                        },
+                        {
+                            "name": [
+                                "--depends-post"
+                            ],
+                            "description": "Dependencies to run after the task runs",
+                            "isRepeatable": true,
+                            "args": {
+                                "name": "depends_post",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
+                                "-w",
+                                "--wait-for"
+                            ],
+                            "description": "Wait for these tasks to complete if they are to run",
+                            "isRepeatable": true,
+                            "args": {
+                                "name": "wait_for",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
+                                "-D",
+                                "--dir"
+                            ],
+                            "description": "Run the task in a specific directory",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "dir",
+                                "isOptional": false,
+                                "isVariadic": false,
+                                "template": "folders"
+                            }
+                        },
+                        {
+                            "name": [
+                                "-H",
+                                "--hide"
+                            ],
+                            "description": "Hide the task from `mise task` and completions",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-r",
+                                "--raw"
+                            ],
+                            "description": "Directly connect stdin/stdout/stderr",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-s",
+                                "--sources"
+                            ],
+                            "description": "Glob patterns of files this task uses as input",
+                            "isRepeatable": true,
+                            "args": {
+                                "name": "sources",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
+                                "--outputs"
+                            ],
+                            "description": "Glob patterns of files this task creates, to skip if they are not modified",
+                            "isRepeatable": true,
+                            "args": {
+                                "name": "outputs",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
+                                "--shell"
+                            ],
+                            "description": "Run the task in a specific shell",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "shell",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
+                                "-q",
+                                "--quiet"
+                            ],
+                            "description": "Do not print the command before running",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "--silent"
+                            ],
+                            "description": "Do not print the command or its output",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "-d",
+                                "--depends"
+                            ],
+                            "description": "Add dependencies to the task",
+                            "isRepeatable": true,
+                            "args": {
+                                "name": "depends",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
+                                "--run-windows"
+                            ],
+                            "description": "Command to run on windows",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "run_windows",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
+                                "-f",
+                                "--file"
+                            ],
+                            "description": "Create a file task instead of a toml task",
+                            "isRepeatable": false
+                        }
+                    ],
+                    "args": [
+                        {
+                            "name": "task",
+                            "description": "Tasks name to add",
+                            "isOptional": false,
+                            "isVariadic": false,
+                            "generators": simpleTaskGenerator
+                        },
+                        {
+                            "name": "run",
+                            "isOptional": false,
+                            "isVariadic": true
+                        }
+                    ]
+                },
+                {
+                    "name": [
                         "deps"
                     ],
                     "description": "Display a tree visualization of a dependency graph",

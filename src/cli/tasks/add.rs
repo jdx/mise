@@ -24,10 +24,10 @@ pub struct TasksAdd {
     #[clap(long, short)]
     wait_for: Vec<String>,
     /// Run the task in a specific directory
-    #[clap(long, short='D')]
+    #[clap(long, short = 'D')]
     dir: Option<String>,
     /// Hide the task from `mise task` and completions
-    #[clap(long, short='H')]
+    #[clap(long, short = 'H')]
     hide: bool,
     /// Directly connect stdin/stdout/stderr
     #[clap(long, short)]
@@ -69,15 +69,23 @@ impl TasksAdd {
     pub fn run(self) -> Result<()> {
         if self.file {
             let path = Task::task_dir().join(&self.task);
-            let mut lines = vec![format!("#!/usr/bin/env {}", self.shell.clone().unwrap_or("bash".into()))];
+            let mut lines = vec![format!(
+                "#!/usr/bin/env {}",
+                self.shell.clone().unwrap_or("bash".into())
+            )];
             if !self.depends.is_empty() {
                 lines.push("#MISE depends=[\"".to_string() + &self.depends.join("\", \"") + "\"]");
             }
             if !self.depends_post.is_empty() {
-                lines.push("#MISE depends_post=[\"".to_string() + &self.depends_post.join("\", \"") + "\"]");
+                lines.push(
+                    "#MISE depends_post=[\"".to_string()
+                        + &self.depends_post.join("\", \"")
+                        + "\"]",
+                );
             }
             if !self.wait_for.is_empty() {
-                lines.push("#MISE wait_for=[\"".to_string() + &self.wait_for.join("\", \"") + "\"]");
+                lines
+                    .push("#MISE wait_for=[\"".to_string() + &self.wait_for.join("\", \"") + "\"]");
             }
             if !self.alias.is_empty() {
                 lines.push("#MISE alias=[\"".to_string() + &self.alias.join("\", \"") + "\"]");
@@ -114,12 +122,17 @@ impl TasksAdd {
             file::write(&path, lines.join("\n"))?;
         } else {
             let path = config::local_toml_config_path();
-            let mut doc: toml_edit::DocumentMut = file::read_to_string(&path).unwrap_or_default().parse()?;
-            let tasks = doc.entry("tasks").or_insert_with(|| {
-                let mut table = toml_edit::Table::new();
-                table.set_implicit(true);
-                Item::Table(table)
-            }).as_table_mut().unwrap();
+            let mut doc: toml_edit::DocumentMut =
+                file::read_to_string(&path).unwrap_or_default().parse()?;
+            let tasks = doc
+                .entry("tasks")
+                .or_insert_with(|| {
+                    let mut table = toml_edit::Table::new();
+                    table.set_implicit(true);
+                    Item::Table(table)
+                })
+                .as_table_mut()
+                .unwrap();
             let mut task = toml_edit::Table::new();
             if !self.depends.is_empty() {
                 let mut depends = toml_edit::Array::new();
@@ -142,7 +155,7 @@ impl TasksAdd {
                 }
                 task.insert("wait_for", Item::Value(wait_for.into()));
             }
-            if !self.description.is_none() {
+            if self.description.is_some() {
                 task.insert("description", self.description.unwrap().into());
             }
             if !self.alias.is_empty() {
@@ -152,7 +165,7 @@ impl TasksAdd {
                 }
                 task.insert("alias", Item::Value(alias.into()));
             }
-            if !self.dir.is_none() {
+            if self.dir.is_some() {
                 task.insert("dir", self.dir.unwrap().into());
             }
             if self.hide {
@@ -175,7 +188,7 @@ impl TasksAdd {
                 }
                 task.insert("outputs", Item::Value(outputs.into()));
             }
-            if !self.shell.is_none() {
+            if self.shell.is_some() {
                 task.insert("shell", self.shell.unwrap().into());
             }
             if self.quiet {
