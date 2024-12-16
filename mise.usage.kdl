@@ -451,9 +451,12 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
 cmd "fmt" help="Formats mise.toml" {
+    long_help r"Formats mise.toml
+
+Sorts keys and cleans up whitespace in mise.toml"
     after_long_help r"Examples:
 
-    $ mise format
+    $ mise fmt
 "
     flag "-a --all" help="Format all files from the current directory"
 }
