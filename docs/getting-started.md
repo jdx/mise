@@ -36,11 +36,11 @@ brew install mise
 == Windows
 ::: code-group
 
-```shell
+```shell [winget]
 winget install jdx.mise
 ```
 
-```shell
+```shell [scoop]
 scoop install mise
 ```
 
