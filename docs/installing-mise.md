@@ -111,7 +111,7 @@ sudo apt install -y mise
 ```
 
 ```sh [arm64]
-apt update -y && apt install -y gpg sudo wget curl
+sudo apt update -y && apt install -y gpg sudo wget curl
 sudo install -dm 755 /etc/apt/keyrings
 wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
 echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
@@ -237,16 +237,20 @@ This is the recommended way to install mise on Windows. It will automatically ad
 scoop install mise
 ```
 
+### Windows - winget
+
+```sh
+winget install jdx.mise
+```
+
 ### Windows - Chocolatey
+
+::: info
+chocolatey version is currently outdated.
+:::
 
 ```sh
 choco install mise
-```
-
-### Windows - WinGet
-
-```sh
-winget install mise
 ```
 
 ### Windows - manual
@@ -355,6 +359,10 @@ the others are implemented. If your shell isn't currently supported
 I'd be happy to help you get yours integrated.
 
 ## Autocompletion
+
+::: tip
+Some installation methods automatically install autocompletion scripts.
+:::
 
 The [`mise completion`](/cli/completion.html) command can generate autocompletion scripts for your shell.
 This requires `usage` to be installed. If you don't have it, install it with:
