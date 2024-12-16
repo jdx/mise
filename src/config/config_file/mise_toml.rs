@@ -1090,7 +1090,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                             _ => {
                                 return Err(de::Error::custom("env must be a table"));
                             }
-                        }
+                        },
                         _ => match v {
                             toml::Value::Boolean(v) => {
                                 options.opts.insert(k, v.to_string());
@@ -1267,7 +1267,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                             _ => {
                                 return Err(de::Error::custom("env must be a table"));
                             }
-                        }
+                        },
                         _ => {
                             options.opts.insert(k, v.as_str().unwrap().to_string());
                         }
