@@ -8,7 +8,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::registry::REGISTRY;
-use crate::toolset::{ToolRequest, ToolSource};
+use crate::toolset::{ToolRequest, ToolSource, Toolset};
 
 #[derive(Debug, Default, Clone)]
 pub struct ToolRequestSet {
@@ -85,6 +85,10 @@ impl ToolRequestSet {
             .filter(|(ba, ..)| tools.contains(&ba.short))
             .map(|(fa, trl, ts)| (fa.clone(), trl.clone(), ts.clone()))
             .collect::<ToolRequestSet>()
+    }
+    
+    pub fn into_toolset(self) -> Toolset {
+        self.into()
     }
 }
 

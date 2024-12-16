@@ -539,10 +539,12 @@ impl Toolset {
         self.list_current_installed_versions()
             .into_par_iter()
             .find_first(|(p, tv)| {
-                if let Ok(x) = p.which(tv, bin_name) {
-                    x.is_some()
-                } else {
-                    false
+                match p.which(tv, bin_name) {
+                    Ok(x) => x.is_some(),
+                    Err(e) => {
+                        debug!("Error running which: {:#}", e);
+                        false
+                    }
                 }
             })
     }

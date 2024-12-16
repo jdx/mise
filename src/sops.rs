@@ -1,4 +1,4 @@
-use crate::config::SETTINGS;
+use crate::config::{Config, SETTINGS};
 use crate::file::replace_path;
 use crate::{dirs, file, result};
 use eyre::WrapErr;
@@ -66,10 +66,15 @@ where
             .wrap_err("failed to decrypt sops file")?
             .to_string()
     } else {
-        // TODO: this won't work right if sops is coming from mise since tools won't have been loaded
+        let config = Config::get();
+        let mut ts = config.get_tool_request_set().cloned().unwrap_or_default()
+            .filter_by_tool(["sops".into()].into())
+            .into_toolset();
+        ts.resolve()?;
+        let sops = ts.which_bin("sops").map(|s| s.to_string_lossy().to_string()).unwrap_or("sops".into());
         // TODO: this obviously won't work on windows
         cmd!(
-            "sops",
+            sops,
             "--input-type",
             format,
             "--output-type",
@@ -77,8 +82,8 @@ where
             "-d",
             "/dev/stdin"
         )
-        .stdin_bytes(input.as_bytes())
-        .read()?
+            .stdin_bytes(input.as_bytes())
+            .read()?
     };
 
     if let Some(age) = prev_age {
