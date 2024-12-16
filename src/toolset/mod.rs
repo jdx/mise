@@ -538,13 +538,11 @@ impl Toolset {
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_installed_versions()
             .into_par_iter()
-            .find_first(|(p, tv)| {
-                match p.which(tv, bin_name) {
-                    Ok(x) => x.is_some(),
-                    Err(e) => {
-                        debug!("Error running which: {:#}", e);
-                        false
-                    }
+            .find_first(|(p, tv)| match p.which(tv, bin_name) {
+                Ok(x) => x.is_some(),
+                Err(e) => {
+                    debug!("Error running which: {:#}", e);
+                    false
                 }
             })
     }

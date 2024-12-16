@@ -225,7 +225,7 @@ impl Config {
             Ok(ts)
         })
     }
-    
+
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
         let plugin_name = self
             .all_aliases

@@ -86,7 +86,7 @@ impl ToolRequestSet {
             .map(|(fa, trl, ts)| (fa.clone(), trl.clone(), ts.clone()))
             .collect::<ToolRequestSet>()
     }
-    
+
     pub fn into_toolset(self) -> Toolset {
         self.into()
     }

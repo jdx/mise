@@ -67,11 +67,17 @@ where
             .to_string()
     } else {
         let config = Config::get();
-        let mut ts = config.get_tool_request_set().cloned().unwrap_or_default()
+        let mut ts = config
+            .get_tool_request_set()
+            .cloned()
+            .unwrap_or_default()
             .filter_by_tool(["sops".into()].into())
             .into_toolset();
         ts.resolve()?;
-        let sops = ts.which_bin("sops").map(|s| s.to_string_lossy().to_string()).unwrap_or("sops".into());
+        let sops = ts
+            .which_bin("sops")
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or("sops".into());
         // TODO: this obviously won't work on windows
         cmd!(
             sops,
@@ -82,8 +88,8 @@ where
             "-d",
             "/dev/stdin"
         )
-            .stdin_bytes(input.as_bytes())
-            .read()?
+        .stdin_bytes(input.as_bytes())
+        .read()?
     };
 
     if let Some(age) = prev_age {
