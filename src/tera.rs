@@ -304,7 +304,10 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
     tera
 }
 
-pub fn tera_exec(dir: Option<PathBuf>, env: EnvMap) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
+pub fn tera_exec(
+    dir: Option<PathBuf>,
+    env: EnvMap,
+) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
     move |args: &HashMap<String, Value>| -> tera::Result<Value> {
         let cache = match args.get("cache_key") {
             Some(Value::String(cache)) => Some(cache),
@@ -312,10 +315,11 @@ pub fn tera_exec(dir: Option<PathBuf>, env: EnvMap) -> impl Fn(&HashMap<String, 
             _ => return Err("exec cache_key must be a string".into()),
         };
         let cache_duration = match args.get("cache_duration") {
-            Some(Value::String(duration)) => match humantime::parse_duration(&duration.to_string()) {
+            Some(Value::String(duration)) => match humantime::parse_duration(&duration.to_string())
+            {
                 Ok(duration) => Some(duration),
                 Err(e) => return Err(format!("exec cache_duration: {}", e).into()),
-            }
+            },
             None => None,
             _ => return Err("exec cache_duration must be an integer".into()),
         };
@@ -326,8 +330,16 @@ pub fn tera_exec(dir: Option<PathBuf>, env: EnvMap) -> impl Fn(&HashMap<String, 
                     cmd = cmd.dir(dir);
                 }
                 let result = if cache.is_some() || cache_duration.is_some() {
-                    let cachehash = hash::hash_sha256_to_str(&(dir.as_ref().map(|d| d.to_string_lossy().to_string()).unwrap_or_default() + command))[..8].to_string();
-                    let mut cacheman = CacheManagerBuilder::new(dirs::CACHE.join("exec").join(cachehash));
+                    let cachehash = hash::hash_sha256_to_str(
+                        &(dir
+                            .as_ref()
+                            .map(|d| d.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                            + command),
+                    )[..8]
+                        .to_string();
+                    let mut cacheman =
+                        CacheManagerBuilder::new(dirs::CACHE.join("exec").join(cachehash));
                     if let Some(cache) = cache {
                         cacheman = cacheman.with_cache_key(cache.clone());
                     }

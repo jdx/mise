@@ -149,9 +149,15 @@ impl EnvResults {
                 continue;
             }
             let mut tera = get_tera(source.parent());
-            tera.register_function("exec", tera_exec(source.parent().map(|d| d.to_path_buf()), env.iter()
-                .map(|(k, (v, _))| (k.clone(), v.clone()))
-                .collect()));
+            tera.register_function(
+                "exec",
+                tera_exec(
+                    source.parent().map(|d| d.to_path_buf()),
+                    env.iter()
+                        .map(|(k, (v, _))| (k.clone(), v.clone()))
+                        .collect(),
+                ),
+            );
             // trace!(
             //     "resolve: directive: {:?}, source: {:?}",
             //     &directive,
