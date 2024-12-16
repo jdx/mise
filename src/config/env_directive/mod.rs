@@ -1,5 +1,5 @@
-use std::cmp::PartialEq;
 use crate::env;
+use std::cmp::PartialEq;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -149,7 +149,8 @@ impl EnvResults {
             EnvDirective::PythonVenv { .. } => Some(d),
             _ => None,
         });
-        let input = input.iter()
+        let input = input
+            .iter()
             .fold(Vec::new(), |mut acc, (directive, source)| {
                 // remove directives that need tools if we're not processing tool directives, or vice versa
                 if directive.options().tools != tools {
