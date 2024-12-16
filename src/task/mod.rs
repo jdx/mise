@@ -10,6 +10,7 @@ use console::{truncate_str, Color};
 use either::Either;
 use eyre::{eyre, Result};
 use globset::GlobBuilder;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use petgraph::prelude::*;
@@ -37,6 +38,7 @@ use task_dep::TaskDep;
 use task_sources::TaskOutputs;
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Task {
     #[serde(skip)]
     pub name: String,
@@ -74,6 +76,8 @@ pub struct Task {
     pub quiet: bool,
     #[serde(default)]
     pub silent: bool,
+    #[serde(default)]
+    pub tools: IndexMap<String, String>,
 
     // normal type
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -178,6 +182,10 @@ impl Task {
         task.env = p.parse_env("env")?.unwrap_or_default();
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
+        task.tools = p
+            .parse_table("tools")
+            .map(|t| t.into_iter().map(|(k, v)| (k, v.to_string())).collect())
+            .unwrap_or_default();
         task.render(config_root)?;
         Ok(task)
     }
@@ -507,6 +515,7 @@ impl Default for Task {
             args: vec![],
             file: None,
             quiet: false,
+            tools: Default::default(),
         }
     }
 }

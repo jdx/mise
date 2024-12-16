@@ -111,6 +111,51 @@
               "description": "environment variables",
               "type": "object"
             },
+            "tools": {
+              "description": "tools to install/activate before running this task",
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "description": "version of the tool to install",
+                    "type": "string"
+                  },
+                  {
+                    "properties": {
+                      "version": {
+                        "description": "version of the tool to install",
+                        "type": "string"
+                      },
+                      "os": {
+                        "oneOf": [
+                          {
+                            "description": "operating system to install on",
+                            "type": "array"
+                          },
+                          {
+                            "description": "option to pass to tool",
+                            "type": "string"
+                          },
+                          {
+                            "description": "option to pass to tool",
+                            "type": "boolean"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["version"],
+                    "type": "object",
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "type": "object"
+            },
             "hide": {
               "description": "do not display this task",
               "type": "boolean"
