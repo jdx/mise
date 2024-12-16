@@ -1,10 +1,11 @@
 use crate::cli::args::ToolArg;
-use crate::config;
+use crate::{config, hooks};
 use crate::config::Config;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use eyre::Result;
 use itertools::Itertools;
+use crate::hooks::Hooks;
 
 /// Install a tool version
 ///
@@ -129,6 +130,7 @@ impl Install {
         let versions = trs.missing_tools().into_iter().cloned().collect_vec();
         let versions = if versions.is_empty() {
             info!("all runtimes are installed");
+            hooks::run_one_hook(config.get_toolset()?, Hooks::Postinstall, None);
             vec![]
         } else {
             let mpr = MultiProgressReport::get();

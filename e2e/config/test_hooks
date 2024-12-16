@@ -13,6 +13,8 @@ EOF
 
 assert_contains "mise i 2>&1" "PREINSTALL"
 assert_contains "mise i dummy@1 2>&1" "POSTINSTALL"
+assert_contains "mise i 2>&1" "POSTINSTALL"
+assert_contains "mise i dummy@1 2>&1" "POSTINSTALL"
 
 eval "$(mise hook-env)"
 assert_not_contains "mise hook-env 2>&1" "HOOK-CD"
