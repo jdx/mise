@@ -48,7 +48,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | argc | [ubi:sigoden/argc](https://github.com/sigoden/argc) |
 | argo | [aqua:argoproj/argo-workflows](https://github.com/argoproj/argo-workflows) [asdf:sudermanjr/asdf-argo](https://github.com/sudermanjr/asdf-argo) |
 | argo-rollouts | [aqua:argoproj/argo-rollouts](https://github.com/argoproj/argo-rollouts) [asdf:abatilo/asdf-argo-rollouts](https://github.com/abatilo/asdf-argo-rollouts) |
-| argocd | [ubi:argoproj/argo-cd](https://github.com/argoproj/argo-cd) [asdf:beardix/asdf-argocd](https://github.com/beardix/asdf-argocd) |
+| argocd | [aqua:argoproj/argo-cd](https://github.com/argoproj/argo-cd) [ubi:argoproj/argo-cd](https://github.com/argoproj/argo-cd) [asdf:beardix/asdf-argocd](https://github.com/beardix/asdf-argocd) |
 | asciidoctorj | [asdf:gliwka/asdf-asciidoctorj](https://github.com/gliwka/asdf-asciidoctorj) |
 | assh | [asdf:zekker6/asdf-assh](https://github.com/zekker6/asdf-assh) |
 | atlas | [aqua:ariga/atlas](https://github.com/ariga/atlas) [asdf:komi1230/asdf-atlas](https://github.com/komi1230/asdf-atlas) |
@@ -80,7 +80,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | bazel | [ubi:bazelbuild/bazel](https://github.com/bazelbuild/bazel) [asdf:rajatvig/asdf-bazel](https://github.com/rajatvig/asdf-bazel) |
 | bazelisk | [aqua:bazelbuild/bazelisk](https://github.com/bazelbuild/bazelisk) [asdf:josephtate/asdf-bazelisk](https://github.com/josephtate/asdf-bazelisk) |
 | bbr-s3-config-validator | [asdf:vmware-tanzu/tanzu-plug-in-for-asdf](https://github.com/vmware-tanzu/tanzu-plug-in-for-asdf) |
-| benthos | [asdf:benthosdev/benthos-asdf](https://github.com/benthosdev/benthos-asdf) |
+| benthos | [aqua:benthosdev/benthos](https://github.com/benthosdev/benthos) [asdf:benthosdev/benthos-asdf](https://github.com/benthosdev/benthos-asdf) |
 | bfs | [asdf:virtualroot/asdf-bfs](https://github.com/virtualroot/asdf-bfs) |
 | binnacle | [aqua:Traackr/binnacle](https://github.com/Traackr/binnacle) [asdf:Traackr/asdf-binnacle](https://github.com/Traackr/asdf-binnacle) |
 | bitwarden | [aqua:bitwarden/clients](https://github.com/bitwarden/clients) [asdf:vixus0/asdf-bitwarden](https://github.com/vixus0/asdf-bitwarden) |
@@ -103,7 +103,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | calendarsync | [ubi:inovex/CalendarSync](https://github.com/inovex/CalendarSync) [asdf:FeryET/asdf-calendarsync](https://github.com/FeryET/asdf-calendarsync) |
 | calicoctl | [aqua:projectcalico/calico/calicoctl](https://github.com/projectcalico/calico/calicoctl) [asdf:TheCubicleJockey/asdf-calicoctl](https://github.com/TheCubicleJockey/asdf-calicoctl) |
 | cargo-binstall | [aqua:cargo-bins/cargo-binstall](https://github.com/cargo-bins/cargo-binstall) [ubi:cargo-bins/cargo-binstall](https://github.com/cargo-bins/cargo-binstall) [cargo:cargo-binstall](https://crates.io/crates/cargo-binstall) |
-| cargo-insta | [ubi:mitsuhiko/insta](https://github.com/mitsuhiko/insta) |
+| cargo-insta | [aqua:mitsuhiko/insta](https://github.com/mitsuhiko/insta) [ubi:mitsuhiko/insta](https://github.com/mitsuhiko/insta) |
 | cargo-make | [ubi:sagiegurari/cargo-make](https://github.com/sagiegurari/cargo-make) [asdf:mise-plugins/asdf-cargo-make](https://github.com/mise-plugins/asdf-cargo-make) |
 | carp | [ubi:carp-lang/Carp](https://github.com/carp-lang/Carp) [asdf:susurri/asdf-carp](https://github.com/susurri/asdf-carp) |
 | carthage | [asdf:younke/asdf-carthage](https://github.com/younke/asdf-carthage) |
