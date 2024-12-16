@@ -155,7 +155,13 @@ impl Settings {
         if !settings.color {
             console::set_colors_enabled(false);
             console::set_colors_enabled_stderr(false);
-        } else if ci_info::is_ci() && !cfg!(test) && *env::CLICOLOR != Some(false) {
+        } else if *env::CLICOLOR_FORCE == Some(true) {
+            console::set_colors_enabled(true);
+            console::set_colors_enabled_stderr(true);
+        } else if *env::CLICOLOR == Some(false) {
+            console::set_colors_enabled(false);
+            console::set_colors_enabled_stderr(false);
+        } else if ci_info::is_ci() && !cfg!(test) {
             console::set_colors_enabled_stderr(true);
         }
         if settings.ci {
