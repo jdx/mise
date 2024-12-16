@@ -1,11 +1,11 @@
 use crate::cli::args::ToolArg;
-use crate::{config, hooks};
 use crate::config::Config;
+use crate::hooks::Hooks;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{config, hooks};
 use eyre::Result;
 use itertools::Itertools;
-use crate::hooks::Hooks;
 
 /// Install a tool version
 ///
