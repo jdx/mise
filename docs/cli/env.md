@@ -50,4 +50,5 @@ eval "$(mise env -s bash)"
 eval "$(mise env -s zsh)"
 mise env -s fish | source
 execx($(mise env -s xonsh))
+mise activate pwsh | Out-String | Invoke-Expression
 ```
