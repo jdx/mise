@@ -191,4 +191,4 @@ Arguments, flags, environment variables, and config files can all be defined in 
 
 `usage` can be installed with `mise` using `mise use -g usage` and is required to get the autocompetion working. See [autocompletion](/installing-mise.html#autocompletion).
 
-You can leverage usage in file tasks to get auto-completion working, see [file tasks#arguements](/tasks/file-tasks.html#arguments).
+You can leverage usage in file tasks to get auto-completion working, see [file tasks arguments](/tasks/file-tasks.html#arguments).
