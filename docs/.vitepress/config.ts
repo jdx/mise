@@ -66,6 +66,7 @@ export default defineConfig({
             items: [
               { text: "Bun", link: "/lang/bun" },
               { text: "Deno", link: "/lang/deno" },
+              { text: "Elixir", link: "/lang/elixir" },
               { text: "Erlang", link: "/lang/erlang" },
               { text: "Go", link: "/lang/go" },
               { text: "Java", link: "/lang/java" },
