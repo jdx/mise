@@ -188,7 +188,7 @@ mise run greet --user jdx -g "hey" "How are you?"
 - The options will all be passed as environment variables prefixed with `usage_` like `usage_user`.
 - Help is available with `mise run greet --help` and will show the options defined in the task.
 - Completions are available like you'd expect, so typing `mise run greet --greeting <tag>` will show `hi`, `hello`, and `hey`
-as options.
+  as options.
 - [Custom completion](https://usage.jdx.dev/spec/reference/complete) can be provided by a CLI. `mise run greet --dir <tab>` will execute `find . -maxdepth 1 -type d` to provide completions.
 
 To get the autocopletion working, set up [mise autocompletions](/installing-mise.html#autocompletion).
