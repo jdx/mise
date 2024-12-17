@@ -524,7 +524,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | nim | [asdf:mise-plugins/mise-nim](https://github.com/mise-plugins/mise-nim) |
 | ninja | [aqua:ninja-build/ninja](https://github.com/ninja-build/ninja) [asdf:asdf-community/asdf-ninja](https://github.com/asdf-community/asdf-ninja) |
 | node | [core:node](https://mise.jdx.dev/lang/node.html) |
-| nomad | [aqua:hashicorp/levant](https://github.com/hashicorp/levant) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
+| nomad | [aqua:hashicorp/nomad](https://github.com/hashicorp/nomad) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | nomad-pack | [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | notation | [aqua:notaryproject/notation](https://github.com/notaryproject/notation) [asdf:bodgit/asdf-notation](https://github.com/bodgit/asdf-notation) |
 | nova | [aqua:FairwindsOps/nova](https://github.com/FairwindsOps/nova) [asdf:elementalvoid/asdf-nova](https://github.com/elementalvoid/asdf-nova) |
