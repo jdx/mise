@@ -321,7 +321,7 @@ run = "echo task4"
 
 If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
 
-## `redactions`
+## `redactions` <Badge type="warning" text="experimental" />
 
 - **Type**: `string[]`
 

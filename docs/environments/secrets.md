@@ -1,4 +1,4 @@
-# Secrets
+# Secrets <Badge type="warning" text="experimental" />
 
 Because env vars in mise.toml can store sensitive information, mise has built-in support for reading
 encrypted secrets from files. Currently, this is done with a [sops](https://getsops.io) implementation
