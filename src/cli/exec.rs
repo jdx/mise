@@ -53,11 +53,12 @@ pub struct Exec {
 
 impl Exec {
     pub fn run(self) -> Result<()> {
+        let config = Config::get();
         let mut ts = measure!("toolset", {
             ToolsetBuilder::new()
                 .with_args(&self.tool)
                 .with_default_to_latest(true)
-                .build(&Config::get())?
+                .build(&config)?
         });
         let opts = InstallOptions {
             force: false,
@@ -81,7 +82,7 @@ impl Exec {
         });
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = measure!("env_with_path", { ts.env_with_path(&Config::get())? });
+        let env = measure!("env_with_path", { ts.env_with_path(&config)? });
 
         if program.rsplit('/').next() == Some("fish") {
             let mut cmd = vec![];
@@ -92,7 +93,9 @@ impl Exec {
                     shell_escape::escape(v.into())
                 ));
             }
-            for p in ts.list_final_paths()? {
+            // TODO: env is being calculated twice with final_env and env_with_path
+            let env_results = ts.final_env(&config)?.1;
+            for p in ts.list_final_paths(&config, env_results)? {
                 cmd.push(format!(
                     "fish_add_path -gm {}",
                     shell_escape::escape(p.to_string_lossy())

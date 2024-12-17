@@ -35,7 +35,8 @@ impl Envrc {
         for cf in config.config_files.keys() {
             writeln!(file, "watch_file {}", cf.to_string_lossy())?;
         }
-        for (k, v) in ts.env(config)? {
+        let (env, env_results) = ts.final_env(config)?;
+        for (k, v) in env {
             if k == *PATH_KEY {
                 writeln!(file, "PATH_add {}", v)?;
             } else {
@@ -47,7 +48,7 @@ impl Envrc {
                 )?;
             }
         }
-        for path in ts.list_paths().into_iter().rev() {
+        for path in ts.list_final_paths(config, env_results)?.into_iter().rev() {
             writeln!(file, "PATH_add {}", path.to_string_lossy())?;
         }
 
