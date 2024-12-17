@@ -1,6 +1,6 @@
 [tools.actionlint]
 version = "1.7.4"
-backend = "ubi:rhysd/actionlint"
+backend = "aqua:rhysd/actionlint"
 
 [tools.actionlint.checksums]
 actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
