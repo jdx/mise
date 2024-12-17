@@ -1,0 +1,10 @@
+---
+source: src/shell/pwsh.rs
+assertion_line: 208
+expression: replace_path(&deactivate)
+snapshot_kind: text
+---
+Remove-Item function:mise
+Remove-Item -Path Env:/MISE_SHELL
+Remove-Item -Path Env:/__MISE_WATCH
+Remove-Item -Path Env:/__MISE_DIFF

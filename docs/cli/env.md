@@ -41,6 +41,7 @@ Shell type to generate environment variables for
 - `nu`
 - `xonsh`
 - `zsh`
+- `pwsh`
 
 Examples:
 

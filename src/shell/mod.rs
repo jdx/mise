@@ -7,6 +7,7 @@ mod bash;
 mod elvish;
 mod fish;
 mod nushell;
+mod pwsh;
 mod xonsh;
 mod zsh;
 
@@ -18,6 +19,7 @@ pub enum ShellType {
     Nu,
     Xonsh,
     Zsh,
+    Pwsh,
 }
 
 impl ShellType {
@@ -37,6 +39,7 @@ impl ShellType {
             Self::Nu => Box::<nushell::Nushell>::default(),
             Self::Xonsh => Box::<xonsh::Xonsh>::default(),
             Self::Zsh => Box::<zsh::Zsh>::default(),
+            Self::Pwsh => Box::<pwsh::Pwsh>::default(),
         }
     }
 }
@@ -50,6 +53,7 @@ impl Display for ShellType {
             Self::Nu => write!(f, "nu"),
             Self::Xonsh => write!(f, "xonsh"),
             Self::Zsh => write!(f, "zsh"),
+            Self::Pwsh => write!(f, "pwsh"),
         }
     }
 }
@@ -67,6 +71,7 @@ impl FromStr for ShellType {
             "nu" => Ok(Self::Nu),
             "xonsh" => Ok(Self::Xonsh),
             "zsh" => Ok(Self::Zsh),
+            "pwsh" => Ok(Self::Pwsh),
             _ => Err(format!("unsupported shell type: {s}")),
         }
     }

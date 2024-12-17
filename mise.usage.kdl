@@ -84,7 +84,7 @@ Customize status output with `status` settings."#
 "#
     flag "-s --shell" help="Shell type to generate the script for" hide=true {
         arg "<SHELL>" {
-            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh" "pwsh"
         }
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
@@ -96,7 +96,7 @@ Customize status output with `status` settings."#
         long_help "Do not automatically call hook-env\n\nThis can be helpful for debugging mise. If you run `eval \"$(mise activate --no-hook-env)\"`, then you can call `mise hook-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook-env --trace` to get more information or just see the values that hook-env is outputting."
     }
     arg "[SHELL_TYPE]" help="Shell type to generate the script for" {
-        choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
+        choices "bash" "elvish" "fish" "nu" "xonsh" "zsh" "pwsh"
     }
 }
 cmd "alias" help="Manage aliases" {
@@ -413,7 +413,7 @@ use this if you have `mise activate` in your shell rc file."
     flag "-D --dotenv" help="Output in dotenv format"
     flag "-s --shell" help="Shell type to generate environment variables for" {
         arg "<SHELL>" {
-            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh" "pwsh"
         }
     }
     arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
@@ -561,7 +561,7 @@ Use `mise local` to set a tool version locally in the current directory."
 cmd "hook-env" hide=true help="[internal] called by activate hook to update env vars directory change" {
     flag "-s --shell" help="Shell type to generate script for" {
         arg "<SHELL>" {
-            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh" "pwsh"
         }
     }
     flag "-f --force" help="Skip early exit check"
@@ -571,7 +571,7 @@ cmd "hook-env" hide=true help="[internal] called by activate hook to update env 
 cmd "hook-not-found" hide=true help="[internal] called by shell when a command is not found" {
     flag "-s --shell" help="Shell type to generate script for" {
         arg "<SHELL>" {
-            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh"
+            choices "bash" "elvish" "fish" "nu" "xonsh" "zsh" "pwsh"
         }
     }
     arg "<BIN>" help="Attempted bin to run"
