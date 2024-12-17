@@ -9,13 +9,13 @@ You can see the core plugins with `mise registry -b core`.
 
 - [Bun](/lang/bun)
 - [Deno](/lang/deno)
-- [Elixir](/lang/elixir)
+- [Elixir](/lang/elixir) <Badge type="warning" text="experimental" />
 - [Erlang](/lang/erlang)
 - [Go](/lang/go)
 - [Java](/lang/java)
 - [NodeJS](/lang/node)
 - [Python](/lang/python)
 - [Ruby](/lang/ruby)
-- [Rust](/lang/rust)
-- [Swift](/lang/swift)
+- [Rust](/lang/rust) <Badge type="warning" text="experimental" />
+- [Swift](/lang/swift) <Badge type="warning" text="experimental" />
 - [Zig](/lang/zig)
