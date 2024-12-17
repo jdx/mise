@@ -1,4 +1,4 @@
-# gem Backend
+# gem Backend <Badge type="warning" text="experimental" />
 
 mise can be used to install CLIs from RubyGems. The code for this is inside of the mise repository at [`./src/backend/gem.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
 
