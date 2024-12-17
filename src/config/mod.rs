@@ -593,7 +593,6 @@ impl Config {
             .into_iter()
             .chain(env_results.redactions.clone())
             .collect_vec();
-        dbg!(&redact_keys);
         self.add_redactions(
             redact_keys,
             &env_results
