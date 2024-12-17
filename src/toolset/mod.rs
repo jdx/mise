@@ -468,20 +468,12 @@ impl Toolset {
     }
     /// the full mise environment including all tool paths
     pub fn env_with_path(&self, config: &Config) -> Result<EnvMap> {
-        let mut env = self.env(config)?;
+        let (mut env, env_results) = self.final_env(config)?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in self.list_final_paths()? {
+        for p in self.list_final_paths(config, env_results)? {
             path_env.add(p);
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
-        let mut ctx = config.tera_ctx.clone();
-        ctx.insert("env", &env);
-        env.extend(
-            self.load_post_env(ctx, &env)?
-                .env
-                .into_iter()
-                .map(|(k, v)| (k, v.0)),
-        );
         Ok(env)
     }
     pub fn env_from_tools(&self, config: &Config) -> Vec<(String, String, String)> {
@@ -501,7 +493,7 @@ impl Toolset {
             .filter(|(_, k, _)| k.to_uppercase() != "PATH")
             .collect::<Vec<(String, String, String)>>()
     }
-    pub fn env(&self, config: &Config) -> Result<EnvMap> {
+    fn env(&self, config: &Config) -> Result<EnvMap> {
         time!("env start");
         let entries = self
             .env_from_tools(config)
@@ -513,7 +505,7 @@ impl Toolset {
             .filter(|(k, _)| k == "MISE_ADD_PATH" || k == "RTX_ADD_PATH")
             .map(|(_, v)| v)
             .join(":");
-        let mut entries: EnvMap = entries
+        let mut env: EnvMap = entries
             .into_iter()
             .filter(|(k, _)| k != "RTX_ADD_PATH")
             .filter(|(k, _)| k != "MISE_ADD_PATH")
@@ -522,16 +514,35 @@ impl Toolset {
             .rev()
             .collect();
         if !add_paths.is_empty() {
-            entries.insert(PATH_KEY.to_string(), add_paths);
+            env.insert(PATH_KEY.to_string(), add_paths);
         }
-        entries.extend(config.env()?.clone());
+        env.extend(config.env()?.clone());
         if let Some(venv) = &*UV_VENV {
             for (k, v) in &venv.env {
-                entries.insert(k.clone(), v.clone());
+                env.insert(k.clone(), v.clone());
             }
         }
         time!("env end");
-        Ok(entries)
+        Ok(env)
+    }
+    pub fn final_env(&self, config: &Config) -> Result<(EnvMap, EnvResults)> {
+        let mut env = self.env(config)?;
+        let mut tera_env = env.clone();
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in self.list_paths().into_iter() {
+            path_env.add(p);
+        }
+        tera_env.insert(PATH_KEY.to_string(), path_env.to_string());
+        let mut ctx = config.tera_ctx.clone();
+        ctx.insert("env", &tera_env);
+        let env_results = self.load_post_env(config, ctx, &tera_env)?;
+        env.extend(
+            env_results
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.0.clone())),
+        );
+        Ok((env, env_results))
     }
     pub fn list_paths(&self) -> Vec<PathBuf> {
         self.list_current_installed_versions()
@@ -547,36 +558,30 @@ impl Toolset {
             .collect()
     }
     /// same as list_paths but includes config.list_paths, venv paths, and MISE_ADD_PATHs from self.env()
-    pub fn list_final_paths(&self) -> Result<Vec<PathBuf>> {
+    pub fn list_final_paths(
+        &self,
+        config: &Config,
+        env_results: EnvResults,
+    ) -> Result<Vec<PathBuf>> {
         let mut paths = IndexSet::new();
-        for p in Config::get().path_dirs()?.clone() {
+        for p in config.path_dirs()?.clone() {
             paths.insert(p);
         }
         if let Some(venv) = &*UV_VENV {
             paths.insert(venv.venv_path.clone());
         }
-        if let Some(path) = self.env(&Config::get())?.get(&*PATH_KEY) {
+        if let Some(path) = self.env(config)?.get(&*PATH_KEY) {
             paths.insert(PathBuf::from(path));
         }
         for p in self.list_paths() {
             paths.insert(p);
         }
-        let config = Config::get();
-        let mut env = self.env(&config)?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         for p in paths.clone().into_iter() {
             path_env.add(p);
         }
-        env.insert(PATH_KEY.to_string(), path_env.to_string());
-        let mut ctx = config.tera_ctx.clone();
-        ctx.insert("env", &env);
         // these are returned in order, but we need to run the post_env stuff last and then put the results in the front
-        let paths = self
-            .load_post_env(ctx, &env)?
-            .env_paths
-            .into_iter()
-            .chain(paths)
-            .collect();
+        let paths = env_results.env_paths.into_iter().chain(paths).collect();
         Ok(paths)
     }
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
@@ -678,8 +683,12 @@ impl Toolset {
         !ba.is_os_supported() || SETTINGS.disable_tools().contains(&ba.short)
     }
 
-    fn load_post_env(&self, ctx: tera::Context, env: &EnvMap) -> Result<EnvResults> {
-        let config = Config::get();
+    fn load_post_env(
+        &self,
+        config: &Config,
+        ctx: tera::Context,
+        env: &EnvMap,
+    ) -> Result<EnvResults> {
         let entries = config
             .config_files
             .iter()
