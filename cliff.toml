@@ -66,7 +66,9 @@ footer = """
 """
 # remove the leading and trailing whitespace from the template
 trim = true
-postprocessors = [{ pattern = '\$REPO', replace = "https://github.com/jdx/mise" }]
+postprocessors = [
+  { pattern = '\$REPO', replace = "https://github.com/jdx/mise" },
+]
 
 [git]
 # parse the commits based on https://www.conventionalcommits.org
