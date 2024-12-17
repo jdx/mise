@@ -45,7 +45,7 @@ file = 'scripts/release.sh' # execute an external script
 
 ## Adding tasks
 
-You can edit the `mise.toml` file directly or use the CLI to add tasks:
+You can edit the `mise.toml` file directly or using [`mise tasks add`](/cli/tasks/add)
 
 ```shell
 mise task add pre-commit --depends "test" --depends "render" -- echo pre-commit
@@ -58,8 +58,6 @@ will add the following to `mise.toml`:
 depends = ["test", "render"]
 run = "echo pre-commit"
 ```
-
-See [`mise tasks add`](/cli/tasks/add) for more information.
 
 ## Common options
 
