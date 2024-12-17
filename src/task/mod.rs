@@ -367,13 +367,11 @@ impl Task {
 
     pub fn dir(&self) -> Result<Option<PathBuf>> {
         let config = Config::get();
-        if let Some(dir) = &self.dir {
-            Ok(Some(PathBuf::from(dir)))
-        } else if let Some(dir) = self
-            .cf(&config)
-            .as_ref()
-            .and_then(|cf| cf.task_config().dir.clone())
-        {
+        if let Some(dir) = self.dir.clone().or_else(|| {
+            self.cf(&config)
+                .as_ref()
+                .and_then(|cf| cf.task_config().dir.clone())
+        }) {
             let config_root = self.config_root.clone().unwrap_or_default();
             let mut tera = get_tera(Some(&config_root));
             let mut tera_ctx = config.tera_ctx.clone();
