@@ -1,9 +1,3 @@
-## `abc`
-
-- Depends: test, render
-
-- **Usage**: `abc`
-
 ## `aqua-tester.fish`
 
 - **Usage**: `aqua-tester.fish`
