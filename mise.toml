@@ -30,3 +30,7 @@ wait-for-gh-rate-limit = "0.1.8"
 
 [task_config]
 includes = ["tasks.toml", "xtasks"]
+
+[tasks.abc]
+depends = ["test", "render"]
+run = "echo pre-commit"
