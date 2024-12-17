@@ -1205,7 +1205,7 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
     }
     flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     flag "-u --unset" help="Removes a previously set version"
-    arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
+    arg "<TOOL@VERSION>..." help="Tool(s) to use" var=true
 }
 cmd "sync" subcommand_required=true help="Synchronize tools from other version managers with mise" {
     cmd "node" help="Symlinks all tool versions from an external tool into mise" {

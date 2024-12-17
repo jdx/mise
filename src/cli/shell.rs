@@ -19,7 +19,7 @@ use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
 #[clap(verbatim_doc_comment, visible_alias = "sh", after_long_help = AFTER_LONG_HELP)]
 pub struct Shell {
     /// Tool(s) to use
-    #[clap(value_name = "TOOL@VERSION", required=true)]
+    #[clap(value_name = "TOOL@VERSION", required = true)]
     tool: Vec<ToolArg>,
 
     /// Number of jobs to run in parallel
@@ -48,7 +48,10 @@ impl Shell {
 
         if self.unset {
             for ta in &self.tool {
-                let op = shell.unset_env(&format!("MISE_{}_VERSION", ta.ba.short.to_shouty_snake_case()));
+                let op = shell.unset_env(&format!(
+                    "MISE_{}_VERSION",
+                    ta.ba.short.to_shouty_snake_case()
+                ));
                 print!("{op}");
             }
             return Ok(());
