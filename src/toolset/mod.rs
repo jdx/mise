@@ -496,7 +496,7 @@ impl Toolset {
     fn env(&self, config: &Config) -> Result<EnvMap> {
         time!("env start");
         let entries = self
-            .env_from_tools(&config)
+            .env_from_tools(config)
             .into_iter()
             .map(|(k, v, _)| (k, v))
             .collect::<Vec<(String, String)>>();
@@ -558,7 +558,11 @@ impl Toolset {
             .collect()
     }
     /// same as list_paths but includes config.list_paths, venv paths, and MISE_ADD_PATHs from self.env()
-    pub fn list_final_paths(&self, config: &Config, env_results: EnvResults) -> Result<Vec<PathBuf>> {
+    pub fn list_final_paths(
+        &self,
+        config: &Config,
+        env_results: EnvResults,
+    ) -> Result<Vec<PathBuf>> {
         let mut paths = IndexSet::new();
         for p in config.path_dirs()?.clone() {
             paths.insert(p);
@@ -577,10 +581,7 @@ impl Toolset {
             path_env.add(p);
         }
         // these are returned in order, but we need to run the post_env stuff last and then put the results in the front
-        let paths = env_results.env_paths
-            .into_iter()
-            .chain(paths)
-            .collect();
+        let paths = env_results.env_paths.into_iter().chain(paths).collect();
         Ok(paths)
     }
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
