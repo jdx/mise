@@ -23,8 +23,6 @@ You can verify the installation by running:
 
 - `~/.local/bin` does not need to be in `PATH`. mise will automatically add its own directory to `PATH`
   when activated.
-- mise respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like
-  to change these locations.
 
 == Brew
 Using [brew](https://brew.sh/) package manager
@@ -41,6 +39,7 @@ winget install jdx.mise
 ```
 
 ```shell [scoop]
+# https://github.com/ScoopInstaller/Main/pull/6374
 scoop install mise
 ```
 
@@ -60,7 +59,7 @@ sudo apt install -y mise
 ```
 
 ```sh [arm64]
-sudo apt update -y && apt install -y gpg sudo wget curl
+sudo apt update -y && sudo apt install -y gpg sudo wget curl
 sudo install -dm 755 /etc/apt/keyrings
 wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
 echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
@@ -69,6 +68,9 @@ sudo apt install -y mise
 ```
 
 :::
+
+`mise` respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like
+to change these locations.
 
 ## 2. Activate `mise`
 
@@ -118,14 +120,14 @@ echo 'eval "$(/opt/homebrew/bin/mise activate zsh)"' >> ~/.zshrc
 ```
 
 - Activation will be handled automatically if you use `fish` shell and installed via `homebrew`. This can be disabled with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`.
-- Make sure you restart your shell session after modifying your rc file in order for it to take effect.-
+- Make sure you restart your shell session after modifying your rc file in order for it to take effect.
 
 == Windows
 
 Only shims are supported for now on Windows.
 
 - When using `scoop`, the shims are automatically added to your `PATH`.
-- With `winget`, Add this directory to PATH: `<homedir>\AppData\Local\mise\shims`.
+- With `winget`, you need to add `<homedir>\AppData\Local\mise\shims` to your `PATH`.
 
   ```powershell
   $shimPath = "$env:USERPROFILE\AppData\Local\mise\shims"
