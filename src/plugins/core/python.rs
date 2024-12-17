@@ -89,9 +89,7 @@ impl PythonPlugin {
                     .build()
             });
         PRECOMPILED_CACHE.get_or_try_init(|| {
-            let arch = python_arch();
-            let os = python_os();
-            let url_path = format!("python-precompiled-{arch}-{os}.gz");
+            let url_path = python_precompiled_url_path();
             let rsp = match SETTINGS.paranoid {
                 true => HTTP_FETCH.get_bytes(format!("https://mise-versions.jdx.dev/{url_path}")),
                 // using http is not a security concern and enabling tls makes mise significantly slower
@@ -451,6 +449,14 @@ impl Backend for PythonPlugin {
     }
 }
 
+fn python_precompiled_url_path() -> String {
+    if cfg!(windows) || cfg!(linux) || cfg!(macos) {
+        format!("python-precompiled-{}-{}.gz", python_arch(), python_os())
+    } else {
+        "python-precompiled.gz".into()
+    }
+}
+
 fn python_os() -> String {
     if let Some(os) = &SETTINGS.python.precompiled_os {
         return os.clone();
@@ -460,9 +466,10 @@ fn python_os() -> String {
     } else if cfg!(target_os = "macos") {
         "apple-darwin".into()
     } else {
-        let os = &built_info::CFG_OS;
-        let env = &built_info::CFG_ENV;
-        format!("unknown-{os}-{env}")
+        ["unknown", built_info::CFG_OS, built_info::CFG_ENV]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .join("-")
     }
 }
 
