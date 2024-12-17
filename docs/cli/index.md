@@ -111,7 +111,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise settings ls [FLAGS] [KEY]`](/cli/settings/ls.md)
 - [`mise settings set [-l --local] <KEY> <VALUE>`](/cli/settings/set.md)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
-- [`mise shell [FLAGS] [TOOL@VERSION]...`](/cli/shell.md)
+- [`mise shell [FLAGS] <TOOL@VERSION>...`](/cli/shell.md)
 - [`mise sync <SUBCOMMAND>`](/cli/sync.md)
 - [`mise sync node [FLAGS]`](/cli/sync/node.md)
 - [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)

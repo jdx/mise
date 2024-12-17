@@ -2288,7 +2288,7 @@ const completionSpec: Fig.Spec = {
                 {
                     "name": "tool@version",
                     "description": "Tool(s) to use",
-                    "isOptional": true,
+                    "isOptional": false,
                     "isVariadic": true,
                     "generators": toolVersionGenerator
                 }
