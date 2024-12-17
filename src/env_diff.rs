@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fmt::Debug;
 use std::io::prelude::*;
@@ -8,6 +8,7 @@ use base64::prelude::*;
 use eyre::Result;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 
@@ -17,9 +18,9 @@ use crate::{cmd, file};
 #[derive(Default, Serialize, Deserialize)]
 pub struct EnvDiff {
     #[serde(default)]
-    pub old: HashMap<String, String>,
+    pub old: IndexMap<String, String>,
     #[serde(default)]
-    pub new: HashMap<String, String>,
+    pub new: IndexMap<String, String>,
     #[serde(default)]
     pub path: Vec<PathBuf>,
 }
@@ -65,7 +66,7 @@ impl EnvDiff {
         U: Into<OsString>,
         V: Into<OsString>,
     {
-        let env: HashMap<OsString, OsString> =
+        let env: IndexMap<OsString, OsString> =
             env.into_iter().map(|(k, v)| (k.into(), v.into())).collect();
         let bash_path = file::which("bash").unwrap_or("/bin/bash".into());
         let out = cmd!(
@@ -186,7 +187,7 @@ fn valid_key(k: &str) -> bool {
 
 impl Debug for EnvDiff {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let print_sorted = |hashmap: &HashMap<String, String>| {
+        let print_sorted = |hashmap: &IndexMap<String, String>| {
             hashmap
                 .iter()
                 .map(|(k, v)| format!("{k}={v}"))
