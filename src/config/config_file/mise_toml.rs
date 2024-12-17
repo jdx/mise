@@ -851,7 +851,10 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     python: venv.python,
                                     uv_create_args: venv.uv_create_args,
                                     python_create_args: venv.python_create_args,
-                                    options: EnvDirectiveOptions { tools: true },
+                                    options: EnvDirectiveOptions {
+                                        tools: true,
+                                        redact: false,
+                                    },
                                 });
                             }
                         }
@@ -860,7 +863,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Int(i64),
                                 Str(String),
                                 Bool(bool),
-                                Map { value: Box<Val>, tools: bool },
+                                Map {
+                                    value: Box<Val>,
+                                    tools: bool,
+                                    redact: bool,
+                                },
                             }
                             impl Display for Val {
                                 fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
@@ -868,10 +875,17 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         Val::Int(i) => write!(f, "{}", i),
                                         Val::Str(s) => write!(f, "{}", s),
                                         Val::Bool(b) => write!(f, "{}", b),
-                                        Val::Map { value, tools } => {
+                                        Val::Map {
+                                            value,
+                                            tools,
+                                            redact,
+                                        } => {
                                             write!(f, "{}", value)?;
                                             if *tools {
                                                 write!(f, " tools")?;
+                                            }
+                                            if *redact {
+                                                write!(f, " redact")?;
                                             }
                                             Ok(())
                                         }
@@ -926,6 +940,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         {
                                             let mut value: Option<Val> = None;
                                             let mut tools = None;
+                                            let mut redact = None;
                                             while let Some((key, val)) =
                                                 map.next_entry::<String, Val>()?
                                             {
@@ -936,10 +951,13 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                                     "tools" => {
                                                         tools = Some(val);
                                                     }
+                                                    "redact" => {
+                                                        redact = Some(val);
+                                                    }
                                                     _ => {
                                                         return Err(de::Error::unknown_field(
                                                             &key,
-                                                            &["value", "tools"],
+                                                            &["value", "tools", "redact"],
                                                         ));
                                                     }
                                                 }
@@ -954,6 +972,15 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                             Ok(Val::Map {
                                                 value: Box::new(value),
                                                 tools,
+                                                redact: redact
+                                                    .map(|r| {
+                                                        if let Val::Bool(b) = r {
+                                                            b
+                                                        } else {
+                                                            false
+                                                        }
+                                                    })
+                                                    .unwrap_or_default(),
                                             })
                                         }
                                     }
@@ -982,8 +1009,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Val::Bool(false) => {
                                     env.push(EnvDirective::Rm(key, Default::default()))
                                 }
-                                Val::Map { value, tools } => {
-                                    let opts = EnvDirectiveOptions { tools };
+                                Val::Map {
+                                    value,
+                                    tools,
+                                    redact,
+                                } => {
+                                    let opts = EnvDirectiveOptions { tools, redact };
                                     env.push(EnvDirective::Val(key, value.to_string(), opts));
                                 }
                             }
@@ -1165,11 +1196,14 @@ impl<'de> de::Deserialize<'de> for MiseTomlEnvDirective {
                 let mut value = None;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
                     match k.as_str() {
-                        "value" => {
+                        "value" | "path" => {
                             value = Some(v.as_str().unwrap().to_string());
                         }
                         "tools" => {
                             options.tools = v.as_bool().unwrap();
+                        }
+                        "redact" => {
+                            options.redact = v.as_bool().unwrap();
                         }
                         _ => {
                             return Err(de::Error::custom("invalid key"));

@@ -1,4 +1,4 @@
-use crate::config::Settings;
+use crate::config::{Config, Settings};
 use eyre::Result;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::Write;
@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::thread;
 
-use crate::{env, ui};
+use crate::{config, env, ui};
 use log::{Level, LevelFilter, Metadata, Record};
 use once_cell::sync::Lazy;
 
@@ -74,6 +74,11 @@ impl Logger {
     }
 
     fn render(&self, record: &Record, level: LevelFilter) -> String {
+        let mut args = record.args().to_string();
+        if config::is_loaded() {
+            let config = Config::get();
+            args = config.redact(args);
+        }
         match level {
             LevelFilter::Off => "".to_string(),
             LevelFilter::Trace => {
@@ -87,17 +92,11 @@ impl Logger {
                     thread_id = thread_id(),
                     line = record.line().unwrap_or(0),
                 ));
-                format!(
-                    "{level} {meta} {args}",
-                    level = self.styled_level(level),
-                    args = record.args()
-                )
+                format!("{level} {meta} {args}", level = self.styled_level(level),)
             }
-            LevelFilter::Debug => format!(
-                "{level} {args}",
-                level = self.styled_level(record.level()),
-                args = record.args()
-            ),
+            LevelFilter::Debug => {
+                format!("{level} {args}", level = self.styled_level(record.level()),)
+            }
             _ => {
                 let mise = match record.level() {
                     Level::Error => ui::style::ered("mise"),
@@ -105,11 +104,10 @@ impl Logger {
                     _ => ui::style::edim("mise"),
                 };
                 match record.level() {
-                    Level::Info => format!("{mise} {args}", args = record.args()),
+                    Level::Info => format!("{mise} {args}"),
                     _ => format!(
                         "{mise} {level} {args}",
                         level = self.styled_level(record.level()),
-                        args = record.args()
                     ),
                 }
             }

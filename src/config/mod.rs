@@ -7,6 +7,7 @@ pub use settings::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
@@ -34,11 +35,11 @@ pub mod settings;
 pub mod tracking;
 
 use crate::cli::self_update::SelfUpdate;
+use crate::env_diff::EnvMap;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
 use crate::plugins::PluginType;
-use crate::redactions::Redactions;
-use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::tera::BASE_CONTEXT;
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
 pub use settings::SETTINGS;
@@ -57,7 +58,6 @@ pub struct Config {
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
-    redactions: OnceCell<IndexSet<String>>,
     shorthands: OnceLock<Shorthands>,
     hooks: OnceCell<Vec<(PathBuf, Hook)>>,
     tasks: OnceCell<BTreeMap<String, Task>>,
@@ -72,6 +72,7 @@ pub struct Alias {
 }
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
+static _REDACTIONS: Lazy<Mutex<Arc<IndexSet<String>>>> = Lazy::new(Default::default);
 
 pub fn is_loaded() -> bool {
     _CONFIG.read().unwrap().is_some()
@@ -108,7 +109,7 @@ impl Config {
 
         let mut tera_ctx = BASE_CONTEXT.clone();
         let vars_results = load_vars(tera_ctx.clone(), &config_files)?;
-        let vars = vars_results
+        let vars: IndexMap<String, String> = vars_results
             .env
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
@@ -120,11 +121,10 @@ impl Config {
             project_root: get_project_root(&config_files),
             repo_urls: load_plugins(&config_files)?,
             tera_ctx,
-            vars,
+            vars: vars.clone(),
             config_files,
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
-            redactions: OnceCell::new(),
             shorthands: OnceLock::new(),
             hooks: OnceCell::new(),
             tasks: OnceCell::new(),
@@ -140,6 +140,9 @@ impl Config {
         config.all_aliases = config.load_all_aliases();
         time!("load all aliases");
 
+        config.add_redactions(config.redaction_keys(), &vars.into_iter().collect());
+        time!("load redactions");
+
         if log::log_enabled!(log::Level::Trace) {
             trace!("config: {config:#?}");
         } else if log::log_enabled!(log::Level::Debug) {
@@ -147,6 +150,7 @@ impl Config {
                 debug!("config: {}", display_path(p));
             }
         }
+
         time!("load done");
 
         for (plugin, url) in &config.repo_urls {
@@ -584,7 +588,19 @@ impl Config {
         // trace!("load_env: entries: {:#?}", entries);
         let env_results =
             EnvResults::resolve(self.tera_ctx.clone(), &env::PRISTINE_ENV, entries, false)?;
-        time!("load_env done");
+        let redact_keys = self
+            .redaction_keys()
+            .into_iter()
+            .chain(env_results.redactions.clone())
+            .collect_vec();
+        self.add_redactions(
+            redact_keys,
+            &env_results
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.0.clone()))
+                .collect(),
+        );
         if log::log_enabled!(log::Level::Trace) {
             trace!("{env_results:#?}");
         } else {
@@ -649,53 +665,68 @@ impl Config {
             .collect())
     }
 
-    fn tera(&self, config_root: &Path) -> (tera::Tera, tera::Context) {
-        let tera = get_tera(Some(config_root));
-        let mut ctx = self.tera_ctx.clone();
-        ctx.insert("config_root", &config_root);
-        (tera, ctx)
+    pub fn redaction_keys(&self) -> Vec<String> {
+        self.config_files
+            .values()
+            .flat_map(|cf| cf.redactions().0.iter())
+            .cloned()
+            .collect()
+    }
+    pub fn add_redactions(&self, redactions: impl IntoIterator<Item = String>, env: &EnvMap) {
+        let mut r = _REDACTIONS.lock().unwrap();
+        let redactions = redactions.into_iter().flat_map(|r| {
+            let matcher = Wildcard::new(vec![r]);
+            env.iter()
+                .filter(|(k, _)| matcher.match_any(k))
+                .map(|(_, v)| v.clone())
+                .collect::<Vec<_>>()
+        });
+        *r = Arc::new(r.iter().cloned().chain(redactions).collect());
     }
 
-    pub fn redactions(&self) -> Result<&IndexSet<String>> {
-        self.redactions.get_or_try_init(|| {
-            let mut redactions = Redactions::default();
-            for cf in self.config_files.values() {
-                let r = cf.redactions();
-                if !r.is_empty() {
-                    let mut r = r.clone();
-                    let (tera, ctx) = self.tera(&cf.config_root());
-                    r.render(&mut tera.clone(), &ctx)?;
-                    redactions.merge(r);
-                }
-            }
-            if redactions.is_empty() {
-                return Ok(Default::default());
-            }
+    pub fn redactions(&self) -> Arc<IndexSet<String>> {
+        let r = _REDACTIONS.lock().unwrap();
+        r.deref().clone()
 
-            let ts = self.get_toolset()?;
-            let env = ts.full_env()?;
-
-            let env_matcher = Wildcard::new(redactions.env.clone());
-            let var_matcher = Wildcard::new(redactions.vars.clone());
-
-            let env_vals = env
-                .into_iter()
-                .filter(|(k, _)| env_matcher.match_any(k))
-                .map(|(_, v)| v);
-            let var_vals = self
-                .vars
-                .iter()
-                .filter(|(k, _)| var_matcher.match_any(k))
-                .map(|(_, v)| v.to_string());
-            Ok(env_vals.chain(var_vals).collect())
-        })
+        // self.redactions.get_or_try_init(|| {
+        //     let mut redactions = Redactions::default();
+        //     for cf in self.config_files.values() {
+        //         let r = cf.redactions();
+        //         if !r.is_empty() {
+        //             let mut r = r.clone();
+        //             let (tera, ctx) = self.tera(&cf.config_root());
+        //             r.render(&mut tera.clone(), &ctx)?;
+        //             redactions.merge(r);
+        //         }
+        //     }
+        //     if redactions.is_empty() {
+        //         return Ok(Default::default());
+        //     }
+        //
+        //     let ts = self.get_toolset()?;
+        //     let env = ts.full_env()?;
+        //
+        //     let env_matcher = Wildcard::new(redactions.env.clone());
+        //     let var_matcher = Wildcard::new(redactions.vars.clone());
+        //
+        //     let env_vals = env
+        //         .into_iter()
+        //         .filter(|(k, _)| env_matcher.match_any(k))
+        //         .map(|(_, v)| v);
+        //     let var_vals = self
+        //         .vars
+        //         .iter()
+        //         .filter(|(k, _)| var_matcher.match_any(k))
+        //         .map(|(_, v)| v.to_string());
+        //     Ok(env_vals.chain(var_vals).collect())
+        // })
     }
 
-    pub fn redact(&self, mut input: String) -> Result<String> {
-        for redaction in self.redactions()? {
+    pub fn redact(&self, mut input: String) -> String {
+        for redaction in self.redactions().deref() {
             input = input.replace(redaction, "[redacted]");
         }
-        Ok(input)
+        input
     }
 }
 

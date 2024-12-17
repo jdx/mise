@@ -8,13 +8,38 @@
       "additionalProperties": {
         "oneOf": [
           {
+            "type": "object",
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "tools": {
+                "type": "boolean",
+                "description": "load tools before resolving"
+              },
+              "redact": {
+                "type": "boolean",
+                "description": "redact the value from logs"
+              }
+            }
+          },
+          {
             "type": "string"
           },
           {
             "type": "number"
           },
           {
-            "enum": [false],
             "type": "boolean"
           }
         ]
@@ -27,6 +52,32 @@
           "properties": {
             "file": {
               "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "type": "boolean",
+                      "description": "load tools before resolving"
+                    },
+                    "redact": {
+                      "type": "boolean",
+                      "description": "redact the value from logs"
+                    }
+                  }
+                },
                 {
                   "description": "dotenv file to load",
                   "type": "string"
@@ -43,6 +94,28 @@
             },
             "path": {
               "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "redact": {
+                      "type": "boolean",
+                      "description": "redact the value from logs"
+                    }
+                  }
+                },
                 {
                   "description": "PATH entry to add",
                   "type": "string"
@@ -101,6 +174,32 @@
             },
             "source": {
               "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "type": "boolean",
+                      "description": "load tools before resolving"
+                    },
+                    "redact": {
+                      "type": "boolean",
+                      "description": "redact the value from logs"
+                    }
+                  }
+                },
                 {
                   "description": "bash script to load",
                   "type": "string"
@@ -1248,6 +1347,13 @@
       "description": "minimum version of mise required to use this config",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
       "type": "string"
+    },
+    "redactions": {
+      "description": "env or vars keys to redact from logs",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "plugins": {
       "additionalProperties": {

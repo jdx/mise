@@ -40,7 +40,17 @@ tools. To do that, turn the value into a map with `tools = true`:
 ```toml
 [env]
 MY_VAR = { value = "tools path: {{env.PATH}}", tools = true }
-_.path = { value = ["{{env.GEM_HOME}}/bin"], tools = true } # directives may also set tools = true
+_.path = { path = ["{{env.GEM_HOME}}/bin"], tools = true } # directives may also set tools = true
+```
+
+## Redactions
+
+Variables can be redacted from the output by setting `redact = true`:
+
+```toml
+[env]
+SECRET = { value = "my_secret", redact = true }
+_.file = { path = [".env.json"], tools = true } # directives may also set redact = true
 ```
 
 ## `env._` directives
