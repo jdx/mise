@@ -159,7 +159,15 @@ bashbot.backends = [
 ]
 bashly.backends = ["asdf:pcrockett/asdf-bashly"]
 # aqua is available but uses cargo
-bat.backends = ["ubi:sharkdp/bat", "asdf:https://gitlab.com/wt0f/asdf-bat"]
+bat.backends = [
+    {full = "ubi:sharkdp/bat", platforms = [
+        "linux",
+        "macos",
+        "windows"
+    ]},
+    "cargo:bat",
+    "asdf:https://gitlab.com/wt0f/asdf-bat"
+]
 bat.test = ["bat --version", "bat {{version}}"]
 bat-extras.backends = ["asdf:vhdirk/asdf-bat-extras"]
 bats.backends = ["aqua:bats-core/bats-core", "asdf:timgluz/asdf-bats"]

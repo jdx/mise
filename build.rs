@@ -1,6 +1,5 @@
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
@@ -29,7 +28,6 @@ fn codegen_registry() {
         .unwrap();
 
     let tools = registry.get("tools").unwrap().as_table().unwrap();
-    let mut trusted_ids = HashSet::new();
     for (short, info) in tools {
         let info = info.as_table().unwrap();
         let aliases = info
@@ -48,20 +46,41 @@ fn codegen_registry() {
                 t[1].as_str().unwrap().to_string(),
             )
         });
-        let backends = info.get("backends").unwrap().as_array().unwrap();
-        let mut fulls = vec![];
-        for backend in backends {
+        let mut backends = vec![];
+        for backend in info.get("backends").unwrap().as_array().unwrap() {
             match backend {
                 toml::Value::String(backend) => {
-                    fulls.push(backend.to_string());
+                    backends.push(format!(
+                        r##"RegistryBackend{{
+                            full: r#"{backend}"#,
+                            platforms: &[],
+                        }}"##,
+                        backend = backend
+                    ));
                 }
                 toml::Value::Table(backend) => {
-                    fulls.push(backend.get("full").unwrap().as_str().unwrap().to_string());
-                    if let Some(trust) = backend.get("trust") {
-                        if trust.as_bool().unwrap() {
-                            trusted_ids.insert(short);
-                        }
-                    }
+                    let full = backend.get("full").unwrap().as_str().unwrap();
+                    let platforms = backend
+                        .get("platforms")
+                        .map(|p| {
+                            p.as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|p| p.as_str().unwrap().to_string())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    backends.push(format!(
+                        r##"RegistryBackend{{
+                            full: r#"{full}"#,
+                            platforms: &[{platforms}],
+                        }}"##,
+                        platforms = platforms
+                            .into_iter()
+                            .map(|p| format!("\"{p}\""))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
                 }
                 _ => panic!("Unknown backend type"),
             }
@@ -105,11 +124,11 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, backends: vec!["{backends}"], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
             description = description
                 .map(|d| format!("Some(r###\"{}\"###)", d))
                 .unwrap_or("None".to_string()),
-            backends = fulls.join("\", \""),
+            backends = backends.into_iter().collect::<Vec<_>>().join(", "),
             aliases = aliases
                 .iter()
                 .map(|a| format!("\"{a}\""))
