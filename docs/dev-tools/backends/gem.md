@@ -41,12 +41,3 @@ Or you can reinstall all gems with:
 ```sh
 mise install -f "gem:*"
 ```
-
-## Settings
-
-Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable listed.
-
-<script setup>
-import Settings from '/components/settings.vue';
-</script>
-<Settings child="gem" :level="3" />
