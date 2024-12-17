@@ -68,5 +68,4 @@ eval "$(mise activate bash)"
 eval "$(mise activate zsh)"
 mise activate fish | source
 execx($(mise activate xonsh))
-mise activate pwsh | Out-String | Invoke-Expression
 ```
