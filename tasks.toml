@@ -32,11 +32,11 @@ run = "bun run docs:build"
 depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }
 run = [
-    "mise usage > mise.usage.kdl",
-    "mise generate task-docs > tasks.md",
-    "rm -rf docs/cli && mkdir -p docs/cli",
-    "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
-    "markdownlint --fix docs/cli",
+  "mise usage > mise.usage.kdl",
+  "mise generate task-docs > tasks.md",
+  "rm -rf docs/cli && mkdir -p docs/cli",
+  "usage generate markdown -m --out-dir docs/cli --url-prefix /cli --html-encode --file mise.usage.kdl --replace-pre-with-code-fences",
+  "markdownlint --fix docs/cli",
 ]
 
 ["render:completions"]
@@ -67,15 +67,18 @@ run = "mise render-mangen"
 ["render:fig"]
 wait_for = ["render:completions"]
 run = [
-    "usage generate fig --file mise.usage.kdl --out-file xtasks/fig/src/mise.ts",
-    "tsx xtasks/fig/addCustomGenerators.ts xtasks/fig/src/mise.ts xtasks/fig/src/mise.ts"
+  "usage generate fig --file mise.usage.kdl --out-file xtasks/fig/src/mise.ts",
+  "tsx xtasks/fig/addCustomGenerators.ts xtasks/fig/src/mise.ts xtasks/fig/src/mise.ts",
 ]
 depends = ['docs:setup']
 
 ["render:help"]
 depends = ["build"]
 env = { NO_COLOR = "1" }
-run = ["mise render-help", "mise run show-output-on-failure -- mise x node@latest -- npx markdown-magic"]
+run = [
+  "mise render-help",
+  "mise run show-output-on-failure -- mise x node@latest -- npx markdown-magic",
+]
 sources = ["mise"]
 outputs = ["README.md"]
 
@@ -126,5 +129,6 @@ run = "cargo install --path . --debug"
 
 [xxx]
 hide = true
-run = "echo xxx"
+tools = { gh = "2.60.0" }
+run = "gh --version"
 description = "a task for testing"

@@ -359,6 +359,7 @@ cmd "doctor" help="Check mise installation for possible problems" {
     [WARN] plugin node is not installed
 "
     cmd "path" help="Print the current PATH entries mise is providing" {
+        alias "paths" hide=true
         after_long_help r"Examples:
 
     Get the current PATH entries mise is providing
@@ -450,9 +451,12 @@ The "--" separates runtimes from the commands to pass along to the subprocess."#
     arg "[COMMAND]..." help="Command string to execute (same as --command)" var=true
 }
 cmd "fmt" help="Formats mise.toml" {
+    long_help r"Formats mise.toml
+
+Sorts keys and cleans up whitespace in mise.toml"
     after_long_help r"Examples:
 
-    $ mise format
+    $ mise fmt
 "
     flag "-a --all" help="Format all files from the current directory"
 }
@@ -1201,7 +1205,7 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
     }
     flag "--raw" help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     flag "-u --unset" help="Removes a previously set version"
-    arg "[TOOL@VERSION]..." help="Tool(s) to use" var=true
+    arg "<TOOL@VERSION>..." help="Tool(s) to use" var=true
 }
 cmd "sync" subcommand_required=true help="Synchronize tools from other version managers with mise" {
     cmd "node" help="Symlinks all tool versions from an external tool into mise" {
@@ -1274,6 +1278,49 @@ cmd "tasks" help="Manage tasks" {
     flag "-J --json" help="Output in JSON format" global=true
     flag "--usage" hide=true global=true
     arg "[TASK]" help="Task name to get info of"
+    cmd "add" help="Create a new task" {
+        after_long_help r#"Examples:
+
+    $ mise task add pre-commit --depends "test" --depends "render" -- echo pre-commit
+"#
+        flag "--description" help="Description of the task" {
+            arg "<DESCRIPTION>"
+        }
+        flag "-a --alias" help="Other names for the task" var=true {
+            arg "<ALIAS>"
+        }
+        flag "--depends-post" help="Dependencies to run after the task runs" var=true {
+            arg "<DEPENDS_POST>"
+        }
+        flag "-w --wait-for" help="Wait for these tasks to complete if they are to run" var=true {
+            arg "<WAIT_FOR>"
+        }
+        flag "-D --dir" help="Run the task in a specific directory" {
+            arg "<DIR>"
+        }
+        flag "-H --hide" help="Hide the task from `mise task` and completions"
+        flag "-r --raw" help="Directly connect stdin/stdout/stderr"
+        flag "-s --sources" help="Glob patterns of files this task uses as input" var=true {
+            arg "<SOURCES>"
+        }
+        flag "--outputs" help="Glob patterns of files this task creates, to skip if they are not modified" var=true {
+            arg "<OUTPUTS>"
+        }
+        flag "--shell" help="Run the task in a specific shell" {
+            arg "<SHELL>"
+        }
+        flag "-q --quiet" help="Do not print the command before running"
+        flag "--silent" help="Do not print the command or its output"
+        flag "-d --depends" help="Add dependencies to the task" var=true {
+            arg "<DEPENDS>"
+        }
+        flag "--run-windows" help="Command to run on windows" {
+            arg "<RUN_WINDOWS>"
+        }
+        flag "-f --file" help="Create a file task instead of a toml task"
+        arg "<TASK>" help="Tasks name to add"
+        arg "<RUN>..." var=true
+    }
     cmd "deps" help="Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:
 

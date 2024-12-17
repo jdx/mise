@@ -6,6 +6,7 @@ use std::{panic, thread};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
+use crate::config::env_directive::EnvResults;
 use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
 use crate::config::Config;
 use crate::env::{PATH_KEY, TERM_WIDTH};
@@ -40,18 +41,37 @@ mod tool_source;
 mod tool_version;
 mod tool_version_list;
 
-pub type ToolVersionOptions = BTreeMap<String, String>;
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct ToolVersionOptions {
+    pub env: BTreeMap<String, String>,
+    #[serde(flatten)]
+    pub opts: BTreeMap<String, String>,
+}
+
+impl ToolVersionOptions {
+    pub fn is_empty(&self) -> bool {
+        self.env.is_empty() && self.opts.is_empty()
+    }
+
+    pub fn get(&self, key: &str) -> Option<&String> {
+        self.opts.get(key)
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.opts.contains_key(key)
+    }
+}
 
 pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
-    let mut opts = ToolVersionOptions::new();
+    let mut tvo = ToolVersionOptions::default();
     for opt in s.split(',') {
         let (k, v) = opt.split_once('=').unwrap_or((opt, ""));
         if k.is_empty() {
             continue;
         }
-        opts.insert(k.to_string(), v.to_string());
+        tvo.opts.insert(k.to_string(), v.to_string());
     }
-    opts
+    tvo
 }
 
 #[derive(Debug)]
@@ -454,6 +474,14 @@ impl Toolset {
             path_env.add(p);
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
+        let mut ctx = config.tera_ctx.clone();
+        ctx.insert("env", &env);
+        env.extend(
+            self.load_post_env(ctx, &env)?
+                .env
+                .into_iter()
+                .map(|(k, v)| (k, v.0)),
+        );
         Ok(env)
     }
     pub fn env_from_tools(&self, config: &Config) -> Vec<(String, String, String)> {
@@ -533,15 +561,31 @@ impl Toolset {
         for p in self.list_paths() {
             paths.insert(p);
         }
-        Ok(paths.into_iter().collect())
+        let config = Config::get();
+        let mut env = self.env(&config)?;
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in paths.clone().into_iter() {
+            path_env.add(p);
+        }
+        env.insert(PATH_KEY.to_string(), path_env.to_string());
+        let mut ctx = config.tera_ctx.clone();
+        ctx.insert("env", &env);
+        // these are returned in order, but we need to run the post_env stuff last and then put the results in the front
+        let paths = self
+            .load_post_env(ctx, &env)?
+            .env_paths
+            .into_iter()
+            .chain(paths)
+            .collect();
+        Ok(paths)
     }
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_installed_versions()
             .into_par_iter()
-            .find_first(|(p, tv)| {
-                if let Ok(x) = p.which(tv, bin_name) {
-                    x.is_some()
-                } else {
+            .find_first(|(p, tv)| match p.which(tv, bin_name) {
+                Ok(x) => x.is_some(),
+                Err(e) => {
+                    debug!("Error running which: {:#}", e);
                     false
                 }
             })
@@ -633,6 +677,30 @@ impl Toolset {
     fn is_disabled(&self, ba: &BackendArg) -> bool {
         !ba.is_os_supported() || SETTINGS.disable_tools().contains(&ba.short)
     }
+
+    fn load_post_env(&self, ctx: tera::Context, env: &EnvMap) -> Result<EnvResults> {
+        let config = Config::get();
+        let entries = config
+            .config_files
+            .iter()
+            .rev()
+            .map(|(source, cf)| {
+                cf.env_entries()
+                    .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        // trace!("load_env: entries: {:#?}", entries);
+        let env_results = EnvResults::resolve(ctx, env, entries, true)?;
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("{env_results:#?}");
+        } else {
+            debug!("{env_results:?}");
+        }
+        Ok(env_results)
+    }
 }
 
 fn show_python_install_hint(versions: &[ToolRequest]) {
@@ -713,23 +781,29 @@ mod tests {
             let opts = super::parse_tool_options(input);
             assert_eq!(opts, f);
         };
-        t("", ToolVersionOptions::new());
+        t("", ToolVersionOptions::default());
         t(
             "exe=rg",
-            [("exe".to_string(), "rg".to_string())]
-                .iter()
-                .cloned()
-                .collect(),
+            ToolVersionOptions {
+                opts: [("exe".to_string(), "rg".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect(),
+                ..Default::default()
+            },
         );
         t(
             "exe=rg,match=musl",
-            [
-                ("exe".to_string(), "rg".to_string()),
-                ("match".to_string(), "musl".to_string()),
-            ]
-            .iter()
-            .cloned()
-            .collect(),
+            ToolVersionOptions {
+                opts: [
+                    ("exe".to_string(), "rg".to_string()),
+                    ("match".to_string(), "musl".to_string()),
+                ]
+                .iter()
+                .cloned()
+                .collect(),
+                ..Default::default()
+            },
         );
     }
 }

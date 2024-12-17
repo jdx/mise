@@ -879,6 +879,12 @@ type = "String"
 optional = true
 description = "The age public keys to use for sops secret encryption."
 
+[sops.rops]
+env = "MISE_SOPS_ROPS"
+type = "Bool"
+default = true
+description = "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops."
+
 [status.missing_tools]
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"

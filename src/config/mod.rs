@@ -218,7 +218,7 @@ impl Config {
             .get_or_try_init(|| ToolRequestSetBuilder::new().build())
     }
 
-    pub fn get_toolset(&self) -> eyre::Result<&Toolset> {
+    pub fn get_toolset(&self) -> Result<&Toolset> {
         self.toolset.get_or_try_init(|| {
             let mut ts = Toolset::from(self.get_tool_request_set()?.clone());
             ts.resolve()?;
@@ -582,7 +582,8 @@ impl Config {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(self.tera_ctx.clone(), &env::PRISTINE_ENV, entries)?;
+        let env_results =
+            EnvResults::resolve(self.tera_ctx.clone(), &env::PRISTINE_ENV, entries, false)?;
         time!("load_env done");
         if log::log_enabled!(log::Level::Trace) {
             trace!("{env_results:#?}");
@@ -1080,7 +1081,7 @@ fn load_vars(ctx: tera::Context, config_files: &ConfigMap) -> Result<EnvResults>
         .into_iter()
         .flatten()
         .collect();
-    let vars_results = EnvResults::resolve(ctx, &env::PRISTINE_ENV, entries)?;
+    let vars_results = EnvResults::resolve(ctx, &env::PRISTINE_ENV, entries, false)?;
     time!("load_vars done");
     if log::log_enabled!(log::Level::Trace) {
         trace!("{vars_results:#?}");

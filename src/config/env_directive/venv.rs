@@ -1,14 +1,13 @@
+use crate::backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
 use crate::config::env_directive::EnvResults;
 use crate::config::{Config, SETTINGS};
-use crate::env::PATH_KEY;
 use crate::env_diff::EnvMap;
 use crate::file::{display_path, which_non_pristine};
 use crate::toolset::ToolsetBuilder;
 use crate::Result;
-use crate::{backend, env};
 use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 
@@ -16,13 +15,14 @@ impl EnvResults {
     #[allow(clippy::too_many_arguments)]
     pub fn venv(
         ctx: &mut tera::Context,
+        tera: &mut tera::Tera,
         env: &mut IndexMap<String, (String, Option<PathBuf>)>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
         config_root: &Path,
         env_vars: EnvMap,
-        path: PathBuf,
+        path: String,
         create: bool,
         python: Option<String>,
         uv_create_args: Option<Vec<String>>,
@@ -30,18 +30,13 @@ impl EnvResults {
     ) -> Result<()> {
         trace!("python venv: {} create={create}", display_path(&path));
         trust_check(source)?;
-        let venv = r.parse_template(ctx, source, path.to_string_lossy().as_ref())?;
+        let venv = r.parse_template(ctx, tera, source, &path)?;
         let venv = normalize_path(config_root, venv.into());
         if !venv.exists() && create {
             // TODO: the toolset stuff doesn't feel like it's in the right place here
             // TODO: in fact this should probably be moved to execute at the same time as src/uv.rs runs in ts.env() instead of config.env()
             let config = Config::get();
             let ts = ToolsetBuilder::new().build(&config)?;
-            let path = ts
-                .list_paths()
-                .into_iter()
-                .chain(env::split_paths(&env_vars[&*PATH_KEY]))
-                .collect::<Vec<_>>();
             let ba = BackendArg::from("python");
             let installed = ts
                 .versions
@@ -113,11 +108,7 @@ impl EnvResults {
                         .args(["-m", "venv", &venv.to_string_lossy()])
                         .args(extra)
                 }
-                .envs(env_vars)
-                .env(
-                    PATH_KEY.to_string(),
-                    env::join_paths(&path)?.to_string_lossy().to_string(),
-                );
+                .envs(env_vars);
                 cmd.execute()?;
             }
         }
@@ -133,9 +124,9 @@ impl EnvResults {
         } else if !create {
             // The create "no venv found" warning is handled elsewhere
             warn!(
-                "no venv found at: {p}\n\n\
-                            To create a virtualenv manually, run:\n\
-                            python -m venv {p}",
+                "no venv found at: {p}
+To create a virtualenv manually, run:
+python -m venv {p}",
                 p = display_path(&venv)
             );
         }
@@ -147,7 +138,7 @@ impl EnvResults {
 #[cfg(unix)]
 mod tests {
     use super::*;
-    use crate::config::env_directive::EnvDirective;
+    use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
     use crate::tera::BASE_CONTEXT;
     use crate::test::replace_path;
     use insta::assert_debug_snapshot;
@@ -162,25 +153,28 @@ mod tests {
             vec![
                 (
                     EnvDirective::PythonVenv {
-                        path: PathBuf::from("/"),
+                        path: "/".into(),
                         create: false,
                         python: None,
                         uv_create_args: None,
                         python_create_args: None,
+                        options: EnvDirectiveOptions { tools: true },
                     },
                     Default::default(),
                 ),
                 (
                     EnvDirective::PythonVenv {
-                        path: PathBuf::from("./"),
+                        path: "./".into(),
                         create: false,
                         python: None,
                         uv_create_args: None,
                         python_create_args: None,
+                        options: EnvDirectiveOptions { tools: true },
                     },
                     Default::default(),
                 ),
             ],
+            true,
         )
         .unwrap();
         // expect order to be reversed as it processes directives from global to dir specific
@@ -189,7 +183,6 @@ mod tests {
             @r#"
         [
             "~/bin",
-            "/bin",
         ]
         "#
         );

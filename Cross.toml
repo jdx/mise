@@ -1,5 +1,2 @@
 [build.env]
-passthrough = [
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-]
+passthrough = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]

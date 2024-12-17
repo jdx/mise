@@ -3,10 +3,7 @@ tasks.build = "bun run docs:build"
 
 [tasks."commit-and-push"]
 depends = ["build"]
-run = [
-  "git ci -pm docs",
-  "git push",
-]
+run = ["git ci -pm docs", "git push"]
 
 [tools]
 bun = 'latest'

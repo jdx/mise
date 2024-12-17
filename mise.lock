@@ -1,6 +1,6 @@
 [tools.actionlint]
 version = "1.7.4"
-backend = "ubi:rhysd/actionlint"
+backend = "aqua:rhysd/actionlint"
 
 [tools.actionlint.checksums]
 actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
@@ -118,6 +118,13 @@ backend = "ubi:slsa-framework/slsa-verifier"
 slsa-verifier-linux-x86_64 = "sha256:1c9c0d6a272063f3def6d233fa3372adbaff1f5a3480611a07c744e73246b62d"
 slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff545460add0cb4a087aec056189c"
 "slsa-verifier.exe-windows-x86_64" = "sha256:37ca29ad748e8ea7be76d3ae766e8fa505362240431f6ea7f0648c727e2f2507"
+
+[tools.taplo]
+version = "0.9.3"
+backend = "ubi:tamasfe/taplo[matching=full]"
+
+[tools.taplo.checksums]
+taplo-full-macos-aarch64 = "sha256:cf55aa3e4c9b631c1fbb3f8a4adac59ca2ecc7898d26e749cd9b62d5ed858fce"
 
 [tools.wait-for-gh-rate-limit]
 version = "0.1.8"

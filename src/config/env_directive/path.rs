@@ -1,36 +1,25 @@
-use crate::config::env_directive::{EnvResults, PathEntry};
+use crate::config::env_directive::EnvResults;
 use crate::result;
 use std::path::PathBuf;
 
 impl EnvResults {
     pub fn path(
         ctx: &mut tera::Context,
+        tera: &mut tera::Tera,
         r: &mut EnvResults,
-        paths: &mut Vec<(PathEntry, PathBuf)>,
+        paths: &mut Vec<(PathBuf, PathBuf)>,
         source: PathBuf,
-        input_str: PathEntry,
+        input: String,
     ) -> result::Result<()> {
         // trace!("resolve: input_str: {:#?}", input_str);
-        match input_str {
-            PathEntry::Normal(input) => {
-                // trace!(
-                //     "resolve: normal: input: {:?}, input.to_string(): {:?}",
-                //     &input,
-                //     input.to_string_lossy().as_ref()
-                // );
-                let s = r.parse_template(ctx, &source, input.to_string_lossy().as_ref())?;
-                // trace!("resolve: s: {:?}", &s);
-                paths.push((PathEntry::Normal(s.into()), source));
-            }
-            PathEntry::Lazy(input) => {
-                // trace!(
-                //     "resolve: lazy: input: {:?}, input.to_string(): {:?}",
-                //     &input,
-                //     input.to_string_lossy().as_ref()
-                // );
-                paths.push((PathEntry::Lazy(input), source));
-            }
-        }
+        // trace!(
+        //     "resolve: normal: input: {:?}, input.to_string(): {:?}",
+        //     &input,
+        //     input.to_string_lossy().as_ref()
+        // );
+        let s = r.parse_template(ctx, tera, &source, &input)?;
+        // trace!("resolve: s: {:?}", &s);
+        paths.push((s.into(), source));
         Ok(())
     }
 }
@@ -56,22 +45,26 @@ mod tests {
             &env,
             vec![
                 (
-                    EnvDirective::Path("/path/1".into()),
+                    EnvDirective::Path("/path/1".into(), Default::default()),
                     PathBuf::from("/config"),
                 ),
                 (
-                    EnvDirective::Path("/path/2".into()),
+                    EnvDirective::Path("/path/2".into(), Default::default()),
                     PathBuf::from("/config"),
                 ),
                 (
-                    EnvDirective::Path("~/foo/{{ env.A }}".into()),
+                    EnvDirective::Path("~/foo/{{ env.A }}".into(), Default::default()),
                     Default::default(),
                 ),
                 (
-                    EnvDirective::Path("./rel/{{ env.A }}:./rel2/{{env.B}}".into()),
+                    EnvDirective::Path(
+                        "./rel/{{ env.A }}:./rel2/{{env.B}}".into(),
+                        Default::default(),
+                    ),
                     Default::default(),
                 ),
             ],
+            false,
         )
         .unwrap();
         assert_debug_snapshot!(

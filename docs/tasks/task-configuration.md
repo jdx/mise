@@ -119,6 +119,19 @@ run = [
 ]
 ```
 
+### `tools`
+
+- **Type**: `{ [key]: string }`
+
+Tools to install and activate before running the task. This is useful for tasks that require a specific tool to be
+installed or a tool with a different version. It will only be used for that task, not dependencies.
+
+```toml
+[tasks.build]
+tools.rust = "1.50.0"
+run = "cargo build"
+```
+
 ### `dir`
 
 - **Type**: `string`
