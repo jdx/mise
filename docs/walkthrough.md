@@ -151,7 +151,7 @@ mise run test
 ```
 
 :::tip
-`mise run` set ups up the "mise environment" before running the task (tools and environment variables).
+`mise run` sets up the "mise environment" before running the task (tools and environment variables).
 So if you'd rather not activate mise in your shell, you can use `mise run` to run tasks, and it will
 have the tools in PATH and the environment variables from `mise.toml` set.
 :::
