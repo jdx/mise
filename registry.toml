@@ -1016,6 +1016,11 @@ kyverno.backends = [
 ]
 lab.backends = ["aqua:zaquestion/lab", "asdf:particledecay/asdf-lab"]
 lane.backends = ["asdf:CodeReaper/asdf-lane"]
+lazydocker.backends = [
+    "aqua:jesseduffield/lazydocker",
+    "ubi:jesseduffield/lazydocker"
+]
+lazydocker.test = ["lazydocker --version", "Version: {{version}}"]
 lazygit.backends = [
     "aqua:jesseduffield/lazygit",
     "asdf:nklmilojevic/asdf-lazygit"
