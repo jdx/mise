@@ -1,5 +1,6 @@
 use color_eyre::eyre::{eyre, Result};
 use console::style;
+use heck::ToShoutySnakeCase;
 use indoc::formatdoc;
 
 use crate::cli::args::ToolArg;
@@ -18,7 +19,7 @@ use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder};
 #[clap(verbatim_doc_comment, visible_alias = "sh", after_long_help = AFTER_LONG_HELP)]
 pub struct Shell {
     /// Tool(s) to use
-    #[clap(value_name = "TOOL@VERSION")]
+    #[clap(value_name = "TOOL@VERSION", required=true)]
     tool: Vec<ToolArg>,
 
     /// Number of jobs to run in parallel
@@ -43,6 +44,16 @@ impl Shell {
             err_inactive()?;
         }
 
+        let shell = get_shell(None).expect("no shell detected");
+
+        if self.unset {
+            for ta in &self.tool {
+                let op = shell.unset_env(&format!("MISE_{}_VERSION", ta.ba.short.to_shouty_snake_case()));
+                print!("{op}");
+            }
+            return Ok(());
+        }
+
         let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
         let opts = InstallOptions {
             force: false,
@@ -53,18 +64,12 @@ impl Shell {
         ts.install_missing_versions(&opts)?;
         ts.notify_if_versions_missing();
 
-        let shell = get_shell(None).expect("no shell detected");
-
         for (p, tv) in ts.list_current_installed_versions() {
             let source = &ts.versions.get(p.ba()).unwrap().source;
             if matches!(source, ToolSource::Argument) {
-                let k = format!("MISE_{}_VERSION", p.id().to_uppercase());
-                let op = if self.unset {
-                    shell.unset_env(&k)
-                } else {
-                    shell.set_env(&k, &tv.version)
-                };
-                miseprintln!("{op}");
+                let k = format!("MISE_{}_VERSION", p.id().to_shouty_snake_case());
+                let op = shell.set_env(&k, &tv.version);
+                print!("{op}");
             }
         }
 
