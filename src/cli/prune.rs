@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::backend::Backend;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::tracking::Tracker;
 use crate::config::{Config, SETTINGS};
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
@@ -22,9 +22,9 @@ use super::trust::Trust;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Prune {
-    /// Prune only versions from this plugin(s)
+    /// Prune only these tools
     #[clap()]
-    pub plugin: Option<Vec<BackendArg>>,
+    pub installed_tool: Option<Vec<ToolArg>>,
 
     /// Do not actually delete anything
     #[clap(long, short = 'n')]
@@ -45,7 +45,11 @@ impl Prune {
             self.prune_configs()?;
         }
         if self.tools || !self.configs {
-            self.prune_tools()?;
+            let backends = self
+                .installed_tool
+                .as_ref()
+                .map(|it| it.iter().map(|ta| &ta.ba).collect());
+            prune(backends.unwrap_or_default(), self.dry_run)?;
         }
         Ok(())
     }
@@ -60,49 +64,46 @@ impl Prune {
         }
         Ok(())
     }
+}
 
-    fn prune_tools(&self) -> Result<()> {
-        let config = Config::try_get()?;
-        let ts = ToolsetBuilder::new().build(&config)?;
-        let mut to_delete = ts
-            .list_installed_versions()?
-            .into_iter()
-            .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
-            .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
+pub fn prune(tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
+    let config = Config::try_get()?;
+    let ts = ToolsetBuilder::new().build(&config)?;
+    let mut to_delete = ts
+        .list_installed_versions()?
+        .into_iter()
+        .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
+        .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
 
-        if let Some(backends) = &self.plugin {
-            to_delete.retain(|_, (_, tv)| backends.contains(tv.ba()));
-        }
-
-        for cf in config.get_tracked_config_files()?.values() {
-            let mut ts = Toolset::from(cf.to_tool_request_set()?);
-            ts.resolve()?;
-            for (_, tv) in ts.list_current_versions() {
-                to_delete.remove(&(tv.ba().short.to_string(), tv.tv_pathname()));
-            }
-        }
-
-        self.delete(to_delete.into_values().collect())
+    if !tools.is_empty() {
+        to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
     }
 
-    fn delete(&self, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Result<()> {
-        let mpr = MultiProgressReport::get();
-        for (p, tv) in to_delete {
-            let mut prefix = tv.style();
-            if self.dry_run {
-                prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
-            }
-            let pr = mpr.add(&prefix);
-            if self.dry_run
-                || SETTINGS.yes
-                || prompt::confirm_with_all(format!("remove {} ?", &tv))?
-            {
-                p.uninstall_version(&tv, pr.as_ref(), self.dry_run)?;
-                pr.finish();
-            }
+    for cf in config.get_tracked_config_files()?.values() {
+        let mut ts = Toolset::from(cf.to_tool_request_set()?);
+        ts.resolve()?;
+        for (_, tv) in ts.list_current_versions() {
+            to_delete.remove(&(tv.ba().short.to_string(), tv.tv_pathname()));
         }
-        Ok(())
     }
+
+    delete(dry_run, to_delete.into_values().collect())
+}
+
+fn delete(dry_run: bool, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Result<()> {
+    let mpr = MultiProgressReport::get();
+    for (p, tv) in to_delete {
+        let mut prefix = tv.style();
+        if dry_run {
+            prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
+        }
+        let pr = mpr.add(&prefix);
+        if dry_run || SETTINGS.yes || prompt::confirm_with_all(format!("remove {} ?", &tv))? {
+            p.uninstall_version(&tv, pr.as_ref(), dry_run)?;
+            pr.finish();
+        }
+    }
+    Ok(())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

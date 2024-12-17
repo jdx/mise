@@ -1,6 +1,6 @@
 # `mise prune`
 
-- **Usage**: `mise prune [FLAGS] [PLUGIN]...`
+- **Usage**: `mise prune [FLAGS] [INSTALLED_TOOL]...`
 - **Source code**: [`src/cli/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/prune.rs)
 
 Delete unused versions of tools
@@ -12,9 +12,9 @@ as will versions only referenced on the command line `mise exec <PLUGIN>@<VERSIO
 
 ## Arguments
 
-### `[PLUGIN]...`
+### `[INSTALLED_TOOL]...`
 
-Prune only versions from this plugin(s)
+Prune only these tools
 
 ## Flags
 

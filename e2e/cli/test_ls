@@ -23,7 +23,7 @@ assert "cat json | jq -r '.tiny[1].active'" "true"
 assert "cat json | jq -r '.tiny[1].version'" "3.1.0"
 assert "cat json | jq -r '.tiny[1].install_path'" "$MISE_DATA_DIR/installs/tiny/3.1.0"
 
-assert "mise rm tiny@3.1.0"
+assert "mise uninstall tiny@3.1.0"
 assert_contains "mise ls tiny" "tiny  3.1.0 (missing)  ~/workdir/mise.toml  3"
 assert_contains "mise ls --missing tiny" "tiny  3.1.0 (missing)  ~/workdir/mise.toml  3"
 assert_not_contains "mise ls --missing tiny" "2.0.0"

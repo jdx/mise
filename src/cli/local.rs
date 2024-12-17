@@ -115,7 +115,7 @@ pub fn local(
 
     if let Some(plugins) = &remove {
         for plugin in plugins {
-            cf.remove_plugin(plugin)?;
+            cf.remove_tool(plugin)?;
         }
         let tools = plugins
             .iter()

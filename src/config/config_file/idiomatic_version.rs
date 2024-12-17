@@ -56,7 +56,7 @@ impl ConfigFile for IdiomaticVersionFile {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn remove_plugin(&mut self, _fa: &BackendArg) -> Result<()> {
+    fn remove_tool(&mut self, _fa: &BackendArg) -> Result<()> {
         unimplemented!()
     }
 

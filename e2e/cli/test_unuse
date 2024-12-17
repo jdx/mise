@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+assert "mise use dummy@1.0.0"
+assert_contains "mise ls dummy" "1.0.0"
+assert "mise unuse dummy"
+assert_empty "mise ls dummy"
+
+assert "mise use dummy@1.0.0"
+mkdir subdir
+cd subdir || exit 1
+assert "mise use -p mise.toml dummy@1.0.0"
+assert "mise ls dummy" "dummy  1.0.0  ~/workdir/subdir/mise.toml  1.0.0"
+assert "mise unuse dummy"
+# version is not pruned because it's in ~/workdir/mise.toml
+assert "mise ls dummy" "dummy  1.0.0  ~/workdir/mise.toml  1.0.0"
+assert "mise unuse dummy"
+assert_empty "mise ls dummy"
+
+assert "mise use -g dummy@1.0.0"
+assert "mise ls dummy" "dummy  1.0.0  ~/.config/mise/config.toml  1.0.0"
+assert "mise unuse dummy"
+assert_empty "mise ls dummy"

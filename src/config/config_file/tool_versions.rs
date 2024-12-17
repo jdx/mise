@@ -150,7 +150,7 @@ impl ConfigFile for ToolVersions {
         self.path.as_path()
     }
 
-    fn remove_plugin(&mut self, fa: &BackendArg) -> Result<()> {
+    fn remove_tool(&mut self, fa: &BackendArg) -> Result<()> {
         self.plugins.shift_remove(fa);
         Ok(())
     }
