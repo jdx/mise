@@ -39,7 +39,7 @@ use crate::env_diff::EnvMap;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
 use crate::plugins::PluginType;
-use crate::tera::{BASE_CONTEXT};
+use crate::tera::BASE_CONTEXT;
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
 pub use settings::SETTINGS;
@@ -588,7 +588,11 @@ impl Config {
         // trace!("load_env: entries: {:#?}", entries);
         let env_results =
             EnvResults::resolve(self.tera_ctx.clone(), &env::PRISTINE_ENV, entries, false)?;
-        let redact_keys = self.redaction_keys().into_iter().chain(env_results.redactions.clone()).collect_vec();
+        let redact_keys = self
+            .redaction_keys()
+            .into_iter()
+            .chain(env_results.redactions.clone())
+            .collect_vec();
         dbg!(&redact_keys);
         self.add_redactions(
             redact_keys,
@@ -671,15 +675,13 @@ impl Config {
     }
     pub fn add_redactions(&self, redactions: impl IntoIterator<Item = String>, env: &EnvMap) {
         let mut r = _REDACTIONS.lock().unwrap();
-        let redactions = redactions
-            .into_iter()
-            .flat_map(|r| {
-                let matcher = Wildcard::new(vec![r]);
-                env.iter()
-                    .filter(|(k, _)| matcher.match_any(k))
-                    .map(|(_, v)| v.clone())
-                    .collect::<Vec<_>>()
-            });
+        let redactions = redactions.into_iter().flat_map(|r| {
+            let matcher = Wildcard::new(vec![r]);
+            env.iter()
+                .filter(|(k, _)| matcher.match_any(k))
+                .map(|(_, v)| v.clone())
+                .collect::<Vec<_>>()
+        });
         *r = Arc::new(r.iter().cloned().chain(redactions).collect());
     }
 

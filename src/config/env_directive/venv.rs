@@ -158,7 +158,10 @@ mod tests {
                         python: None,
                         uv_create_args: None,
                         python_create_args: None,
-                        options: EnvDirectiveOptions { tools: true, redact: false },
+                        options: EnvDirectiveOptions {
+                            tools: true,
+                            redact: false,
+                        },
                     },
                     Default::default(),
                 ),
@@ -169,7 +172,10 @@ mod tests {
                         python: None,
                         uv_create_args: None,
                         python_create_args: None,
-                        options: EnvDirectiveOptions { tools: true, redact: false },
+                        options: EnvDirectiveOptions {
+                            tools: true,
+                            redact: false,
+                        },
                     },
                     Default::default(),
                 ),

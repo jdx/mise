@@ -92,15 +92,11 @@ impl Logger {
                     thread_id = thread_id(),
                     line = record.line().unwrap_or(0),
                 ));
-                format!(
-                    "{level} {meta} {args}",
-                    level = self.styled_level(level),
-                )
+                format!("{level} {meta} {args}", level = self.styled_level(level),)
             }
-            LevelFilter::Debug => format!(
-                "{level} {args}",
-                level = self.styled_level(record.level()),
-            ),
+            LevelFilter::Debug => {
+                format!("{level} {args}", level = self.styled_level(record.level()),)
+            }
             _ => {
                 let mise = match record.level() {
                     Level::Error => ui::style::ered("mise"),

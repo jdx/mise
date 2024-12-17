@@ -1,15 +1,15 @@
-use crate::env;
-use std::cmp::PartialEq;
-use std::collections::{BTreeSet, HashMap};
-use std::fmt::{Debug, Display, Formatter};
-use std::path::{Path, PathBuf};
 use crate::config::config_file::{config_root, trust_check};
 use crate::dirs;
+use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
+use std::cmp::PartialEq;
+use std::collections::{BTreeSet, HashMap};
+use std::fmt::{Debug, Display, Formatter};
+use std::path::{Path, PathBuf};
 
 mod file;
 mod module;
