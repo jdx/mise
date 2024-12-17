@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
@@ -380,7 +381,7 @@ impl Run {
             .bright()
             .to_string();
         if !self.quiet(Some(task)) {
-            let msg = format!("{prefix} {}", config.redact(cmd)?);
+            let msg = format!("{prefix} {}", config.redact(cmd));
             eprintln!("{}", trunc(&msg));
         }
 
@@ -481,7 +482,7 @@ impl Run {
         if !self.quiet(Some(task)) {
             let cmd = format!("{} {}", display_path(file), args.join(" "));
             let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
-            let cmd = trunc(&format!("{prefix} {}", config.redact(cmd)?));
+            let cmd = trunc(&format!("{prefix} {}", config.redact(cmd)));
             eprintln!("{cmd}");
         }
 
@@ -510,11 +511,11 @@ impl Run {
     ) -> Result<()> {
         let config = Config::get();
         let program = program.to_executable();
-        let redactions = config.redactions()?;
+        let redactions = config.redactions();
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
-            .redact(redactions.clone())
+            .redact(redactions.deref().clone())
             .raw(self.raw(Some(task)));
         cmd.with_pass_signals();
         match self.output(Some(task)) {

@@ -321,46 +321,23 @@ run = "echo task4"
 
 If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
 
-## `[redactions]` options
+## `redactions`
+
+- **Type**: `string[]`
 
 Redactions are a way to hide sensitive information from the output of tasks. This is useful for things like
 API keys, passwords, or other sensitive information that you don't want to accidentally leak in logs or
 other output.
 
-### `redactions.env`
-
-- **Type**: `string[]`
-
 A list of environment variables to redact from the output.
 
 ```toml
-[redactions]
-env = ["API_KEY", "PASSWORD"]
-[tasks.test]
-run = "echo $API_KEY"
+redactions = ["API_KEY", "PASSWORD"]
 ```
 
 Running the above task will output `echo [redacted]` instead.
 
 You can also specify these as a glob pattern, e.g.: `redactions.env = ["SECRETS_*"]`.
-
-### `redactions.vars`
-
-- **Type**: `string[]`
-
-A list of [vars](#vars) to redact from the output.
-
-```toml
-[vars]
-secret = "mysecret"
-[tasks.test]
-run = "echo {{vars.secret}}"
-```
-
-:::tip
-This is generally useful when using `mise.local.toml` to put secret vars in which can be shared
-with any other `mise.toml` file in the hierarchy.
-:::
 
 ## `[vars]` options
 

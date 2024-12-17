@@ -496,7 +496,7 @@ impl Toolset {
     fn env(&self, config: &Config) -> Result<EnvMap> {
         time!("env start");
         let entries = self
-            .env_from_tools(config)
+            .env_from_tools(&config)
             .into_iter()
             .map(|(k, v, _)| (k, v))
             .collect::<Vec<(String, String)>>();
