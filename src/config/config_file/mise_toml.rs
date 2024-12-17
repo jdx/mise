@@ -1211,10 +1211,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlEnvDirective {
                     }
                 }
                 if let Some(value) = value {
-                    Ok(MiseTomlEnvDirective {
-                        value,
-                        options,
-                    })
+                    Ok(MiseTomlEnvDirective { value, options })
                 } else {
                     Err(de::Error::custom("missing value"))
                 }
