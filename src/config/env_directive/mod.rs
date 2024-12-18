@@ -224,6 +224,7 @@ impl EnvResults {
                         &mut ctx,
                         &mut tera,
                         &mut env,
+                        &mut paths,
                         &mut r,
                         normalize_path,
                         &source,
