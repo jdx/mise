@@ -3,6 +3,7 @@ use clap::Subcommand;
 mod git_pre_commit;
 mod github_action;
 mod task_docs;
+mod config;
 
 /// [experimental] Generate files for various tools/services
 #[derive(Debug, clap::Args)]
@@ -14,6 +15,7 @@ pub struct Generate {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Config(config::Config),
     GitPreCommit(git_pre_commit::GitPreCommit),
     GithubAction(github_action::GithubAction),
     TaskDocs(task_docs::TaskDocs),
@@ -22,6 +24,7 @@ enum Commands {
 impl Commands {
     pub fn run(self) -> eyre::Result<()> {
         match self {
+            Self::Config(cmd) => cmd.run(),
             Self::GitPreCommit(cmd) => cmd.run(),
             Self::GithubAction(cmd) => cmd.run(),
             Self::TaskDocs(cmd) => cmd.run(),
