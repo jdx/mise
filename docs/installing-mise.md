@@ -378,7 +378,7 @@ Then, run the following commands to install the completion script for your shell
 ```sh [bash]
 # This requires bash-completion to be installed
 mkdir -p /etc/bash_completion.d/
-mise completion bash > /etc/bash_completion.d/mise
+mise completion bash --include-bash-completion-lib > /etc/bash_completion.d/mise
 ```
 
 ```sh [zsh]
