@@ -250,7 +250,6 @@ impl ToolVersion {
             backend: tr.ba().clone(),
             ref_,
             ref_type,
-            os: None,
             options: opts.clone(),
             source: tr.source().clone(),
         };
@@ -264,7 +263,6 @@ impl ToolVersion {
             backend: tr.ba().clone(),
             path,
             source: tr.source().clone(),
-            os: None,
             options: tr.options().clone(),
         };
         let version = request.version();

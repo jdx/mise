@@ -155,7 +155,6 @@ impl Use {
                         if let ToolRequest::Version {
                             version: _version,
                             source,
-                            os,
                             options,
                             backend,
                         } = request
@@ -163,7 +162,6 @@ impl Use {
                             request = ToolRequest::Version {
                                 version: tv.version.clone(),
                                 source,
-                                os,
                                 options,
                                 backend,
                             };

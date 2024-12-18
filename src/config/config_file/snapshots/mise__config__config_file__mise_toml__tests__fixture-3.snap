@@ -10,13 +10,13 @@ ToolRequestSet {
                 backend: BackendArg(terraform),
                 version: "1.0.0",
                 options: ToolVersionOptions {
-                    env: {},
+                    os: None,
+                    install_env: {},
                     opts: {},
                 },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-                os: None,
             },
         ],
         BackendArg(node): [
@@ -24,50 +24,50 @@ ToolRequestSet {
                 backend: BackendArg(node),
                 version: "18",
                 options: ToolVersionOptions {
-                    env: {},
+                    os: None,
+                    install_env: {},
                     opts: {},
                 },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-                os: None,
             },
             Prefix {
                 backend: BackendArg(node),
                 prefix: "20",
                 options: ToolVersionOptions {
-                    env: {},
+                    os: None,
+                    install_env: {},
                     opts: {},
                 },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-                os: None,
             },
             Ref {
                 backend: BackendArg(node),
                 ref_: "master",
                 ref_type: "ref",
                 options: ToolVersionOptions {
-                    env: {},
+                    os: None,
+                    install_env: {},
                     opts: {},
                 },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-                os: None,
             },
             Path {
                 backend: BackendArg(node),
                 path: "~/.nodes/18",
                 options: ToolVersionOptions {
-                    env: {},
+                    os: None,
+                    install_env: {},
                     opts: {},
                 },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-                os: None,
             },
         ],
         BackendArg(jq): [
@@ -75,13 +75,13 @@ ToolRequestSet {
                 backend: BackendArg(jq),
                 prefix: "1.6",
                 options: ToolVersionOptions {
-                    env: {},
+                    os: None,
+                    install_env: {},
                     opts: {},
                 },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-                os: None,
             },
         ],
         BackendArg(shellcheck): [
@@ -89,13 +89,13 @@ ToolRequestSet {
                 backend: BackendArg(shellcheck),
                 version: "0.9.0",
                 options: ToolVersionOptions {
-                    env: {},
+                    os: None,
+                    install_env: {},
                     opts: {},
                 },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-                os: None,
             },
         ],
         BackendArg(python): [
@@ -103,7 +103,8 @@ ToolRequestSet {
                 backend: BackendArg(python),
                 version: "3.10.0",
                 options: ToolVersionOptions {
-                    env: {},
+                    os: None,
+                    install_env: {},
                     opts: {
                         "venv": ".venv",
                     },
@@ -111,19 +112,18 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-                os: None,
             },
             Version {
                 backend: BackendArg(python),
                 version: "3.9.0",
                 options: ToolVersionOptions {
-                    env: {},
+                    os: None,
+                    install_env: {},
                     opts: {},
                 },
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
-                os: None,
             },
         ],
     },
