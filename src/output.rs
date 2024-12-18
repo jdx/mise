@@ -2,6 +2,41 @@ use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+#[macro_export]
+macro_rules! prefix_println {
+    ($prefix:expr, $($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        let re = xx::regex!(r#"MISE_TASK_UNNEST:(\d+):MISE_TASK_UNNEST (.*)"#);
+        if let Some(msg) = re.captures(&msg) {
+            let level = msg.get(1).unwrap().as_str().parse::<usize>().unwrap();
+            if level > 1 {
+                println!("MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {}", level - 1, msg.get(2).unwrap().as_str());
+            } else {
+                println!("{}", msg.get(2).unwrap().as_str());
+            }
+        } else {
+            println!("{} {}", $prefix, msg);
+        }
+    }};
+}
+#[macro_export]
+macro_rules! prefix_eprintln {
+    ($prefix:expr, $($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        let re = xx::regex!(r#"MISE_TASK_UNNEST:(\d+):MISE_TASK_UNNEST (.*)"#);
+        if let Some(msg) = re.captures(&msg) {
+            let level = msg.get(1).unwrap().as_str().parse::<usize>().unwrap();
+            if level > 1 {
+                eprintln!("MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {}", level - 1, msg.get(2).unwrap().as_str());
+            } else {
+                eprintln!("{}", msg.get(2).unwrap().as_str());
+            }
+        } else {
+            eprintln!("{} {}", $prefix, msg);
+        }
+    }};
+}
+
 #[cfg(test)]
 #[macro_export]
 macro_rules! miseprintln {

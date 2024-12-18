@@ -62,18 +62,6 @@ Don't actually run the tasks(s), just print them in order of execution
 
 Force the tasks to run even if outputs are up to date
 
-### `-p --prefix`
-
-Print stdout/stderr by line, prefixed with the tasks's label
-Defaults to true if --jobs > 1
-Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
-
-### `-i --interleave`
-
-Print directly to stdout/stderr instead of by line
-Defaults to true if --jobs == 1
-Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
-
 ### `-s --shell <SHELL>`
 
 Shell to use to run toml tasks
@@ -110,6 +98,8 @@ Don't show extra output
 ### `-S --silent`
 
 Don't show any output except for errors
+
+### `--output <OUTPUT>`
 
 Examples:
 

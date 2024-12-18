@@ -398,9 +398,15 @@ impl<'a> CmdLineRunner<'a> {
                 pr.set_message(line)
             }
         } else if console::colors_enabled() {
-            println!("{}{line}\x1b[0m", self.prefix);
+            if self.prefix.is_empty() {
+                println!("{line}\x1b[0m");
+            } else {
+                prefix_println!(self.prefix, "{line}\x1b[0m");
+            }
+        } else if self.prefix.is_empty() {
+            println!("{line}");
         } else {
-            println!("{}{line}", self.prefix);
+            prefix_println!(self.prefix, "{line}");
         }
     }
 
@@ -418,9 +424,15 @@ impl<'a> CmdLineRunner<'a> {
             }
             None => {
                 if console::colors_enabled_stderr() {
-                    eprintln!("{}{line}\x1b[0m", self.prefix);
+                    if self.prefix.is_empty() {
+                        eprintln!("{line}\x1b[0m");
+                    } else {
+                        prefix_eprintln!(self.prefix, "{line}\x1b[0m");
+                    }
+                } else if self.prefix.is_empty() {
+                    eprintln!("{line}");
                 } else {
-                    eprintln!("{}{line}", self.prefix);
+                    prefix_eprintln!(self.prefix, "{line}");
                 }
             }
         }

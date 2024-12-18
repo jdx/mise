@@ -1,4 +1,5 @@
 use crate::cli::args::ToolArg;
+use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
 use crate::exit::exit;
 use crate::ui::ctrlc;
@@ -106,6 +107,8 @@ pub struct Cli {
     pub jobs: Option<usize>,
     #[clap(long, short, hide = true, overrides_with = "interleave")]
     pub prefix: bool,
+    #[clap(long)]
+    pub output: Option<TaskOutput>,
     /// Set the profile (environment)
     #[clap(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
     pub profile: Option<Vec<String>>,
@@ -363,7 +366,7 @@ impl Cli {
                         is_linear: false,
                         jobs: self.jobs,
                         no_timings: self.no_timings,
-                        output: run::TaskOutput::Prefix,
+                        output: self.output,
                         prefix: self.prefix,
                         shell: self.shell,
                         quiet: self.global_output_flags.quiet,

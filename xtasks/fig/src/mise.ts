@@ -1852,22 +1852,6 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
-                        "-p",
-                        "--prefix"
-                    ],
-                    "description": "Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var",
-                    "isRepeatable": false
-                },
-                {
-                    "name": [
-                        "-i",
-                        "--interleave"
-                    ],
-                    "description": "Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var",
-                    "isRepeatable": false
-                },
-                {
-                    "name": [
                         "-s",
                         "--shell"
                     ],
@@ -1936,6 +1920,17 @@ const completionSpec: Fig.Spec = {
                     ],
                     "description": "Don't show any output except for errors",
                     "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--output"
+                    ],
+                    "isRepeatable": false,
+                    "args": {
+                        "name": "output",
+                        "isOptional": false,
+                        "isVariadic": false
+                    }
                 }
             ],
             "generateSpec": usageGenerateSpec(["mise tasks --usage"]),
@@ -2755,22 +2750,6 @@ const completionSpec: Fig.Spec = {
                         },
                         {
                             "name": [
-                                "-p",
-                                "--prefix"
-                            ],
-                            "description": "Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var",
-                            "isRepeatable": false
-                        },
-                        {
-                            "name": [
-                                "-i",
-                                "--interleave"
-                            ],
-                            "description": "Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var",
-                            "isRepeatable": false
-                        },
-                        {
-                            "name": [
                                 "-s",
                                 "--shell"
                             ],
@@ -2839,6 +2818,17 @@ const completionSpec: Fig.Spec = {
                             ],
                             "description": "Don't show any output except for errors",
                             "isRepeatable": false
+                        },
+                        {
+                            "name": [
+                                "--output"
+                            ],
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "output",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
                         }
                     ],
                     "args": [
@@ -3924,6 +3914,17 @@ const completionSpec: Fig.Spec = {
             "isRepeatable": false,
             "args": {
                 "name": "jobs",
+                "isOptional": false,
+                "isVariadic": false
+            }
+        },
+        {
+            "name": [
+                "--output"
+            ],
+            "isRepeatable": false,
+            "args": {
+                "name": "output",
                 "isOptional": false,
                 "isVariadic": false
             }
