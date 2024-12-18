@@ -54,6 +54,10 @@ Arguments to pass to the tasks. Use ":::" to separate tasks
 
 Change to this directory before executing the command
 
+### `-c --continue-on-error`
+
+Continue running tasks even if one fails
+
 ### `-n --dry-run`
 
 Don't actually run the tasks(s), just print them in order of execution

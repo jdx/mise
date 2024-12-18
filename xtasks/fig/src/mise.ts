@@ -1835,6 +1835,14 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
+                        "-c",
+                        "--continue-on-error"
+                    ],
+                    "description": "Continue running tasks even if one fails",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
                         "-n",
                         "--dry-run"
                     ],
@@ -2730,6 +2738,14 @@ const completionSpec: Fig.Spec = {
                                 "isOptional": false,
                                 "isVariadic": false
                             }
+                        },
+                        {
+                            "name": [
+                                "-c",
+                                "--continue-on-error"
+                            ],
+                            "description": "Continue running tasks even if one fails",
+                            "isRepeatable": false
                         },
                         {
                             "name": [
