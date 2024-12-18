@@ -461,7 +461,7 @@ impl Task {
 }
 
 fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
-    Ok(path
+    let name = path
         .as_ref()
         .strip_prefix(prefix)
         .map(|p| match p {
@@ -476,7 +476,12 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
         .map(path::Component::as_os_str)
         .map(ffi::OsStr::to_string_lossy)
         .map(|s| s.replace(':', "_"))
-        .join(":"))
+        .join(":");
+    if let Some(name) = name.strip_suffix(":_default") {
+        Ok(name.to_string())
+    } else {
+        Ok(name)
+    }
 }
 
 fn match_tasks(tasks: &BTreeMap<String, &Task>, td: &TaskDep) -> Result<Vec<Task>> {
