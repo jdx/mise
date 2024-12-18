@@ -117,7 +117,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)
 - [`mise sync ruby [--brew]`](/cli/sync/ruby.md)
 - [`mise tasks [FLAGS] [TASK] <SUBCOMMAND>`](/cli/tasks.md)
-- [`mise tasks add [FLAGS] <TASK> <RUN>...`](/cli/tasks/add.md)
+- [`mise tasks add [FLAGS] <TASK> [RUN]...`](/cli/tasks/add.md)
 - [`mise tasks deps [--hidden] [--dot] [TASKS]...`](/cli/tasks/deps.md)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
