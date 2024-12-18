@@ -62,7 +62,12 @@ impl EnvDiff {
         diff
     }
 
-    pub fn from_bash_script<T, U, V>(script: &Path, dir: &Path, env: T, opts: EnvDiffOptions) -> Result<Self>
+    pub fn from_bash_script<T, U, V>(
+        script: &Path,
+        dir: &Path,
+        env: T,
+        opts: EnvDiffOptions,
+    ) -> Result<Self>
     where
         T: IntoIterator<Item = (U, V)>,
         U: Into<OsString>,
@@ -269,7 +274,7 @@ impl Default for EnvDiffOptions {
                 .iter()
                 .cloned()
                 .chain(once(PATH_KEY.to_string()))
-                .collect()
+                .collect(),
         }
     }
 }
