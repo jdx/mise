@@ -407,6 +407,10 @@
           "description": "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var.",
           "type": "string"
         },
+        "global_config_root": {
+          "description": "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var.",
+          "type": "string"
+        },
         "go_default_packages_file": {
           "default": "~/.default-go-packages",
           "description": "Path to a file containing default go packages to install when installing go",

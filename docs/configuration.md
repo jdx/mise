@@ -342,6 +342,12 @@ Default: `$MISE_CONFIG_DIR/config.toml` (Usually ~/.config/mise/config.toml)
 
 This is the path to the config file.
 
+### `MISE_GLOBAL_CONFIG_ROOT`
+
+Default: `$HOME`
+
+This is the path which is used as `{{config_root}}` for the global config file.
+
 ### `MISE_ENV_FILE`
 
 Set to a filename to read from env from a dotenv file. e.g.: `MISE_ENV_FILE=.env`.

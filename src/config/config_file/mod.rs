@@ -242,7 +242,7 @@ pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
 
 pub fn config_root(path: &Path) -> PathBuf {
     if is_global_config(path) {
-        return env::HOME.to_path_buf();
+        return env::MISE_GLOBAL_CONFIG_ROOT.to_path_buf();
     }
     let path = path
         .absolutize()
