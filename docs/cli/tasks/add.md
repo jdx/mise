@@ -1,6 +1,6 @@
 # `mise tasks add`
 
-- **Usage**: `mise tasks add [FLAGS] <TASK> [RUN]...`
+- **Usage**: `mise tasks add [FLAGS] <TASK> [-- RUN]...`
 - **Source code**: [`src/cli/tasks/add.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/add.rs)
 
 Create a new task
@@ -11,7 +11,7 @@ Create a new task
 
 Tasks name to add
 
-### `[RUN]...`
+### `[-- RUN]...`
 
 ## Flags
 

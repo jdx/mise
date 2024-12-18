@@ -32,9 +32,7 @@ $ mise registry
 node    core:node
 poetry  asdf:mise-plugins/mise-poetry
 ubi     cargo:ubi-cli
-```
 
-```
 $ mise registry poetry
 asdf:mise-plugins/mise-poetry
 ```

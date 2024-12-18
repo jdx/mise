@@ -31,9 +31,7 @@ Examples:
 # build node-20.0.0 with node-build and link it into mise
 $ node-build 20.0.0 ~/.nodes/20.0.0
 $ mise link node@20.0.0 ~/.nodes/20.0.0
-```
 
-```
 # have mise use the python version provided by Homebrew
 $ brew install node
 $ mise link node@brew $(brew --prefix node)

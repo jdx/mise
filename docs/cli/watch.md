@@ -610,20 +610,14 @@ Examples:
 $ mise watch build
 Runs the "build" tasks. Will re-run the tasks when any of its sources change.
 Uses "sources" from the tasks definition to determine which files to watch.
-```
 
-```
 $ mise watch build --glob src/**/*.rs
 Runs the "build" tasks but specify the files to watch with a glob pattern.
 This overrides the "sources" from the tasks definition.
-```
 
-```
 $ mise watch build --clear
 Extra arguments are passed to watchexec. See `watchexec --help` for details.
-```
 
-```
 $ mise watch serve --watch src --exts rs --restart
 Starts an api server, watching for changes to "*.rs" files in "./src" and kills/restarts the server when they change.
 ```

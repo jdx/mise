@@ -28,14 +28,10 @@ Examples:
 ```
 # Show dependencies for all tasks
 $ mise tasks deps
-```
 
-```
 # Show dependencies for the "lint", "test" and "check" tasks
 $ mise tasks deps lint test check
-```
 
-```
 # Show dependencies in DOT format
 $ mise tasks deps --dot
 ```

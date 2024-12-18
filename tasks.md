@@ -273,9 +273,3 @@ run unit tests
 ## `update-descriptions`
 
 - **Usage**: `update-descriptions`
-
-## `xxx`
-
-- **Usage**: `xxx`
-
-a task for testing

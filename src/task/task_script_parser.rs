@@ -1,4 +1,5 @@
 use crate::config::{Config, SETTINGS};
+use crate::exit::exit;
 use crate::shell::ShellType;
 use crate::task::Task;
 use crate::tera::get_tera;
@@ -96,6 +97,7 @@ impl TaskScriptParser {
                         hide,
                         default,
                         choices,
+                        ..Default::default()
                     };
                     arg.usage = arg.usage();
                     input_args.lock().unwrap().push(arg);
@@ -311,7 +313,15 @@ pub fn replace_template_placeholders_with_args(
         .into_iter()
         .chain(args.iter().cloned())
         .collect::<Vec<_>>();
-    let m = usage::parse(spec, &args).map_err(|e| eyre::eyre!(e.to_string()))?;
+    let m = match usage::parse(spec, &args) {
+        Ok(m) => m,
+        Err(e) => {
+            // just print exactly what usage returns so the error output isn't double-wrapped
+            // this could be displaying help or a parse error
+            eprintln!("{}", format!("{e}").trim_end());
+            exit(1);
+        }
+    };
     let mut out = vec![];
     let re = regex!(r"MISE_TASK_ARG:(\w+):MISE_TASK_ARG");
     for script in scripts {
