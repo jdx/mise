@@ -43,14 +43,15 @@ mod tool_version_list;
 
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
-    pub env: BTreeMap<String, String>,
+    pub os: Option<Vec<String>>,
+    pub install_env: BTreeMap<String, String>,
     #[serde(flatten)]
     pub opts: BTreeMap<String, String>,
 }
 
 impl ToolVersionOptions {
     pub fn is_empty(&self) -> bool {
-        self.env.is_empty() && self.opts.is_empty()
+        self.install_env.is_empty() && self.opts.is_empty()
     }
 
     pub fn get(&self, key: &str) -> Option<&String> {
@@ -407,7 +408,6 @@ impl Toolset {
                                 backend: p.ba().clone(),
                                 ref_: r.to_string(),
                                 ref_type: ref_type.to_string(),
-                                os: v.request.os().clone(),
                                 options: v.request.options().clone(),
                                 source: v.request.source().clone(),
                             };

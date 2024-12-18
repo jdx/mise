@@ -165,7 +165,7 @@ impl AsdfBackend {
             let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value.clone());
         }
-        for (key, value) in tv.request.options().env {
+        for (key, value) in tv.request.options().install_env {
             sm = sm.with_env(key, value.clone());
         }
         if let Some(project_root) = &config.project_root {

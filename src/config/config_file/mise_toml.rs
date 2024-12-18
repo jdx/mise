@@ -75,7 +75,6 @@ pub struct MiseTomlToolList(Vec<MiseTomlTool>);
 #[derive(Debug, Clone)]
 pub struct MiseTomlTool {
     pub tt: ToolVersionType,
-    pub os: Option<Vec<String>>,
     pub options: Option<ToolVersionOptions>,
 }
 
@@ -329,6 +328,9 @@ impl ConfigFile for MiseToml {
         let is_tools_sorted = is_tools_sorted(&self.tools); // was it previously sorted (if so we'll keep it sorted)
         let existing = self.tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
+            if opts.os.is_some() || !opts.install_env.is_empty() {
+                return false;
+            }
             if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
                 if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
                     // in this case the options specified are the same as in the registry so output no options and rely on the defaults
@@ -357,13 +359,28 @@ impl ConfigFile for MiseToml {
         }
 
         if versions.len() == 1 {
-            if output_empty_opts(&versions[0].options()) {
+            let options = versions[0].options();
+            if output_empty_opts(&options) {
                 tools.insert_formatted(&key, value(versions[0].version()));
             } else {
                 let mut table = InlineTable::new();
                 table.insert("version", versions[0].version().into());
-                for (k, v) in versions[0].options().opts {
+                for (k, v) in options.opts {
                     table.insert(k, v.into());
+                }
+                if let Some(os) = options.os {
+                    let mut arr = Array::new();
+                    for o in os {
+                        arr.push(Value::from(o));
+                    }
+                    table.insert("os", Value::Array(arr));
+                }
+                if !options.install_env.is_empty() {
+                    let mut env = InlineTable::new();
+                    for (k, v) in options.install_env {
+                        env.insert(k, v.into());
+                    }
+                    table.insert("install_env", env.into());
                 }
                 tools.insert_formatted(&key, table.into());
             }
@@ -416,7 +433,7 @@ impl ConfigFile for MiseToml {
         for (ba, tvp) in &self.tools {
             for tool in &tvp.0 {
                 let version = self.parse_template(&tool.tt.to_string())?;
-                let mut tvr = if let Some(mut options) = tool.options.clone() {
+                let tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.opts.values_mut() {
                         *v = self.parse_template(v)?;
                     }
@@ -424,7 +441,6 @@ impl ConfigFile for MiseToml {
                 } else {
                     ToolRequest::new(ba.clone(), &version, source.clone())?
                 };
-                tvr = tvr.with_os(tool.os.clone());
                 trs.add_version(tvr, &source);
             }
         }
@@ -572,13 +588,11 @@ impl From<ToolRequest> for MiseTomlTool {
         match tr {
             ToolRequest::Version {
                 version,
-                os,
                 options,
                 backend: _backend,
                 source: _source,
             } => Self {
                 tt: ToolVersionType::Version(version),
-                os,
                 options: if options.is_empty() {
                     None
                 } else {
@@ -587,13 +601,11 @@ impl From<ToolRequest> for MiseTomlTool {
             },
             ToolRequest::Path {
                 path,
-                os,
                 options,
                 backend: _backend,
                 source: _source,
             } => Self {
                 tt: ToolVersionType::Path(path),
-                os,
                 options: if options.is_empty() {
                     None
                 } else {
@@ -602,13 +614,11 @@ impl From<ToolRequest> for MiseTomlTool {
             },
             ToolRequest::Prefix {
                 prefix,
-                os,
                 options,
                 backend: _backend,
                 source: _source,
             } => Self {
                 tt: ToolVersionType::Prefix(prefix),
-                os,
                 options: if options.is_empty() {
                     None
                 } else {
@@ -618,13 +628,11 @@ impl From<ToolRequest> for MiseTomlTool {
             ToolRequest::Ref {
                 ref_,
                 ref_type,
-                os,
                 options,
                 backend: _backend,
                 source: _source,
             } => Self {
                 tt: ToolVersionType::Ref(ref_, ref_type),
-                os,
                 options: if options.is_empty() {
                     None
                 } else {
@@ -633,14 +641,12 @@ impl From<ToolRequest> for MiseTomlTool {
             },
             ToolRequest::Sub {
                 sub,
-                os,
                 options,
                 orig_version,
                 backend: _backend,
                 source: _source,
             } => Self {
                 tt: ToolVersionType::Sub { sub, orig_version },
-                os,
                 options: if options.is_empty() {
                     None
                 } else {
@@ -648,13 +654,11 @@ impl From<ToolRequest> for MiseTomlTool {
                 },
             },
             ToolRequest::System {
-                os,
                 options,
                 backend: _backend,
                 source: _source,
             } => Self {
                 tt: ToolVersionType::System,
-                os,
                 options: if options.is_empty() {
                     None
                 } else {
@@ -1049,11 +1053,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 let tt: ToolVersionType = v
                     .parse()
                     .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
-                Ok(MiseTomlToolList(vec![MiseTomlTool {
-                    tt,
-                    os: None,
-                    options: None,
-                }]))
+                Ok(MiseTomlToolList(vec![MiseTomlTool { tt, options: None }]))
             }
 
             fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
@@ -1072,7 +1072,6 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 M: de::MapAccess<'de>,
             {
                 let mut options: ToolVersionOptions = Default::default();
-                let mut os: Option<Vec<String>> = None;
                 let mut tt: Option<ToolVersionType> = None;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
                     match k.as_str() {
@@ -1088,7 +1087,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                         }
                         "os" => match v {
                             toml::Value::Array(s) => {
-                                os = Some(
+                                options.os = Some(
                                     s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
                                 );
                             }
@@ -1104,13 +1103,13 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                 for (k, v) in env {
                                     match v {
                                         toml::Value::Boolean(v) => {
-                                            options.env.insert(k, v.to_string());
+                                            options.install_env.insert(k, v.to_string());
                                         }
                                         toml::Value::Integer(v) => {
-                                            options.env.insert(k, v.to_string());
+                                            options.install_env.insert(k, v.to_string());
                                         }
                                         toml::Value::String(v) => {
-                                            options.env.insert(k, v);
+                                            options.install_env.insert(k, v);
                                         }
                                         _ => {
                                             return Err(de::Error::custom("invalid value type"));
@@ -1141,7 +1140,6 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                 if let Some(tt) = tt {
                     Ok(MiseTomlToolList(vec![MiseTomlTool {
                         tt,
-                        os,
                         options: Some(options),
                     }]))
                 } else {
@@ -1242,11 +1240,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 let tt: ToolVersionType = v
                     .parse()
                     .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
-                Ok(MiseTomlTool {
-                    tt,
-                    os: None,
-                    options: None,
-                })
+                Ok(MiseTomlTool { tt, options: None })
             }
 
             fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
@@ -1254,7 +1248,6 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 M: de::MapAccess<'de>,
             {
                 let mut options: ToolVersionOptions = Default::default();
-                let mut os: Option<Vec<String>> = None;
                 let mut tt = ToolVersionType::System;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
                     match k.as_str() {
@@ -1268,7 +1261,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                         }
                         "os" => match v {
                             toml::Value::Array(s) => {
-                                os = Some(
+                                options.os = Some(
                                     s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
                                 );
                             }
@@ -1284,13 +1277,13 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                                 for (k, v) in env {
                                     match v {
                                         toml::Value::Boolean(v) => {
-                                            options.env.insert(k, v.to_string());
+                                            options.install_env.insert(k, v.to_string());
                                         }
                                         toml::Value::Integer(v) => {
-                                            options.env.insert(k, v.to_string());
+                                            options.install_env.insert(k, v.to_string());
                                         }
                                         toml::Value::String(v) => {
-                                            options.env.insert(k, v);
+                                            options.install_env.insert(k, v);
                                         }
                                         _ => {
                                             return Err(de::Error::custom("invalid value type"));
@@ -1309,7 +1302,6 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 }
                 Ok(MiseTomlTool {
                     tt,
-                    os,
                     options: Some(options),
                 })
             }
