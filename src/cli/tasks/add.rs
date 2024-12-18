@@ -1,3 +1,4 @@
+use crate::config::config_file;
 use crate::task::Task;
 use crate::{config, file};
 use eyre::Result;
@@ -203,7 +204,8 @@ impl TasksAdd {
                 task.insert("run", shell_words::join(&self.run).into());
             }
             tasks.insert(&self.task, Item::Table(task));
-            file::write(path, doc.to_string())?;
+            file::write(&path, doc.to_string())?;
+            config_file::trust(&config_file::config_trust_root(&path))?;
         }
 
         Ok(())
