@@ -15,6 +15,7 @@ usage "Usage: mise [OPTIONS] [TASK] [COMMAND]"
 flag "-C --cd" help="Change directory before running command" global=true {
     arg "<DIR>"
 }
+flag "-c --continue-on-error" help="Continue running tasks even if one fails" hide=true
 flag "-n --dry-run" help="Dry run, don't actually do anything" hide=true
 flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" var=true global=true {
     arg "<ENV>"
@@ -1024,6 +1025,7 @@ The name of the script will be the name of the tasks.
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg "<CD>"
     }
+    flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
     flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the task's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var" hide=true
@@ -1464,6 +1466,7 @@ The name of the script will be the name of the tasks.
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg "<CD>"
         }
+        flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
         flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the task's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var" hide=true

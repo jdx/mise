@@ -79,7 +79,7 @@ pub struct Run {
     /// Change to this directory before executing the command
     #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     pub cd: Option<PathBuf>,
-    
+
     /// Continue running tasks even if one fails
     #[clap(long, short = 'c', verbatim_doc_comment)]
     pub continue_on_error: bool,
