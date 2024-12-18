@@ -56,14 +56,14 @@ variable.
 ## Precompiled python binaries
 
 By default, mise will
-download [precompiled binaries](https://github.com/indygreg/python-build-standalone)
+download [precompiled binaries](https://github.com/astral-sh/python-build-standalone)
 for python instead of compiling them with python-build. This makes installing python much faster.
 
 In addition to being faster, it also means you don't have to install all of the system dependencies
 either.
 
 That said, there are
-some [quirks](https://github.com/indygreg/python-build-standalone/blob/main/docs/quirks.rst)
+some [quirks](https://github.com/astral-sh/python-build-standalone/blob/main/docs/quirks.rst)
 with the precompiled binaries to be aware of.
 
 If you'd like to disable these binaries, set `mise settings python.compile=1`.

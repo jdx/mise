@@ -173,14 +173,14 @@ impl PythonPlugin {
         if cfg!(unix) {
             hint!(
                 "python_precompiled",
-                "installing precompiled python from indygreg/python-build-standalone\n\
+                "installing precompiled python from astral-sh/python-build-standalone\n\
                 if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
                 "mise settings python.compile=1"
             );
         }
 
         let url = format!(
-            "https://github.com/indygreg/python-build-standalone/releases/download/{tag}/{filename}"
+            "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/{filename}"
         );
         let filename = url.split('/').last().unwrap();
         let install = tv.install_path();
