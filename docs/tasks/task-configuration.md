@@ -227,7 +227,7 @@ outputs = { auto = true }
 - **Note**: Only applies to toml-tasks.
 
 The shell to use to run the task. This is useful if you want to run a task with a different shell than
-the default such as `fish`, `zsh`, or `pwsh`. Generally though, it's recommended to use a [shebang](/tasks/toml-tasks.html#shell-shebang) instead
+the default such as `fish`, `zsh`, or `pwsh`. Generally though, it's recommended to use a [shebang](./toml-tasks#shell-shebang) instead
 because that will allow IDEs with mise support to show syntax highlighting and linting for the script.
 
 ```toml
@@ -321,46 +321,23 @@ run = "echo task4"
 
 If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
 
-## `[redactions]` options
+## `redactions` <Badge type="warning" text="experimental" />
+
+- **Type**: `string[]`
 
 Redactions are a way to hide sensitive information from the output of tasks. This is useful for things like
 API keys, passwords, or other sensitive information that you don't want to accidentally leak in logs or
 other output.
 
-### `redactions.env`
-
-- **Type**: `string[]`
-
 A list of environment variables to redact from the output.
 
 ```toml
-[redactions]
-env = ["API_KEY", "PASSWORD"]
-[tasks.test]
-run = "echo $API_KEY"
+redactions = ["API_KEY", "PASSWORD"]
 ```
 
 Running the above task will output `echo [redacted]` instead.
 
 You can also specify these as a glob pattern, e.g.: `redactions.env = ["SECRETS_*"]`.
-
-### `redactions.vars`
-
-- **Type**: `string[]`
-
-A list of [vars](#vars) to redact from the output.
-
-```toml
-[vars]
-secret = "mysecret"
-[tasks.test]
-run = "echo {{vars.secret}}"
-```
-
-:::tip
-This is generally useful when using `mise.local.toml` to put secret vars in which can be shared
-with any other `mise.toml` file in the hierarchy.
-:::
 
 ## `[vars]` options
 

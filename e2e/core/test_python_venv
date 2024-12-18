@@ -4,15 +4,15 @@ export MISE_PYTHON_DEFAULT_PACKAGES_FILE="$HOME/.default-python-packages"
 
 cat >.mise.toml <<EOF
 [env._.python]
-venv = {path = "my_venv", create=true}
+venv = {path = "{{env.HOME}}/my_venv", create=true}
 [tools]
 python = "3.12.3"
 EOF
 
 mise i
 assert "mise x -- python --version" "Python 3.12.3"
-assert "mise env -s bash | grep VIRTUAL_ENV" "export VIRTUAL_ENV=$PWD/my_venv"
-assert "mise x -- which python" "$PWD/my_venv/bin/python"
+assert "mise env -s bash | grep VIRTUAL_ENV" "export VIRTUAL_ENV=$HOME/my_venv"
+assert "mise x -- which python" "$HOME/my_venv/bin/python"
 
 # verify nested virtualenv is used
 mkdir -p subdir

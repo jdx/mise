@@ -25,6 +25,7 @@ pre-commit = "latest"
 "shellcheck" = "0.10"
 "shfmt" = "3"
 slsa-verifier = "latest"
+taplo = "latest"
 wait-for-gh-rate-limit = "0.1.8"
 
 [task_config]

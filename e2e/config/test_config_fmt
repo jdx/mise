@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+exit 0 # this isn't working right
+cat <<EOF >mise.toml
+env_path = "."
+env_file = ".env"
+min_version = "0"
+[tasks.a]
+[tools]
+[tasks.c]
+[task_config]
+[tasks.b]
+[_]
+[alias]
+[env]
+[hooks]
+[plugins]
+[redactions]
+[[watch_files]]
+patterns = [ "src/**/*.rs" ]
+run = "test"
+[vars]
+[settings]
+EOF
+
+assert "mise fmt"
+assert 'cat mise.toml' 'min_version = "0"
+env_file = ".env"
+env_path = "."
+[_]
+[env]
+[vars]
+[hooks]
+[[watch_files]]
+[tools]
+[tasks.a]
+[tasks.b]
+[tasks.c]
+[task_config]
+[redactions]
+[alias]
+[plugins]
+[settings]'

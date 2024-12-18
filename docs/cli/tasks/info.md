@@ -25,9 +25,7 @@ Name: test
 Aliases: t
 Description: Test the application
 Source: ~/src/myproj/mise.toml
-```
 
-```
 $ mise tasks info test --json
 {
   "name": "test",

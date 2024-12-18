@@ -155,7 +155,6 @@ impl Use {
                         if let ToolRequest::Version {
                             version: _version,
                             source,
-                            os,
                             options,
                             backend,
                         } = request
@@ -163,7 +162,6 @@ impl Use {
                             request = ToolRequest::Version {
                                 version: tv.version.clone(),
                                 source,
-                                os,
                                 options,
                                 backend,
                             };
@@ -179,7 +177,7 @@ impl Use {
             self.warn_if_hidden(&config, cf.get_path());
         }
         for plugin_name in &self.remove {
-            cf.remove_plugin(plugin_name)?;
+            cf.remove_tool(plugin_name)?;
         }
         cf.save()?;
 

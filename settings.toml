@@ -330,6 +330,12 @@ type = "Path"
 optional = true
 description = "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var."
 
+[global_config_root]
+env = "MISE_GLOBAL_CONFIG_ROOT"
+type = "Path"
+optional = true
+description = "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var."
+
 [go_default_packages_file]
 env = "MISE_GO_DEFAULT_PACKAGES_FILE"
 type = "Path"
@@ -389,7 +395,7 @@ default = true
 description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
 docs = """
 Plugins can read the versions files used by other version managers (if enabled by the plugin)
-for example, `.nvmrc` in the case of node's nvm. See [idiomatic version files](#idiomatic-version-files)
+for example, `.nvmrc` in the case of node's nvm. See [idiomatic version files](/configuration.html#idiomatic-version-files)
 for more
 information.
 
@@ -613,7 +619,7 @@ optional = true
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
 docs = """
 * Values:
-  * `true` - always compile with python-build instead of downloading [precompiled binaries](#precompiled-python-binaries).
+  * `true` - always compile with python-build instead of downloading [precompiled binaries](/python.html#precompiled-python-binaries).
   * `false` - always download precompiled binaries.
   * [undefined] - use precompiled binary if one is available for the current platform, compile otherwise.
 """

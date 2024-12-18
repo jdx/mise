@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.12.12"
+version = "2024.12.14"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -12,18 +12,18 @@ license = "MIT"
 keywords = ["mise"]
 categories = ["command-line-utilities"]
 include = [
-    "/Cargo.lock",
-    "/LICENSE",
-    "/README.md",
-    "/build.rs",
-    "/completions/*",
-    "/registry.toml",
-    "/settings.toml",
-    "/zipsign.pub",
-    "/src/**/*.rs",
-    "/src/assets/**",
-    "/src/plugins/core/assets/**",
-    "/aqua-registry/pkgs/**/registry.yaml",
+  "/Cargo.lock",
+  "/LICENSE",
+  "/README.md",
+  "/build.rs",
+  "/completions/*",
+  "/registry.toml",
+  "/settings.toml",
+  "/zipsign.pub",
+  "/src/**/*.rs",
+  "/src/assets/**",
+  "/src/plugins/core/assets/**",
+  "/aqua-registry/pkgs/**/registry.yaml",
 ]
 rust-version = "1.79"
 build = "build.rs"
@@ -49,7 +49,10 @@ opt-level = 3
 base64 = "0.22"
 bzip2 = "0.5"
 calm_io = "0.1"
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono = { version = "0.4", default-features = false, features = [
+  "std",
+  "clock",
+] }
 ci_info = "0.14"
 clap = { version = "4", features = ["env", "derive", "string"] }
 clap_mangen = { version = "0.2", optional = true }
@@ -75,7 +78,7 @@ git2 = "<1"
 glob = "0.3"
 globset = "0.4"
 heck = "0.5"
-home = "0.5"
+home = "= 0.5.9" # TODO: bump this when we can bump msrv
 humantime = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
@@ -95,9 +98,19 @@ petgraph = "0.6"
 rand = "0.8"
 rayon = "1"
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "zstd"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "gzip",
+  "zstd",
+] }
 rmp-serde = "1"
-rops = {version="0.1", default-features = false, features = ["aes-gcm", "sha2", "yaml", "json", "age"]}
+rops = { version = "0.1", default-features = false, features = [
+  "aes-gcm",
+  "sha2",
+  "yaml",
+  "json",
+  "age",
+] }
 serde = "1"
 serde_derive = "1"
 serde_ignored = "0.1"
@@ -139,13 +152,16 @@ zstd = "0.13"
 exec = "0.3"
 nix = { version = "0.29", features = ["signal", "user"] }
 self_update = { version = "0.41", default-features = false, features = [
-    "archive-tar",
-    "compression-flate2",
-    "signatures",
+  "archive-tar",
+  "compression-flate2",
+  "signatures",
 ] }
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.41", default-features = false, features = ["archive-zip", "signatures"] }
+self_update = { version = "0.41", default-features = false, features = [
+  "archive-zip",
+  "signatures",
+] }
 sevenz-rust = "0.6"
 
 [build-dependencies]
@@ -165,7 +181,11 @@ test-log = "0.2"
 default = ["native-tls", "vfox/vendored-lua"]
 native-tls = ["reqwest/native-tls", "ubi/native-tls"]
 rustls = ["reqwest/rustls-tls", "self_update/rustls", "ubi/rustls-tls"]
-rustls-native-roots = ["reqwest/rustls-tls-native-roots", "self_update/rustls", "ubi/rustls-tls-native-roots"]
+rustls-native-roots = [
+  "reqwest/rustls-tls-native-roots",
+  "self_update/rustls",
+  "ubi/rustls-tls-native-roots",
+]
 
 [package.metadata.binstall]
 bin-dir = "mise/bin/mise"
@@ -184,7 +204,9 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ 
 ignored = ["built", "openssl", "cfg_aliases"]
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(coverage,coverage_nightly)',
+] }
 
 [lints.clippy]
 borrowed_box = "allow"

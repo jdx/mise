@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
+use std::ops::Deref;
+use std::panic;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
@@ -78,6 +80,10 @@ pub struct Run {
     #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     pub cd: Option<PathBuf>,
 
+    /// Continue running tasks even if one fails
+    #[clap(long, short = 'c', verbatim_doc_comment)]
+    pub continue_on_error: bool,
+
     /// Don't actually run the tasks(s), just print them in order of execution
     #[clap(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
@@ -86,16 +92,28 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub force: bool,
 
-    /// Print stdout/stderr by line, prefixed with the tasks's label
+    /// Print stdout/stderr by line, prefixed with the task's label
     /// Defaults to true if --jobs > 1
     /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
-    #[clap(long, short, verbatim_doc_comment, overrides_with = "interleave")]
+    #[clap(
+        long,
+        short,
+        verbatim_doc_comment,
+        hide = true,
+        overrides_with = "interleave"
+    )]
     pub prefix: bool,
 
     /// Print directly to stdout/stderr instead of by line
     /// Defaults to true if --jobs == 1
     /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
-    #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
+    #[clap(
+        long,
+        short,
+        verbatim_doc_comment,
+        hide = true,
+        overrides_with = "prefix"
+    )]
     pub interleave: bool,
 
     /// Shell to use to run toml tasks
@@ -148,8 +166,8 @@ pub struct Run {
     #[clap(skip)]
     pub failed_tasks: Mutex<Vec<(Task, i32)>>,
 
-    #[clap(skip)]
-    pub output: TaskOutput,
+    #[clap(long)]
+    pub output: Option<TaskOutput>,
 
     #[clap(skip)]
     pub tmpdir: PathBuf,
@@ -199,7 +217,7 @@ impl Run {
 
         let num_tasks = tasks.all().count();
         self.is_linear = tasks.is_linear();
-        self.output = self.output(None);
+        self.output = Some(self.output(None));
 
         let mut all_tools = self.tool.clone();
         for t in tasks.all() {
@@ -230,6 +248,11 @@ impl Run {
                 s.spawn(|_| {
                     let task = t;
                     let tx_err = tx_err;
+                    let prefix = task.estyled_prefix();
+                    panic::set_hook(Box::new(move |info| {
+                        prefix_eprintln!(prefix, "panic in task: {info}");
+                        exit(1);
+                    }));
                     if !self.is_stopping() {
                         trace!("running task: {task}");
                         if let Err(err) = self.run_task(&task) {
@@ -238,7 +261,7 @@ impl Run {
                                 // only show this if it's the first failure, or we haven't killed all the remaining tasks
                                 // otherwise we'll get unhelpful error messages about being killed by mise which we expect
                                 let prefix = task.estyled_prefix();
-                                eprintln!("{prefix} {} {err:?}", style::ered("ERROR"));
+                                prefix_eprintln!(prefix, "{} {err:?}", style::ered("ERROR"));
                             }
                             let _ = tx_err.send((task.clone(), status));
                         }
@@ -257,10 +280,12 @@ impl Run {
                     recv(rx_err) -> task => { // a task errored
                         let (task, status) = task.unwrap();
                         self.add_failed_task(task, status);
-                        #[cfg(unix)]
-                        CmdLineRunner::kill_all(SIGTERM); // start killing other running tasks
-                        #[cfg(windows)]
-                        CmdLineRunner::kill_all();
+                        if !self.continue_on_error {
+                            #[cfg(unix)]
+                            CmdLineRunner::kill_all(SIGTERM); // start killing other running tasks
+                            #[cfg(windows)]
+                            CmdLineRunner::kill_all();
+                        }
                     }
                 }
             }
@@ -268,11 +293,11 @@ impl Run {
 
         if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
             let prefix = task.estyled_prefix();
-            eprintln!("{prefix} {} task failed", style::ered("ERROR"));
+            prefix_eprintln!(prefix, "{} task failed", style::ered("ERROR"));
             exit(*status);
         }
 
-        if self.timings() && num_tasks > 1 {
+        if self.timings() && num_tasks > 1 && *env::MISE_TASK_LEVEL == 0 {
             let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
             eprintln!("{}", style::edim(msg));
         };
@@ -286,13 +311,13 @@ impl Run {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
-                eprintln!("{prefix} skipping task");
+                prefix_eprintln!(prefix, "skipping task");
             }
             return Ok(());
         }
         if !self.force && self.sources_are_fresh(task)? {
             if !self.quiet(Some(task)) {
-                eprintln!("{prefix} sources up-to-date, skipping");
+                prefix_eprintln!(prefix, "sources up-to-date, skipping");
             }
             return Ok(());
         }
@@ -304,10 +329,21 @@ impl Run {
         }
         let ts = ToolsetBuilder::new().with_args(&tools).build(&config)?;
         let mut env = ts.env_with_path(&config)?;
+        env.insert(
+            "MISE_TASK_OUTPUT".into(),
+            self.output(Some(task)).to_string(),
+        );
+        env.insert(
+            "MISE_TASK_LEVEL".into(),
+            (*env::MISE_TASK_LEVEL + 1).to_string(),
+        );
+        if !self.timings {
+            env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
+        }
         if let Some(cwd) = &*dirs::CWD {
             env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
         }
-        if let Some(root) = Config::get().project_root.clone() {
+        if let Some(root) = config.project_root.clone().or(task.config_root.clone()) {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
             env.insert("root".into(), root.display().to_string());
         }
@@ -355,8 +391,9 @@ impl Run {
         }
 
         if self.timings() && (task.file.as_ref().is_some() || !task.run().is_empty()) {
-            eprintln!(
-                "{prefix} finished in {}",
+            prefix_eprintln!(
+                prefix,
+                "finished in {}",
                 time::format_duration(timer.elapsed())
             );
         }
@@ -380,8 +417,8 @@ impl Run {
             .bright()
             .to_string();
         if !self.quiet(Some(task)) {
-            let msg = format!("{prefix} {}", config.redact(cmd)?);
-            eprintln!("{}", trunc(&msg));
+            let msg = trunc(prefix, config.redact(cmd).trim());
+            prefix_eprintln!(prefix, "{msg}")
         }
 
         if script.starts_with("#!") {
@@ -479,10 +516,12 @@ impl Run {
         }
 
         if !self.quiet(Some(task)) {
-            let cmd = format!("{} {}", display_path(file), args.join(" "));
+            let cmd = format!("{} {}", display_path(file), args.join(" "))
+                .trim()
+                .to_string();
             let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
-            let cmd = trunc(&format!("{prefix} {}", config.redact(cmd)?));
-            eprintln!("{cmd}");
+            let cmd = trunc(prefix, config.redact(cmd).trim());
+            prefix_eprintln!(prefix, "{cmd}");
         }
 
         self.exec(file, &args, task, &env, prefix)
@@ -510,15 +549,15 @@ impl Run {
     ) -> Result<()> {
         let config = Config::get();
         let program = program.to_executable();
-        let redactions = config.redactions()?;
+        let redactions = config.redactions();
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
-            .redact(redactions.clone())
+            .redact(redactions.deref().clone())
             .raw(self.raw(Some(task)));
         cmd.with_pass_signals();
         match self.output(Some(task)) {
-            TaskOutput::Prefix => cmd = cmd.prefix(format!("{prefix} ")),
+            TaskOutput::Prefix => cmd = cmd.prefix(prefix),
             TaskOutput::Silent => {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
@@ -533,8 +572,9 @@ impl Run {
         }
         let dir = self.cwd(task)?;
         if !dir.exists() {
-            eprintln!(
-                "{prefix} {} task directory does not exist: {}",
+            prefix_eprintln!(
+                prefix,
+                "{} task directory does not exist: {}",
                 style::eyellow("WARN"),
                 display_path(&dir)
             );
@@ -549,7 +589,9 @@ impl Run {
     }
 
     fn output(&self, task: Option<&Task>) -> TaskOutput {
-        if self.silent(task) {
+        if let Some(o) = self.output {
+            o
+        } else if self.silent(task) {
             TaskOutput::Silent
         } else if self.quiet(task) {
             TaskOutput::Quiet
@@ -567,13 +609,16 @@ impl Run {
     }
 
     fn silent(&self, task: Option<&Task>) -> bool {
-        self.silent || SETTINGS.silent || self.output.is_silent() || task.is_some_and(|t| t.silent)
+        self.silent
+            || SETTINGS.silent
+            || self.output.is_some_and(|o| o.is_silent())
+            || task.is_some_and(|t| t.silent)
     }
 
     fn quiet(&self, task: Option<&Task>) -> bool {
         self.quiet
             || SETTINGS.quiet
-            || self.output.is_quiet()
+            || self.output.is_some_and(|o| o.is_quiet())
             || task.is_some_and(|t| t.quiet)
             || self.silent(task)
     }
@@ -693,7 +738,7 @@ impl Run {
             && !self.no_timings
             && SETTINGS
                 .task_timings
-                .unwrap_or(self.output == TaskOutput::Prefix)
+                .unwrap_or(self.output == Some(TaskOutput::Prefix))
     }
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
@@ -809,6 +854,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     Clone,
     Copy,
     PartialEq,
+    strum::Display,
     strum::EnumString,
     strum::EnumIs,
     serde::Serialize,
@@ -824,9 +870,10 @@ pub enum TaskOutput {
     Silent,
 }
 
-fn trunc(msg: &str) -> String {
+fn trunc(prefix: &str, msg: &str) -> String {
+    let prefix_len = console::measure_text_width(prefix);
     let msg = msg.lines().next().unwrap_or_default();
-    console::truncate_str(msg, *env::TERM_WIDTH, "…").to_string()
+    console::truncate_str(msg, *env::TERM_WIDTH - prefix_len - 1, "…").to_string()
 }
 
 fn err_no_task(name: &str) -> Result<()> {

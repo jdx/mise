@@ -45,9 +45,7 @@ Examples:
 $ mise settings ls
 idiomatic_version_file = false
 ...
-```
 
-```
 $ mise settings ls python
 default_packages_file = "~/.default-python-packages"
 ...

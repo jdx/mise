@@ -5,7 +5,7 @@ use crate::task::task_script_parser::{
 };
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
-use crate::{dirs, file};
+use crate::{dirs, env, file};
 use console::{truncate_str, Color};
 use either::Either;
 use eyre::{eyre, Result};
@@ -362,18 +362,24 @@ impl Task {
             ]
         });
         let idx = self.name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
-        style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string()
+        let prefix = style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string();
+        if *env::MISE_TASK_LEVEL > 0 {
+            format!(
+                "MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {prefix}",
+                *env::MISE_TASK_LEVEL
+            )
+        } else {
+            prefix
+        }
     }
 
     pub fn dir(&self) -> Result<Option<PathBuf>> {
         let config = Config::get();
-        if let Some(dir) = &self.dir {
-            Ok(Some(PathBuf::from(dir)))
-        } else if let Some(dir) = self
-            .cf(&config)
-            .as_ref()
-            .and_then(|cf| cf.task_config().dir.clone())
-        {
+        if let Some(dir) = self.dir.clone().or_else(|| {
+            self.cf(&config)
+                .as_ref()
+                .and_then(|cf| cf.task_config().dir.clone())
+        }) {
             let config_root = self.config_root.clone().unwrap_or_default();
             let mut tera = get_tera(Some(&config_root));
             let mut tera_ctx = config.tera_ctx.clone();
@@ -455,7 +461,7 @@ impl Task {
 }
 
 fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
-    Ok(path
+    let name = path
         .as_ref()
         .strip_prefix(prefix)
         .map(|p| match p {
@@ -470,7 +476,12 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
         .map(path::Component::as_os_str)
         .map(ffi::OsStr::to_string_lossy)
         .map(|s| s.replace(':', "_"))
-        .join(":"))
+        .join(":");
+    if let Some(name) = name.strip_suffix(":_default") {
+        Ok(name.to_string())
+    } else {
+        Ok(name)
+    }
 }
 
 fn match_tasks(tasks: &BTreeMap<String, &Task>, td: &TaskDep) -> Result<Vec<Task>> {

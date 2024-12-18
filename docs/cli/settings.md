@@ -52,19 +52,13 @@ Examples:
 ```
 # list all settings
 $ mise settings
-```
 
-```
 # get the value of the setting "always_keep_download"
 $ mise settings always_keep_download
-```
 
-```
 # set the value of the setting "always_keep_download" to "true"
 $ mise settings always_keep_download=true
-```
 
-```
 # set the value of the setting "node.mirror_url" to "https://npm.taobao.org/mirrors/node"
 $ mise settings node.mirror_url https://npm.taobao.org/mirrors/node
 ```

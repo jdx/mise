@@ -47,3 +47,13 @@ Would install dummy@2.0.0
 Would bump dummy@prefix:2 in ~/workdir/mise.toml"
 mise up dummy --bump
 assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  prefix:2"
+
+cat <<EOF >mise.toml
+[tools]
+dummy = "latest"
+EOF
+assert "mise uninstall dummy --all"
+assert "mise i dummy@1.0.0"
+assert "mise up --bump"
+assert "cat mise.toml" '[tools]
+dummy = "latest"'

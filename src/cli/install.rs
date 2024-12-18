@@ -1,8 +1,9 @@
 use crate::cli::args::ToolArg;
-use crate::config;
 use crate::config::Config;
+use crate::hooks::Hooks;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{config, hooks};
 use eyre::Result;
 use itertools::Itertools;
 
@@ -110,7 +111,6 @@ impl Install {
                                 let tvr = ToolRequest::Version {
                                     backend: ta.ba.clone(),
                                     version: "latest".into(),
-                                    os: None,
                                     options: ta.ba.opts(),
                                     source: ToolSource::Argument,
                                 };
@@ -129,6 +129,7 @@ impl Install {
         let versions = trs.missing_tools().into_iter().cloned().collect_vec();
         let versions = if versions.is_empty() {
             info!("all runtimes are installed");
+            hooks::run_one_hook(config.get_toolset()?, Hooks::Postinstall, None);
             vec![]
         } else {
             let mpr = MultiProgressReport::get();

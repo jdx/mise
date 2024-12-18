@@ -43,7 +43,27 @@ description = 'Cut a new release'
 file = 'scripts/release.sh' # execute an external script
 ```
 
-## run
+## Adding tasks
+
+You can edit the `mise.toml` file directly or using [`mise tasks add`](/cli/tasks/add)
+
+```shell
+mise task add pre-commit --depends "test" --depends "render" -- echo pre-commit
+```
+
+will add the following to `mise.toml`:
+
+```shell
+[tasks.pre-commit]
+depends = ["test", "render"]
+run = "echo pre-commit"
+```
+
+## Common options
+
+For an exhaustive list, see [task configuration](/tasks/task-configuration).
+
+### Run command
 
 Provide the script to run. Can be a single command or an array of commands:
 
@@ -62,8 +82,6 @@ run = [
 ]
 ```
 
-### run_windows
-
 You can specify an alternate command to run on Windows by using the `run_windows` key:
 
 ```toml
@@ -72,7 +90,7 @@ run = 'cargo test'
 run_windows = 'cargo test --features windows'
 ```
 
-## dir
+### Specifying which directory to use
 
 Tasks are executed with `cwd` set to the directory containing `mise.toml`. You can use the directory
 from where the task was run with `dir = "{{cwd}}"`:
@@ -85,17 +103,19 @@ dir = "{{cwd}}"
 
 Also, `MISE_ORIGINAL_CWD` is set to the original working directory and will be passed to the task.
 
-## description
+### Adding a description and alias
 
-You can add a description to a task:
+You can add a description to a task and alias for a task.
 
 ```toml
 [tasks.build]
 description = 'Build the CLI'
 run = "cargo build"
+alias = 'b' # `mise run b`
 ```
 
-The description will for example be displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html)` with no arguments.
+- This alias can be used to run the task
+- The description will be displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html)` with no arguments.
 
 ```shell
 ❯ mise run
@@ -105,7 +125,7 @@ Tasks
 #   test   Run the tests
 ```
 
-## depends
+### Dependencies
 
 You can specify dependencies for a task. Dependencies are run before the task itself. If a dependency fails, the task will not run.
 
@@ -117,41 +137,9 @@ run = 'cargo build'
 depends = ['build']
 ```
 
-## wait_for
+There are other ways to specify dependencies, see [wait_for](/tasks/task-configuration.html#wait-for) and [depends_post](/tasks/task-configuration.html#depends-post)
 
-If a task must run after another task, you can use `wait_for`:
-
-```toml
-[tasks.clean]
-run = 'cargo clean'
-
-[tasks.build]
-run = 'cargo build'
-wait_for = ['clean']
-```
-
-## hide
-
-You can hide a task from the list of available tasks by setting `hide = true`:
-
-```toml
-[tasks.cleancache]
-run = "rm -rf .cache"
-hide = true # hide this task from mise tasks ls / mise run
-```
-
-## alias
-
-You can specify an alias for a task. This alias can be used to run the task:
-
-```toml
-[tasks.build]
-description = 'Build the CLI'
-run = "cargo build"
-alias = 'b' # `mise run b`
-```
-
-## env
+### Environment variables
 
 You can specify environment variables for a task:
 
@@ -166,7 +154,7 @@ cargo clippy
 """
 ```
 
-## sources / outputs
+### Sources / Outputs
 
 If you want to skip executing a task if certain files haven't changed (up-to-date), you should specify `sources` and `outputs`:
 
@@ -180,7 +168,7 @@ outputs = ['target/debug/mycli']
 
 You can use `sources` alone if with [`mise watch`](/cli/watch.html) to run the task when the sources change.
 
-## shell / shebang
+## Specifying a shell or an interpreter {#shell-shebang}
 
 Tasks are executed with `set -e` (`set -o erropt`) if the shell is `sh`, `bash`, or `zsh`. This means that the script
 will exit if any command fails. You can disable this by running `set +e` in the script.
@@ -334,7 +322,7 @@ Example: `#!/usr/bin/env -S python -u` will run Python with unbuffered output.
 
 :::
 
-## file
+## Using a file or remote script
 
 You can specify a file to run as a task:
 
@@ -355,21 +343,6 @@ file = "https://example.com/build.sh"
 
 Currently, they're fetched everytime they're executed, but we may add some cache support later.
 This could be extended with other protocols like mentioned in [this ticket](https://github.com/jdx/mise/issues/2488) if there were interest.
-
-## raw
-
-Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
-it running in parallel with any other task. A RWMutex will get a write lock in this case.
-
-```toml
-[tasks.build]
-raw = true
-run = 'echo "Enter your name:"; read name; echo "Hello, $name!"'
-```
-
-## quiet
-
-Set `quiet = true` to suppress mise additional output.
 
 ## Arguments
 

@@ -1,4 +1,5 @@
 use crate::cli::args::ToolArg;
+use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
 use crate::exit::exit;
 use crate::ui::ctrlc;
@@ -57,6 +58,7 @@ mod tool;
 mod trust;
 mod uninstall;
 mod unset;
+mod unuse;
 mod upgrade;
 mod usage;
 mod r#use;
@@ -89,6 +91,9 @@ pub struct Cli {
     /// Change directory before running command
     #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
+    /// Continue running tasks even if one fails
+    #[clap(long, short = 'c', hide = true, verbatim_doc_comment)]
+    pub continue_on_error: bool,
     /// Dry run, don't actually do anything
     #[clap(short = 'n', long, hide = true)]
     pub dry_run: bool,
@@ -106,6 +111,8 @@ pub struct Cli {
     pub jobs: Option<usize>,
     #[clap(long, short, hide = true, overrides_with = "interleave")]
     pub prefix: bool,
+    #[clap(long)]
+    pub output: Option<TaskOutput>,
     /// Set the profile (environment)
     #[clap(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
     pub profile: Option<Vec<String>>,
@@ -219,6 +226,7 @@ pub enum Commands {
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Unset(unset::Unset),
+    Unuse(unuse::Unuse),
     Upgrade(upgrade::Upgrade),
     Usage(usage::Usage),
     Use(r#use::Use),
@@ -281,6 +289,7 @@ impl Commands {
             Self::Trust(cmd) => cmd.run(),
             Self::Uninstall(cmd) => cmd.run(),
             Self::Unset(cmd) => cmd.run(),
+            Self::Unuse(cmd) => cmd.run(),
             Self::Upgrade(cmd) => cmd.run(),
             Self::Usage(cmd) => cmd.run(),
             Self::Use(cmd) => cmd.run(),
@@ -356,6 +365,7 @@ impl Cli {
                         task,
                         args: self.task_args.unwrap_or_default(),
                         cd: self.cd,
+                        continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
                         failed_tasks: Default::default(),
                         force: self.force,
@@ -363,7 +373,7 @@ impl Cli {
                         is_linear: false,
                         jobs: self.jobs,
                         no_timings: self.no_timings,
-                        output: run::TaskOutput::Prefix,
+                        output: self.output,
                         prefix: self.prefix,
                         shell: self.shell,
                         quiet: self.global_output_flags.quiet,

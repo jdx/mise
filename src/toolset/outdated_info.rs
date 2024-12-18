@@ -89,14 +89,12 @@ impl OutdatedInfo {
                             backend,
                             options,
                             source,
-                            os,
                         } => {
                             oi.tool_request = ToolRequest::Version {
                                 backend,
                                 options,
                                 source,
                                 version: format!("{prefix}{bumped_version}"),
-                                os,
                             };
                             Some(oi.tool_request.version())
                         }
@@ -105,14 +103,12 @@ impl OutdatedInfo {
                             backend,
                             options,
                             source,
-                            os,
                         } => {
                             oi.tool_request = ToolRequest::Prefix {
                                 backend,
                                 options,
                                 source,
                                 prefix: format!("{prefix}{bumped_version}"),
-                                os,
                             };
                             Some(oi.tool_request.version())
                         }
@@ -165,6 +161,9 @@ impl Display for OutdatedInfo {
 /// used with `mise outdated --bump` to determine what new semver range to use
 /// given old: "20" and new: "21.2.3", return Some("21")
 fn check_semver_bump(old: &str, new: &str) -> Option<String> {
+    if old == "latest" {
+        return Some("latest".to_string());
+    }
     if let Some(("prefix", old_)) = old.split_once(':') {
         return check_semver_bump(old_, new);
     }
@@ -295,7 +294,7 @@ mod tests {
         );
         std::assert_eq!(
             check_semver_bump("latest", "20.0.0"),
-            Some("20.0.0".to_string())
+            Some("latest".to_string())
         );
     }
 }

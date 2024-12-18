@@ -1,16 +1,15 @@
-use crate::env;
-use std::cmp::PartialEq;
-use std::collections::{BTreeSet, HashMap};
-use std::fmt::{Debug, Display, Formatter};
-use std::path::{Path, PathBuf};
-
 use crate::config::config_file::{config_root, trust_check};
 use crate::dirs;
+use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
+use std::cmp::PartialEq;
+use std::collections::{BTreeSet, HashMap};
+use std::fmt::{Debug, Display, Formatter};
+use std::path::{Path, PathBuf};
 
 mod file;
 mod module;
@@ -21,6 +20,7 @@ mod venv;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EnvDirectiveOptions {
     pub(crate) tools: bool,
+    pub(crate) redact: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,6 +115,7 @@ pub struct EnvResults {
     pub env_files: Vec<PathBuf>,
     pub env_paths: Vec<PathBuf>,
     pub env_scripts: Vec<PathBuf>,
+    pub redactions: Vec<String>,
 }
 
 impl EnvResults {
@@ -135,6 +136,7 @@ impl EnvResults {
             env_files: Vec::new(),
             env_paths: Vec::new(),
             env_scripts: Vec::new(),
+            redactions: Vec::new(),
         };
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
@@ -189,6 +191,7 @@ impl EnvResults {
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect::<EnvMap>();
             ctx.insert("env", &env_vars);
+            let redact = directive.options().redact;
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
@@ -221,6 +224,7 @@ impl EnvResults {
                         &mut ctx,
                         &mut tera,
                         &mut env,
+                        &mut paths,
                         &mut r,
                         normalize_path,
                         &source,
@@ -257,6 +261,12 @@ impl EnvResults {
                     Self::module(&mut r, source, name, &value)?;
                 }
             };
+
+            if redact {
+                for k in env.keys() {
+                    r.redactions.push(k.clone());
+                }
+            }
         }
         let env_vars = env
             .iter()
@@ -281,6 +291,7 @@ impl EnvResults {
                 .map(|s| normalize_path(&config_root, s))
                 .for_each(|p| r.env_paths.push(p.clone()));
         }
+
         Ok(r)
     }
 

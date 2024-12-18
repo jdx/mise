@@ -20,7 +20,8 @@ impl Path {
             let path = env.get("PATH").cloned().unwrap_or_default();
             env::split_paths(&path).collect()
         } else {
-            ts.list_final_paths()?
+            let (_env, env_results) = ts.final_env(&config)?;
+            ts.list_final_paths(&config, env_results)?
         };
         for path in paths {
             println!("{}", path.display());

@@ -143,7 +143,7 @@ impl AsdfBackend {
         }
         let script = sm.get_script_path(&ExecEnv);
         let dir = dirs::CWD.clone().unwrap_or_default();
-        let ed = EnvDiff::from_bash_script(&script, &dir, &sm.env)?;
+        let ed = EnvDiff::from_bash_script(&script, &dir, &sm.env, Default::default())?;
         let env = ed
             .to_patches()
             .into_iter()
@@ -159,11 +159,14 @@ impl AsdfBackend {
     fn script_man_for_tv(&self, tv: &ToolVersion) -> Result<ScriptManager> {
         let config = Config::get();
         let mut sm = self.plugin.script_man.clone();
-        for (key, value) in &tv.request.options() {
+        for (key, value) in tv.request.options().opts {
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value.clone());
             let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value.clone());
+        }
+        for (key, value) in tv.request.options().install_env {
+            sm = sm.with_env(key, value.clone());
         }
         if let Some(project_root) = &config.project_root {
             let project_root = project_root.to_string_lossy().to_string();

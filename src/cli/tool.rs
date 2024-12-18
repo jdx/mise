@@ -153,7 +153,7 @@ impl Tool {
             if info.tool_options.is_empty() {
                 miseprintln!("[none]");
             } else {
-                for (k, v) in info.tool_options {
+                for (k, v) in info.tool_options.opts {
                     miseprintln!("{k}={v:?}");
                 }
             }
@@ -179,6 +179,7 @@ impl Tool {
                 table.push((
                     "Tool Options:",
                     info.tool_options
+                        .opts
                         .into_iter()
                         .map(|(k, v)| format!("{k}={v:?}"))
                         .join(","),

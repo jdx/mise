@@ -1,6 +1,6 @@
 use clap::Subcommand;
 use eyre::Result;
-mod generate;
+pub(crate) mod generate;
 mod get;
 mod ls;
 mod set;

@@ -20,14 +20,12 @@ pub enum ToolRequest {
         version: String,
         options: ToolVersionOptions,
         source: ToolSource,
-        os: Option<Vec<String>>,
     },
     Prefix {
         backend: BackendArg,
         prefix: String,
         options: ToolVersionOptions,
         source: ToolSource,
-        os: Option<Vec<String>>,
     },
     Ref {
         backend: BackendArg,
@@ -35,7 +33,6 @@ pub enum ToolRequest {
         ref_type: String,
         options: ToolVersionOptions,
         source: ToolSource,
-        os: Option<Vec<String>>,
     },
     Sub {
         backend: BackendArg,
@@ -43,20 +40,17 @@ pub enum ToolRequest {
         orig_version: String,
         options: ToolVersionOptions,
         source: ToolSource,
-        os: Option<Vec<String>>,
     },
     Path {
         backend: BackendArg,
         path: PathBuf,
         options: ToolVersionOptions,
         source: ToolSource,
-        os: Option<Vec<String>>,
     },
     System {
         backend: BackendArg,
         source: ToolSource,
         options: ToolVersionOptions,
-        os: Option<Vec<String>>,
     },
 }
 
@@ -71,21 +65,18 @@ impl ToolRequest {
                 ref_: r.to_string(),
                 ref_type: ref_type.to_string(),
                 options: backend.opts(),
-                os: None,
                 backend,
                 source,
             },
             Some(("prefix", p)) => Self::Prefix {
                 prefix: p.to_string(),
                 options: backend.opts(),
-                os: None,
                 backend,
                 source,
             },
             Some(("path", p)) => Self::Path {
                 path: PathBuf::from(p),
                 options: backend.opts(),
-                os: None,
                 backend,
                 source,
             },
@@ -93,7 +84,6 @@ impl ToolRequest {
                 sub: p.split_once('-').unwrap().1.to_string(),
                 options: backend.opts(),
                 orig_version: v.to_string(),
-                os: None,
                 backend,
                 source,
             },
@@ -101,7 +91,6 @@ impl ToolRequest {
                 if s == "system" {
                     Self::System {
                         options: backend.opts(),
-                        os: None,
                         backend,
                         source,
                     }
@@ -109,7 +98,6 @@ impl ToolRequest {
                     Self::Version {
                         version: s,
                         options: backend.opts(),
-                        os: None,
                         backend,
                         source,
                     }
@@ -169,12 +157,12 @@ impl ToolRequest {
     }
     pub fn os(&self) -> &Option<Vec<String>> {
         match self {
-            Self::Version { os, .. }
-            | Self::Prefix { os, .. }
-            | Self::Ref { os, .. }
-            | Self::Path { os, .. }
-            | Self::Sub { os, .. }
-            | Self::System { os, .. } => os,
+            Self::Version { options, .. }
+            | Self::Prefix { options, .. }
+            | Self::Ref { options, .. }
+            | Self::Path { options, .. }
+            | Self::Sub { options, .. }
+            | Self::System { options, .. } => &options.os,
         }
     }
     pub fn set_options(&mut self, options: ToolVersionOptions) -> &mut Self {
@@ -185,17 +173,6 @@ impl ToolRequest {
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
             | Self::System { options: o, .. } => *o = options,
-        }
-        self
-    }
-    pub fn with_os(mut self, os: Option<Vec<String>>) -> Self {
-        match &mut self {
-            Self::Version { os: o, .. }
-            | Self::Prefix { os: o, .. }
-            | Self::Ref { os: o, .. }
-            | Self::Path { os: o, .. }
-            | Self::Sub { os: o, .. }
-            | Self::System { os: o, .. } => *o = os,
         }
         self
     }

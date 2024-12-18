@@ -80,7 +80,7 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_plugin(&mut self, ba: &BackendArg) -> eyre::Result<()>;
+    fn remove_tool(&mut self, ba: &BackendArg) -> eyre::Result<()>;
     fn replace_versions(&mut self, ba: &BackendArg, versions: Vec<ToolRequest>)
         -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
@@ -148,7 +148,6 @@ impl dyn ConfigFile {
                         if let ToolRequest::Version {
                             version: _version,
                             source,
-                            os,
                             options,
                             backend,
                         } = tr
@@ -156,7 +155,6 @@ impl dyn ConfigFile {
                             tr = ToolRequest::Version {
                                 version: tv.version,
                                 source,
-                                os,
                                 options,
                                 backend,
                             };
@@ -216,9 +214,14 @@ fn init(path: &Path) -> Box<dyn ConfigFile> {
 }
 
 pub fn parse_or_init(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
+    let path = if path.is_dir() {
+        path.join("mise.toml")
+    } else {
+        path.into()
+    };
     let cf = match path.exists() {
-        true => parse(path)?,
-        false => init(path),
+        true => parse(&path)?,
+        false => init(&path),
     };
     Ok(cf)
 }
@@ -242,7 +245,7 @@ pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
 
 pub fn config_root(path: &Path) -> PathBuf {
     if is_global_config(path) {
-        return env::HOME.to_path_buf();
+        return env::MISE_GLOBAL_CONFIG_ROOT.to_path_buf();
     }
     let path = path
         .absolutize()
@@ -501,7 +504,11 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
 }
 
 fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
-    match path.file_name().unwrap().to_str().unwrap() {
+    match path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("mise.toml")
+    {
         f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
         f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
         f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),

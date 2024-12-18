@@ -116,6 +116,9 @@ export const commands: { [key: string]: Command } = {
   generate: {
     hide: false,
     subcommands: {
+      config: {
+        hide: false,
+      },
       "git-pre-commit": {
         hide: false,
       },
@@ -247,6 +250,9 @@ export const commands: { [key: string]: Command } = {
   tasks: {
     hide: false,
     subcommands: {
+      add: {
+        hide: false,
+      },
       deps: {
         hide: false,
       },
@@ -277,6 +283,9 @@ export const commands: { [key: string]: Command } = {
     hide: false,
   },
   unset: {
+    hide: false,
+  },
+  unuse: {
     hide: false,
   },
   upgrade: {

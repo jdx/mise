@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[env]
+FOO={value="bar", tools=true}
+EOF
+assert_contains "mise hook-env -s bash" "export FOO=bar"
+
+cat <<EOF >mise.toml
+[env]
+WHICH={value="{{ exec(command='which which') }}", tools=true}
+EOF
+assert_contains "mise hook-env -s bash" "export WHICH=$(which which)"

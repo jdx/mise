@@ -55,9 +55,9 @@ fn init() {
             [tasks.test]
             run = 'echo "testing!"'
             [settings]
-            always_keep_download= true
-            always_keep_install= true
-            idiomatic_version_file= true
+            always_keep_download = true
+            always_keep_install = true
+            idiomatic_version_file = true
             plugin_autoupdate_last_check_duration = "20m"
             jobs = 2
             "#},

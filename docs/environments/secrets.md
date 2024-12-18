@@ -1,7 +1,7 @@
-# Secrets
+# Secrets <Badge type="warning" text="experimental" />
 
 Because env vars in mise.toml can store sensitive information, mise has built-in support for reading
-encrypted secrets from files. Currently, this is done with a [sops](https://getsops.com) implementation
+encrypted secrets from files. Currently, this is done with a [sops](https://getsops.io) implementation
 however other secret backends could be added in the future.
 
 Secrets are `.env.(json|yaml|toml)` files with a simple structure, for example:
@@ -24,7 +24,7 @@ mise will automatically use a secret backend like sops if the file is encrypted.
 
 ## sops
 
-mise uses the rust [rops](https://github.com/gibbz00/rops) library to interact with [sops](https://getsops.com) files.
+mise uses the rust [rops](https://github.com/gibbz00/rops) library to interact with [sops](https://getsops.io) files.
 If you encrypt a sops file, mise will automatically decrypt it when reading the file. sops files can
 be in json, yaml, or toml format—however if you want to use toml you'll need to use the rops cli instead
 of sops. Otherwise, either sops or rops will work fine.

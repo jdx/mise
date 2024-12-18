@@ -97,7 +97,7 @@ As of this writing, env var management and task execution are not yet supported 
 
 `mise activate` will not update PATH until the shell prompt is displayed. So if you need to access a
 tool provided by mise before the prompt is displayed you can either
-[add the shims to your PATH](getting-started.html#2-add-mise-shims-to-path) e.g.
+[add the shims to your PATH](/dev-tools/shims.html#how-to-add-mise-shims-to-path) e.g.
 
 ```bash
 export PATH="$HOME/.local/share/mise/shims:$PATH"

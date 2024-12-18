@@ -4,6 +4,7 @@ import {
   groupIconMdPlugin,
   groupIconVitePlugin,
 } from "vitepress-plugin-group-icons";
+import { tabsMarkdownPlugin } from "vitepress-plugin-tabs";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -65,6 +66,7 @@ export default defineConfig({
             items: [
               { text: "Bun", link: "/lang/bun" },
               { text: "Deno", link: "/lang/deno" },
+              { text: "Elixir", link: "/lang/elixir" },
               { text: "Erlang", link: "/lang/erlang" },
               { text: "Go", link: "/lang/go" },
               { text: "Java", link: "/lang/java" },
@@ -84,6 +86,7 @@ export default defineConfig({
               { text: "aqua", link: "/dev-tools/backends/aqua" },
               { text: "asdf", link: "/dev-tools/backends/asdf" },
               { text: "cargo", link: "/dev-tools/backends/cargo" },
+              { text: "gem", link: "/dev-tools/backends/gem" },
               { text: "go", link: "/dev-tools/backends/go" },
               { text: "npm", link: "/dev-tools/backends/npm" },
               { text: "pipx", link: "/dev-tools/backends/pipx" },
@@ -179,6 +182,7 @@ export default defineConfig({
   markdown: {
     config(md) {
       md.use(groupIconMdPlugin);
+      md.use(tabsMarkdownPlugin);
     },
   },
   vite: {

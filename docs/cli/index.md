@@ -48,6 +48,8 @@ Show extra output (use -vv for even more)
 
 ## Flags
 
+### `--output <OUTPUT>`
+
 ### `--no-config`
 
 Do not load any config files
@@ -70,7 +72,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise cache prune [--dry-run] [-v --verbose...] [PLUGIN]...`](/cli/cache/prune.md)
 - [`mise completion [--include-bash-completion-lib] [SHELL]`](/cli/completion.md)
 - [`mise config [--no-header] [-J --json] <SUBCOMMAND>`](/cli/config.md)
-- [`mise config generate [-o --output <OUTPUT>]`](/cli/config/generate.md)
+- [`mise config generate [-t --tool-versions <TOOL_VERSIONS>] [-o --output <OUTPUT>]`](/cli/config/generate.md)
 - [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
 - [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
 - [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)
@@ -79,9 +81,10 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise doctor path [-f --full]`](/cli/doctor/path.md)
 - [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.md)
 - [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)
-- [`mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`](/cli/exec.md)
+- [`mise exec [FLAGS] [TOOL@VERSION]... [-- COMMAND]...`](/cli/exec.md)
 - [`mise fmt [-a --all]`](/cli/fmt.md)
 - [`mise generate <SUBCOMMAND>`](/cli/generate.md)
+- [`mise generate config [-t --tool-versions <TOOL_VERSIONS>] [-o --output <OUTPUT>]`](/cli/generate/config.md)
 - [`mise generate git-pre-commit [FLAGS]`](/cli/generate/git-pre-commit.md)
 - [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
@@ -99,7 +102,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise plugins ls-remote [-u --urls] [--only-names]`](/cli/plugins/ls-remote.md)
 - [`mise plugins uninstall [-p --purge] [-a --all] [PLUGIN]...`](/cli/plugins/uninstall.md)
 - [`mise plugins update [-j --jobs <JOBS>] [PLUGIN]...`](/cli/plugins/update.md)
-- [`mise prune [FLAGS] [PLUGIN]...`](/cli/prune.md)
+- [`mise prune [FLAGS] [INSTALLED_TOOL]...`](/cli/prune.md)
 - [`mise registry [-b --backend <BACKEND>] [--hide-aliased] [NAME]`](/cli/registry.md)
 - [`mise reshim [-f --force]`](/cli/reshim.md)
 - [`mise run [FLAGS]`](/cli/run.md)
@@ -111,12 +114,13 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise settings ls [FLAGS] [KEY]`](/cli/settings/ls.md)
 - [`mise settings set [-l --local] <KEY> <VALUE>`](/cli/settings/set.md)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
-- [`mise shell [FLAGS] [TOOL@VERSION]...`](/cli/shell.md)
+- [`mise shell [FLAGS] <TOOL@VERSION>...`](/cli/shell.md)
 - [`mise sync <SUBCOMMAND>`](/cli/sync.md)
 - [`mise sync node [FLAGS]`](/cli/sync/node.md)
 - [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)
 - [`mise sync ruby [--brew]`](/cli/sync/ruby.md)
 - [`mise tasks [FLAGS] [TASK] <SUBCOMMAND>`](/cli/tasks.md)
+- [`mise tasks add [FLAGS] <TASK> [-- RUN]...`](/cli/tasks/add.md)
 - [`mise tasks deps [--hidden] [--dot] [TASKS]...`](/cli/tasks/deps.md)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
@@ -126,6 +130,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise trust [FLAGS] [CONFIG_FILE]`](/cli/trust.md)
 - [`mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`](/cli/uninstall.md)
 - [`mise unset [-f --file <FILE>] [-g --global] [KEYS]...`](/cli/unset.md)
+- [`mise unuse [--no-prune] [--global] <INSTALLED_TOOL@VERSION>...`](/cli/unuse.md)
 - [`mise upgrade [FLAGS] [TOOL@VERSION]...`](/cli/upgrade.md)
 - [`mise use [FLAGS] [TOOL@VERSION]...`](/cli/use.md)
 - [`mise version`](/cli/version.md)

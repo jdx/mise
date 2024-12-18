@@ -31,14 +31,10 @@ Examples:
 $ mise en .
 $ node -v
 v20.0.0
-```
 
-```
 Skip loading bashrc:
 $ mise en -s "bash --norc"
-```
 
-```
 Skip loading zshrc:
 $ mise en -s "zsh -f"
 ```
