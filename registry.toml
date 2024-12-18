@@ -421,8 +421,6 @@ coursier.backends = [
 ]
 # ls-remote not available for aqua
 cowsay.backends = ["npm:cowsay"]
-# coursier.test = ["cs version", "{{version}}"] flaky builds
-
 crane.backends = [
     "aqua:google/go-containerregistry",
     "ubi:google/go-containerregistry[exe=crane]",
@@ -968,7 +966,10 @@ kubectl-convert.backends = [
     "aqua:kubernetes/kubectl-convert",
     "asdf:iul1an/asdf-kubectl-convert"
 ]
-kubectl-kots.backends = ["aqua:replicatedhq/kots", "asdf:ganta/asdf-kubectl-kots"]
+kubectl-kots.backends = [
+    "aqua:replicatedhq/kots",
+    "asdf:ganta/asdf-kubectl-kots"
+]
 kubectl-kots.test = ["kots version", "Replicated KOTS {{version}}"]
 kubectl-kuttl.aliases = ["kuttl"]
 kubectl-kuttl.backends = [
@@ -984,21 +985,33 @@ kubectx.backends = [
     "aqua:ahmetb/kubectx",
     "asdf:https://gitlab.com/wt0f/asdf-kubectx"
 ]
-kubefedctl.backends = ["aqua:kubernetes-retired/kubefed", "asdf:kvokka/asdf-kubefedctl"]
-kubefedctl.test = ["kubefedctl version", "kubefedctl version:"] # may not have version in output
+kubefedctl.backends = [
+    "aqua:kubernetes-retired/kubefed",
+    "asdf:kvokka/asdf-kubefedctl"
+]
+kubefedctl.test = [
+    "kubefedctl version",
+    "kubefedctl version:"
+] # may not have version in output
 kubefirst.backends = ["asdf:Claywd/asdf-kubefirst"]
 kubelogin.backends = ["aqua:int128/kubelogin"]
 kubemqctl.backends = [
     "aqua:kubemq-io/kubemqctl",
     "asdf:johnlayton/asdf-kubemqctl"
 ]
-kubent.backends = ["aqua:doitintl/kube-no-trouble", "asdf:virtualstaticvoid/asdf-kubent"]
+kubent.backends = [
+    "aqua:doitintl/kube-no-trouble",
+    "asdf:virtualstaticvoid/asdf-kubent"
+]
 kubent.test = ["kubent --version", "version {{version}}"]
 kubergrunt.backends = [
     "aqua:gruntwork-io/kubergrunt",
     "asdf:NeoHsu/asdf-kubergrunt"
 ]
-kubeseal.backends = ["aqua:bitnami-labs/sealed-secrets", "asdf:stefansedich/asdf-kubeseal"]
+kubeseal.backends = [
+    "aqua:bitnami-labs/sealed-secrets",
+    "asdf:stefansedich/asdf-kubeseal"
+]
 kubeseal.test = ["kubeseal --version", "kubeseal version: {{version}}"]
 kubesec.backends = ["aqua:controlplaneio/kubesec", "asdf:vitalis/asdf-kubesec"]
 kubeshark.backends = [
@@ -1251,7 +1264,10 @@ pre-commit.backends = [
     "asdf:jonathanmorley/asdf-pre-commit"
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
-promtool.backends = ["aqua:prometheus/prometheus", "asdf:asdf-community/asdf-promtool"]
+promtool.backends = [
+    "aqua:prometheus/prometheus",
+    "asdf:asdf-community/asdf-promtool"
+]
 promtool.test = ["promtool --version", "promtool, version {{version}}"]
 protobuf.backends = ["vfox:ahai-code/vfox-protobuf"]
 protoc.backends = [
