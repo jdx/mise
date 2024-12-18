@@ -1319,7 +1319,7 @@ cmd "tasks" help="Manage tasks" {
         }
         flag "-f --file" help="Create a file task instead of a toml task"
         arg "<TASK>" help="Tasks name to add"
-        arg "<RUN>..." var=true
+        arg "[RUN]..." var=true
     }
     cmd "deps" help="Display a tree visualization of a dependency graph" {
         after_long_help r#"Examples:

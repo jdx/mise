@@ -2560,7 +2560,7 @@ const completionSpec: Fig.Spec = {
                         },
                         {
                             "name": "run",
-                            "isOptional": false,
+                            "isOptional": true,
                             "isVariadic": true
                         }
                     ]
