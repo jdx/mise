@@ -1,4 +1,5 @@
 use crate::config::{Config, SETTINGS};
+use crate::exit::exit;
 use crate::shell::ShellType;
 use crate::task::Task;
 use crate::tera::get_tera;
@@ -10,7 +11,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use usage::parse::ParseValue;
 use xx::regex;
-use crate::exit::exit;
 
 pub struct TaskScriptParser {
     dir: Option<PathBuf>,
