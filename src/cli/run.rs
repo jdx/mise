@@ -331,6 +331,9 @@ impl Run {
             "MISE_TASK_LEVEL".into(),
             (*env::MISE_TASK_LEVEL + 1).to_string(),
         );
+        if !self.timings {
+            env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
+        }
         if let Some(cwd) = &*dirs::CWD {
             env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
         }
@@ -408,8 +411,8 @@ impl Run {
             .bright()
             .to_string();
         if !self.quiet(Some(task)) {
-            let msg = format!("{prefix} {}", config.redact(cmd));
-            prefix_eprintln!(prefix, "{}", trunc(&msg));
+            let msg = trunc(prefix, config.redact(cmd).trim());
+            prefix_eprintln!(prefix, "{msg}")
         }
 
         if script.starts_with("#!") {
@@ -507,11 +510,12 @@ impl Run {
         }
 
         if !self.quiet(Some(task)) {
-            let cmd = format!("{} {}", display_path(file), args.join(" "));
+            let cmd = format!("{} {}", display_path(file), args.join(" "))
+                .trim()
+                .to_string();
             let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
-            let cmd = trunc(&format!("{prefix} {}", config.redact(cmd)));
-            // TODO: prefix_eprintln!("{cmd}");
-            eprintln!("{cmd}");
+            let cmd = trunc(prefix, config.redact(cmd).trim());
+            prefix_eprintln!(prefix, "{cmd}");
         }
 
         self.exec(file, &args, task, &env, prefix)
@@ -860,9 +864,10 @@ pub enum TaskOutput {
     Silent,
 }
 
-fn trunc(msg: &str) -> String {
+fn trunc(prefix: &str, msg: &str) -> String {
+    let prefix_len = console::measure_text_width(prefix);
     let msg = msg.lines().next().unwrap_or_default();
-    console::truncate_str(msg, *env::TERM_WIDTH, "…").to_string()
+    console::truncate_str(msg, *env::TERM_WIDTH - prefix_len - 1, "…").to_string()
 }
 
 fn err_no_task(name: &str) -> Result<()> {

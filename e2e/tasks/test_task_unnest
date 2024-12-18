@@ -24,3 +24,10 @@ assert "mise run --output prefix c" "\
 [c] c
 [b] b
 [a] a"
+
+assert "mise run --no-timings --output prefix c 2>&1" '[c] $ echo c && mise run b
+[c] c
+[b] $ echo b && mise run a
+[b] b
+[a] $ echo a
+[a] a'
