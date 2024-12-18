@@ -2,6 +2,7 @@ use crate::config::config_file;
 use crate::task::Task;
 use crate::{config, file};
 use eyre::Result;
+use std::path::MAIN_SEPARATOR_STR;
 use toml_edit::Item;
 
 /// Create a new task
@@ -69,7 +70,10 @@ pub struct TasksAdd {
 impl TasksAdd {
     pub fn run(self) -> Result<()> {
         if self.file {
-            let path = Task::task_dir().join(&self.task);
+            let mut path = Task::task_dir().join(self.task.replace(':', MAIN_SEPARATOR_STR));
+            if path.is_dir() {
+                path = path.join("_default");
+            }
             let mut lines = vec![format!(
                 "#!/usr/bin/env {}",
                 self.shell.clone().unwrap_or("bash".into())
@@ -123,6 +127,7 @@ impl TasksAdd {
             }
             file::create_dir_all(path.parent().unwrap())?;
             file::write(&path, lines.join("\n"))?;
+            file::make_executable(&path)?;
         } else {
             let path = config::local_toml_config_path();
             let mut doc: toml_edit::DocumentMut =

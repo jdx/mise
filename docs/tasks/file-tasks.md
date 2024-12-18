@@ -96,6 +96,7 @@ when loaded.
 mise-tasks
 ├── build
 └── test
+    ├── _default
     ├── integration
     └── units
 ```
@@ -105,9 +106,10 @@ Running `mise tasks` will give the below output:
 ```text
 $ mise tasks
 Name              Description Source
-build                         .../mise-tasks/build
-test:integration              .../mise-tasks/test/integration
-test:units                    .../mise-tasks/test/units
+build                         ./mise-tasks/build
+test                          ./mise-tasks/test/_default
+test:integration              ./mise-tasks/test/integration
+test:units                    ./mise-tasks/test/units
 ```
 
 ## Arguments

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+assert "mise task add --file foo:bar:baz -- echo baz"
+assert "mise task add --file foo:bar -- echo bar"
+ls -lR .
+
+assert "mise tasks" "foo:bar
+foo:bar:baz"
+assert "mise task run foo:bar:baz" "baz"
+assert "mise task run foo:bar" "bar"
