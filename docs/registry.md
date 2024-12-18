@@ -94,6 +94,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | boundary | [aqua:hashicorp/boundary](https://github.com/hashicorp/boundary) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | bpkg | [asdf:bpkg/asdf-bpkg](https://github.com/bpkg/asdf-bpkg) |
 | brig | [aqua:brigadecore/brigade](https://github.com/brigadecore/brigade) [asdf:Ibotta/asdf-brig](https://github.com/Ibotta/asdf-brig) |
+| btop | [ubi:aristocratos/btop](https://github.com/aristocratos/btop) |
 | btrace | [asdf:joschi/asdf-btrace](https://github.com/joschi/asdf-btrace) |
 | buf | [aqua:bufbuild/buf](https://github.com/bufbuild/buf) [ubi:bufbuild/buf](https://github.com/bufbuild/buf) [asdf:truepay/asdf-buf](https://github.com/truepay/asdf-buf) |
 | buildpack | [aqua:buildpacks/pack](https://github.com/buildpacks/pack) [asdf:johnlayton/asdf-buildpack](https://github.com/johnlayton/asdf-buildpack) |

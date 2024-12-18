@@ -228,6 +228,8 @@ boundary.backends = [
 bpkg.backends = ["asdf:bpkg/asdf-bpkg"]
 brig.backends = ["aqua:brigadecore/brigade", "asdf:Ibotta/asdf-brig"]
 brig.test = ["brig version", "Brigade client: version v{{version}}"]
+btop.backends = ['ubi:aristocratos/btop']
+btop.test = ["btop --version", "btop version: {{version}}"]
 btrace.backends = ["asdf:joschi/asdf-btrace"]
 buf.backends = [
     "aqua:bufbuild/buf",
