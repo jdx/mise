@@ -79,6 +79,10 @@ pub struct Run {
     /// Change to this directory before executing the command
     #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     pub cd: Option<PathBuf>,
+    
+    /// Continue running tasks even if one fails
+    #[clap(long, short = 'c', verbatim_doc_comment)]
+    pub continue_on_error: bool,
 
     /// Don't actually run the tasks(s), just print them in order of execution
     #[clap(long, short = 'n', verbatim_doc_comment)]
@@ -276,10 +280,12 @@ impl Run {
                     recv(rx_err) -> task => { // a task errored
                         let (task, status) = task.unwrap();
                         self.add_failed_task(task, status);
-                        #[cfg(unix)]
-                        CmdLineRunner::kill_all(SIGTERM); // start killing other running tasks
-                        #[cfg(windows)]
-                        CmdLineRunner::kill_all();
+                        if !self.continue_on_error {
+                            #[cfg(unix)]
+                            CmdLineRunner::kill_all(SIGTERM); // start killing other running tasks
+                            #[cfg(windows)]
+                            CmdLineRunner::kill_all();
+                        }
                     }
                 }
             }

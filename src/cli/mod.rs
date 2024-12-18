@@ -91,6 +91,9 @@ pub struct Cli {
     /// Change directory before running command
     #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
+    /// Continue running tasks even if one fails
+    #[clap(long, short = 'c', hide = true, verbatim_doc_comment)]
+    pub continue_on_error: bool,
     /// Dry run, don't actually do anything
     #[clap(short = 'n', long, hide = true)]
     pub dry_run: bool,
@@ -362,6 +365,7 @@ impl Cli {
                         task,
                         args: self.task_args.unwrap_or_default(),
                         cd: self.cd,
+                        continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
                         failed_tasks: Default::default(),
                         force: self.force,
