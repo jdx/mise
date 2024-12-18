@@ -527,7 +527,8 @@ impl Toolset {
     }
     pub fn final_env(&self, config: &Config) -> Result<(EnvMap, EnvResults)> {
         let mut env = self.env(config)?;
-        let mut tera_env = env.clone();
+        let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
+        tera_env.extend(env.clone());
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         for p in self.list_paths().into_iter() {
             path_env.add(p);
