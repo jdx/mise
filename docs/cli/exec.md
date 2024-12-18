@@ -1,6 +1,6 @@
 # `mise exec`
 
-- **Usage**: `mise exec [FLAGS] [TOOL@VERSION]... [COMMAND]...`
+- **Usage**: `mise exec [FLAGS] [TOOL@VERSION]... [-- COMMAND]...`
 - **Aliases**: `x`
 - **Source code**: [`src/cli/exec.rs`](https://github.com/jdx/mise/blob/main/src/cli/exec.rs)
 
@@ -20,7 +20,7 @@ The "--" separates runtimes from the commands to pass along to the subprocess.
 
 Tool(s) to start e.g.: node@20 python@3.10
 
-### `[COMMAND]...`
+### `[-- COMMAND]...`
 
 Command string to execute (same as --command)
 
@@ -42,16 +42,12 @@ Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 Examples:
 
 ```
-mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
-mise x node@20 -- node ./app.js     # shorter alias
-```
+$ mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
+$ mise x node@20 -- node ./app.js     # shorter alias
 
-```
 # Specify command as a string:
 $ mise exec node@20 python@3.11 --command "node -v && python -V"
-```
 
-```
 # Run a command in a different directory:
 $ mise x -C /path/to/project node@20 -- node ./app.js
 ```

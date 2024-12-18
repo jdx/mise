@@ -5,4 +5,7 @@ cat <<EOF >mise.toml
 run = 'echo {{arg(name="myarg")}}'
 EOF
 
-assert "mise run a --help" "x"
+assert "mise run a --help 2>&1 || true" "Usage: a <myarg>
+
+Arguments:
+  <myarg>"

@@ -103,25 +103,17 @@ Examples:
 # Runs the "lint" tasks. This needs to either be defined in mise.toml
 # or as a standalone script. See the project README for more information.
 $ mise run lint
-```
 
-```
 # Forces the "build" tasks to run even if its sources are up-to-date.
 $ mise run build --force
-```
 
-```
 # Run "test" with stdin/stdout/stderr all connected to the current terminal.
 # This forces `--jobs=1` to prevent interleaving of output.
 $ mise run test --raw
-```
 
-```
 # Runs the "lint", "test", and "check" tasks in parallel.
 $ mise run lint ::: test ::: check
-```
 
-```
 # Execute multiple tasks each with their own arguments.
 $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 ```

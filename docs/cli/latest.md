@@ -24,9 +24,7 @@ Examples:
 ```
 $ mise latest node@20  # get the latest version of node 20
 20.0.0
-```
 
-```
 $ mise latest node     # get the latest stable version of node
 20.0.0
 ```

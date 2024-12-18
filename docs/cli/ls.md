@@ -63,15 +63,11 @@ $ mise ls
 node    20.0.0 ~/src/myapp/.tool-versions latest
 python  3.11.0 ~/.tool-versions           3.10
 python  3.10.0
-```
 
-```
 $ mise ls --current
 node    20.0.0 ~/src/myapp/.tool-versions 20
 python  3.11.0 ~/.tool-versions           3.11.0
-```
 
-```
 $ mise ls --json
 {
   "node": [

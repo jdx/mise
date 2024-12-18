@@ -43,7 +43,7 @@ impl TaskDocs {
         let dir = dirs::CWD.as_ref().unwrap();
         let tasks = Config::get().load_tasks_in_dir(dir)?;
         let mut out = vec![];
-        for task in &tasks {
+        for task in tasks.iter().filter(|t| !t.hide) {
             out.push(task.render_markdown(dir)?);
         }
         if let Some(output) = &self.output {

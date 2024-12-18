@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use usage::parse::ParseValue;
 use xx::regex;
+use crate::exit::exit;
 
 pub struct TaskScriptParser {
     dir: Option<PathBuf>,
@@ -312,7 +313,15 @@ pub fn replace_template_placeholders_with_args(
         .into_iter()
         .chain(args.iter().cloned())
         .collect::<Vec<_>>();
-    let m = usage::parse(spec, &args).map_err(|e| eyre::eyre!(e.to_string()))?;
+    let m = match usage::parse(spec, &args) {
+        Ok(m) => m,
+        Err(e) => {
+            // just print exactly what usage returns so the error output isn't double-wrapped
+            // this could be displaying help or a parse error
+            eprintln!("{}", format!("{e}").trim_end());
+            exit(1);
+        }
+    };
     let mut out = vec![];
     let re = regex!(r"MISE_TASK_ARG:(\w+):MISE_TASK_ARG");
     for script in scripts {
