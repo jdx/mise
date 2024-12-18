@@ -245,6 +245,9 @@ cmd "config" help="Manage config files" {
     $ mise cf generate > mise.toml
     $ mise cf generate --output=mise.toml
 "
+        flag "-t --tool-versions" help="Path to a .tool-versions file to import tools from" {
+            arg "<TOOL_VERSIONS>"
+        }
         flag "-o --output" help="Output to file instead of stdout" {
             arg "<OUTPUT>"
         }
@@ -467,6 +470,20 @@ Sorts keys and cleans up whitespace in mise.toml"
 cmd "generate" subcommand_required=true help="[experimental] Generate files for various tools/services" {
     alias "gen"
     alias "g" hide=true
+    cmd "config" help="[experimental] Generate a mise.toml file" {
+        alias "g"
+        after_long_help r"Examples:
+
+    $ mise cf generate > mise.toml
+    $ mise cf generate --output=mise.toml
+"
+        flag "-t --tool-versions" help="Path to a .tool-versions file to import tools from" {
+            arg "<TOOL_VERSIONS>"
+        }
+        flag "-o --output" help="Output to file instead of stdout" {
+            arg "<OUTPUT>"
+        }
+    }
     cmd "git-pre-commit" help="[experimental] Generate a git pre-commit hook" {
         alias "pre-commit"
         long_help r"[experimental] Generate a git pre-commit hook

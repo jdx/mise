@@ -116,6 +116,9 @@ export const commands: { [key: string]: Command } = {
   generate: {
     hide: false,
     subcommands: {
+      config: {
+        hide: false,
+      },
       "git-pre-commit": {
         hide: false,
       },
