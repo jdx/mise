@@ -692,6 +692,19 @@ const completionSpec: Fig.Spec = {
                     "options": [
                         {
                             "name": [
+                                "-t",
+                                "--tool-versions"
+                            ],
+                            "description": "Path to a .tool-versions file to import tools from",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "tool_versions",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
                                 "-o",
                                 "--output"
                             ],
@@ -1038,6 +1051,41 @@ const completionSpec: Fig.Spec = {
             ],
             "description": "[experimental] Generate files for various tools/services",
             "subcommands": [
+                {
+                    "name": [
+                        "config",
+                        "g"
+                    ],
+                    "description": "[experimental] Generate a mise.toml file",
+                    "options": [
+                        {
+                            "name": [
+                                "-t",
+                                "--tool-versions"
+                            ],
+                            "description": "Path to a .tool-versions file to import tools from",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "tool_versions",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        },
+                        {
+                            "name": [
+                                "-o",
+                                "--output"
+                            ],
+                            "description": "Output to file instead of stdout",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "output",
+                                "isOptional": false,
+                                "isVariadic": false
+                            }
+                        }
+                    ]
+                },
                 {
                     "name": [
                         "git-pre-commit",

@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::ValueHint;
 use eyre::Result;
 
-use crate::config::Settings;
+use crate::config::{config_file, SETTINGS};
 use crate::file;
 use crate::file::display_path;
 
@@ -11,6 +11,9 @@ use crate::file::display_path;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "g", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigGenerate {
+    /// Path to a .tool-versions file to import tools from
+    #[clap(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    tool_versions: Option<PathBuf>,
     /// Output to file instead of stdout
     #[clap(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     output: Option<PathBuf>,
@@ -18,9 +21,34 @@ pub struct ConfigGenerate {
 
 impl ConfigGenerate {
     pub fn run(self) -> Result<()> {
-        let settings = Settings::try_get()?;
-        settings.ensure_experimental("`mise config generate`")?;
-        let doc = r#"
+        SETTINGS.ensure_experimental("`mise config generate`")?;
+        let doc = if let Some(tool_versions) = &self.tool_versions {
+            self.tool_versions(tool_versions)?
+        } else {
+            self.default()
+        };
+        if let Some(output) = &self.output {
+            info!("writing to {}", display_path(output));
+            file::write(output, doc)?;
+        } else {
+            miseprintln!("{doc}");
+        }
+
+        Ok(())
+    }
+
+    fn tool_versions(&self, tool_versions: &Path) -> Result<String> {
+        let mut to = config_file::parse_or_init(&PathBuf::from("mise.toml"))?;
+        let from = config_file::parse(tool_versions)?;
+        let tools = from.to_tool_request_set()?.tools;
+        for (ba, tools) in tools {
+            to.replace_versions(&ba, tools)?;
+        }
+        to.dump()
+    }
+
+    fn default(&self) -> String {
+        r#"
 # # mise config files are hierarchical. mise will find all of the config files
 # # in all parent directories and merge them together.
 # # You might have a structure like:
@@ -71,20 +99,12 @@ impl ConfigGenerate {
 # # setup a custom alias so you can run `mise use -g node@work` for node-16.x
 # work = '16'
 "#
-        .trim();
-        if let Some(output) = &self.output {
-            info!("writing to {}", display_path(output));
-            file::write(output, doc)?;
-        } else {
-            miseprintln!("{doc}");
-        }
-
-        Ok(())
+        .to_string()
     }
 }
 
 // TODO: fill this out
-static AFTER_LONG_HELP: &str = color_print::cstr!(
+pub static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise cf generate > mise.toml</bold>

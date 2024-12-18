@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+cat <<EOF >.tool-versions
+node 22
+python 3.9 3.10 3.11
+EOF
+
+assert "mise generate config --tool-versions .tool-versions" '[tools]
+node = "22"
+python = ["3.9", "3.10", "3.11"]'
