@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+cat <<EOF >.mise.toml
+[tasks.a]
+run = 'echo a'
+[tasks.b]
+run = ['echo b && mise run a']
+EOF
+
+assert "mise run --output prefix b" "\
+[b] b
+[a] a"
+
+cat <<EOF >.mise.toml
+[tasks.a]
+run = 'echo a'
+[tasks.b]
+run = ['echo b && mise run a']
+[tasks.c]
+run = ['echo c && mise run b']
+EOF
+
+assert "mise run --output prefix c" "\
+[c] c
+[b] b
+[a] a"

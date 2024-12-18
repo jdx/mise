@@ -48,6 +48,8 @@ Show extra output (use -vv for even more)
 
 ## Flags
 
+### `--output <OUTPUT>`
+
 ### `--no-config`
 
 Do not load any config files

@@ -5,7 +5,7 @@ use crate::task::task_script_parser::{
 };
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
-use crate::{dirs, file};
+use crate::{dirs, env, file};
 use console::{truncate_str, Color};
 use either::Either;
 use eyre::{eyre, Result};
@@ -362,7 +362,15 @@ impl Task {
             ]
         });
         let idx = self.name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
-        style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string()
+        let prefix = style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string();
+        if *env::MISE_TASK_LEVEL > 0 {
+            format!(
+                "MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {prefix}",
+                *env::MISE_TASK_LEVEL
+            )
+        } else {
+            prefix
+        }
     }
 
     pub fn dir(&self) -> Result<Option<PathBuf>> {
