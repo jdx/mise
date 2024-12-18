@@ -177,7 +177,7 @@ impl Use {
             self.warn_if_hidden(&config, cf.get_path());
         }
         for plugin_name in &self.remove {
-            cf.remove_plugin(plugin_name)?;
+            cf.remove_tool(plugin_name)?;
         }
         cf.save()?;
 

@@ -1754,11 +1754,10 @@ const completionSpec: Fig.Spec = {
             ],
             "args": [
                 {
-                    "name": "plugin",
-                    "description": "Prune only versions from this plugin(s)",
+                    "name": "installed_tool",
+                    "description": "Prune only these tools",
                     "isOptional": true,
-                    "isVariadic": true,
-                    "generators": pluginGenerator
+                    "isVariadic": true
                 }
             ]
         },
@@ -3048,9 +3047,7 @@ const completionSpec: Fig.Spec = {
         },
         {
             "name": [
-                "uninstall",
-                "remove",
-                "rm"
+                "uninstall"
             ],
             "description": "Removes installed tool versions",
             "options": [
@@ -3116,6 +3113,39 @@ const completionSpec: Fig.Spec = {
                     "description": "Environment variable(s) to remove\ne.g.: NODE_ENV",
                     "isOptional": true,
                     "isVariadic": true
+                }
+            ]
+        },
+        {
+            "name": [
+                "unuse",
+                "rm",
+                "remove"
+            ],
+            "description": "Removes installed tool versions from mise.toml",
+            "options": [
+                {
+                    "name": [
+                        "--no-prune"
+                    ],
+                    "description": "Do not also prune the installed version",
+                    "isRepeatable": false
+                },
+                {
+                    "name": [
+                        "--global"
+                    ],
+                    "description": "Remove tool from global config",
+                    "isRepeatable": false
+                }
+            ],
+            "args": [
+                {
+                    "name": "installed_tool@version",
+                    "description": "Tool(s) to remove",
+                    "isOptional": false,
+                    "isVariadic": true,
+                    "generators": installedToolVersionGenerator
                 }
             ]
         },

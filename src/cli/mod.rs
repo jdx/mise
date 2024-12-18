@@ -58,6 +58,7 @@ mod tool;
 mod trust;
 mod uninstall;
 mod unset;
+mod unuse;
 mod upgrade;
 mod usage;
 mod r#use;
@@ -222,6 +223,7 @@ pub enum Commands {
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Unset(unset::Unset),
+    Unuse(unuse::Unuse),
     Upgrade(upgrade::Upgrade),
     Usage(usage::Usage),
     Use(r#use::Use),
@@ -284,6 +286,7 @@ impl Commands {
             Self::Trust(cmd) => cmd.run(),
             Self::Uninstall(cmd) => cmd.run(),
             Self::Unset(cmd) => cmd.run(),
+            Self::Unuse(cmd) => cmd.run(),
             Self::Upgrade(cmd) => cmd.run(),
             Self::Usage(cmd) => cmd.run(),
             Self::Use(cmd) => cmd.run(),

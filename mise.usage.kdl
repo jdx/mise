@@ -922,7 +922,7 @@ as will versions only referenced on the command line `mise exec <PLUGIN>@<VERSIO
     flag "-n --dry-run" help="Do not actually delete anything"
     flag "--configs" help="Prune only tracked and trusted configuration links that point to non-existent configurations"
     flag "--tools" help="Prune only unused versions of tools"
-    arg "[PLUGIN]..." help="Prune only versions from this plugin(s)" required=false var=true
+    arg "[INSTALLED_TOOL]..." help="Prune only these tools" required=false var=true
 }
 cmd "registry" help="List available tools to install" {
     long_help r"List available tools to install
@@ -1554,7 +1554,6 @@ This includes:
     arg "[CONFIG_FILE]" help="The config file to trust" required=false
 }
 cmd "uninstall" help="Removes installed tool versions" {
-    alias "remove" "rm"
     long_help r"Removes installed tool versions
 
 This only removes the installed version, it does not modify mise.toml."
@@ -1590,6 +1589,20 @@ By default, this command modifies `mise.toml` in the current directory."
     }
     flag "-g --global" help="Use the global config file"
     arg "[KEYS]..." help="Environment variable(s) to remove\ne.g.: NODE_ENV" required=false var=true
+}
+cmd "unuse" help="Removes installed tool versions from mise.toml" {
+    alias "rm" "remove"
+    long_help r"Removes installed tool versions from mise.toml
+
+Will also prune the installed version if no other configurations are using it."
+    after_long_help r"Examples:
+
+    # will uninstall specific version
+    $ mise remove node@18.0.0
+"
+    flag "--no-prune" help="Do not also prune the installed version"
+    flag "--global" help="Remove tool from global config"
+    arg "<INSTALLED_TOOL@VERSION>..." help="Tool(s) to remove" var=true
 }
 cmd "upgrade" help="Upgrades outdated tools" {
     alias "up"

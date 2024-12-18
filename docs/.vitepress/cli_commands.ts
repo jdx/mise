@@ -282,6 +282,9 @@ export const commands: { [key: string]: Command } = {
   unset: {
     hide: false,
   },
+  unuse: {
+    hide: false,
+  },
   upgrade: {
     hide: false,
   },

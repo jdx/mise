@@ -306,7 +306,7 @@ impl ConfigFile for MiseToml {
         self.tasks.0.values().collect()
     }
 
-    fn remove_plugin(&mut self, fa: &BackendArg) -> eyre::Result<()> {
+    fn remove_tool(&mut self, fa: &BackendArg) -> eyre::Result<()> {
         self.tools.shift_remove(fa);
         let doc = self.doc_mut()?;
         if let Some(tools) = doc.get_mut("tools") {
@@ -1744,7 +1744,7 @@ mod tests {
         )
         .unwrap();
         let mut cf = MiseToml::from_file(&p).unwrap();
-        cf.remove_plugin(&"node".into()).unwrap();
+        cf.remove_tool(&"node".into()).unwrap();
 
         assert_debug_snapshot!(cf.to_toolset().unwrap());
         let cf: Box<dyn ConfigFile> = Box::new(cf);
