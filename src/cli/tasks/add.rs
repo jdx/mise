@@ -61,7 +61,7 @@ pub struct TasksAdd {
     #[clap(long, short)]
     file: bool,
 
-    #[clap(last = true, required = true)]
+    #[clap(last = true)]
     run: Vec<String>,
 }
 
@@ -116,8 +116,10 @@ impl TasksAdd {
             }
             lines.push("set -euxo pipefail".into());
             lines.push("".into());
-            lines.push(self.run.join(" "));
-            lines.push("".into());
+            if !self.run.is_empty() {
+                lines.push(self.run.join(" "));
+                lines.push("".into());
+            }
             file::create_dir_all(path.parent().unwrap())?;
             file::write(&path, lines.join("\n"))?;
         } else {
@@ -197,7 +199,9 @@ impl TasksAdd {
             if self.silent {
                 task.insert("silent", true.into());
             }
-            task.insert("run", shell_words::join(&self.run).into());
+            if !self.run.is_empty() {
+                task.insert("run", shell_words::join(&self.run).into());
+            }
             tasks.insert(&self.task, Item::Table(task));
             file::write(path, doc.to_string())?;
         }
