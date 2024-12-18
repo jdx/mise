@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.a]
+run = 'echo {{arg(name="myarg")}}'
+EOF
+
+assert "mise run a --help" "x"

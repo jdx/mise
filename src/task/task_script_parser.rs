@@ -96,6 +96,7 @@ impl TaskScriptParser {
                         hide,
                         default,
                         choices,
+                        ..Default::default()
                     };
                     arg.usage = arg.usage();
                     input_args.lock().unwrap().push(arg);
