@@ -168,7 +168,7 @@ outputs = ['target/debug/mycli']
 
 You can use `sources` alone if with [`mise watch`](/cli/watch.html) to run the task when the sources change.
 
-## Specifying a shell or an interpreter
+## Specifying a shell or an interpreter {#shell-shebang}
 
 Tasks are executed with `set -e` (`set -o erropt`) if the shell is `sh`, `bash`, or `zsh`. This means that the script
 will exit if any command fails. You can disable this by running `set +e` in the script.

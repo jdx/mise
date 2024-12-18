@@ -227,7 +227,7 @@ outputs = { auto = true }
 - **Note**: Only applies to toml-tasks.
 
 The shell to use to run the task. This is useful if you want to run a task with a different shell than
-the default such as `fish`, `zsh`, or `pwsh`. Generally though, it's recommended to use a [shebang](/tasks/toml-tasks.html#shell-shebang) instead
+the default such as `fish`, `zsh`, or `pwsh`. Generally though, it's recommended to use a [shebang](./toml-tasks#shell-shebang) instead
 because that will allow IDEs with mise support to show syntax highlighting and linting for the script.
 
 ```toml
