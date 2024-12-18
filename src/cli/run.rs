@@ -343,7 +343,7 @@ impl Run {
         if let Some(cwd) = &*dirs::CWD {
             env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
         }
-        if let Some(root) = Config::get().project_root.clone() {
+        if let Some(root) = config.project_root.clone().or_else(|| task.config_root.clone()) {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
             env.insert("root".into(), root.display().to_string());
         }
