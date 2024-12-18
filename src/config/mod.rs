@@ -409,7 +409,15 @@ impl Config {
             task.config_source = path.to_path_buf();
             task.config_root = Some(config_root.to_path_buf());
         }
-        Ok(tasks.into_values().collect())
+        Ok(tasks
+            .into_values()
+            .map(|mut t| {
+                if let Err(err) = t.render(config_root) {
+                    warn!("rendering task: {err:?}");
+                }
+                t
+            })
+            .collect())
     }
 
     fn load_local_tasks(&self) -> Result<Vec<Task>> {
