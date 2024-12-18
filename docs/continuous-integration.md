@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
-          version: 2023.12.0 # [default: latest] mise version to install
+          version: 2024.12.14 # [default: latest] mise version to install
           install: true # [default: true] run `mise install`
           cache: true # [default: true] cache mise using GitHub's cache
           experimental: true # [default: false] enable experimental features
