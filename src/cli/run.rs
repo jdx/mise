@@ -346,7 +346,7 @@ impl Run {
         if let Some(root) = config
             .project_root
             .clone()
-            .or_else(|| task.config_root.clone())
+            .or(task.config_root.clone())
         {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
             env.insert("root".into(), root.display().to_string());
