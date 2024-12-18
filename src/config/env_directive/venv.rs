@@ -113,7 +113,8 @@ impl EnvResults {
             }
         }
         if venv.exists() {
-            r.env_paths.insert(0, venv.join("bin"));
+            r.env_paths
+                .insert(0, venv.join(if cfg!(windows) { "Scripts" } else { "bin" }));
             env.insert(
                 "VIRTUAL_ENV".into(),
                 (
