@@ -49,7 +49,7 @@ impl TaskDocs {
         if let Some(output) = &self.output {
             if self.multi {
                 if output.is_dir() {
-                    for (i, task) in tasks.iter().enumerate() {
+                    for (i, task) in tasks.iter().filter(|t| !t.hide).enumerate() {
                         let path = output.join(format!("{}.md", i));
                         file::write(&path, &task.render_markdown(dir)?)?;
                     }

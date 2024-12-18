@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
+use std::panic;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
@@ -231,6 +232,10 @@ impl Run {
                 s.spawn(|_| {
                     let task = t;
                     let tx_err = tx_err;
+                    panic::set_hook(Box::new(|info| {
+                        eprintln!("panic in task: {info}");
+                        exit(1);
+                    }));
                     if !self.is_stopping() {
                         trace!("running task: {task}");
                         if let Err(err) = self.run_task(&task) {
