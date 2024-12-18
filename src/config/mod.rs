@@ -909,7 +909,10 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     config_files
         .into_iter()
         .unique_by(|p| file::desymlink_path(p))
-        .filter(|p| include_ignored || !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(&p)))
+        .filter(|p| {
+            include_ignored
+                || !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
+        })
         .collect()
 }
 
