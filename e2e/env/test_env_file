@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
 
-cat <<'EOF' >mise.toml
+cat <<EOF >mise.toml
 [env]
 mise.file = ['.test-env']
 EOF
-
 echo FOO_FROM_FILE=foo_from_file >.test-env
 echo TEST_ENV2=foo >.test-env2
-
 assert "mise x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file"
 assert "MISE_ENV_FILE=.test-env2 mise x -- env | grep TEST_ENV2" "TEST_ENV2=foo"
 
-cat <<'EOF' >mise.toml
+cat <<EOF >mise.toml
 [env]
 _.file = 'not_present'
 EOF
 assert "mise env" # does not error
 
-cat <<'EOF' >mise.toml
+cat <<EOF >mise.toml
 [env]
 _.file = ['a', 'b.json']
 EOF
@@ -25,3 +23,10 @@ echo 'export A=1' >a
 echo '{"B": 2}' >b.json
 assert "mise env | grep -v PATH" "export A=1
 export B=2"
+
+cat <<EOF >mise.toml
+[env]
+mise.file = ['{{env.HOME}}/.home-test-env']
+EOF
+echo FOO_FROM_FILE=foo_from_file_home >~/.home-test-env
+assert "mise x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file_home"
