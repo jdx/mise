@@ -383,7 +383,7 @@ concourse.backends = [
     "asdf:mattysweeps/asdf-concourse"
 ]
 conduit.backends = ["ubi:ConduitIO/conduit", "asdf:gmcabrita/asdf-conduit"]
-conduit.test = ["conduit --version", "v{{version}}"] 
+conduit.test = ["conduit --version", "v{{version}}"]
 conform.backends = ["aqua:siderolabs/conform", "asdf:skyzyx/asdf-conform"]
 conform.os = ["linux", "macos"]
 conform.test = ["conform version", "conform version v{{version}}"]
