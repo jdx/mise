@@ -6,9 +6,9 @@ use crate::{dirs, hook_env};
 use eyre::{eyre, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use std::iter::once;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
 
 #[derive(

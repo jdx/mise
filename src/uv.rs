@@ -4,9 +4,9 @@ use crate::config::{Config, SETTINGS};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::Result;
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock as Lazy;
 
 #[derive(Debug)]
 pub struct Venv {

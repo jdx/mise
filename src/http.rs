@@ -4,9 +4,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use eyre::{bail, Report, Result};
-use once_cell::sync::Lazy;
 use reqwest::header::HeaderMap;
 use reqwest::{ClientBuilder, IntoUrl, RequestBuilder, Response};
+use std::sync::LazyLock as Lazy;
 use url::Url;
 
 use crate::cli::version;

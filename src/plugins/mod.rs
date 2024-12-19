@@ -8,11 +8,11 @@ use crate::ui::progress_report::SingleReport;
 use clap::Command;
 use eyre::{eyre, Result};
 use heck::ToKebabCase;
-use once_cell::sync::Lazy;
 use regex::Regex;
 pub use script_manager::{Script, ScriptManager};
 use std::fmt::{Debug, Display};
 use std::path::PathBuf;
+use std::sync::LazyLock as Lazy;
 use std::vec;
 
 pub mod asdf_plugin;

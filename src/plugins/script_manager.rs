@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use color_eyre::eyre::{Context, Result};
 use duct::Expression;
 use indexmap::indexmap;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock as Lazy;
 
 use crate::cmd::{cmd, CmdLineRunner};
 use crate::config::{Settings, SETTINGS};

@@ -4,11 +4,11 @@ use crate::file::replace_path;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
-use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::path::PathBuf;
 use std::string::ToString;
+use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
 use std::{path, process};
 

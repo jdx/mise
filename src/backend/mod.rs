@@ -26,8 +26,8 @@ use console::style;
 use eyre::{bail, eyre, Result, WrapErr};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use regex::Regex;
+use std::sync::LazyLock as Lazy;
 
 pub mod aqua;
 pub mod asdf;

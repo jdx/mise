@@ -7,9 +7,9 @@ use std::sync::{Mutex, Once};
 
 use eyre::{eyre, Result};
 use idiomatic_version::IdiomaticVersionFile;
-use once_cell::sync::Lazy;
 use path_absolutize::Absolutize;
 use serde_derive::Deserialize;
+use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
 use versions::Versioning;
 use xx::regex;
