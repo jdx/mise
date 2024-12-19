@@ -32,6 +32,7 @@ mod hook_env;
 mod hook_not_found;
 mod implode;
 mod install;
+mod install_into;
 mod latest;
 mod link;
 mod local;
@@ -204,6 +205,7 @@ pub enum Commands {
     HookNotFound(hook_not_found::HookNotFound),
     Implode(implode::Implode),
     Install(install::Install),
+    InstallInto(install_into::InstallInto),
     Latest(latest::Latest),
     Link(link::Link),
     Local(local::Local),
@@ -267,6 +269,7 @@ impl Commands {
             Self::HookNotFound(cmd) => cmd.run(),
             Self::Implode(cmd) => cmd.run(),
             Self::Install(cmd) => cmd.run(),
+            Self::InstallInto(cmd) => cmd.run(),
             Self::Latest(cmd) => cmd.run(),
             Self::Link(cmd) => cmd.run(),
             Self::Local(cmd) => cmd.run(),

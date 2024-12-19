@@ -90,6 +90,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
 - [`mise implode [--config] [-n --dry-run]`](/cli/implode.md)
 - [`mise install [FLAGS] [TOOL@VERSION]...`](/cli/install.md)
+- [`mise install-into <TOOL@VERSION> <PATH>`](/cli/install-into.md)
 - [`mise latest [-i --installed] <TOOL@VERSION>`](/cli/latest.md)
 - [`mise link [-f --force] <TOOL@VERSION> <PATH>`](/cli/link.md)
 - [`mise ls [FLAGS] [PLUGIN]...`](/cli/ls.md)

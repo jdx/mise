@@ -417,7 +417,10 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
 
-        install_state::write_backend_meta(self.ba())?;
+        if tv.install_path().starts_with(&*dirs::INSTALLS) {
+            // this will be false only for `install-into`
+            install_state::write_backend_meta(self.ba())?;
+        }
 
         self.cleanup_install_dirs(&tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
