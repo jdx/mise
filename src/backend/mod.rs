@@ -417,7 +417,7 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
 
-        if tv.install_path().starts_with(&*dirs::INSTALLS) {
+        if tv.install_path().starts_with(*dirs::INSTALLS) {
             // this will be false only for `install-into`
             install_state::write_backend_meta(self.ba())?;
         }

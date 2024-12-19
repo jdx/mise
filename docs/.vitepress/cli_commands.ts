@@ -145,6 +145,9 @@ export const commands: { [key: string]: Command } = {
   install: {
     hide: false,
   },
+  "install-into": {
+    hide: false,
+  },
   latest: {
     hide: false,
   },
