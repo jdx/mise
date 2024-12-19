@@ -2398,7 +2398,7 @@ const completionSpec: Fig.Spec = {
                             "name": [
                                 "--uv"
                             ],
-                            "description": "Sync tool versions from uv",
+                            "description": "Sync tool versions with uv (2-way sync)",
                             "isRepeatable": false
                         }
                     ]
