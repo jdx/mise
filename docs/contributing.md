@@ -5,19 +5,6 @@ PRs are often either rejected or need to change significantly after submission s
 
 Issues ideal for contributors can be found with the ["help wanted"](https://github.com/jdx/mise/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) and ["good first issue"](https://github.com/jdx/mise/labels/good%20first%20issue) labels. These are isssues that I feel are self-contained therefore don't require super in-depth understanding of the codebase or that require knowledge about something I don't understand very well myself.
 
-## Dev Container
-
-There is a docker setup that makes development with mise easier. It is especially helpful for running the E2E tests.
-Here's some example ways to use it:
-
-```sh
-mise run docker:cargo build
-mise run docker:cargo test
-mise run docker:mise --help # run `mise --help` in the dev container
-mise run docker:mise run test:e2e # run the e2e tests inside of the docker container
-mise run docker:e2e # shortcut for `mise run docker:mise run test:e2e`
-```
-
 ## Testing
 
 ### Unit Tests
@@ -98,6 +85,24 @@ test:e2e                                                     ~/src/mise/.mise.to
 ## Setup
 
 Shouldn't require anything special I'm aware of, but `mise run build` is a good sanity check to run and make sure it's all working.
+
+## Dev Container
+
+::: danger
+The docker setup quit working and since I don't use it I haven't bothered to fix it. For now you'll need to run outside of
+docker or you can try to fix the docker setup.
+:::
+
+There is a docker setup that makes development with mise easier. It is especially helpful for running the E2E tests.
+Here's some example ways to use it:
+
+```sh
+mise run docker:cargo build
+mise run docker:cargo test
+mise run docker:mise --help # run `mise --help` in the dev container
+mise run docker:mise run test:e2e # run the e2e tests inside of the docker container
+mise run docker:e2e # shortcut for `mise run docker:mise run test:e2e`
+```
 
 ## Pre-commit hook
 
