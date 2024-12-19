@@ -6,4 +6,5 @@ snapshot_kind: text
 Toolset {
     versions: {},
     source: None,
+    tera_ctx: OnceCell(Uninit),
 }

@@ -108,7 +108,7 @@ impl Display for EnvDirective {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct EnvResults {
     pub env: IndexMap<String, (String, PathBuf)>,
     pub env_remove: BTreeSet<String>,

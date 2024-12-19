@@ -94,7 +94,7 @@ impl Exec {
                 ));
             }
             // TODO: env is being calculated twice with final_env and env_with_path
-            let env_results = ts.final_env(&config)?.1;
+            let (_, env_results) = ts.final_env(&config)?;
             for p in ts.list_final_paths(&config, env_results)? {
                 cmd.push(format!(
                     "fish_add_path -gm {}",
