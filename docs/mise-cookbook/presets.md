@@ -33,7 +33,6 @@ mise config set hooks.postinstall "pdm sync"
 
 Then in any directory, you can run `mise preset:pdm 3.10` to scaffold a new project with `python` and `pdm`:
 
-
 ```shell
 cd my-project
 mise preset:pdm 3.10
