@@ -632,6 +632,19 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
     }
     arg "[TOOL@VERSION]..." help="Tool(s) to install e.g.: node@20" required=false var=true
 }
+cmd "install-into" help="Install a tool version to a specific path" {
+    long_help r"Install a tool version to a specific path
+
+Used for building a tool to a directory for use outside of mise"
+    after_long_help r"Examples:
+
+    # install node@20.0.0 into ./mynode
+    $ mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v
+    20.0.0
+"
+    arg "<TOOL@VERSION>" help="Tool to install e.g.: node@20"
+    arg "<PATH>" help="Path to install the tool into"
+}
 cmd "latest" help="Gets the latest available version for a plugin" {
     long_help r"Gets the latest available version for a plugin
 

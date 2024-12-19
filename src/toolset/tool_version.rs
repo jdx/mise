@@ -23,6 +23,7 @@ pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
     pub checksums: BTreeMap<String, String>,
+    pub install_path: Option<PathBuf>,
 }
 
 impl ToolVersion {
@@ -31,6 +32,7 @@ impl ToolVersion {
             request,
             version,
             checksums: Default::default(),
+            install_path: None,
         }
     }
 
@@ -77,6 +79,9 @@ impl ToolVersion {
     }
 
     pub fn install_path(&self) -> PathBuf {
+        if let Some(p) = &self.install_path {
+            return p.clone();
+        }
         let pathname = match &self.request {
             ToolRequest::Path { path: p, .. } => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
