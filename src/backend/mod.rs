@@ -41,6 +41,7 @@ pub mod pipx;
 pub mod spm;
 pub mod ubi;
 pub mod vfox;
+pub mod dotnet;
 
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
@@ -132,6 +133,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Aqua => Some(Arc::new(aqua::AquaBackend::from_arg(ba))),
         BackendType::Asdf => Some(Arc::new(asdf::AsdfBackend::from_arg(ba))),
         BackendType::Cargo => Some(Arc::new(cargo::CargoBackend::from_arg(ba))),
+        BackendType::Dotnet => Some(Arc::new(dotnet::DotnetBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Gem => Some(Arc::new(gem::GemBackend::from_arg(ba))),
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
