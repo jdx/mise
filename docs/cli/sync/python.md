@@ -17,7 +17,7 @@ Get tool versions from pyenv
 
 ### `--uv`
 
-Sync tool versions from uv
+Sync tool versions with uv (2-way sync)
 
 Examples:
 

@@ -1268,7 +1268,7 @@ This won't overwrite any existing installs but will overwrite any existing symli
     $ uv run -p 3.10.0 -- python -V - uses mise-provided python
 "
         flag "--pyenv" help="Get tool versions from pyenv"
-        flag "--uv" help="Sync tool versions from uv"
+        flag "--uv" help="Sync tool versions with uv (2-way sync)"
     }
     cmd "ruby" help="Symlinks all ruby tool versions from an external tool into mise" {
         after_long_help r"Examples:

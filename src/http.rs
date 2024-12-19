@@ -211,10 +211,10 @@ fn with_github_auth(url: &Url, mut req: RequestBuilder) -> RequestBuilder {
 fn display_github_rate_limit(resp: &Response) {
     let status = resp.status().as_u16();
     if status == 403 || status == 429 {
-        if !resp
+        if resp
             .headers()
             .get("x-ratelimit-remaining")
-            .is_some_and(|r| r == "0")
+            .is_none_or(|r| r != "0")
         {
             return;
         }

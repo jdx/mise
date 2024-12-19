@@ -1,5 +1,6 @@
 use eyre::Result;
 use itertools::sorted;
+use std::env::consts::{ARCH, OS};
 
 use crate::env::PYENV_ROOT;
 use crate::{backend, config, dirs, env, file};
@@ -16,7 +17,7 @@ pub struct SyncPython {
     #[clap(long)]
     pyenv: bool,
 
-    /// Sync tool versions from uv
+    /// Sync tool versions with uv (2-way sync)
     #[clap(long)]
     uv: bool,
 }
@@ -79,36 +80,33 @@ impl SyncPython {
             }
         }
 
-        // TODO: disable reverse syncing until there is a way to deal with these 2 files that uv needs:
-        // ❯ diff -rq uv mise
-        // Only in uv/lib/python3.11: EXTERNALLY-MANAGED
-        // Files uv/lib/python3.11/_sysconfigdata__darwin_darwin.py and mise/lib/python3.11/_sysconfigdata__darwin_darwin.py differ
-        // See https://github.com/jdx/mise/issues/3654
-        //let subdirs = file::dir_subdirs(&installed_python_versions_path)?;
-        //for v in sorted(subdirs) {
-        //    if v.starts_with(".") {
-        //        continue;
-        //    }
-        //    let src = installed_python_versions_path.join(&v);
-        //    if src.is_symlink() {
-        //        continue;
-        //    }
-        //    // ~/.local/share/uv/python/cpython-3.10.16-macos-aarch64-none
-        //    // ~/.local/share/uv/python/cpython-3.13.0-linux-x86_64-gnu
-        //    let os = OS;
-        //    let arch = if cfg!(target_arch = "x86_64") {
-        //        "x86_64-gnu"
-        //    } else if cfg!(target_arch = "aarch64") {
-        //        "aarch64-none"
-        //    } else {
-        //        ARCH
-        //    };
-        //    let dst = uv_versions_path.join(format!("cpython-{v}-{os}-{arch}"));
-        //    if !dst.exists() {
-        //        file::make_symlink(&src, &dst)?;
-        //        miseprintln!("Synced python@{v} from mise to uv");
-        //    }
-        //}
+        let subdirs = file::dir_subdirs(&installed_python_versions_path)?;
+        for v in sorted(subdirs) {
+            if v.starts_with(".") {
+                continue;
+            }
+            let src = installed_python_versions_path.join(&v);
+            if src.is_symlink() {
+                continue;
+            }
+            // ~/.local/share/uv/python/cpython-3.10.16-macos-aarch64-none
+            // ~/.local/share/uv/python/cpython-3.13.0-linux-x86_64-gnu
+            let os = OS;
+            let arch = if cfg!(target_arch = "x86_64") {
+                "x86_64-gnu"
+            } else if cfg!(target_arch = "aarch64") {
+                "aarch64-none"
+            } else {
+                ARCH
+            };
+            let dst = uv_versions_path.join(format!("cpython-{v}-{os}-{arch}"));
+            if !dst.exists() {
+                // TODO: uv doesn't support symlinked dirs
+                // https://github.com/astral-sh/uv/blob/e65a273f1b6b7c3ab129d902e93adeda4da20636/crates/uv-python/src/managed.rs#L196
+                file::clone_dir(&src, &dst)?;
+                miseprintln!("Synced python@{v} from mise to uv");
+            }
+        }
         Ok(())
     }
 }

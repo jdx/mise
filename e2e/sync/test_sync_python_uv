@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+assert "mise use -g uv python@3.11.3"
+assert "mise x -- uv python install 3.11.1"
+export UV_PYTHON_DOWNLOADS=never
+assert "mise sync python --uv"
+assert "mise x python@3.11.1 -- python -V" "Python 3.11.1"
+assert "mise x -- uv run -p 3.11.3 -- python -V" "Python 3.11.3"
