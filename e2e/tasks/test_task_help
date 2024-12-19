@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
 
 cat <<EOF >mise.toml
-[tasks.a]
+[tasks.atask]
 run = 'echo {{arg(name="myarg")}}'
+[tasks.npm]
+run = 'echo npm'
 EOF
 
-assert "mise run a --help 2>&1 || true" "Usage: a <myarg>
+assert "mise run atask --help 2>&1 || true" "Usage: atask <myarg>
 
 Arguments:
   <myarg>"
+
+assert_contains "mise --help 2>&1 || true" "Usage: mise [OPTIONS] [TASK] [COMMAND]"
+assert_contains "mise install --help 2>&1 || true" "Usage: mise install [OPTIONS] [TOOL@VERSION]..."
+assert_contains "mise run --help 2>&1 || true" "Usage: run [OPTIONS] [TASK] [ARGS]..."
+assert_contains "mise atask -- --help 2>&1 || true" "Usage: atask <myarg>"
+assert "mise run -q npm --help 2>&1 || true" "npm --help"
+assert "mise -q npm -- --help 2>&1 || true" "npm --help"
+assert "mise atask -q -- -- --help 2>&1 || true" "--help"
+assert_contains "mise run atask -q -- --help 2>&1 || true" "Usage: atask <myarg>"
+assert_contains "mise run atask -q -- foo --help 2>&1 || true" "Usage: atask <myarg>"
+assert_contains "mise run atask -q foo --help 2>&1 || true" "Usage: atask <myarg>"
+assert_contains "mise atask -q -- foo --help 2>&1 || true" "Usage: atask <myarg>"
+assert_contains "mise atask -q foo --help 2>&1 || true" "Usage: atask <myarg>"
