@@ -292,8 +292,7 @@ impl Task {
             spec.cmd.name = self.name.clone();
             (spec, vec![])
         } else {
-            let (scripts, spec) =
-                TaskScriptParser::new(cwd).parse_run_scripts(&self.config_root, self.run())?;
+            let (scripts, spec) = TaskScriptParser::new(cwd).parse_run_scripts(self, self.run())?;
             (spec, scripts)
         };
         spec.name = self.name.clone();
@@ -382,8 +381,7 @@ impl Task {
         }) {
             let config_root = self.config_root.clone().unwrap_or_default();
             let mut tera = get_tera(Some(&config_root));
-            let mut tera_ctx = config.tera_ctx.clone();
-            tera_ctx.insert("config_root", &config_root);
+            let tera_ctx = self.tera_ctx()?;
             let dir = tera.render_str(&dir, &tera_ctx)?;
             let dir = file::replace_path(&dir);
             if dir.is_absolute() {
@@ -396,6 +394,14 @@ impl Task {
         } else {
             Ok(self.config_root.clone())
         }
+    }
+
+    pub fn tera_ctx(&self) -> Result<tera::Context> {
+        let config = Config::get();
+        let ts = config.get_toolset()?;
+        let mut tera_ctx = ts.tera_ctx()?.clone();
+        tera_ctx.insert("config_root", &self.config_root);
+        Ok(tera_ctx)
     }
 
     pub fn cf<'a>(&self, config: &'a Config) -> Option<&'a Box<dyn ConfigFile>> {
@@ -418,10 +424,8 @@ impl Task {
     }
 
     pub fn render(&mut self, config_root: &Path) -> Result<()> {
-        let config = Config::get();
         let mut tera = get_tera(Some(config_root));
-        let mut tera_ctx = config.tera_ctx.clone();
-        tera_ctx.insert("config_root", &config_root);
+        let tera_ctx = self.tera_ctx()?;
         for a in &mut self.aliases {
             *a = tera.render_str(a, &tera_ctx)?;
         }
@@ -431,22 +435,13 @@ impl Task {
         }
         self.outputs.render(&mut tera, &tera_ctx)?;
         for d in &mut self.depends {
-            d.task = tera.render_str(&d.task, &tera_ctx)?;
-            for a in &mut d.args {
-                *a = tera.render_str(a, &tera_ctx)?;
-            }
+            d.render(&mut tera, &tera_ctx)?;
         }
         for d in &mut self.depends_post {
-            d.task = tera.render_str(&d.task, &tera_ctx)?;
-            for a in &mut d.args {
-                *a = tera.render_str(a, &tera_ctx)?;
-            }
+            d.render(&mut tera, &tera_ctx)?;
         }
         for d in &mut self.wait_for {
-            d.task = tera.render_str(&d.task, &tera_ctx)?;
-            for a in &mut d.args {
-                *a = tera.render_str(a, &tera_ctx)?;
-            }
+            d.render(&mut tera, &tera_ctx)?;
         }
         for v in self.env.values_mut() {
             if let EitherStringOrIntOrBool(Either::Left(s)) = v {

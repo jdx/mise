@@ -44,4 +44,5 @@ Toolset {
             "/tmp/.mise.toml",
         ),
     ),
+    tera_ctx: OnceCell(Uninit),
 }

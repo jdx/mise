@@ -23,6 +23,7 @@ use console::truncate_str;
 use eyre::{eyre, Result, WrapErr};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 pub use outdated_info::is_outdated_version;
 use outdated_info::OutdatedInfo;
 use rayon::prelude::*;
@@ -108,6 +109,7 @@ impl Default for InstallOptions {
 pub struct Toolset {
     pub versions: IndexMap<BackendArg, ToolVersionList>,
     pub source: Option<ToolSource>,
+    tera_ctx: OnceCell<tera::Context>,
 }
 
 impl Toolset {
@@ -463,7 +465,7 @@ impl Toolset {
     /// returns env_with_path but also with the existing env vars from the system
     pub fn full_env(&self) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
-        env.extend(self.env_with_path(&Config::get())?);
+        env.extend(self.env_with_path(&Config::get())?.clone());
         Ok(env)
     }
     /// the full mise environment including all tool paths
@@ -471,7 +473,7 @@ impl Toolset {
         let (mut env, env_results) = self.final_env(config)?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         for p in self.list_final_paths(config, env_results)? {
-            path_env.add(p);
+            path_env.add(p.clone());
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
         Ok(env)
@@ -584,6 +586,15 @@ impl Toolset {
         // these are returned in order, but we need to run the post_env stuff last and then put the results in the front
         let paths = env_results.env_paths.into_iter().chain(paths).collect();
         Ok(paths)
+    }
+    pub fn tera_ctx(&self) -> Result<&tera::Context> {
+        self.tera_ctx.get_or_try_init(|| {
+            let config = Config::get();
+            let env = self.env_with_path(&config)?;
+            let mut ctx = config.tera_ctx.clone();
+            ctx.insert("env", &env);
+            Ok(ctx)
+        })
     }
     pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_installed_versions()
