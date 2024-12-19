@@ -1,6 +1,5 @@
 use eyre::Result;
 use itertools::sorted;
-use std::env::consts::{ARCH, OS};
 
 use crate::env::PYENV_ROOT;
 use crate::{backend, config, dirs, env, file};
