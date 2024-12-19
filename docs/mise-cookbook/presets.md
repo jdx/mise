@@ -10,12 +10,10 @@ Here is an example of how to create your python preset that creates a `mise.toml
 #!/usr/bin/env bash
 #MISE dir="{{cwd}}"
 
-touch mise.toml
-mise trust
 mise use pre-commit
 mise config set env._.python.venv.path .venv
 mise config set env._.python.venv.create true -t bool
-mise config set tasks.lint.run "pre-commit run -a"
+mise tasks add lint -- pre-commit run -a
 ```
 
 ```shell [~/.config/mise/tasks/preset/pdm]
@@ -24,8 +22,6 @@ mise config set tasks.lint.run "pre-commit run -a"
 #MISE depends=["preset:python"]
 #USAGE arg "<version>"
 
-touch mise.toml
-mise trust
 mise use python@$usage_version
 mise use pdm@latest
 mise config set hooks.postinstall "pdm sync"
@@ -37,19 +33,19 @@ Then in any directory, you can run `mise preset:pdm 3.10` to scaffold a new proj
 cd my-project
 mise preset:pdm 3.10
 # [preset:python] $ ~/.config/mise/tasks/preset/python
-mise WARN  No untrusted config files found.
-mise ~/Code/sandbox/mise-presets/mise.toml tools: pre-commit@4.0.1
+# mise WARN  No untrusted config files found.
+# mise ~/my-project/mise.toml tools: pre-commit@4.0.1
 # [preset:pdm] $ ~/.config/mise/tasks/preset/pdm 3.10
-mise WARN  No untrusted config files found.
-mise ~/Code/sandbox/mise-presets/mise.toml tools: python@3.10.15
-mise ~/Code/sandbox/mise-presets/mise.toml tools: pdm@2.21.0
-mise creating venv with uv at: ~/Code/sandbox/mise-presets/.venv
+# mise WARN  No untrusted config files found.
+# mise ~/my-project/mise.toml tools: python@3.10.15
+# mise ~/my-project/mise.toml tools: pdm@2.21.0
+# mise creating venv with uv at: ~/my-project/.venv
 # Using CPython 3.10.15 interpreter at: /Users/simon/.local/share/mise/installs/python/3.10.15/bin/python
 # Creating virtual environment at: .venv
 # Activate with: source .venv/bin/activate.fish
 
-Code/sandbox/mise-presets via 🐍 v3.10.15 (.venv)
-# ...
+~/my-project via 🐍 v3.10.15 (.venv)
+# we are in the virtual environment ^
 ```
 
 Here is the generated `mise.toml` file:
@@ -70,7 +66,6 @@ postinstall = "pdm sync"
 path = ".venv"
 create = true
 
-[tasks]
 [tasks.lint]
 run = "pre-commit run -a"
 ```
