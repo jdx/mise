@@ -220,12 +220,14 @@ impl PythonPlugin {
         let suffix = version_parts
             .get(2)
             .map(|s| re_digits.replace(s, "").to_string());
-        if let (Some(major), Some(minor), Some(suffix)) = (major, minor, suffix) {
-            if tv.request.options().get("patch_sysconfig") != Some(&"false".to_string()) {
-                sysconfig::update_sysconfig(&install, major, minor, &suffix)?;
+        if cfg!(unix) {
+            if let (Some(major), Some(minor), Some(suffix)) = (major, minor, suffix) {
+                if tv.request.options().get("patch_sysconfig") != Some(&"false".to_string()) {
+                    sysconfig::update_sysconfig(&install, major, minor, &suffix)?;
+                }
+            } else {
+                debug!("failed to update sysconfig with version {}", tv.version);
             }
-        } else {
-            debug!("failed to update sysconfig with version {}", tv.version);
         }
 
         if !install.join("bin").join("python").exists() {

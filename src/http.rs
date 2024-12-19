@@ -213,7 +213,8 @@ fn display_github_rate_limit(resp: &Response) {
     if status == 403 || status == 429 {
         if resp
             .headers()
-            .get("x-ratelimit-remaining").is_none_or(|r| r != "0")
+            .get("x-ratelimit-remaining")
+            .is_none_or(|r| r != "0")
         {
             return;
         }
