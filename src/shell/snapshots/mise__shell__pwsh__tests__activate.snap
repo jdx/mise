@@ -1,6 +1,5 @@
 ---
 source: src/shell/pwsh.rs
-assertion_line: 235
 expression: pwsh.activate(opts)
 snapshot_kind: text
 ---
@@ -72,7 +71,7 @@ function __enable_mise_chpwd{
     }
 }
 __enable_mise_chpwd
-Remove-Item -Path Function:/__enable_mise_chpwd
+Remove-Item -ErrorAction SilentlyContinue -Path Function:/__enable_mise_chpwd
 
 function __enable_mise_prompt {
     if (-not $__mise_pwsh_previous_prompt_function){
@@ -86,7 +85,7 @@ function __enable_mise_prompt {
     }
 }
 __enable_mise_prompt
-Remove-Item -Path Function:/__enable_mise_prompt
+Remove-Item -ErrorAction SilentlyContinue -Path Function:/__enable_mise_prompt
 
 _mise_hook
 if (-not $__mise_pwsh_command_not_found){
@@ -115,5 +114,5 @@ if (-not $__mise_pwsh_command_not_found){
         }
     }
     __enable_mise_command_not_found
-    Remove-Item -Path Function:/__enable_mise_command_not_found
+    Remove-Item -ErrorAction SilentlyContinue -Path Function:/__enable_mise_command_not_found
 }
