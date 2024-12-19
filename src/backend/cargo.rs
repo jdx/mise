@@ -92,9 +92,8 @@ impl Backend for CargoBackend {
         if let Some(bin) = opts.get("bin") {
             cmd = cmd.arg(format!("--bin={bin}"));
         }
-        if !opts
-            .get("locked")
-            .is_some_and(|v| v.to_lowercase() == "false")
+        if opts
+            .get("locked").is_none_or(|v| v.to_lowercase() != "false")
         {
             cmd = cmd.arg("--locked");
         }

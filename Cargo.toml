@@ -25,8 +25,8 @@ include = [
   "/src/plugins/core/assets/**",
   "/aqua-registry/pkgs/**/registry.yaml",
 ]
-rust-version = "1.79"
 build = "build.rs"
+rust-version = "1.82"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -78,7 +78,7 @@ git2 = "<1"
 glob = "0.3"
 globset = "0.4"
 heck = "0.5"
-home = "= 0.5.9" # TODO: bump this when we can bump msrv
+home = "0.5"
 humantime = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }

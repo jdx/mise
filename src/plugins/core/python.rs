@@ -10,7 +10,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, dirs, file, plugins};
+use crate::{cmd, dirs, file, plugins, sysconfig};
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
@@ -208,8 +208,31 @@ impl PythonPlugin {
                 file::rename(&entry, install.join(filename))?;
             }
         }
-        #[cfg(unix)]
-        file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
+
+        let re_digits = regex!(r"\d+");
+        let version_parts = tv.version.split('.').collect_vec();
+        let major = re_digits
+            .find(version_parts[0])
+            .and_then(|m| m.as_str().parse().ok());
+        let minor = re_digits
+            .find(version_parts[1])
+            .and_then(|m| m.as_str().parse().ok());
+        let suffix = version_parts
+            .get(2)
+            .map(|s| re_digits.replace(s, "").to_string());
+        if let (Some(major), Some(minor), Some(suffix)) = (major, minor, suffix) {
+            if tv.request.options().get("patch_sysconfig") != Some(&"false".to_string()) {
+                sysconfig::update_sysconfig(&install, major, minor, &suffix)?;
+            }
+        } else {
+            debug!("failed to update sysconfig with version {}", tv.version);
+        }
+
+        if !install.join("bin").join("python").exists() {
+            #[cfg(unix)]
+            file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
+        }
+
         Ok(())
     }
 

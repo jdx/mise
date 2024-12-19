@@ -749,6 +749,17 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
     }
 }
 
+pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
+    if cfg!(macos) {
+        cmd!("cp", "-cR", from, to).run()?;
+    } else if cfg!(windows) {
+        cmd!("robocopy", from, to, "/MIR").run()?;
+    } else {
+        cmd!("cp", "--reflink=auto", "-r", from, to).run()?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
 
