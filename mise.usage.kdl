@@ -61,7 +61,7 @@ flag "--silent" help="Suppress all task output and mise non-error messages" glob
 flag "--trace" help="Sets log level to trace" hide=true global=true
 flag "-v --verbose" help="Show extra output (use -vv for even more)" var=true global=true count=true
 arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise task run <TASK>`." required=false
-arg "[TASK_ARGS]..." help="Task arguments" required=false var=true hide=true
+arg "[TASK_ARGS]..." help="Task arguments" required=false double_dash="automatic" var=true hide=true
 cmd "activate" help="Initializes mise in the current shell session" {
     long_help r#"Initializes mise in the current shell session
 
