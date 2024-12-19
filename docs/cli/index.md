@@ -77,7 +77,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise config ls [--no-header] [-J --json]`](/cli/config/ls.md)
 - [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)
 - [`mise deactivate`](/cli/deactivate.md)
-- [`mise doctor <SUBCOMMAND>`](/cli/doctor.md)
+- [`mise doctor [-J --json] <SUBCOMMAND>`](/cli/doctor.md)
 - [`mise doctor path [-f --full]`](/cli/doctor/path.md)
 - [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.md)
 - [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)

@@ -365,6 +365,7 @@ cmd "doctor" help="Check mise installation for possible problems" {
     $ mise doctor
     [WARN] plugin node is not installed
 "
+    flag "-J --json"
     cmd "path" help="Print the current PATH entries mise is providing" {
         alias "paths" hide=true
         after_long_help r"Examples:
