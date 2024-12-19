@@ -564,7 +564,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | pdm | [pipx:pdm](https://pypi.org/project/pdm) [asdf:1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm) |
 | peco | [aqua:peco/peco](https://github.com/peco/peco) [asdf:asdf-community/asdf-peco](https://github.com/asdf-community/asdf-peco) |
 | periphery | [asdf:MontakOleg/asdf-periphery](https://github.com/MontakOleg/asdf-periphery) |
-| perl | [asdf:ouest/asdf-perl](https://github.com/ouest/asdf-perl) |
+| perl | [aqua:skaji/relocatable-perl](https://github.com/skaji/relocatable-perl) [asdf:ouest/asdf-perl](https://github.com/ouest/asdf-perl) |
 | php | [asdf:asdf-community/asdf-php](https://github.com/asdf-community/asdf-php) [vfox:version-fox/vfox-php](https://github.com/version-fox/vfox-php) |
 | pint | [aqua:cloudflare/pint](https://github.com/cloudflare/pint) [asdf:sam-burrell/asdf-pint](https://github.com/sam-burrell/asdf-pint) |
 | pipectl | [aqua:pipe-cd/pipecd/pipectl](https://github.com/pipe-cd/pipecd/pipectl) [asdf:pipe-cd/asdf-pipectl](https://github.com/pipe-cd/asdf-pipectl) |
