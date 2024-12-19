@@ -25,7 +25,7 @@ PROJECT_NAME = "{{ cwd | basename }}"
 node = "{{ get_env(name='NODE_VERSION', default='20') }}"
 ```
 
-You will find more examples in the [cookbook](/mise-cookbook).
+You will find more examples in the [cookbook](./mise-cookbook/index.md).
 
 ## Template Rendering
 
