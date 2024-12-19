@@ -38,19 +38,24 @@ impl EnvResults {
             let config = Config::get();
             let ts = ToolsetBuilder::new().build(&config)?;
             let ba = BackendArg::from("python");
-            let installed = ts
-                .versions
-                .get(&ba)
-                .and_then(|tv| {
-                    // if a python version is specified, check if that version is installed
-                    // otherwise use the first since that's what `python3` will refer to
-                    if let Some(v) = &python {
-                        tv.versions.iter().find(|t| t.version.starts_with(v))
-                    } else {
-                        tv.versions.first()
-                    }
-                })
-                .map(|tv| {
+            let tv = ts.versions.get(&ba).and_then(|tv| {
+                // if a python version is specified, check if that version is installed
+                // otherwise use the first since that's what `python3` will refer to
+                if let Some(v) = &python {
+                    tv.versions.iter().find(|t| t.version.starts_with(v))
+                } else {
+                    tv.versions.first()
+                }
+            });
+            let python_path = tv.map(|tv| {
+                tv.install_path()
+                    .join("bin")
+                    .join("python")
+                    .to_string_lossy()
+                    .to_string()
+            });
+            let installed = tv
+                .map(|tv: &crate::toolset::ToolVersion| {
                     let backend = backend::get(&ba).unwrap();
                     backend.is_version_installed(tv, false)
                 })
@@ -59,12 +64,12 @@ impl EnvResults {
                 .unwrap_or(true);
             if !installed {
                 warn!(
-                                "no venv found at: {p}\n\n\
-                                mise will automatically create the venv once all requested python versions are installed.\n\
-                                To install the missing python versions and create the venv, please run:\n\
-                                mise install",
-                                p = display_path(&venv)
-                            );
+                    "no venv found at: {p}\n\n\
+                    mise will automatically create the venv once all requested python versions are installed.\n\
+                    To install the missing python versions and create the venv, please run:\n\
+                    mise install",
+                    p = display_path(&venv)
+                );
             } else {
                 let has_uv_bin = ts.which("uv").is_some() || which_non_pristine("uv").is_some();
                 let use_uv = !SETTINGS.python.venv_stdlib && has_uv_bin;
@@ -84,9 +89,15 @@ impl EnvResults {
                         .or(uv_create_args)
                         .unwrap_or_default();
                     let mut cmd = CmdLineRunner::new("uv").args(["venv", &venv.to_string_lossy()]);
-                    if let Some(python) = python {
-                        cmd = cmd.args(["--python", &python]);
-                    }
+
+                    cmd = match (python_path, python) {
+                        // The selected mise managed python tool path from env._.python.venv.python or first in list
+                        (Some(python_path), _) => cmd.args(["--python", &python_path]),
+                        // User specified in env._.python.venv.python but it's not in mise tools, so pass version number to uv
+                        (_, Some(python)) => cmd.args(["--python", &python]),
+                        // Default to whatever uv wants to use
+                        _ => cmd,
+                    };
                     cmd.args(extra)
                 } else {
                     info!("creating venv with stdlib at: {}", display_path(&venv));
@@ -103,7 +114,16 @@ impl EnvResults {
                         })
                         .or(python_create_args)
                         .unwrap_or_default();
-                    let bin = format!("python{}", python.unwrap_or("3".into()));
+
+                    let bin = match (python_path, python) {
+                        // The selected mise managed python tool path from env._.python.venv.python or first in list
+                        (Some(python_path), _) => python_path,
+                        // User specified in env._.python.venv.python but it's not in mise tools, so try to find it on path
+                        (_, Some(python)) => format!("python{}", python),
+                        // Default to whatever python3 points to on path
+                        _ => "python3".to_string(),
+                    };
+
                     CmdLineRunner::new(bin)
                         .args(["-m", "venv", &venv.to_string_lossy()])
                         .args(extra)
