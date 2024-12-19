@@ -1,6 +1,6 @@
-# Tasks Cookbook
+# Mise + Terraform/Opentofu Cookbook
 
-Here we are sharing a few configurations for tasks that other people have found useful.
+Here are some tips on managing Terraform projects with mise.
 
 ## Managing `terraform`/`opentofu` Projects
 
@@ -9,7 +9,7 @@ This necessitates the use of syntax like `terraform -chdir=terraform plan` to us
 terraform command. The following config allows you to invoke all of them from `mise`, leveraging
 `mise` tasks.
 
-```toml
+```toml [mise.toml]
 [tools]
 terraform = "1"
 
