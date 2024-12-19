@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+tasks.mytask = 'echo {{option(name="foo")}}'
+EOF
+
+assert "mise run mytask --foo bar" "bar"
+assert "mise run -- mytask --foo bar" "bar"
+assert "mise run mytask -- --foo bar" "bar"
+assert "mise mytask --foo bar" "bar"
+assert "mise -- mytask --foo bar" "bar"
+assert "mise mytask -- --foo bar" "bar"
