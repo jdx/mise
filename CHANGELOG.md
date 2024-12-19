@@ -1,5 +1,21 @@
 # Changelog
 
+## [2024.12.16](https://github.com/jdx/mise/compare/v2024.12.15..v2024.12.16) - 2024-12-19
+
+### 🐛 Bug Fixes
+
+- `mise run` shorthand with options by [@jdx](https://github.com/jdx) in [#3719](https://github.com/jdx/mise/pull/3719)
+
+### 📚 Documentation
+
+- update cookbook by [@hverlin](https://github.com/hverlin) in [#3718](https://github.com/jdx/mise/pull/3718)
+
+### 🔍 Other Changes
+
+- Update bug_report.md by [@jdx](https://github.com/jdx) in [5365b72](https://github.com/jdx/mise/commit/5365b72ba6c89ddcd04604f897237d9f6a6a93d0)
+- Update feature_request.md by [@jdx](https://github.com/jdx) in [4947e99](https://github.com/jdx/mise/commit/4947e995ecb463e848f821f0577e9cd469ff9881)
+- Update blank.md by [@jdx](https://github.com/jdx) in [6bd6d58](https://github.com/jdx/mise/commit/6bd6d582d36f2605a07a63612f41375eb87f5691)
+
 ## [2024.12.15](https://github.com/jdx/mise/compare/v2024.12.14..v2024.12.15) - 2024-12-19
 
 ### 🚀 Features
