@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use console::style;
 use eyre::Result;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
 use crate::build_time::{git_sha, BUILD_TIME};

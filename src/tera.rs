@@ -5,9 +5,9 @@ use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
-use once_cell::sync::Lazy;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use std::sync::LazyLock as Lazy;
 use tera::{Context, Tera, Value};
 use versions::{Requirement, Versioning};
 

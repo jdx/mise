@@ -2,11 +2,11 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::{dirs, duration, env};
 use eyre::Result;
 use heck::ToKebabCase;
-use once_cell::sync::Lazy;
 use reqwest::header::HeaderMap;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock as Lazy;
 use std::sync::{RwLock, RwLockReadGuard};
 use xx::regex;
 

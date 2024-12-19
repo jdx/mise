@@ -1,7 +1,7 @@
 use eyre::{bail, eyre, Context, Result};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 pub use settings::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -9,6 +9,7 @@ use std::fmt::{Debug, Formatter};
 use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 use walkdir::WalkDir;

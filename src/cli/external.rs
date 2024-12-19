@@ -1,8 +1,8 @@
 use clap::Command;
 use eyre::Result;
-use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use std::collections::HashMap;
+use std::sync::LazyLock as Lazy;
 
 use crate::backend;
 use crate::cli::args::BackendArg;

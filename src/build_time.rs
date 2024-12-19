@@ -1,5 +1,5 @@
 use chrono::{DateTime, FixedOffset};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock as Lazy;
 
 pub mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));

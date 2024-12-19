@@ -12,7 +12,6 @@ use eyre::{eyre, Result};
 use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use petgraph::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -22,6 +21,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::LazyLock as Lazy;
 use std::{ffi, fmt, path};
 use xx::regex;
 

@@ -12,11 +12,11 @@ use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
 use indexmap::IndexSet;
-use once_cell::sync::Lazy;
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::iterator::Signals;
+use std::sync::LazyLock as Lazy;
 
 use crate::config::SETTINGS;
 use crate::env;

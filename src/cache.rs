@@ -9,9 +9,10 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use itertools::Itertools;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::sync::LazyLock as Lazy;
 
 use crate::build_time::built_info;
 use crate::config::Settings;

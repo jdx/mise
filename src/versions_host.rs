@@ -4,8 +4,8 @@ use crate::http::HTTP_FETCH;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
 use crate::{http, registry};
-use once_cell::sync::Lazy;
 use std::collections::HashSet;
+use std::sync::LazyLock as Lazy;
 use url::Url;
 
 static PLUGINS_USE_VERSION_HOST: Lazy<HashSet<&str>> = Lazy::new(|| {

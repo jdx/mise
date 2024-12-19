@@ -19,9 +19,9 @@ use crate::{file, plugins};
 use color_eyre::eyre::{eyre, Result};
 use indoc::formatdoc;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
+use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 use xx::regex;
 
