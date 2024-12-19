@@ -876,6 +876,15 @@ const completionSpec: Fig.Spec = {
                         }
                     ]
                 }
+            ],
+            "options": [
+                {
+                    "name": [
+                        "-J",
+                        "--json"
+                    ],
+                    "isRepeatable": false
+                }
             ]
         },
         {
