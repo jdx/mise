@@ -87,7 +87,7 @@ pub struct Cli {
     #[clap(name = "TASK", long_help = LONG_TASK_ABOUT)]
     pub task: Option<String>,
     /// Task arguments
-    #[clap(hide = true)]
+    #[clap(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
     pub task_args: Option<Vec<String>>,
     /// Change directory before running command
     #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
