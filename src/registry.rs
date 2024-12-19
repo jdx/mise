@@ -1,11 +1,11 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
-use once_cell::sync::Lazy;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env::consts::{ARCH, OS};
 use std::fmt::Display;
 use std::iter::Iterator;
+use std::sync::LazyLock as Lazy;
 use strum::IntoEnumIterator;
 use url::Url;
 

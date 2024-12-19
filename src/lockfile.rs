@@ -5,10 +5,10 @@ use crate::registry::REGISTRY;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{bail, Report, Result};
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
 use toml_edit::DocumentMut;
 

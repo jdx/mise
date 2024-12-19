@@ -15,8 +15,8 @@ use color_eyre::eyre::{Context, Result};
 use filetime::{set_file_times, FileTime};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use rayon::prelude::*;
+use std::sync::LazyLock as Lazy;
 use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
@@ -747,6 +747,17 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
     } else {
         p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
     }
+}
+
+pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
+    if cfg!(macos) {
+        cmd!("cp", "-cR", from, to).run()?;
+    } else if cfg!(windows) {
+        cmd!("robocopy", from, to, "/MIR").run()?;
+    } else {
+        cmd!("cp", "--reflink=auto", "-r", from, to).run()?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

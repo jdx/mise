@@ -8,7 +8,7 @@ use std::thread;
 
 use crate::{config, env, ui};
 use log::{Level, LevelFilter, Metadata, Record};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock as Lazy;
 
 #[derive(Debug)]
 struct Logger {

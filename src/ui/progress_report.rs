@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use indicatif::{ProgressBar, ProgressStyle};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock as Lazy;
 
 use crate::ui::style;
 use crate::{backend, env, ui};

@@ -1,5 +1,5 @@
 use clap::{Arg, ArgAction};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock as Lazy;
 
 #[derive(Clone, Debug)]
 pub struct ProfileArg;

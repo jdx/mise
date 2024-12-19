@@ -1,4 +1,4 @@
-use crate::config::{Config, SETTINGS};
+use crate::config::SETTINGS;
 use crate::exit::exit;
 use crate::shell::ShellType;
 use crate::task::Task;
@@ -27,7 +27,7 @@ impl TaskScriptParser {
 
     pub fn parse_run_scripts(
         &self,
-        config_root: &Option<PathBuf>,
+        task: &Task,
         scripts: &[String],
     ) -> Result<(Vec<String>, usage::Spec)> {
         let mut tera = self.get_tera();
@@ -272,9 +272,7 @@ impl TaskScriptParser {
                 }
             }
         });
-        let config = Config::get();
-        let mut ctx = config.tera_ctx.clone();
-        ctx.insert("config_root", config_root);
+        let ctx = task.tera_ctx()?;
         let scripts = scripts
             .iter()
             .map(|s| tera.render_str(s.trim(), &ctx).unwrap())
@@ -384,7 +382,7 @@ mod tests {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(i=0, name='foo') }}".to_string()];
-        let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
+        let (scripts, spec) = parser.parse_run_scripts(&task, &scripts).unwrap();
         assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
         let arg0 = spec.cmd.args.first().unwrap();
         assert_eq!(arg0.name, "foo");
@@ -403,7 +401,7 @@ mod tests {
             "echo {{ arg(name='foo') }}; echo {{ arg(name='bar') }}; echo {{ arg(name='foo') }}"
                 .to_string(),
         ];
-        let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
+        let (scripts, spec) = parser.parse_run_scripts(&task, &scripts).unwrap();
         assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG; echo MISE_TASK_ARG:bar:MISE_TASK_ARG; echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
         let arg0 = spec.cmd.args.first().unwrap();
         let arg1 = spec.cmd.args.get(1).unwrap();
@@ -426,7 +424,7 @@ mod tests {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(var=true) }}".to_string()];
-        let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
+        let (scripts, spec) = parser.parse_run_scripts(&task, &scripts).unwrap();
         assert_eq!(scripts, vec!["echo MISE_TASK_ARG:0:MISE_TASK_ARG"]);
         let arg0 = spec.cmd.args.first().unwrap();
         assert_eq!(arg0.name, "0");
@@ -446,7 +444,7 @@ mod tests {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ flag(name='foo') }}".to_string()];
-        let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
+        let (scripts, spec) = parser.parse_run_scripts(&task, &scripts).unwrap();
         assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
         let flag = spec.cmd.flags.iter().find(|f| &f.name == "foo").unwrap();
         assert_eq!(&flag.name, "foo");
@@ -462,7 +460,7 @@ mod tests {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ option(name='foo') }}".to_string()];
-        let (scripts, spec) = parser.parse_run_scripts(&None, &scripts).unwrap();
+        let (scripts, spec) = parser.parse_run_scripts(&task, &scripts).unwrap();
         assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
         let option = spec.cmd.flags.iter().find(|f| &f.name == "foo").unwrap();
         assert_eq!(&option.name, "foo");

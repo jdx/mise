@@ -1,7 +1,7 @@
 use eyre::Result;
-use once_cell::sync::Lazy;
 use std::ffi::OsString;
 use std::sync::Arc;
+use std::sync::LazyLock as Lazy;
 
 pub use python::PythonPlugin;
 

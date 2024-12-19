@@ -9,11 +9,11 @@ use expr::{Context, Parser, Program, Value};
 use eyre::{eyre, ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use serde_derive::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock as Lazy;
 use url::Url;
 
 #[allow(clippy::invisible_characters)]

@@ -1,5 +1,5 @@
-use once_cell::sync::Lazy;
 use std::collections::HashSet;
+use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
 
 #[macro_export]

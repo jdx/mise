@@ -101,7 +101,9 @@ impl SyncPython {
             };
             let dst = uv_versions_path.join(format!("cpython-{v}-{os}-{arch}"));
             if !dst.exists() {
-                file::make_symlink(&src, &dst)?;
+                // TODO: uv doesn't support symlinked dirs
+                // https://github.com/astral-sh/uv/blob/e65a273f1b6b7c3ab129d902e93adeda4da20636/crates/uv-python/src/managed.rs#L196
+                file::clone_dir(&src, &dst)?;
                 miseprintln!("Synced python@{v} from mise to uv");
             }
         }

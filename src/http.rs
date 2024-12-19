@@ -4,9 +4,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use eyre::{bail, Report, Result};
-use once_cell::sync::Lazy;
 use reqwest::header::HeaderMap;
 use reqwest::{ClientBuilder, IntoUrl, RequestBuilder, Response};
+use std::sync::LazyLock as Lazy;
 use url::Url;
 
 use crate::cli::version;
@@ -211,10 +211,10 @@ fn with_github_auth(url: &Url, mut req: RequestBuilder) -> RequestBuilder {
 fn display_github_rate_limit(resp: &Response) {
     let status = resp.status().as_u16();
     if status == 403 || status == 429 {
-        if !resp
+        if resp
             .headers()
             .get("x-ratelimit-remaining")
-            .is_some_and(|r| r == "0")
+            .is_none_or(|r| r != "0")
         {
             return;
         }
