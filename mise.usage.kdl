@@ -61,7 +61,8 @@ flag "--silent" help="Suppress all task output and mise non-error messages" glob
 flag "--trace" help="Sets log level to trace" hide=true global=true
 flag "-v --verbose" help="Show extra output (use -vv for even more)" var=true global=true count=true
 arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise task run <TASK>`." required=false
-arg "[TASK_ARGS]..." help="Task arguments" required=false double_dash="automatic" var=true hide=true
+arg "[TASK_ARGS]..." help="Task arguments" required=false var=true hide=true
+arg "[-- TASK_ARGS_LAST]..." required=false var=true hide=true
 cmd "activate" help="Initializes mise in the current shell session" {
     long_help r#"Initializes mise in the current shell session
 
@@ -1525,7 +1526,8 @@ The name of the script will be the name of the tasks.
             arg "<OUTPUT>"
         }
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" required=false default="default"
-        arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=false double_dash="automatic" var=true
+        arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=false var=true
+        arg "[-- ARGS_LAST]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=false var=true hide=true
         mount run="mise tasks --usage"
     }
 }

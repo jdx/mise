@@ -59,8 +59,7 @@ use xx::regex;
 ///     EOF
 ///     $ mise run build
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "r", verbatim_doc_comment, disable_help_flag = true, after_long_help = AFTER_LONG_HELP
-)]
+#[clap(visible_alias = "r", verbatim_doc_comment, disable_help_flag = true, after_long_help = AFTER_LONG_HELP)]
 pub struct Run {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
@@ -73,8 +72,12 @@ pub struct Run {
     pub task: String,
 
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
-    #[clap(allow_hyphen_values = true, trailing_var_arg = true)]
+    #[clap(allow_hyphen_values = true)]
     pub args: Vec<String>,
+
+    /// Arguments to pass to the tasks. Use ":::" to separate tasks.
+    #[clap(allow_hyphen_values = true, hide = true, last = true)]
+    pub args_last: Vec<String>,
 
     /// Change to this directory before executing the command
     #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
@@ -188,6 +191,7 @@ impl Run {
         self.tmpdir = tmpdir.path().to_path_buf();
         let args = once(self.task.clone())
             .chain(self.args.clone())
+            .chain(self.args_last.clone())
             .collect_vec();
         let task_list = get_task_lists(&args, true)?;
         time!("run get_task_lists");
