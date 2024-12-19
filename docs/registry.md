@@ -366,7 +366,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | jfrog-cli | [asdf:LozanoMatheus/asdf-jfrog-cli](https://github.com/LozanoMatheus/asdf-jfrog-cli) |
 | jib | [asdf:joschi/asdf-jib](https://github.com/joschi/asdf-jib) |
 | jiq | [aqua:fiatjaf/jiq](https://github.com/fiatjaf/jiq) [asdf:chessmango/asdf-jiq](https://github.com/chessmango/asdf-jiq) |
-| jj | [aqua:martinvonz/jj](https://github.com/martinvonz/jj) [ubi:martinvonz/jj](https://github.com/martinvonz/jj) |
+| jj | [aqua:jj-vcs/jj](https://github.com/jj-vcs/jj) [ubi:jj-vcs/jj](https://github.com/jj-vcs/jj) |
 | jless | [aqua:PaulJuliusMartinez/jless](https://github.com/PaulJuliusMartinez/jless) [asdf:jc00ke/asdf-jless](https://github.com/jc00ke/asdf-jless) |
 | jmespath | [aqua:jmespath/jp](https://github.com/jmespath/jp) [asdf:skyzyx/asdf-jmespath](https://github.com/skyzyx/asdf-jmespath) |
 | jmeter | [asdf:comdotlinux/asdf-jmeter](https://github.com/comdotlinux/asdf-jmeter) |
