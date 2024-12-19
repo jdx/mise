@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
 
-use indexmap::IndexMap;
-use itertools::Itertools;
-
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::registry::REGISTRY;
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
+use indexmap::IndexMap;
+use itertools::Itertools;
 
 #[derive(Debug, Default, Clone)]
 pub struct ToolRequestSet {
@@ -168,7 +168,11 @@ impl ToolRequestSetBuilder {
     }
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
-        !ba.is_os_supported() || self.disable_tools.contains(ba)
+        let backend_type = ba.backend_type();
+        backend_type == BackendType::Unknown
+            || (cfg!(windows) && backend_type == BackendType::Asdf)
+            || !ba.is_os_supported()
+            || self.disable_tools.contains(ba)
     }
 
     fn load_config_files(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
