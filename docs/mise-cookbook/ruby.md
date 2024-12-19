@@ -15,8 +15,8 @@ PROJECT_NAME = "{{ config_root | basename }}"
 # Install Ruby with the specified version
 ruby = "{{ get_env(name='RUBY_VERSION', default='3.3.3') }}"
 
-# Install gem dependencies
 [tasks."bundle:install"]
+description = "Install gem dependencies"
 run = "bundle install"
 
 [tasks.server]

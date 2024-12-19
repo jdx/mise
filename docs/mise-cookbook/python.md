@@ -4,6 +4,8 @@ Here are some tips on managing Python projects with mise.
 
 ## A Python Project with virtualenv
 
+Here is an example python project with a `requirements.txt` file.
+
 ```toml [mise.toml]
 min_version = "2024.9.5"
 
@@ -16,6 +18,7 @@ _.python.venv = { path = ".venv", create = true }
 
 [tools]
 python = "{{ get_env(name='PYTHON_VERSION', default='3.11') }}"
+ruff = "latest"
 
 [tasks.install]
 description = "Install dependencies"

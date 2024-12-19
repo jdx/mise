@@ -2,14 +2,28 @@
 
 Here are some tips on managing Node.js projects with mise.
 
+## Add node modules binaries to the PATH
+
+A nice trick you can use is to add the node modules binaries to the PATH. This will make CLIs installed with npm available without `npx`.
+
+```toml [mise.toml]
+[env]
+_.path = ['./node_modules/.bin']
+```
+
+Example:
+
+```shell
+npm install --save eslint
+eslint --version # works
+```
+
 ## Example Node.js Project
 
 ```toml [mise.toml]
 min_version = "2024.9.5"
 
 [env]
-# Add the node modules bin path to the PATH
-# This will make CLIs installed with npm available (without `npx`)
 _.path = ['{{config_root}}/node_modules/.bin']
 
 # Use the project name derived from the current directory
