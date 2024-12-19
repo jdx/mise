@@ -2,7 +2,7 @@
 
 Here are some tips on using Docker with mise.
 
-## Docker image for mise
+## Docker image with mise
 
 Here is an example Dockerfile showing how to install mise in a Docker image.
 
