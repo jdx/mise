@@ -62,7 +62,7 @@ jobs:
             command: |
               mise use --global erlang@24.3.4.9
               eval "$(mise env bash)"
-              mise use --global elixir@main-otp-24
+              mise use --global elixir
               eval "$(mise env bash)"
               mise exec -- elixir --version
           - plugin: golang
