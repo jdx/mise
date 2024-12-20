@@ -1,5 +1,46 @@
 # Changelog
 
+## [2024.12.16](https://github.com/jdx/mise/compare/v2024.12.15..v2024.12.16) - 2024-12-20
+
+### 🚀 Features
+
+- add dotnet backend by [@acesyde](https://github.com/acesyde) in [#3737](https://github.com/jdx/mise/pull/3737)
+- added ignored_config_paths to `mise dr` by [@jdx](https://github.com/jdx) in [#3742](https://github.com/jdx/mise/pull/3742)
+
+### 🐛 Bug Fixes
+
+- **(ruby)** fix Ruby plugin to use `ruby_install` option correctly by [@yuhr](https://github.com/yuhr) in [#3732](https://github.com/jdx/mise/pull/3732)
+- `mise run` shorthand with options by [@jdx](https://github.com/jdx) in [#3719](https://github.com/jdx/mise/pull/3719)
+- zig on windows by [@jdx](https://github.com/jdx) in [#3739](https://github.com/jdx/mise/pull/3739)
+- allow using previously defined vars by [@jdx](https://github.com/jdx) in [#3741](https://github.com/jdx/mise/pull/3741)
+- make --help consistent with `mise run` and `mise <task>` by [@jdx](https://github.com/jdx) in [#3723](https://github.com/jdx/mise/pull/3723)
+- use implicit keys for `mise config set` by [@jdx](https://github.com/jdx) in [#3744](https://github.com/jdx/mise/pull/3744)
+
+### 📚 Documentation
+
+- update cookbook by [@hverlin](https://github.com/hverlin) in [#3718](https://github.com/jdx/mise/pull/3718)
+- remove reference to deprecated asdf_compat functionality by [@jdx](https://github.com/jdx) in [03a2afb](https://github.com/jdx/mise/commit/03a2afb4f8c738e3b172d0f5e1ca1465bf1d6a5c)
+- describe behavior of `run --output` better by [@jdx](https://github.com/jdx) in [#3740](https://github.com/jdx/mise/pull/3740)
+
+### 🔍 Other Changes
+
+- Update bug_report.md by [@jdx](https://github.com/jdx) in [5365b72](https://github.com/jdx/mise/commit/5365b72ba6c89ddcd04604f897237d9f6a6a93d0)
+- Update feature_request.md by [@jdx](https://github.com/jdx) in [4947e99](https://github.com/jdx/mise/commit/4947e995ecb463e848f821f0577e9cd469ff9881)
+- Update blank.md by [@jdx](https://github.com/jdx) in [6bd6d58](https://github.com/jdx/mise/commit/6bd6d582d36f2605a07a63612f41375eb87f5691)
+- lint fix by [@jdx](https://github.com/jdx) in [118b8de](https://github.com/jdx/mise/commit/118b8de645712ff1d78c33b9a2c094a1f92c5b20)
+- Clarify docs on using oh-my-zsh plugin by [@ssbarnea](https://github.com/ssbarnea) in [#3735](https://github.com/jdx/mise/pull/3735)
+- switch from home -> homedir crate by [@jdx](https://github.com/jdx) in [#3743](https://github.com/jdx/mise/pull/3743)
+
+### 📦️ Dependency Updates
+
+- update dependency bun to v1.1.40 by [@renovate[bot]](https://github.com/renovate[bot]) in [#3729](https://github.com/jdx/mise/pull/3729)
+
+### New Contributors
+
+- @acesyde made their first contribution in [#3737](https://github.com/jdx/mise/pull/3737)
+- @ssbarnea made their first contribution in [#3735](https://github.com/jdx/mise/pull/3735)
+- @yuhr made their first contribution in [#3732](https://github.com/jdx/mise/pull/3732)
+
 ## [2024.12.15](https://github.com/jdx/mise/compare/v2024.12.14..v2024.12.15) - 2024-12-19
 
 ### 🚀 Features
