@@ -3,26 +3,11 @@ use std::ffi::OsString;
 use std::sync::Arc;
 use std::sync::LazyLock as Lazy;
 
-pub use python::PythonPlugin;
-
 use crate::backend::{Backend, BackendMap};
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::env;
 use crate::env::PATH_KEY;
-use crate::plugins::core::bun::BunPlugin;
-use crate::plugins::core::deno::DenoPlugin;
-use crate::plugins::core::elixir::ElixirPlugin;
-#[cfg(unix)]
-use crate::plugins::core::erlang::ErlangPlugin;
-use crate::plugins::core::go::GoPlugin;
-use crate::plugins::core::java::JavaPlugin;
-use crate::plugins::core::node::NodePlugin;
-use crate::plugins::core::ruby::RubyPlugin;
-use crate::plugins::core::rust::RustPlugin;
-use crate::plugins::core::swift::SwiftPlugin;
-#[cfg(unix)]
-use crate::plugins::core::zig::ZigPlugin;
 use crate::timeout::run_with_timeout;
 use crate::toolset::ToolVersion;
 
@@ -39,39 +24,38 @@ mod python;
 mod ruby;
 mod rust;
 mod swift;
-#[cfg(unix)]
 mod zig;
 
 pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     #[cfg(unix)]
     let plugins: Vec<Arc<dyn Backend>> = vec![
-        Arc::new(BunPlugin::new()),
-        Arc::new(DenoPlugin::new()),
-        Arc::new(ElixirPlugin::new()),
-        Arc::new(ErlangPlugin::new()),
-        Arc::new(GoPlugin::new()),
-        Arc::new(JavaPlugin::new()),
-        Arc::new(NodePlugin::new()),
-        Arc::new(PythonPlugin::new()),
-        Arc::new(RubyPlugin::new()),
-        Arc::new(RustPlugin::new()),
-        Arc::new(SwiftPlugin::new()),
-        Arc::new(ZigPlugin::new()),
+        Arc::new(bun::BunPlugin::new()),
+        Arc::new(deno::DenoPlugin::new()),
+        Arc::new(elixir::ElixirPlugin::new()),
+        Arc::new(erlang::ErlangPlugin::new()),
+        Arc::new(go::GoPlugin::new()),
+        Arc::new(java::JavaPlugin::new()),
+        Arc::new(node::NodePlugin::new()),
+        Arc::new(python::PythonPlugin::new()),
+        Arc::new(ruby::RubyPlugin::new()),
+        Arc::new(rust::RustPlugin::new()),
+        Arc::new(swift::SwiftPlugin::new()),
+        Arc::new(zig::ZigPlugin::new()),
     ];
     #[cfg(windows)]
     let plugins: Vec<Arc<dyn Backend>> = vec![
-        Arc::new(BunPlugin::new()),
-        Arc::new(DenoPlugin::new()),
-        // Arc::new(ErlangPlugin::new()),
-        Arc::new(ElixirPlugin::new()),
-        Arc::new(GoPlugin::new()),
-        Arc::new(JavaPlugin::new()),
-        Arc::new(NodePlugin::new()),
-        Arc::new(PythonPlugin::new()),
-        Arc::new(RubyPlugin::new()),
-        Arc::new(RustPlugin::new()),
-        Arc::new(SwiftPlugin::new()),
-        // Arc::new(ZigPlugin::new()),
+        Arc::new(bun::BunPlugin::new()),
+        Arc::new(deno::DenoPlugin::new()),
+        Arc::new(elixir::ElixirPlugin::new()),
+        // Arc::new(erlang::ErlangPlugin::new()),
+        Arc::new(go::GoPlugin::new()),
+        Arc::new(java::JavaPlugin::new()),
+        Arc::new(node::NodePlugin::new()),
+        Arc::new(python::PythonPlugin::new()),
+        Arc::new(ruby::RubyPlugin::new()),
+        Arc::new(rust::RustPlugin::new()),
+        Arc::new(swift::SwiftPlugin::new()),
+        Arc::new(zig::ZigPlugin::new()),
     ];
     plugins
         .into_iter()
