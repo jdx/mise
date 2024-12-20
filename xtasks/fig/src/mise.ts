@@ -2009,8 +2009,10 @@ const completionSpec: Fig.Spec = {
                 },
                 {
                     "name": [
+                        "-o",
                         "--output"
                     ],
+                    "description": "Change how tasks information is output when running tasks",
                     "isRepeatable": false,
                     "args": {
                         "name": "output",
@@ -2915,8 +2917,10 @@ const completionSpec: Fig.Spec = {
                         },
                         {
                             "name": [
+                                "-o",
                                 "--output"
                             ],
+                            "description": "Change how tasks information is output when running tasks",
                             "isRepeatable": false,
                             "args": {
                                 "name": "output",
