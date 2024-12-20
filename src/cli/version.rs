@@ -92,7 +92,7 @@ fn show_version() -> std::io::Result<()> {
 /_/ /_/ /_/_/____/\___/      \___/_/ /_/     / .___/_/\__,_/\___/\___/
                                             /_/
 "#
-                .trim_start_matches("\n")
+            .trim_start_matches("\n")
         );
     }
     miseprintln!("{}", *VERSION);
