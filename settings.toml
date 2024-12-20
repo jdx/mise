@@ -246,6 +246,19 @@ default = []
 parse_env = "list_by_comma"
 description = "Tools defined in mise.toml that should be ignored"
 
+[dotnet.registry_url]
+env = "MISE_DOTNET_REGISTRY_URL"
+type = "Url"
+optional = true
+description = "URL to fetch dotnet tools from."
+docs = """
+URL to fetch dotnet tools from. This is used when installing dotnet tools.
+
+By default, mise will use the [nuget](https://api.nuget.org/v3/index.json) API to fetch.
+
+However, you can set this to a different URL if you have a custom feed or want to use a different source.
+"""
+
 [env]
 env = "MISE_ENV"
 type = "ListString"
@@ -1073,16 +1086,3 @@ description = "List of executable extensions for Windows. For example, `exe` for
 env = "MISE_YES"
 type = "Bool"
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
-
-[dotnet.registry_url]
-env = "MISE_DOTNET_REGISTRY_URL"
-type = "Url"
-optional = true
-description = "URL to fetch dotnet tools from."
-docs = """
-URL to fetch dotnet tools from. This is used when installing dotnet tools.
-
-By default, mise will use the [nuget](https://api.nuget.org/v3/index.json) API to fetch.
-
-However, you can set this to a different URL if you have a custom feed or want to use a different source.
-"""

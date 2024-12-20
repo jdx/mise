@@ -38,11 +38,7 @@ impl Backend for DotnetBackend {
 
         let data = feed.data.first().ok_or_else(|| eyre!("No data found"))?;
 
-        Ok(data
-            .versions
-            .iter()
-            .map(|x| x.version.clone())
-            .collect())
+        Ok(data.versions.iter().map(|x| x.version.clone()).collect())
     }
 
     fn install_version_(
@@ -103,4 +99,3 @@ struct NugetFeedSearchData {
 struct NugetFeedSearchDataVersion {
     version: String,
 }
-

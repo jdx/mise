@@ -33,6 +33,7 @@ pub mod aqua;
 pub mod asdf;
 pub mod backend_type;
 pub mod cargo;
+pub mod dotnet;
 mod external_plugin_cache;
 pub mod gem;
 pub mod go;
@@ -41,7 +42,6 @@ pub mod pipx;
 pub mod spm;
 pub mod ubi;
 pub mod vfox;
-pub mod dotnet;
 
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
