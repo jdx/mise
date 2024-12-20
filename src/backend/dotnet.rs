@@ -27,7 +27,7 @@ impl Backend for DotnetBackend {
         let feed_url = self.get_search_url()?;
 
         let feed: NugetFeedSearch = HTTP_FETCH.json(format!(
-            "{}?q={}&packageType=DotnetCliTool&take=1",
+            "{}?q={}&packageType=dotnettool&take=1",
             feed_url,
             &self.tool_name()
         ))?;
@@ -37,6 +37,13 @@ impl Backend for DotnetBackend {
         }
 
         let data = feed.data.first().ok_or_else(|| eyre!("No data found"))?;
+
+        // Because the nuget API is a search API we need to check name of the tool we are looking for
+        debug!("Found tool: {}", data.id);
+        debug!("Tool name: {}", self.tool_name());
+        if data.id != self.tool_name() {
+            return Err(eyre!("Tool {} not found", &self.tool_name()));
+        }
 
         Ok(data.versions.iter().map(|x| x.version.clone()).collect())
     }
@@ -56,10 +63,10 @@ impl DotnetBackend {
     }
 
     fn get_search_url(&self) -> eyre::Result<String> {
-        let nuget_registry = SETTINGS.dotnet.registry_url.as_ref().ok_or_else(|| {
-            eyre!("No registry URL found in settings. Please set it in your config file.")
-        })?;
+        let nuget_registry = SETTINGS.dotnet.registry_url.as_str();
+
         let services: NugetFeed = HTTP_FETCH.json(nuget_registry)?;
+
         let feed = services
             .resources
             .iter()
@@ -72,18 +79,20 @@ impl DotnetBackend {
 
 #[derive(serde::Deserialize)]
 struct NugetFeed {
-    version: String,
     resources: Vec<NugetFeedResource>,
 }
 
 #[derive(serde::Deserialize)]
 struct NugetFeedResource {
+    #[serde(rename = "@id")]
     id: String,
+    #[serde(rename = "@type")]
     service_type: String,
 }
 
 #[derive(serde::Deserialize)]
 struct NugetFeedSearch {
+    #[serde(rename = "totalHits")]
     total_hits: i32,
     data: Vec<NugetFeedSearchData>,
 }

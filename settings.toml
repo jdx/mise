@@ -249,7 +249,7 @@ description = "Tools defined in mise.toml that should be ignored"
 [dotnet.registry_url]
 env = "MISE_DOTNET_REGISTRY_URL"
 type = "Url"
-optional = true
+default = "https://api.nuget.org/v3/index.json"
 description = "URL to fetch dotnet tools from."
 docs = """
 URL to fetch dotnet tools from. This is used when installing dotnet tools.
