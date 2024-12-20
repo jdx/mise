@@ -6,6 +6,8 @@ backend = "aqua:rhysd/actionlint"
 actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
 actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5ccd2564bf86192c1b661"
 "actionlint.exe-windows-x86_64" = "sha256:04ca117d9f33b77731fd3ef6a3670bd6b11b40c1b1cc5b7aaf6c28392d74d2e2"
+"actionlint_1.7.4_linux_amd64.tar.gz" = "sha256:fc0a6886bbb9a23a39eeec4b176193cadb54ddbe77cdbb19b637933919545395"
+"actionlint_1.7.4_linux_arm64.tar.gz" = "sha256:ede03682dc955381d057dde95bb85ce9ca418122209a8a313b617d4adec56416"
 
 [tools.bun]
 version = "1.1.38"
@@ -21,6 +23,7 @@ backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
 "cargo-binstall-aarch64-apple-darwin.zip" = "sha256:0afb56acd834d7b0bc9a5293963da04abe48923d90f374bed98068b313a48f2c"
+"cargo-binstall-aarch64-unknown-linux-musl.tgz" = "sha256:b44c167a2520701f1888e03d7b7355617926278e24e792eeb264333e94b6ae5a"
 "cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:f333f552699e76e8fe570da6fb928c273c0c2d14e0955f6b79f7f59eb932ba73"
 
 [tools."cargo:cargo-edit"]
@@ -54,6 +57,7 @@ backend = "aqua:sigstore/cosign"
 [tools.cosign.checksums]
 cosign-darwin-arm64 = "sha256:13343856b69f70388c4fe0b986a31dde5958e444b41be22d785d3dc5e1a9cc62"
 cosign-linux-amd64 = "sha256:8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b"
+cosign-linux-arm64 = "sha256:3b2e2e3854d0356c45fe6607047526ccd04742d20bd44afb5be91fa2a6e7cb4a"
 "cosign-windows-amd64.exe" = "sha256:8d57f8a42a981d27290c4227271fa9f0f62ca6630eb4a21d316bd6b01405b87c"
 
 [tools.jq]
@@ -62,6 +66,7 @@ backend = "aqua:jqlang/jq"
 
 [tools.jq.checksums]
 jq-linux-amd64 = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5"
+jq-linux-arm64 = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5"
 jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
 "jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
 
@@ -90,6 +95,7 @@ backend = "aqua:BurntSushi/ripgrep"
 
 [tools.ripgrep.checksums]
 "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz" = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
+"ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz" = "sha256:c827481c4ff4ea10c9dc7a4022c8de5db34a5737cb74484d62eb94a95841ab2f"
 "ripgrep-14.1.1-x86_64-pc-windows-msvc.zip" = "sha256:d0f534024c42afd6cb4d38907c25cd2b249b79bbe6cc1dbee8e3e37c2b6e25a1"
 "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz" = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
 
@@ -101,6 +107,7 @@ backend = "aqua:koalaman/shellcheck"
 shellcheck-linux-x86_64 = "sha256:f35ae15a4677945428bdfe61ccc297490d89dd1e544cc06317102637638c6deb"
 shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f8b02ea4811cd4cc1109"
 "shellcheck-v0.10.0.darwin.x86_64.tar.xz" = "sha256:ef27684f23279d112d8ad84e0823642e43f838993bbb8c0963db9b58a90464c2"
+"shellcheck-v0.10.0.linux.aarch64.tar.xz" = "sha256:324a7e89de8fa2aed0d0c28f3dab59cf84c6d74264022c00c22af665ed1a09bb"
 "shellcheck-v0.10.0.linux.x86_64.tar.xz" = "sha256:6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87"
 
 [tools.shfmt]
@@ -109,6 +116,7 @@ backend = "aqua:mvdan/sh"
 
 [tools.shfmt.checksums]
 "shfmt_v3.10.0_linux_amd64" = "sha256:1f57a384d59542f8fac5f503da1f3ea44242f46dff969569e80b524d64b71dbc"
+"shfmt_v3.10.0_linux_arm64" = "sha256:9d23013d56640e228732fd2a04a9ede0ab46bc2d764bf22a4a35fb1b14d707a8"
 
 [tools.slsa-verifier]
 version = "2.6.0"
@@ -124,6 +132,7 @@ version = "0.9.3"
 backend = "ubi:tamasfe/taplo[matching=full]"
 
 [tools.taplo.checksums]
+taplo-full-linux-aarch64 = "sha256:9ffa2a799ff0ca601a0e7ff93dcae64a34c81c677916e6f0d3c81d62e0670d83"
 taplo-full-linux-x86_64 = "sha256:e89d2303ea9a5ec07971feec807fa493dc9ab6624c19b313ff90fdede247ee08"
 taplo-full-macos-aarch64 = "sha256:cf55aa3e4c9b631c1fbb3f8a4adac59ca2ecc7898d26e749cd9b62d5ed858fce"
 
@@ -132,5 +141,6 @@ version = "0.1.8"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
 
 [tools.wait-for-gh-rate-limit.checksums]
+wait-for-gh-rate-limit-linux-aarch64 = "sha256:a7e2fbbaa745dd33b94d8e530deb0f450e4ef3e994916a7394dac36d01ab79e4"
 wait-for-gh-rate-limit-linux-x86_64 = "sha256:a3e7e966a8d681f30bb7887e471740607074ab7f28580dd926efc307b0d35c20"
 wait-for-gh-rate-limit-macos-aarch64 = "sha256:94975cf4b05c29d1a2bf42ead5c07f297ab80169a3c1813bcbbbac35d9acf7cb"

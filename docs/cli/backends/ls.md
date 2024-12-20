@@ -10,10 +10,16 @@ Examples:
 
 ```
 $ mise backends ls
+aqua
+asdf
 cargo
+core
+dotnet
+gem
 go
 npm
 pipx
 spm
 ubi
+vfox
 ```
