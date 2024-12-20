@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use console::{style, Term};
-use eyre::{eyre, Result};
+use eyre::{bail, eyre, Result};
 use itertools::Itertools;
 use path_absolutize::Absolutize;
 
@@ -250,6 +250,9 @@ impl Use {
     }
 
     fn tool_selector(&self) -> Result<ToolArg> {
+        if !console::user_attended_stderr() {
+            bail!("No tool specified and not running interactively");
+        }
         let mut s = demand::Select::new("Tools")
             .description("Select a tool to install")
             .filtering(true)

@@ -992,7 +992,7 @@ pub fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
                 .cloned()
                 .collect_vec();
             if tasks.is_empty() {
-                if t != "default" || !prompt {
+                if t != "default" || !prompt || !console::user_attended_stderr() {
                     err_no_task(&t)?;
                 }
 

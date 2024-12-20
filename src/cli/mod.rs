@@ -393,10 +393,11 @@ impl Cli {
                     external::execute(
                         &task.into(),
                         cmd.clone(),
-                        self.task_args.unwrap_or_default().into_iter()
+                        self.task_args
+                            .unwrap_or_default()
+                            .into_iter()
                             .chain(self.task_args_last)
-                            .collect()
-                        ,
+                            .collect(),
                     )?;
                     exit(0);
                 }
