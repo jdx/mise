@@ -104,7 +104,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: jdx/mise-action@v1
+      - uses: jdx/mise-action@v2
       - run: node -v # will be the node version from `mise.toml`/`.tool-versions`
 ```
 
