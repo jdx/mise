@@ -335,14 +335,14 @@ impl Run {
         }
         let ts = ToolsetBuilder::new().with_args(&tools).build(&config)?;
         let mut env = ts.env_with_path(&config)?;
-        env.insert(
-            "MISE_TASK_OUTPUT".into(),
-            self.output(Some(task)).to_string(),
-        );
-        env.insert(
-            "MISE_TASK_LEVEL".into(),
-            (*env::MISE_TASK_LEVEL + 1).to_string(),
-        );
+        let output = self.output(Some(task));
+        env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
+        if output == TaskOutput::Prefix {
+            env.insert(
+                "MISE_TASK_LEVEL".into(),
+                (*env::MISE_TASK_LEVEL + 1).to_string(),
+            );
+        }
         if !self.timings {
             env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
         }

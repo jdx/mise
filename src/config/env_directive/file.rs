@@ -22,33 +22,29 @@ impl EnvResults {
     pub fn file(
         ctx: &mut tera::Context,
         tera: &mut tera::Tera,
-        env: &mut IndexMap<String, (String, Option<PathBuf>)>,
         r: &mut EnvResults,
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
         config_root: &Path,
         input: String,
-    ) -> Result<()> {
+    ) -> Result<IndexMap<PathBuf, EnvMap>> {
+        let mut out = IndexMap::new();
         let s = r.parse_template(ctx, tera, source, &input)?;
         for p in xx::file::glob(normalize_path(config_root, s.into())).unwrap_or_default() {
-            r.env_files.push(p.clone());
+            let env = out.entry(p.clone()).or_insert_with(IndexMap::new);
             let parse_template = |s: String| r.parse_template(ctx, tera, source, &s);
             let ext = p
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let new_vars = match ext.as_str() {
+            *env = match ext.as_str() {
                 "json" => Self::json(&p, parse_template)?,
                 "yaml" => Self::yaml(&p, parse_template)?,
                 "toml" => unimplemented!("toml"),
                 _ => Self::dotenv(&p)?,
             };
-            for (k, v) in new_vars {
-                r.env_remove.remove(&k);
-                env.insert(k, (v, Some(p.clone())));
-            }
         }
-        Ok(())
+        Ok(out)
     }
 
     fn json<PT>(p: &Path, parse_template: PT) -> Result<EnvMap>

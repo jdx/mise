@@ -19,7 +19,7 @@ use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::{config_trust_root, ConfigFile};
-use crate::config::env_directive::EnvResults;
+use crate::config::env_directive::{EnvResolveOptions, EnvResults};
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
 use crate::shorthands::{get_shorthands, Shorthands};
@@ -111,7 +111,7 @@ impl Config {
         let mut tera_ctx = BASE_CONTEXT.clone();
         let vars_results = load_vars(tera_ctx.clone(), &config_files)?;
         let vars: IndexMap<String, String> = vars_results
-            .env
+            .vars
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect();
@@ -595,8 +595,12 @@ impl Config {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results =
-            EnvResults::resolve(self.tera_ctx.clone(), &env::PRISTINE_ENV, entries, false)?;
+        let env_results = EnvResults::resolve(
+            self.tera_ctx.clone(),
+            &env::PRISTINE_ENV,
+            entries,
+            EnvResolveOptions::default(),
+        )?;
         let redact_keys = self
             .redaction_keys()
             .into_iter()
@@ -1124,7 +1128,15 @@ fn load_vars(ctx: tera::Context, config_files: &ConfigMap) -> Result<EnvResults>
         .into_iter()
         .flatten()
         .collect();
-    let vars_results = EnvResults::resolve(ctx, &env::PRISTINE_ENV, entries, false)?;
+    let vars_results = EnvResults::resolve(
+        ctx,
+        &env::PRISTINE_ENV,
+        entries,
+        EnvResolveOptions {
+            vars: true,
+            ..Default::default()
+        },
+    )?;
     time!("load_vars done");
     if log::log_enabled!(log::Level::Trace) {
         trace!("{vars_results:#?}");

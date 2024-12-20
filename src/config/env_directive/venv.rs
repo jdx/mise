@@ -159,7 +159,7 @@ python -m venv {p}",
 #[cfg(unix)]
 mod tests {
     use super::*;
-    use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+    use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions, EnvResolveOptions};
     use crate::tera::BASE_CONTEXT;
     use crate::test::replace_path;
     use insta::assert_debug_snapshot;
@@ -201,7 +201,10 @@ mod tests {
                     Default::default(),
                 ),
             ],
-            true,
+            EnvResolveOptions {
+                tools: true,
+                ..Default::default()
+            },
         )
         .unwrap();
         // expect order to be reversed as it processes directives from global to dir specific

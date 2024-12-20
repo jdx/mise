@@ -28,7 +28,7 @@ impl EnvResults {
 #[cfg(unix)]
 mod tests {
     use super::*;
-    use crate::config::env_directive::EnvDirective;
+    use crate::config::env_directive::{EnvDirective, EnvResolveOptions};
     use crate::env_diff::EnvMap;
     use crate::tera::BASE_CONTEXT;
     use crate::test::replace_path;
@@ -64,7 +64,7 @@ mod tests {
                     Default::default(),
                 ),
             ],
-            false,
+            EnvResolveOptions::default(),
         )
         .unwrap();
         assert_debug_snapshot!(

@@ -6,7 +6,7 @@ use std::{panic, thread};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::config::env_directive::EnvResults;
+use crate::config::env_directive::{EnvResolveOptions, EnvResults};
 use crate::config::settings::{SettingsStatusMissingTools, SETTINGS};
 use crate::config::Config;
 use crate::env::{PATH_KEY, TERM_WIDTH};
@@ -714,7 +714,15 @@ impl Toolset {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(ctx, env, entries, true)?;
+        let env_results = EnvResults::resolve(
+            ctx,
+            env,
+            entries,
+            EnvResolveOptions {
+                tools: true,
+                ..Default::default()
+            },
+        )?;
         if log::log_enabled!(log::Level::Trace) {
             trace!("{env_results:#?}");
         } else {
