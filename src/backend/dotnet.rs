@@ -52,7 +52,6 @@ impl Backend for DotnetBackend {
         ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
     ) -> eyre::Result<crate::toolset::ToolVersion> {
-
         let mut cli = CmdLineRunner::new("dotnet")
             .arg("tool")
             .arg("install")
