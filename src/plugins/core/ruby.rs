@@ -50,9 +50,9 @@ impl RubyPlugin {
     fn lock_build_tool(&self) -> Result<fslock::LockFile> {
         let settings = Settings::get();
         let build_tool_path = if settings.ruby.ruby_install {
-            self.ruby_build_bin()
-        } else {
             self.ruby_install_bin()
+        } else {
+            self.ruby_build_bin()
         };
         LockFile::new(&build_tool_path)
             .with_callback(|l| {
@@ -65,10 +65,11 @@ impl RubyPlugin {
         let pr = ctx.map(|ctx| ctx.pr.as_ref());
         if SETTINGS.ruby.ruby_install {
             self.update_ruby_install(pr)
-                .wrap_err("failed to update ruby-install")?;
+                .wrap_err("failed to update ruby-install")
+        } else {
+            self.update_ruby_build(pr)
+                .wrap_err("failed to update ruby-build")
         }
-        self.update_ruby_build(pr)
-            .wrap_err("failed to update ruby-build")
     }
 
     fn install_ruby_build(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
