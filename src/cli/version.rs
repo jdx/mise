@@ -81,6 +81,20 @@ pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
 }
 
 fn show_version() -> std::io::Result<()> {
+    if console::user_attended() {
+        miseprintln!(
+            "{}",
+            r#"
+              _                                        __              
+   ____ ___  (_)_______        ___  ____        ____  / /___ _________
+  / __ `__ \/ / ___/ _ \______/ _ \/ __ \______/ __ \/ / __ `/ ___/ _ \
+ / / / / / / (__  )  __/_____/  __/ / / /_____/ /_/ / / /_/ / /__/  __/
+/_/ /_/ /_/_/____/\___/      \___/_/ /_/     / .___/_/\__,_/\___/\___/
+                                            /_/
+"#
+            .trim_start_matches("\n")
+        );
+    }
     miseprintln!("{}", *VERSION);
     Ok(())
 }
