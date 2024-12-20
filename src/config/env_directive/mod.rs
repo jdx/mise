@@ -111,6 +111,7 @@ impl Display for EnvDirective {
 #[derive(Default, Clone)]
 pub struct EnvResults {
     pub env: IndexMap<String, (String, PathBuf)>,
+    pub vars: IndexMap<String, (String, PathBuf)>,
     pub env_remove: BTreeSet<String>,
     pub env_files: Vec<PathBuf>,
     pub env_paths: Vec<PathBuf>,
@@ -118,12 +119,18 @@ pub struct EnvResults {
     pub redactions: Vec<String>,
 }
 
+#[derive(Default)]
+pub struct EnvResolveOptions {
+    pub vars: bool,
+    pub tools: bool,
+}
+
 impl EnvResults {
     pub fn resolve(
         mut ctx: tera::Context,
         initial: &EnvMap,
         input: Vec<(EnvDirective, PathBuf)>,
-        tools: bool,
+        resolve_opts: EnvResolveOptions,
     ) -> eyre::Result<Self> {
         // trace!("resolve: input: {:#?}", &input);
         let mut env = initial
@@ -132,6 +139,7 @@ impl EnvResults {
             .collect::<IndexMap<_, _>>();
         let mut r = Self {
             env: Default::default(),
+            vars: Default::default(),
             env_remove: BTreeSet::new(),
             env_files: Vec::new(),
             env_paths: Vec::new(),
@@ -155,7 +163,7 @@ impl EnvResults {
             .iter()
             .fold(Vec::new(), |mut acc, (directive, source)| {
                 // remove directives that need tools if we're not processing tool directives, or vice versa
-                if directive.options().tools != tools {
+                if directive.options().tools != resolve_opts.tools {
                     return acc;
                 }
                 if let Some(d) = &last_python_venv {
@@ -191,14 +199,25 @@ impl EnvResults {
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect::<EnvMap>();
             ctx.insert("env", &env_vars);
+            ctx.insert(
+                "vars",
+                &r.vars
+                    .iter()
+                    .map(|(k, (v, _))| (k.clone(), v.clone()))
+                    .collect::<EnvMap>(),
+            );
             let redact = directive.options().redact;
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
                     let v = r.parse_template(&ctx, &mut tera, &source, &v)?;
-                    r.env_remove.remove(&k);
-                    // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
-                    env.insert(k, (v, Some(source.clone())));
+                    if resolve_opts.vars {
+                        r.vars.insert(k, (v, source.clone()));
+                    } else {
+                        r.env_remove.remove(&k);
+                        // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
+                        env.insert(k, (v, Some(source.clone())));
+                    }
                 }
                 EnvDirective::Rm(k, _opts) => {
                     env.shift_remove(&k);
@@ -208,22 +227,31 @@ impl EnvResults {
                     Self::path(&mut ctx, &mut tera, &mut r, &mut paths, source, input_str)?;
                 }
                 EnvDirective::File(input, _opts) => {
-                    Self::file(
+                    let files = Self::file(
                         &mut ctx,
                         &mut tera,
-                        &mut env,
                         &mut r,
                         normalize_path,
                         &source,
                         &config_root,
                         input,
                     )?;
+                    for (f, new_env) in files {
+                        r.env_files.push(f.clone());
+                        for (k, v) in new_env {
+                            if resolve_opts.vars {
+                                r.vars.insert(k, (v, f.clone()));
+                            } else {
+                                r.env_remove.insert(k.clone());
+                                env.insert(k, (v, Some(f.clone())));
+                            }
+                        }
+                    }
                 }
                 EnvDirective::Source(input, _opts) => {
-                    Self::source(
+                    let files = Self::source(
                         &mut ctx,
                         &mut tera,
-                        &mut env,
                         &mut paths,
                         &mut r,
                         normalize_path,
@@ -231,7 +259,18 @@ impl EnvResults {
                         &config_root,
                         &env_vars,
                         input,
-                    );
+                    )?;
+                    for (f, new_env) in files {
+                        r.env_scripts.push(f.clone());
+                        for (k, v) in new_env {
+                            if resolve_opts.vars {
+                                r.vars.insert(k, (v, f.clone()));
+                            } else {
+                                r.env_remove.insert(k.clone());
+                                env.insert(k, (v, Some(f.clone())));
+                            }
+                        }
+                    }
                 }
                 EnvDirective::PythonVenv {
                     path,
@@ -317,6 +356,9 @@ impl Debug for EnvResults {
         let mut ds = f.debug_struct("EnvResults");
         if !self.env.is_empty() {
             ds.field("env", &self.env);
+        }
+        if !self.vars.is_empty() {
+            ds.field("vars", &self.vars);
         }
         if !self.env_remove.is_empty() {
             ds.field("env_remove", &self.env_remove);
