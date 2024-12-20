@@ -389,6 +389,7 @@ impl Cli {
                         tmpdir: Default::default(),
                         tool: Default::default(),
                         keep_order_output: Default::default(),
+                        task_prs: Default::default(),
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(

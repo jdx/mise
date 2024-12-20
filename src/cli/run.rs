@@ -5,7 +5,7 @@ use std::ops::Deref;
 use std::panic;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use super::args::ToolArg;
@@ -18,6 +18,8 @@ use crate::file::display_path;
 use crate::http::HTTP;
 use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, prompt, style, time};
 use crate::{dirs, env, exit, file, ui};
 use clap::{CommandFactory, ValueHint};
@@ -173,6 +175,8 @@ pub struct Run {
     ///
     /// - `prefix` - Print stdout/stderr by line, prefixed with the task's label
     /// - `interleave` - Print directly to stdout/stderr instead of by line
+    /// - `replacing` - Stdout is replaced each time, stderr is printed as is
+    /// - `lengthy` - Only show stdout lines if they are displayed for more than 1 second
     /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
     /// - `quiet` - Don't show extra output
     /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
@@ -184,6 +188,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub keep_order_output: Mutex<IndexMap<Task, KeepOrderOutputs>>,
+
+    #[clap(skip)]
+    pub task_prs: IndexMap<Task, Arc<Box<dyn SingleReport>>>,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -229,12 +236,20 @@ impl Run {
         let tasks = Deps::new(tasks)?;
         for task in tasks.all() {
             self.validate_task(task)?;
-            if self.output(Some(task)) == TaskOutput::KeepOrder {
-                self.keep_order_output
-                    .lock()
-                    .unwrap()
-                    .insert(task.clone(), Default::default());
+            match self.output(Some(task)) {
+                TaskOutput::KeepOrder => {
+                    self.keep_order_output
+                        .lock()
+                        .unwrap()
+                        .insert(task.clone(), Default::default());
+                }
+                TaskOutput::Replacing => {
+                    let pr = MultiProgressReport::get().add(&task.estyled_prefix());
+                    self.task_prs.insert(task.clone(), Arc::new(pr));
+                }
+                _ => {}
             }
+            if self.output(Some(task)) == TaskOutput::KeepOrder {}
         }
 
         let num_tasks = tasks.all().count();
@@ -283,7 +298,11 @@ impl Run {
                                 // only show this if it's the first failure, or we haven't killed all the remaining tasks
                                 // otherwise we'll get unhelpful error messages about being killed by mise which we expect
                                 let prefix = task.estyled_prefix();
-                                prefix_eprintln!(prefix, "{} {err:?}", style::ered("ERROR"));
+                                self.eprint(
+                                    &task,
+                                    &prefix,
+                                    &format!("{} {err:?}", style::ered("ERROR")),
+                                );
                             }
                             let _ = tx_err.send((task.clone(), status));
                         }
@@ -315,7 +334,11 @@ impl Run {
 
         if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
             let prefix = task.estyled_prefix();
-            prefix_eprintln!(prefix, "{} task failed", style::ered("ERROR"));
+            self.eprint(
+                task,
+                &prefix,
+                &format!("{} task failed", style::ered("ERROR")),
+            );
             exit(*status);
         }
 
@@ -349,17 +372,29 @@ impl Run {
         Ok(())
     }
 
+    fn eprint(&self, task: &Task, prefix: &str, line: &str) {
+        match self.output(Some(task)) {
+            TaskOutput::Replacing => {
+                let pr = self.task_prs.get(task).unwrap().clone();
+                pr.set_message(format!("{} {}", prefix, line));
+            }
+            _ => {
+                prefix_eprintln!(prefix, "{line}");
+            }
+        }
+    }
+
     fn run_task(&self, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
-                prefix_eprintln!(prefix, "skipping task");
+                self.eprint(task, &prefix, "skipping task");
             }
             return Ok(());
         }
         if !self.force && self.sources_are_fresh(task)? {
             if !self.quiet(Some(task)) {
-                prefix_eprintln!(prefix, "sources up-to-date, skipping");
+                self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
             return Ok(());
         }
@@ -411,10 +446,10 @@ impl Run {
         }
 
         if self.timings() && (task.file.as_ref().is_some() || !task.run().is_empty()) {
-            prefix_eprintln!(
-                prefix,
-                "finished in {}",
-                time::format_duration(timer.elapsed())
+            self.eprint(
+                task,
+                &prefix,
+                &format!("finished in {}", time::format_duration(timer.elapsed())),
             );
         }
 
@@ -438,7 +473,7 @@ impl Run {
             .to_string();
         if !self.quiet(Some(task)) {
             let msg = trunc(prefix, config.redact(cmd).trim());
-            prefix_eprintln!(prefix, "{msg}")
+            self.eprint(task, prefix, &msg)
         }
 
         if script.starts_with("#!") {
@@ -535,7 +570,7 @@ impl Run {
                 .to_string();
             let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
             let cmd = trunc(prefix, config.redact(cmd).trim());
-            prefix_eprintln!(prefix, "{cmd}");
+            self.eprint(task, prefix, &cmd);
         }
 
         self.exec(file, &args, task, &env, prefix)
@@ -569,8 +604,9 @@ impl Run {
             .envs(env)
             .redact(redactions.deref().clone())
             .raw(self.raw(Some(task)));
+        let output = self.output(Some(task));
         cmd.with_pass_signals();
-        match self.output(Some(task)) {
+        match output {
             TaskOutput::Prefix => {
                 cmd = cmd.with_on_stdout(|line| {
                     if console::colors_enabled() {
@@ -581,9 +617,9 @@ impl Run {
                 });
                 cmd = cmd.with_on_stderr(|line| {
                     if console::colors_enabled() {
-                        prefix_eprintln!(prefix, "{line}\x1b[0m");
+                        self.eprint(task, prefix, &format!("{line}\x1b[0m"));
                     } else {
-                        prefix_eprintln!(prefix, "{line}");
+                        self.eprint(task, prefix, &line);
                     }
                 });
             }
@@ -607,6 +643,10 @@ impl Run {
                         .push((prefix.to_string(), line));
                 });
             }
+            TaskOutput::Replacing => {
+                let pr = self.task_prs.get(task).unwrap().clone();
+                cmd = cmd.with_pr_arc(pr);
+            }
             TaskOutput::Silent => {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
@@ -621,11 +661,14 @@ impl Run {
         }
         let dir = self.cwd(task)?;
         if !dir.exists() {
-            prefix_eprintln!(
+            self.eprint(
+                task,
                 prefix,
-                "{} task directory does not exist: {}",
-                style::eyellow("WARN"),
-                display_path(&dir)
+                &format!(
+                    "{} task directory does not exist: {}",
+                    style::eyellow("WARN"),
+                    display_path(&dir)
+                ),
             );
         }
         cmd = cmd.current_dir(dir);
@@ -916,6 +959,7 @@ pub enum TaskOutput {
     KeepOrder,
     #[default]
     Prefix,
+    Replacing,
     Quiet,
     Silent,
 }

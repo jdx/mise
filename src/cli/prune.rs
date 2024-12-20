@@ -99,7 +99,7 @@ fn delete(dry_run: bool, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Res
         }
         let pr = mpr.add(&prefix);
         if dry_run || SETTINGS.yes || prompt::confirm_with_all(format!("remove {} ?", &tv))? {
-            p.uninstall_version(&tv, pr.as_ref(), dry_run)?;
+            p.uninstall_version(&tv, &pr, dry_run)?;
             pr.finish();
         }
     }

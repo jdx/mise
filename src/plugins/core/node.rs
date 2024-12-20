@@ -42,7 +42,7 @@ impl NodePlugin {
         match self.fetch_tarball(
             ctx,
             tv,
-            ctx.pr.as_ref(),
+            &ctx.pr,
             &opts.binary_tarball_url,
             &opts.binary_tarball_path,
             &opts.version,
@@ -65,7 +65,7 @@ impl NodePlugin {
             &TarOptions {
                 format: TarFormat::TarGz,
                 strip_components: 1,
-                pr: Some(ctx.pr.as_ref()),
+                pr: Some(&ctx.pr),
             },
         )?;
         Ok(())
@@ -80,7 +80,7 @@ impl NodePlugin {
         match self.fetch_tarball(
             ctx,
             tv,
-            ctx.pr.as_ref(),
+            &ctx.pr,
             &opts.binary_tarball_url,
             &opts.binary_tarball_path,
             &opts.version,
@@ -112,7 +112,7 @@ impl NodePlugin {
         self.fetch_tarball(
             ctx,
             tv,
-            ctx.pr.as_ref(),
+            &ctx.pr,
             &opts.source_tarball_url,
             &opts.source_tarball_path,
             &opts.version,
@@ -124,7 +124,7 @@ impl NodePlugin {
             opts.build_dir.parent().unwrap(),
             &TarOptions {
                 format: TarFormat::TarGz,
-                pr: Some(ctx.pr.as_ref()),
+                pr: Some(&ctx.pr),
                 ..Default::default()
             },
         )?;
@@ -138,7 +138,7 @@ impl NodePlugin {
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
         url: &Url,
         local: &Path,
         version: &str,
@@ -161,7 +161,7 @@ impl NodePlugin {
     fn sh<'a>(&self, ctx: &'a InstallContext, opts: &BuildOpts) -> eyre::Result<CmdLineRunner<'a>> {
         let mut cmd = CmdLineRunner::new("sh")
             .prepend_path(opts.path.clone())?
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .current_dir(&opts.build_dir)
             .arg("-c");
         if let Some(cflags) = &*env::MISE_NODE_CFLAGS {
@@ -183,11 +183,7 @@ impl NodePlugin {
     fn get_checksum(&self, ctx: &InstallContext, tarball: &Path, version: &str) -> Result<String> {
         let tarball_name = tarball.file_name().unwrap().to_string_lossy().to_string();
         let shasums_file = tarball.parent().unwrap().join("SHASUMS256.txt");
-        HTTP.download_file(
-            self.shasums_url(version)?,
-            &shasums_file,
-            Some(ctx.pr.as_ref()),
-        )?;
+        HTTP.download_file(self.shasums_url(version)?, &shasums_file, Some(&ctx.pr))?;
         if SETTINGS.node.gpg_verify != Some(false) && version.starts_with("2") {
             self.verify_with_gpg(ctx, &shasums_file, version)?;
         }
@@ -204,7 +200,7 @@ impl NodePlugin {
         }
         let sig_file = shasums_file.with_extension("asc");
         let sig_url = format!("{}.sig", self.shasums_url(v)?);
-        HTTP.download_file(sig_url, &sig_file, Some(ctx.pr.as_ref()))?;
+        HTTP.download_file(sig_url, &sig_file, Some(&ctx.pr))?;
         gpg::add_keys_node(ctx)?;
         CmdLineRunner::new("gpg")
             .arg("--quiet")
@@ -213,7 +209,7 @@ impl NodePlugin {
             .arg("--verify")
             .arg(sig_file)
             .arg(shasums_file)
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .execute()?;
         Ok(())
     }
@@ -246,7 +242,7 @@ impl NodePlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
         let body = file::read_to_string(&*env::MISE_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
         for package in body.lines() {
@@ -275,7 +271,11 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn enable_default_corepack_shims(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn enable_default_corepack_shims(
+        &self,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<()> {
         pr.set_message("enable corepack shims".into());
         let corepack = self.corepack_path(tv);
         CmdLineRunner::new(corepack)
@@ -286,7 +286,12 @@ impl NodePlugin {
         Ok(())
     }
 
-    fn test_node(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_node(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<()> {
         pr.set_message("node -v".into());
         CmdLineRunner::new(self.node_path(tv))
             .with_pr(pr)
@@ -295,7 +300,12 @@ impl NodePlugin {
             .execute()
     }
 
-    fn test_npm(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_npm(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<()> {
         pr.set_message("npm -v".into());
         CmdLineRunner::new(self.npm_path(tv))
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
@@ -412,16 +422,16 @@ impl Backend for NodePlugin {
         } else {
             self.install_precompiled(ctx, &mut tv, &opts)?;
         }
-        self.test_node(&config, &tv, ctx.pr.as_ref())?;
+        self.test_node(&config, &tv, &ctx.pr)?;
         if !cfg!(windows) {
             self.install_npm_shim(&tv)?;
         }
-        self.test_npm(&config, &tv, ctx.pr.as_ref())?;
-        if let Err(err) = self.install_default_packages(&config, &tv, ctx.pr.as_ref()) {
+        self.test_npm(&config, &tv, &ctx.pr)?;
+        if let Err(err) = self.install_default_packages(&config, &tv, &ctx.pr) {
             warn!("failed to install default npm packages: {err:#}");
         }
         if *env::MISE_NODE_COREPACK && self.corepack_path(&tv).exists() {
-            self.enable_default_corepack_shims(&tv, ctx.pr.as_ref())?;
+            self.enable_default_corepack_shims(&tv, &ctx.pr)?;
         }
 
         Ok(tv)

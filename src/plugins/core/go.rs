@@ -57,7 +57,7 @@ impl GoPlugin {
     fn install_default_packages(
         &self,
         tv: &ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
     ) -> eyre::Result<()> {
         let settings = Settings::get();
         let default_packages_file = file::replace_path(&settings.go_default_packages_file);
@@ -83,7 +83,7 @@ impl GoPlugin {
         Ok(())
     }
 
-    fn test_go(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<()> {
+    fn test_go(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         pr.set_message("go version".into());
         CmdLineRunner::new(self.go_bin(tv))
             .with_pr(pr)
@@ -91,7 +91,7 @@ impl GoPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
+    fn download(&self, tv: &mut ToolVersion, pr: &Box<dyn SingleReport>) -> eyre::Result<PathBuf> {
         let settings = Settings::get();
         let filename = format!("go{}.{}-{}.{}", tv.version, platform(), arch(), ext());
         let tarball_url = format!("{}/{}", &settings.go_download_mirror, &filename);
@@ -116,7 +116,7 @@ impl GoPlugin {
     fn install(
         &self,
         tv: &ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
         tarball_path: &Path,
     ) -> eyre::Result<()> {
         let tarball = tarball_path
@@ -143,7 +143,7 @@ impl GoPlugin {
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         self.test_go(tv, pr)?;
         if let Err(err) = self.install_default_packages(tv, pr) {
             warn!("failed to install default go packages: {err:#}");
@@ -202,15 +202,19 @@ impl Backend for GoPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let tarball_path = self.download(&mut tv, ctx.pr.as_ref())?;
+        let tarball_path = self.download(&mut tv, &ctx.pr)?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
-        self.install(&tv, ctx.pr.as_ref(), &tarball_path)?;
-        self.verify(&tv, ctx.pr.as_ref())?;
+        self.install(&tv, &ctx.pr, &tarball_path)?;
+        self.verify(&tv, &ctx.pr)?;
 
         Ok(tv)
     }
 
-    fn uninstall_version_impl(&self, _pr: &dyn SingleReport, tv: &ToolVersion) -> eyre::Result<()> {
+    fn uninstall_version_impl(
+        &self,
+        _pr: &Box<dyn SingleReport>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<()> {
         let gopath = self.gopath(tv);
         if gopath.exists() {
             cmd!("chmod", "-R", "u+wx", gopath).run()?;

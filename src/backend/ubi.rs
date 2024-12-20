@@ -198,14 +198,14 @@ impl Backend for UbiBackend {
             ctx.pr
                 .set_message(format!("checksum verify {checksum_key}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
+                hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
             } else {
                 bail!("Invalid checksum: {checksum_key}");
             }
         } else if SETTINGS.lockfile && SETTINGS.experimental {
             ctx.pr
                 .set_message(format!("checksum generate {checksum_key}"));
-            let hash = hash::file_hash_sha256(file, Some(ctx.pr.as_ref()))?;
+            let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
             tv.checksums.insert(checksum_key, format!("sha256:{hash}"));
         }
         Ok(())

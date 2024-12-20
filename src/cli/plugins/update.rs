@@ -52,7 +52,7 @@ impl Update {
                         let prefix = format!("plugin:{}", style(plugin.name()).blue().for_stderr());
                         let pr = mpr.add(&prefix);
                         plugin
-                            .update(pr.as_ref(), ref_)
+                            .update(&pr, ref_)
                             .wrap_err_with(|| format!("[{plugin}] plugin update"))?;
                         Ok(())
                     })

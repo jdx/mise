@@ -96,7 +96,7 @@ impl Backend for PIPXBackend {
                 self,
                 &tv,
                 ctx.ts,
-                &*ctx.pr,
+                &ctx.pr,
             )?;
             if let Some(args) = tv.request.options().get("uvx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
@@ -110,7 +110,7 @@ impl Backend for PIPXBackend {
                 self,
                 &tv,
                 ctx.ts,
-                &*ctx.pr,
+                &ctx.pr,
             )?;
             if let Some(args) = tv.request.options().get("pipx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
@@ -149,14 +149,14 @@ impl PIPXBackend {
                     ("install", format!("{}=={}", tv.ba().tool_name, tv.version)),
                 ] {
                     let args = &["tool", cmd, tool];
-                    Self::uvx_cmd(&config, args, &*b, &tv, &ts, &*pr)?.execute()?;
+                    Self::uvx_cmd(&config, args, &*b, &tv, &ts, &pr)?.execute()?;
                 }
             }
         } else {
             let pr = MultiProgressReport::get().add("reinstalling pipx tools");
             for (b, tv) in pipx_tools {
                 let args = &["reinstall", &tv.ba().tool_name];
-                Self::pipx_cmd(&config, args, &*b, &tv, &ts, &*pr)?.execute()?;
+                Self::pipx_cmd(&config, args, &*b, &tv, &ts, &pr)?.execute()?;
             }
         }
         Ok(())
@@ -168,7 +168,7 @@ impl PIPXBackend {
         b: &dyn Backend,
         tv: &ToolVersion,
         ts: &Toolset,
-        pr: &'a dyn SingleReport,
+        pr: &'a Box<dyn SingleReport>,
     ) -> Result<CmdLineRunner<'a>> {
         let mut cmd = CmdLineRunner::new("uv");
         for arg in args {
@@ -189,7 +189,7 @@ impl PIPXBackend {
         b: &dyn Backend,
         tv: &ToolVersion,
         ts: &Toolset,
-        pr: &'a dyn SingleReport,
+        pr: &'a Box<dyn SingleReport>,
     ) -> Result<CmdLineRunner<'a>> {
         let mut cmd = CmdLineRunner::new("pipx");
         for arg in args {
