@@ -13,6 +13,12 @@ $ dotnet-gitversion /version
 5.12.0+Branch.support-5.x.Sha.3f75764963eb3d7956dcd5a40488c074dd9faf9e
 ```
 
+```sh
+$ mise use -g dotnet:GitVersion.Tool
+$ dotnet-gitversion /version
+6.1.0+Branch.main.Sha.8856e3041dbb768118a55a31ad4e465ae70c6767
+```
+
 The version will be set in `~/.config/mise/config.toml` with the following format:
 
 ```toml
@@ -20,7 +26,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 "dotnet:GitVersion.Tool" = "5.12.0"
 ```
 
-### Supported Pipx Syntax
+### Supported Dotnet Syntax
 
 | Description                           | Usage                           |
 | ------------------------------------- | ------------------------------- |
