@@ -52,15 +52,11 @@ impl ConfigSet {
             let mut container = config.as_item_mut();
             let parts = self.key.split('.').collect::<Vec<&str>>();
             for key in parts.iter().take(parts.len() - 1) {
-                container = container
-                    .as_table_mut()
-                    .unwrap()
-                    .entry(key)
-                    .or_insert({
-                        let mut t = toml_edit::Table::new();
-                        t.set_implicit(true);
-                        toml_edit::Item::Table(t)
-                    });
+                container = container.as_table_mut().unwrap().entry(key).or_insert({
+                    let mut t = toml_edit::Table::new();
+                    t.set_implicit(true);
+                    toml_edit::Item::Table(t)
+                });
             }
             let last_key = parts.last().unwrap();
 
