@@ -51,7 +51,6 @@ This is intended to be used on each project separately. Via the defined tasks yo
 
 It will create a `.venv` directory via the `python` preset and additional configuration depending on the other tooling.
 
-
 ### Configuration files
 
 Recommended configuration
