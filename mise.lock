@@ -6,6 +6,7 @@ backend = "aqua:rhysd/actionlint"
 actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
 actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5ccd2564bf86192c1b661"
 "actionlint.exe-windows-x86_64" = "sha256:04ca117d9f33b77731fd3ef6a3670bd6b11b40c1b1cc5b7aaf6c28392d74d2e2"
+"actionlint_1.7.4_linux_amd64.tar.gz" = "sha256:fc0a6886bbb9a23a39eeec4b176193cadb54ddbe77cdbb19b637933919545395"
 
 [tools.bun]
 version = "1.1.38"

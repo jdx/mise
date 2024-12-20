@@ -12,12 +12,12 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use color_eyre::eyre::{Context, Result};
+use eyre::bail;
 use filetime::{set_file_times, FileTime};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::sync::LazyLock as Lazy;
-use eyre::bail;
 use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
@@ -629,7 +629,9 @@ pub struct TarOptions<'a> {
 
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     let format = match opts.format {
-        TarFormat::Auto => TarFormat::from_ext(&archive.extension().unwrap().to_string_lossy().to_string()),
+        TarFormat::Auto => {
+            TarFormat::from_ext(archive.extension().unwrap().to_string_lossy().as_ref())
+        }
         _ => opts.format,
     };
     if format == TarFormat::Zip {
@@ -637,7 +639,8 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         match opts.strip_components {
             0 => {}
             1 => {
-                let entries = ls(dest)?.into_iter()
+                let entries = ls(dest)?
+                    .into_iter()
                     .map(|p| ls(&p))
                     .collect::<Result<Vec<_>>>()?
                     .into_iter()

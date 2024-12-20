@@ -327,7 +327,7 @@
         },
         "default_tool_versions_filename": {
           "default": ".tool-versions",
-          "description": "The default .tool-versions filename read. `mise use` and other commands that write to new config files will use this if asdf_compat=1. This must be an env var.",
+          "description": "The default .tool-versions filename read. This will not ignore .tool-versions—use override_tool_versions_filename for that. This must be an env var.",
           "type": "string"
         },
         "disable_backends": {
