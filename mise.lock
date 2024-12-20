@@ -8,12 +8,11 @@ actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5c
 "actionlint.exe-windows-x86_64" = "sha256:04ca117d9f33b77731fd3ef6a3670bd6b11b40c1b1cc5b7aaf6c28392d74d2e2"
 
 [tools.bun]
-version = "1.1.38"
+version = "1.1.40"
 backend = "core:bun"
 
 [tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:bbc6fb0e7bb99e7e95001ba05105cf09d0b79c06941d9f6ee3d0b34dc1541590"
-"bun-linux-x64-baseline.zip" = "sha256:353e2e6d4086a09eeee984d2ed61736dcd905838ede51b82689fd7b3e95def90"
+"bun-linux-x64-baseline.zip" = "sha256:c6be2321e8028c6376098fa29baad1cd454f4f33827ff426fdd5ce79695f6d27"
 
 [tools.cargo-binstall]
 version = "1.10.15"
