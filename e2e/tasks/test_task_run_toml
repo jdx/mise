@@ -35,3 +35,12 @@ assert "mise run -E windows configtask" "configtask:windows"
 assert "mise run -P windows configtask" "configtask:windows"
 MISE_ENV=windows assert "mise run configtask" "configtask:windows"
 MISE_PROFILE=windows assert "mise run configtask" "configtask:windows"
+
+cat <<EOF >mise.toml
+[tasks.a]
+usage = '''
+arg "myarg" "myarg description" default="foo"
+'''
+run = 'echo {{arg(name="myarg")}}'
+EOF
+assert "mise run a" "foo"

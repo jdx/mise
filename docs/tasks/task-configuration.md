@@ -254,6 +254,20 @@ like to hide even the output that the task emits, use [`silent`](#silent).
 
 Suppress all output from the task. If set to `"stdout"` or `"stderr"`, only that stream will be suppressed.
 
+### `usage`
+
+- **Type**: `string`
+
+More advanced usage specs can be added to the task's `usage` field. This only applies to toml-tasks.
+
+```toml
+[tasks.test]
+usage = '''
+arg "file" description="The file to test" default="src/main.rs"
+'''
+run = 'cargo test {{arg(name="file")}}'
+```
+
 ## Vars
 
 Vars are variables that can be shared between tasks like environment variables but they are not
