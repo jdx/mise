@@ -7,7 +7,7 @@ use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
 use crate::cli::version;
 use crate::cli::version::VERSION;
-use crate::config::Config;
+use crate::config::{Config, IGNORED_CONFIG_FILES};
 use crate::env::PATH_KEY;
 use crate::file::display_path;
 use crate::git::Git;
@@ -108,6 +108,21 @@ impl Doctor {
             "paths".into(),
             self.paths(ts)?
                 .into_iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+        );
+        data.insert(
+            "config_files".into(),
+            config
+                .config_files
+                .keys()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+        );
+        data.insert(
+            "ignored_config_files".into(),
+            IGNORED_CONFIG_FILES
+                .iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect(),
         );
@@ -241,6 +256,15 @@ impl Doctor {
         let config = config.as_ref();
 
         info::section("config_files", render_config_files(config))?;
+        if IGNORED_CONFIG_FILES.is_empty() {
+            println!();
+            info::inline_section("ignored_config_files", "(none)")?;
+        } else {
+            info::section(
+                "ignored_config_files",
+                IGNORED_CONFIG_FILES.iter().map(display_path).join("\n"),
+            )?;
+        }
         info::section("backends", render_backends())?;
         info::section("plugins", render_plugins())?;
 
