@@ -56,7 +56,11 @@ impl ConfigSet {
                     .as_table_mut()
                     .unwrap()
                     .entry(key)
-                    .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+                    .or_insert({
+                        let mut t = toml_edit::Table::new();
+                        t.set_implicit(true);
+                        toml_edit::Item::Table(t)
+                    });
             }
             let last_key = parts.last().unwrap();
 
