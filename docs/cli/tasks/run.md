@@ -103,7 +103,11 @@ Don't show extra output
 
 Don't show any output except for errors
 
-### `--output <OUTPUT>`
+### `-o --output <OUTPUT>`
+
+Change how tasks information is output when running tasks
+
+- `prefix` - Print stdout/stderr by line, prefixed with the task's label - `interleave` - Print directly to stdout/stderr instead of by line - `quiet` - Don't show extra output - `silent` - Don't show any output including stdout and stderr from the task except for errors
 
 Examples:
 

@@ -167,7 +167,7 @@ pub struct Run {
     pub failed_tasks: Mutex<Vec<(Task, i32)>>,
 
     /// Change how tasks information is output when running tasks
-    /// 
+    ///
     /// - `prefix` - Print stdout/stderr by line, prefixed with the task's label
     /// - `interleave` - Print directly to stdout/stderr instead of by line
     /// - `quiet` - Don't show extra output
