@@ -861,6 +861,12 @@ pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
         .into_iter()
         .collect()
 });
+pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
+    load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
+        .into_iter()
+        .filter(|p| config_file::is_ignored(p))
+        .collect()
+});
 // pub static LOCAL_CONFIG_FILES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
 //     ALL_CONFIG_FILES
 //         .iter()
@@ -901,9 +907,10 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     let mut config_files = dirs
         .par_iter()
         .flat_map(|dir| {
-            if env::MISE_IGNORED_CONFIG_PATHS
-                .iter()
-                .any(|p| dir.starts_with(p))
+            if !include_ignored
+                && env::MISE_IGNORED_CONFIG_PATHS
+                    .iter()
+                    .any(|p| dir.starts_with(p))
             {
                 vec![]
             } else {
