@@ -203,7 +203,7 @@ description = "The default config filename read. `mise use` and other commands t
 env = "MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
 type = "String"
 default = ".tool-versions"
-description = "The default .tool-versions filename read. `mise use` and other commands that write to new config files will use this if asdf_compat=1. This must be an env var."
+description = "The default .tool-versions filename read. This will not ignore .tool-versions—use override_tool_versions_filename for that. This must be an env var."
 
 [disable_backends]
 env = "MISE_DISABLE_BACKENDS"
