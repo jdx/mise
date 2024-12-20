@@ -1,6 +1,7 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
+use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
 use crate::http::HTTP_FETCH;
 use eyre::eyre;
@@ -39,8 +40,6 @@ impl Backend for DotnetBackend {
         let data = feed.data.first().ok_or_else(|| eyre!("No data found"))?;
 
         // Because the nuget API is a search API we need to check name of the tool we are looking for
-        debug!("Found tool: {}", data.id);
-        debug!("Tool name: {}", self.tool_name());
         if data.id != self.tool_name() {
             return Err(eyre!("Tool {} not found", &self.tool_name()));
         }
@@ -53,7 +52,23 @@ impl Backend for DotnetBackend {
         ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
     ) -> eyre::Result<crate::toolset::ToolVersion> {
-        todo!()
+
+        let mut cli = CmdLineRunner::new("dotnet")
+            .arg("tool")
+            .arg("install")
+            .arg(self.tool_name())
+            .arg("--tool-path")
+            .arg(tv.install_path().join("bin"));
+
+        if &tv.version != "latest" {
+            cli = cli.arg("--version").arg(&tv.version);
+        }
+
+        cli.with_pr(ctx.pr.as_ref())
+            .envs(self.dependency_env()?)
+            .execute()?;
+
+        Ok(tv)
     }
 }
 
@@ -100,7 +115,6 @@ struct NugetFeedSearch {
 #[derive(serde::Deserialize)]
 struct NugetFeedSearchData {
     id: String,
-    version: String,
     versions: Vec<NugetFeedSearchDataVersion>,
 }
 
