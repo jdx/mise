@@ -23,8 +23,12 @@ pub static SHELL: Lazy<String> = Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| 
 pub static HOME: Lazy<PathBuf> =
     Lazy::new(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
 #[cfg(not(test))]
-pub static HOME: Lazy<PathBuf> =
-    Lazy::new(|| home::home_dir().unwrap_or_else(|| PathBuf::from("/")));
+pub static HOME: Lazy<PathBuf> = Lazy::new(|| {
+    homedir::my_home()
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| PathBuf::from("/"))
+});
 
 pub static EDITOR: Lazy<String> =
     Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));

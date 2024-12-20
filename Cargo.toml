@@ -68,6 +68,7 @@ digest = "0.10.7"
 dotenvy = "0.15"
 duct = "0.13"
 either = { version = "1", features = ["serde"] }
+homedir = "0.3"
 # expr-lang = { path = "../expr-lang" }
 expr-lang = "0.2"
 eyre = "0.6"
@@ -78,7 +79,6 @@ git2 = "<1"
 glob = "0.3"
 globset = "0.4"
 heck = "0.5"
-home = "0.5"
 humantime = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
