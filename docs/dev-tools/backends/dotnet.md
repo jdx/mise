@@ -13,6 +13,13 @@ $ dotnet-gitversion /version
 5.12.0+Branch.support-5.x.Sha.3f75764963eb3d7956dcd5a40488c074dd9faf9e
 ```
 
+The version will be set in `~/.config/mise/config.toml` with the following format:
+
+```toml
+[tools]
+"dotnet:GitVersion.Tool" = "5.12.0"
+```
+
 ```sh
 $ mise use -g dotnet:GitVersion.Tool
 $ dotnet-gitversion /version
@@ -23,7 +30,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ```toml
 [tools]
-"dotnet:GitVersion.Tool" = "5.12.0"
+"dotnet:GitVersion.Tool" = "latest"
 ```
 
 ### Supported Dotnet Syntax
