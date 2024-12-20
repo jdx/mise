@@ -913,6 +913,15 @@
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
+        },
+        "dotnet": {
+          "additionalProperties": false,
+          "properties": {
+            "registry_url": {
+              "description": "URL to fetch dotnet tools from.",
+              "type": "string"
+            }
+          }
         }
       }
     },
