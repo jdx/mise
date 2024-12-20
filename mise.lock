@@ -22,6 +22,7 @@ backend = "aqua:cargo-bins/cargo-binstall"
 [tools.cargo-binstall.checksums]
 "cargo-binstall-aarch64-apple-darwin.zip" = "sha256:0afb56acd834d7b0bc9a5293963da04abe48923d90f374bed98068b313a48f2c"
 "cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:f333f552699e76e8fe570da6fb928c273c0c2d14e0955f6b79f7f59eb932ba73"
+"cargo-binstall.exe-windows-aarch64" = "sha256:cda730ac19fafe200fe9fb12d6dddfb6a125b47ce9441d0f862f6d739ff486b3"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.0"
@@ -126,6 +127,7 @@ backend = "ubi:tamasfe/taplo[matching=full]"
 [tools.taplo.checksums]
 taplo-full-linux-x86_64 = "sha256:e89d2303ea9a5ec07971feec807fa493dc9ab6624c19b313ff90fdede247ee08"
 taplo-full-macos-aarch64 = "sha256:cf55aa3e4c9b631c1fbb3f8a4adac59ca2ecc7898d26e749cd9b62d5ed858fce"
+"taplo.exe-full-windows-aarch64" = "sha256:13eaa7f30f321a02a43bcc476450b9a79307f12addc25df132613cbb76d03f86"
 
 [tools.wait-for-gh-rate-limit]
 version = "0.1.8"
@@ -134,3 +136,4 @@ backend = "ubi:jdx/wait-for-gh-rate-limit"
 [tools.wait-for-gh-rate-limit.checksums]
 wait-for-gh-rate-limit-linux-x86_64 = "sha256:a3e7e966a8d681f30bb7887e471740607074ab7f28580dd926efc307b0d35c20"
 wait-for-gh-rate-limit-macos-aarch64 = "sha256:94975cf4b05c29d1a2bf42ead5c07f297ab80169a3c1813bcbbbac35d9acf7cb"
+"wait-for-gh-rate-limit.exe-windows-aarch64" = "sha256:2b6a48bc8f31388e1b8d66ccd6dd19c450a42e6ae0edb4b3072f3348735e4056"

@@ -5,6 +5,7 @@ use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
+use crate::file::TarOptions;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion};
@@ -29,7 +30,11 @@ impl ZigPlugin {
     }
 
     fn zig_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("zig")
+        if cfg!(windows) {
+            tv.install_path().join("zig.exe")
+        } else {
+            tv.install_path().join("bin").join("zig")
+        }
     }
 
     fn test_zig(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
@@ -41,23 +46,28 @@ impl ZigPlugin {
     }
 
     fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+        let archive_ext = if cfg!(target_os = "windows") {
+            "zip"
+        } else {
+            "tar.xz"
+        };
         let url = if tv.version == "ref:master" {
             format!(
-                "https://ziglang.org/builds/zig-{}-{}-{}.tar.xz",
+                "https://ziglang.org/builds/zig-{}-{}-{}.{archive_ext}",
                 os(),
                 arch(),
                 self.get_master_version()?
             )
         } else if regex!(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").is_match(&tv.version) {
             format!(
-                "https://ziglang.org/builds/zig-{}-{}-{}.tar.xz",
+                "https://ziglang.org/builds/zig-{}-{}-{}.{archive_ext}",
                 os(),
                 arch(),
                 tv.version
             )
         } else {
             format!(
-                "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
+                "https://ziglang.org/download/{}/zig-{}-{}-{}.{archive_ext}",
                 tv.version,
                 os(),
                 arch(),
@@ -78,25 +88,20 @@ impl ZigPlugin {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
-        untar_xy(tarball_path, &tv.download_path())?;
-        file::rename(
-            tv.download_path().join(format!(
-                "zig-{}-{}-{}",
-                os(),
-                arch(),
-                if tv.version == "ref:master" {
-                    self.get_master_version()?
-                } else {
-                    tv.version.clone()
-                }
-            )),
-            tv.install_path(),
+        file::untar(
+            tarball_path,
+            &tv.install_path(),
+            &TarOptions {
+                strip_components: 1,
+                pr: Some(ctx.pr.as_ref()),
+                ..Default::default()
+            },
         )?;
-        file::create_dir_all(tv.install_path().join("bin"))?;
-        file::make_symlink(
-            self.zig_bin(tv).as_path(),
-            &tv.install_path().join("bin/zig"),
-        )?;
+
+        if cfg!(unix) {
+            file::create_dir_all(tv.install_path().join("bin"))?;
+            file::make_symlink(Path::new("../zig"), &tv.install_path().join("bin/zig"))?;
+        }
 
         Ok(())
     }
@@ -129,6 +134,14 @@ impl Backend for ZigPlugin {
             .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
             .collect();
         Ok(versions)
+    }
+
+    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        if cfg!(windows) {
+            Ok(vec![tv.install_path()])
+        } else {
+            Ok(vec![tv.install_path().join("bin")])
+        }
     }
 
     fn idiomatic_filenames(&self) -> Result<Vec<String>> {
@@ -170,27 +183,4 @@ fn arch() -> &'static str {
     } else {
         arch
     }
-}
-
-pub fn untar_xy(archive: &Path, dest: &Path) -> Result<()> {
-    let archive = archive
-        .to_str()
-        .ok_or(eyre::eyre!("Failed to read archive path"))?;
-    let dest = dest
-        .to_str()
-        .ok_or(eyre::eyre!("Failed to read destination path"))?;
-
-    let output = std::process::Command::new("tar")
-        .arg("-xf")
-        .arg(archive)
-        .arg("-C")
-        .arg(dest)
-        .output()?;
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        return Err(eyre::eyre!("Failed to extract tar: {}", err));
-    }
-
-    Ok(())
 }

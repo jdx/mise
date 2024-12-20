@@ -17,6 +17,7 @@ use flate2::read::GzDecoder;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::sync::LazyLock as Lazy;
+use eyre::bail;
 use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
@@ -591,7 +592,7 @@ pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-#[derive(Default, Clone, Copy, strum::EnumString, strum::Display)]
+#[derive(Default, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
 pub enum TarFormat {
     #[default]
     Auto,
@@ -603,6 +604,20 @@ pub enum TarFormat {
     TarBz2,
     #[strum(serialize = "tar.zst")]
     TarZst,
+    #[strum(serialize = "zip")]
+    Zip,
+}
+
+impl TarFormat {
+    pub fn from_ext(ext: &str) -> Self {
+        match ext {
+            "xz" => TarFormat::TarXz,
+            "bz2" => TarFormat::TarBz2,
+            "zst" => TarFormat::TarZst,
+            "zip" => TarFormat::Zip,
+            _ => TarFormat::TarGz,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -613,6 +628,31 @@ pub struct TarOptions<'a> {
 }
 
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
+    let format = match opts.format {
+        TarFormat::Auto => TarFormat::from_ext(&archive.extension().unwrap().to_string_lossy().to_string()),
+        _ => opts.format,
+    };
+    if format == TarFormat::Zip {
+        unzip(archive, dest)?;
+        match opts.strip_components {
+            0 => {}
+            1 => {
+                let entries = ls(dest)?.into_iter()
+                    .map(|p| ls(&p))
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+                for entry in entries {
+                    let mut new_dest = dest.to_path_buf();
+                    new_dest.push(entry.file_name().unwrap());
+                    fs::rename(entry, new_dest)?;
+                }
+            }
+            _ => bail!("strip-components not supported for zip archives"),
+        }
+        return Ok(());
+    }
     debug!("tar -xf {} -C {}", archive.display(), dest.display());
     if let Some(pr) = &opts.pr {
         pr.set_message(format!(
@@ -620,7 +660,7 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
-    let tar = open_tar(opts.format, archive)?;
+    let tar = open_tar(format, archive)?;
     let err = || {
         let archive = display_path(archive);
         let dest = display_path(dest);
@@ -671,10 +711,12 @@ fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>>
         TarFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
         TarFormat::TarBz2 => Box::new(bzip2::read::BzDecoder::new(f)),
         TarFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
+        TarFormat::Zip => bail!("zip format not supported"),
         TarFormat::Auto => match archive.extension().and_then(|s| s.to_str()) {
             Some("xz") => open_tar(TarFormat::TarXz, archive)?,
             Some("bz2") => open_tar(TarFormat::TarBz2, archive)?,
             Some("zst") => open_tar(TarFormat::TarZst, archive)?,
+            Some("zip") => bail!("zip format not supported"),
             _ => open_tar(TarFormat::TarGz, archive)?,
         },
     })
@@ -762,7 +804,6 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-
     use pretty_assertions::assert_eq;
     use test_log::test;
 
