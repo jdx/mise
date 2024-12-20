@@ -32,6 +32,7 @@ mod hook_env;
 mod hook_not_found;
 mod implode;
 mod install;
+mod install_into;
 mod latest;
 mod link;
 mod local;
@@ -86,7 +87,7 @@ pub struct Cli {
     #[clap(name = "TASK", long_help = LONG_TASK_ABOUT)]
     pub task: Option<String>,
     /// Task arguments
-    #[clap(hide = true)]
+    #[clap(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
     pub task_args: Option<Vec<String>>,
     /// Change directory before running command
     #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
@@ -204,6 +205,7 @@ pub enum Commands {
     HookNotFound(hook_not_found::HookNotFound),
     Implode(implode::Implode),
     Install(install::Install),
+    InstallInto(install_into::InstallInto),
     Latest(latest::Latest),
     Link(link::Link),
     Local(local::Local),
@@ -267,6 +269,7 @@ impl Commands {
             Self::HookNotFound(cmd) => cmd.run(),
             Self::Implode(cmd) => cmd.run(),
             Self::Install(cmd) => cmd.run(),
+            Self::InstallInto(cmd) => cmd.run(),
             Self::Latest(cmd) => cmd.run(),
             Self::Link(cmd) => cmd.run(),
             Self::Local(cmd) => cmd.run(),

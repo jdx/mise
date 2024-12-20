@@ -1,6 +1,7 @@
 mod path;
 
 use crate::exit;
+use std::collections::BTreeMap;
 
 use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
@@ -13,14 +14,17 @@ use crate::git::Git;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
 use crate::shell::ShellType;
-use crate::toolset::{Toolset, ToolsetBuilder};
+use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
 use crate::{backend, cmd, dirs, duration, env, file, shims};
 use console::{pad_str, style, Alignment};
+use heck::ToSnakeCase;
+use indexmap::IndexMap;
 use indoc::formatdoc;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::env::split_paths;
+use std::path::{Path, PathBuf};
 use strum::IntoEnumIterator;
 
 /// Check mise installation for possible problems
@@ -33,6 +37,8 @@ pub struct Doctor {
     errors: Vec<String>,
     #[clap(skip)]
     warnings: Vec<String>,
+    #[clap(long, short = 'J')]
+    json: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]
@@ -46,9 +52,104 @@ impl Doctor {
             match cmd {
                 Commands::Path(cmd) => cmd.run(),
             }
+        } else if self.json {
+            self.doctor_json()
         } else {
             self.doctor()
         }
+    }
+
+    fn doctor_json(mut self) -> crate::Result<()> {
+        let mut data: BTreeMap<String, _> = BTreeMap::new();
+        data.insert(
+            "version".into(),
+            serde_json::Value::String(VERSION.to_string()),
+        );
+        data.insert("activated".into(), env::is_activated().into());
+        data.insert("shims_on_path".into(), shims_on_path().into());
+        if env::is_activated() && shims_on_path() {
+            self.errors.push("shims are on PATH and mise is also activated. You should only use one of these methods.".to_string());
+        }
+        data.insert(
+            "build_info".into(),
+            build_info()
+                .into_iter()
+                .map(|(k, v)| (k.to_snake_case(), v))
+                .collect(),
+        );
+        let shell = shell();
+        let mut shell_lines = shell.lines();
+        let mut shell = serde_json::Map::new();
+        if let Some(name) = shell_lines.next() {
+            shell.insert("name".into(), name.into());
+        }
+        if let Some(version) = shell_lines.next() {
+            shell.insert("version".into(), version.into());
+        }
+        data.insert("shell".into(), shell.into());
+        data.insert(
+            "dirs".into(),
+            mise_dirs()
+                .into_iter()
+                .map(|(k, p)| (k, p.to_string_lossy().to_string()))
+                .collect(),
+        );
+        data.insert("env_vars".into(), mise_env_vars().into_iter().collect());
+        data.insert(
+            "settings".into(),
+            serde_json::from_str(&cmd!("mise", "settings", "-J").read()?)?,
+        );
+
+        let config = Config::get();
+        let ts = config.get_toolset()?;
+        self.analyze_shims(ts);
+        self.analyze_plugins();
+        data.insert(
+            "paths".into(),
+            self.paths(ts)?
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+        );
+
+        let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tv)| {
+            let versions: serde_json::Value = tv
+                .iter()
+                .map(|tv: &ToolVersion| {
+                    let mut tool = serde_json::Map::new();
+                    match f.is_version_installed(tv, true) {
+                        true => {
+                            tool.insert("version".into(), tv.version.to_string().into());
+                        }
+                        false => {
+                            tool.insert("version".into(), tv.version.to_string().into());
+                            tool.insert("missing".into(), true.into());
+                        }
+                    }
+                    serde_json::Value::from(tool)
+                })
+                .collect();
+            (f.ba().to_string(), versions)
+        });
+        data.insert("toolset".into(), tools.collect());
+
+        if !self.errors.is_empty() {
+            data.insert("errors".into(), self.errors.clone().into_iter().collect());
+        }
+        if !self.warnings.is_empty() {
+            data.insert(
+                "warnings".into(),
+                self.warnings.clone().into_iter().collect(),
+            );
+        }
+
+        let out = serde_json::to_string_pretty(&data)?;
+        println!("{}", out);
+
+        if !self.errors.is_empty() {
+            exit(1);
+        }
+        Ok(())
     }
 
     fn doctor(mut self) -> eyre::Result<()> {
@@ -60,9 +161,17 @@ impl Doctor {
             self.errors.push("shims are on PATH and mise is also activated. You should only use one of these methods.".to_string());
         }
 
-        info::section("build_info", build_info())?;
+        let build_info = build_info()
+            .into_iter()
+            .map(|(k, v)| format!("{k}: {v}"))
+            .join("\n");
+        info::section("build_info", build_info)?;
         info::section("shell", shell())?;
-        info::section("dirs", mise_dirs())?;
+        let mise_dirs = mise_dirs()
+            .into_iter()
+            .map(|(k, p)| format!("{k}: {}", display_path(p)))
+            .join("\n");
+        info::section("dirs", mise_dirs)?;
 
         match Config::try_get() {
             Ok(config) => self.analyze_config(config)?,
@@ -71,7 +180,15 @@ impl Doctor {
 
         self.analyze_plugins();
 
-        info::section("env_vars", mise_env_vars())?;
+        let env_vars = mise_env_vars()
+            .into_iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .join("\n");
+        if env_vars.is_empty() {
+            info::section("env_vars", "(none)")?;
+        } else {
+            info::section("env_vars", env_vars)?;
+        }
         self.analyze_settings()?;
 
         if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
@@ -231,16 +348,16 @@ impl Doctor {
         }
     }
 
-    fn analyze_paths(&mut self, toolset: &Toolset) -> eyre::Result<()> {
-        let env = toolset.full_env()?;
+    fn paths(&mut self, ts: &Toolset) -> eyre::Result<Vec<PathBuf>> {
+        let env = ts.full_env()?;
         let path = env
             .get(&*PATH_KEY)
             .ok_or_else(|| eyre::eyre!("Path not found"))?;
-        let paths = split_paths(path)
-            .collect::<Vec<std::path::PathBuf>>()
-            .into_iter()
-            .map(display_path)
-            .join("\n");
+        Ok(split_paths(path).map(PathBuf::from).collect())
+    }
+
+    fn analyze_paths(&mut self, ts: &Toolset) -> eyre::Result<()> {
+        let paths = self.paths(ts)?.into_iter().map(display_path).join("\n");
 
         info::section("path", paths)?;
         Ok(())
@@ -259,7 +376,7 @@ fn yn(b: bool) -> String {
     }
 }
 
-fn mise_dirs() -> String {
+fn mise_dirs() -> Vec<(String, &'static Path)> {
     [
         ("cache", &*dirs::CACHE),
         ("config", &*dirs::CONFIG),
@@ -268,19 +385,15 @@ fn mise_dirs() -> String {
         ("state", &*dirs::STATE),
     ]
     .iter()
-    .map(|(k, p)| format!("{k}: {}", display_path(p)))
-    .join("\n")
+    .map(|(k, v)| (k.to_string(), **v))
+    .collect()
 }
 
-fn mise_env_vars() -> String {
-    let vars = env::vars()
+fn mise_env_vars() -> Vec<(String, String)> {
+    env::vars()
         .filter(|(k, _)| k.starts_with("MISE_"))
         .filter(|(k, _)| k != "MISE_GITHUB_TOKEN")
-        .collect::<Vec<(String, String)>>();
-    if vars.is_empty() {
-        return "(none)".to_string();
-    }
-    vars.iter().map(|(k, v)| format!("{k}={v}")).join("\n")
+        .collect()
 }
 
 fn render_config_files(config: &Config) -> String {
@@ -340,14 +453,14 @@ fn render_plugins() -> String {
         .join("\n")
 }
 
-fn build_info() -> String {
-    let mut s = vec![];
-    s.push(format!("Target: {}", built_info::TARGET));
-    s.push(format!("Features: {}", built_info::FEATURES_STR));
-    s.push(format!("Built: {}", built_info::BUILT_TIME_UTC));
-    s.push(format!("Rust Version: {}", built_info::RUSTC_VERSION));
-    s.push(format!("Profile: {}", built_info::PROFILE));
-    s.join("\n")
+fn build_info() -> IndexMap<String, &'static str> {
+    let mut s = IndexMap::new();
+    s.insert("Target".into(), built_info::TARGET);
+    s.insert("Features".into(), built_info::FEATURES_STR);
+    s.insert("Built".into(), built_info::BUILT_TIME_UTC);
+    s.insert("Rust Version".into(), built_info::RUSTC_VERSION);
+    s.insert("Profile".into(), built_info::PROFILE);
+    s
 }
 
 fn shell() -> String {

@@ -2,12 +2,30 @@
 
 Templates in mise provide a powerful way to configure different aspects of
 your environment and project settings.
+
+A template is a string that contains variables, expressions, and control structures.
+When rendered, the template engine (`tera`) replaces the variables with their values.
+
 You can define and use templates in the following locations:
 
 - Most `mise.toml` configuration values
   - The `mise.toml` file itself is not templated and must be valid toml
 - `.tool-versions` files
 - _(Submit a ticket if you want to see it used elsewhere!)_
+
+## Example
+
+Here is an example of a `mise.toml` file that uses templates:
+
+```toml
+[env]
+PROJECT_NAME = "{{ cwd | basename }}"
+
+[tools]
+node = "{{ get_env(name='NODE_VERSION', default='20') }}"
+```
+
+You will find more examples in the [cookbook](./mise-cookbook/index.md).
 
 ## Template Rendering
 
@@ -213,7 +231,7 @@ Some filters:
 - `str | date(format) -> String` – Converts a timestamp to
   a formatted date string using the provided format,
   such as <span v-pre>`{{ ts | date(format="%Y-%m-%d") }}`</span>.
-  Find a list of time format on [`chrono` documentation][chrono-doc].
+  Find a list of time format on [`chrono` documentation](https://docs.rs/chrono/latest/chrono/format/strftime/index.html).
 - `str | split(pat) -> Array` – Splits a string by the given pattern and
   returns an array of substrings.
 - `str | default(value) -> String` – Returns the default value
@@ -289,181 +307,3 @@ Mise offers additional tests:
 - `if path is dir` – Checks if the provided path is a directory.
 - `if path is file` – Checks if the path points to a file.
 - `if path is exists` – Checks if the path exists.
-
-### Example Templates
-
-#### A Node.js Project
-
-```toml
-min_version = "2024.9.5"
-
-[env]
-# Use the project name derived from the current directory
-PROJECT_NAME = "{{ cwd | basename }}"
-
-# Set up the path for node module binaries
-BIN_PATH = "{{ cwd }}/node_modules/.bin"
-
-NODE_ENV = "{{ env.NODE_ENV | default(value='development') }}"
-
-[tools]
-# Install Node.js using the specified version
-node = "{{ env['NODE_VERSION'] | default(value='lts') }}"
-
-# Install npm packages globally if needed
-"npm:typescript" = "latest"
-"npm:eslint" = "latest"
-"npm:jest" = "latest"
-
-# Install npm dependencies
-[tasks.install]
-alias = "i"
-run = "npm install"
-
-# Run the development server
-[tasks.start]
-alias = "s"
-run = "npm run start"
-
-# Run linting
-[tasks.lint]
-alias = "l"
-run = "eslint src/"
-
-# Run tests
-[tasks.test]
-alias = "t"
-run = "jest"
-
-# Build the project
-[tasks.build]
-alias = "b"
-run = "npm run build"
-
-# Print project info
-[tasks.info]
-run = '''
-echo "Project: $PROJECT_NAME"
-echo "NODE_ENV: $NODE_ENV"
-'''
-```
-
-#### A Python Project with virtualenv
-
-```toml
-min_version = "2024.9.5"
-
-[env]
-# Use the project name derived from the current directory
-PROJECT_NAME = "{{ cwd | basename }}"
-
-# Automatic virtualenv activation
-_.python.venv = { path = ".venv", create = true }
-
-[tools]
-# Install the specified Python version
-python = "{{ get_env(name='PYTHON_VERSION', default='3.11') }}"
-
-# Install dependencies
-[tasks.install]
-alias = "i"
-run = "pip install -r requirements.txt"
-
-# Run the application
-[tasks.run]
-run = "python app.py"
-
-# Run tests
-[tasks.test]
-run = "pytest tests/"
-
-# Lint the code
-[tasks.lint]
-run = "ruff src/"
-
-# Print environment information
-[tasks.info]
-run = '''
-echo "Project: $PROJECT_NAME"
-echo "Virtual Environment: $VIRTUAL_ENV"
-'''
-```
-
-#### A C++ Project with CMake
-
-```toml
-min_version = "2024.9.5"
-
-[env]
-# Project information
-PROJECT_NAME = "{{ cwd | basename }}"
-
-# Build directory
-BUILD_DIR = "{{ cwd }}/build"
-
-[tools]
-# Install CMake and make
-cmake = "latest"
-make = "latest"
-
-# Configure the project
-[tasks.configure]
-run = "mkdir -p $BUILD_DIR && cd $BUILD_DIR && cmake .."
-
-# Build the project
-[tasks.build]
-alias = "b"
-run = "cd $BUILD_DIR && make"
-
-# Clean the build directory
-[tasks.clean]
-alias = "c"
-run = "rm -rf $BUILD_DIR"
-
-# Run the application
-[tasks.run]
-alias = "r"
-run = "$BUILD_DIR/bin/$PROJECT_NAME"
-
-# Print project info
-[tasks.info]
-run = '''
-echo "Project: $PROJECT_NAME"
-echo "Build Directory: $BUILD_DIR"
-'''
-```
-
-#### A Ruby on Rails Project
-
-```toml
-min_version = "2024.9.5"
-
-[env]
-# Project information
-PROJECT_NAME = "{{ cwd | basename }}"
-
-[tools]
-# Install Ruby with the specified version
-ruby = "{{ get_env(name='RUBY_VERSION', default='3.3.3') }}"
-
-# Install gem dependencies
-[tasks."bundle:install"]
-run = "bundle install"
-
-# Run the Rails server
-[tasks.server]
-alias = "s"
-run = "rails server"
-
-# Run tests
-[tasks.test]
-alias = "t"
-run = "rails test"
-
-# Lint the code
-[tasks.lint]
-alias = "l"
-run = "rubocop"
-```
-
-[chrono-doc]: https://docs.rs/chrono/0.4.38/chrono/format/strftime/index.html

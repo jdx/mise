@@ -89,7 +89,7 @@ impl Shell for Pwsh {
                 }}
             }}
             __enable_mise_chpwd
-            Remove-Item -Path Function:/__enable_mise_chpwd
+            Remove-Item -ErrorAction SilentlyContinue -Path Function:/__enable_mise_chpwd
 
             function __enable_mise_prompt {{
                 if (-not $__mise_pwsh_previous_prompt_function){{
@@ -103,7 +103,7 @@ impl Shell for Pwsh {
                 }}
             }}
             __enable_mise_prompt
-            Remove-Item -Path Function:/__enable_mise_prompt
+            Remove-Item -ErrorAction SilentlyContinue -Path Function:/__enable_mise_prompt
 
             _mise_hook
             "#});
@@ -136,7 +136,7 @@ impl Shell for Pwsh {
                     }}
                 }}
                 __enable_mise_command_not_found
-                Remove-Item -Path Function:/__enable_mise_command_not_found
+                Remove-Item -ErrorAction SilentlyContinue -Path Function:/__enable_mise_command_not_found
             }}
             "#});
         }
@@ -145,10 +145,10 @@ impl Shell for Pwsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        Remove-Item function:mise
-        Remove-Item -Path Env:/MISE_SHELL
-        Remove-Item -Path Env:/__MISE_WATCH
-        Remove-Item -Path Env:/__MISE_DIFF
+        Remove-Item -ErrorAction SilentlyContinue function:mise
+        Remove-Item -ErrorAction SilentlyContinue -Path Env:/MISE_SHELL
+        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_WATCH
+        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_DIFF
         "#}
     }
 
@@ -166,7 +166,7 @@ impl Shell for Pwsh {
 
     fn unset_env(&self, k: &str) -> String {
         let k = powershell_escape(k.into());
-        format!("Remove-Item -Path Env:/{k}\n")
+        format!("Remove-Item -ErrorAction SilentlyContinue -Path Env:/{k}\n")
     }
 }
 

@@ -876,6 +876,15 @@ const completionSpec: Fig.Spec = {
                         }
                     ]
                 }
+            ],
+            "options": [
+                {
+                    "name": [
+                        "-J",
+                        "--json"
+                    ],
+                    "isRepeatable": false
+                }
             ]
         },
         {
@@ -1321,6 +1330,28 @@ const completionSpec: Fig.Spec = {
                     "isOptional": true,
                     "isVariadic": true,
                     "generators": toolVersionGenerator
+                }
+            ]
+        },
+        {
+            "name": [
+                "install-into"
+            ],
+            "description": "Install a tool version to a specific path",
+            "args": [
+                {
+                    "name": "tool@version",
+                    "description": "Tool to install e.g.: node@20",
+                    "isOptional": false,
+                    "isVariadic": false,
+                    "generators": toolVersionGenerator
+                },
+                {
+                    "name": "path",
+                    "description": "Path to install the tool into",
+                    "isOptional": false,
+                    "isVariadic": false,
+                    "template": "filepaths"
                 }
             ]
         },

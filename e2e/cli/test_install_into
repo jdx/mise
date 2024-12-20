@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+assert "mise install-into node@22.0.0 ./mynode"
+assert "./mynode/bin/node -v" "v22.0.0"
