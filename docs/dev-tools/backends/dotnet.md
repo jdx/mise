@@ -4,7 +4,7 @@ The code for this is inside the mise repository at [`./src/backend/dotnet.rs`](h
 
 ## Usage
 
-The following installs the latest version of [eza](https://crates.io/crates/eza) and
+The following installs the latest version of [GitVersion.Tool](https://gitversion.net/) and
 sets it as the active version on PATH:
 
 ```sh
