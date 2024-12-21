@@ -50,7 +50,6 @@ run = "printf '\$BAZ: %s\n' \$BAZ"
 EOF
 assert "mise run --trace foo" "\$BAZ: foo"
 
-
 cat <<EOF >mise.toml
 [env]
 FOO = "/foo"

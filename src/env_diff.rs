@@ -99,7 +99,7 @@ impl EnvDiff {
             match line.strip_prefix("declare -x ") {
                 Some(line) => {
                     let (k, v) = line.split_once('=').unwrap_or_default();
-                    if invalid_key(k, &opts) {
+                    if invalid_key(k, opts) {
                         continue;
                     }
                     cur_key = Some(k.to_string());
@@ -387,7 +387,8 @@ mod tests {
             .map(|(k, v)| (k.into(), v.into()))
             .collect::<Vec<(String, String)>>();
         let cwd = dirs::CWD.clone().unwrap();
-        let ed = EnvDiff::from_bash_script(path.as_path(), &cwd, orig, &Default::default()).unwrap();
+        let ed =
+            EnvDiff::from_bash_script(path.as_path(), &cwd, orig, &Default::default()).unwrap();
         assert_debug_snapshot!(ed);
     }
 

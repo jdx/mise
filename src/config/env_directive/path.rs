@@ -1,13 +1,13 @@
 use crate::config::env_directive::EnvResults;
 use crate::result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 impl EnvResults {
     pub fn path(
         ctx: &mut tera::Context,
         tera: &mut tera::Tera,
         r: &mut EnvResults,
-        source: &PathBuf,
+        source: &Path,
         input: String,
     ) -> result::Result<PathBuf> {
         r.parse_template(ctx, tera, source, &input)
