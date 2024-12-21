@@ -56,14 +56,6 @@ You can also use it to run the script with various programming languages.
 
 ::: code-group
 
-```js [powershell]
-#!/usr/bin/env pwsh
-#MISE description="Hello, World in Powershell"
-
-$current_directory = Get-Location
-Write-Host "Hello from Powershell, current directory is $current_directory"
-```
-
 ```js [node]
 #!/usr/bin/env node
 //MISE description="Hello, World in Node.js"
@@ -83,6 +75,14 @@ print('Hello, World!')
 //MISE description="Hello, World in Deno"
 
 console.log(`PATH, ${Deno.env.get("PATH")}`);
+```
+
+```powershell [powershell]
+#!/usr/bin/env pwsh
+#MISE description="Hello, World in Powershell"
+
+$current_directory = Get-Location
+Write-Host "Hello from Powershell, current directory is $current_directory"
 ```
 
 :::
