@@ -66,7 +66,7 @@ impl EnvDiff {
         script: &Path,
         dir: &Path,
         env: T,
-        opts: EnvDiffOptions,
+        opts: &EnvDiffOptions,
     ) -> Result<Self>
     where
         T: IntoIterator<Item = (U, V)>,
@@ -387,7 +387,7 @@ mod tests {
             .map(|(k, v)| (k.into(), v.into()))
             .collect::<Vec<(String, String)>>();
         let cwd = dirs::CWD.clone().unwrap();
-        let ed = EnvDiff::from_bash_script(path.as_path(), &cwd, orig, Default::default()).unwrap();
+        let ed = EnvDiff::from_bash_script(path.as_path(), &cwd, orig, &Default::default()).unwrap();
         assert_debug_snapshot!(ed);
     }
 

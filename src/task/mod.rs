@@ -487,7 +487,7 @@ impl Task {
             .filter(|(_, v)| v.0 == Either::Right(EitherIntOrBool(Either::Right(false))))
             .map(|(k, _)| k)
             .collect::<HashSet<_>>();
-        
+
         Ok(env
             .into_iter()
             .filter(|(k, _)| !rm_env.contains(k))

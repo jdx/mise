@@ -6,6 +6,7 @@ use crate::file::display_path;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use std::cmp::PartialEq;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
@@ -224,7 +225,13 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Path(input_str, _opts) => {
-                    Self::path(&mut ctx, &mut tera, &mut r, &mut paths, source, input_str)?;
+                    let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str)?;
+                    paths.push((path.clone(), source.clone()));
+                    let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
+                    let mut env_path = env::split_paths(&env_path).collect_vec();
+                    env_path.insert(0, path);
+                    let env_path = env::join_paths(&env_path)?.to_string_lossy().to_string();
+                    env.insert(env::PATH_KEY.to_string(), (env_path, None));
                 }
                 EnvDirective::File(input, _opts) => {
                     let files = Self::file(

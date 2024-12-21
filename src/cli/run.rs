@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, };
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
@@ -370,7 +370,9 @@ impl Run {
         if let Some(file) = &task.file {
             self.exec_file(file, task, &env, &prefix)?;
         } else {
-            for (script, args) in task.render_run_scripts_with_args(self.cd.clone(), &task.args, &env)? {
+            for (script, args) in
+                task.render_run_scripts_with_args(self.cd.clone(), &task.args, &env)?
+            {
                 self.exec_script(&script, &args, task, &env, &prefix)?;
             }
         }
@@ -480,13 +482,7 @@ impl Run {
         }
     }
 
-    fn exec_file(
-        &self,
-        file: &Path,
-        task: &Task,
-        env: &EnvMap,
-        prefix: &str,
-    ) -> Result<()> {
+    fn exec_file(&self, file: &Path, task: &Task, env: &EnvMap, prefix: &str) -> Result<()> {
         let config = Config::get();
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();

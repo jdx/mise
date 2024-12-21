@@ -7,20 +7,11 @@ impl EnvResults {
         ctx: &mut tera::Context,
         tera: &mut tera::Tera,
         r: &mut EnvResults,
-        paths: &mut Vec<(PathBuf, PathBuf)>,
-        source: PathBuf,
+        source: &PathBuf,
         input: String,
-    ) -> result::Result<()> {
-        // trace!("resolve: input_str: {:#?}", input_str);
-        // trace!(
-        //     "resolve: normal: input: {:?}, input.to_string(): {:?}",
-        //     &input,
-        //     input.to_string_lossy().as_ref()
-        // );
-        let s = r.parse_template(ctx, tera, &source, &input)?;
-        // trace!("resolve: s: {:?}", &s);
-        paths.push((s.into(), source));
-        Ok(())
+    ) -> result::Result<PathBuf> {
+        r.parse_template(ctx, tera, source, &input)
+            .map(PathBuf::from)
     }
 }
 
