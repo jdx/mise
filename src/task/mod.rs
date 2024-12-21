@@ -80,6 +80,8 @@ pub struct Task {
     pub silent: bool,
     #[serde(default)]
     pub tools: IndexMap<String, String>,
+    #[serde(default)]
+    pub usage: String,
 
     // normal type
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -562,6 +564,7 @@ impl Default for Task {
             file: None,
             quiet: false,
             tools: Default::default(),
+            usage: "".to_string(),
         }
     }
 }

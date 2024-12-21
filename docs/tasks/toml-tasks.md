@@ -441,3 +441,15 @@ fi
 - `name`: The name of the flag. This is used for help/error messages.
 
 The value will be `true` if the flag is passed, and `false` otherwise.
+
+### Usage spec
+
+More advanced usage specs can be added to the task's `usage` field:
+
+```toml
+[tasks.test]
+usage = '''
+arg "file" description="The file to test" default="src/main.rs"
+'''
+run = 'cargo test {{arg(name="file")}}'
+```
