@@ -246,11 +246,20 @@ default = []
 parse_env = "list_by_comma"
 description = "Tools defined in mise.toml that should be ignored"
 
-[dotnet.allow_prerelease]
-env = "MISE_DOTNET_ALLOW_PRERELEASE"
-type = "Bool"
-default = false
-description = "Allow installing prerelease versions of dotnet tools."
+[dotnet.package_flags]
+env = "MISE_DOTNET_PACKAGE_FLAGS"
+type = "ListString"
+rust_type = "Vec<String>"
+default = []
+parse_env = "list_by_comma"
+description = "Extends dotnet search and install abilities."
+docs = """
+This is a list of flags to extend the search and install abilities of dotnet tools.
+
+Here are the available flags:
+
+- 'prerelease' : include prerelease versions in search and install
+"""
 
 [dotnet.registry_url]
 env = "MISE_DOTNET_REGISTRY_URL"

@@ -366,10 +366,13 @@
         "dotnet": {
           "additionalProperties": false,
           "properties": {
-            "allow_prerelease": {
-              "default": false,
-              "description": "Allow installing prerelease versions of dotnet tools.",
-              "type": "boolean"
+            "package_flags": {
+              "default": [],
+              "description": "Extends dotnet search and install abilities.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "registry_url": {
               "default": "https://api.nuget.org/v3/index.json",
