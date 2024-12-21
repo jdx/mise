@@ -85,12 +85,14 @@ This example uses `pnpm` as the package manager. This will skip installing depen
 node = '22'
 
 [hooks]
-post_install = 'corepack enable'
+# Enabling corepack will install the `pnpm` package manager specified in your package.json
+# alternatively, you can also install `pnpm` with mise
+post_install = 'npx corepack enable'
 
 [env]
 _.path = ['./node_modules/.bin']
 
-[tasks.pnpmInstall]
+[tasks.pnpm-install]
 description = 'Installs dependencies with pnpm'
 run = 'pnpm install'
 sources = ['package.json', 'pnpm-lock.yaml', 'mise.toml']
@@ -99,7 +101,7 @@ outputs = ['node_modules/.pnpm/lock.yaml']
 [tasks.dev]
 description = 'Calls your dev script in `package.json`'
 run = 'node --run dev'
-depends = ['pnpmInstall']
+depends = ['pnpm-install']
 ```
 
 With this setup, getting started in a NodeJS project is as simple as running `mise dev`:
