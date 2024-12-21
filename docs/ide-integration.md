@@ -1,17 +1,19 @@
 # IDE Integration
 
-Editors and IDEs work differently than interactive shells. Usually, they will either inherit the environment from your current shell (this is the case if you start it from a terminal like `nvim .` or `code .`) or will have [their own way to set up the environment](https://code.visualstudio.com/docs/supporting/faq#_resolving-shell-environment-fails).
+Code editors and IDEs work differently than interactive shells.
 
-Once you have launched the IDE, it won't reload the environment variables or the `PATH` provided by `mise` if you update your mise configuration files. Therefore, we cannot rely on the `mise activate` method to automatically set up the editor.
+Usually, they will either inherit the environment from your current shell (this is the case if you start it from a terminal like `nvim .` or `code .`) or will have [their own way](https://github.com/microsoft/vscode-docs/blob/906acccd6180d8425577f8297ed29e221ad3daca/docs/supporting/faq.md?plain=1#L238) to set up the environment.
+
+Once you have launched the IDE, it won't reload the environment variables or the `PATH` provided by `mise` if you update your mise configuration files. Therefore, we cannot rely on the default `mise activate` method to automatically set up the editor.
 
 There are a few ways to make `mise` work with your editor:
 
-- Some editors or IDE plugins have direct support for `mise` and can let you select the tools/sdk path from the IDE settings. This will get you access to the tool binary but won't load the environment variables.
-- Most editors (and language plugins) will look for tools on the `PATH` and run them in the context of your project. Therefore, adding the `mise` shims to the `PATH` might be enough (see section below). This will run the tool provided by mise and load the environment variables.
-- In other cases, you may need to manually indicate the path to the tools provided by `mise` in the IDE settings. This can be done by using `mise which <tool>` or `mise where`. You can also provide the path to the tool shim (e.g. `~/.local/share/mise/shims/node`) if the plugin supports it as this will also load the environment variables when the tool is run.
+- Some editors or IDE plugins have direct support for `mise` and can let you select the tools/sdk path from the IDE settings. This will let you access to the tool binaries but won't load the environment variables.
+- Most editors (and language plugins) will look for tools on the `PATH` and run them in the context of your project. Therefore, adding the `mise` shims to the `PATH` might be enough (see [below](#adding-shims-to-path-default-shell)). This will run the tool provided by mise and load the environment variables.
+- In other cases, you may need to manually indicate the path to the tools provided by `mise` in the IDE settings. This can be done by using [`mise which <tool>`](./cli/which.md) or [`mise where`](./cli/where). You can also provide the path to the tool shim (e.g. `~/.local/share/mise/shims/node`) if the plugin supports it as this will also load the environment variables when the tool is run.
 - Finally, some custom plugins have been developed to work with `mise`. You can find them in the [IDE Plugins](#ide-plugins) section.
 
-## Adding shims to PATH in your default shell profile
+## Adding shims to PATH in your default shell profile {#adding-shims-to-path-default-shell}
 
 IDEs work better with [shims](./dev-tools/shims) than they do environment variable modifications. The simplest way is
 to add the mise shim directory to `PATH`.
@@ -60,8 +62,11 @@ end
 This assumes that `mise` is on `PATH`. If it is not, you'll need to use the absolute path (
 e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
-<details>
-<summary>Conditional shims activation</summary>
+Here is an example showing that VSCode will use `node` provided by `mise`:
+
+![vscode-shim.png](./shims-vscode.png)
+
+::: details Conditional shims activation
 
 Conditionally using shims is also possible. Some programs will set a `TERM_PROGRAM` environment
 variable, which may be used to determine which activation strategy to use.
@@ -88,16 +93,16 @@ else
 fi
 ```
 
-:::
-
 Note that this might not work in all cases or only in the integrated terminal of the IDE.
 
-</details>
+:::
 
 As mentioned above, using `shims` doesn't work with all mise features. For example, arbitrary [env vars](./environments/) in `[env]` will
 only be set if a shim is executed. For this we need tighter integration with the IDE and/or a custom plugin.
 
 ## IDE Plugins
+
+Here are some community plugins that have been developed to work with `mise`:
 
 - Emacs: [mise.el](https://github.com/liuyinz/mise.el)
 - IntelliJ: [intellij-mise](https://github.com/134130/intellij-mise)
@@ -179,15 +184,24 @@ Or in the case of node (possibly other languages), it's under "Languages & Frame
 
 ### VSCode Plugin
 
-There is a [VSCode plugin](https://marketplace.visualstudio.com/items?itemName=hverlin.mise-vscode) which can configure other extensions for you, without having to modify your shell profile.
-In addition, it provides an easy way to manage `mise` tasks, tools, and environment variables directly from VSCode.
+There is a [VSCode plugin](https://marketplace.visualstudio.com/items?itemName=hverlin.mise-vscode) which can configure other extensions for you, without having to modify your shell profile to add the shims to `PATH`.
+
+In addition, it provides additional features such as:
+
+- Automatic configuration of other extensions to use tools provided by `mise`
+- Manage `mise` tasks, tools, and environment variables directly from VSCode
+- Load environment variables from `mise.toml` files in VSCode
+- Support for autocompletion and snippets for `mise.toml` file
+- Integration with VSCode tasks
 
 <https://github.com/hverlin/mise-vscode/> ([Documentation](https://hverlin.github.io/mise-vscode/))
 
-### Use `mise exec` in launch Configuration
+### Use [`mise exec`](./cli/exec) in launch Configuration
 
 While modifying your default shell profile is likely the easiest solution, you can also set
 the tools in `launch.json`:
+
+::: details mise exec launch.json example
 
 ```json
 {
@@ -204,11 +218,13 @@ the tools in `launch.json`:
       "linux": {
         "runtimeExecutable": "mise"
       },
-      "runtimeArgs": ["x", "--", "node"]
+      "runtimeArgs": ["exec", "--", "node"]
     }
   ]
 }
 ```
+
+:::
 
 ## Xcode
 
