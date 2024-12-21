@@ -62,7 +62,7 @@ impl RubyPlugin {
     }
 
     fn update_build_tool(&self, ctx: Option<&InstallContext>) -> Result<()> {
-        let pr = ctx.map(|ctx| ctx.pr.as_ref());
+        let pr = ctx.map(|ctx| &ctx.pr);
         if SETTINGS.ruby.ruby_install {
             self.update_ruby_install(pr)
                 .wrap_err("failed to update ruby-install")
@@ -72,7 +72,7 @@ impl RubyPlugin {
         }
     }
 
-    fn install_ruby_build(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
+    fn install_ruby_build(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
         debug!(
             "Installing ruby-build to {}",
             self.ruby_build_path().display()
@@ -90,7 +90,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         Ok(())
     }
-    fn update_ruby_build(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
+    fn update_ruby_build(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
         let _lock = self.lock_build_tool();
         if self.ruby_build_bin().exists() {
             let cur = self.ruby_build_version()?;
@@ -113,7 +113,7 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn install_ruby_install(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
+    fn install_ruby_install(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
         let settings = Settings::get();
         debug!(
             "Installing ruby-install to {}",
@@ -133,7 +133,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         Ok(())
     }
-    fn update_ruby_install(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
+    fn update_ruby_install(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
         let _lock = self.lock_build_tool();
         let ruby_install_path = self.ruby_install_path();
         if !ruby_install_path.exists() {
@@ -170,7 +170,7 @@ impl RubyPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
         let settings = Settings::get();
         let default_gems_file = file::replace_path(&settings.ruby.default_packages_file);
@@ -197,7 +197,12 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn test_ruby(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_ruby(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<()> {
         pr.set_message("ruby -v".into());
         CmdLineRunner::new(self.ruby_path(tv))
             .with_pr(pr)
@@ -206,7 +211,12 @@ impl RubyPlugin {
             .execute()
     }
 
-    fn test_gem(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_gem(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<()> {
         if !regex!(r#"^\d"#).is_match(&self.tool_name()) {
             // don't expect gem for artichoke
             return Ok(());
@@ -249,7 +259,7 @@ impl RubyPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &'a dyn SingleReport,
+        pr: &'a Box<dyn SingleReport>,
     ) -> Result<CmdLineRunner<'a>> {
         let settings = Settings::get();
         let cmd = if settings.ruby.ruby_install {
@@ -381,12 +391,12 @@ impl Backend for RubyPlugin {
         }
         ctx.pr.set_message("ruby-build".into());
         let config = Config::get();
-        self.install_cmd(&config, &tv, ctx.pr.as_ref())?.execute()?;
+        self.install_cmd(&config, &tv, &ctx.pr)?.execute()?;
 
-        self.test_ruby(&config, &tv, ctx.pr.as_ref())?;
+        self.test_ruby(&config, &tv, &ctx.pr)?;
         self.install_rubygems_hook(&tv)?;
-        self.test_gem(&config, &tv, ctx.pr.as_ref())?;
-        if let Err(err) = self.install_default_gems(&config, &tv, ctx.pr.as_ref()) {
+        self.test_gem(&config, &tv, &ctx.pr)?;
+        if let Err(err) = self.install_default_gems(&config, &tv, &ctx.pr) {
             warn!("failed to install default ruby gems {err:#}");
         }
         Ok(tv)

@@ -112,7 +112,7 @@ impl Backend for CargoBackend {
 
         cmd.arg("--root")
             .arg(tv.install_path())
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .envs(ctx.ts.env_with_path(&config)?)
             .prepend_path(ctx.ts.list_paths())?
             .prepend_path(self.dependency_toolset()?.list_paths())?

@@ -94,11 +94,7 @@ impl ErlangPlugin {
         };
         ctx.pr.set_message(format!("Downloading {}", tarball_name));
         let tarball_path = tv.download_path().join(&tarball_name);
-        HTTP.download_file(
-            &asset.browser_download_url,
-            &tarball_path,
-            Some(ctx.pr.as_ref()),
-        )?;
+        HTTP.download_file(&asset.browser_download_url, &tarball_path, Some(&ctx.pr))?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.set_message(format!("Extracting {}", tarball_name));
         file::untar(
@@ -106,7 +102,7 @@ impl ErlangPlugin {
             &tv.install_path(),
             &TarOptions {
                 strip_components: 0,
-                pr: Some(ctx.pr.as_ref()),
+                pr: Some(&ctx.pr),
                 format: file::TarFormat::TarGz,
             },
         )?;

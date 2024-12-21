@@ -40,18 +40,20 @@ enum TaskDocsStyle {
 
 impl TaskDocs {
     pub fn run(self) -> eyre::Result<()> {
+        let config = Config::get();
+        let ts = config.get_toolset()?;
         let dir = dirs::CWD.as_ref().unwrap();
-        let tasks = Config::get().load_tasks_in_dir(dir)?;
+        let tasks = config.load_tasks_in_dir(dir)?;
         let mut out = vec![];
         for task in tasks.iter().filter(|t| !t.hide) {
-            out.push(task.render_markdown(dir)?);
+            out.push(task.render_markdown(ts, dir)?);
         }
         if let Some(output) = &self.output {
             if self.multi {
                 if output.is_dir() {
                     for (i, task) in tasks.iter().filter(|t| !t.hide).enumerate() {
                         let path = output.join(format!("{}.md", i));
-                        file::write(&path, &task.render_markdown(dir)?)?;
+                        file::write(&path, &task.render_markdown(ts, dir)?)?;
                     }
                 } else {
                     return Err(eyre::eyre!(

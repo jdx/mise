@@ -231,7 +231,7 @@ impl AquaBackend {
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))?;
+        HTTP.download_file(url, &tarball_path, Some(&ctx.pr))?;
         Ok(())
     }
 
@@ -255,7 +255,7 @@ impl AquaBackend {
                         AquaChecksumType::Http => checksum.url(pkg, v)?,
                     };
                     let checksum_path = tv.download_path().join(format!("{}.checksum", filename));
-                    HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))?;
+                    HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))?;
                     self.cosign_checksums(ctx, pkg, v, tv, &checksum_path)?;
                     let mut checksum_file = file::read_to_string(&checksum_path)?;
                     if checksum.file_format() == "regexp" {
@@ -352,7 +352,7 @@ impl AquaBackend {
                             .map(|a| a.browser_download_url);
                         if let Some(url) = url {
                             let path = tv.download_path().join(asset);
-                            HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))?;
+                            HTTP.download_file(&url, &path, Some(&ctx.pr))?;
                             path.to_string_lossy().to_string()
                         } else {
                             warn!("no asset found for slsa verification of {tv}: {asset}");
@@ -362,7 +362,7 @@ impl AquaBackend {
                     "http" => {
                         let url = slsa.url(pkg, v)?;
                         let path = tv.download_path().join(filename);
-                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))?;
+                        HTTP.download_file(&url, &path, Some(&ctx.pr))?;
                         path.to_string_lossy().to_string()
                     }
                     t => {
@@ -379,7 +379,7 @@ impl AquaBackend {
                     .arg(format!("github.com/{repo}"))
                     .arg("--provenance-path")
                     .arg(provenance_path);
-                cmd = cmd.with_pr(ctx.pr.as_ref());
+                cmd = cmd.with_pr(&ctx.pr);
                 cmd.execute()?;
             } else {
                 warn!("{tv} can be verified with slsa-verifier but slsa-verifier is not installed");
@@ -434,7 +434,7 @@ impl AquaBackend {
                 for opt in cosign.opts(pkg, v)? {
                     cmd = cmd.arg(opt);
                 }
-                cmd = cmd.with_pr(ctx.pr.as_ref());
+                cmd = cmd.with_pr(&ctx.pr);
                 cmd.execute()?;
             } else {
                 warn!("{tv} can be verified with cosign but cosign is not installed");
@@ -463,7 +463,7 @@ impl AquaBackend {
         }
         let mut tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
-            pr: Some(ctx.pr.as_ref()),
+            pr: Some(&ctx.pr),
             strip_components: 0,
         };
         if let AquaPackageType::GithubArchive = pkg.r#type {

@@ -157,7 +157,7 @@ impl Upgrade {
 
         for (o, tv) in to_remove {
             let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
-            self.uninstall_old_version(&o.tool_version, pr.as_ref())?;
+            self.uninstall_old_version(&o.tool_version, &pr)?;
         }
 
         config::rebuild_shims_and_runtime_symlinks(&versions)?;
@@ -170,7 +170,7 @@ impl Upgrade {
         Ok(())
     }
 
-    fn uninstall_old_version(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn uninstall_old_version(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
         tv.backend()?
             .uninstall_version(tv, pr, self.dry_run)
             .wrap_err_with(|| format!("failed to uninstall {tv}"))?;

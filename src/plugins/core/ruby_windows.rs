@@ -41,7 +41,7 @@ impl RubyPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
         let settings = Settings::get();
         let default_gems_file = file::replace_path(&settings.ruby.default_packages_file);
@@ -68,7 +68,7 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn test_ruby(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_ruby(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
         pr.set_message("ruby -v".into());
         CmdLineRunner::new(self.ruby_path(tv))
             .with_pr(pr)
@@ -77,7 +77,12 @@ impl RubyPlugin {
             .execute()
     }
 
-    fn test_gem(&self, config: &Config, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_gem(
+        &self,
+        config: &Config,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<()> {
         pr.set_message("gem -v".into());
         CmdLineRunner::new(self.gem_path(tv))
             .with_pr(pr)
@@ -99,7 +104,7 @@ impl RubyPlugin {
         tv.install_path().join("lib").join("rubygems_plugin")
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let arch = arch();
         let url = format!(
             "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-{version}-1/rubyinstaller-{version}-1-{arch}.7z",
@@ -129,7 +134,7 @@ impl RubyPlugin {
     }
 
     fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        self.test_ruby(tv, ctx.pr.as_ref())
+        self.test_ruby(tv, &ctx.pr)
     }
 }
 
@@ -185,13 +190,13 @@ impl Backend for RubyPlugin {
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         let config = Config::get();
-        let tarball = self.download(&tv, ctx.pr.as_ref())?;
+        let tarball = self.download(&tv, &ctx.pr)?;
         self.verify_checksum(ctx, &mut tv, &tarball)?;
         self.install(ctx, &tv, &tarball)?;
         self.verify(ctx, &tv)?;
         self.install_rubygems_hook(&tv)?;
-        self.test_gem(&config, &tv, ctx.pr.as_ref())?;
-        if let Err(err) = self.install_default_gems(&config, &tv, ctx.pr.as_ref()) {
+        self.test_gem(&config, &tv, &ctx.pr)?;
+        if let Err(err) = self.install_default_gems(&config, &tv, &ctx.pr) {
             warn!("failed to install default ruby gems {err:#}");
         }
         Ok(tv)

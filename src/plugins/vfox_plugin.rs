@@ -133,12 +133,12 @@ impl Plugin for VfoxPlugin {
             let url = self.get_repo_url()?;
             trace!("Cloning vfox plugin: {url}");
             let pr = mpr.add(&format!("clone vfox plugin {}", url));
-            self.repo().clone(url.as_str(), Some(pr.as_ref()))?;
+            self.repo().clone(url.as_str(), Some(&pr))?;
         }
         Ok(())
     }
 
-    fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
+    fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             warn!(
@@ -166,7 +166,7 @@ impl Plugin for VfoxPlugin {
         Ok(())
     }
 
-    fn uninstall(&self, pr: &dyn SingleReport) -> Result<()> {
+    fn uninstall(&self, pr: &Box<dyn SingleReport>) -> Result<()> {
         if !self.is_installed() {
             return Ok(());
         }
@@ -190,7 +190,7 @@ impl Plugin for VfoxPlugin {
         Ok(())
     }
 
-    fn install(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
+    fn install(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         let repository = self.get_repo_url()?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(repository.as_str());
         debug!("vfox_plugin[{}]:install {:?}", self.name, repository);

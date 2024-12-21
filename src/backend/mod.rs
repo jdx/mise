@@ -371,7 +371,7 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(())
     }
-    fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
+    fn purge(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         rmdir(&self.ba().installs_path, pr)?;
         rmdir(&self.ba().cache_path, pr)?;
         rmdir(&self.ba().downloads_path, pr)?;
@@ -401,7 +401,7 @@ pub trait Backend: Debug + Send + Sync {
         let config = Config::get();
         if self.is_version_installed(&tv, true) {
             if ctx.force {
-                self.uninstall_version(&tv, ctx.pr.as_ref(), false)?;
+                self.uninstall_version(&tv, &ctx.pr, false)?;
             } else {
                 return Ok(tv);
             }
@@ -455,7 +455,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<()> {
         CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .arg("-c")
             .arg(script)
             .envs(self.exec_env(&Config::get(), ctx.ts, tv)?)
@@ -466,7 +466,7 @@ pub trait Backend: Debug + Send + Sync {
     fn uninstall_version(
         &self,
         tv: &ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
         dryrun: bool,
     ) -> eyre::Result<()> {
         pr.set_message("uninstall".into());
@@ -491,14 +491,10 @@ pub trait Backend: Debug + Send + Sync {
         rmdir(&tv.cache_path())?;
         Ok(())
     }
-    fn uninstall_version_impl(
-        &self,
-        _pr: &dyn SingleReport,
-        _tv: &ToolVersion,
-    ) -> eyre::Result<()> {
+    fn uninstall_version_impl(&self, _pr: &Box<dyn SingleReport>, _tv: &ToolVersion) -> Result<()> {
         Ok(())
     }
-    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         match tv.request {
             ToolRequest::System { .. } => Ok(vec![]),
             _ => Ok(vec![tv.install_path().join("bin")]),
@@ -510,7 +506,7 @@ pub trait Backend: Debug + Send + Sync {
         _config: &Config,
         _ts: &Toolset,
         _tv: &ToolVersion,
-    ) -> eyre::Result<BTreeMap<String, String>> {
+    ) -> Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
 
@@ -603,7 +599,8 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
-        self.dependency_toolset()?.full_env()
+        let config = Config::get();
+        self.dependency_toolset()?.full_env(&config)
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
@@ -663,13 +660,13 @@ pub trait Backend: Debug + Send + Sync {
         if let Some(checksum) = &tv.checksums.get(&filename) {
             ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
+                hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
         } else if SETTINGS.lockfile && SETTINGS.experimental {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_sha256(file, Some(ctx.pr.as_ref()))?;
+            let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
             tv.checksums.insert(filename, format!("sha256:{hash}"));
         }
         Ok(())
@@ -687,7 +684,7 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     }
 }
 
-fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
+fn rmdir(dir: &Path, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
     if !dir.exists() {
         return Ok(());
     }
