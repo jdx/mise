@@ -545,16 +545,12 @@ const completionSpec: Fig.Spec = {
                         {
                             "name": "plugin",
                             "description": "The plugin to show the alias for",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": pluginGenerator,
                             "debounce": true
                         },
                         {
                             "name": "alias",
                             "description": "The alias to show",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": aliasGenerator,
                             "debounce": true
                         }
@@ -590,16 +586,12 @@ const completionSpec: Fig.Spec = {
                         {
                             "name": "plugin",
                             "description": "The plugin to set the alias for",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": pluginGenerator,
                             "debounce": true
                         },
                         {
                             "name": "alias",
                             "description": "The alias to set",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": aliasGenerator,
                             "debounce": true
                         },
@@ -622,16 +614,12 @@ const completionSpec: Fig.Spec = {
                         {
                             "name": "plugin",
                             "description": "The plugin to remove the alias from",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": pluginGenerator,
                             "debounce": true
                         },
                         {
                             "name": "alias",
                             "description": "The alias to remove",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": aliasGenerator,
                             "debounce": true
                         }
@@ -648,8 +636,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "plugin",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": pluginGenerator,
                         "debounce": true
                     }
@@ -680,16 +666,14 @@ const completionSpec: Fig.Spec = {
         {
             "name": "bin-paths",
             "description": "List all the active runtime bin paths",
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to look up\ne.g.: ruby@3",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to look up\ne.g.: ruby@3",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": "cache",
@@ -701,16 +685,14 @@ const completionSpec: Fig.Spec = {
                         "c"
                     ],
                     "description": "Deletes all cache files in mise",
-                    "args": [
-                        {
-                            "name": "plugin",
-                            "description": "Plugin(s) to clear cache for e.g.: node, python",
-                            "isOptional": true,
-                            "isVariadic": true,
-                            "generators": pluginGenerator,
-                            "debounce": true
-                        }
-                    ]
+                    "args": {
+                        "name": "plugin",
+                        "description": "Plugin(s) to clear cache for e.g.: node, python",
+                        "isOptional": true,
+                        "isVariadic": true,
+                        "generators": pluginGenerator,
+                        "debounce": true
+                    }
                 },
                 {
                     "name": [
@@ -733,16 +715,14 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": true
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "plugin",
-                            "description": "Plugin(s) to clear cache for e.g.: node, python",
-                            "isOptional": true,
-                            "isVariadic": true,
-                            "generators": pluginGenerator,
-                            "debounce": true
-                        }
-                    ]
+                    "args": {
+                        "name": "plugin",
+                        "description": "Plugin(s) to clear cache for e.g.: node, python",
+                        "isOptional": true,
+                        "isVariadic": true,
+                        "generators": pluginGenerator,
+                        "debounce": true
+                    }
                 }
             ]
         },
@@ -1021,16 +1001,14 @@ const completionSpec: Fig.Spec = {
                     }
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to use",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to use",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": [
@@ -1160,8 +1138,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false,
                             "args": {
                                 "name": "task",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "generators": simpleTaskGenerator,
                                 "debounce": true
                             }
@@ -1197,8 +1173,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false,
                             "args": {
                                 "name": "task",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "generators": simpleTaskGenerator,
                                 "debounce": true
                             }
@@ -1340,16 +1314,14 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": true
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to install e.g.: node@20",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to install e.g.: node@20",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": "install-into",
@@ -1358,8 +1330,6 @@ const completionSpec: Fig.Spec = {
                 {
                     "name": "tool@version",
                     "description": "Tool to install e.g.: node@20",
-                    "isOptional": false,
-                    "isVariadic": false,
                     "generators": toolVersionGenerator,
                     "debounce": true
                 },
@@ -1383,16 +1353,12 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool to get the latest version of",
-                    "isOptional": false,
-                    "isVariadic": false,
-                    "generators": toolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool to get the latest version of",
+                "generators": toolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": [
@@ -1414,8 +1380,6 @@ const completionSpec: Fig.Spec = {
                 {
                     "name": "tool@version",
                     "description": "Tool name and version to create a symlink for",
-                    "isOptional": false,
-                    "isVariadic": false,
                     "generators": toolVersionGenerator,
                     "debounce": true
                 },
@@ -1492,8 +1456,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "prefix",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": completionGeneratorTemplate(`mise ls-remote {{words[PREV]}}`),
                         "debounce": true
                     }
@@ -1504,16 +1466,14 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "plugin",
-                    "description": "Only show tool versions from [PLUGIN]",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": pluginGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "plugin",
+                "description": "Only show tool versions from [PLUGIN]",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": pluginGenerator,
+                "debounce": true
+            }
         },
         {
             "name": "ls-remote",
@@ -1530,7 +1490,6 @@ const completionSpec: Fig.Spec = {
                     "name": "tool@version",
                     "description": "Tool to get versions for",
                     "isOptional": true,
-                    "isVariadic": false,
                     "generators": toolVersionGenerator,
                     "debounce": true
                 },
@@ -1538,7 +1497,6 @@ const completionSpec: Fig.Spec = {
                     "name": "prefix",
                     "description": "The version prefix to use when querying the latest version\nsame as the first argument after the \"@\"",
                     "isOptional": true,
-                    "isVariadic": false,
                     "generators": completionGeneratorTemplate(`mise ls-remote {{words[PREV]}}`),
                     "debounce": true
                 }
@@ -1570,16 +1528,14 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": [
@@ -1627,7 +1583,6 @@ const completionSpec: Fig.Spec = {
                             "name": "new_plugin",
                             "description": "The name of the plugin to install\ne.g.: node, ruby\nCan specify multiple plugins: `mise plugins install node ruby python`",
                             "isOptional": true,
-                            "isVariadic": false,
                             "generators": completionGeneratorTemplate(`mise plugins --all`),
                             "debounce": true
                         },
@@ -1732,16 +1687,14 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "plugin",
-                            "description": "Plugin(s) to remove",
-                            "isOptional": true,
-                            "isVariadic": true,
-                            "generators": pluginGenerator,
-                            "debounce": true
-                        }
-                    ]
+                    "args": {
+                        "name": "plugin",
+                        "description": "Plugin(s) to remove",
+                        "isOptional": true,
+                        "isVariadic": true,
+                        "generators": pluginGenerator,
+                        "debounce": true
+                    }
                 },
                 {
                     "name": [
@@ -1763,16 +1716,14 @@ const completionSpec: Fig.Spec = {
                             }
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "plugin",
-                            "description": "Plugin(s) to update",
-                            "isOptional": true,
-                            "isVariadic": true,
-                            "generators": pluginGenerator,
-                            "debounce": true
-                        }
-                    ]
+                    "args": {
+                        "name": "plugin",
+                        "description": "Plugin(s) to update",
+                        "isOptional": true,
+                        "isVariadic": true,
+                        "generators": pluginGenerator,
+                        "debounce": true
+                    }
                 }
             ],
             "options": [
@@ -1932,8 +1883,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": true,
                     "args": {
                         "name": "tool@version",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": toolVersionGenerator,
                         "debounce": true
                     }
@@ -2047,16 +1996,14 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "env_vars",
-                    "description": "Environment variable(s) to set\ne.g.: NODE_ENV=production",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": envVarGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "env_vars",
+                "description": "Environment variable(s) to set\ne.g.: NODE_ENV=production",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": envVarGenerator,
+                "debounce": true
+            }
         },
         {
             "name": "settings",
@@ -2291,16 +2238,13 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to use",
-                    "isOptional": false,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to use",
+                "isVariadic": true,
+                "generators": toolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": "sync",
@@ -2384,8 +2328,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": true,
                             "args": {
                                 "name": "alias",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "generators": aliasGenerator,
                                 "debounce": true
                             }
@@ -2509,8 +2451,6 @@ const completionSpec: Fig.Spec = {
                         {
                             "name": "task",
                             "description": "Tasks name to add",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": simpleTaskGenerator,
                             "debounce": true
                         },
@@ -2556,16 +2496,12 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "task",
-                            "description": "Tasks to edit",
-                            "isOptional": false,
-                            "isVariadic": false,
-                            "generators": simpleTaskGenerator,
-                            "debounce": true
-                        }
-                    ]
+                    "args": {
+                        "name": "task",
+                        "description": "Tasks to edit",
+                        "generators": simpleTaskGenerator,
+                        "debounce": true
+                    }
                 },
                 {
                     "name": "info",
@@ -2580,16 +2516,12 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "task",
-                            "description": "Name of the task to get information about",
-                            "isOptional": false,
-                            "isVariadic": false,
-                            "generators": simpleTaskGenerator,
-                            "debounce": true
-                        }
-                    ]
+                    "args": {
+                        "name": "task",
+                        "description": "Name of the task to get information about",
+                        "generators": simpleTaskGenerator,
+                        "debounce": true
+                    }
                 },
                 {
                     "name": "ls",
@@ -2711,8 +2643,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": true,
                             "args": {
                                 "name": "tool@version",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "generators": toolVersionGenerator,
                                 "debounce": true
                             }
@@ -2774,7 +2704,6 @@ const completionSpec: Fig.Spec = {
                             "name": "task",
                             "description": "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2",
                             "isOptional": true,
-                            "isVariadic": false,
                             "generators": simpleTaskGenerator,
                             "debounce": true
                         },
@@ -2843,16 +2772,13 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "task",
-                    "description": "Task name to get info of",
-                    "isOptional": true,
-                    "isVariadic": false,
-                    "generators": simpleTaskGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "task",
+                "description": "Task name to get info of",
+                "isOptional": true,
+                "generators": simpleTaskGenerator,
+                "debounce": true
+            }
         },
         {
             "name": "tool",
@@ -2935,17 +2861,14 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "config_file",
-                    "description": "The config file to trust",
-                    "isOptional": true,
-                    "isVariadic": false,
-                    "template": "filepaths",
-                    "generators": configPathGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "config_file",
+                "description": "The config file to trust",
+                "isOptional": true,
+                "template": "filepaths",
+                "generators": configPathGenerator,
+                "debounce": true
+            }
         },
         {
             "name": "uninstall",
@@ -2968,16 +2891,14 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "installed_tool@version",
-                    "description": "Tool(s) to remove",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": installedToolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "installed_tool@version",
+                "description": "Tool(s) to remove",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": installedToolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": "unset",
@@ -3030,16 +2951,13 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "installed_tool@version",
-                    "description": "Tool(s) to remove",
-                    "isOptional": false,
-                    "isVariadic": true,
-                    "generators": installedToolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "installed_tool@version",
+                "description": "Tool(s) to remove",
+                "isVariadic": true,
+                "generators": installedToolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": [
@@ -3089,16 +3007,14 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": [
@@ -3161,8 +3077,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": true,
                     "args": {
                         "name": "plugin",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": pluginGenerator,
                         "debounce": true
                     }
@@ -3185,16 +3099,14 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to add to config file",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to add to config file",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": [
@@ -3605,7 +3517,6 @@ const completionSpec: Fig.Spec = {
                     "name": "task",
                     "description": "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2",
                     "isOptional": true,
-                    "isVariadic": false,
                     "generators": simpleTaskGenerator,
                     "debounce": true
                 },
@@ -3620,16 +3531,12 @@ const completionSpec: Fig.Spec = {
         {
             "name": "where",
             "description": "Display the installation path for a tool",
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to look up\ne.g.: ruby@3\nif \"@<PREFIX>\" is specified, it will show the latest installed version\nthat matches the prefix\notherwise, it will show the current, active installed version",
-                    "isOptional": false,
-                    "isVariadic": false,
-                    "generators": toolVersionGenerator,
-                    "debounce": true
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to look up\ne.g.: ruby@3\nif \"@<PREFIX>\" is specified, it will show the latest installed version\nthat matches the prefix\notherwise, it will show the current, active installed version",
+                "generators": toolVersionGenerator,
+                "debounce": true
+            }
         },
         {
             "name": "which",
@@ -3654,8 +3561,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "tool@version",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": toolVersionGenerator,
                         "debounce": true
                     }
@@ -3749,15 +3654,12 @@ const completionSpec: Fig.Spec = {
             "isRepeatable": true
         }
     ],
-    "args": [
-        {
-            "name": "task",
-            "description": "Task to run",
-            "isOptional": true,
-            "isVariadic": false,
-            "generators": simpleTaskGenerator,
-            "debounce": true
-        }
-    ]
+    "args": {
+        "name": "task",
+        "description": "Task to run",
+        "isOptional": true,
+        "generators": simpleTaskGenerator,
+        "debounce": true
+    }
 };
 export default completionSpec;
