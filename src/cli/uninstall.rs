@@ -55,7 +55,7 @@ impl Uninstall {
             }
 
             let pr = mpr.add(&tv.style());
-            if let Err(err) = plugin.uninstall_version(&tv, pr.as_ref(), self.dry_run) {
+            if let Err(err) = plugin.uninstall_version(&tv, &pr, self.dry_run) {
                 error!("{err}");
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }

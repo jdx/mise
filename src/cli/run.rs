@@ -1,12 +1,12 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
-use std::panic;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Mutex;
-use std::time::SystemTime;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
+use std::{panic, thread};
 
 use super::args::ToolArg;
 use crate::cli::Cli;
@@ -16,8 +16,10 @@ use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::file::display_path;
 use crate::http::HTTP;
-use crate::task::{Deps, EitherIntOrBool, GetMatchingExt, Task};
+use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, prompt, style, time};
 use crate::{dirs, env, exit, file, ui};
 use clap::{CommandFactory, ValueHint};
@@ -25,9 +27,9 @@ use console::Term;
 use crossbeam_channel::{select, unbounded};
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
-use either::Either;
 use eyre::{bail, ensure, eyre, Result};
 use glob::glob;
+use indexmap::IndexMap;
 use itertools::Itertools;
 #[cfg(unix)]
 use nix::sys::signal::SIGTERM;
@@ -58,7 +60,7 @@ use xx::regex;
 ///     npm run build
 ///     EOF
 ///     $ mise run build
-#[derive(Debug, clap::Args)]
+#[derive(clap::Args)]
 #[clap(visible_alias = "r", verbatim_doc_comment, disable_help_flag = true, after_long_help = AFTER_LONG_HELP)]
 pub struct Run {
     /// Tasks to run
@@ -173,14 +175,28 @@ pub struct Run {
     ///
     /// - `prefix` - Print stdout/stderr by line, prefixed with the task's label
     /// - `interleave` - Print directly to stdout/stderr instead of by line
+    /// - `replacing` - Stdout is replaced each time, stderr is printed as is
+    /// - `timed` - Only show stdout lines if they are displayed for more than 1 second
+    /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
     /// - `quiet` - Don't show extra output
     /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
-    #[clap(short, long, env = "MISE_TASK_OUTPUT")]
+    #[clap(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
 
     #[clap(skip)]
     pub tmpdir: PathBuf,
+
+    #[clap(skip)]
+    pub keep_order_output: Mutex<IndexMap<Task, KeepOrderOutputs>>,
+
+    #[clap(skip)]
+    pub task_prs: IndexMap<Task, Arc<Box<dyn SingleReport>>>,
+
+    #[clap(skip)]
+    pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
 }
+
+type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
 impl Run {
     pub fn run(mut self) -> Result<()> {
@@ -219,10 +235,44 @@ impl Run {
 
         ctrlc::exit_on_ctrl_c(false);
 
+        if self.output(None) == TaskOutput::Timed {
+            let timed_outputs = self.timed_outputs.clone();
+            thread::spawn(move || loop {
+                {
+                    let mut outputs = timed_outputs.lock().unwrap();
+                    for (prefix, out) in outputs.clone() {
+                        let (time, line) = out;
+                        if time.elapsed().unwrap().as_secs() >= 1 {
+                            if console::colors_enabled() {
+                                prefix_println!(prefix, "{line}\x1b[0m");
+                            } else {
+                                prefix_println!(prefix, "{line}");
+                            }
+                            outputs.shift_remove(&prefix);
+                        }
+                    }
+                }
+                thread::sleep(Duration::from_millis(100));
+            });
+        }
+
         self.fetch_tasks(&mut tasks)?;
         let tasks = Deps::new(tasks)?;
         for task in tasks.all() {
             self.validate_task(task)?;
+            match self.output(Some(task)) {
+                TaskOutput::KeepOrder => {
+                    self.keep_order_output
+                        .lock()
+                        .unwrap()
+                        .insert(task.clone(), Default::default());
+                }
+                TaskOutput::Replacing => {
+                    let pr = MultiProgressReport::get().add(&task.estyled_prefix());
+                    self.task_prs.insert(task.clone(), Arc::new(pr));
+                }
+                _ => {}
+            }
         }
 
         let num_tasks = tasks.all().count();
@@ -271,7 +321,11 @@ impl Run {
                                 // only show this if it's the first failure, or we haven't killed all the remaining tasks
                                 // otherwise we'll get unhelpful error messages about being killed by mise which we expect
                                 let prefix = task.estyled_prefix();
-                                prefix_eprintln!(prefix, "{} {err:?}", style::ered("ERROR"));
+                                self.eprint(
+                                    &task,
+                                    &prefix,
+                                    &format!("{} {err:?}", style::ered("ERROR")),
+                                );
                             }
                             let _ = tx_err.send((task.clone(), status));
                         }
@@ -303,7 +357,11 @@ impl Run {
 
         if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
             let prefix = task.estyled_prefix();
-            prefix_eprintln!(prefix, "{} task failed", style::ered("ERROR"));
+            self.eprint(
+                task,
+                &prefix,
+                &format!("{} task failed", style::ered("ERROR")),
+            );
             exit(*status);
         }
 
@@ -312,22 +370,54 @@ impl Run {
             eprintln!("{}", style::edim(msg));
         };
 
-        time!("paralellize_tasks done");
+        if self.output(None) == TaskOutput::KeepOrder {
+            // TODO: display these as tasks complete in order somehow rather than waiting until everything is done
+            let output = self.keep_order_output.lock().unwrap();
+            for (out, err) in output.values() {
+                for (prefix, line) in out {
+                    if console::colors_enabled() {
+                        prefix_println!(prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_println!(prefix, "{line}");
+                    }
+                }
+                for (prefix, line) in err {
+                    if console::colors_enabled_stderr() {
+                        prefix_eprintln!(prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_eprintln!(prefix, "{line}");
+                    }
+                }
+            }
+        }
+        time!("parallelize_tasks done");
 
         Ok(())
+    }
+
+    fn eprint(&self, task: &Task, prefix: &str, line: &str) {
+        match self.output(Some(task)) {
+            TaskOutput::Replacing => {
+                let pr = self.task_prs.get(task).unwrap().clone();
+                pr.set_message(format!("{} {}", prefix, line));
+            }
+            _ => {
+                prefix_eprintln!(prefix, "{line}");
+            }
+        }
     }
 
     fn run_task(&self, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
-                prefix_eprintln!(prefix, "skipping task");
+                self.eprint(task, &prefix, "skipping task");
             }
             return Ok(());
         }
         if !self.force && self.sources_are_fresh(task)? {
             if !self.quiet(Some(task)) {
-                prefix_eprintln!(prefix, "sources up-to-date, skipping");
+                self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
             return Ok(());
         }
@@ -338,7 +428,7 @@ impl Run {
             tools.push(format!("{}@{}", k, v).parse()?);
         }
         let ts = ToolsetBuilder::new().with_args(&tools).build(&config)?;
-        let mut env = ts.env_with_path(&config)?;
+        let mut env = task.render_env(&ts)?;
         let output = self.output(Some(task));
         env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
         if output == TaskOutput::Prefix {
@@ -366,45 +456,23 @@ impl Run {
         if let Some(config_root) = &task.config_root {
             env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
         }
-        let string_env: Vec<(String, String)> = task
-            .env
-            .iter()
-            .filter_map(|(k, v)| match &v.0 {
-                Either::Left(v) => Some((k.to_string(), v.to_string())),
-                Either::Right(EitherIntOrBool(Either::Left(v))) => {
-                    Some((k.to_string(), v.to_string()))
-                }
-                _ => None,
-            })
-            .collect_vec();
-        let rm_env = task
-            .env
-            .iter()
-            .filter(|(_, v)| v.0 == Either::Right(EitherIntOrBool(Either::Right(false))))
-            .map(|(k, _)| k)
-            .collect::<HashSet<_>>();
-        let env: EnvMap = env
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .chain(string_env)
-            .filter(|(k, _)| !rm_env.contains(k))
-            .collect();
-
         let timer = std::time::Instant::now();
 
         if let Some(file) = &task.file {
             self.exec_file(file, task, &env, &prefix)?;
         } else {
-            for (script, args) in task.render_run_scripts_with_args(self.cd.clone(), &task.args)? {
+            for (script, args) in
+                task.render_run_scripts_with_args(self.cd.clone(), &task.args, &env)?
+            {
                 self.exec_script(&script, &args, task, &env, &prefix)?;
             }
         }
 
         if self.timings() && (task.file.as_ref().is_some() || !task.run().is_empty()) {
-            prefix_eprintln!(
-                prefix,
-                "finished in {}",
-                time::format_duration(timer.elapsed())
+            self.eprint(
+                task,
+                &prefix,
+                &format!("finished in {}", time::format_duration(timer.elapsed())),
             );
         }
 
@@ -428,7 +496,7 @@ impl Run {
             .to_string();
         if !self.quiet(Some(task)) {
             let msg = trunc(prefix, config.redact(cmd).trim());
-            prefix_eprintln!(prefix, "{msg}")
+            self.eprint(task, prefix, &msg)
         }
 
         if script.starts_with("#!") {
@@ -505,18 +573,12 @@ impl Run {
         }
     }
 
-    fn exec_file(
-        &self,
-        file: &Path,
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
-    ) -> Result<()> {
+    fn exec_file(&self, file: &Path, task: &Task, env: &EnvMap, prefix: &str) -> Result<()> {
         let config = Config::get();
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
-        let (spec, _) = task.parse_usage_spec(self.cd.clone())?;
+        let (spec, _) = task.parse_usage_spec(self.cd.clone(), &env)?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args = once(command.clone()).chain(args.clone()).collect_vec();
             let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
@@ -531,7 +593,7 @@ impl Run {
                 .to_string();
             let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
             let cmd = trunc(prefix, config.redact(cmd).trim());
-            prefix_eprintln!(prefix, "{cmd}");
+            self.eprint(task, prefix, &cmd);
         }
 
         self.exec(file, &args, task, &env, prefix)
@@ -565,9 +627,65 @@ impl Run {
             .envs(env)
             .redact(redactions.deref().clone())
             .raw(self.raw(Some(task)));
+        let output = self.output(Some(task));
         cmd.with_pass_signals();
-        match self.output(Some(task)) {
-            TaskOutput::Prefix => cmd = cmd.prefix(prefix),
+        match output {
+            TaskOutput::Prefix => {
+                cmd = cmd.with_on_stdout(|line| {
+                    if console::colors_enabled() {
+                        prefix_println!(prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_println!(prefix, "{line}");
+                    }
+                });
+                cmd = cmd.with_on_stderr(|line| {
+                    if console::colors_enabled() {
+                        self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                    } else {
+                        self.eprint(task, prefix, &line);
+                    }
+                });
+            }
+            TaskOutput::KeepOrder => {
+                cmd = cmd.with_on_stdout(|line| {
+                    self.keep_order_output
+                        .lock()
+                        .unwrap()
+                        .get_mut(task)
+                        .unwrap()
+                        .0
+                        .push((prefix.to_string(), line));
+                });
+                cmd = cmd.with_on_stderr(|line| {
+                    self.keep_order_output
+                        .lock()
+                        .unwrap()
+                        .get_mut(task)
+                        .unwrap()
+                        .1
+                        .push((prefix.to_string(), line));
+                });
+            }
+            TaskOutput::Replacing => {
+                let pr = self.task_prs.get(task).unwrap().clone();
+                cmd = cmd.with_pr_arc(pr);
+            }
+            TaskOutput::Timed => {
+                let timed_outputs = self.timed_outputs.clone();
+                cmd = cmd.with_on_stdout(move |line| {
+                    timed_outputs
+                        .lock()
+                        .unwrap()
+                        .insert(prefix.to_string(), (SystemTime::now(), line));
+                });
+                cmd = cmd.with_on_stderr(|line| {
+                    if console::colors_enabled() {
+                        self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                    } else {
+                        self.eprint(task, prefix, &line);
+                    }
+                });
+            }
             TaskOutput::Silent => {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
@@ -582,11 +700,14 @@ impl Run {
         }
         let dir = self.cwd(task)?;
         if !dir.exists() {
-            prefix_eprintln!(
+            self.eprint(
+                task,
                 prefix,
-                "{} task directory does not exist: {}",
-                style::eyellow("WARN"),
-                display_path(&dir)
+                &format!(
+                    "{} task directory does not exist: {}",
+                    style::eyellow("WARN"),
+                    display_path(&dir)
+                ),
             );
         }
         cmd = cmd.current_dir(dir);
@@ -870,12 +991,15 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     serde::Serialize,
     serde::Deserialize,
 )]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum TaskOutput {
+    Interleave,
+    KeepOrder,
     #[default]
     Prefix,
-    Interleave,
+    Replacing,
+    Timed,
     Quiet,
     Silent,
 }

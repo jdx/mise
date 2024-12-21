@@ -1,11 +1,11 @@
+use crate::config::Settings;
+use crate::dirs;
 use std::env::{join_paths, split_paths};
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
-
-use crate::config::Settings;
-use crate::dirs;
+use std::str::FromStr;
 
 pub struct PathEnv {
     pre: Vec<PathBuf>,
@@ -71,6 +71,14 @@ impl FromIterator<PathBuf> for PathEnv {
         }
 
         path_env
+    }
+}
+
+impl FromStr for PathEnv {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from_iter(split_paths(s)))
     }
 }
 

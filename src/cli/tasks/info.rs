@@ -3,6 +3,7 @@ use itertools::Itertools;
 use serde_json::json;
 
 use crate::config::Config;
+use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::Task;
 use crate::ui::info;
@@ -25,10 +26,12 @@ impl TasksInfo {
         let task = config.tasks()?.get(&self.task);
 
         if let Some(task) = task {
+            let ts = config.get_toolset()?;
+            let env = task.render_env(ts)?;
             if self.json {
-                self.display_json(task)?;
+                self.display_json(task, &env)?;
             } else {
-                self.display(task)?;
+                self.display(task, &env)?;
             }
         } else {
             bail!(
@@ -40,7 +43,7 @@ impl TasksInfo {
         Ok(())
     }
 
-    fn display(&self, task: &Task) -> Result<()> {
+    fn display(&self, task: &Task, env: &EnvMap) -> Result<()> {
         info::inline_section("Task", &task.name)?;
         if !task.aliases.is_empty() {
             info::inline_section("Aliases", task.aliases.join(", "))?;
@@ -82,15 +85,15 @@ impl TasksInfo {
         if !task.env.is_empty() {
             info::section("Environment Variables", toml::to_string_pretty(&task.env)?)?;
         }
-        let (spec, _) = task.parse_usage_spec(None)?;
+        let (spec, _) = task.parse_usage_spec(None, env)?;
         if !spec.is_empty() {
             info::section("Usage Spec", &spec)?;
         }
         Ok(())
     }
 
-    fn display_json(&self, task: &Task) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(None)?;
+    fn display_json(&self, task: &Task, env: &EnvMap) -> Result<()> {
+        let (spec, _) = task.parse_usage_spec(None, env)?;
         let o = json!({
             "name": task.name.to_string(),
             "aliases": task.aliases.join(", "),

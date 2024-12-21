@@ -159,7 +159,7 @@ impl Client {
         &self,
         url: U,
         path: &Path,
-        pr: Option<&dyn SingleReport>,
+        pr: Option<&Box<dyn SingleReport>>,
     ) -> Result<()> {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));

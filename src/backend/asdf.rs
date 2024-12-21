@@ -143,7 +143,7 @@ impl AsdfBackend {
         }
         let script = sm.get_script_path(&ExecEnv);
         let dir = dirs::CWD.clone().unwrap_or_default();
-        let ed = EnvDiff::from_bash_script(&script, &dir, &sm.env, Default::default())?;
+        let ed = EnvDiff::from_bash_script(&script, &dir, &sm.env, &Default::default())?;
         let env = ed
             .to_patches()
             .into_iter()
@@ -331,7 +331,7 @@ impl Backend for AsdfBackend {
             sm.prepend_path(p);
         }
 
-        let run_script = |script| sm.run_by_line(script, ctx.pr.as_ref());
+        let run_script = |script| sm.run_by_line(script, &ctx.pr);
 
         if sm.script_exists(&Download) {
             ctx.pr.set_message("bin/download".into());
@@ -344,7 +344,7 @@ impl Backend for AsdfBackend {
         Ok(tv)
     }
 
-    fn uninstall_version_impl(&self, pr: &dyn SingleReport, tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, pr: &Box<dyn SingleReport>, tv: &ToolVersion) -> Result<()> {
         if self.plugin_path.join("bin/uninstall").exists() {
             self.script_man_for_tv(tv)?
                 .run_by_line(&Script::Uninstall, pr)?;

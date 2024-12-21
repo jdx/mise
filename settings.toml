@@ -987,6 +987,26 @@ enum = [
     [
         "interleave",
         "(default if jobs == 1 or all tasks run sequentially) print output as it comes in"
+    ],
+    [
+        "keep-order",
+        "print output from tasks in the order they are defined"
+    ],
+    [
+        "replacing",
+        "replace stdout each time a line is printed-this uses similar logic as `mise install`"
+    ],
+    [
+        "timed",
+        "only show stdout lines that take longer than 1s to complete"
+    ],
+    [
+        "quiet",
+        "print only stdout/stderr from tasks and nothing from mise"
+    ],
+    [
+        "silent",
+        "print nothing from tasks or mise"
     ]
 ]
 docs = """

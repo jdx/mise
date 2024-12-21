@@ -3,6 +3,7 @@ use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
+use crate::path_env::PathEnv;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
@@ -224,7 +225,12 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Path(input_str, _opts) => {
-                    Self::path(&mut ctx, &mut tera, &mut r, &mut paths, source, input_str)?;
+                    let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str)?;
+                    paths.push((path.clone(), source.clone()));
+                    let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
+                    let mut env_path: PathEnv = env_path.parse()?;
+                    env_path.add(path);
+                    env.insert(env::PATH_KEY.to_string(), (env_path.to_string(), None));
                 }
                 EnvDirective::File(input, _opts) => {
                     let files = Self::file(

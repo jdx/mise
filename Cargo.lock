@@ -2108,9 +2108,9 @@ dependencies = [
 
 [[package]]
 name = "impl-tools"
-version = "0.10.2"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4739bc9af85c18969eba5e4db90dbf26be140ff2e5628593693f18559e9e5fe"
+checksum = "0ae95c9095c2f1126d7db785955c73cdc5fc33e7c3fa911bd4a42931672029a7"
 dependencies = [
  "autocfg",
  "impl-tools-lib",
@@ -2120,9 +2120,9 @@ dependencies = [
 
 [[package]]
 name = "impl-tools-lib"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "798fe18a7e727001b30a029ab9cdd485afd325801d4df846f0bb5338b2986a2c"
+checksum = "2a391adcea096a89a593317881fb61ef4e68d3e7d9de9e2338e6e1557be29e10"
 dependencies = [
  "proc-macro-error2",
  "proc-macro2",
@@ -2603,7 +2603,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.12.16"
+version = "2024.12.17"
 dependencies = [
  "base64 0.22.1",
  "built",
@@ -4556,9 +4556,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.8.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "445e881f4f6d382d5f27c034e25eb92edd7c784ceab92a0937db7f2e9471b938"
+checksum = "022db8904dfa342efe721985167e9fcd16c29b226db4397ed752a761cfce81e8"
 dependencies = [
  "tinyvec_macros",
 ]
@@ -4945,9 +4945,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-lib"
-version = "1.7.2"
+version = "1.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8e8e596b6aabf5e0f7589a08facfccb63ee1668d071c26c321f64d7c7050fd2"
+checksum = "ab923f719b3048bd1cd2fb738fca978ed2a60756ce15cdad639fc40645adad9c"
 dependencies = [
  "clap",
  "heck 0.5.0",

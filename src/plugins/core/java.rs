@@ -80,7 +80,7 @@ impl JavaPlugin {
         tv.install_path().join("bin/java")
     }
 
-    fn test_java(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_java(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
         CmdLineRunner::new(self.java_bin(tv))
             .with_pr(pr)
             .env("JAVA_HOME", tv.install_path())
@@ -92,7 +92,7 @@ impl JavaPlugin {
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
         m: &JavaMetadata,
     ) -> Result<PathBuf> {
         let filename = m.url.split('/').last().unwrap();
@@ -113,7 +113,7 @@ impl JavaPlugin {
     fn install(
         &self,
         tv: &ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
         tarball_path: &Path,
         m: &JavaMetadata,
     ) -> Result<()> {
@@ -223,7 +223,7 @@ impl JavaPlugin {
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
         pr.set_message("java -version".into());
         self.test_java(tv, pr)
     }
@@ -379,9 +379,9 @@ impl Backend for JavaPlugin {
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         let metadata = self.tv_to_metadata(&tv)?;
-        let tarball_path = self.download(ctx, &mut tv, ctx.pr.as_ref(), metadata)?;
-        self.install(&tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
-        self.verify(&tv, ctx.pr.as_ref())?;
+        let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata)?;
+        self.install(&tv, &ctx.pr, &tarball_path, metadata)?;
+        self.verify(&tv, &ctx.pr)?;
 
         Ok(tv)
     }

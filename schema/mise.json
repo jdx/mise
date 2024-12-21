@@ -847,7 +847,15 @@
         "task_output": {
           "description": "Change output style when executing tasks.",
           "type": "string",
-          "enum": ["prefix", "interleave"]
+          "enum": [
+            "prefix",
+            "interleave",
+            "keep-order",
+            "replacing",
+            "timed",
+            "quiet",
+            "silent"
+          ]
         },
         "task_run_auto_install": {
           "default": true,

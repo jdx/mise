@@ -86,13 +86,13 @@ pub trait Plugin: Debug + Send {
     fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> eyre::Result<()> {
         Ok(())
     }
-    fn update(&self, _pr: &dyn SingleReport, _gitref: Option<String>) -> eyre::Result<()> {
+    fn update(&self, _pr: &Box<dyn SingleReport>, _gitref: Option<String>) -> eyre::Result<()> {
         Ok(())
     }
-    fn uninstall(&self, _pr: &dyn SingleReport) -> eyre::Result<()> {
+    fn uninstall(&self, _pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         Ok(())
     }
-    fn install(&self, _pr: &dyn SingleReport) -> eyre::Result<()> {
+    fn install(&self, _pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         Ok(())
     }
     fn external_commands(&self) -> eyre::Result<Vec<Command>> {

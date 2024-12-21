@@ -373,7 +373,8 @@ impl Doctor {
     }
 
     fn paths(&mut self, ts: &Toolset) -> eyre::Result<Vec<PathBuf>> {
-        let env = ts.full_env()?;
+        let config = Config::get();
+        let env = ts.full_env(&config)?;
         let path = env
             .get(&*PATH_KEY)
             .ok_or_else(|| eyre::eyre!("Path not found"))?;

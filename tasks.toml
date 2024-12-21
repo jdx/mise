@@ -135,5 +135,5 @@ run = "cargo install --path . --debug"
 [xxx]
 hide = true
 tools = { gh = "2.60.0" }
-run = "echo {{arg(name='greeting')}}"
+run = "echo {{arg(name='greeting')}}; sleep 2; echo 2; sleep 2; echo 3; sleep 0.4; echo 4; sleep 1"
 description = "a task for testing"
