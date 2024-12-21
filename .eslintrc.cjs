@@ -1,5 +1,3 @@
 module.exports = {
-  extends: [
-    "@fig/autocomplete"
-  ],
+  extends: ["@fig/autocomplete"],
 };
