@@ -32,7 +32,7 @@ getent passwd $USER | cut -d: -f7
 :::
 
 You can change your default shell with `chsh -s /path/to/shell` but you may need
-to first add it to `/etc/shells`.  Once you know the right one, modify the appropriate file:
+to first add it to `/etc/shells`. Once you know the right one, modify the appropriate file:
 
 ::: code-group
 
@@ -130,6 +130,7 @@ vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
 ### Use with package [mise.el](https://github.com/liuyinz/mise.el)
 
 <https://github.com/liuyinz/mise.el>
+
 > A GNU Emacs library which uses the mise tool to determine per-directory/project environment variables and then set those environment variables on a per-buffer basis.
 
 ```lisp
@@ -155,7 +156,7 @@ Example for Java:
 ### SDK selection using asdf layout
 
 Some plugins cannot find SDK installed by `mise` yet but might have support for asdf.
-In that case,  a workaround is to symlink the mise tool directory which has same layout as asdf:
+In that case, a workaround is to symlink the mise tool directory which has same layout as asdf:
 
 ```sh
 ln -s ~/.local/share/mise ~/.asdf
