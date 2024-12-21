@@ -67,7 +67,8 @@ fn execute(ts: &Toolset, root: &Path, run: &str, files: Vec<&PathBuf>) -> Result
         .map(|s| s.as_str())
         .chain(once(run))
         .collect_vec();
-    let mut env = ts.full_env()?;
+    let config = Config::get();
+    let mut env = ts.full_env(&config)?;
     env.insert("MISE_WATCH_FILES_MODIFIED".to_string(), modified_files_var);
     if let Some(cwd) = &*dirs::CWD {
         env.insert(

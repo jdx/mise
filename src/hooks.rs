@@ -161,7 +161,8 @@ fn execute(ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
         .map(|s| s.as_str())
         .chain(once(hook.script.as_str()))
         .collect_vec();
-    let mut env = ts.full_env()?;
+    let config = Config::get();
+    let mut env = ts.full_env(&config)?;
     if let Some(cwd) = dirs::CWD.as_ref() {
         env.insert(
             "MISE_ORIGINAL_CWD".to_string(),

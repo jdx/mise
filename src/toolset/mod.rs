@@ -463,9 +463,9 @@ impl Toolset {
             .collect()
     }
     /// returns env_with_path but also with the existing env vars from the system
-    pub fn full_env(&self) -> Result<EnvMap> {
+    pub fn full_env(&self, config: &Config) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
-        env.extend(self.env_with_path(&Config::get())?.clone());
+        env.extend(self.env_with_path(config)?.clone());
         Ok(env)
     }
     /// the full mise environment including all tool paths
@@ -590,7 +590,7 @@ impl Toolset {
     pub fn tera_ctx(&self) -> Result<&tera::Context> {
         self.tera_ctx.get_or_try_init(|| {
             let config = Config::get();
-            let env = self.env_with_path(&config)?;
+            let env = self.full_env(&config)?;
             let mut ctx = config.tera_ctx.clone();
             ctx.insert("env", &env);
             Ok(ctx)
