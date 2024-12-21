@@ -10,6 +10,9 @@ assert_not_contains "mise ls-remote dotnet:GitVersion.Tool" "-beta"
 test dotnet:GitVersion.Tool@5.12.0 "dotnet-gitversion /version" "5.12.0+Branch.support-5.x.Sha.3f75764963eb3d7956dcd5a40488c074dd9faf9e"
 test dotnet:Husky@0.7.2 "husky --version" "v0.7.2"
 
+# This command is needed if you want to reexcute the ls-remote command
+mise cache clear
+
 export MISE_DOTNET_PACKAGE_FLAGS="prerelease"
 
 assert_contains "mise ls-remote dotnet:GitVersion.Tool" "-beta"
