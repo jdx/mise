@@ -246,6 +246,12 @@ default = []
 parse_env = "list_by_comma"
 description = "Tools defined in mise.toml that should be ignored"
 
+[dotnet.allow_prerelease]
+env = "MISE_DOTNET_ALLOW_PRERELEASE"
+type = "Bool"
+default = false
+description = "Allow installing prerelease versions of dotnet tools."
+
 [dotnet.registry_url]
 env = "MISE_DOTNET_REGISTRY_URL"
 type = "Url"
@@ -258,12 +264,6 @@ By default, mise will use the [nuget](https://api.nuget.org/v3/index.json) API t
 
 However, you can set this to a different URL if you have a custom feed or want to use a different source.
 """
-
-[dotnet.allow_prerelease]
-env = "MISE_ALLOW_PRERELEASE"
-type = "Bool"
-default = false
-description = "Allow installing prerelease versions of dotnet tools."
 
 [env]
 env = "MISE_ENV"
