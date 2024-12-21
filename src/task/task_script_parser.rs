@@ -295,10 +295,11 @@ impl TaskScriptParser {
             })
             .collect();
         cmd.flags = input_flags.lock().unwrap().clone();
-        let spec = usage::Spec {
+        let mut spec = usage::Spec {
             cmd,
             ..Default::default()
         };
+        spec.merge(task.usage.parse()?);
 
         Ok((scripts, spec))
     }

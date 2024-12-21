@@ -15,6 +15,7 @@ backend = "core:bun"
 
 [tools.bun.checksums]
 "bun-darwin-aarch64.zip" = "sha256:64a70fe290bd6391a09d555d4e4e1a8df56543e526bb1381ab344a385348572c"
+"bun-linux-x64-baseline.zip" = "sha256:19584af4189e6434124a556e830427f0f44b7ebed8530eacf4fe369bd14b93d6"
 
 [tools.cargo-binstall]
 version = "1.10.17"
@@ -22,6 +23,7 @@ backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
 "cargo-binstall-aarch64-apple-darwin.zip" = "sha256:81abb7de75ef130844bb58965bdb93969afadd0821cf5e1e1bd0517e48963199"
+"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:d073d4e8901e176b0f625845f9a0bbd926a063017991d7cc0c863e6b884d2d59"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.0"
@@ -44,7 +46,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "1.7.3"
+version = "1.7.4"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
