@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
-use std::panic;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
+use std::{panic, thread};
 
 use super::args::ToolArg;
 use crate::cli::Cli;
@@ -176,7 +176,7 @@ pub struct Run {
     /// - `prefix` - Print stdout/stderr by line, prefixed with the task's label
     /// - `interleave` - Print directly to stdout/stderr instead of by line
     /// - `replacing` - Stdout is replaced each time, stderr is printed as is
-    /// - `lengthy` - Only show stdout lines if they are displayed for more than 1 second
+    /// - `timed` - Only show stdout lines if they are displayed for more than 1 second
     /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
     /// - `quiet` - Don't show extra output
     /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
@@ -191,6 +191,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub task_prs: IndexMap<Task, Arc<Box<dyn SingleReport>>>,
+
+    #[clap(skip)]
+    pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -232,6 +235,27 @@ impl Run {
 
         ctrlc::exit_on_ctrl_c(false);
 
+        if self.output(None) == TaskOutput::Timed {
+            let timed_outputs = self.timed_outputs.clone();
+            thread::spawn(move || loop {
+                {
+                    let mut outputs = timed_outputs.lock().unwrap();
+                    for (prefix, out) in outputs.clone() {
+                        let (time, line) = out;
+                        if time.elapsed().unwrap().as_secs() >= 1 {
+                            if console::colors_enabled() {
+                                prefix_println!(prefix, "{line}\x1b[0m");
+                            } else {
+                                prefix_println!(prefix, "{line}");
+                            }
+                            outputs.shift_remove(&prefix);
+                        }
+                    }
+                }
+                thread::sleep(Duration::from_millis(100));
+            });
+        }
+
         self.fetch_tasks(&mut tasks)?;
         let tasks = Deps::new(tasks)?;
         for task in tasks.all() {
@@ -249,7 +273,6 @@ impl Run {
                 }
                 _ => {}
             }
-            if self.output(Some(task)) == TaskOutput::KeepOrder {}
         }
 
         let num_tasks = tasks.all().count();
@@ -647,6 +670,22 @@ impl Run {
                 let pr = self.task_prs.get(task).unwrap().clone();
                 cmd = cmd.with_pr_arc(pr);
             }
+            TaskOutput::Timed => {
+                let timed_outputs = self.timed_outputs.clone();
+                cmd = cmd.with_on_stdout(move |line| {
+                    timed_outputs
+                        .lock()
+                        .unwrap()
+                        .insert(prefix.to_string(), (SystemTime::now(), line));
+                });
+                cmd = cmd.with_on_stderr(|line| {
+                    if console::colors_enabled() {
+                        self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                    } else {
+                        self.eprint(task, prefix, &line);
+                    }
+                });
+            }
             TaskOutput::Silent => {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
@@ -960,6 +999,7 @@ pub enum TaskOutput {
     #[default]
     Prefix,
     Replacing,
+    Timed,
     Quiet,
     Silent,
 }
