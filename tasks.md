@@ -1,6 +1,6 @@
-## `aqua-tester.fish`
+## `aqua-tester`
 
-- **Usage**: `aqua-tester.fish`
+- **Usage**: `aqua-tester`
 
 ## `build`
 
@@ -74,9 +74,9 @@ Overwrite existing &lt;file>
 
 User to run as
 
-## `filetask.bat`
+## `filetask`
 
-- **Usage**: `filetask.bat`
+- **Usage**: `filetask`
 
 ## `install-dev`
 
