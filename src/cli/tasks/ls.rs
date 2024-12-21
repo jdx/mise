@@ -5,6 +5,7 @@ use itertools::Itertools;
 use crate::config::Config;
 use crate::file::{display_path, display_rel_path};
 use crate::task::Task;
+use crate::toolset::Toolset;
 use crate::ui::table::MiseTable;
 
 /// List available tasks to execute
@@ -62,6 +63,7 @@ pub enum SortOrder {
 impl TasksLs {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
+        let ts = config.get_toolset()?;
         let tasks = config
             .tasks()?
             .values()
@@ -71,16 +73,16 @@ impl TasksLs {
             .collect::<Vec<Task>>();
 
         if self.usage {
-            self.display_usage(tasks)?;
+            self.display_usage(ts, tasks)?;
         } else if self.json {
-            self.display_json(tasks)?;
+            self.display_json(ts, tasks)?;
         } else {
-            self.display(tasks)?;
+            self.display(ts, tasks)?;
         }
         Ok(())
     }
 
-    fn display(&self, tasks: Vec<Task>) -> Result<()> {
+    fn display(&self, _ts: &Toolset, tasks: Vec<Task>) -> Result<()> {
         let mut table = MiseTable::new(
             self.no_header,
             if self.extended {
@@ -95,10 +97,11 @@ impl TasksLs {
         table.print()
     }
 
-    fn display_usage(&self, tasks: Vec<Task>) -> Result<()> {
+    fn display_usage(&self, ts: &Toolset, tasks: Vec<Task>) -> Result<()> {
         let mut usage = usage::Spec::default();
         for task in tasks {
-            let (mut task_spec, _) = task.parse_usage_spec(None)?;
+            let env = task.render_env(ts)?;
+            let (mut task_spec, _) = task.parse_usage_spec(None, &env)?;
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }
@@ -111,7 +114,7 @@ impl TasksLs {
         Ok(())
     }
 
-    fn display_json(&self, tasks: Vec<Task>) -> Result<()> {
+    fn display_json(&self, _ts: &Toolset, tasks: Vec<Task>) -> Result<()> {
         let array_items = tasks
             .into_iter()
             .filter(|t| self.hidden || !t.hide)

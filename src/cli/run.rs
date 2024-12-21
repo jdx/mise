@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
@@ -16,7 +16,7 @@ use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::file::display_path;
 use crate::http::HTTP;
-use crate::task::{Deps, EitherIntOrBool, GetMatchingExt, Task};
+use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, prompt, style, time};
 use crate::{dirs, env, exit, file, ui};
@@ -25,7 +25,6 @@ use console::Term;
 use crossbeam_channel::{select, unbounded};
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
-use either::Either;
 use eyre::{bail, ensure, eyre, Result};
 use glob::glob;
 use itertools::Itertools;
@@ -338,7 +337,7 @@ impl Run {
             tools.push(format!("{}@{}", k, v).parse()?);
         }
         let ts = ToolsetBuilder::new().with_args(&tools).build(&config)?;
-        let mut env = ts.env_with_path(&config)?;
+        let mut env = task.render_env(&ts)?;
         let output = self.output(Some(task));
         env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
         if output == TaskOutput::Prefix {
@@ -366,36 +365,14 @@ impl Run {
         if let Some(config_root) = &task.config_root {
             env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
         }
-        let string_env: Vec<(String, String)> = task
-            .env
-            .iter()
-            .filter_map(|(k, v)| match &v.0 {
-                Either::Left(v) => Some((k.to_string(), v.to_string())),
-                Either::Right(EitherIntOrBool(Either::Left(v))) => {
-                    Some((k.to_string(), v.to_string()))
-                }
-                _ => None,
-            })
-            .collect_vec();
-        let rm_env = task
-            .env
-            .iter()
-            .filter(|(_, v)| v.0 == Either::Right(EitherIntOrBool(Either::Right(false))))
-            .map(|(k, _)| k)
-            .collect::<HashSet<_>>();
-        let env: EnvMap = env
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .chain(string_env)
-            .filter(|(k, _)| !rm_env.contains(k))
-            .collect();
-
         let timer = std::time::Instant::now();
 
         if let Some(file) = &task.file {
             self.exec_file(file, task, &env, &prefix)?;
         } else {
-            for (script, args) in task.render_run_scripts_with_args(self.cd.clone(), &task.args)? {
+            for (script, args) in
+                task.render_run_scripts_with_args(self.cd.clone(), &task.args, &env)?
+            {
                 self.exec_script(&script, &args, task, &env, &prefix)?;
             }
         }
@@ -505,18 +482,12 @@ impl Run {
         }
     }
 
-    fn exec_file(
-        &self,
-        file: &Path,
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
-    ) -> Result<()> {
+    fn exec_file(&self, file: &Path, task: &Task, env: &EnvMap, prefix: &str) -> Result<()> {
         let config = Config::get();
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
-        let (spec, _) = task.parse_usage_spec(self.cd.clone())?;
+        let (spec, _) = task.parse_usage_spec(self.cd.clone(), &env)?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args = once(command.clone()).chain(args.clone()).collect_vec();
             let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;

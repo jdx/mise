@@ -31,7 +31,9 @@ mod task_script_parser;
 pub mod task_sources;
 
 use crate::config::config_file::ConfigFile;
+use crate::env_diff::EnvMap;
 use crate::file::display_path;
+use crate::toolset::Toolset;
 use crate::ui::style;
 pub use deps::Deps;
 use task_dep::TaskDep;
@@ -284,7 +286,11 @@ impl Task {
         Ok((depends, depends_post))
     }
 
-    pub fn parse_usage_spec(&self, cwd: Option<PathBuf>) -> Result<(usage::Spec, Vec<String>)> {
+    pub fn parse_usage_spec(
+        &self,
+        cwd: Option<PathBuf>,
+        env: &EnvMap,
+    ) -> Result<(usage::Spec, Vec<String>)> {
         let (mut spec, scripts) = if let Some(file) = &self.file {
             let mut spec = usage::Spec::parse_script(file)
                 .inspect_err(|e| debug!("failed to parse task file with usage: {e}"))
@@ -292,7 +298,8 @@ impl Task {
             spec.cmd.name = self.name.clone();
             (spec, vec![])
         } else {
-            let (scripts, spec) = TaskScriptParser::new(cwd).parse_run_scripts(self, self.run())?;
+            let (scripts, spec) =
+                TaskScriptParser::new(cwd).parse_run_scripts(self, self.run(), env)?;
             (spec, scripts)
         };
         spec.name = self.name.clone();
@@ -317,8 +324,9 @@ impl Task {
         &self,
         cwd: Option<PathBuf>,
         args: &[String],
+        env: &EnvMap,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(cwd)?;
+        let (spec, scripts) = self.parse_usage_spec(cwd, env)?;
         if has_any_args_defined(&spec) {
             Ok(
                 replace_template_placeholders_with_args(self, &spec, &scripts, args)?
@@ -341,8 +349,9 @@ impl Task {
         }
     }
 
-    pub fn render_markdown(&self, dir: &Path) -> Result<String> {
-        let (spec, _) = self.parse_usage_spec(Some(dir.to_path_buf()))?;
+    pub fn render_markdown(&self, ts: &Toolset, dir: &Path) -> Result<String> {
+        let env = self.render_env(ts)?;
+        let (spec, _) = self.parse_usage_spec(Some(dir.to_path_buf()), &env)?;
         let ctx = usage::docs::markdown::MarkdownRenderer::new(spec)
             .with_replace_pre_with_code_fences(true)
             .with_header_level(2);
@@ -443,15 +452,46 @@ impl Task {
         for d in &mut self.wait_for {
             d.render(&mut tera, &tera_ctx)?;
         }
-        for v in self.env.values_mut() {
-            if let EitherStringOrIntOrBool(Either::Left(s)) = v {
-                *s = tera.render_str(s, &tera_ctx)?;
-            }
-        }
         if let Some(dir) = &mut self.dir {
             *dir = tera.render_str(dir, &tera_ctx)?;
         }
         Ok(())
+    }
+
+    pub fn render_env(&self, ts: &Toolset) -> Result<EnvMap> {
+        let config = Config::get();
+        let mut tera = get_tera(self.config_root.as_deref());
+        let mut tera_ctx = ts.tera_ctx()?.clone();
+        let mut env = ts.full_env(&config)?;
+        if let Some(root) = &config.project_root {
+            tera_ctx.insert("config_root", &root);
+        }
+        let task_env: Vec<(String, String)> = self
+            .env
+            .iter()
+            .filter_map(|(k, v)| match &v.0 {
+                Either::Left(v) => Some((k.to_string(), v.to_string())),
+                Either::Right(EitherIntOrBool(Either::Left(v))) => {
+                    Some((k.to_string(), v.to_string()))
+                }
+                _ => None,
+            })
+            .collect_vec();
+        for (k, v) in task_env {
+            tera_ctx.insert("env", &env);
+            env.insert(k, tera.render_str(&v, &tera_ctx)?);
+        }
+        let rm_env = self
+            .env
+            .iter()
+            .filter(|(_, v)| v.0 == Either::Right(EitherIntOrBool(Either::Right(false))))
+            .map(|(k, _)| k)
+            .collect::<HashSet<_>>();
+
+        Ok(env
+            .into_iter()
+            .filter(|(k, _)| !rm_env.contains(k))
+            .collect())
     }
 }
 
