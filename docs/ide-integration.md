@@ -73,37 +73,6 @@ Here is an example showing that VSCode will use `node` provided by `mise`:
 [![intellij using shims](./shims-intellij.png)](./shims-intellij.png)
 :::
 
-::: details Conditional shims activation
-
-Conditionally using shims is also possible. Some programs will set a `TERM_PROGRAM` environment
-variable, which may be used to determine which activation strategy to use.
-
-Here is an example using VSCode:
-
-::: code-group
-
-```zsh
-# ~/.zprofile
-if [[ "$TERM_PROGRAM" == "vscode" ]]; then
-  eval "$($HOME/.local/bin/mise activate zsh --shims)"
-else
-  eval "$($HOME/.local/bin/mise activate zsh)"
-fi
-```
-
-```bash
-# ~/.bash_profile or ~/.bash_login or ~/.profile
-if [[ "$TERM_PROGRAM" == "vscode" ]]; then
-  eval "$($HOME/.local/bin/mise activate bash --shims)"
-else
-  eval "$($HOME/.local/bin/mise activate bash)"
-fi
-```
-
-Note that this might not work in all cases or only in the integrated terminal of the IDE.
-
-:::
-
 As mentioned above, using `shims` doesn't work with all mise features. For example, arbitrary [env vars](./environments/) in `[env]` will
 only be set if a shim is executed. For this we need tighter integration with the IDE and/or a custom plugin.
 
