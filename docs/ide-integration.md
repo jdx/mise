@@ -1,12 +1,12 @@
 # IDE Integration
 
-Editorts and IDEs works differently than interactive shells. Usually, they will either inherit the environment from your current shell (this is the case if you start it from a terminal like `nvim .` or `code .`) or will have [their own way to set up the environment](https://code.visualstudio.com/docs/supporting/faq#_resolving-shell-environment-fails).
+Editors and IDEs work differently than interactive shells. Usually, they will either inherit the environment from your current shell (this is the case if you start it from a terminal like `nvim .` or `code .`) or will have [their own way to set up the environment](https://code.visualstudio.com/docs/supporting/faq#_resolving-shell-environment-fails).
 
 Once you have launched the IDE, it won't reload the environment variables or the `PATH` provided by `mise` if you update your mise configuration files. Therefore, we cannot rely on the `mise activate` method to automatically set up the editor.
 
 There are a few ways to make `mise` work with your editor:
 
-- Some editors or IDE plugins have direct support for `mise` and can let you select the tools/sdk path from the IDE settings. This will get you access to the too binary but won't load the environment variables.
+- Some editors or IDE plugins have direct support for `mise` and can let you select the tools/sdk path from the IDE settings. This will get you access to the tool binary but won't load the environment variables.
 - Most editors (and language plugins) will look for tools on the `PATH` and run them in the context of your project. Therefore, adding the `mise` shims to the `PATH` might be enough (see section below). This will run the tool provided by mise and load the environment variables.
 - In other cases, you may need to manually indicate the path to the tools provided by `mise` in the IDE settings. This can be done by using `mise which <tool>` or `mise where`. You can also provide the path to the tool shim (e.g. `~/.local/share/mise/shims/node`) if the plugin supports it as this will also load the environment variables when the tool is run.
 - Finally, some custom plugins have been developed to work with `mise`. You can find them in the [IDE Plugins](#ide-plugins) section.
