@@ -68,7 +68,9 @@ impl Completion {
             args.push("--include-bash-completion-lib".into());
         }
         let config = Config::get();
-        let output = cmd("usage", args).full_env(toolset.full_env(&config)?).read()?;
+        let output = cmd("usage", args)
+            .full_env(toolset.full_env(&config)?)
+            .read()?;
         Ok(output)
     }
 
