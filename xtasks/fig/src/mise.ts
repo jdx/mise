@@ -316,6 +316,12 @@ const installedToolVersionGenerator: Fig.Generator = {
   },
 };
 
+const envVarGenerator = {
+    script: ["sh", "-c", "env"],
+    postProcess: (output: string) => {
+        return output.split("\n").map((l) => ({ name: l.split("=")[0] }));
+    },
+};
 const usageGenerateSpec = (cmds: string[]) => {
     return async (context: string[], executeCommand: Fig.ExecuteCommandFunction): Promise<Fig.Spec> => {
         const promises = cmds.map(async (cmd): Promise<Fig.Subcommand[]> => {
@@ -375,20 +381,14 @@ const completionGeneratorTemplate = (argSuggestionBash: string): Fig.Generator =
     };
 };
 const completionSpec: Fig.Spec = {
-    "name": [
-        "mise"
-    ],
+    "name": "mise",
     "subcommands": [
         {
-            "name": [
-                "activate"
-            ],
+            "name": "activate",
             "description": "Initializes mise in the current shell session",
             "options": [
                 {
-                    "name": [
-                        "--shims"
-                    ],
+                    "name": "--shims",
                     "description": "Use shims instead of modifying PATH\nEffectively the same as:",
                     "isRepeatable": false
                 },
@@ -401,30 +401,25 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--no-hook-env"
-                    ],
+                    "name": "--no-hook-env",
                     "description": "Do not automatically call hook-env",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "shell_type",
-                    "description": "Shell type to generate the script for",
-                    "isOptional": true,
-                    "isVariadic": false,
-                    "suggestions": [
-                        "bash",
-                        "elvish",
-                        "fish",
-                        "nu",
-                        "xonsh",
-                        "zsh",
-                        "pwsh"
-                    ]
-                }
-            ]
+            "args": {
+                "name": "shell_type",
+                "description": "Shell type to generate the script for",
+                "isOptional": true,
+                "suggestions": [
+                    "bash",
+                    "elvish",
+                    "fish",
+                    "nu",
+                    "xonsh",
+                    "zsh",
+                    "pwsh"
+                ]
+            }
         },
         {
             "name": [
@@ -434,23 +429,17 @@ const completionSpec: Fig.Spec = {
             "description": "Manage aliases",
             "subcommands": [
                 {
-                    "name": [
-                        "get"
-                    ],
+                    "name": "get",
                     "description": "Show an alias for a plugin",
                     "args": [
                         {
                             "name": "plugin",
                             "description": "The plugin to show the alias for",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": pluginGenerator
                         },
                         {
                             "name": "alias",
                             "description": "The alias to show",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": aliasGenerator
                         }
                     ]
@@ -463,21 +452,16 @@ const completionSpec: Fig.Spec = {
                     "description": "List aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`.",
                     "options": [
                         {
-                            "name": [
-                                "--no-header"
-                            ],
+                            "name": "--no-header",
                             "description": "Don't show table header",
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "tool",
-                            "description": "Show aliases for <TOOL>",
-                            "isOptional": true,
-                            "isVariadic": false
-                        }
-                    ]
+                    "args": {
+                        "name": "tool",
+                        "description": "Show aliases for <TOOL>",
+                        "isOptional": true
+                    }
                 },
                 {
                     "name": [
@@ -490,22 +474,16 @@ const completionSpec: Fig.Spec = {
                         {
                             "name": "plugin",
                             "description": "The plugin to set the alias for",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": pluginGenerator
                         },
                         {
                             "name": "alias",
                             "description": "The alias to set",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": aliasGenerator
                         },
                         {
                             "name": "value",
-                            "description": "The value to set the alias to",
-                            "isOptional": false,
-                            "isVariadic": false
+                            "description": "The value to set the alias to"
                         }
                     ]
                 },
@@ -522,15 +500,11 @@ const completionSpec: Fig.Spec = {
                         {
                             "name": "plugin",
                             "description": "The plugin to remove the alias from",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": pluginGenerator
                         },
                         {
                             "name": "alias",
                             "description": "The alias to remove",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": aliasGenerator
                         }
                     ]
@@ -542,19 +516,15 @@ const completionSpec: Fig.Spec = {
                         "-p",
                         "--plugin"
                     ],
-                    "description": "filter aliases by plugin",
+                    "description": "Filter aliases by plugin",
                     "isRepeatable": false,
                     "args": {
                         "name": "plugin",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": pluginGenerator
                     }
                 },
                 {
-                    "name": [
-                        "--no-header"
-                    ],
+                    "name": "--no-header",
                     "description": "Don't show table header",
                     "isRepeatable": false
                 }
@@ -577,24 +547,18 @@ const completionSpec: Fig.Spec = {
             ]
         },
         {
-            "name": [
-                "bin-paths"
-            ],
+            "name": "bin-paths",
             "description": "List all the active runtime bin paths",
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to look up\ne.g.: ruby@3",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to look up\ne.g.: ruby@3",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator
+            }
         },
         {
-            "name": [
-                "cache"
-            ],
+            "name": "cache",
             "description": "Manage the mise cache",
             "subcommands": [
                 {
@@ -603,15 +567,13 @@ const completionSpec: Fig.Spec = {
                         "c"
                     ],
                     "description": "Deletes all cache files in mise",
-                    "args": [
-                        {
-                            "name": "plugin",
-                            "description": "Plugin(s) to clear cache for e.g.: node, python",
-                            "isOptional": true,
-                            "isVariadic": true,
-                            "generators": pluginGenerator
-                        }
-                    ]
+                    "args": {
+                        "name": "plugin",
+                        "description": "Plugin(s) to clear cache for e.g.: node, python",
+                        "isOptional": true,
+                        "isVariadic": true,
+                        "generators": pluginGenerator
+                    }
                 },
                 {
                     "name": [
@@ -621,9 +583,7 @@ const completionSpec: Fig.Spec = {
                     "description": "Removes stale mise cache files",
                     "options": [
                         {
-                            "name": [
-                                "--dry-run"
-                            ],
+                            "name": "--dry-run",
                             "description": "Just show what would be pruned",
                             "isRepeatable": false
                         },
@@ -636,45 +596,36 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": true
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "plugin",
-                            "description": "Plugin(s) to clear cache for e.g.: node, python",
-                            "isOptional": true,
-                            "isVariadic": true,
-                            "generators": pluginGenerator
-                        }
-                    ]
+                    "args": {
+                        "name": "plugin",
+                        "description": "Plugin(s) to clear cache for e.g.: node, python",
+                        "isOptional": true,
+                        "isVariadic": true,
+                        "generators": pluginGenerator
+                    }
                 }
             ]
         },
         {
-            "name": [
-                "completion"
-            ],
+            "name": "completion",
             "description": "Generate shell completions",
             "options": [
                 {
-                    "name": [
-                        "--include-bash-completion-lib"
-                    ],
+                    "name": "--include-bash-completion-lib",
                     "description": "Include the bash completion library in the bash completion script",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "shell",
-                    "description": "Shell type to generate completions for",
-                    "isOptional": true,
-                    "isVariadic": false,
-                    "suggestions": [
-                        "bash",
-                        "fish",
-                        "zsh"
-                    ]
-                }
-            ]
+            "args": {
+                "name": "shell",
+                "description": "Shell type to generate completions for",
+                "isOptional": true,
+                "suggestions": [
+                    "bash",
+                    "fish",
+                    "zsh"
+                ]
+            }
         },
         {
             "name": [
@@ -698,9 +649,7 @@ const completionSpec: Fig.Spec = {
                             "description": "Path to a .tool-versions file to import tools from",
                             "isRepeatable": false,
                             "args": {
-                                "name": "tool_versions",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "tool_versions"
                             }
                         },
                         {
@@ -711,17 +660,13 @@ const completionSpec: Fig.Spec = {
                             "description": "Output to file instead of stdout",
                             "isRepeatable": false,
                             "args": {
-                                "name": "output",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "output"
                             }
                         }
                     ]
                 },
                 {
-                    "name": [
-                        "get"
-                    ],
+                    "name": "get",
                     "description": "Display the value of a setting in a mise.toml file",
                     "options": [
                         {
@@ -733,20 +678,15 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false,
                             "args": {
                                 "name": "file",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "template": "filepaths"
                             }
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "key",
-                            "description": "The path of the config to display",
-                            "isOptional": true,
-                            "isVariadic": false
-                        }
-                    ]
+                    "args": {
+                        "name": "key",
+                        "description": "The path of the config to display",
+                        "isOptional": true
+                    }
                 },
                 {
                     "name": [
@@ -756,9 +696,7 @@ const completionSpec: Fig.Spec = {
                     "description": "List config files currently in use",
                     "options": [
                         {
-                            "name": [
-                                "--no-header"
-                            ],
+                            "name": "--no-header",
                             "description": "Do not print table header",
                             "isRepeatable": false
                         },
@@ -773,9 +711,7 @@ const completionSpec: Fig.Spec = {
                     ]
                 },
                 {
-                    "name": [
-                        "set"
-                    ],
+                    "name": "set",
                     "description": "Set the value of a setting in a mise.toml file",
                     "options": [
                         {
@@ -787,8 +723,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false,
                             "args": {
                                 "name": "file",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "template": "filepaths"
                             }
                         },
@@ -800,8 +734,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false,
                             "args": {
                                 "name": "type",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "suggestions": [
                                     "infer",
                                     "string",
@@ -816,24 +748,18 @@ const completionSpec: Fig.Spec = {
                     "args": [
                         {
                             "name": "key",
-                            "description": "The path of the config to display",
-                            "isOptional": false,
-                            "isVariadic": false
+                            "description": "The path of the config to display"
                         },
                         {
                             "name": "value",
-                            "description": "The value to set the key to",
-                            "isOptional": false,
-                            "isVariadic": false
+                            "description": "The value to set the key to"
                         }
                     ]
                 }
             ],
             "options": [
                 {
-                    "name": [
-                        "--no-header"
-                    ],
+                    "name": "--no-header",
                     "description": "Do not print table header",
                     "isRepeatable": false
                 },
@@ -848,9 +774,7 @@ const completionSpec: Fig.Spec = {
             ]
         },
         {
-            "name": [
-                "deactivate"
-            ],
+            "name": "deactivate",
             "description": "Disable mise for current shell session"
         },
         {
@@ -861,9 +785,7 @@ const completionSpec: Fig.Spec = {
             "description": "Check mise installation for possible problems",
             "subcommands": [
                 {
-                    "name": [
-                        "path"
-                    ],
+                    "name": "path",
                     "description": "Print the current PATH entries mise is providing",
                     "options": [
                         {
@@ -888,9 +810,7 @@ const completionSpec: Fig.Spec = {
             ]
         },
         {
-            "name": [
-                "en"
-            ],
+            "name": "en",
             "description": "[experimental] starts a new shell with the mise environment built from the current configuration",
             "options": [
                 {
@@ -901,21 +821,16 @@ const completionSpec: Fig.Spec = {
                     "description": "Shell to start",
                     "isRepeatable": false,
                     "args": {
-                        "name": "shell",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "shell"
                     }
                 }
             ],
-            "args": [
-                {
-                    "name": "dir",
-                    "description": "Directory to start the shell in",
-                    "isOptional": true,
-                    "isVariadic": false,
-                    "template": "folders"
-                }
-            ]
+            "args": {
+                "name": "dir",
+                "description": "Directory to start the shell in",
+                "isOptional": true,
+                "template": "folders"
+            }
         },
         {
             "name": [
@@ -933,9 +848,7 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--json-extended"
-                    ],
+                    "name": "--json-extended",
                     "description": "Output in JSON format with additional information (source, tool)",
                     "isRepeatable": false
                 },
@@ -956,8 +869,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "shell",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "suggestions": [
                             "bash",
                             "elvish",
@@ -970,15 +881,13 @@ const completionSpec: Fig.Spec = {
                     }
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to use",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to use",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator
+            }
         },
         {
             "name": [
@@ -995,9 +904,7 @@ const completionSpec: Fig.Spec = {
                     "description": "Command string to execute",
                     "isRepeatable": false,
                     "args": {
-                        "name": "c",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "c"
                     }
                 },
                 {
@@ -1008,15 +915,11 @@ const completionSpec: Fig.Spec = {
                     "description": "Number of jobs to run in parallel\n[default: 4]",
                     "isRepeatable": false,
                     "args": {
-                        "name": "jobs",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "jobs"
                     }
                 },
                 {
-                    "name": [
-                        "--raw"
-                    ],
+                    "name": "--raw",
                     "description": "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
                     "isRepeatable": false
                 }
@@ -1038,9 +941,7 @@ const completionSpec: Fig.Spec = {
             ]
         },
         {
-            "name": [
-                "fmt"
-            ],
+            "name": "fmt",
             "description": "Formats mise.toml",
             "options": [
                 {
@@ -1075,9 +976,7 @@ const completionSpec: Fig.Spec = {
                             "description": "Path to a .tool-versions file to import tools from",
                             "isRepeatable": false,
                             "args": {
-                                "name": "tool_versions",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "tool_versions"
                             }
                         },
                         {
@@ -1088,9 +987,7 @@ const completionSpec: Fig.Spec = {
                             "description": "Output to file instead of stdout",
                             "isRepeatable": false,
                             "args": {
-                                "name": "output",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "output"
                             }
                         }
                     ]
@@ -1103,15 +1000,11 @@ const completionSpec: Fig.Spec = {
                     "description": "[experimental] Generate a git pre-commit hook",
                     "options": [
                         {
-                            "name": [
-                                "--hook"
-                            ],
+                            "name": "--hook",
                             "description": "Which hook to generate (saves to .git/hooks/$hook)",
                             "isRepeatable": false,
                             "args": {
-                                "name": "hook",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "hook"
                             }
                         },
                         {
@@ -1123,8 +1016,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false,
                             "args": {
                                 "name": "task",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "generators": simpleTaskGenerator
                             }
                         },
@@ -1133,27 +1024,21 @@ const completionSpec: Fig.Spec = {
                                 "-w",
                                 "--write"
                             ],
-                            "description": "write to .git/hooks/pre-commit and make it executable",
+                            "description": "Write to .git/hooks/pre-commit and make it executable",
                             "isRepeatable": false
                         }
                     ]
                 },
                 {
-                    "name": [
-                        "github-action"
-                    ],
+                    "name": "github-action",
                     "description": "[experimental] Generate a GitHub Action workflow file",
                     "options": [
                         {
-                            "name": [
-                                "--name"
-                            ],
-                            "description": "the name of the workflow to generate",
+                            "name": "--name",
+                            "description": "The name of the workflow to generate",
                             "isRepeatable": false,
                             "args": {
-                                "name": "name",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "name"
                             }
                         },
                         {
@@ -1165,8 +1050,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false,
                             "args": {
                                 "name": "task",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "generators": simpleTaskGenerator
                             }
                         },
@@ -1175,15 +1058,13 @@ const completionSpec: Fig.Spec = {
                                 "-w",
                                 "--write"
                             ],
-                            "description": "write to .github/workflows/$name.yml",
+                            "description": "Write to .github/workflows/$name.yml",
                             "isRepeatable": false
                         }
                     ]
                 },
                 {
-                    "name": [
-                        "task-docs"
-                    ],
+                    "name": "task-docs",
                     "description": "Generate documentation for tasks in a project",
                     "options": [
                         {
@@ -1191,7 +1072,7 @@ const completionSpec: Fig.Spec = {
                                 "-I",
                                 "--index"
                             ],
-                            "description": "write only an index of tasks, intended for use with `--multi`",
+                            "description": "Write only an index of tasks, intended for use with `--multi`",
                             "isRepeatable": false
                         },
                         {
@@ -1199,7 +1080,7 @@ const completionSpec: Fig.Spec = {
                                 "-i",
                                 "--inject"
                             ],
-                            "description": "inserts the documentation into an existing file",
+                            "description": "Inserts the documentation into an existing file",
                             "isRepeatable": false
                         },
                         {
@@ -1207,7 +1088,7 @@ const completionSpec: Fig.Spec = {
                                 "-m",
                                 "--multi"
                             ],
-                            "description": "render each task as a separate document, requires `--output` to be a directory",
+                            "description": "Render each task as a separate document, requires `--output` to be a directory",
                             "isRepeatable": false
                         },
                         {
@@ -1215,12 +1096,10 @@ const completionSpec: Fig.Spec = {
                                 "-o",
                                 "--output"
                             ],
-                            "description": "writes the generated docs to a file/directory",
+                            "description": "Writes the generated docs to a file/directory",
                             "isRepeatable": false,
                             "args": {
-                                "name": "output",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "output"
                             }
                         },
                         {
@@ -1228,12 +1107,10 @@ const completionSpec: Fig.Spec = {
                                 "-r",
                                 "--root"
                             ],
-                            "description": "root directory to search for tasks",
+                            "description": "Root directory to search for tasks",
                             "isRepeatable": false,
                             "args": {
-                                "name": "root",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "root"
                             }
                         },
                         {
@@ -1244,8 +1121,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false,
                             "args": {
                                 "name": "style",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "suggestions": [
                                     "simple",
                                     "detailed"
@@ -1257,15 +1132,11 @@ const completionSpec: Fig.Spec = {
             ]
         },
         {
-            "name": [
-                "implode"
-            ],
+            "name": "implode",
             "description": "Removes mise CLI and all related data",
             "options": [
                 {
-                    "name": [
-                        "--config"
-                    ],
+                    "name": "--config",
                     "description": "Also remove config directory",
                     "isRepeatable": false
                 },
@@ -1302,15 +1173,11 @@ const completionSpec: Fig.Spec = {
                     "description": "Number of jobs to run in parallel\n[default: 4]",
                     "isRepeatable": false,
                     "args": {
-                        "name": "jobs",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "jobs"
                     }
                 },
                 {
-                    "name": [
-                        "--raw"
-                    ],
+                    "name": "--raw",
                     "description": "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
                     "isRepeatable": false
                 },
@@ -1323,42 +1190,32 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": true
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to install e.g.: node@20",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to install e.g.: node@20",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator
+            }
         },
         {
-            "name": [
-                "install-into"
-            ],
+            "name": "install-into",
             "description": "Install a tool version to a specific path",
             "args": [
                 {
                     "name": "tool@version",
                     "description": "Tool to install e.g.: node@20",
-                    "isOptional": false,
-                    "isVariadic": false,
                     "generators": toolVersionGenerator
                 },
                 {
                     "name": "path",
                     "description": "Path to install the tool into",
-                    "isOptional": false,
-                    "isVariadic": false,
                     "template": "filepaths"
                 }
             ]
         },
         {
-            "name": [
-                "latest"
-            ],
+            "name": "latest",
             "description": "Gets the latest available version for a plugin",
             "options": [
                 {
@@ -1370,15 +1227,11 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool to get the latest version of",
-                    "isOptional": false,
-                    "isVariadic": false,
-                    "generators": toolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool to get the latest version of",
+                "generators": toolVersionGenerator
+            }
         },
         {
             "name": [
@@ -1400,15 +1253,11 @@ const completionSpec: Fig.Spec = {
                 {
                     "name": "tool@version",
                     "description": "Tool name and version to create a symlink for",
-                    "isOptional": false,
-                    "isVariadic": false,
                     "generators": toolVersionGenerator
                 },
                 {
                     "name": "path",
                     "description": "The local path to the tool version\ne.g.: ~/.nvm/versions/node/v20.0.0",
-                    "isOptional": false,
-                    "isVariadic": false,
                     "template": "filepaths"
                 }
             ]
@@ -1453,9 +1302,7 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--outdated"
-                    ],
+                    "name": "--outdated",
                     "description": "Display whether a version is outdated",
                     "isRepeatable": false
                 },
@@ -1476,46 +1323,34 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--prefix"
-                    ],
+                    "name": "--prefix",
                     "description": "Display versions matching this prefix",
                     "isRepeatable": false,
                     "args": {
                         "name": "prefix",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": completionGeneratorTemplate(`mise ls-remote {{words[PREV]}}`)
                     }
                 },
                 {
-                    "name": [
-                        "--no-header"
-                    ],
+                    "name": "--no-header",
                     "description": "Don't display headers",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "plugin",
-                    "description": "Only show tool versions from [PLUGIN]",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": pluginGenerator
-                }
-            ]
+            "args": {
+                "name": "plugin",
+                "description": "Only show tool versions from [PLUGIN]",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": pluginGenerator
+            }
         },
         {
-            "name": [
-                "ls-remote"
-            ],
+            "name": "ls-remote",
             "description": "List runtime versions available for install.",
             "options": [
                 {
-                    "name": [
-                        "--all"
-                    ],
+                    "name": "--all",
                     "description": "Show all installed plugins and versions",
                     "isRepeatable": false
                 }
@@ -1525,22 +1360,18 @@ const completionSpec: Fig.Spec = {
                     "name": "tool@version",
                     "description": "Tool to get versions for",
                     "isOptional": true,
-                    "isVariadic": false,
                     "generators": toolVersionGenerator
                 },
                 {
                     "name": "prefix",
                     "description": "The version prefix to use when querying the latest version\nsame as the first argument after the \"@\"",
                     "isOptional": true,
-                    "isVariadic": false,
                     "generators": completionGeneratorTemplate(`mise ls-remote {{words[PREV]}}`)
                 }
             ]
         },
         {
-            "name": [
-                "outdated"
-            ],
+            "name": "outdated",
             "description": "Shows outdated tool versions",
             "options": [
                 {
@@ -1560,22 +1391,18 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--no-header"
-                    ],
+                    "name": "--no-header",
                     "description": "Don't show table header",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator
+            }
         },
         {
             "name": [
@@ -1623,14 +1450,12 @@ const completionSpec: Fig.Spec = {
                             "name": "new_plugin",
                             "description": "The name of the plugin to install\ne.g.: node, ruby\nCan specify multiple plugins: `mise plugins install node ruby python`",
                             "isOptional": true,
-                            "isVariadic": false,
                             "generators": completionGeneratorTemplate(`mise plugins --all`)
                         },
                         {
                             "name": "git_url",
                             "description": "The git url of the plugin",
-                            "isOptional": true,
-                            "isVariadic": false
+                            "isOptional": true
                         }
                     ]
                 },
@@ -1653,15 +1478,12 @@ const completionSpec: Fig.Spec = {
                     "args": [
                         {
                             "name": "name",
-                            "description": "The name of the plugin\ne.g.: node, ruby",
-                            "isOptional": false,
-                            "isVariadic": false
+                            "description": "The name of the plugin\ne.g.: node, ruby"
                         },
                         {
                             "name": "dir",
                             "description": "The local path to the plugin\ne.g.: ./mise-node",
                             "isOptional": true,
-                            "isVariadic": false,
                             "template": "folders"
                         }
                     ]
@@ -1700,9 +1522,7 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--only-names"
-                            ],
+                            "name": "--only-names",
                             "description": "Only show the name of each plugin by default it will show a \"*\" next to installed plugins",
                             "isRepeatable": false
                         }
@@ -1733,15 +1553,13 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "plugin",
-                            "description": "Plugin(s) to remove",
-                            "isOptional": true,
-                            "isVariadic": true,
-                            "generators": pluginGenerator
-                        }
-                    ]
+                    "args": {
+                        "name": "plugin",
+                        "description": "Plugin(s) to remove",
+                        "isOptional": true,
+                        "isVariadic": true,
+                        "generators": pluginGenerator
+                    }
                 },
                 {
                     "name": [
@@ -1759,21 +1577,17 @@ const completionSpec: Fig.Spec = {
                             "description": "Number of jobs to run in parallel\nDefault: 4",
                             "isRepeatable": false,
                             "args": {
-                                "name": "jobs",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "jobs"
                             }
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "plugin",
-                            "description": "Plugin(s) to update",
-                            "isOptional": true,
-                            "isVariadic": true,
-                            "generators": pluginGenerator
-                        }
-                    ]
+                    "args": {
+                        "name": "plugin",
+                        "description": "Plugin(s) to update",
+                        "isOptional": true,
+                        "isVariadic": true,
+                        "generators": pluginGenerator
+                    }
                 }
             ],
             "options": [
@@ -1786,9 +1600,7 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--user"
-                    ],
+                    "name": "--user",
                     "description": "List installed plugins",
                     "isRepeatable": false
                 },
@@ -1803,9 +1615,7 @@ const completionSpec: Fig.Spec = {
             ]
         },
         {
-            "name": [
-                "prune"
-            ],
+            "name": "prune",
             "description": "Delete unused versions of tools",
             "options": [
                 {
@@ -1817,33 +1627,25 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--configs"
-                    ],
+                    "name": "--configs",
                     "description": "Prune only tracked and trusted configuration links that point to non-existent configurations",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--tools"
-                    ],
+                    "name": "--tools",
                     "description": "Prune only unused versions of tools",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "installed_tool",
-                    "description": "Prune only these tools",
-                    "isOptional": true,
-                    "isVariadic": true
-                }
-            ]
+            "args": {
+                "name": "installed_tool",
+                "description": "Prune only these tools",
+                "isOptional": true,
+                "isVariadic": true
+            }
         },
         {
-            "name": [
-                "registry"
-            ],
+            "name": "registry",
             "description": "List available tools to install",
             "options": [
                 {
@@ -1854,32 +1656,23 @@ const completionSpec: Fig.Spec = {
                     "description": "Show only tools for this backend",
                     "isRepeatable": false,
                     "args": {
-                        "name": "backend",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "backend"
                     }
                 },
                 {
-                    "name": [
-                        "--hide-aliased"
-                    ],
+                    "name": "--hide-aliased",
                     "description": "Hide aliased tools",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "name",
-                    "description": "Show only the specified tool's full name",
-                    "isOptional": true,
-                    "isVariadic": false
-                }
-            ]
+            "args": {
+                "name": "name",
+                "description": "Show only the specified tool's full name",
+                "isOptional": true
+            }
         },
         {
-            "name": [
-                "reshim"
-            ],
+            "name": "reshim",
             "description": "Creates new shims based on bin paths from currently installed tools.",
             "options": [
                 {
@@ -1907,9 +1700,7 @@ const completionSpec: Fig.Spec = {
                     "description": "Change to this directory before executing the command",
                     "isRepeatable": false,
                     "args": {
-                        "name": "cd",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "cd"
                     }
                 },
                 {
@@ -1944,9 +1735,7 @@ const completionSpec: Fig.Spec = {
                     "description": "Shell to use to run toml tasks",
                     "isRepeatable": false,
                     "args": {
-                        "name": "shell",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "shell"
                     }
                 },
                 {
@@ -1958,8 +1747,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": true,
                     "args": {
                         "name": "tool@version",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": toolVersionGenerator
                     }
                 },
@@ -1971,9 +1758,7 @@ const completionSpec: Fig.Spec = {
                     "description": "Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var",
                     "isRepeatable": false,
                     "args": {
-                        "name": "jobs",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "jobs"
                     }
                 },
                 {
@@ -1985,9 +1770,7 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--no-timings"
-                    ],
+                    "name": "--no-timings",
                     "description": "Hides elapsed time after each task completes",
                     "isRepeatable": false
                 },
@@ -2015,9 +1798,7 @@ const completionSpec: Fig.Spec = {
                     "description": "Change how tasks information is output when running tasks",
                     "isRepeatable": false,
                     "args": {
-                        "name": "output",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "output"
                     }
                 }
             ],
@@ -2025,9 +1806,7 @@ const completionSpec: Fig.Spec = {
             "cache": false
         },
         {
-            "name": [
-                "self-update"
-            ],
+            "name": "self-update",
             "description": "Updates mise itself.",
             "options": [
                 {
@@ -2039,9 +1818,7 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--no-plugins"
-                    ],
+                    "name": "--no-plugins",
                     "description": "Disable auto-updating plugins",
                     "isRepeatable": false
                 },
@@ -2054,31 +1831,22 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "version",
-                    "description": "Update to a specific version",
-                    "isOptional": true,
-                    "isVariadic": false
-                }
-            ]
+            "args": {
+                "name": "version",
+                "description": "Update to a specific version",
+                "isOptional": true
+            }
         },
         {
-            "name": [
-                "set"
-            ],
+            "name": "set",
             "description": "Set environment variables in mise.toml",
             "options": [
                 {
-                    "name": [
-                        "--file"
-                    ],
+                    "name": "--file",
                     "description": "The TOML file to update",
                     "isRepeatable": false,
                     "args": {
                         "name": "file",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "filepaths"
                     }
                 },
@@ -2091,26 +1859,21 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "env_vars",
-                    "description": "Environment variable(s) to set\ne.g.: NODE_ENV=production",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": envVarGenerator
-                }
-            ]
+            "args": {
+                "name": "env_vars",
+                "description": "Environment variable(s) to set\ne.g.: NODE_ENV=production",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": envVarGenerator,
+                "debounce": true
+            }
         },
         {
-            "name": [
-                "settings"
-            ],
+            "name": "settings",
             "description": "Manage settings",
             "subcommands": [
                 {
-                    "name": [
-                        "add"
-                    ],
+                    "name": "add",
                     "description": "Adds a setting to the configuration file",
                     "options": [
                         {
@@ -2125,22 +1888,16 @@ const completionSpec: Fig.Spec = {
                     "args": [
                         {
                             "name": "key",
-                            "description": "The setting to set",
-                            "isOptional": false,
-                            "isVariadic": false
+                            "description": "The setting to set"
                         },
                         {
                             "name": "value",
-                            "description": "The value to set",
-                            "isOptional": false,
-                            "isVariadic": false
+                            "description": "The value to set"
                         }
                     ]
                 },
                 {
-                    "name": [
-                        "get"
-                    ],
+                    "name": "get",
                     "description": "Show a current setting",
                     "options": [
                         {
@@ -2152,14 +1909,10 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "key",
-                            "description": "The setting to show",
-                            "isOptional": false,
-                            "isVariadic": false
-                        }
-                    ]
+                    "args": {
+                        "name": "key",
+                        "description": "The setting to show"
+                    }
                 },
                 {
                     "name": [
@@ -2193,9 +1946,7 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--json-extended"
-                            ],
+                            "name": "--json-extended",
                             "description": "Output in JSON format with sources",
                             "isRepeatable": false
                         },
@@ -2208,14 +1959,11 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "key",
-                            "description": "List keys under this key",
-                            "isOptional": true,
-                            "isVariadic": false
-                        }
-                    ]
+                    "args": {
+                        "name": "key",
+                        "description": "List keys under this key",
+                        "isOptional": true
+                    }
                 },
                 {
                     "name": [
@@ -2236,15 +1984,11 @@ const completionSpec: Fig.Spec = {
                     "args": [
                         {
                             "name": "key",
-                            "description": "The setting to set",
-                            "isOptional": false,
-                            "isVariadic": false
+                            "description": "The setting to set"
                         },
                         {
                             "name": "value",
-                            "description": "The value to set",
-                            "isOptional": false,
-                            "isVariadic": false
+                            "description": "The value to set"
                         }
                     ]
                 },
@@ -2267,14 +2011,10 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "key",
-                            "description": "The setting to remove",
-                            "isOptional": false,
-                            "isVariadic": false
-                        }
-                    ]
+                    "args": {
+                        "name": "key",
+                        "description": "The setting to remove"
+                    }
                 }
             ],
             "options": [
@@ -2303,9 +2043,7 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--json-extended"
-                    ],
+                    "name": "--json-extended",
                     "description": "Output in JSON format with sources",
                     "isRepeatable": false
                 },
@@ -2322,14 +2060,12 @@ const completionSpec: Fig.Spec = {
                 {
                     "name": "key",
                     "description": "Setting name to get/set",
-                    "isOptional": true,
-                    "isVariadic": false
+                    "isOptional": true
                 },
                 {
                     "name": "value",
                     "description": "Setting value to set",
-                    "isOptional": true,
-                    "isVariadic": false
+                    "isOptional": true
                 }
             ]
         },
@@ -2348,15 +2084,11 @@ const completionSpec: Fig.Spec = {
                     "description": "Number of jobs to run in parallel\n[default: 4]",
                     "isRepeatable": false,
                     "args": {
-                        "name": "jobs",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "jobs"
                     }
                 },
                 {
-                    "name": [
-                        "--raw"
-                    ],
+                    "name": "--raw",
                     "description": "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
                     "isRepeatable": false
                 },
@@ -2369,83 +2101,60 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to use",
-                    "isOptional": false,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to use",
+                "isVariadic": true,
+                "generators": toolVersionGenerator
+            }
         },
         {
-            "name": [
-                "sync"
-            ],
+            "name": "sync",
             "description": "Synchronize tools from other version managers with mise",
             "subcommands": [
                 {
-                    "name": [
-                        "node"
-                    ],
+                    "name": "node",
                     "description": "Symlinks all tool versions from an external tool into mise",
                     "options": [
                         {
-                            "name": [
-                                "--brew"
-                            ],
+                            "name": "--brew",
                             "description": "Get tool versions from Homebrew",
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--nvm"
-                            ],
+                            "name": "--nvm",
                             "description": "Get tool versions from nvm",
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--nodenv"
-                            ],
+                            "name": "--nodenv",
                             "description": "Get tool versions from nodenv",
                             "isRepeatable": false
                         }
                     ]
                 },
                 {
-                    "name": [
-                        "python"
-                    ],
+                    "name": "python",
                     "description": "Symlinks all tool versions from an external tool into mise",
                     "options": [
                         {
-                            "name": [
-                                "--pyenv"
-                            ],
+                            "name": "--pyenv",
                             "description": "Get tool versions from pyenv",
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--uv"
-                            ],
+                            "name": "--uv",
                             "description": "Sync tool versions with uv (2-way sync)",
                             "isRepeatable": false
                         }
                     ]
                 },
                 {
-                    "name": [
-                        "ruby"
-                    ],
+                    "name": "ruby",
                     "description": "Symlinks all ruby tool versions from an external tool into mise",
                     "options": [
                         {
-                            "name": [
-                                "--brew"
-                            ],
+                            "name": "--brew",
                             "description": "Get tool versions from Homebrew",
                             "isRepeatable": false
                         }
@@ -2461,21 +2170,15 @@ const completionSpec: Fig.Spec = {
             "description": "Manage tasks",
             "subcommands": [
                 {
-                    "name": [
-                        "add"
-                    ],
+                    "name": "add",
                     "description": "Create a new task",
                     "options": [
                         {
-                            "name": [
-                                "--description"
-                            ],
+                            "name": "--description",
                             "description": "Description of the task",
                             "isRepeatable": false,
                             "args": {
-                                "name": "description",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "description"
                             }
                         },
                         {
@@ -2487,21 +2190,15 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": true,
                             "args": {
                                 "name": "alias",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "generators": aliasGenerator
                             }
                         },
                         {
-                            "name": [
-                                "--depends-post"
-                            ],
+                            "name": "--depends-post",
                             "description": "Dependencies to run after the task runs",
                             "isRepeatable": true,
                             "args": {
-                                "name": "depends_post",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "depends_post"
                             }
                         },
                         {
@@ -2512,9 +2209,7 @@ const completionSpec: Fig.Spec = {
                             "description": "Wait for these tasks to complete if they are to run",
                             "isRepeatable": true,
                             "args": {
-                                "name": "wait_for",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "wait_for"
                             }
                         },
                         {
@@ -2526,8 +2221,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false,
                             "args": {
                                 "name": "dir",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "template": "folders"
                             }
                         },
@@ -2555,33 +2248,23 @@ const completionSpec: Fig.Spec = {
                             "description": "Glob patterns of files this task uses as input",
                             "isRepeatable": true,
                             "args": {
-                                "name": "sources",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "sources"
                             }
                         },
                         {
-                            "name": [
-                                "--outputs"
-                            ],
+                            "name": "--outputs",
                             "description": "Glob patterns of files this task creates, to skip if they are not modified",
                             "isRepeatable": true,
                             "args": {
-                                "name": "outputs",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "outputs"
                             }
                         },
                         {
-                            "name": [
-                                "--shell"
-                            ],
+                            "name": "--shell",
                             "description": "Run the task in a specific shell",
                             "isRepeatable": false,
                             "args": {
-                                "name": "shell",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "shell"
                             }
                         },
                         {
@@ -2593,9 +2276,7 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--silent"
-                            ],
+                            "name": "--silent",
                             "description": "Do not print the command or its output",
                             "isRepeatable": false
                         },
@@ -2607,21 +2288,15 @@ const completionSpec: Fig.Spec = {
                             "description": "Add dependencies to the task",
                             "isRepeatable": true,
                             "args": {
-                                "name": "depends",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "depends"
                             }
                         },
                         {
-                            "name": [
-                                "--run-windows"
-                            ],
+                            "name": "--run-windows",
                             "description": "Command to run on windows",
                             "isRepeatable": false,
                             "args": {
-                                "name": "run_windows",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "run_windows"
                             }
                         },
                         {
@@ -2637,8 +2312,6 @@ const completionSpec: Fig.Spec = {
                         {
                             "name": "task",
                             "description": "Tasks name to add",
-                            "isOptional": false,
-                            "isVariadic": false,
                             "generators": simpleTaskGenerator
                         },
                         {
@@ -2649,39 +2322,29 @@ const completionSpec: Fig.Spec = {
                     ]
                 },
                 {
-                    "name": [
-                        "deps"
-                    ],
+                    "name": "deps",
                     "description": "Display a tree visualization of a dependency graph",
                     "options": [
                         {
-                            "name": [
-                                "--hidden"
-                            ],
+                            "name": "--hidden",
                             "description": "Show hidden tasks",
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--dot"
-                            ],
+                            "name": "--dot",
                             "description": "Display dependencies in DOT format",
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "tasks",
-                            "description": "Tasks to show dependencies for\nCan specify multiple tasks by separating with spaces\ne.g.: mise tasks deps lint test check",
-                            "isOptional": true,
-                            "isVariadic": true
-                        }
-                    ]
+                    "args": {
+                        "name": "tasks",
+                        "description": "Tasks to show dependencies for\nCan specify multiple tasks by separating with spaces\ne.g.: mise tasks deps lint test check",
+                        "isOptional": true,
+                        "isVariadic": true
+                    }
                 },
                 {
-                    "name": [
-                        "edit"
-                    ],
+                    "name": "edit",
                     "description": "Edit a tasks with $EDITOR",
                     "options": [
                         {
@@ -2693,20 +2356,14 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "task",
-                            "description": "Tasks to edit",
-                            "isOptional": false,
-                            "isVariadic": false,
-                            "generators": simpleTaskGenerator
-                        }
-                    ]
+                    "args": {
+                        "name": "task",
+                        "description": "Tasks to edit",
+                        "generators": simpleTaskGenerator
+                    }
                 },
                 {
-                    "name": [
-                        "info"
-                    ],
+                    "name": "info",
                     "description": "Get information about a task",
                     "options": [
                         {
@@ -2718,26 +2375,18 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         }
                     ],
-                    "args": [
-                        {
-                            "name": "task",
-                            "description": "Name of the task to get information about",
-                            "isOptional": false,
-                            "isVariadic": false,
-                            "generators": simpleTaskGenerator
-                        }
-                    ]
+                    "args": {
+                        "name": "task",
+                        "description": "Name of the task to get information about",
+                        "generators": simpleTaskGenerator
+                    }
                 },
                 {
-                    "name": [
-                        "ls"
-                    ],
+                    "name": "ls",
                     "description": "List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list.",
                     "options": [
                         {
-                            "name": [
-                                "--no-header"
-                            ],
+                            "name": "--no-header",
                             "description": "Do not print table header",
                             "isRepeatable": false
                         },
@@ -2750,22 +2399,16 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--hidden"
-                            ],
+                            "name": "--hidden",
                             "description": "Show hidden tasks",
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--sort"
-                            ],
+                            "name": "--sort",
                             "description": "Sort by column. Default is name.",
                             "isRepeatable": false,
                             "args": {
                                 "name": "column",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "suggestions": [
                                     "name",
                                     "alias",
@@ -2775,15 +2418,11 @@ const completionSpec: Fig.Spec = {
                             }
                         },
                         {
-                            "name": [
-                                "--sort-order"
-                            ],
+                            "name": "--sort-order",
                             "description": "Sort order. Default is asc.",
                             "isRepeatable": false,
                             "args": {
                                 "name": "sort_order",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "suggestions": [
                                     "asc",
                                     "desc"
@@ -2815,9 +2454,7 @@ const completionSpec: Fig.Spec = {
                             "description": "Change to this directory before executing the command",
                             "isRepeatable": false,
                             "args": {
-                                "name": "cd",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "cd"
                             }
                         },
                         {
@@ -2852,9 +2489,7 @@ const completionSpec: Fig.Spec = {
                             "description": "Shell to use to run toml tasks",
                             "isRepeatable": false,
                             "args": {
-                                "name": "shell",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "shell"
                             }
                         },
                         {
@@ -2866,8 +2501,6 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": true,
                             "args": {
                                 "name": "tool@version",
-                                "isOptional": false,
-                                "isVariadic": false,
                                 "generators": toolVersionGenerator
                             }
                         },
@@ -2879,9 +2512,7 @@ const completionSpec: Fig.Spec = {
                             "description": "Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var",
                             "isRepeatable": false,
                             "args": {
-                                "name": "jobs",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "jobs"
                             }
                         },
                         {
@@ -2893,9 +2524,7 @@ const completionSpec: Fig.Spec = {
                             "isRepeatable": false
                         },
                         {
-                            "name": [
-                                "--no-timings"
-                            ],
+                            "name": "--no-timings",
                             "description": "Hides elapsed time after each task completes",
                             "isRepeatable": false
                         },
@@ -2923,9 +2552,7 @@ const completionSpec: Fig.Spec = {
                             "description": "Change how tasks information is output when running tasks",
                             "isRepeatable": false,
                             "args": {
-                                "name": "output",
-                                "isOptional": false,
-                                "isVariadic": false
+                                "name": "output"
                             }
                         }
                     ],
@@ -2934,7 +2561,6 @@ const completionSpec: Fig.Spec = {
                             "name": "task",
                             "description": "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2",
                             "isOptional": true,
-                            "isVariadic": false,
                             "generators": simpleTaskGenerator
                         },
                         {
@@ -2950,9 +2576,7 @@ const completionSpec: Fig.Spec = {
             ],
             "options": [
                 {
-                    "name": [
-                        "--no-header"
-                    ],
+                    "name": "--no-header",
                     "description": "Do not print table header",
                     "isRepeatable": false
                 },
@@ -2965,22 +2589,16 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--hidden"
-                    ],
+                    "name": "--hidden",
                     "description": "Show hidden tasks",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--sort"
-                    ],
+                    "name": "--sort",
                     "description": "Sort by column. Default is name.",
                     "isRepeatable": false,
                     "args": {
                         "name": "column",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "suggestions": [
                             "name",
                             "alias",
@@ -2990,15 +2608,11 @@ const completionSpec: Fig.Spec = {
                     }
                 },
                 {
-                    "name": [
-                        "--sort-order"
-                    ],
+                    "name": "--sort-order",
                     "description": "Sort order. Default is asc.",
                     "isRepeatable": false,
                     "args": {
                         "name": "sort_order",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "suggestions": [
                             "asc",
                             "desc"
@@ -3014,20 +2628,15 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "task",
-                    "description": "Task name to get info of",
-                    "isOptional": true,
-                    "isVariadic": false,
-                    "generators": simpleTaskGenerator
-                }
-            ]
+            "args": {
+                "name": "task",
+                "description": "Task name to get info of",
+                "isOptional": true,
+                "generators": simpleTaskGenerator
+            }
         },
         {
-            "name": [
-                "tool"
-            ],
+            "name": "tool",
             "description": "Gets information about a tool",
             "options": [
                 {
@@ -3039,68 +2648,48 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--backend"
-                    ],
+                    "name": "--backend",
                     "description": "Only show backend field",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--description"
-                    ],
+                    "name": "--description",
                     "description": "Only show description field",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--installed"
-                    ],
+                    "name": "--installed",
                     "description": "Only show installed versions",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--active"
-                    ],
+                    "name": "--active",
                     "description": "Only show active versions",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--requested"
-                    ],
+                    "name": "--requested",
                     "description": "Only show requested versions",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--config-source"
-                    ],
+                    "name": "--config-source",
                     "description": "Only show config source",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--tool-options"
-                    ],
+                    "name": "--tool-options",
                     "description": "Only show tool options",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "backend",
-                    "description": "Tool name to get information about",
-                    "isOptional": false,
-                    "isVariadic": false
-                }
-            ]
+            "args": {
+                "name": "backend",
+                "description": "Tool name to get information about"
+            }
         },
         {
-            "name": [
-                "trust"
-            ],
+            "name": "trust",
             "description": "Marks a config file as trusted",
             "options": [
                 {
@@ -3112,42 +2701,31 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--ignore"
-                    ],
+                    "name": "--ignore",
                     "description": "Do not trust this config and ignore it in the future",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--untrust"
-                    ],
+                    "name": "--untrust",
                     "description": "No longer trust this config, will prompt in the future",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--show"
-                    ],
+                    "name": "--show",
                     "description": "Show the trusted status of config files from the current directory and its parents.\nDoes not trust or untrust any files.",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "config_file",
-                    "description": "The config file to trust",
-                    "isOptional": true,
-                    "isVariadic": false,
-                    "template": "filepaths",
-                    "generators": configPathGenerator
-                }
-            ]
+            "args": {
+                "name": "config_file",
+                "description": "The config file to trust",
+                "isOptional": true,
+                "template": "filepaths",
+                "generators": configPathGenerator
+            }
         },
         {
-            "name": [
-                "uninstall"
-            ],
+            "name": "uninstall",
             "description": "Removes installed tool versions",
             "options": [
                 {
@@ -3167,20 +2745,16 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "installed_tool@version",
-                    "description": "Tool(s) to remove",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": installedToolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "installed_tool@version",
+                "description": "Tool(s) to remove",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": installedToolVersionGenerator
+            }
         },
         {
-            "name": [
-                "unset"
-            ],
+            "name": "unset",
             "description": "Remove environment variable(s) from the config file.",
             "options": [
                 {
@@ -3192,8 +2766,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "file",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "filepaths"
                     }
                 },
@@ -3206,14 +2778,12 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "keys",
-                    "description": "Environment variable(s) to remove\ne.g.: NODE_ENV",
-                    "isOptional": true,
-                    "isVariadic": true
-                }
-            ]
+            "args": {
+                "name": "keys",
+                "description": "Environment variable(s) to remove\ne.g.: NODE_ENV",
+                "isOptional": true,
+                "isVariadic": true
+            }
         },
         {
             "name": [
@@ -3224,29 +2794,22 @@ const completionSpec: Fig.Spec = {
             "description": "Removes installed tool versions from mise.toml",
             "options": [
                 {
-                    "name": [
-                        "--no-prune"
-                    ],
+                    "name": "--no-prune",
                     "description": "Do not also prune the installed version",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--global"
-                    ],
+                    "name": "--global",
                     "description": "Remove tool from global config",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "installed_tool@version",
-                    "description": "Tool(s) to remove",
-                    "isOptional": false,
-                    "isVariadic": true,
-                    "generators": installedToolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "installed_tool@version",
+                "description": "Tool(s) to remove",
+                "isVariadic": true,
+                "generators": installedToolVersionGenerator
+            }
         },
         {
             "name": [
@@ -3279,9 +2842,7 @@ const completionSpec: Fig.Spec = {
                     "description": "Number of jobs to run in parallel\n[default: 4]",
                     "isRepeatable": false,
                     "args": {
-                        "name": "jobs",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "jobs"
                     }
                 },
                 {
@@ -3293,22 +2854,18 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--raw"
-                    ],
+                    "name": "--raw",
                     "description": "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator
+            }
         },
         {
             "name": [
@@ -3326,9 +2883,7 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--fuzzy"
-                    ],
+                    "name": "--fuzzy",
                     "description": "Save fuzzy version to config file",
                     "isRepeatable": false
                 },
@@ -3348,9 +2903,7 @@ const completionSpec: Fig.Spec = {
                     "description": "Create/modify an environment-specific config file like .mise.<env>.toml",
                     "isRepeatable": false,
                     "args": {
-                        "name": "env",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "env"
                     }
                 },
                 {
@@ -3361,28 +2914,20 @@ const completionSpec: Fig.Spec = {
                     "description": "Number of jobs to run in parallel\n[default: 4]",
                     "isRepeatable": false,
                     "args": {
-                        "name": "jobs",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "jobs"
                     }
                 },
                 {
-                    "name": [
-                        "--raw"
-                    ],
+                    "name": "--raw",
                     "description": "Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--remove"
-                    ],
+                    "name": "--remove",
                     "description": "Remove the plugin(s) from config file",
                     "isRepeatable": true,
                     "args": {
                         "name": "plugin",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": pluginGenerator
                     }
                 },
@@ -3395,28 +2940,22 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "path",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "filepaths"
                     }
                 },
                 {
-                    "name": [
-                        "--pin"
-                    ],
+                    "name": "--pin",
                     "description": "Save exact version to config file\ne.g.: `mise use --pin node@20` will save 20.0.0 as the version\nSet `MISE_PIN=1` to make this the default behavior",
                     "isRepeatable": false
                 }
             ],
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to add to config file",
-                    "isOptional": true,
-                    "isVariadic": true,
-                    "generators": toolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to add to config file",
+                "isOptional": true,
+                "isVariadic": true,
+                "generators": toolVersionGenerator
+            }
         },
         {
             "name": [
@@ -3441,8 +2980,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": true,
                     "args": {
                         "name": "path",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "filepaths"
                     }
                 },
@@ -3455,8 +2992,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": true,
                     "args": {
                         "name": "path",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "filepaths"
                     }
                 },
@@ -3469,8 +3004,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "path",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "filepaths"
                     }
                 },
@@ -3483,8 +3016,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "mode",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "suggestions": [
                             "clear",
                             "reset"
@@ -3500,8 +3031,6 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "mode",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "suggestions": [
                             "queue",
                             "do-nothing",
@@ -3526,45 +3055,31 @@ const completionSpec: Fig.Spec = {
                     "description": "Send a signal to the process when it's still running",
                     "isRepeatable": false,
                     "args": {
-                        "name": "signal",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "signal"
                     }
                 },
                 {
-                    "name": [
-                        "--stop-signal"
-                    ],
+                    "name": "--stop-signal",
                     "description": "Signal to send to stop the command",
                     "isRepeatable": false,
                     "args": {
-                        "name": "signal",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "signal"
                     }
                 },
                 {
-                    "name": [
-                        "--stop-timeout"
-                    ],
+                    "name": "--stop-timeout",
                     "description": "Time to wait for the command to exit gracefully",
                     "isRepeatable": false,
                     "args": {
-                        "name": "timeout",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "timeout"
                     }
                 },
                 {
-                    "name": [
-                        "--map-signal"
-                    ],
+                    "name": "--map-signal",
                     "description": "Translate signals from the OS to signals to send to the command",
                     "isRepeatable": true,
                     "args": {
-                        "name": "signal:signal",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "signal:signal"
                     }
                 },
                 {
@@ -3575,57 +3090,41 @@ const completionSpec: Fig.Spec = {
                     "description": "Time to wait for new events before taking action",
                     "isRepeatable": false,
                     "args": {
-                        "name": "timeout",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "timeout"
                     }
                 },
                 {
-                    "name": [
-                        "--stdin-quit"
-                    ],
+                    "name": "--stdin-quit",
                     "description": "Exit when stdin closes",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--no-vcs-ignore"
-                    ],
+                    "name": "--no-vcs-ignore",
                     "description": "Don't load gitignores",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--no-project-ignore"
-                    ],
+                    "name": "--no-project-ignore",
                     "description": "Don't load project-local ignores",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--no-global-ignore"
-                    ],
+                    "name": "--no-global-ignore",
                     "description": "Don't load global ignores",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--no-default-ignore"
-                    ],
+                    "name": "--no-default-ignore",
                     "description": "Don't use internal default ignores",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--no-discover-ignore"
-                    ],
+                    "name": "--no-discover-ignore",
                     "description": "Don't discover ignore files at all",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--ignore-nothing"
-                    ],
+                    "name": "--ignore-nothing",
                     "description": "Don't ignore anything at all",
                     "isRepeatable": false
                 },
@@ -3638,58 +3137,40 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--delay-run"
-                    ],
+                    "name": "--delay-run",
                     "description": "Sleep before running the command",
                     "isRepeatable": false,
                     "args": {
-                        "name": "duration",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "duration"
                     }
                 },
                 {
-                    "name": [
-                        "--poll"
-                    ],
+                    "name": "--poll",
                     "description": "Poll for filesystem changes",
                     "isRepeatable": false,
                     "args": {
-                        "name": "interval",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "interval"
                     }
                 },
                 {
-                    "name": [
-                        "--shell"
-                    ],
+                    "name": "--shell",
                     "description": "Use a different shell",
                     "isRepeatable": false,
                     "args": {
-                        "name": "shell",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "shell"
                     }
                 },
                 {
-                    "name": [
-                        "-n"
-                    ],
+                    "name": "-n",
                     "description": "Shorthand for '--shell=none'",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--emit-events-to"
-                    ],
+                    "name": "--emit-events-to",
                     "description": "Configure event emission",
                     "isRepeatable": false,
                     "args": {
                         "name": "mode",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "suggestions": [
                             "environment",
                             "stdio",
@@ -3701,9 +3182,7 @@ const completionSpec: Fig.Spec = {
                     }
                 },
                 {
-                    "name": [
-                        "--only-emit-events"
-                    ],
+                    "name": "--only-emit-events",
                     "description": "Only emit events to stdout, run no commands",
                     "isRepeatable": false
                 },
@@ -3715,21 +3194,15 @@ const completionSpec: Fig.Spec = {
                     "description": "Add env vars to the command",
                     "isRepeatable": true,
                     "args": {
-                        "name": "key=value",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "key=value"
                     }
                 },
                 {
-                    "name": [
-                        "--wrap-process"
-                    ],
+                    "name": "--wrap-process",
                     "description": "Configure how the process is wrapped",
                     "isRepeatable": false,
                     "args": {
                         "name": "mode",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "suggestions": [
                             "group",
                             "session",
@@ -3746,15 +3219,11 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--color"
-                    ],
+                    "name": "--color",
                     "description": "When to use terminal colours",
                     "isRepeatable": false,
                     "args": {
                         "name": "mode",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "suggestions": [
                             "auto",
                             "always",
@@ -3763,9 +3232,7 @@ const completionSpec: Fig.Spec = {
                     }
                 },
                 {
-                    "name": [
-                        "--timings"
-                    ],
+                    "name": "--timings",
                     "description": "Print how long the command took to run",
                     "isRepeatable": false
                 },
@@ -3778,35 +3245,25 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--bell"
-                    ],
+                    "name": "--bell",
                     "description": "Ring the terminal bell on command completion",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--project-origin"
-                    ],
+                    "name": "--project-origin",
                     "description": "Set the project origin",
                     "isRepeatable": false,
                     "args": {
                         "name": "directory",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "folders"
                     }
                 },
                 {
-                    "name": [
-                        "--workdir"
-                    ],
+                    "name": "--workdir",
                     "description": "Set the working directory",
                     "isRepeatable": false,
                     "args": {
                         "name": "directory",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "folders"
                     }
                 },
@@ -3818,9 +3275,7 @@ const completionSpec: Fig.Spec = {
                     "description": "Filename extensions to filter to",
                     "isRepeatable": true,
                     "args": {
-                        "name": "extensions",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "extensions"
                     }
                 },
                 {
@@ -3831,21 +3286,15 @@ const completionSpec: Fig.Spec = {
                     "description": "Filename patterns to filter to",
                     "isRepeatable": true,
                     "args": {
-                        "name": "pattern",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "pattern"
                     }
                 },
                 {
-                    "name": [
-                        "--filter-file"
-                    ],
+                    "name": "--filter-file",
                     "description": "Files to load filters from",
                     "isRepeatable": true,
                     "args": {
                         "name": "path",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "filepaths"
                     }
                 },
@@ -3857,9 +3306,7 @@ const completionSpec: Fig.Spec = {
                     "description": "[experimental] Filter programs",
                     "isRepeatable": true,
                     "args": {
-                        "name": "expression",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "expression"
                     }
                 },
                 {
@@ -3870,34 +3317,24 @@ const completionSpec: Fig.Spec = {
                     "description": "Filename patterns to filter out",
                     "isRepeatable": true,
                     "args": {
-                        "name": "pattern",
-                        "isOptional": false,
-                        "isVariadic": false
+                        "name": "pattern"
                     }
                 },
                 {
-                    "name": [
-                        "--ignore-file"
-                    ],
+                    "name": "--ignore-file",
                     "description": "Files to load ignores from",
                     "isRepeatable": true,
                     "args": {
                         "name": "path",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "template": "filepaths"
                     }
                 },
                 {
-                    "name": [
-                        "--fs-events"
-                    ],
+                    "name": "--fs-events",
                     "description": "Filesystem events to filter to",
                     "isRepeatable": true,
                     "args": {
                         "name": "events",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "suggestions": [
                             "access",
                             "create",
@@ -3909,23 +3346,17 @@ const completionSpec: Fig.Spec = {
                     }
                 },
                 {
-                    "name": [
-                        "--no-meta"
-                    ],
+                    "name": "--no-meta",
                     "description": "Don't emit fs events for metadata changes",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--print-events"
-                    ],
+                    "name": "--print-events",
                     "description": "Print events that trigger actions",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--manual"
-                    ],
+                    "name": "--manual",
                     "description": "Show the manual page",
                     "isRepeatable": false
                 }
@@ -3935,7 +3366,6 @@ const completionSpec: Fig.Spec = {
                     "name": "task",
                     "description": "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2",
                     "isOptional": true,
-                    "isVariadic": false,
                     "generators": simpleTaskGenerator
                 },
                 {
@@ -3947,37 +3377,25 @@ const completionSpec: Fig.Spec = {
             ]
         },
         {
-            "name": [
-                "where"
-            ],
+            "name": "where",
             "description": "Display the installation path for a tool",
-            "args": [
-                {
-                    "name": "tool@version",
-                    "description": "Tool(s) to look up\ne.g.: ruby@3\nif \"@<PREFIX>\" is specified, it will show the latest installed version\nthat matches the prefix\notherwise, it will show the current, active installed version",
-                    "isOptional": false,
-                    "isVariadic": false,
-                    "generators": toolVersionGenerator
-                }
-            ]
+            "args": {
+                "name": "tool@version",
+                "description": "Tool(s) to look up\ne.g.: ruby@3\nif \"@<PREFIX>\" is specified, it will show the latest installed version\nthat matches the prefix\notherwise, it will show the current, active installed version",
+                "generators": toolVersionGenerator
+            }
         },
         {
-            "name": [
-                "which"
-            ],
+            "name": "which",
             "description": "Shows the path that a tool's bin points to.",
             "options": [
                 {
-                    "name": [
-                        "--plugin"
-                    ],
+                    "name": "--plugin",
                     "description": "Show the plugin name instead of the path",
                     "isRepeatable": false
                 },
                 {
-                    "name": [
-                        "--version"
-                    ],
+                    "name": "--version",
                     "description": "Show the version instead of the path",
                     "isRepeatable": false
                 },
@@ -3990,20 +3408,14 @@ const completionSpec: Fig.Spec = {
                     "isRepeatable": false,
                     "args": {
                         "name": "tool@version",
-                        "isOptional": false,
-                        "isVariadic": false,
                         "generators": toolVersionGenerator
                     }
                 }
             ],
-            "args": [
-                {
-                    "name": "bin_name",
-                    "description": "The bin to look up",
-                    "isOptional": false,
-                    "isVariadic": false
-                }
-            ]
+            "args": {
+                "name": "bin_name",
+                "description": "The bin to look up"
+            }
         }
     ],
     "options": [
@@ -4016,8 +3428,6 @@ const completionSpec: Fig.Spec = {
             "isRepeatable": false,
             "args": {
                 "name": "dir",
-                "isOptional": false,
-                "isVariadic": false,
                 "template": "folders"
             }
         },
@@ -4029,9 +3439,7 @@ const completionSpec: Fig.Spec = {
             "description": "Set the environment for loading `mise.<ENV>.toml`",
             "isRepeatable": true,
             "args": {
-                "name": "env",
-                "isOptional": false,
-                "isVariadic": false
+                "name": "env"
             }
         },
         {
@@ -4042,33 +3450,23 @@ const completionSpec: Fig.Spec = {
             "description": "How many jobs to run in parallel [default: 8]",
             "isRepeatable": false,
             "args": {
-                "name": "jobs",
-                "isOptional": false,
-                "isVariadic": false
+                "name": "jobs"
             }
         },
         {
-            "name": [
-                "--output"
-            ],
+            "name": "--output",
             "isRepeatable": false,
             "args": {
-                "name": "output",
-                "isOptional": false,
-                "isVariadic": false
+                "name": "output"
             }
         },
         {
-            "name": [
-                "--raw"
-            ],
+            "name": "--raw",
             "description": "Read/write directly to stdin/stdout/stderr instead of by line",
             "isRepeatable": false
         },
         {
-            "name": [
-                "--no-config"
-            ],
+            "name": "--no-config",
             "description": "Do not load any config files",
             "isRepeatable": false
         },
@@ -4089,9 +3487,7 @@ const completionSpec: Fig.Spec = {
             "isRepeatable": false
         },
         {
-            "name": [
-                "--silent"
-            ],
+            "name": "--silent",
             "description": "Suppress all task output and mise non-error messages",
             "isRepeatable": false
         },
@@ -4104,14 +3500,11 @@ const completionSpec: Fig.Spec = {
             "isRepeatable": true
         }
     ],
-    "args": [
-        {
-            "name": "task",
-            "description": "Task to run",
-            "isOptional": true,
-            "isVariadic": false,
-            "generators": simpleTaskGenerator
-        }
-    ]
+    "args": {
+        "name": "task",
+        "description": "Task to run",
+        "isOptional": true,
+        "generators": simpleTaskGenerator
+    }
 };
 export default completionSpec;

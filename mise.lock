@@ -10,22 +10,18 @@ actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5c
 "actionlint_1.7.4_linux_arm64.tar.gz" = "sha256:ede03682dc955381d057dde95bb85ce9ca418122209a8a313b617d4adec56416"
 
 [tools.bun]
-version = "1.1.40"
+version = "1.1.42"
 backend = "core:bun"
 
 [tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:8b59f2f08da45f851fcd8901e0e87628cf00f1aa65fb2ce1ed88a455c0895f03"
-"bun-linux-x64-baseline.zip" = "sha256:c6be2321e8028c6376098fa29baad1cd454f4f33827ff426fdd5ce79695f6d27"
+"bun-darwin-aarch64.zip" = "sha256:64a70fe290bd6391a09d555d4e4e1a8df56543e526bb1381ab344a385348572c"
 
 [tools.cargo-binstall]
-version = "1.10.15"
+version = "1.10.17"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
-"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:0afb56acd834d7b0bc9a5293963da04abe48923d90f374bed98068b313a48f2c"
-"cargo-binstall-aarch64-unknown-linux-musl.tgz" = "sha256:b44c167a2520701f1888e03d7b7355617926278e24e792eeb264333e94b6ae5a"
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:f333f552699e76e8fe570da6fb928c273c0c2d14e0955f6b79f7f59eb932ba73"
-"cargo-binstall.exe-windows-aarch64" = "sha256:cda730ac19fafe200fe9fb12d6dddfb6a125b47ce9441d0f862f6d739ff486b3"
+"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:81abb7de75ef130844bb58965bdb93969afadd0821cf5e1e1bd0517e48963199"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.0"
@@ -48,7 +44,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "1.7.2"
+version = "1.7.3"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
