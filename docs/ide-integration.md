@@ -64,7 +64,14 @@ e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
 Here is an example showing that VSCode will use `node` provided by `mise`:
 
-![vscode-shim.png](./shims-vscode.png)
+::: tabs
+=== VSCode
+
+[![vscode using shims](./shims-vscode.png)](./shims-vscode.png)
+
+=== IntelliJ
+[![intellij using shims](./shims-intellij.png)](./shims-intellij.png)
+:::
 
 ::: details Conditional shims activation
 
