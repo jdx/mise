@@ -390,6 +390,7 @@ impl Cli {
                         tool: Default::default(),
                         keep_order_output: Default::default(),
                         task_prs: Default::default(),
+                        timed_outputs: Default::default(),
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
