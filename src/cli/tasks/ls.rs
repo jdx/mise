@@ -3,7 +3,7 @@ use eyre::Result;
 use itertools::Itertools;
 
 use crate::config::Config;
-use crate::file::{display_path, display_rel_path};
+use crate::file::display_rel_path;
 use crate::task::Task;
 use crate::toolset::Toolset;
 use crate::ui::table::MiseTable;
@@ -108,7 +108,7 @@ impl TasksLs {
             usage
                 .cmd
                 .subcommands
-                .insert(task.name.clone(), task_spec.cmd);
+                .insert(task.display_name(), task_spec.cmd);
         }
         miseprintln!("{}", usage.to_string());
         Ok(())
@@ -117,7 +117,6 @@ impl TasksLs {
     fn display_json(&self, _ts: &Toolset, tasks: Vec<Task>) -> Result<()> {
         let array_items = tasks
             .into_iter()
-            .filter(|t| self.hidden || !t.hide)
             .map(|task| {
                 let mut inner = serde_json::Map::new();
                 inner.insert("name".to_string(), task.display_name().into());
@@ -130,7 +129,7 @@ impl TasksLs {
                 inner.insert("description".to_string(), task.description.into());
                 inner.insert(
                     "source".to_string(),
-                    display_path(task.config_source).into(),
+                    task.config_source.to_string_lossy().into(),
                 );
                 inner
             })

@@ -96,7 +96,7 @@ impl TasksAdd {
                 lines.push("#MISE alias=[\"".to_string() + &self.alias.join("\", \"") + "\"]");
             }
             if let Some(description) = &self.description {
-                lines.push("#MISE description=".to_string() + description);
+                lines.push("#MISE description=\"".to_string() + description + "\"");
             }
             if self.dir.is_some() {
                 lines.push("#MISE dir=".to_string() + &self.dir.unwrap());
