@@ -51,9 +51,10 @@ Example usage:
 # Digest: sha256:eecc479b6259479ffca5a4f9c68dbfe8631ca62dc59aa60c9ab5e4f6e9982701
 # Status: Image is up to date for jdxcode/mise:latest
 root@75f179a190a1:/mise# eval "$(mise activate bash)"
+# overwrite configuration and prune to give us a clean state
 root@75f179a190a1:/mise# echo "" >/mise/config.toml
 root@75f179a190a1:/mise# mise prune --yes
-mise pruned configuration links
-mise python@3.13.1 ✓ remove /mise/cache/python/3.13.1
+# mise pruned configuration links
+# mise python@3.13.1 ✓ remove /mise/cache/python/3.13.1
 # ...
 ```
