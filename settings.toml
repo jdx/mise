@@ -259,6 +259,12 @@ By default, mise will use the [nuget](https://api.nuget.org/v3/index.json) API t
 However, you can set this to a different URL if you have a custom feed or want to use a different source.
 """
 
+[dotnet.allow_prerelease]
+env = "MISE_ALLOW_PRERELEASE"
+type = "Bool"
+default = false
+description = "Allow installing prerelease versions of dotnet tools."
+
 [env]
 env = "MISE_ENV"
 type = "ListString"

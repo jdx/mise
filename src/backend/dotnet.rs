@@ -28,9 +28,10 @@ impl Backend for DotnetBackend {
         let feed_url = self.get_search_url()?;
 
         let feed: NugetFeedSearch = HTTP_FETCH.json(format!(
-            "{}?q={}&packageType=dotnettool&take=1",
+            "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
             feed_url,
-            &self.tool_name()
+            &self.tool_name(),
+            SETTINGS.dotnet.allow_prerelease
         ))?;
 
         if feed.total_hits == 0 {

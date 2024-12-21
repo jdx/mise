@@ -370,6 +370,11 @@
               "default": "https://api.nuget.org/v3/index.json",
               "description": "URL to fetch dotnet tools from.",
               "type": "string"
+            },
+            "allow_prerelease": {
+              "default": false,
+              "description": "Allow installing prerelease versions of dotnet tools.",
+              "type": "boolean"
             }
           }
         },
