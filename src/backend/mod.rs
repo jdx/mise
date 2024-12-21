@@ -603,7 +603,8 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
-        self.dependency_toolset()?.full_env()
+        let config = Config::get();
+        self.dependency_toolset()?.full_env(&config)
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
