@@ -77,6 +77,14 @@ print('Hello, World!')
 console.log(`PATH, ${Deno.env.get("PATH")}`);
 ```
 
+```powershell [powershell]
+#!/usr/bin/env pwsh
+#MISE description="Hello, World in Powershell"
+
+$current_directory = Get-Location
+Write-Host "Hello from Powershell, current directory is $current_directory"
+```
+
 :::
 
 ## Editing tasks
