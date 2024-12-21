@@ -14,6 +14,7 @@ version = "1.1.40"
 backend = "core:bun"
 
 [tools.bun.checksums]
+"bun-darwin-aarch64.zip" = "sha256:8b59f2f08da45f851fcd8901e0e87628cf00f1aa65fb2ce1ed88a455c0895f03"
 "bun-linux-x64-baseline.zip" = "sha256:c6be2321e8028c6376098fa29baad1cd454f4f33827ff426fdd5ce79695f6d27"
 
 [tools.cargo-binstall]

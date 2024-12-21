@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
 
-cat <<EOF >.mise.toml
+cat <<EOF >mise.toml
 [env]
 ENV_TMPL_EXEC = "{{ exec(command='echo foo') }}"
 EOF
-
 assert "mise env -s zsh | grep ENV_TMPL_EXEC" "export ENV_TMPL_EXEC=foo"
+
+cat <<EOF >mise.toml
+[env]
+B = "{{ env.A }}"
+EOF
+A=a assert "mise env -s bash | grep B" "export B=a"
+
+cat <<EOF >mise.toml
+[env]
+A = "a"
+B = "{{ env.A }}"
+EOF
+assert "mise env -s bash | grep B" "export B=a"
