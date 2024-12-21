@@ -33,13 +33,13 @@ impl ElixirPlugin {
     fn test_elixir(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("elixir --version".into());
         CmdLineRunner::new(self.elixir_bin(tv))
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .envs(self.dependency_env()?)
             .arg("--version")
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let version = &tv.version;
         let url = format!("https://builds.hex.pm/builds/elixir/v{version}.zip");
 
@@ -99,7 +99,7 @@ impl Backend for ElixirPlugin {
     }
 
     fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
+        let tarball_path = self.download(&tv, &ctx.pr)?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;
         self.verify(ctx, &tv)?;

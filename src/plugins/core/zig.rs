@@ -40,12 +40,12 @@ impl ZigPlugin {
     fn test_zig(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("zig version".into());
         CmdLineRunner::new(self.zig_bin(tv))
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .arg("version")
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let archive_ext = if cfg!(target_os = "windows") {
             "zip"
         } else {
@@ -93,7 +93,7 @@ impl ZigPlugin {
             &tv.install_path(),
             &TarOptions {
                 strip_components: 1,
-                pr: Some(ctx.pr.as_ref()),
+                pr: Some(&ctx.pr),
                 ..Default::default()
             },
         )?;
@@ -150,7 +150,7 @@ impl Backend for ZigPlugin {
 
     #[requires(matches!(tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
     fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
+        let tarball_path = self.download(&tv, &ctx.pr)?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;
         self.verify(ctx, &tv)?;

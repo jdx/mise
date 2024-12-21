@@ -624,7 +624,7 @@ impl TarFormat {
 pub struct TarOptions<'a> {
     pub format: TarFormat,
     pub strip_components: usize,
-    pub pr: Option<&'a dyn SingleReport>,
+    pub pr: Option<&'a Box<dyn SingleReport>>,
 }
 
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {

@@ -33,12 +33,12 @@ impl BunPlugin {
     fn test_bun(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("bun -v".into());
         CmdLineRunner::new(self.bun_bin(tv))
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .arg("-v")
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let url = format!(
             "https://github.com/oven-sh/bun/releases/download/bun-v{}/bun-{}-{}.zip",
             tv.version,
@@ -99,7 +99,7 @@ impl Backend for BunPlugin {
     }
 
     fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
+        let tarball_path = self.download(&tv, &ctx.pr)?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;
         self.verify(ctx, &tv)?;

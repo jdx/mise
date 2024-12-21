@@ -56,7 +56,7 @@ impl AsdfPlugin {
 
     fn exec_hook_post_plugin_update(
         &self,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
         pre: String,
         post: String,
     ) -> eyre::Result<()> {
@@ -75,12 +75,12 @@ impl AsdfPlugin {
         Ok(())
     }
 
-    fn exec_hook(&self, pr: &dyn SingleReport, hook: &str) -> eyre::Result<()> {
+    fn exec_hook(&self, pr: &Box<dyn SingleReport>, hook: &str) -> eyre::Result<()> {
         self.exec_hook_env(pr, hook, Default::default())
     }
     fn exec_hook_env(
         &self,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
         hook: &str,
         env: HashMap<OsString, OsString>,
     ) -> eyre::Result<()> {
@@ -257,10 +257,10 @@ impl Plugin for AsdfPlugin {
         let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
         let pr = mpr.add(&prefix);
         let _lock = lock_file::get(&self.plugin_path, force)?;
-        self.install(pr.as_ref())
+        self.install(&pr)
     }
 
-    fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
+    fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             warn!(
@@ -289,7 +289,7 @@ impl Plugin for AsdfPlugin {
         Ok(())
     }
 
-    fn uninstall(&self, pr: &dyn SingleReport) -> Result<()> {
+    fn uninstall(&self, pr: &Box<dyn SingleReport>) -> Result<()> {
         if !self.is_installed() {
             return Ok(());
         }
@@ -314,7 +314,7 @@ impl Plugin for AsdfPlugin {
         Ok(())
     }
 
-    fn install(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
+    fn install(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         let config = Config::get();
         let repository = self.get_repo_url(&config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);

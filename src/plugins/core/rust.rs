@@ -32,15 +32,11 @@ impl RustPlugin {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
-        HTTP.download_file(
-            "https://sh.rustup.rs",
-            &rustup_path(),
-            Some(ctx.pr.as_ref()),
-        )?;
+        HTTP.download_file("https://sh.rustup.rs", &rustup_path(), Some(&ctx.pr))?;
         file::make_executable(rustup_path())?;
         file::create_dir_all(rustup_home())?;
         let cmd = CmdLineRunner::new(rustup_path())
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .arg("--no-modify-path")
             .arg("--default-toolchain")
             .arg("none")
@@ -53,7 +49,7 @@ impl RustPlugin {
     fn test_rust(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message(format!("{RUSTC_BIN} -V"));
         CmdLineRunner::new(RUSTC_BIN)
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .arg("-V")
             .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)?)
             .prepend_path(self.list_bin_paths(tv)?)?
@@ -103,7 +99,7 @@ impl Backend for RustPlugin {
         self.setup_rustup(ctx, &tv)?;
 
         CmdLineRunner::new(RUSTUP_BIN)
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .arg("toolchain")
             .arg("install")
             .arg(&tv.version)
@@ -119,7 +115,7 @@ impl Backend for RustPlugin {
         Ok(tv)
     }
 
-    fn uninstall_version_impl(&self, pr: &dyn SingleReport, tv: &ToolVersion) -> Result<()> {
+    fn uninstall_version_impl(&self, pr: &Box<dyn SingleReport>, tv: &ToolVersion) -> Result<()> {
         let mut env = self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)?;
         env.remove("RUSTUP_TOOLCHAIN");
         CmdLineRunner::new(RUSTUP_BIN)

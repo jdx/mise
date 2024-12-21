@@ -49,7 +49,7 @@ fn get_or_create_venv(venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
         let pr = mpr.add("Creating uv venv");
         let mut cmd = CmdLineRunner::new(uv_path)
             .current_dir(uv_root().unwrap())
-            .with_pr(pr.as_ref())
+            .with_pr(&pr)
             .envs(&venv.env)
             .arg("venv");
         if !log::log_enabled!(log::Level::Debug) {

@@ -37,7 +37,7 @@ impl DenoPlugin {
         })
     }
 
-    fn test_deno(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn test_deno(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
         pr.set_message("deno -V".into());
         CmdLineRunner::new(self.deno_bin(tv))
             .with_pr(pr)
@@ -45,7 +45,7 @@ impl DenoPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let url = format!(
             "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
             tv.version,
@@ -63,7 +63,12 @@ impl DenoPlugin {
         Ok(tarball_path)
     }
 
-    fn install(&self, tv: &ToolVersion, pr: &dyn SingleReport, tarball_path: &Path) -> Result<()> {
+    fn install(
+        &self,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+        tarball_path: &Path,
+    ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
@@ -81,7 +86,7 @@ impl DenoPlugin {
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
         self.test_deno(tv, pr)
     }
 }
@@ -108,15 +113,11 @@ impl Backend for DenoPlugin {
         Ok(vec![".deno-version".into()])
     }
 
-    fn install_version_(
-        &self,
-        ctx: &InstallContext,
-        mut tv: ToolVersion,
-    ) -> eyre::Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
+    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
+        let tarball_path = self.download(&tv, &ctx.pr)?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
-        self.install(&tv, ctx.pr.as_ref(), &tarball_path)?;
-        self.verify(&tv, ctx.pr.as_ref())?;
+        self.install(&tv, &ctx.pr, &tarball_path)?;
+        self.verify(&tv, &ctx.pr)?;
 
         Ok(tv)
     }
