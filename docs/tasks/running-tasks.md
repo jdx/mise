@@ -4,8 +4,11 @@ See available tasks with `mise tasks`. To show tasks hidden with property `hide=
 
 List dependencies of tasks with `mise task deps [tasks]...`.
 
-Run a task with `mise task run`, `mise run`, or just `mise r`.
-You might even want to make a shell alias like `alias mr='mise run --'` since this is likely a common command.
+Run a task with `mise task run <task>`, `mise run <task>`, `mise r <task>`, or just `mise <task>`—however
+that last one you should never put into scripts or documentation because if mise ever adds a command with that name in a
+future mise version, the task will be shadowed and must be run with one of the other forms.
+
+Most mise users will have an alias for `mise run` like `alias mr='mise run'`.
 
 By default, tasks will execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option,
 `jobs` setting or `MISE_JOBS` environment variable. The output normally will be by line, prefixed with the task

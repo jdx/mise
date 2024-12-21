@@ -532,7 +532,10 @@ impl Toolset {
         let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         tera_env.extend(env.clone());
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in self.list_paths().into_iter() {
+        for p in self.list_paths() {
+            path_env.add(p);
+        }
+        for p in config.path_dirs()?.clone() {
             path_env.add(p);
         }
         tera_env.insert(PATH_KEY.to_string(), path_env.to_string());

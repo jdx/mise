@@ -20,14 +20,16 @@ impl EnvResults {
     ) -> Result<IndexMap<PathBuf, IndexMap<String, String>>> {
         let mut out = IndexMap::new();
         let s = r.parse_template(ctx, tera, source, &input)?;
+        let orig_path = env_vars.get(&*env::PATH_KEY).cloned().unwrap_or_default();
+        let mut env_diff_opts = EnvDiffOptions::default();
+        env_diff_opts.ignore_keys.shift_remove(&*env::PATH_KEY); // allow modifying PATH
         for p in xx::file::glob(normalize_path(config_root, s.into())).unwrap_or_default() {
+            if !p.exists() {
+                continue;
+            }
             let env = out.entry(p.clone()).or_insert_with(IndexMap::new);
-            let orig_path = env_vars.get(&*env::PATH_KEY).cloned().unwrap_or_default();
-            let mut env_diff_opts = EnvDiffOptions::default();
-            env_diff_opts.ignore_keys.shift_remove(&*env::PATH_KEY); // allow modifying PATH
             let env_diff =
-                EnvDiff::from_bash_script(&p, config_root, env_vars.clone(), env_diff_opts)
-                    .unwrap_or_default();
+                EnvDiff::from_bash_script(&p, config_root, env_vars.clone(), &env_diff_opts)?;
             for p in env_diff.to_patches() {
                 match p {
                     EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
