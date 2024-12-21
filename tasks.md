@@ -74,9 +74,9 @@ Overwrite existing &lt;file>
 
 User to run as
 
-## `filetask`
+## `filetask.bat`
 
-- **Usage**: `filetask`
+- **Usage**: `filetask.bat`
 
 ## `install-dev`
 

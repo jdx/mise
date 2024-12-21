@@ -196,11 +196,23 @@ impl Task {
 
     /// prints the task name without an extension
     pub fn display_name(&self) -> String {
-        self.name
+        let display_name = self
+            .name
             .rsplitn(2, '.')
             .last()
             .unwrap_or_default()
-            .to_string()
+            .to_string();
+        let config = Config::get();
+        if config
+            .tasks()
+            .map(|t| t.contains_key(&display_name))
+            .unwrap_or_default()
+        {
+            // this means another task has the name without an extension so use the full name
+            self.name.clone()
+        } else {
+            display_name
+        }
     }
 
     pub fn is_match(&self, pat: &str) -> bool {
