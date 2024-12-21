@@ -1,13 +1,7 @@
 // If not being published, these need to manually downloaded from https://github.com/withfig/autocomplete/tree/master/src
+/* eslint-disable @withfig/fig-linter/conventional-descriptions */
 import { createNpmSearchHandler } from "./npm";
 import { searchGenerator as createCargoSearchGenerator } from "./cargo";
-
-const envVarGenerator = {
-  script: ["sh", "-c", "env"],
-  postProcess: (output: string) => {
-    return output.split("\n").map((l) => ({ name: l.split("=")[0] }));
-  },
-};
 
 const singleCmdNewLineGenerator = (completion_cmd: string): Fig.Generator => ({
   script: completion_cmd.split(" "),
@@ -17,6 +11,7 @@ const singleCmdNewLineGenerator = (completion_cmd: string): Fig.Generator => ({
 const singleCmdJsonGenerator = (cmd: string): Fig.Generator => ({
   script: cmd.split(" "),
   postProcess: (out) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     JSON.parse(out).map((r: any) => ({
       name: r.name,
       description: r.description,
@@ -67,7 +62,7 @@ const pluginWithAlias: Fig.Generator = {
 };
 
 const getInstalledTools = async (
-  executeShellCommand: Fig.ExecuteCommandFunction,
+  executeShellCommand: Fig.ExecuteCommandFunction
 ) => {
   const { stdout } = await executeShellCommand({
     command: "sh",
@@ -78,7 +73,7 @@ const getInstalledTools = async (
       stdout.split("\n").map((l) => {
         const tokens = l.split(/\s+/);
         return { name: tokens[0], version: tokens[1] };
-      }),
+      })
     ),
   ];
 };
@@ -104,7 +99,7 @@ type ObjectAcceptableKeyValues = {
 
 function groupBy<T extends ObjectAcceptableKeyValues>(
   array: T[],
-  key: keyof T,
+  key: keyof T
 ): Record<T[keyof T], T[]> {
   return array.reduce(
     (result, currentItem) => {
@@ -112,7 +107,7 @@ function groupBy<T extends ObjectAcceptableKeyValues>(
         result[currentItem[key] as ObjectKeyType] || []).push(currentItem);
       return result;
     },
-    {} as Record<ObjectKeyType, T[]>,
+    {} as Record<ObjectKeyType, T[]>
   );
 }
 
@@ -124,7 +119,7 @@ const installedToolsGenerator: Fig.Generator = {
         stdout.split("\n").map((l) => {
           const tokens = l.split(/\s+/);
           return { name: tokens[0], version: tokens[1] };
-        }),
+        })
       ),
     ];
   },
@@ -139,30 +134,136 @@ const settingsGenerator = singleCmdNewLineGenerator(`mise settings --keys`);
 const atsInStr = (s: string) => (s.match(/@/g) || []).length != 0;
 const backendSepInStr = (s: string) => (s.match(/:/g) || []).length != 0;
 
+type GitHubRepoInfo = {
+  name: string;
+  full_name: string;
+  description: string;
+};
+
+type GitHubAssetInfo = {
+  url: string;
+  uploader: object;
+  download_count: number;
+  state: string;
+};
+type GitHubVersionInfo = {
+  assets: string[];
+  tag_name: string;
+  draft: boolean;
+  body: string; // Markdown
+};
+
+const searchGitHub = async (
+  package_name: string,
+  executeShellCommand: Fig.ExecuteCommandFunction,
+  shellContext: Fig.GeneratorContext
+): Promise<Fig.Suggestion[]> => {
+  const query = [
+    "-H",
+    "Accept: application/vnd.github+json",
+    "-H",
+    "X-GitHub-Api-Version: 2022-11-28",
+  ];
+
+  const generalUrl =
+    "https://api.github.com/search/repositories?q=$NAME$+in:name";
+  const versionsUrl = "https://api.github.com/repos/$FULL_NAME$/releases";
+
+  try {
+    const envs = (
+      await executeShellCommand({
+        command: envVarGenerator.script[0],
+        args: envVarGenerator.script.slice(1),
+      })
+    ).stdout
+      .split("\n")
+      .map((l) => ({
+        name: l.split("=")[0].trim(),
+        value: l.split("=")[1].trim(),
+      }));
+
+    const gh_token = envs.find((v) => v.name == "GITHUB_TOKEN");
+    if (gh_token) {
+      query.push("-H");
+      query.push("Authorization: Bearer $TOKEN$");
+      query[query.length - 1] = query[query.length - 1].replace(
+        "$TOKEN$",
+        gh_token.value
+      );
+    }
+
+    const url =
+      package_name[package_name.length - 1] === "@" ? versionsUrl : generalUrl;
+    query.push(url);
+    query[query.length - 1] = query[query.length - 1].replace(
+      "$NAME$",
+      package_name
+    );
+    query[query.length - 1] = query[query.length - 1].replace(
+      "$FULL_NAME$",
+      package_name.slice(0, package_name.length - 1)
+    );
+
+    const { stdout } = await executeShellCommand({
+      command: "curl",
+      args: query,
+    });
+
+    if (package_name[package_name.length - 1] === "@") {
+      const package_real_name = package_name.slice(0, package_name.length - 1);
+      return [
+        ...new Set(
+          (JSON.parse(stdout) as GitHubVersionInfo[])
+            .filter((e) => e.assets.length > 0)
+            .slice(0, 200)
+            .map((e) => ({
+              name: `${package_real_name}@${e.tag_name}`,
+              description: e.body,
+            }))
+        ),
+      ];
+    } else {
+      return [
+        ...new Set(
+          (JSON.parse(stdout).items as GitHubRepoInfo[]).slice(0, 200).map(
+            (entry) =>
+              ({
+                name: entry.full_name,
+                displayName: entry.name,
+                description: entry.description,
+              }) as Fig.Suggestion
+          )
+        ),
+      ];
+    }
+  } catch (error) {
+    return [{ name: "error", description: error as string }];
+  }
+};
+
 const searchBackend = async (
   backend: string,
   context: string[],
   executeShellCommand: Fig.ExecuteCommandFunction,
-  shellContext: Fig.GeneratorContext,
+  shellContext: Fig.GeneratorContext
 ): Promise<Fig.Suggestion[]> => {
   const customContext = context;
   customContext[context.length - 1] = customContext[context.length - 1].replace(
     `${backend}:`,
-    "",
+    ""
   );
   switch (backend) {
     case "npm":
       return await createNpmSearchHandler()(
         context,
         executeShellCommand,
-        shellContext,
+        shellContext
       );
     case "cargo":
-      //return [{name: customContext[context.length - 1]}]
       return await createCargoSearchGenerator.custom(
         customContext,
         executeShellCommand,
-        shellContext,
+        shellContext
       );
     case "asdf":
       const { stdout } = await executeShellCommand({
@@ -174,23 +275,15 @@ const searchBackend = async (
           stdout.split("\n").map((l) => {
             const tokens = l.split(/\s+/);
             return { name: tokens[1].replace(`${backend}:`, "") };
-          }),
+          })
         ),
       ];
     case "ubi":
-      const { stdout: ubiOut } = await executeShellCommand({
-        command: "sh",
-        args: ["-c", "mise registry"],
-      });
-      return [
-        ...new Set(
-          ubiOut.split("\n").flatMap((l) => {
-            const tokens = l.split(/\s+/);
-            if (!tokens[1].includes("ubi:")) return [];
-            return [{ name: tokens[1].replace("ubi:", "") }] as Fig.Suggestion;
-          }),
-        ),
-      ];
+      return await searchGitHub(
+        customContext[customContext.length - 1],
+        executeShellCommand,
+        shellContext
+      );
     default:
       return [];
   }
@@ -200,6 +293,19 @@ const compareVersions = (a: string, b: string): number => {
   const result = [a, b].sort(); // Unless we can add semversort
   if (result[0] != a) return 1;
   return -1;
+};
+
+const getBackends = async (
+  executeShellCommand: Fig.ExecuteCommandFunction
+): Promise<string[]> => {
+  const { stdout, stderr, status } = await executeShellCommand({
+    command: "sh",
+    args: ["-c", "mise backends ls"],
+  });
+  if (status != 0) {
+    return [stderr];
+  }
+  return [stdout];
 };
 
 const toolVersionGenerator: Fig.Generator = {
@@ -214,8 +320,8 @@ const toolVersionGenerator: Fig.Generator = {
   custom: async (
     context: string[],
     executeShellCommand: Fig.ExecuteCommandFunction,
-    shellContext: Fig.GeneratorContext,
-  ) => {
+    shellContext: Fig.GeneratorContext
+  ): Promise<Fig.Suggestion[]> => {
     const currentWord = context[context.length - 1];
     if (backendSepInStr(currentWord)) {
       // Let's handle backends
@@ -226,7 +332,7 @@ const toolVersionGenerator: Fig.Generator = {
       ).map((s) => ({
         ...s,
         name: `${backend}:${s.name}`,
-        displayName: s.name,
+        displayName: s.name as string,
         icon: "📦",
       }));
     } else if (atsInStr(currentWord)) {
@@ -250,18 +356,23 @@ const toolVersionGenerator: Fig.Generator = {
       return [...aliases_suggestions, ...remote_versions_suggestions];
     }
 
-    const { stdout } = await executeShellCommand({
+    const { stdout: registryStdout } = await executeShellCommand({
       command: "sh",
       args: ["-c", "mise registry"],
     });
-    return [
+    const registrySuggestions = [
       ...new Set(
-        stdout.split("\n").map((l) => {
+        registryStdout.split("\n").map((l) => {
           const tokens = l.split(/\s+/);
-          return { name: tokens[0] };
-        }),
+          return { name: tokens[0], description: tokens[1] };
+        })
       ),
     ];
+
+    const backendSuggestions = (await getBackends(executeShellCommand)).map(
+      (backend) => ({ name: backend, description: "Backend" })
+    );
+    return [...backendSuggestions, ...registrySuggestions];
   },
 };
 
@@ -270,7 +381,7 @@ const installedToolVersionGenerator: Fig.Generator = {
   getQueryTerm: "@",
   custom: async (
     context: string[],
-    executeShellCommand: Fig.ExecuteCommandFunction,
+    executeShellCommand: Fig.ExecuteCommandFunction
   ) => {
     const tools = await getInstalledTools(executeShellCommand);
     const toolsVersions = groupBy(tools, "name");
