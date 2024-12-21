@@ -10,7 +10,7 @@ mod info;
 mod ls;
 
 /// Manage tasks
-#[derive(Debug, clap::Args)]
+#[derive(clap::Args)]
 #[clap(visible_alias = "t", alias = "task", verbatim_doc_comment)]
 pub struct Tasks {
     #[clap(subcommand)]
@@ -23,7 +23,7 @@ pub struct Tasks {
     ls: ls::TasksLs,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand)]
 enum Commands {
     Add(add::TasksAdd),
     Deps(deps::TasksDeps),

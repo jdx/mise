@@ -78,7 +78,7 @@ pub enum LevelFilter {
     Error,
 }
 
-#[derive(clap::Parser, Debug)]
+#[derive(clap::Parser)]
 #[clap(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true)]
 pub struct Cli {
     #[clap(subcommand)]
@@ -160,7 +160,7 @@ pub struct Cli {
     pub global_output_flags: CliGlobalOutputFlags,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(clap::Args)]
 #[group(multiple = false)]
 pub struct CliGlobalOutputFlags {
     /// Sets log level to debug
@@ -182,7 +182,7 @@ pub struct CliGlobalOutputFlags {
     pub verbose: u8,
 }
 
-#[derive(Debug, Subcommand, strum::Display)]
+#[derive(Subcommand, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
 pub enum Commands {
     Activate(activate::Activate),
@@ -388,6 +388,7 @@ impl Cli {
                         timings: self.timings,
                         tmpdir: Default::default(),
                         tool: Default::default(),
+                        keep_order_output: Default::default(),
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(

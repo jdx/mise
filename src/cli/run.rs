@@ -27,6 +27,7 @@ use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
 use eyre::{bail, ensure, eyre, Result};
 use glob::glob;
+use indexmap::IndexMap;
 use itertools::Itertools;
 #[cfg(unix)]
 use nix::sys::signal::SIGTERM;
@@ -57,7 +58,7 @@ use xx::regex;
 ///     npm run build
 ///     EOF
 ///     $ mise run build
-#[derive(Debug, clap::Args)]
+#[derive(clap::Args)]
 #[clap(visible_alias = "r", verbatim_doc_comment, disable_help_flag = true, after_long_help = AFTER_LONG_HELP)]
 pub struct Run {
     /// Tasks to run
@@ -172,14 +173,20 @@ pub struct Run {
     ///
     /// - `prefix` - Print stdout/stderr by line, prefixed with the task's label
     /// - `interleave` - Print directly to stdout/stderr instead of by line
+    /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
     /// - `quiet` - Don't show extra output
     /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
-    #[clap(short, long, env = "MISE_TASK_OUTPUT")]
+    #[clap(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
 
     #[clap(skip)]
     pub tmpdir: PathBuf,
+
+    #[clap(skip)]
+    pub keep_order_output: Mutex<IndexMap<Task, KeepOrderOutputs>>,
 }
+
+type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
 impl Run {
     pub fn run(mut self) -> Result<()> {
@@ -222,6 +229,12 @@ impl Run {
         let tasks = Deps::new(tasks)?;
         for task in tasks.all() {
             self.validate_task(task)?;
+            if self.output(Some(task)) == TaskOutput::KeepOrder {
+                self.keep_order_output
+                    .lock()
+                    .unwrap()
+                    .insert(task.clone(), Default::default());
+            }
         }
 
         let num_tasks = tasks.all().count();
@@ -311,7 +324,27 @@ impl Run {
             eprintln!("{}", style::edim(msg));
         };
 
-        time!("paralellize_tasks done");
+        if self.output(None) == TaskOutput::KeepOrder {
+            // TODO: display these as tasks complete in order somehow rather than waiting until everything is done
+            let output = self.keep_order_output.lock().unwrap();
+            for (out, err) in output.values() {
+                for (prefix, line) in out {
+                    if console::colors_enabled() {
+                        prefix_println!(prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_println!(prefix, "{line}");
+                    }
+                }
+                for (prefix, line) in err {
+                    if console::colors_enabled_stderr() {
+                        prefix_eprintln!(prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_eprintln!(prefix, "{line}");
+                    }
+                }
+            }
+        }
+        time!("parallelize_tasks done");
 
         Ok(())
     }
@@ -538,7 +571,42 @@ impl Run {
             .raw(self.raw(Some(task)));
         cmd.with_pass_signals();
         match self.output(Some(task)) {
-            TaskOutput::Prefix => cmd = cmd.prefix(prefix),
+            TaskOutput::Prefix => {
+                cmd = cmd.with_on_stdout(|line| {
+                    if console::colors_enabled() {
+                        prefix_println!(prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_println!(prefix, "{line}");
+                    }
+                });
+                cmd = cmd.with_on_stderr(|line| {
+                    if console::colors_enabled() {
+                        prefix_eprintln!(prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_eprintln!(prefix, "{line}");
+                    }
+                });
+            }
+            TaskOutput::KeepOrder => {
+                cmd = cmd.with_on_stdout(|line| {
+                    self.keep_order_output
+                        .lock()
+                        .unwrap()
+                        .get_mut(task)
+                        .unwrap()
+                        .0
+                        .push((prefix.to_string(), line));
+                });
+                cmd = cmd.with_on_stderr(|line| {
+                    self.keep_order_output
+                        .lock()
+                        .unwrap()
+                        .get_mut(task)
+                        .unwrap()
+                        .1
+                        .push((prefix.to_string(), line));
+                });
+            }
             TaskOutput::Silent => {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
@@ -841,12 +909,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     serde::Serialize,
     serde::Deserialize,
 )]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum TaskOutput {
+    Interleave,
+    KeepOrder,
     #[default]
     Prefix,
-    Interleave,
     Quiet,
     Silent,
 }
