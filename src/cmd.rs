@@ -100,10 +100,11 @@ pub struct CmdLineRunner<'a> {
     cmd: Command,
     pr: Option<&'a dyn SingleReport>,
     stdin: Option<String>,
-    prefix: String,
     redactions: IndexSet<String>,
     raw: bool,
     pass_signals: bool,
+    on_stdout: Option<Box<dyn Fn(String) + 'a>>,
+    on_stderr: Option<Box<dyn Fn(String) + 'a>>,
 }
 
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
@@ -127,10 +128,11 @@ impl<'a> CmdLineRunner<'a> {
             cmd,
             pr: None,
             stdin: None,
-            prefix: String::new(),
             redactions: Default::default(),
             raw: false,
             pass_signals: false,
+            on_stdout: None,
+            on_stderr: None,
         }
     }
 
@@ -184,8 +186,13 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn prefix(mut self, prefix: impl Into<String>) -> Self {
-        self.prefix = prefix.into();
+    pub fn with_on_stdout<F: Fn(String) + 'a>(mut self, on_stdout: F) -> Self {
+        self.on_stdout = Some(Box::new(on_stdout));
+        self
+    }
+
+    pub fn with_on_stderr<F: Fn(String) + 'a>(mut self, on_stderr: F) -> Self {
+        self.on_stderr = Some(Box::new(on_stderr));
         self
     }
 
@@ -347,10 +354,18 @@ impl<'a> CmdLineRunner<'a> {
         for line in rx {
             match line {
                 ChildProcessOutput::Stdout(line) => {
+                    let line = self
+                        .redactions
+                        .iter()
+                        .fold(line, |acc, r| acc.replace(r, "[redacted]"));
                     self.on_stdout(line.clone());
                     combined_output.push(line);
                 }
                 ChildProcessOutput::Stderr(line) => {
+                    let line = self
+                        .redactions
+                        .iter()
+                        .fold(line, |acc, r| acc.replace(r, "[redacted]"));
                     self.on_stderr(line.clone());
                     combined_output.push(line);
                 }
@@ -387,35 +402,29 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    fn on_stdout(&self, mut line: String) {
-        line = self
-            .redactions
-            .iter()
-            .fold(line, |acc, r| acc.replace(r, "[redacted]"));
+    fn on_stdout(&self, line: String) {
         let _lock = OUTPUT_LOCK.lock().unwrap();
+        if let Some(on_stdout) = &self.on_stdout {
+            on_stdout(line);
+            return;
+        }
         if let Some(pr) = self.pr {
             if !line.trim().is_empty() {
                 pr.set_message(line)
             }
         } else if console::colors_enabled() {
-            if self.prefix.is_empty() {
-                println!("{line}\x1b[0m");
-            } else {
-                prefix_println!(self.prefix, "{line}\x1b[0m");
-            }
-        } else if self.prefix.is_empty() {
-            println!("{line}");
+            println!("{line}\x1b[0m");
         } else {
-            prefix_println!(self.prefix, "{line}");
+            println!("{line}");
         }
     }
 
-    fn on_stderr(&self, mut line: String) {
-        line = self
-            .redactions
-            .iter()
-            .fold(line, |acc, r| acc.replace(r, "[redacted]"));
+    fn on_stderr(&self, line: String) {
         let _lock = OUTPUT_LOCK.lock().unwrap();
+        if let Some(on_stderr) = &self.on_stderr {
+            on_stderr(line);
+            return;
+        }
         match self.pr {
             Some(pr) => {
                 if !line.trim().is_empty() {
@@ -424,15 +433,9 @@ impl<'a> CmdLineRunner<'a> {
             }
             None => {
                 if console::colors_enabled_stderr() {
-                    if self.prefix.is_empty() {
-                        eprintln!("{line}\x1b[0m");
-                    } else {
-                        prefix_eprintln!(self.prefix, "{line}\x1b[0m");
-                    }
-                } else if self.prefix.is_empty() {
-                    eprintln!("{line}");
+                    eprintln!("{line}\x1b[0m");
                 } else {
-                    prefix_eprintln!(self.prefix, "{line}");
+                    eprintln!("{line}");
                 }
             }
         }
