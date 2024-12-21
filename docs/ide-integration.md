@@ -60,7 +60,9 @@ end
 This assumes that `mise` is on `PATH`. If it is not, you'll need to use the absolute path (
 e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
 
-:::: tip
+<details>
+<summary>Conditional shims activation</summary>
+
 Conditionally using shims is also possible. Some programs will set a `TERM_PROGRAM` environment
 variable, which may be used to determine which activation strategy to use.
 
@@ -87,7 +89,10 @@ fi
 ```
 
 :::
-::::
+
+Note that this might not work in all cases or only in the integrated terminal of the IDE.
+
+</details>
 
 As mentioned above, using `shims` doesn't work with all mise features. For example, arbitrary [env vars](./environments/) in `[env]` will
 only be set if a shim is executed. For this we need tighter integration with the IDE and/or a custom plugin.
