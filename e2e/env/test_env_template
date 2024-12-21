@@ -18,3 +18,34 @@ A = "a"
 B = "{{ env.A }}"
 EOF
 assert "mise env -s bash | grep B" "export B=a"
+
+cat <<EOF >mise.toml
+[env]
+FOO = "foo"
+
+[tasks.foo]
+env.BAR = "bar"
+
+run = """
+printf '\$FOO: %s\n' \$FOO
+printf '\$BAR: %s\n' \$BAR
+echo "{% raw %}{{ env.FOO }}{% endraw %}: {{ env.FOO }}"
+echo "{% raw %}{{ env.BAR }}{% endraw %}: {{ env.BAR }}"
+"""
+EOF
+assert "mise run --trace foo" "\$FOO: foo
+\$BAR: bar
+{{ env.FOO }}: foo
+{{ env.BAR }}: bar"
+
+cat <<EOF >mise.toml
+[env]
+FOO = "foo"
+
+[tasks.foo]
+env.BAR = "{{ env.FOO }}"
+env.BAZ = "{{ env.BAR }}"
+
+run = "printf '\$BAZ: %s\n' \$BAZ"
+EOF
+assert "mise run --trace foo" "\$BAZ: foo"
