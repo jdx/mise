@@ -366,6 +366,14 @@
         "dotnet": {
           "additionalProperties": false,
           "properties": {
+            "package_flags": {
+              "default": [],
+              "description": "Extends dotnet search and install abilities.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "registry_url": {
               "default": "https://api.nuget.org/v3/index.json",
               "description": "URL to fetch dotnet tools from.",

@@ -28,9 +28,13 @@ impl Backend for DotnetBackend {
         let feed_url = self.get_search_url()?;
 
         let feed: NugetFeedSearch = HTTP_FETCH.json(format!(
-            "{}?q={}&packageType=dotnettool&take=1",
+            "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
             feed_url,
-            &self.tool_name()
+            &self.tool_name(),
+            SETTINGS
+                .dotnet
+                .package_flags
+                .contains(&"prerelease".to_string())
         ))?;
 
         if feed.total_hits == 0 {
@@ -40,7 +44,7 @@ impl Backend for DotnetBackend {
         let data = feed.data.first().ok_or_else(|| eyre!("No data found"))?;
 
         // Because the nuget API is a search API we need to check name of the tool we are looking for
-        if data.id != self.tool_name() {
+        if data.id.to_lowercase() != self.tool_name().to_lowercase() {
             return Err(eyre!("Tool {} not found", &self.tool_name()));
         }
 
