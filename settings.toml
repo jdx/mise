@@ -979,7 +979,7 @@ enum = [
     ],
     [
         "replacing",
-        "replace stdout each time a line is printed",
+        "replace stdout each time a line is printed-this uses similar logic as `mise install`"
     ],
     [
         "timed",
