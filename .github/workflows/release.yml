@@ -69,7 +69,6 @@ jobs:
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
-      - run: mkdir -p ~/.minisign && echo "$MINISIGN_KEY" >~/.minisign/minisign.key
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -234,6 +233,7 @@ jobs:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
+      - run: mkdir -p ~/.minisign && echo "$MINISIGN_KEY" >~/.minisign/minisign.key
       - name: cache zipsign
         id: cache-zipsign
         uses: actions/cache@v4
