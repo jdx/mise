@@ -16,6 +16,7 @@ cargo-binstall = "1.10.17"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
 cosign = "latest"
 "jq" = "latest"
+minisign = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
 "pipx:toml-sort" = "latest"
