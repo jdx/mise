@@ -69,6 +69,7 @@ jobs:
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
+      - run: mkdir -p ~/.minisign && echo "$MINISIGN_KEY" >~/.minisign/minisign.key
       - uses: actions/checkout@v4
         with:
           submodules: true
