@@ -50,6 +50,7 @@ mod lockfile;
 pub(crate) mod logger;
 pub(crate) mod maplit;
 mod migrate;
+mod minisign;
 mod path_env;
 mod plugins;
 mod rand;

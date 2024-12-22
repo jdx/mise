@@ -962,6 +962,51 @@ const completionSpec: Fig.Spec = {
             "description": "[experimental] Generate files for various tools/services",
             "subcommands": [
                 {
+                    "name": "bootstrap",
+                    "description": "[experimental] Generate a script to download+execute mise",
+                    "options": [
+                        {
+                            "name": [
+                                "-l",
+                                "--localize"
+                            ],
+                            "description": "Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": "--localized-dir",
+                            "description": "Directory to put localized data into",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "localized_dir",
+                                "template": "folders"
+                            }
+                        },
+                        {
+                            "name": [
+                                "-V",
+                                "--version"
+                            ],
+                            "description": "Specify mise version to fetch",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "version"
+                            }
+                        },
+                        {
+                            "name": [
+                                "-w",
+                                "--write"
+                            ],
+                            "description": "Instead of outputting the script to stdout, write to a file and make it executable",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "write"
+                            }
+                        }
+                    ]
+                },
+                {
                     "name": [
                         "config",
                         "g"
@@ -1125,6 +1170,35 @@ const completionSpec: Fig.Spec = {
                                     "simple",
                                     "detailed"
                                 ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "task-stubs",
+                    "description": "[experimental] Generates shims to run mise tasks",
+                    "options": [
+                        {
+                            "name": [
+                                "-m",
+                                "--mise-bin"
+                            ],
+                            "description": "Path to a mise bin to use when running the task stub.",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "mise_bin"
+                            }
+                        },
+                        {
+                            "name": [
+                                "-d",
+                                "--dir"
+                            ],
+                            "description": "Directory to create task stubs inside of",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "dir",
+                                "template": "folders"
                             }
                         }
                     ]

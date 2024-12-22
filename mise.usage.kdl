@@ -478,6 +478,29 @@ Sorts keys and cleans up whitespace in mise.toml"
 cmd "generate" subcommand_required=true help="[experimental] Generate files for various tools/services" {
     alias "gen"
     alias "g" hide=true
+    cmd "bootstrap" help="[experimental] Generate a script to download+execute mise" {
+        long_help r"[experimental] Generate a script to download+execute mise
+
+This is designed to be used in a project where contributors may not have mise installed."
+        after_long_help r"Examples:
+
+    $ mise generate bootstrap >./bin/mise
+    $ chmod +x ./bin/mise
+    $ ./bin/mise install – automatically downloads mise to .mise if not already installed
+"
+        flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
+            long_help "Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project\n\nThis is necessary if users may use a different version of mise outside the project."
+        }
+        flag "--localized-dir" help="Directory to put localized data into" {
+            arg "<LOCALIZED_DIR>"
+        }
+        flag "-V --version" help="Specify mise version to fetch" {
+            arg "<VERSION>"
+        }
+        flag "-w --write" help="instead of outputting the script to stdout, write to a file and make it executable" {
+            arg "<WRITE>"
+        }
+    }
     cmd "config" help="[experimental] Generate a mise.toml file" {
         alias "g"
         after_long_help r"Examples:
@@ -552,6 +575,26 @@ when you push changes to your repository."
             arg "<STYLE>" {
                 choices "simple" "detailed"
             }
+        }
+    }
+    cmd "task-stubs" help="[experimental] Generates shims to run mise tasks" {
+        long_help r"[experimental] Generates shims to run mise tasks
+
+By default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`
+so contributors to a project can execute mise tasks without installing mise into their system."
+        after_long_help r"Examples:
+
+    $ mise task add test -- echo 'running tests'
+    $ mise generate task-stubs
+    $ ./bin/test
+    running tests
+"
+        flag "-m --mise-bin" help="Path to a mise bin to use when running the task stub." {
+            long_help "Path to a mise bin to use when running the task stub.\n\nUse `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`"
+            arg "<MISE_BIN>"
+        }
+        flag "-d --dir" help="Directory to create task stubs inside of" {
+            arg "<DIR>"
         }
     }
 }
