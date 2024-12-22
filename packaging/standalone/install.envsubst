@@ -193,21 +193,18 @@ after_finish_help() {
 		info "mise: run the following to activate mise in your shell:"
 		info "echo \"eval \\\"\\\$($install_path activate zsh)\\\"\" >> \"${ZDOTDIR-$HOME}/.zshrc\""
 		info ""
-		info "mise: this must be run in order to use mise in the terminal"
 		info "mise: run \`mise doctor\` to verify this is setup correctly"
 		;;
 	*/bash)
 		info "mise: run the following to activate mise in your shell:"
 		info "echo \"eval \\\"\\\$($install_path activate bash)\\\"\" >> ~/.bashrc"
 		info ""
-		info "mise: this must be run in order to use mise in the terminal"
 		info "mise: run \`mise doctor\` to verify this is setup correctly"
 		;;
 	*/fish)
 		info "mise: run the following to activate mise in your shell:"
 		info "echo \"$install_path activate fish | source\" >> ~/.config/fish/config.fish"
 		info ""
-		info "mise: this must be run in order to use mise in the terminal"
 		info "mise: run \`mise doctor\` to verify this is setup correctly"
 		;;
 	*)
@@ -217,4 +214,6 @@ after_finish_help() {
 }
 
 install_mise
-after_finish_help
+if [ "${MISE_INSTALL_HELP-}" != 0 ]; then
+  after_finish_help
+fi
