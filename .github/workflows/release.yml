@@ -246,7 +246,7 @@ jobs:
       - name: Install fd-find
         run: |
           sudo apt-get update
-          sudo apt-get install fd-find
+          sudo apt-get install fd-find minisign
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
