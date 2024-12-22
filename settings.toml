@@ -61,6 +61,12 @@ type = "Bool"
 default = true
 description = "Use cosign to verify aqua tool signatures."
 
+[aqua.minisign]
+env = "MISE_AQUA_MINISIGN"
+type = "Bool"
+default = true
+description = "Use minisign to verify aqua tool signatures."
+
 [aqua.registry_url]
 env = "MISE_AQUA_REGISTRY_URL"
 type = "Url"

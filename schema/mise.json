@@ -250,6 +250,11 @@
               "description": "URL to fetch aqua registry from.",
               "type": "string"
             },
+            "minisign": {
+              "default": true,
+              "description": "Use minisign to verify aqua tool signatures.",
+              "type": "boolean"
+            },
             "slsa": {
               "default": true,
               "description": "Use SLSA to verify aqua tool signatures.",

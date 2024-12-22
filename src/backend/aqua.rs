@@ -11,7 +11,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
-use crate::{file, github};
+use crate::{file, github, minisign};
 use eyre::{bail, ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -244,6 +244,7 @@ impl AquaBackend {
         filename: &str,
     ) -> Result<()> {
         self.verify_slsa(ctx, tv, pkg, v, filename)?;
+        self.verify_minisign(ctx, tv, pkg, v, filename)?;
         if !tv.checksums.contains_key(filename) {
             if let Some(checksum) = &pkg.checksum {
                 if checksum.enabled() {
@@ -312,6 +313,42 @@ impl AquaBackend {
         }
         let tarball_path = tv.download_path().join(filename);
         self.verify_checksum(ctx, tv, &tarball_path)?;
+        Ok(())
+    }
+
+    fn verify_minisign(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        pkg: &AquaPackage,
+        v: &str,
+        filename: &str,
+    ) -> Result<()> {
+        if !SETTINGS.aqua.slsa {
+            return Ok(());
+        }
+        if let Some(minisign) = &pkg.minisign {
+            if minisign.enabled == Some(false) {
+                debug!("minisign is disabled for {tv}");
+                return Ok(());
+            }
+            ctx.pr.set_message("verify minisign".to_string());
+            let sig_path = match minisign.r#type.as_str() {
+                "http" => {
+                    let url = minisign.url(pkg, v)?;
+                    let path = tv.download_path().join(filename).with_extension(".minisig");
+                    HTTP.download_file(&url, &path, Some(&ctx.pr))?;
+                    path
+                }
+                t => {
+                    warn!("unsupported minisign type: {t}");
+                    return Ok(());
+                }
+            };
+            let data = file::read(tv.download_path().join(filename))?;
+            let sig = file::read_to_string(sig_path)?;
+            minisign::verify(&minisign.public_key(pkg, v)?, &data, &sig)?;
+        }
         Ok(())
     }
 
