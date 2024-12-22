@@ -29,6 +29,7 @@ mod deps;
 mod task_dep;
 mod task_script_parser;
 pub mod task_sources;
+pub mod task_files;
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
