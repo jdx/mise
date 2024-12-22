@@ -55,7 +55,7 @@ sha256sum ./mise-latest-* >SHASUMS256.txt
 sha512sum ./mise-latest-* >SHASUMS512.txt
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS512.txt >SHASUMS512.asc
-minisign -Ss "$BASE_DIR/minisign.key" -m SHASUMS256.txt SHA256SUMS512.txt
+minisign -Ss "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m SHASUMS256.txt SHA256SUMS512.txt
 popd
 
 pushd "$RELEASE_DIR/$MISE_VERSION"
@@ -63,7 +63,7 @@ sha256sum ./* >SHASUMS256.txt
 sha512sum ./* >SHASUMS512.txt
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS512.txt >SHASUMS512.asc
-minisign -Ss "$BASE_DIR/minisign.key" -m SHASUMS256.txt SHA256SUMS512.txt
+minisign -Ss "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m SHASUMS256.txt SHA256SUMS512.txt
 popd
 
 echo "::group::install.sh"
@@ -71,7 +71,7 @@ echo "::group::install.sh"
 chmod +x "$RELEASE_DIR"/install.sh
 shellcheck "$RELEASE_DIR"/install.sh
 gpg -u 8B81C9D17413A06D --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
-minisign -Ss "$BASE_DIR/minisign.key" -m "$RELEASE_DIR"/install.sh
+minisign -Ss "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m "$RELEASE_DIR"/install.sh
 cp "$RELEASE_DIR"/{install.sh,install.sh.minisig} "$RELEASE_DIR/$MISE_VERSION"
 
 if [[ "$DRY_RUN" != 1 ]]; then
