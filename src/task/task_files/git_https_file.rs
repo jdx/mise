@@ -37,12 +37,12 @@ mod tests {
 
     #[test]
     fn test_from_valid_str() {
-        let result = GitHttpsFile::from_str("git::https://github.com/user/repo.git//path/to/task?ref=main");
+        let result =
+            GitHttpsFile::from_str("git::https://github.com/user/repo.git//path/to/task?ref=main");
         assert!(result.is_ok());
         let source = result.unwrap();
         assert_eq!(source.url, "https://github.com/user/repo.git");
         assert_eq!(source.file_path, "path/to/task");
         assert_eq!(source.ref_name, "main");
     }
-
 }

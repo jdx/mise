@@ -5,7 +5,8 @@ use super::SourceType;
 pub struct GitSshFile {
     url: String,
     file_path: String,
-    ref_name: String,}
+    ref_name: String,
+}
 
 impl SourceType for GitSshFile {
     fn from_str(s: &str) -> Result<Self, String> {
@@ -36,12 +37,12 @@ mod tests {
 
     #[test]
     fn test_from_valid_str() {
-        let result = GitSshFile::from_str("git::ssh://github.com/user/repo.git//path/to/task?ref=main");
+        let result =
+            GitSshFile::from_str("git::ssh://github.com/user/repo.git//path/to/task?ref=main");
         assert!(result.is_ok());
         let source = result.unwrap();
         assert_eq!(source.url, "https://github.com/user/repo.git");
         assert_eq!(source.file_path, "path/to/task");
         assert_eq!(source.ref_name, "main");
     }
-
 }
