@@ -1,6 +1,6 @@
 # `mise settings set`
 
-- **Usage**: `mise settings set [-l --local] <KEY> <VALUE>`
+- **Usage**: `mise settings set [-l --local] <SETTING> <VALUE>`
 - **Aliases**: `create`
 - **Source code**: [`src/cli/settings/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/set.rs)
 
@@ -10,7 +10,7 @@ This modifies the contents of ~/.config/mise/config.toml
 
 ## Arguments
 
-### `<KEY>`
+### `<SETTING>`
 
 The setting to set
 

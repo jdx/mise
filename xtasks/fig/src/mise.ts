@@ -1887,8 +1887,9 @@ const completionSpec: Fig.Spec = {
                     ],
                     "args": [
                         {
-                            "name": "key",
-                            "description": "The setting to set"
+                            "name": "setting",
+                            "description": "The setting to set",
+                            "generators": settingsGenerator
                         },
                         {
                             "name": "value",
@@ -1910,8 +1911,9 @@ const completionSpec: Fig.Spec = {
                         }
                     ],
                     "args": {
-                        "name": "key",
-                        "description": "The setting to show"
+                        "name": "setting",
+                        "description": "The setting to show",
+                        "generators": settingsGenerator
                     }
                 },
                 {
@@ -1960,9 +1962,10 @@ const completionSpec: Fig.Spec = {
                         }
                     ],
                     "args": {
-                        "name": "key",
+                        "name": "setting",
                         "description": "List keys under this key",
-                        "isOptional": true
+                        "isOptional": true,
+                        "generators": settingsGenerator
                     }
                 },
                 {
@@ -1983,8 +1986,9 @@ const completionSpec: Fig.Spec = {
                     ],
                     "args": [
                         {
-                            "name": "key",
-                            "description": "The setting to set"
+                            "name": "setting",
+                            "description": "The setting to set",
+                            "generators": settingsGenerator
                         },
                         {
                             "name": "value",
@@ -2058,9 +2062,10 @@ const completionSpec: Fig.Spec = {
             ],
             "args": [
                 {
-                    "name": "key",
+                    "name": "setting",
                     "description": "Setting name to get/set",
-                    "isOptional": true
+                    "isOptional": true,
+                    "generators": settingsGenerator
                 },
                 {
                     "name": "value",

@@ -1,6 +1,6 @@
 # `mise settings ls`
 
-- **Usage**: `mise settings ls [FLAGS] [KEY]`
+- **Usage**: `mise settings ls [FLAGS] [SETTING]`
 - **Aliases**: `list`
 - **Source code**: [`src/cli/settings/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/ls.rs)
 
@@ -13,7 +13,7 @@ but managed separately with `mise aliases`
 
 ## Arguments
 
-### `[KEY]`
+### `[SETTING]`
 
 List keys under this key
 

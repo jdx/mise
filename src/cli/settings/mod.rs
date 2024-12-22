@@ -15,7 +15,7 @@ pub struct Settings {
 
     /// Setting name to get/set
     #[clap(conflicts_with = "all")]
-    key: Option<String>,
+    setting: Option<String>,
 
     /// Setting value to set
     #[clap(conflicts_with = "all")]
@@ -68,27 +68,27 @@ impl Settings {
         let cmd = self.command.unwrap_or_else(|| {
             if let Some(value) = self.value {
                 Commands::Set(set::SettingsSet {
-                    key: self.key.unwrap(),
+                    setting: self.setting.unwrap(),
                     value,
                     local: self.local,
                 })
-            } else if let Some(key) = self.key {
-                if let Some((key, value)) = key.split_once('=') {
+            } else if let Some(setting) = self.setting {
+                if let Some((setting, value)) = setting.split_once('=') {
                     Commands::Set(set::SettingsSet {
-                        key: key.to_string(),
+                        setting: setting.to_string(),
                         value: value.to_string(),
                         local: self.local,
                     })
                 } else {
                     Commands::Get(get::SettingsGet {
-                        key,
+                        setting,
                         local: self.local,
                     })
                 }
             } else {
                 Commands::Ls(ls::SettingsLs {
                     all: self.all,
-                    key: None,
+                    setting: None,
                     local: self.local,
                     json: self.json,
                     json_extended: self.json_extended,
