@@ -217,7 +217,7 @@ jobs:
           path: dist/deb
           if-no-files-found: error
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
