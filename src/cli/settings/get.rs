@@ -12,7 +12,7 @@ use eyre::bail;
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsGet {
     /// The setting to show
-    pub key: String,
+    pub setting: String,
     /// Use the local config file instead of the global one
     #[clap(long, short)]
     pub local: bool,
@@ -28,7 +28,7 @@ impl SettingsGet {
             SETTINGS.as_dict()?
         };
         let mut value = toml::Value::Table(settings);
-        let mut key = Some(self.key.as_str());
+        let mut key = Some(self.setting.as_str());
         while let Some(k) = key {
             let k = k
                 .split_once('.')
@@ -38,7 +38,7 @@ impl SettingsGet {
                 key = k.1;
                 value = v.clone()
             } else {
-                bail!("Unknown setting: {}", self.key);
+                bail!("Unknown setting: {}", self.setting);
             }
         }
         match value {

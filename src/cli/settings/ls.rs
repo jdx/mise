@@ -17,7 +17,7 @@ use tabled::{Table, Tabled};
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsLs {
     /// List keys under this key
-    pub key: Option<String>,
+    pub setting: Option<String>,
 
     /// Display settings set to the default
     #[clap(long, short)]
@@ -70,7 +70,7 @@ impl SettingsLs {
             }));
             rows
         };
-        if let Some(key) = &self.key {
+        if let Some(key) = &self.setting {
             rows.retain(|r| &r.key == key || r.key.starts_with(&format!("{key}.")));
         }
         for k in Settings::hidden_configs() {
