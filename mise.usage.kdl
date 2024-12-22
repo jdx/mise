@@ -1152,7 +1152,7 @@ cmd "settings" help="Manage settings" {
     flag "-J --json" help="Output in JSON format"
     flag "--json-extended" help="Output in JSON format with sources"
     flag "-T --toml" help="Output in TOML format"
-    arg "[KEY]" help="Setting name to get/set" required=false
+    arg "[SETTING]" help="Setting name to get/set" required=false
     arg "[VALUE]" help="Setting value to set" required=false
     cmd "add" help="Adds a setting to the configuration file" {
         long_help r"Adds a setting to the configuration file
@@ -1164,7 +1164,7 @@ This modifies the contents of ~/.config/mise/config.toml"
     $ mise settings add disable_hints python_multi
 "
         flag "-l --local" help="Use the local config file instead of the global one"
-        arg "<KEY>" help="The setting to set"
+        arg "<SETTING>" help="The setting to set"
         arg "<VALUE>" help="The value to set"
     }
     cmd "get" help="Show a current setting" {
@@ -1180,7 +1180,7 @@ but managed separately with `mise aliases get`"
     true
 "
         flag "-l --local" help="Use the local config file instead of the global one"
-        arg "<KEY>" help="The setting to show"
+        arg "<SETTING>" help="The setting to show"
     }
     cmd "ls" help="Show current settings" {
         alias "list"
@@ -1205,7 +1205,7 @@ but managed separately with `mise aliases`"
         flag "-J --json" help="Output in JSON format"
         flag "--json-extended" help="Output in JSON format with sources"
         flag "-T --toml" help="Output in TOML format"
-        arg "[KEY]" help="List keys under this key" required=false
+        arg "[SETTING]" help="List keys under this key" required=false
     }
     cmd "set" help="Add/update a setting" {
         alias "create"
@@ -1217,7 +1217,7 @@ This modifies the contents of ~/.config/mise/config.toml"
     $ mise settings idiomatic_version_file=true
 "
         flag "-l --local" help="Use the local config file instead of the global one"
-        arg "<KEY>" help="The setting to set"
+        arg "<SETTING>" help="The setting to set"
         arg "<VALUE>" help="The value to set"
     }
     cmd "unset" help="Clears a setting" {
@@ -2015,7 +2015,7 @@ complete "config_file" type="file"
 complete "new_plugin" run="mise plugins --all"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
-complete "setting" run="mise settings --keys"
+complete "setting" run="mise settings | awk '{print $1}'"
 complete "task" run=r#"
 mise tasks --json | jq -r '.[] | (.name | sub(":"; "\\:")) + ":" + (.description | sub(":"; "\\:"))'
 "# descriptions=true
