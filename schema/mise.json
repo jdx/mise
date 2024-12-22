@@ -246,14 +246,14 @@
               "description": "Use cosign to verify aqua tool signatures.",
               "type": "boolean"
             },
-            "registry_url": {
-              "description": "URL to fetch aqua registry from.",
-              "type": "string"
-            },
             "minisign": {
               "default": true,
               "description": "Use minisign to verify aqua tool signatures.",
               "type": "boolean"
+            },
+            "registry_url": {
+              "description": "URL to fetch aqua registry from.",
+              "type": "string"
             },
             "slsa": {
               "default": true,

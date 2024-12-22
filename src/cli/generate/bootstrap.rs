@@ -55,7 +55,7 @@ impl Bootstrap {
         };
         let install = HTTP.get_text(&url)?;
         let install_sig = HTTP.get_text(format!("{url}.minisig"))?;
-        minisign::verify(minisign::MISE_PUB_KEY, install.as_bytes(), &install_sig)?;
+        minisign::verify(&minisign::MISE_PUB_KEY, install.as_bytes(), &install_sig)?;
         let install = info::indent_by(install, "        ");
         let version = regex!(r#"version="\$\{MISE_VERSION:-v([0-9.]+)\}""#)
             .captures(&install)
@@ -90,7 +90,7 @@ export MISE_INSTALL_PATH="$cache_home/mise-{version}"
         let script = format!(
             r#"
 #!/bin/sh
-set -euxo pipefail
+set -eu
 
 __mise_bootstrap() {{
 {vars}

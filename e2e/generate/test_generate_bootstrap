@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 assert "mise generate bootstrap -w"
-assert "./bin/mise -v"
+assert "./bin/mise version"
 
 assert "mise task add xxx -- echo 'running xxx'"
 assert "mise generate task-stubs --mise-bin ./bin/mise"
