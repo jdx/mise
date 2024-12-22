@@ -12,6 +12,7 @@ aws s3 cp "$RELEASE_DIR" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --n
 aws s3 cp "$RELEASE_DIR/VERSION" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
 aws s3 cp "$RELEASE_DIR/install.sh" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
 aws s3 cp "$RELEASE_DIR/install.sh.sig" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress
+aws s3 cp "$RELEASE_DIR/install.sh.minisig" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress
 aws s3 cp "./schema/mise.json" "s3://$AWS_S3_BUCKET/schema/mise.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 aws s3 cp "./schema/mise.plugin.json" "s3://$AWS_S3_BUCKET/schema/mise.plugin.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 aws s3 cp "./schema/mise-task.json" "s3://$AWS_S3_BUCKET/schema/mise-task.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
@@ -28,12 +29,6 @@ export CLOUDFLARE_ACCOUNT_ID=6e243906ff257b965bcae8025c2fc344
 
 # jdx.dev
 curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/90dfd7997bdcfa8579c52d8ee8dd4cd1/purge_cache" \
-  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data '{ "purge_everything": true }'
-
-# rtx.pub
-curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/80d977fd09f01db52bec165778088891/purge_cache" \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{ "purge_everything": true }'

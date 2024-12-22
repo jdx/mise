@@ -17,6 +17,7 @@ include = [
   "/README.md",
   "/build.rs",
   "/completions/*",
+  "/minisign.pub",
   "/registry.toml",
   "/settings.toml",
   "/zipsign.pub",
@@ -87,6 +88,7 @@ indoc = "2"
 itertools = "0.13"
 junction = "1"
 log = "0.4"
+minisign = "0.7"
 md-5 = "0.10"
 num_cpus = "1"
 number_prefix = "0.4"
