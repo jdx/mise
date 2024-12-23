@@ -55,7 +55,7 @@ sha256sum ./mise-latest-* >SHASUMS256.txt
 sha512sum ./mise-latest-* >SHASUMS512.txt
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS512.txt >SHASUMS512.asc
-minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m SHASUMS256.txt SHA256SUMS512.txt </dev/zero
+minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m SHASUMS256.txt SHASUMS512.txt </dev/zero
 popd
 
 pushd "$RELEASE_DIR/$MISE_VERSION"
@@ -63,7 +63,7 @@ sha256sum ./* >SHASUMS256.txt
 sha512sum ./* >SHASUMS512.txt
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS512.txt >SHASUMS512.asc
-minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m SHASUMS256.txt SHA256SUMS512.txt </dev/zero
+minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m SHASUMS256.txt SHASUMS512.txt </dev/zero
 popd
 
 echo "::group::install.sh"
