@@ -245,7 +245,7 @@ jobs:
       - name: Install fd-find
         run: |
           sudo apt-get update
-          sudo apt-get install fd-find minisign age
+          sudo apt-get install fd-find minisign
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -268,7 +268,7 @@ jobs:
             mise-v*.tar.xz
             mise-v*.zip
           merge-multiple: true
-      - run: echo "$AGE_KEY" >age.txt && age -i age.txt -d minisign.key.age >minisign.key
+      - run: echo "${{ secrets.MINISIGN_KEY }}" >minisign.key
       - run: ls -R artifacts
       - run: scripts/release.sh
         env:
