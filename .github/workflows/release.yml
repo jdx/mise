@@ -154,7 +154,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: usage-cli
-      - run: tar -C "$HOME" -xvJf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
+      - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - run: mise -v
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
