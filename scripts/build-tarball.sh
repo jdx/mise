@@ -99,8 +99,8 @@ if [[ "$os" == "windows" ]]; then
   zip -r "$basename.zip" mise
   ls -oh "$basename.zip"
 else
-  tar -cJf "$basename.tar.xz" mise
-  tar -czf "$basename.tar.gz" mise
-  tar --zstd -cf "$basename.tar.zst" mise
+  XZ_OPT=-9 tar -acf "$basename.tar.xz" mise
+  GZIP=-9 tar -acf "$basename.tar.gz" mise
+  ZSTD_NBTHREADS=4 ZSTD_CLEVEL=19 tar -acf "$basename.tar.zst" mise
   ls -oh "$basename.tar.xz"
 fi
