@@ -500,6 +500,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | minikube | [aqua:kubernetes/minikube](https://github.com/kubernetes/minikube) [asdf:alvarobp/asdf-minikube](https://github.com/alvarobp/asdf-minikube) |
 | minio | [asdf:aeons/asdf-minio](https://github.com/aeons/asdf-minio) |
 | minishift | [aqua:minishift/minishift](https://github.com/minishift/minishift) [asdf:sqtran/asdf-minishift](https://github.com/sqtran/asdf-minishift) |
+| minisign | [aqua:jedisct1/minisign](https://github.com/jedisct1/minisign) |
 | mint | [asdf:mint-lang/asdf-mint](https://github.com/mint-lang/asdf-mint) |
 | mirrord | [asdf:metalbear-co/asdf-mirrord](https://github.com/metalbear-co/asdf-mirrord) |
 | mitmproxy | [asdf:NeoHsu/asdf-mitmproxy](https://github.com/NeoHsu/asdf-mitmproxy) |

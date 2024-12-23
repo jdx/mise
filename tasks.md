@@ -1,6 +1,6 @@
-## `aqua-tester.fish`
+## `aqua-tester`
 
-- **Usage**: `aqua-tester.fish`
+- **Usage**: `aqua-tester`
 
 ## `build`
 

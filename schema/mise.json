@@ -246,6 +246,11 @@
               "description": "Use cosign to verify aqua tool signatures.",
               "type": "boolean"
             },
+            "minisign": {
+              "default": true,
+              "description": "Use minisign to verify aqua tool signatures.",
+              "type": "boolean"
+            },
             "registry_url": {
               "description": "URL to fetch aqua registry from.",
               "type": "string"
@@ -366,6 +371,14 @@
         "dotnet": {
           "additionalProperties": false,
           "properties": {
+            "package_flags": {
+              "default": [],
+              "description": "Extends dotnet search and install abilities.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "registry_url": {
               "default": "https://api.nuget.org/v3/index.json",
               "description": "URL to fetch dotnet tools from.",
@@ -839,7 +852,15 @@
         "task_output": {
           "description": "Change output style when executing tasks.",
           "type": "string",
-          "enum": ["prefix", "interleave"]
+          "enum": [
+            "prefix",
+            "interleave",
+            "keep-order",
+            "replacing",
+            "timed",
+            "quiet",
+            "silent"
+          ]
         },
         "task_run_auto_install": {
           "default": true,

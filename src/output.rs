@@ -1,13 +1,16 @@
+use regex::Regex;
 use std::collections::HashSet;
-use std::sync::LazyLock as Lazy;
+use std::sync::LazyLock;
 use std::sync::Mutex;
+
+pub static UNNEST_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"MISE_TASK_UNNEST:(\d+):MISE_TASK_UNNEST (.*)"#).unwrap());
 
 #[macro_export]
 macro_rules! prefix_println {
     ($prefix:expr, $($arg:tt)*) => {{
         let msg = format!($($arg)*);
-        let re = xx::regex!(r#"MISE_TASK_UNNEST:(\d+):MISE_TASK_UNNEST (.*)"#);
-        if let Some(msg) = re.captures(&msg) {
+        if let Some(msg) = $crate::output::UNNEST_RE.captures(&msg) {
             let level = msg.get(1).unwrap().as_str().parse::<usize>().unwrap();
             if level > 1 {
                 println!("MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {}", level - 1, msg.get(2).unwrap().as_str());
@@ -23,8 +26,7 @@ macro_rules! prefix_println {
 macro_rules! prefix_eprintln {
     ($prefix:expr, $($arg:tt)*) => {{
         let msg = format!($($arg)*);
-        let re = xx::regex!(r#"MISE_TASK_UNNEST:(\d+):MISE_TASK_UNNEST (.*)"#);
-        if let Some(msg) = re.captures(&msg) {
+        if let Some(msg) = $crate::output::UNNEST_RE.captures(&msg) {
             let level = msg.get(1).unwrap().as_str().parse::<usize>().unwrap();
             if level > 1 {
                 eprintln!("MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {}", level - 1, msg.get(2).unwrap().as_str());
@@ -149,7 +151,7 @@ macro_rules! warn {
     }};
 }
 
-pub static WARNED_ONCE: Lazy<Mutex<HashSet<String>>> = Lazy::new(Default::default);
+pub static WARNED_ONCE: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
 macro_rules! warn_once {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
@@ -167,7 +169,7 @@ macro_rules! error {
     }};
 }
 
-pub static DEPRECATED: Lazy<Mutex<HashSet<&'static str>>> = Lazy::new(Default::default);
+pub static DEPRECATED: LazyLock<Mutex<HashSet<&'static str>>> = LazyLock::new(Default::default);
 
 #[macro_export]
 macro_rules! deprecated {

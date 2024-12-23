@@ -65,7 +65,7 @@ impl Backend for GoBackend {
             CmdLineRunner::new("go")
                 .arg("install")
                 .arg(format!("{}@{v}", self.tool_name()))
-                .with_pr(ctx.pr.as_ref())
+                .with_pr(&ctx.pr)
                 .envs(self.dependency_env()?)
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()

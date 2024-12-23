@@ -196,11 +196,23 @@ impl Task {
 
     /// prints the task name without an extension
     pub fn display_name(&self) -> String {
-        self.name
+        let display_name = self
+            .name
             .rsplitn(2, '.')
             .last()
             .unwrap_or_default()
-            .to_string()
+            .to_string();
+        let config = Config::get();
+        if config
+            .tasks()
+            .map(|t| t.contains_key(&display_name))
+            .unwrap_or_default()
+        {
+            // this means another task has the name without an extension so use the full name
+            self.name.clone()
+        } else {
+            display_name
+        }
     }
 
     pub fn is_match(&self, pat: &str) -> bool {
@@ -294,22 +306,21 @@ impl Task {
         env: &EnvMap,
     ) -> Result<(usage::Spec, Vec<String>)> {
         let (mut spec, scripts) = if let Some(file) = &self.file {
-            let mut spec = usage::Spec::parse_script(file)
+            let spec = usage::Spec::parse_script(file)
                 .inspect_err(|e| debug!("failed to parse task file with usage: {e}"))
                 .unwrap_or_default();
-            spec.cmd.name = self.name.clone();
             (spec, vec![])
         } else {
             let (scripts, spec) =
                 TaskScriptParser::new(cwd).parse_run_scripts(self, self.run(), env)?;
             (spec, scripts)
         };
-        spec.name = self.name.clone();
-        spec.bin = self.name.clone();
+        spec.name = self.display_name();
+        spec.bin = self.display_name();
         if spec.cmd.help.is_none() {
             spec.cmd.help = Some(self.description.clone());
         }
-        spec.cmd.name = self.name.clone();
+        spec.cmd.name = self.display_name();
         spec.cmd.aliases = self.aliases.clone();
         if spec.cmd.before_help.is_none()
             && spec.cmd.before_help_long.is_none()
@@ -371,7 +382,12 @@ impl Task {
                 Color::Red,
             ]
         });
-        let idx = self.name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
+        let idx = self
+            .display_name()
+            .chars()
+            .map(|c| c as usize)
+            .sum::<usize>()
+            % COLORS.len();
         let prefix = style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string();
         if *env::MISE_TASK_LEVEL > 0 {
             format!(
@@ -458,6 +474,10 @@ impl Task {
             *dir = tera.render_str(dir, &tera_ctx)?;
         }
         Ok(())
+    }
+
+    pub fn name_to_path(&self) -> PathBuf {
+        self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
     pub fn render_env(&self, ts: &Toolset) -> Result<EnvMap> {

@@ -47,8 +47,10 @@ impl Client {
     }
 
     fn _new() -> ClientBuilder {
+        let v = &*version::VERSION;
+        let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();
         ClientBuilder::new()
-            .user_agent(format!("mise/{}", &*version::VERSION))
+            .user_agent(format!("mise/{v} {shell}").trim())
             .gzip(true)
             .zstd(true)
     }
@@ -159,7 +161,7 @@ impl Client {
         &self,
         url: U,
         path: &Path,
-        pr: Option<&dyn SingleReport>,
+        pr: Option<&Box<dyn SingleReport>>,
     ) -> Result<()> {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));

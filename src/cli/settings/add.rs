@@ -11,7 +11,7 @@ use crate::cli::settings::set::set;
 pub struct SettingsAdd {
     /// The setting to set
     #[clap()]
-    pub key: String,
+    pub setting: String,
     /// The value to set
     pub value: String,
     /// Use the local config file instead of the global one
@@ -21,7 +21,7 @@ pub struct SettingsAdd {
 
 impl SettingsAdd {
     pub fn run(self) -> Result<()> {
-        set(&self.key, &self.value, true, self.local)
+        set(&self.setting, &self.value, true, self.local)
     }
 }
 

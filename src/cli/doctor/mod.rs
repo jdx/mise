@@ -13,7 +13,6 @@ use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
-use crate::shell::ShellType;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
 use crate::{backend, cmd, dirs, duration, env, file, shims};
@@ -489,7 +488,7 @@ fn build_info() -> IndexMap<String, &'static str> {
 }
 
 fn shell() -> String {
-    match ShellType::load().map(|s| s.to_string()) {
+    match env::MISE_SHELL.map(|s| s.to_string()) {
         Some(shell) => {
             let shell_cmd = if env::SHELL.ends_with(shell.as_str()) {
                 &*env::SHELL

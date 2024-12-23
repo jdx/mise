@@ -26,10 +26,12 @@ platforms=(
 for platform in "${platforms[@]}"; do
   cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
   cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz"
+  cp artifacts/*/"mise-$MISE_VERSION-$platform.tar.zst" "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.zst"
   zipsign sign tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" ~/.zipsign/mise.priv
   zipsign verify tar "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$BASE_DIR/zipsign.pub"
   cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz" "$RELEASE_DIR/mise-latest-$platform.tar.gz"
   cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.xz" "$RELEASE_DIR/mise-latest-$platform.tar.xz"
+  cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.zst" "$RELEASE_DIR/mise-latest-$platform.tar.zst"
   tar -xvzf "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.tar.gz"
   cp -v mise/bin/mise "$RELEASE_DIR/mise-latest-$platform"
   cp -v mise/bin/mise "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform"
@@ -55,6 +57,7 @@ sha256sum ./mise-latest-* >SHASUMS256.txt
 sha512sum ./mise-latest-* >SHASUMS512.txt
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS512.txt >SHASUMS512.asc
+minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m SHASUMS256.txt SHASUMS512.txt </dev/zero
 popd
 
 pushd "$RELEASE_DIR/$MISE_VERSION"
@@ -62,6 +65,7 @@ sha256sum ./* >SHASUMS256.txt
 sha512sum ./* >SHASUMS512.txt
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS256.txt >SHASUMS256.asc
 gpg --clearsign -u 8B81C9D17413A06D <SHASUMS512.txt >SHASUMS512.asc
+minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m SHASUMS256.txt SHASUMS512.txt </dev/zero
 popd
 
 echo "::group::install.sh"
@@ -69,6 +73,8 @@ echo "::group::install.sh"
 chmod +x "$RELEASE_DIR"/install.sh
 shellcheck "$RELEASE_DIR"/install.sh
 gpg -u 8B81C9D17413A06D --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
+minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m "$RELEASE_DIR"/install.sh </dev/zero
+cp "$RELEASE_DIR"/{install.sh,install.sh.minisig} "$RELEASE_DIR/$MISE_VERSION"
 
 if [[ "$DRY_RUN" != 1 ]]; then
   echo "::group::Publish npm @jdxcode/mise"

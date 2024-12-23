@@ -30,12 +30,12 @@ impl SwiftPlugin {
     fn test_swift(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("swift --version".into());
         CmdLineRunner::new(self.swift_bin(tv))
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .arg("--version")
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let url = format!(
             "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
             version = tv.version,
@@ -72,7 +72,7 @@ impl SwiftPlugin {
                 .arg("--expand-full")
                 .arg(tarball_path)
                 .arg(&tmp)
-                .with_pr(ctx.pr.as_ref())
+                .with_pr(&ctx.pr)
                 .execute()?;
             file::remove_all(tv.install_path())?;
             file::rename(
@@ -88,7 +88,7 @@ impl SwiftPlugin {
                 &tv.install_path(),
                 &file::TarOptions {
                     format: file::TarFormat::TarGz,
-                    pr: Some(ctx.pr.as_ref()),
+                    pr: Some(&ctx.pr),
                     strip_components: 1,
                 },
             )?;
@@ -125,7 +125,7 @@ impl SwiftPlugin {
         }
         gpg::add_keys_swift(ctx)?;
         let sig_path = PathBuf::from(format!("{}.sig", tarball_path.to_string_lossy()));
-        HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(ctx.pr.as_ref()))?;
+        HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(&ctx.pr))?;
         self.gpg(ctx)
             .arg("--quiet")
             .arg("--trust-model")
@@ -142,7 +142,7 @@ impl SwiftPlugin {
     }
 
     fn gpg<'a>(&self, ctx: &'a InstallContext) -> CmdLineRunner<'a> {
-        CmdLineRunner::new("gpg").with_pr(ctx.pr.as_ref())
+        CmdLineRunner::new("gpg").with_pr(&ctx.pr)
     }
 }
 
@@ -171,7 +171,7 @@ impl Backend for SwiftPlugin {
     }
 
     fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref())?;
+        let tarball_path = self.download(&tv, &ctx.pr)?;
         if cfg!(target_os = "linux") && SETTINGS.swift.gpg_verify != Some(false) {
             self.verify_gpg(ctx, &tv, &tarball_path)?;
         }

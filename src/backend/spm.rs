@@ -95,7 +95,7 @@ impl SPMBackend {
                 package_repo.url.as_str(),
                 repo.dir.display(),
             );
-            repo.clone(package_repo.url.as_str(), Some(ctx.pr.as_ref()))?;
+            repo.clone(package_repo.url.as_str(), Some(&ctx.pr))?;
         }
         debug!("Checking out revision: {revision}");
         repo.update(Some(revision.to_string()))?;
@@ -152,7 +152,7 @@ impl SPMBackend {
             .arg(repo_dir)
             .arg("--cache-path")
             .arg(dirs::CACHE.join("spm"))
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .prepend_path(self.dependency_toolset()?.list_paths())?
             .execute()?;
 

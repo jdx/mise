@@ -86,6 +86,7 @@ export default defineConfig({
               { text: "aqua", link: "/dev-tools/backends/aqua" },
               { text: "asdf", link: "/dev-tools/backends/asdf" },
               { text: "cargo", link: "/dev-tools/backends/cargo" },
+              { text: "dotnet", link: "/dev-tools/backends/dotnet" },
               { text: "gem", link: "/dev-tools/backends/gem" },
               { text: "go", link: "/dev-tools/backends/go" },
               { text: "npm", link: "/dev-tools/backends/npm" },

@@ -95,6 +95,7 @@ jobs:
           path: |
             dist/mise-*.tar.xz
             dist/mise-*.tar.gz
+            dist/mise-*.tar.zst
           if-no-files-found: error
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-cache }
@@ -153,7 +154,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: usage-cli
-      - run: tar -C "$HOME" -xvJf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.xz"
+      - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - run: mise -v
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
@@ -217,7 +218,7 @@ jobs:
           path: dist/deb
           if-no-files-found: error
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
@@ -245,7 +246,7 @@ jobs:
       - name: Install fd-find
         run: |
           sudo apt-get update
-          sudo apt-get install fd-find
+          sudo apt-get install fd-find minisign
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -266,8 +267,10 @@ jobs:
           pattern: |
             mise-v*.tar.gz
             mise-v*.tar.xz
+            mise-v*.tar.zst
             mise-v*.zip
           merge-multiple: true
+      - run: echo "${{ secrets.MINISIGN_KEY }}" >minisign.key
       - run: ls -R artifacts
       - run: scripts/release.sh
         env:

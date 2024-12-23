@@ -478,6 +478,29 @@ Sorts keys and cleans up whitespace in mise.toml"
 cmd "generate" subcommand_required=true help="[experimental] Generate files for various tools/services" {
     alias "gen"
     alias "g" hide=true
+    cmd "bootstrap" help="[experimental] Generate a script to download+execute mise" {
+        long_help r"[experimental] Generate a script to download+execute mise
+
+This is designed to be used in a project where contributors may not have mise installed."
+        after_long_help r"Examples:
+
+    $ mise generate bootstrap >./bin/mise
+    $ chmod +x ./bin/mise
+    $ ./bin/mise install – automatically downloads mise to .mise if not already installed
+"
+        flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
+            long_help "Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project\n\nThis is necessary if users may use a different version of mise outside the project."
+        }
+        flag "--localized-dir" help="Directory to put localized data into" {
+            arg "<LOCALIZED_DIR>"
+        }
+        flag "-V --version" help="Specify mise version to fetch" {
+            arg "<VERSION>"
+        }
+        flag "-w --write" help="instead of outputting the script to stdout, write to a file and make it executable" {
+            arg "<WRITE>"
+        }
+    }
     cmd "config" help="[experimental] Generate a mise.toml file" {
         alias "g"
         after_long_help r"Examples:
@@ -499,7 +522,7 @@ cmd "generate" subcommand_required=true help="[experimental] Generate files for 
 This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
 when you commit changes to your repository.
 
-Staged files are passed to the task via appended arguments"
+Staged files are passed to the task as `STAGED`."
         after_long_help r#"Examples:
 
     $ mise generate git-pre-commit --write --task=pre-commit
@@ -552,6 +575,26 @@ when you push changes to your repository."
             arg "<STYLE>" {
                 choices "simple" "detailed"
             }
+        }
+    }
+    cmd "task-stubs" help="[experimental] Generates shims to run mise tasks" {
+        long_help r"[experimental] Generates shims to run mise tasks
+
+By default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`
+so contributors to a project can execute mise tasks without installing mise into their system."
+        after_long_help r"Examples:
+
+    $ mise task add test -- echo 'running tests'
+    $ mise generate task-stubs
+    $ ./bin/test
+    running tests
+"
+        flag "-m --mise-bin" help="Path to a mise bin to use when running the task stub." {
+            long_help "Path to a mise bin to use when running the task stub.\n\nUse `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`"
+            arg "<MISE_BIN>"
+        }
+        flag "-d --dir" help="Directory to create task stubs inside of" {
+            arg "<DIR>"
         }
     }
 }
@@ -1088,7 +1131,7 @@ The name of the script will be the name of the tasks.
     flag "-q --quiet" help="Don't show extra output"
     flag "-S --silent" help="Don't show any output except for errors"
     flag "-o --output" help="Change how tasks information is output when running tasks" {
-        long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label - `interleave` - Print directly to stdout/stderr instead of by line - `quiet` - Don't show extra output - `silent` - Don't show any output including stdout and stderr from the task except for errors"
+        long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
         arg "<OUTPUT>"
     }
     mount run="mise tasks --usage"
@@ -1152,7 +1195,7 @@ cmd "settings" help="Manage settings" {
     flag "-J --json" help="Output in JSON format"
     flag "--json-extended" help="Output in JSON format with sources"
     flag "-T --toml" help="Output in TOML format"
-    arg "[KEY]" help="Setting name to get/set" required=false
+    arg "[SETTING]" help="Setting name to get/set" required=false
     arg "[VALUE]" help="Setting value to set" required=false
     cmd "add" help="Adds a setting to the configuration file" {
         long_help r"Adds a setting to the configuration file
@@ -1164,7 +1207,7 @@ This modifies the contents of ~/.config/mise/config.toml"
     $ mise settings add disable_hints python_multi
 "
         flag "-l --local" help="Use the local config file instead of the global one"
-        arg "<KEY>" help="The setting to set"
+        arg "<SETTING>" help="The setting to set"
         arg "<VALUE>" help="The value to set"
     }
     cmd "get" help="Show a current setting" {
@@ -1180,7 +1223,7 @@ but managed separately with `mise aliases get`"
     true
 "
         flag "-l --local" help="Use the local config file instead of the global one"
-        arg "<KEY>" help="The setting to show"
+        arg "<SETTING>" help="The setting to show"
     }
     cmd "ls" help="Show current settings" {
         alias "list"
@@ -1205,7 +1248,7 @@ but managed separately with `mise aliases`"
         flag "-J --json" help="Output in JSON format"
         flag "--json-extended" help="Output in JSON format with sources"
         flag "-T --toml" help="Output in TOML format"
-        arg "[KEY]" help="List keys under this key" required=false
+        arg "[SETTING]" help="List keys under this key" required=false
     }
     cmd "set" help="Add/update a setting" {
         alias "create"
@@ -1217,7 +1260,7 @@ This modifies the contents of ~/.config/mise/config.toml"
     $ mise settings idiomatic_version_file=true
 "
         flag "-l --local" help="Use the local config file instead of the global one"
-        arg "<KEY>" help="The setting to set"
+        arg "<SETTING>" help="The setting to set"
         arg "<VALUE>" help="The value to set"
     }
     cmd "unset" help="Clears a setting" {
@@ -1530,7 +1573,7 @@ The name of the script will be the name of the tasks.
         flag "-q --quiet" help="Don't show extra output"
         flag "-S --silent" help="Don't show any output except for errors"
         flag "-o --output" help="Change how tasks information is output when running tasks" {
-            long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label - `interleave` - Print directly to stdout/stderr instead of by line - `quiet` - Don't show extra output - `silent` - Don't show any output including stdout and stderr from the task except for errors"
+            long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
             arg "<OUTPUT>"
         }
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" required=false default="default"
@@ -2015,7 +2058,7 @@ complete "config_file" type="file"
 complete "new_plugin" run="mise plugins --all"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
-complete "setting" run="mise settings --keys"
+complete "setting" run="mise settings | awk '{print $1}'"
 complete "task" run=r#"
 mise tasks --json | jq -r '.[] | (.name | sub(":"; "\\:")) + ":" + (.description | sub(":"; "\\:"))'
 "# descriptions=true

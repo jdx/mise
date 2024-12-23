@@ -138,7 +138,7 @@ impl Git {
         Ok((prev_rev, post_rev))
     }
 
-    pub fn clone(&self, url: &str, pr: Option<&dyn SingleReport>) -> Result<()> {
+    pub fn clone(&self, url: &str, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
         debug!("cloning {} to {}", url, self.dir.display());
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;

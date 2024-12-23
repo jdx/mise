@@ -57,7 +57,7 @@ impl PythonPlugin {
         file::remove_all(&python_build_path)?;
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
-        let pr = ctx.map(|ctx| ctx.pr.as_ref());
+        let pr = ctx.map(|ctx| &ctx.pr);
         git.clone(&SETTINGS.python.pyenv_repo, pr)?;
         Ok(())
     }
@@ -188,7 +188,7 @@ impl PythonPlugin {
         let tarball_path = download.join(filename);
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))?;
+        HTTP.download_file(&url, &tarball_path, Some(&ctx.pr))?;
 
         file::remove_all(&install)?;
         file::untar(
@@ -196,7 +196,7 @@ impl PythonPlugin {
             &install,
             &TarOptions {
                 strip_components: 1,
-                pr: Some(ctx.pr.as_ref()),
+                pr: Some(&ctx.pr),
                 ..Default::default()
             },
         )?;
@@ -246,7 +246,7 @@ impl PythonPlugin {
         }
         ctx.pr.set_message("python-build".into());
         let mut cmd = CmdLineRunner::new(self.python_build_bin())
-            .with_pr(ctx.pr.as_ref())
+            .with_pr(&ctx.pr)
             .arg(tv.version.as_str())
             .arg(tv.install_path())
             .env("PIP_REQUIRE_VIRTUALENV", "false")
@@ -280,7 +280,7 @@ impl PythonPlugin {
         config: &Config,
         packages_file: &Path,
         tv: &ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
     ) -> eyre::Result<()> {
         if !packages_file.exists() {
             return Ok(());
@@ -303,7 +303,7 @@ impl PythonPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: Option<&dyn SingleReport>,
+        pr: Option<&Box<dyn SingleReport>>,
     ) -> eyre::Result<Option<PathBuf>> {
         if let Some(virtualenv) = tv.request.options().get("virtualenv") {
             if !SETTINGS.experimental {
@@ -367,7 +367,7 @@ impl PythonPlugin {
         &self,
         config: &Config,
         tv: &ToolVersion,
-        pr: &dyn SingleReport,
+        pr: &Box<dyn SingleReport>,
     ) -> eyre::Result<()> {
         pr.set_message("python --version".into());
         CmdLineRunner::new(self.python_path(tv))
@@ -421,15 +421,13 @@ impl Backend for PythonPlugin {
         } else {
             self.install_compiled(ctx, &tv)?;
         }
-        self.test_python(&config, &tv, ctx.pr.as_ref())?;
-        if let Err(e) = self.get_virtualenv(&config, &tv, Some(ctx.pr.as_ref())) {
+        self.test_python(&config, &tv, &ctx.pr)?;
+        if let Err(e) = self.get_virtualenv(&config, &tv, Some(&ctx.pr)) {
             warn!("failed to get virtualenv: {e:#}");
         }
         if let Some(default_file) = &SETTINGS.python.default_packages_file {
             let default_file = file::replace_path(default_file);
-            if let Err(err) =
-                self.install_default_packages(&config, &default_file, &tv, ctx.pr.as_ref())
-            {
+            if let Err(err) = self.install_default_packages(&config, &default_file, &tv, &ctx.pr) {
                 warn!("failed to install default python packages: {err:#}");
             }
         }

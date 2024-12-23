@@ -12,3 +12,13 @@ EOF
 
 assert "mise env -s bash | grep MISE_TEST_SOURCE" "export MISE_TEST_SOURCE=1234"
 assert_contains "mise env -s bash | grep PATH" "export PATH='$HOME/newbin:"
+
+# TODO: this fails because of https://github.com/jdx/mise/blob/53c9144df8ef5d7d75f19c949be6231a05f7405a/src/config/config_file/mise_toml.rs#L838
+#cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+#[env]
+#_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
+#_.path = [
+#    "/{{ env.MISE_TEST_SOURCE }}",
+#]
+#EOF
+#assert_contains "mise env -s bash | grep PATH" "export PATH='/1234:"

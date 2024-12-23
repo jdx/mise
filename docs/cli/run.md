@@ -93,7 +93,13 @@ Don't show any output except for errors
 
 Change how tasks information is output when running tasks
 
-- `prefix` - Print stdout/stderr by line, prefixed with the task's label - `interleave` - Print directly to stdout/stderr instead of by line - `quiet` - Don't show extra output - `silent` - Don't show any output including stdout and stderr from the task except for errors
+- `prefix` - Print stdout/stderr by line, prefixed with the task's label
+- `interleave` - Print directly to stdout/stderr instead of by line
+- `replacing` - Stdout is replaced each time, stderr is printed as is
+- `timed` - Only show stdout lines if they are displayed for more than 1 second
+- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
+- `quiet` - Don't show extra output
+- `silent` - Don't show any output including stdout and stderr from the task except for errors
 
 Examples:
 

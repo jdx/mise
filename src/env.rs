@@ -1,6 +1,7 @@
 use crate::cli::args::{ENV_ARG, PROFILE_ARG};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
+use crate::shell::ShellType;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
@@ -17,6 +18,12 @@ pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 #[cfg(windows)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
+pub static MISE_SHELL: Lazy<Option<ShellType>> = Lazy::new(|| {
+    var("MISE_SHELL")
+        .unwrap_or_else(|_| SHELL.clone())
+        .parse()
+        .ok()
+});
 
 // paths and directories
 #[cfg(test)]

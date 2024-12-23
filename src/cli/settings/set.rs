@@ -12,7 +12,7 @@ use crate::{config, file};
 pub struct SettingsSet {
     /// The setting to set
     #[clap()]
-    pub key: String,
+    pub setting: String,
     /// The value to set
     pub value: String,
     /// Use the local config file instead of the global one
@@ -22,7 +22,7 @@ pub struct SettingsSet {
 
 impl SettingsSet {
     pub fn run(self) -> Result<()> {
-        set(&self.key, &self.value, false, self.local)
+        set(&self.setting, &self.value, false, self.local)
     }
 }
 

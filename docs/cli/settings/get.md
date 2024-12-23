@@ -1,6 +1,6 @@
 # `mise settings get`
 
-- **Usage**: `mise settings get [-l --local] <KEY>`
+- **Usage**: `mise settings get [-l --local] <SETTING>`
 - **Source code**: [`src/cli/settings/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/get.rs)
 
 Show a current setting
@@ -12,7 +12,7 @@ but managed separately with `mise aliases get`
 
 ## Arguments
 
-### `<KEY>`
+### `<SETTING>`
 
 The setting to show
 

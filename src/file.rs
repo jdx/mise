@@ -33,7 +33,6 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     File::open(path).wrap_err_with(|| format!("failed open: {}", display_path(path)))
 }
 
-#[allow(unused)]
 pub fn read<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
     let path = path.as_ref();
     trace!("cat {}", display_path(path));
@@ -624,7 +623,7 @@ impl TarFormat {
 pub struct TarOptions<'a> {
     pub format: TarFormat,
     pub strip_components: usize,
-    pub pr: Option<&'a dyn SingleReport>,
+    pub pr: Option<&'a Box<dyn SingleReport>>,
 }
 
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
