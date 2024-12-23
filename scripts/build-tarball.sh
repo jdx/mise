@@ -102,5 +102,5 @@ else
   XZ_OPT=-9 tar -acf "$basename.tar.xz" mise
   GZIP=-9 tar -acf "$basename.tar.gz" mise
   ZSTD_NBTHREADS=0 ZSTD_CLEVEL=19 tar -acf "$basename.tar.zst" mise
-  ls -oh "$basename.tar.xz"
+  ls -oh "$basename.tar."*
 fi
