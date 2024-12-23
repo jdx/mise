@@ -10,7 +10,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
-use crate::{file, github, plugins};
+use crate::{file, github, minisign, plugins};
 use contracts::requires;
 use eyre::Result;
 use itertools::Itertools;
@@ -21,6 +21,8 @@ use xx::regex;
 pub struct ZigPlugin {
     ba: BackendArg,
 }
+
+const ZIG_MINISIGN_KEY: &str = "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U";
 
 impl ZigPlugin {
     pub fn new() -> Self {
@@ -80,6 +82,11 @@ impl ZigPlugin {
 
         pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &tarball_path, Some(pr))?;
+
+        pr.set_message(format!("minisign {filename}"));
+        let tarball_data = file::read(&tarball_path)?;
+        let sig = HTTP.get_text(format!("{url}.minisig"))?;
+        minisign::verify(ZIG_MINISIGN_KEY, &tarball_data, &sig)?;
 
         Ok(tarball_path)
     }

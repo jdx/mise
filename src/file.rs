@@ -33,7 +33,6 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     File::open(path).wrap_err_with(|| format!("failed open: {}", display_path(path)))
 }
 
-#[allow(unused)]
 pub fn read<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
     let path = path.as_ref();
     trace!("cat {}", display_path(path));

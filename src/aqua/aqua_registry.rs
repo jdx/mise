@@ -67,6 +67,7 @@ pub struct AquaPackage {
     pub version_source: Option<String>,
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
+    pub minisign: Option<AquaMinisign>,
     overrides: Vec<AquaOverride>,
     version_constraint: String,
     version_overrides: Vec<AquaPackage>,
@@ -129,6 +130,14 @@ pub struct AquaSlsaProvenance {
     pub repo_name: Option<String>,
     pub url: Option<String>,
     pub asset: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AquaMinisign {
+    pub enabled: Option<bool>,
+    pub r#type: String,
+    pub url: String,
+    pub public_key: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -483,6 +492,11 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         slsa_provenance.merge(avo_slsa_provenance);
         orig.slsa_provenance = Some(slsa_provenance);
     }
+    if let Some(avo_minisign) = avo.minisign.clone() {
+        let mut minisign = orig.minisign.unwrap_or_else(|| avo_minisign.clone());
+        minisign.merge(avo_minisign);
+        orig.minisign = Some(minisign);
+    }
     orig
 }
 
@@ -667,6 +681,30 @@ impl AquaSlsaProvenance {
         }
         if let Some(asset) = other.asset {
             self.asset = Some(asset);
+        }
+    }
+}
+
+impl AquaMinisign {
+    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        pkg.parse_aqua_str(&self.url, v, &Default::default())
+    }
+    pub fn public_key(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        pkg.parse_aqua_str(&self.public_key, v, &Default::default())
+    }
+
+    fn merge(&mut self, other: Self) {
+        if let Some(enabled) = other.enabled {
+            self.enabled = Some(enabled);
+        }
+        if !other.r#type.is_empty() {
+            self.r#type = other.r#type;
+        }
+        if !other.url.is_empty() {
+            self.url = other.url;
+        }
+        if !other.public_key.is_empty() {
+            self.public_key = other.public_key;
         }
     }
 }

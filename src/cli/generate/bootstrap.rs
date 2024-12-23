@@ -1,8 +1,8 @@
 use crate::config::SETTINGS;
-use crate::file;
 use crate::http::HTTP;
 use crate::ui::info;
 use crate::Result;
+use crate::{file, minisign};
 use clap::ValueHint;
 use std::path::PathBuf;
 use xx::file::display_path;
@@ -54,8 +54,8 @@ impl Bootstrap {
             "https://mise.jdx.dev/install.sh".into()
         };
         let install = HTTP.get_text(&url)?;
-        // let install_sig = HTTP.get_text(format!("{url}.minisig"))?;
-        // minisign::verify(minisign::MISE_PUB_KEY, &install, &install_sig)?;
+        let install_sig = HTTP.get_text(format!("{url}.minisig"))?;
+        minisign::verify(&minisign::MISE_PUB_KEY, install.as_bytes(), &install_sig)?;
         let install = info::indent_by(install, "        ");
         let version = regex!(r#"version="\$\{MISE_VERSION:-v([0-9.]+)\}""#)
             .captures(&install)
@@ -90,7 +90,7 @@ export MISE_INSTALL_PATH="$cache_home/mise-{version}"
         let script = format!(
             r#"
 #!/bin/sh
-set -euxo pipefail
+set -eu
 
 __mise_bootstrap() {{
 {vars}
