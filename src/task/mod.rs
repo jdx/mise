@@ -27,6 +27,7 @@ use xx::regex;
 
 mod deps;
 mod task_dep;
+pub mod task_files;
 mod task_script_parser;
 pub mod task_sources;
 
