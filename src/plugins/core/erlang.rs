@@ -52,7 +52,6 @@ impl ErlangPlugin {
         self.install_kerl()?;
         cmd!(self.kerl_path(), "update", "releases")
             .env("KERL_BASE_DIR", self.kerl_base_dir())
-            .stdout_to_stderr()
             .run()?;
         Ok(())
     }
@@ -73,7 +72,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if SETTINGS.erlang.compile == Some(false) {
+        if SETTINGS.erlang.compile == Some(true) {
             return Ok(None);
         }
         let release_tag = format!("OTP-{}", tv.version);
@@ -126,7 +125,7 @@ impl ErlangPlugin {
                     tv.install_path()
                 )
                 .env("KERL_BASE_DIR", self.ba.cache_path.join("kerl"))
-                .stdout_to_stderr()
+                .env("MAKEFLAGS", format!("-j{}", num_cpus::get()))
                 .run()?;
             }
         }
