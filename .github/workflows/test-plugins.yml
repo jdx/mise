@@ -57,12 +57,12 @@ jobs:
           - plugin: direnv
             command: mise exec direnv@latest -- direnv --version
           - plugin: erlang
-            command: mise exec erlang@24.3.4.9 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
+            command: mise exec erlang@27.2 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
           - plugin: elixir
             command: |
-              mise use --global erlang@24.3.4.9
+              mise use --global erlang@27.2
               eval "$(mise env bash)"
-              mise use --global elixir
+              mise use --global elixir@1.17.3
               eval "$(mise env bash)"
               mise exec -- elixir --version
           - plugin: golang
