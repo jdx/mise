@@ -27,12 +27,16 @@ permissions:
 
 jobs:
   build-ubuntu:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - run: sudo apt-get update && sudo apt-get install minisign
+      - run: echo "${{ secrets.MINISIGN_KEY }}" >minisign.key
+      - run: minisign -WSs "minisign.key" -p "minisign.pub" -m Cargo.toml </dev/zero
+      - run: cat Cargo.toml.minisig
       - uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2
         with:
