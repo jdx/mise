@@ -101,6 +101,6 @@ if [[ "$os" == "windows" ]]; then
 else
   tar -cJf "$basename.tar.xz" mise
   tar -czf "$basename.tar.gz" mise
-  tar -cf --zstd "$basename.tar.zst" mise
+  tar --zstd -cf "$basename.tar.zst" mise
   ls -oh "$basename.tar.xz"
 fi
