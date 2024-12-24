@@ -101,7 +101,7 @@ get_checksum() {
 	os="$(get_os)"
 	arch="$(get_arch)"
 	ext="$(get_ext)"
-	url="https://github.com/jdx/mise/releases/download/${version}/SHASUMS256.txt"
+	url="https://github.com/jdx/mise/releases/download/v${version}/SHASUMS256.txt"
 
 	# For current version use static checksum otherwise
 	# use checksum from releases
@@ -230,12 +230,13 @@ download_file() {
 
 install_mise() {
 	version="${MISE_VERSION:-$MISE_CURRENT_VERSION}"
+	version="${version#v}"
 	os="$(get_os)"
 	arch="$(get_arch)"
 	ext="$(get_ext)"
 	install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
 	install_dir="$(dirname "$install_path")"
-	tarball_url="https://github.com/jdx/mise/releases/download/${version}/mise-${version}-${os}-${arch}.${ext}"
+	tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
 
 	cache_file=$(download_file "$tarball_url")
 	debug "mise-setup: tarball=$cache_file"
