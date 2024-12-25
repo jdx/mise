@@ -1,5 +1,32 @@
 # Changelog
 
+## [2024.12.20](https://github.com/jdx/mise/compare/v2024.12.19..v2024.12.20) - 2024-12-25
+
+### 🚀 Features
+
+- **(hugo)** add extended registry from aqua and keep only one registry with all aliases by [@kilianpaquier](https://github.com/kilianpaquier) in [#3813](https://github.com/jdx/mise/pull/3813)
+- build erlang with all cores by [@jdx](https://github.com/jdx) in [#3802](https://github.com/jdx/mise/pull/3802)
+- Modify install_rubygems_hook to place plugin in site_ruby directory by [@zkhadikov](https://github.com/zkhadikov) in [#3812](https://github.com/jdx/mise/pull/3812)
+
+### 🐛 Bug Fixes
+
+- do not require "v" prefix in mise.run by [@jdx](https://github.com/jdx) in [#3800](https://github.com/jdx/mise/pull/3800)
+- add checksum for macos-x86 by [@jdx](https://github.com/jdx) in [#3815](https://github.com/jdx/mise/pull/3815)
+
+### 📚 Documentation
+
+- Correct link to aqua registry by [@jesse-c](https://github.com/jesse-c) in [#3803](https://github.com/jdx/mise/pull/3803)
+
+### 🧪 Testing
+
+- skip dotnet if not installed by [@jdx](https://github.com/jdx) in [1a663dd](https://github.com/jdx/mise/commit/1a663dd63e17cc08a961b86b5b0b6a1d7e9b2a1f)
+
+### New Contributors
+
+- @zkhadikov made their first contribution in [#3812](https://github.com/jdx/mise/pull/3812)
+- @kilianpaquier made their first contribution in [#3813](https://github.com/jdx/mise/pull/3813)
+- @jesse-c made their first contribution in [#3803](https://github.com/jdx/mise/pull/3803)
+
 ## [2024.12.19](https://github.com/jdx/mise/compare/v2024.12.18..v2024.12.19) - 2024-12-23
 
 ### 🚀 Features
