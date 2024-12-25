@@ -120,6 +120,7 @@ get_checksum() {
 		checksum_linux_arm64_musl_zstd="$MISE_CHECKSUM_LINUX_ARM64_MUSL_ZSTD"
 		checksum_linux_armv7_zstd="$MISE_CHECKSUM_LINUX_ARMV7_ZSTD"
 		checksum_linux_armv7_musl_zstd="$MISE_CHECKSUM_LINUX_ARMV7_MUSL_ZSTD"
+		checksum_macos_x86_64_zstd="$MISE_CHECKSUM_MACOS_X86_64_ZSTD"
 		checksum_macos_arm64_zstd="$MISE_CHECKSUM_MACOS_ARM64_ZSTD"
 
     # TODO: refactor this, it's a bit messy
@@ -141,7 +142,9 @@ get_checksum() {
           warn "no checksum for $os-$arch"
         fi
       elif [ "$os" = "macos" ]; then
-        if [ "$arch" = "arm64" ]; then
+        if [ "$arch" = "x64" ]; then
+          echo "$checksum_macos_x86_64_zstd"
+        elif [ "$arch" = "arm64" ]; then
           echo "$checksum_macos_arm64_zstd"
         else
           warn "no checksum for $os-$arch"
