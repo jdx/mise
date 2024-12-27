@@ -73,6 +73,9 @@ jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea
 version = "0.11"
 backend = "aqua:jedisct1/minisign"
 
+[tools.minisign.checksums]
+"minisign-0.11-linux.tar.gz" = "sha256:f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0"
+
 [tools."npm:markdownlint-cli"]
 version = "0.43.0"
 backend = "npm:markdownlint-cli"
