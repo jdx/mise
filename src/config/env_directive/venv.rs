@@ -78,14 +78,7 @@ impl EnvResults {
                     let extra = SETTINGS
                         .python
                         .uv_venv_create_args
-                        .as_ref()
-                        .and_then(|a| match shell_words::split(a) {
-                            Ok(a) => Some(a),
-                            Err(err) => {
-                                warn!("failed to split uv_venv_create_args: {}", err);
-                                None
-                            }
-                        })
+                        .clone()
                         .or(uv_create_args)
                         .unwrap_or_default();
                     let mut cmd = CmdLineRunner::new("uv").args(["venv", &venv.to_string_lossy()]);
@@ -104,14 +97,7 @@ impl EnvResults {
                     let extra = SETTINGS
                         .python
                         .venv_create_args
-                        .as_ref()
-                        .and_then(|a| match shell_words::split(a) {
-                            Ok(a) => Some(a),
-                            Err(err) => {
-                                warn!("failed to split venv_create_args: {}", err);
-                                None
-                            }
-                        })
+                        .clone()
                         .or(python_create_args)
                         .unwrap_or_default();
 
