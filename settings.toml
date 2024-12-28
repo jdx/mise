@@ -653,7 +653,7 @@ optional = true
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
 docs = """
 * Values:
-  * `true` - always compile with python-build instead of downloading [precompiled binaries](/python.html#precompiled-python-binaries).
+  * `true` - always compile with python-build instead of downloading [precompiled binaries](/lang/python.html#precompiled-python-binaries).
   * `false` - always download precompiled binaries.
   * [undefined] - use precompiled binary if one is available for the current platform, compile otherwise.
 """
