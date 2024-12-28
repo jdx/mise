@@ -10,6 +10,7 @@ use crate::cli::self_update::SelfUpdate;
 #[cfg(not(test))]
 use crate::config::Settings;
 use crate::file::modified_duration;
+use crate::ui::style;
 use crate::{dirs, duration, env, file};
 
 /// Display the version of mise
@@ -83,8 +84,7 @@ pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
 
 fn show_version() -> std::io::Result<()> {
     if console::user_attended() {
-        miseprintln!(
-            "{}",
+        let banner = style::nred(
             r#"
               _                                        __              
    ____ ___  (_)_______        ___  ____        ____  / /___ _________
@@ -93,8 +93,9 @@ fn show_version() -> std::io::Result<()> {
 /_/ /_/ /_/_/____/\___/      \___/_/ /_/     / .___/_/\__,_/\___/\___/
                                             /_/
 "#
-            .trim_start_matches("\n")
+            .trim_start_matches("\n"),
         );
+        miseprintln!("{banner}");
     }
     miseprintln!("{}", *VERSION);
     Ok(())
