@@ -39,7 +39,7 @@ pub fn unset(mut key: &str, local: bool) -> Result<()> {
     if key.contains(".") {
         let (parent_key, child_key) = key.split_once('.').unwrap();
 
-        key = child_key.into();
+        key = child_key;
         settings = settings
             .entry(parent_key)
             .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
