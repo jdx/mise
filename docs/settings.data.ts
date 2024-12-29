@@ -63,7 +63,7 @@ export default {
             settings: [],
           };
           settings[key].settings.push(
-            buildElement(`${key}.${subkey}`, props[subkey]),
+            buildElement(`${key}.${subkey}`, props[subkey])
           );
         }
       }
