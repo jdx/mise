@@ -17,7 +17,7 @@ Aqua is definitely preferred to ubi as it has better UX and more features like s
 mise uses asdf's plugin ecosystem under the hood. These plugins contain shell scripts like
 `bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
 
-See <https://github.com/mise-plugins/registry> for the list of built-in plugins shorthands. See asdf's
+See <https://github.com/jdx/mise/blob/main/registry.toml> for the list of built-in plugins shorthands. See asdf's
 [Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
 more about how they work.
 
