@@ -1,5 +1,35 @@
 # Changelog
 
+## [2024.12.22](https://github.com/jdx/mise/compare/v2024.12.21..v2024.12.22) - 2024-12-30
+
+### 🚀 Features
+
+- colorize banner by [@jdx](https://github.com/jdx) in [ad3a5f0](https://github.com/jdx/mise/commit/ad3a5f040013bad046f2ca3abb9eebc941301368)
+
+### 🐛 Bug Fixes
+
+- add `:` escaping for tasks with multiple colons by [@eitamal](https://github.com/eitamal) in [#3853](https://github.com/jdx/mise/pull/3853)
+- type issue in docs/JSON schema for python_create_args and uv_create_args by [@roele](https://github.com/roele) in [#3855](https://github.com/jdx/mise/pull/3855)
+
+### 📚 Documentation
+
+- **(settings)** fix link to precompiled python binaries by [@scop](https://github.com/scop) in [#3851](https://github.com/jdx/mise/pull/3851)
+- Fix cargo install examples by [@orf](https://github.com/orf) in [#3862](https://github.com/jdx/mise/pull/3862)
+
+### 🔍 Other Changes
+
+- Delete .github/ISSUE_TEMPLATE/blank.md by [@jdx](https://github.com/jdx) in [0a6b692](https://github.com/jdx/mise/commit/0a6b6925107b088d6dd65ae2ed5fc7de6abf6788)
+- Delete .github/ISSUE_TEMPLATE/bug_report.md by [@jdx](https://github.com/jdx) in [951eab7](https://github.com/jdx/mise/commit/951eab7ca534a713cdc470704967057951ff4743)
+- Create config.yml by [@jdx](https://github.com/jdx) in [d167979](https://github.com/jdx/mise/commit/d16797986a770c5340c472726ed05397463a6755)
+- Delete .github/ISSUE_TEMPLATE/feature_request.md by [@jdx](https://github.com/jdx) in [1bb59d9](https://github.com/jdx/mise/commit/1bb59d9f1cbd9667e4afdae41448450a744af0c0)
+- Create preapproved.md by [@jdx](https://github.com/jdx) in [51fa75e](https://github.com/jdx/mise/commit/51fa75e9aa265434d73a469cf44a9af8ba554877)
+- Delete .github/ISSUE_TEMPLATE/preapproved.md by [@jdx](https://github.com/jdx) in [2b94fcf](https://github.com/jdx/mise/commit/2b94fcf2ecc8b91d30addf0f547216a180345ad8)
+
+### New Contributors
+
+- @orf made their first contribution in [#3862](https://github.com/jdx/mise/pull/3862)
+- @eitamal made their first contribution in [#3853](https://github.com/jdx/mise/pull/3853)
+
 ## [2024.12.21](https://github.com/jdx/mise/compare/v2024.12.20..v2024.12.21) - 2024-12-27
 
 ### 🐛 Bug Fixes
