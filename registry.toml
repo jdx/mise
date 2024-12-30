@@ -758,7 +758,8 @@ gotestsum.backends = [
     "asdf:pmalek/mise-gotestsum"
 ]
 graalvm.backends = ["asdf:asdf-community/asdf-graalvm"]
-gradle.backends = ["asdf:rfrancis/asdf-gradle", "vfox:version-fox/vfox-gradle"]
+gradle.backends = ["aqua:gradle/gradle-distributions", "asdf:rfrancis/asdf-gradle", "vfox:version-fox/vfox-gradle"]
+gradle.depends = ["java"]
 gradle-profiler.backends = ["asdf:joschi/asdf-gradle-profiler"]
 grails.backends = ["asdf:weibemoura/asdf-grails"]
 grain.backends = ["asdf:cometkim/asdf-grain"]

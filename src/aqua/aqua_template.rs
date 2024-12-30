@@ -139,6 +139,21 @@ impl Parser<'_> {
                             s = str.to_string();
                         }
                     }
+                    "trimSuffix" => {
+                        let suffix = next_arg(&mut tokens)?;
+                        let str = next_arg(&mut tokens)?;
+                        if let Some(str) = str.strip_suffix(&suffix) {
+                            s = str.to_string();
+                        } else {
+                            s = str.to_string();
+                        }
+                    }
+                    "replace" => {
+                        let from = next_arg(&mut tokens)?;
+                        let to = next_arg(&mut tokens)?;
+                        let str = next_arg(&mut tokens)?;
+                        s = str.replace(&from, &to);
+                    }
                     _ => bail!("unexpected function: {func}"),
                 },
                 Token::Whitespace(_) => {}
@@ -190,7 +205,9 @@ mod tests {
         test_parse_trimv: (r#"trimV "v1.0.0""#, "1.0.0", hashmap!{}),
         test_parse_trim_prefix: (r#"trimPrefix "v" "v1.0.0""#, "1.0.0", hashmap!{}),
         test_parse_trim_prefix2: (r#"trimPrefix "v" "1.0.0""#, "1.0.0", hashmap!{}),
+        test_parse_trim_suffix: (r#"trimSuffix "-v1.0.0" "foo-v1.0.0""#, "foo", hashmap!{}),
         test_parse_pipe: (r#"trimPrefix "foo-" "foo-v1.0.0" | trimV"#, "1.0.0", hashmap!{}),
+        test_parse_replace: (r#"replace "foo" "bar" "foo-bar""#, "bar-bar", hashmap!{}),
     );
 
     #[test]
