@@ -25,6 +25,10 @@ aws s3 cp artifacts/rpm/repodata/ "s3://$AWS_S3_BUCKET/rpm/repodata/" --cache-co
 aws s3 cp artifacts/deb/pool/ "s3://$AWS_S3_BUCKET/deb/pool/" --cache-control "$cache_week" --no-progress --recursive
 aws s3 cp artifacts/deb/dists/ "s3://$AWS_S3_BUCKET/deb/dists/" --cache-control "$cache_day" --no-progress --no-progress --recursive
 
+# delete ancient CLIs
+# since=`date --date '-3 years' +%F 2>/dev/null`
+# aws s3api list-objects-v2 --bucket "$AWS_S3_BUCKET" --query 'Contents[?LastModified < `'"$since"'`]' | jq -r '.[].Key' | grep "^(deb|rpm)\/"
+
 export CLOUDFLARE_ACCOUNT_ID=6e243906ff257b965bcae8025c2fc344
 
 # jdx.dev
