@@ -46,10 +46,10 @@ Slow tests do not run by default or on PRs. They can be manually enabled with `T
 
 ### Windows E2E Tests
 
-:::sh
+```sh
 pwsh e2e-win\run.ps1
 pwsh e2e-win\run.ps1 task # run tests matching `*task*`
-:::
+```
 
 ## Dependencies
 
