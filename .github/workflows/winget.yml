@@ -2,6 +2,7 @@ name: Publish to WinGet
 on:
   release:
     types: [released]
+  workflow_dispatch:
 jobs:
   publish:
     runs-on: windows-latest
@@ -18,6 +19,6 @@ jobs:
       - run: git push -f origin master
       - uses: vedantmgoyal9/winget-releaser@main
         with:
-          identifier: mise.jdx
+          identifier: jdx.mise
           max-versions-to-keep: 5
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
