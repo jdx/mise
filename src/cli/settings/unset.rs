@@ -32,26 +32,26 @@ pub fn unset(mut key: &str, local: bool) -> Result<()> {
     };
     let raw = file::read_to_string(&path)?;
     let mut config: DocumentMut = raw.parse()?;
-    if !config.contains_key("settings") {
-        return Ok(());
+    if let Some(mut settings) = config["settings"].as_table_mut() {
+        if let Some((parent_key, child_key)) = key.split_once('.') {
+            key = child_key;
+            settings = settings
+                .entry(parent_key)
+                .or_insert({
+                    let mut t = toml_edit::Table::new();
+                    t.set_implicit(true);
+                    toml_edit::Item::Table(t)
+                })
+                .as_table_mut()
+                .unwrap();
+        }
+        settings.remove(key);
+        // validate
+        let _: SettingsFile = toml::from_str(&config.to_string())?;
+
+        file::write(&path, config.to_string())?;
     }
-    let mut settings = config["settings"].as_table_mut().unwrap();
-    if key.contains(".") {
-        let (parent_key, child_key) = key.split_once('.').unwrap();
-
-        key = child_key;
-        settings = settings
-            .entry(parent_key)
-            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-            .as_table_mut()
-            .unwrap();
-    }
-    settings.remove(key);
-
-    // validate
-    let _: SettingsFile = toml::from_str(&config.to_string())?;
-
-    file::write(&path, config.to_string())
+    Ok(())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
