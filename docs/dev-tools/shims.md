@@ -83,6 +83,7 @@ but since this is only run once per shell session it's not a big deal.
 ## Shims vs PATH
 
 The following features are affected when shims are used **instead** of PATH activation:
+
 - Env vars defined in mise are only available to mise tools
 - Most hooks won't trigger
 - The unix `which` command points to the shim, obscuring the real executable
