@@ -13,6 +13,11 @@ however that
 will only setup the global tools. It won't modify the environment variables when entering into a
 different project.
 
+::: warning
+`mise activate --shims` does not support all the features of `mise activate`.<br>
+See [shims vs path](/dev-tools/shims.html#shims-vs-path) for more info.
+:::
+
 Also see the [shebang](/tips-and-tricks#shebang) example for a way to make scripts call mise to get
 the runtime.
 That is another way to use mise without activation.

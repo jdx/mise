@@ -60,7 +60,7 @@ end
 :::
 
 This assumes that `mise` is on `PATH`. If it is not, you'll need to use the absolute path (
-e.g.: `eval "$($HOME/.local/bin/mise activate zsh)"`).
+e.g.: `eval "$($HOME/.local/bin/mise activate zsh --shims)"`).
 
 Here is an example showing that VSCode will use `node` provided by `mise`:
 
