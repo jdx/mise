@@ -79,6 +79,11 @@ Now that `mise` is installed, you can optionally activate it or add its [shims](
 - [`mise activate`](/cli/activate) method updates your environment variable and `PATH` every time your prompt is run to ensure you use the correct versions.
 - [Shims](dev-tools/shims.md) are symlinks to the `mise` binary that intercept commands and load the appropriate environment
 
+::: warning
+Shims do not support all the features of `mise activate`.<br>
+See [shims vs path](/dev-tools/shims.html#shims-vs-path) for more info.
+:::
+
 For interactive shells, `mise activate` is recommended. In non-interactive sessions, like CI/CD, IDEs, and scripts, using `shims` might work best. You can also not use any and call `mise exec/run` directly instead.
 See [this guide](dev-tools/shims.md) for more information.
 

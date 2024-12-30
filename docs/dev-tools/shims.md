@@ -4,6 +4,11 @@
 The [beginner's guide](https://dev.to/jdxcode/beginners-guide-to-rtx-ac4), and my [blog post](https://jdx.dev/posts/2024-04-13-shims-how-they-work-in-mise-en-place/) are helpful resources to dive deeper into shims.
 :::
 
+::: warning
+`mise activate --shims` does not support all the features of `mise activate`.<br>
+See [shims vs path](/dev-tools/shims.html#shims-vs-path) for more info.
+:::
+
 ## Introduction
 
 There are two ways for dev tools to be loaded into your shell: `mise activate` and `shims`.
@@ -77,6 +82,11 @@ but since this is only run once per shell session it's not a big deal.
 
 ## Shims vs PATH
 
+The following features are affected when shims are used **instead** of PATH activation:
+- Env vars defined in mise are only available to mise tools
+- Most hooks won't trigger
+- The unix `which` command points to the shim, obscuring the real executable
+
 In general, I recommend using PATH (`mise activate`) instead of shims for _interactive_ situations. The
 way activate works is every time the prompt is displayed, mise-en-place will determine what PATH and other
 env vars should be and export them. This is why it doesn't work well for non-interactive situations like
@@ -102,18 +112,6 @@ Note that shims _will_ work with the inline example above.
 This may be fixable at least for some shells if they support a hook for directory change, however
 some investigation will need to be done. See [#1294](https://github.com/jdx/mise/issues/1294) for details.
 :::
-
-### `which`
-
-`which` is a command that I personally find great value in. shims effectively "break" `which` and
-cause it to show the location of the shim. Of course `mise which` will show the location but I prefer
-the "cleanliness" of running `which node` and getting back a real path with a version number inside of it.
-e.g:
-
-```sh
-$ which node
-/Users/jdx/.mise/installs/node/20/bin/node
-```
 
 ### Env vars and shims
 
@@ -150,6 +148,22 @@ production
 In general, [tasks](/tasks/) are a good way to ensure that the mise environment is always loaded so
 this isn't a problem.
 :::
+
+### Hooks and shims
+
+The [hooks](/hooks.html) `cd`, `enter`, `exit`, and `watch_files` only trigger with `mise activate`. However `preinstall` and `postinstall` still work with shims because they don't require shell integration.
+
+### `which`
+
+`which` is a command that I personally find great value in. shims effectively "break" `which` and
+cause it to show the location of the shim. Of course `mise which` will show the location but I prefer
+the "cleanliness" of running `which node` and getting back a real path with a version number inside of it.
+e.g:
+
+```sh
+$ which node
+/Users/jdx/.mise/installs/node/20/bin/node
+```
 
 ## Hook on `cd`
 

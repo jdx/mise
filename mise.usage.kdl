@@ -94,7 +94,7 @@ Customize status output with `status` settings."#
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
     flag "--shims" help="Use shims instead of modifying PATH\nEffectively the same as:" {
-        long_help "Use shims instead of modifying PATH\nEffectively the same as:\n\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\""
+        long_help "Use shims instead of modifying PATH\nEffectively the same as:\n\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\"\n\n`mise activate --shims` does not support all the features of `mise activate`.\nSee https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information"
     }
     flag "-q --quiet" help="Suppress non-error messages"
     flag "--no-hook-env" help="Do not automatically call hook-env" {
