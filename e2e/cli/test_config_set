@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 echo '[tools.node]
-version = "latest"' > mise.toml
+version = "latest"' >mise.toml
 
 assert "cat mise.toml" '[tools.node]
 version = "latest"'
