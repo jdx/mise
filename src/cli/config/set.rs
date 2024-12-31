@@ -51,14 +51,27 @@ impl ConfigSet {
             let mut config: toml_edit::DocumentMut = std::fs::read_to_string(&file)?.parse()?;
             let mut container = config.as_item_mut();
             let parts = self.key.split('.').collect::<Vec<&str>>();
-            for key in parts.iter().take(parts.len() - 1) {
-                container = container.as_table_mut().unwrap().entry(key).or_insert({
-                    let mut t = toml_edit::Table::new();
-                    t.set_implicit(true);
-                    toml_edit::Item::Table(t)
-                });
-            }
             let last_key = parts.last().unwrap();
+            for (idx, key) in parts.iter().take(parts.len() - 1).enumerate() {
+                container = container
+                    .as_table_like_mut()
+                    .unwrap()
+                    .entry(key)
+                    .or_insert({
+                        let mut t = toml_edit::Table::new();
+                        t.set_implicit(true);
+                        toml_edit::Item::Table(t)
+                    });
+                // if the key is a tool with a simple value, we want to convert it to a inline table preserving the version
+                let is_simple_tool_version =
+                    self.key.starts_with("tools.") && idx == 1 && !container.is_table_like();
+                if is_simple_tool_version {
+                    let mut inline_table = toml_edit::InlineTable::new();
+                    inline_table.insert("version", container.as_value().unwrap().clone());
+                    *container =
+                        toml_edit::Item::Value(toml_edit::Value::InlineTable(inline_table));
+                }
+            }
 
             let type_to_use = match self.type_ {
                 TomlValueTypes::Infer => {
@@ -78,7 +91,10 @@ impl ConfigSet {
                             SettingsType::ListString => TomlValueTypes::List,
                             SettingsType::ListPath => TomlValueTypes::List,
                         },
-                        None => TomlValueTypes::String,
+                        None => match self.value.as_str() {
+                            "true" | "false" => TomlValueTypes::Bool,
+                            _ => TomlValueTypes::String,
+                        },
                     }
                 }
                 _ => self.type_,
@@ -99,7 +115,14 @@ impl ConfigSet {
                 TomlValueTypes::Infer => bail!("Type not found"),
             };
 
-            container.as_table_mut().unwrap().insert(last_key, value);
+            container
+                .as_table_like_mut()
+                .unwrap_or({
+                    let mut t = toml_edit::Table::new();
+                    t.set_implicit(true);
+                    toml_edit::Item::Table(t).as_table_like_mut().unwrap()
+                })
+                .insert(last_key, value);
 
             let raw = config.to_string();
             MiseToml::from_str(&raw, &file)?;
