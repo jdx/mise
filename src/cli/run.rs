@@ -445,7 +445,6 @@ impl Run {
         }
         if let Some(root) = config.project_root.clone().or(task.config_root.clone()) {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
-            env.insert("root".into(), root.display().to_string());
         }
         env.insert("MISE_TASK_NAME".into(), task.name.clone());
         let task_file = task.file.as_ref().unwrap_or(&task.config_source);

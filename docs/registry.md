@@ -305,7 +305,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | goss | [aqua:goss-org/goss](https://github.com/goss-org/goss) [asdf:raimon49/asdf-goss](https://github.com/raimon49/asdf-goss) |
 | gotestsum | [aqua:gotestyourself/gotestsum](https://github.com/gotestyourself/gotestsum) [asdf:pmalek/mise-gotestsum](https://github.com/pmalek/mise-gotestsum) |
 | graalvm | [asdf:asdf-community/asdf-graalvm](https://github.com/asdf-community/asdf-graalvm) |
-| gradle | [asdf:rfrancis/asdf-gradle](https://github.com/rfrancis/asdf-gradle) [vfox:version-fox/vfox-gradle](https://github.com/version-fox/vfox-gradle) |
+| gradle | [asdf:rfrancis/asdf-gradle](https://github.com/rfrancis/asdf-gradle) [vfox:version-fox/vfox-gradle](https://github.com/version-fox/vfox-gradle) [aqua:gradle/gradle-distributions](https://github.com/gradle/gradle-distributions) |
 | gradle-profiler | [asdf:joschi/asdf-gradle-profiler](https://github.com/joschi/asdf-gradle-profiler) |
 | grails | [asdf:weibemoura/asdf-grails](https://github.com/weibemoura/asdf-grails) |
 | grain | [asdf:cometkim/asdf-grain](https://github.com/cometkim/asdf-grain) |

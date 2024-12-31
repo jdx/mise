@@ -1,5 +1,70 @@
 # Changelog
 
+## [2024.12.24](https://github.com/jdx/mise/compare/v2024.12.23..v2024.12.24) - 2024-12-31
+
+### 🐛 Bug Fixes
+
+- switch back to asdf for gradle by [@jdx](https://github.com/jdx) in [cc88dca](https://github.com/jdx/mise/commit/cc88dca50e8e0dac94dbb83d0ce1ebcfc38a1ec4)
+
+### 🔍 Other Changes
+
+- add commented out cleanup of old CLIs by [@jdx](https://github.com/jdx) in [bb7e022](https://github.com/jdx/mise/commit/bb7e022240c0e7019a595d093a33b414119e975f)
+
+## [2024.12.23](https://github.com/jdx/mise/compare/v2024.12.22..v2024.12.23) - 2024-12-30
+
+### 🐛 Bug Fixes
+
+- winget release PRs by [@jdx](https://github.com/jdx) in [9dec542](https://github.com/jdx/mise/commit/9dec542188e731ef357fd74339dd08ac005cb9e3)
+- mise settings unset does not seem to work by [@roele](https://github.com/roele) in [#3867](https://github.com/jdx/mise/pull/3867)
+- gradle aqua package by [@jdx](https://github.com/jdx) in [#3880](https://github.com/jdx/mise/pull/3880)
+- **breaking** remove `root` env var in tasks by [@jdx](https://github.com/jdx) in [#3884](https://github.com/jdx/mise/pull/3884)
+
+### 📚 Documentation
+
+- syntax in `mise watch` by [@jdx](https://github.com/jdx) in [beab480](https://github.com/jdx/mise/commit/beab48029b3e7a91047012b655f3efe4fd722acf)
+- Update registry link by [@bmulholland](https://github.com/bmulholland) in [#3864](https://github.com/jdx/mise/pull/3864)
+- clarify shims behaviour by [@syhol](https://github.com/syhol) in [#3881](https://github.com/jdx/mise/pull/3881)
+
+### 🔍 Other Changes
+
+- Fix sh code block by [@o-l-a-v](https://github.com/o-l-a-v) in [#3876](https://github.com/jdx/mise/pull/3876)
+- remove unused versioned tarballs from mise.jdx.dev by [@jdx](https://github.com/jdx) in [48f1021](https://github.com/jdx/mise/commit/48f1021048646061e7cd85d9f9969946b00962a6)
+- trim newline in banner by [@jdx](https://github.com/jdx) in [c8f2c90](https://github.com/jdx/mise/commit/c8f2c90111c5d20fe4586d59eb66f3bb2f8cfd9a)
+
+### New Contributors
+
+- @bmulholland made their first contribution in [#3864](https://github.com/jdx/mise/pull/3864)
+
+## [2024.12.22](https://github.com/jdx/mise/compare/v2024.12.21..v2024.12.22) - 2024-12-30
+
+### 🚀 Features
+
+- colorize banner by [@jdx](https://github.com/jdx) in [ad3a5f0](https://github.com/jdx/mise/commit/ad3a5f040013bad046f2ca3abb9eebc941301368)
+
+### 🐛 Bug Fixes
+
+- add `:` escaping for tasks with multiple colons by [@eitamal](https://github.com/eitamal) in [#3853](https://github.com/jdx/mise/pull/3853)
+- type issue in docs/JSON schema for python_create_args and uv_create_args by [@roele](https://github.com/roele) in [#3855](https://github.com/jdx/mise/pull/3855)
+
+### 📚 Documentation
+
+- **(settings)** fix link to precompiled python binaries by [@scop](https://github.com/scop) in [#3851](https://github.com/jdx/mise/pull/3851)
+- Fix cargo install examples by [@orf](https://github.com/orf) in [#3862](https://github.com/jdx/mise/pull/3862)
+
+### 🔍 Other Changes
+
+- Delete .github/ISSUE_TEMPLATE/blank.md by [@jdx](https://github.com/jdx) in [0a6b692](https://github.com/jdx/mise/commit/0a6b6925107b088d6dd65ae2ed5fc7de6abf6788)
+- Delete .github/ISSUE_TEMPLATE/bug_report.md by [@jdx](https://github.com/jdx) in [951eab7](https://github.com/jdx/mise/commit/951eab7ca534a713cdc470704967057951ff4743)
+- Create config.yml by [@jdx](https://github.com/jdx) in [d167979](https://github.com/jdx/mise/commit/d16797986a770c5340c472726ed05397463a6755)
+- Delete .github/ISSUE_TEMPLATE/feature_request.md by [@jdx](https://github.com/jdx) in [1bb59d9](https://github.com/jdx/mise/commit/1bb59d9f1cbd9667e4afdae41448450a744af0c0)
+- Create preapproved.md by [@jdx](https://github.com/jdx) in [51fa75e](https://github.com/jdx/mise/commit/51fa75e9aa265434d73a469cf44a9af8ba554877)
+- Delete .github/ISSUE_TEMPLATE/preapproved.md by [@jdx](https://github.com/jdx) in [2b94fcf](https://github.com/jdx/mise/commit/2b94fcf2ecc8b91d30addf0f547216a180345ad8)
+
+### New Contributors
+
+- @orf made their first contribution in [#3862](https://github.com/jdx/mise/pull/3862)
+- @eitamal made their first contribution in [#3853](https://github.com/jdx/mise/pull/3853)
+
 ## [2024.12.21](https://github.com/jdx/mise/compare/v2024.12.20..v2024.12.21) - 2024-12-27
 
 ### 🐛 Bug Fixes

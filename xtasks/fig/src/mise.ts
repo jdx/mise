@@ -3443,7 +3443,7 @@ const completionSpec: Fig.Spec = {
             "args": [
                 {
                     "name": "task",
-                    "description": "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2",
+                    "description": "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`",
                     "isOptional": true,
                     "generators": simpleTaskGenerator
                 },

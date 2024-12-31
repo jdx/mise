@@ -758,7 +758,13 @@ gotestsum.backends = [
     "asdf:pmalek/mise-gotestsum"
 ]
 graalvm.backends = ["asdf:asdf-community/asdf-graalvm"]
-gradle.backends = ["asdf:rfrancis/asdf-gradle", "vfox:version-fox/vfox-gradle"]
+gradle.backends = [
+    "asdf:rfrancis/asdf-gradle",
+    "vfox:version-fox/vfox-gradle",
+    "aqua:gradle/gradle-distributions"
+]
+gradle.depends = ["java"]
+# gradle.test = ["gradle -V", "Gradle {{version}}"] TODO: make test-tool use dependencies
 gradle-profiler.backends = ["asdf:joschi/asdf-gradle-profiler"]
 grails.backends = ["asdf:weibemoura/asdf-grails"]
 grain.backends = ["asdf:cometkim/asdf-grain"]
