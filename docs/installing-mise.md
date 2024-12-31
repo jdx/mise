@@ -294,7 +294,7 @@ See [about_Profiles](https://learn.microsoft.com/en-us/powershell/module/microso
 You will need to first create the parent directory if it does not exist.
 :::
 
-```pwsh
+```powershell
 echo '~/.local/bin/mise activate mise activate pwsh | Out-String | Invoke-Expression' >> $HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
 ```
 
