@@ -14,11 +14,14 @@ use crate::toolset::ToolVersion;
 use crate::{file, github, minisign};
 use eyre::{bail, ContextCompat, Result};
 use indexmap::IndexSet;
+use base64::prelude::*;
 use itertools::Itertools;
 use regex::Regex;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
+use sigstore::cosign::client::Client;
+use sigstore::cosign::CosignCapabilities;
 
 #[derive(Debug)]
 pub struct AquaBackend {
@@ -245,8 +248,11 @@ impl AquaBackend {
     ) -> Result<()> {
         self.verify_slsa(ctx, tv, pkg, v, filename)?;
         self.verify_minisign(ctx, tv, pkg, v, filename)?;
+        dbg!(&tv);
         if !tv.checksums.contains_key(filename) {
             if let Some(checksum) = &pkg.checksum {
+                dbg!(&checksum);
+                dbg!(&checksum.enabled());
                 if checksum.enabled() {
                     let url = match checksum._type() {
                         AquaChecksumType::GithubRelease => {
@@ -433,13 +439,38 @@ impl AquaBackend {
         tv: &ToolVersion,
         checksum_path: &Path,
     ) -> Result<()> {
+        dbg!(&pkg.checksum);
         if !SETTINGS.aqua.cosign {
             return Ok(());
         }
+        dbg!("X");
         if let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref()) {
+            dbg!(&cosign);
             if cosign.enabled == Some(false) {
                 debug!("cosign is disabled for {tv}");
                 return Ok(());
+            }
+            let mut certificate = None;
+            let mut signature = None;
+            if let Some(asset) = &cosign.certificate {
+                let url = asset.arg(pkg, v)?;
+                let cert_input = HTTP.get_text(url)?;
+                certificate = match BASE64_STANDARD.decode(cert_input.as_bytes()) {
+                    Ok(c) => Some(String::from_utf8(c)?),
+                    Err(_) => Some(cert_input),
+                };
+                dbg!(&certificate);
+            }
+            if let Some(asset) = &cosign.signature {
+                let url = asset.arg(pkg, v)?;
+                signature = Some(HTTP.get_text(url)?);
+                dbg!(&signature);
+            }
+            if let (Some(certificate), Some(signature)) = (certificate, signature) {
+                let blob = file::read(checksum_path)?;
+                dbg!(&certificate, signature.trim(), &String::from_utf8(blob.clone())?);
+                Client::verify_blob(&certificate, signature.trim(), &blob)?;
+                panic!("yay");
             }
             if let Some(cosign_bin) = self.dependency_which("cosign") {
                 ctx.pr
@@ -472,7 +503,9 @@ impl AquaBackend {
                     cmd = cmd.arg(opt);
                 }
                 cmd = cmd.with_pr(&ctx.pr);
+                dbg!(&cmd);
                 cmd.execute()?;
+                // let public_key = cosign.public_key(pkg, v)?;
             } else {
                 warn!("{tv} can be verified with cosign but cosign is not installed");
             }

@@ -14,7 +14,6 @@ cargo-binstall = "1.10.17"
 "cargo:git-cliff" = "latest"
 "cargo:toml-cli" = "latest"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
-cosign = "latest"
 "jq" = "latest"
 minisign = "latest"
 "npm:markdownlint-cli" = "latest"

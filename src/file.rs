@@ -206,11 +206,11 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
 
 /// replaces $HOME with "~"
 pub fn display_path<P: AsRef<Path>>(path: P) -> String {
-    let home = dirs::HOME.to_string_lossy();
-    let path = path.as_ref();
-    match cfg!(unix) && path.starts_with(home.as_ref()) && home != "/" {
-        true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
-        false => path.to_string_lossy().to_string(),
+    let home = dirs::HOME.to_string_lossy().to_string();
+    let path = path.as_ref().to_string_lossy().to_string();
+    match cfg!(unix) && path.starts_with(&home) && home != "/" {
+        true => path.replacen(&home, "~", 1),
+        false => path
     }
 }
 

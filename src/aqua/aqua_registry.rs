@@ -119,6 +119,8 @@ pub struct AquaCosign {
     pub signature: Option<AquaCosignSignature>,
     pub key: Option<AquaCosignSignature>,
     pub certificate: Option<AquaCosignSignature>,
+    pub certificate_oidc_issuer: Option<String>,
+    pub certificate_identity_regexp: Option<String>,
     opts: Vec<String>,
 }
 
@@ -597,6 +599,44 @@ impl AquaCosign {
         }
         if !other.opts.is_empty() {
             self.opts = other.opts.clone();
+        }
+        for (k, v) in self.opts.iter().tuples() {
+            match k.as_str() {
+                "--certificate-oidc-issuer" => {
+                    self.certificate_oidc_issuer = Some(v.to_string());
+                },
+                "--certificate-identity-regexp" => {
+                    self.certificate_identity_regexp = Some(v.to_string());
+                },
+                "--certificate" => {
+                    self.certificate = Some(AquaCosignSignature {
+                        r#type: Some("http".to_string()),
+                        url: Some(v.to_string()),
+                        asset: None,
+                        repo_owner: None,
+                        repo_name: None,
+                    });
+                }
+                "--key" => {
+                    self.key = Some(AquaCosignSignature {
+                        r#type: Some("http".to_string()),
+                        url: Some(v.to_string()),
+                        asset: None,
+                        repo_owner: None,
+                        repo_name: None,
+                    });
+                }
+                "--signature" => {
+                    self.signature = Some(AquaCosignSignature {
+                        r#type: Some("http".to_string()),
+                        url: Some(v.to_string()),
+                        asset: None,
+                        repo_owner: None,
+                        repo_name: None,
+                    });
+                }
+                _ => {}
+            }
         }
     }
 }
