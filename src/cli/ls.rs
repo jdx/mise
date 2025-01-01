@@ -295,11 +295,16 @@ impl From<RuntimeRow<'_>> for JSONToolVersion {
                 Some(source.as_json())
             },
             installed: !matches!(vs, VersionStatus::Missing(_)),
-            active: matches!(vs, VersionStatus::Active(_, _)),
+            active: match vs {
+                VersionStatus::Active(_, _) => true,
+                VersionStatus::Symlink(_, active) => active,
+                _ => false,
+            },
         }
     }
 }
 
+#[derive(Debug)]
 enum VersionStatus {
     Active(String, bool),
     Inactive(String),
