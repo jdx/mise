@@ -1280,7 +1280,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62d87141875739c4eb2b6a6e0c6dbd6f877ff3336953cdbf850b3dc920d3bf2f"
 dependencies = [
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "log",
  "once_cell",
  "pest",
@@ -1346,9 +1346,9 @@ dependencies = [
 
 [[package]]
 name = "fixedbitset"
-version = "0.5.7"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
+checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "flate2"
@@ -1647,7 +1647,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http",
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -1665,6 +1665,12 @@ name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+
+[[package]]
+name = "hashbrown"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf151400ff0baff5465007dd2f3e717f3fe502074ca563069ce3a6629d07b289"
 
 [[package]]
 name = "heck"
@@ -2154,12 +2160,12 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.5.0"
+version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68b900aa2f7301e21c36462b170ee99994de34dff39a4a6a528e80e7376d07e5"
+checksum = "62f822373a4fe84d4bb149bf54e584a7f4abec90e072ed49cda0edea5b95471f"
 dependencies = [
  "equivalent",
- "hashbrown 0.14.5",
+ "hashbrown 0.15.2",
  "serde",
 ]
 
@@ -2614,7 +2620,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2024.12.24"
+version = "2025.1.0"
 dependencies = [
  "base64 0.22.1",
  "built",
@@ -2651,7 +2657,7 @@ dependencies = [
  "homedir",
  "humantime",
  "indenter",
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "indicatif",
  "indoc",
  "insta",
@@ -3094,12 +3100,12 @@ dependencies = [
 
 [[package]]
 name = "petgraph"
-version = "0.6.6"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c94eb96835f05ec51384814c9b2daef83f68486f67a0e2e9680e0f698dca808e"
+checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
  "fixedbitset",
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
 ]
 
 [[package]]
@@ -3489,9 +3495,9 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "reqwest"
-version = "0.12.11"
+version = "0.12.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fe060fe50f524be480214aba758c71f99f90ee8c83c5a36b5e9e1d568eb4eb3"
+checksum = "43e734407157c3c2034e0258f5e4473ddb361b1e85f95a66690d67264d7cd1da"
 dependencies = [
  "async-compression",
  "base64 0.22.1",
@@ -3599,7 +3605,7 @@ dependencies = [
  "generic-array",
  "hex",
  "impl-tools",
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "rand",
  "regex",
  "serde",
@@ -3972,7 +3978,7 @@ version = "1.0.134"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d00f4175c42ee48b15416f6193a959ba3a0d67fc699a0db9ad12df9f83991c7d"
 dependencies = [
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "itoa",
  "memchr",
  "ryu",
@@ -4020,7 +4026,7 @@ dependencies = [
  "chrono",
  "hex",
  "indexmap 1.9.3",
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "serde",
  "serde_derive",
  "serde_json",
@@ -4046,7 +4052,7 @@ version = "0.9.34+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
 dependencies = [
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "itoa",
  "ryu",
  "serde",
@@ -4720,7 +4726,7 @@ version = "0.22.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ae48d6208a266e853d946088ed816055e556cc6028c5e8e2b84d9fa5dd7c7f5"
 dependencies = [
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "serde",
  "serde_spanned",
  "toml_datetime",
@@ -5028,7 +5034,7 @@ checksum = "ab923f719b3048bd1cd2fb738fca978ed2a60756ce15cdad639fc40645adad9c"
 dependencies = [
  "clap",
  "heck 0.5.0",
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "itertools 0.13.0",
  "kdl",
  "log",
@@ -5098,7 +5104,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4c44e4ec114bba1eeed55bc3a47ced72545cd2ffa04ce0ec0bdba1fb535807d"
 dependencies = [
  "homedir",
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "itertools 0.13.0",
  "log",
  "mlua",
@@ -5558,9 +5564,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winnow"
-version = "0.6.20"
+version = "0.6.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36c1fec1a2bb5866f07c25f68c26e565c4c200aebb96d7e55710c19d3e8ac49b"
+checksum = "e6f5bb5257f2407a5425c6e749bfd9692192a73e70a6060516ac04f889087d68"
 dependencies = [
  "memchr",
 ]
@@ -5769,7 +5775,7 @@ dependencies = [
  "displaydoc",
  "flate2",
  "hmac",
- "indexmap 2.5.0",
+ "indexmap 2.7.0",
  "lzma-rs",
  "memchr",
  "pbkdf2",
