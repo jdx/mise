@@ -9,7 +9,7 @@
 1password.backends = ["asdf:NeoHsu/asdf-1password-cli", "aqua:1password/cli"]
 # 1password.test = ["op --version", "{{version}}"] fails on CI for some reason
 aapt2.backends = ["asdf:ronnnnn/asdf-aapt2"]
-aapt2.test = ["aapt2 version", "Android Asset Packaging Tool (aapt)"]
+aapt2.test = ["aapt2 version 2>&1", "Android Asset Packaging Tool (aapt)"]
 act.backends = ["aqua:nektos/act", "ubi:nektos/act", "asdf:gr1m0h/asdf-act"]
 act.test = ["act --version", "act version {{version}}"]
 action-validator.backends = [
@@ -43,7 +43,7 @@ age-plugin-yubikey.backends = [
 # test seems to fail on linux
 # age-plugin-yubikey.test = ["age-plugin-yubikey --version", "age-plugin-yubikey {{version}}"]
 agebox.backends = ["ubi:slok/agebox", "asdf:slok/asdf-agebox"]
-agebox.test = ["agebox --version", "v{{version}}"]
+agebox.test = ["agebox --version 2>&1", "v{{version}}"]
 air.backends = ["aqua:air-verse/air", "asdf:pdemagny/asdf-air"]
 air.test = ["air -v", "{{version}}"]
 aks-engine.backends = [
@@ -56,7 +56,7 @@ allure.test = ["allure --version", "{{version}}"]
 alp.backends = ["aqua:tkuchiki/alp", "asdf:asdf-community/asdf-alp"]
 alp.test = ["alp --version", "{{version}}"]
 amass.backends = ["ubi:owasp-amass/amass", "asdf:dhoeric/asdf-amass"]
-amass.test = ["amass -version", "v{{version}}"]
+amass.test = ["amass -version 2>&1", "v{{version}}"]
 amazon-ecr-credential-helper.backends = [
     "aqua:awslabs/amazon-ecr-credential-helper",
     "asdf:dex4er/asdf-amazon-ecr-credential-helper"
@@ -298,7 +298,7 @@ choose.backends = [
 ]
 chromedriver.backends = ["asdf:schinckel/asdf-chromedriver"]
 cidr-merger.backends = ["ubi:zhanhb/cidr-merger", "asdf:ORCID/asdf-cidr-merger"]
-cidr-merger.test = ["cidr-merger --version", "cidr merger {{version}}"]
+cidr-merger.test = ["cidr-merger --version 2>&1", "cidr merger {{version}}"]
 cidrchk.backends = ["ubi:mhausenblas/cidrchk", "asdf:ORCID/asdf-cidrchk"]
 cidrchk.test = ["cidrchk --version", "{{version}},"]
 cilium-cli.backends = [
@@ -741,7 +741,7 @@ gomigrate.backends = [
     "aqua:golang-migrate/migrate",
     "asdf:joschi/asdf-gomigrate"
 ]
-gomigrate.test = ["migrate --version", "{{version}}"]
+gomigrate.test = ["migrate --version 2>&1", "{{version}}"]
 gomplate.backends = [
     "aqua:hairyhenderson/gomplate",
     "asdf:sneakybeaky/asdf-gomplate"
@@ -758,13 +758,9 @@ gotestsum.backends = [
     "asdf:pmalek/mise-gotestsum"
 ]
 graalvm.backends = ["asdf:asdf-community/asdf-graalvm"]
-gradle.backends = [
-    "asdf:rfrancis/asdf-gradle",
-    "vfox:version-fox/vfox-gradle",
-    "aqua:gradle/gradle-distributions"
-]
+gradle.backends = ["aqua:gradle/gradle", "vfox:version-fox/vfox-gradle"]
 gradle.depends = ["java"]
-# gradle.test = ["gradle -V", "Gradle {{version}}"] TODO: make test-tool use dependencies
+gradle.test = ["gradle -V", "Gradle"]
 gradle-profiler.backends = ["asdf:joschi/asdf-gradle-profiler"]
 grails.backends = ["asdf:weibemoura/asdf-grails"]
 grain.backends = ["asdf:cometkim/asdf-grain"]
@@ -829,7 +825,7 @@ hls.backends = ["asdf:sestrella/asdf-ghcup"]
 hostctl.backends = ["aqua:guumaster/hostctl", "asdf:svenluijten/asdf-hostctl"]
 httpie-go.backends = ["aqua:nojima/httpie-go", "asdf:abatilo/asdf-httpie-go"]
 httpie-go.os = ["linux", "macos"]
-httpie-go.test = ["ht --version", "httpie-go {{version}}"]
+httpie-go.test = ["ht --version 2>&1", "httpie-go {{version}}"]
 hub.backends = ["aqua:mislav/hub", "asdf:mise-plugins/asdf-hub"]
 hugo.backends = [
     "aqua:gohugoio/hugo",
@@ -867,7 +863,7 @@ istioctl.test = ["istioctl version", "client version: {{version}}"]
 janet.backends = ["asdf:Jakski/asdf-janet"]
 java.backends = ["core:java"]
 jb.backends = ["aqua:jsonnet-bundler/jsonnet-bundler", "asdf:beardix/asdf-jb"]
-jb.test = ["jb --version", "v{{version}}"]
+jb.test = ["jb --version 2>&1", "v{{version}}"]
 jbang.backends = ["asdf:jbangdev/jbang-asdf"]
 jfrog-cli.backends = ["asdf:LozanoMatheus/asdf-jfrog-cli"]
 jib.backends = ["asdf:joschi/asdf-jib"]
@@ -1014,7 +1010,7 @@ kubent.backends = [
     "aqua:doitintl/kube-no-trouble",
     "asdf:virtualstaticvoid/asdf-kubent"
 ]
-kubent.test = ["kubent --version", "version {{version}}"]
+kubent.test = ["kubent --version 2>&1", "version {{version}}"]
 kubergrunt.backends = [
     "aqua:gruntwork-io/kubergrunt",
     "asdf:NeoHsu/asdf-kubergrunt"
