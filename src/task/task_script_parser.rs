@@ -4,7 +4,7 @@ use crate::exit::exit;
 use crate::shell::ShellType;
 use crate::task::Task;
 use crate::tera::get_tera;
-use eyre::Result;
+use eyre::{Context, Result};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::iter::once;
@@ -278,8 +278,11 @@ impl TaskScriptParser {
         tera_ctx.insert("env", &env);
         let scripts = scripts
             .iter()
-            .map(|s| tera.render_str(s.trim(), &tera_ctx).unwrap())
-            .collect();
+            .map(|s| {
+                tera.render_str(s.trim(), &tera_ctx)
+                    .wrap_err_with(|| s.to_string())
+            })
+            .collect::<Result<Vec<String>>>()?;
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
         let arg_order = arg_order.lock().unwrap();
