@@ -26,23 +26,18 @@ In terms of performance, mise is still faster than the go asdf, however the diff
 
 ![GgAQJJmWIAAUlec](https://github.com/user-attachments/assets/05689925-396d-41f3-bcd1-7b3b1bf6c2fa)
 
-I don't think performance is a good enough reason to switch though now that asdf-go is a thing. It's a reason, but it's a minor one. The improved security in mise, better DX, and lack of reliance on shims.
+I don't think performance is a good enough reason to switch though now that asdf-go is a thing. It's a reason, but it's a minor one. The improved security in mise, better DX, and lack of reliance on shims are all more important than performance.
 
 Given they went through the trouble of rewriting asdf—that's also an indication they want to keep working on it (which is awesome that they're doing that btw). This does mean that some of what's written here may go out of date if they address some of the problems
 with asdf.
 
 ## Supply chain security
 
-asdf plugins are not very secure. This is explained on the [asdf backend page](https://mise.jdx.dev/dev-tools/backends/asdf.html), but the quick explanation is that asdf plugins involve shell code which can essentially do anything on your machine. It's dangerous code. What's worse is asdf plugins are rarely written by the tool vendor (who you need to trust anyway to use the tool), which means for every asdf plugin you use you'll be trusting a random developer to not go rogue and to not get hacked themselves and publish changes to a plugin with an exploit.
+asdf plugins are not secure. This is explained in [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md), but the quick explanation is that asdf plugins involve shell code which can essentially do anything on your machine. It's dangerous code. What's worse is asdf plugins are rarely written by the tool vendor (who you need to trust anyway to use the tool), which means for every asdf plugin you use you'll be trusting a random developer to not go rogue and to not get hacked themselves and publish changes to a plugin with an exploit.
 
-While mise still uses asdf plugins for some tools, the count is (as of this writing, 2025-01-01) ~35% of tools in the default mise registry use asdf as the primary backend. aqua/ubi are the preferred backends, however not all tools can work with aqua or ubi—it's basically just tools that have GitHub Releases of precompiled binaries that can. If something needs to be compiled or uses features like custom env vars, it needs to use an asdf plugin. (vfox can also be used, but vfox suffers from the same supply-chain issue as asdf).
+mise still uses asdf plugins for some tools, but we're actively reducing that count as well as moving things into the [mise-plugins org](https://github.com/mise-plugins). It looks like asdf has a similar model with their asdf-community org, but it isn't. asdf gives plugin authors commit access to their plugin in [asdf-community](https://github.com/asdf-community) when they move it in, which I feel like defeats the purpose of having a dedicated org in the first place. By the end of 2025 I would like for there to no longer be any asdf plugins in the registry that aren't owned by me.
 
-We've been working on reducing this number and hopefully by the end of 2025 we will have either moved everything over to safer backends or forked/moved all the asdf plugins into the [mise-plugins org](https://github.com/mise-plugins). The mise-plugins org also solves this issue for us
-since that org is owned by me—a developer going rogue would need to submit a PR containing an exploit that I would need to first accept. Of course, that's [no guarantee nothing could slip in](https://www.puppet.com/blog/xz-backdoor), but it's certainly better than the wild west of asdf plugins. Given that asdf plugins rarely need patches of any kind it's relatively easy for me to audit each
-change.
-
-Most core tools and some aqua tools have support for extra security features like gpg verification, slsa-verify, cosign, or minisign. I try to adopt whatever the vendor provides to validate what gets fetched is genuine. This is an area that mise will perpetually need contributors helping though. If you notice a tool doesn't have any verification (you can see mise verifying during installs if you set `--verbose`), see if the vendor offers something like gpg signed checksums or slsa provenance. If so, it should just be a matter of
-adding [configuration](https://aquaproj.github.io/docs/reference/security/cosign-slsa/) to the [aqua-registry](https://github.com/aquaproj/aqua-registry).
+I've also been adopting extra security verification steps when vendors offer that ability such as gpg verification on node installs, or slsa-verify/cosign checks on some aqua tools.
 
 ## UX
 
