@@ -123,7 +123,7 @@ sha2 = "0.10"
 shell-escape = "0.1"
 shell-words = "1"
 signal-hook = "0.3"
-sigstore = { version = "0.10.0", default-features = true}
+sigstore = { version = "0.10.0", default-features = true }
 siphasher = "1"
 strum = { version = "0.26", features = ["derive"] }
 sys-info = "0.9"
@@ -182,8 +182,17 @@ test-log = "0.2"
 
 [features]
 default = ["native-tls", "vfox/vendored-lua"]
-native-tls = ["reqwest/native-tls", "ubi/native-tls", "sigstore/registry-native-tls"]
-rustls = ["reqwest/rustls-tls", "self_update/rustls", "ubi/rustls-tls", "sigstore/registry-rustls-tls"]
+native-tls = [
+  "reqwest/native-tls",
+  "ubi/native-tls",
+  "sigstore/registry-native-tls",
+]
+rustls = [
+  "reqwest/rustls-tls",
+  "self_update/rustls",
+  "ubi/rustls-tls",
+  "sigstore/registry-rustls-tls",
+]
 rustls-native-roots = [
   "reqwest/rustls-tls-native-roots",
   "self_update/rustls",

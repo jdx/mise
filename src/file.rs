@@ -210,7 +210,7 @@ pub fn display_path<P: AsRef<Path>>(path: P) -> String {
     let path = path.as_ref().to_string_lossy().to_string();
     match cfg!(unix) && path.starts_with(&home) && home != "/" {
         true => path.replacen(&home, "~", 1),
-        false => path
+        false => path,
     }
 }
 

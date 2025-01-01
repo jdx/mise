@@ -12,16 +12,16 @@ use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{file, github, minisign};
+use base64::prelude::*;
 use eyre::{bail, ContextCompat, Result};
 use indexmap::IndexSet;
-use base64::prelude::*;
 use itertools::Itertools;
 use regex::Regex;
+use sigstore::cosign::client::Client;
+use sigstore::cosign::CosignCapabilities;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
-use sigstore::cosign::client::Client;
-use sigstore::cosign::CosignCapabilities;
 
 #[derive(Debug)]
 pub struct AquaBackend {
@@ -468,7 +468,11 @@ impl AquaBackend {
             }
             if let (Some(certificate), Some(signature)) = (certificate, signature) {
                 let blob = file::read(checksum_path)?;
-                dbg!(&certificate, signature.trim(), &String::from_utf8(blob.clone())?);
+                dbg!(
+                    &certificate,
+                    signature.trim(),
+                    &String::from_utf8(blob.clone())?
+                );
                 Client::verify_blob(&certificate, signature.trim(), &blob)?;
                 panic!("yay");
             }

@@ -604,10 +604,10 @@ impl AquaCosign {
             match k.as_str() {
                 "--certificate-oidc-issuer" => {
                     self.certificate_oidc_issuer = Some(v.to_string());
-                },
+                }
                 "--certificate-identity-regexp" => {
                     self.certificate_identity_regexp = Some(v.to_string());
-                },
+                }
                 "--certificate" => {
                     self.certificate = Some(AquaCosignSignature {
                         r#type: Some("http".to_string()),
