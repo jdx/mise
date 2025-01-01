@@ -1177,6 +1177,12 @@ By default, this command modifies `mise.toml` in the current directory."
     arg "[ENV_VARS]..." help="Environment variable(s) to set\ne.g.: NODE_ENV=production" required=false var=true
 }
 cmd "settings" help="Manage settings" {
+    long_help r"Show current settings
+
+This is the contents of ~/.config/mise/config.toml
+
+Note that aliases are also stored in this file
+but managed separately with `mise aliases`"
     after_long_help r#"Examples:
     # list all settings
     $ mise settings
@@ -1191,11 +1197,12 @@ cmd "settings" help="Manage settings" {
     $ mise settings node.mirror_url https://npm.taobao.org/mirrors/node
 "#
     flag "-a --all" help="List all settings"
+    flag "--complete" help="Print all settings with descriptions for shell completions" hide=true
     flag "-l --local" help="Use the local config file instead of the global one" global=true
     flag "-J --json" help="Output in JSON format"
     flag "--json-extended" help="Output in JSON format with sources"
     flag "-T --toml" help="Output in TOML format"
-    arg "[SETTING]" help="Setting name to get/set" required=false
+    arg "[SETTING]" help="Name of setting" required=false
     arg "[VALUE]" help="Setting value to set" required=false
     cmd "add" help="Adds a setting to the configuration file" {
         long_help r"Adds a setting to the configuration file
@@ -1243,12 +1250,13 @@ but managed separately with `mise aliases`"
     default_packages_file = "~/.default-python-packages"
     ...
 "#
-        flag "-a --all" help="Display settings set to the default"
-        flag "-l --local" help="Use the local config file instead of the global one"
+        flag "-a --all" help="List all settings"
+        flag "--complete" help="Print all settings with descriptions for shell completions" hide=true
+        flag "-l --local" help="Use the local config file instead of the global one" global=true
         flag "-J --json" help="Output in JSON format"
         flag "--json-extended" help="Output in JSON format with sources"
         flag "-T --toml" help="Output in TOML format"
-        arg "[SETTING]" help="List keys under this key" required=false
+        arg "[SETTING]" help="Name of setting" required=false
     }
     cmd "set" help="Add/update a setting" {
         alias "create"
@@ -1353,6 +1361,7 @@ cmd "tasks" help="Manage tasks" {
     $ mise tasks ls
 "
     flag "--no-header" help="Do not print table header" global=true
+    flag "--complete" help="Display tasks for usage completion" hide=true
     flag "-x --extended" help="Show all columns" global=true
     flag "--hidden" help="Show hidden tasks" global=true
     flag "--sort" help="Sort by column. Default is name." global=true {
@@ -1484,6 +1493,7 @@ tasks will override the global ones if they have the same name."
     $ mise tasks ls
 "
         flag "--no-header" help="Do not print table header" global=true
+        flag "--complete" help="Display tasks for usage completion" hide=true
         flag "-x --extended" help="Show all columns" global=true
         flag "--hidden" help="Show hidden tasks" global=true
         flag "--sort" help="Sort by column. Default is name." global=true {
@@ -2058,10 +2068,8 @@ complete "config_file" type="file"
 complete "new_plugin" run="mise plugins --all"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
-complete "setting" run="mise settings | awk '{print $1}'"
-complete "task" run=r#"
-mise tasks --json | jq -r '.[] | (.name | gsub(":"; "\\:")) + ":" + (.description | gsub(":"; "\\:"))'
-"# descriptions=true
+complete "setting" run="mise settings --complete" descriptions=true
+complete "task" run="mise tasks ls --complete" descriptions=true
 
 complete "tool@version" run=r#"
 cur="{{words[CURRENT]}}"

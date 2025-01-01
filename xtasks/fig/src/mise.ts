@@ -2002,7 +2002,7 @@ const completionSpec: Fig.Spec = {
                                 "-a",
                                 "--all"
                             ],
-                            "description": "Display settings set to the default",
+                            "description": "List all settings",
                             "isRepeatable": false
                         },
                         {
@@ -2037,7 +2037,7 @@ const completionSpec: Fig.Spec = {
                     ],
                     "args": {
                         "name": "setting",
-                        "description": "List keys under this key",
+                        "description": "Name of setting",
                         "isOptional": true,
                         "generators": settingsGenerator
                     }
@@ -2137,7 +2137,7 @@ const completionSpec: Fig.Spec = {
             "args": [
                 {
                     "name": "setting",
-                    "description": "Setting name to get/set",
+                    "description": "Name of setting",
                     "isOptional": true,
                     "generators": settingsGenerator
                 },

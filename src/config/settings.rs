@@ -40,7 +40,7 @@ pub enum SettingsType {
 pub struct SettingsMeta {
     // pub key: String,
     pub type_: SettingsType,
-    // pub description: String,
+    pub description: &'static str,
 }
 
 #[derive(

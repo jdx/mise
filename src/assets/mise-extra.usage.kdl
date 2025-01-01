@@ -5,10 +5,8 @@ complete "config_file" type="file"
 complete "new_plugin" run="mise plugins --all"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
-complete "setting" run="mise settings | awk '{print $1}'"
-complete "task" run=r#"
-mise tasks --json | jq -r '.[] | (.name | gsub(":"; "\\:")) + ":" + (.description | gsub(":"; "\\:"))'
-"# descriptions=true
+complete "setting" run="mise settings --complete" descriptions=true
+complete "task" run="mise tasks ls --complete" descriptions=true
 
 complete "tool@version" run=r#"
 cur="{{words[CURRENT]}}"
