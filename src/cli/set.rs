@@ -25,6 +25,10 @@ pub struct Set {
     #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::FilePath)]
     file: Option<PathBuf>,
 
+    /// Render completions
+    #[clap(long, hide = true)]
+    complete: bool,
+
     /// Set the environment variable in the global config file
     #[clap(short, long, verbatim_doc_comment, overrides_with = "file")]
     global: bool,
@@ -32,17 +36,20 @@ pub struct Set {
     /// Remove the environment variable from config file
     ///
     /// Can be used multiple times.
-    #[clap(long, value_name = "ENV_VAR", verbatim_doc_comment, aliases = ["rm", "unset"], hide = true)]
+    #[clap(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
     remove: Option<Vec<String>>,
 
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
-    #[clap(verbatim_doc_comment)]
+    #[clap(value_name = "ENV_VAR", verbatim_doc_comment)]
     env_vars: Option<Vec<EnvVarArg>>,
 }
 
 impl Set {
     pub fn run(self) -> Result<()> {
+        if self.complete {
+            return self.complete();
+        }
         match (&self.remove, &self.env_vars) {
             (None, None) => {
                 return self.list_all();
@@ -84,6 +91,13 @@ impl Set {
             }
         }
         mise_toml.save()
+    }
+
+    fn complete(&self) -> Result<()> {
+        for ev in self.cur_env()? {
+            println!("{}", ev.key);
+        }
+        Ok(())
     }
 
     fn list_all(self) -> Result<()> {

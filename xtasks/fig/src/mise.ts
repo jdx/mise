@@ -460,7 +460,8 @@ const completionSpec: Fig.Spec = {
                     "args": {
                         "name": "tool",
                         "description": "Show aliases for <TOOL>",
-                        "isOptional": true
+                        "isOptional": true,
+                        "generators": completionGeneratorTemplate(`mise registry --complete`)
                     }
                 },
                 {
@@ -1412,11 +1413,11 @@ const completionSpec: Fig.Spec = {
                 }
             ],
             "args": {
-                "name": "plugin",
-                "description": "Only show tool versions from [PLUGIN]",
+                "name": "installed_tool",
+                "description": "Only show tool versions from [TOOL]",
                 "isOptional": true,
                 "isVariadic": true,
-                "generators": pluginGenerator
+                "generators": completionGeneratorTemplate(`mise plugins --core --user`)
             }
         },
         {
@@ -1715,7 +1716,8 @@ const completionSpec: Fig.Spec = {
                 "name": "installed_tool",
                 "description": "Prune only these tools",
                 "isOptional": true,
-                "isVariadic": true
+                "isVariadic": true,
+                "generators": completionGeneratorTemplate(`mise plugins --core --user`)
             }
         },
         {
@@ -1730,7 +1732,8 @@ const completionSpec: Fig.Spec = {
                     "description": "Show only tools for this backend",
                     "isRepeatable": false,
                     "args": {
-                        "name": "backend"
+                        "name": "backend",
+                        "generators": completionGeneratorTemplate(`mise backends`)
                     }
                 },
                 {
@@ -1934,7 +1937,7 @@ const completionSpec: Fig.Spec = {
                 }
             ],
             "args": {
-                "name": "env_vars",
+                "name": "env_var",
                 "description": "Environment variable(s) to set\ne.g.: NODE_ENV=production",
                 "isOptional": true,
                 "isVariadic": true,
@@ -2763,8 +2766,9 @@ const completionSpec: Fig.Spec = {
                 }
             ],
             "args": {
-                "name": "backend",
-                "description": "Tool name to get information about"
+                "name": "tool",
+                "description": "Tool name to get information about",
+                "generators": completionGeneratorTemplate(`mise registry --complete`)
             }
         },
         {
@@ -2858,10 +2862,11 @@ const completionSpec: Fig.Spec = {
                 }
             ],
             "args": {
-                "name": "keys",
+                "name": "env_key",
                 "description": "Environment variable(s) to remove\ne.g.: NODE_ENV",
                 "isOptional": true,
-                "isVariadic": true
+                "isVariadic": true,
+                "generators": completionGeneratorTemplate(`mise set --complete`)
             }
         },
         {
@@ -3493,7 +3498,9 @@ const completionSpec: Fig.Spec = {
             ],
             "args": {
                 "name": "bin_name",
-                "description": "The bin to look up"
+                "description": "The bin to look up",
+                "isOptional": true,
+                "generators": completionGeneratorTemplate(`mise which --complete`)
             }
         }
     ],

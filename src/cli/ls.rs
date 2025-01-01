@@ -25,12 +25,12 @@ use crate::ui::table::MiseTable;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Ls {
-    /// Only show tool versions from [PLUGIN]
-    #[clap(conflicts_with = "plugin_flag")]
-    plugin: Option<Vec<BackendArg>>,
+    /// Only show tool versions from [TOOL]
+    #[clap(conflicts_with = "tool_flag")]
+    installed_tool: Option<Vec<BackendArg>>,
 
-    #[clap(long = "plugin", short, hide = true)]
-    plugin_flag: Option<BackendArg>,
+    #[clap(long = "plugin", short = 'p', hide = true)]
+    tool_flag: Option<BackendArg>,
 
     /// Only show tool versions currently specified in a mise.toml
     #[clap(long, short)]
@@ -62,7 +62,7 @@ pub struct Ls {
     missing: bool,
 
     /// Display versions matching this prefix
-    #[clap(long, requires = "plugin")]
+    #[clap(long, requires = "installed_tool")]
     prefix: Option<String>,
 
     /// Don't display headers
@@ -73,9 +73,9 @@ pub struct Ls {
 impl Ls {
     pub fn run(mut self) -> Result<()> {
         let config = Config::try_get()?;
-        self.plugin = self
-            .plugin
-            .or_else(|| self.plugin_flag.clone().map(|p| vec![p]));
+        self.installed_tool = self
+            .installed_tool
+            .or_else(|| self.tool_flag.clone().map(|p| vec![p]));
         self.verify_plugin()?;
 
         let mut runtimes = self.get_runtime_list(&config)?;
@@ -101,7 +101,7 @@ impl Ls {
     }
 
     fn verify_plugin(&self) -> Result<()> {
-        if let Some(plugins) = &self.plugin {
+        if let Some(plugins) = &self.installed_tool {
             for ba in plugins {
                 if let Some(plugin) = ba.backend()?.plugin() {
                     ensure!(plugin.is_installed(), "{ba} is not installed");
@@ -112,7 +112,7 @@ impl Ls {
     }
 
     fn display_json(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        if let Some(plugins) = &self.plugin {
+        if let Some(plugins) = &self.installed_tool {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
                 .into_iter()
@@ -185,7 +185,7 @@ impl Ls {
             .list_all_versions()?
             .into_iter()
             .map(|(b, tv)| ((b, tv.version.clone()), tv))
-            .filter(|((b, _), _)| match &self.plugin {
+            .filter(|((b, _), _)| match &self.installed_tool {
                 Some(p) => p.contains(b.ba()),
                 None => true,
             })
@@ -199,7 +199,7 @@ impl Ls {
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
             // if it isn't installed and it's not specified, don't show it
             .filter(|(_ls, p, tv, source)| !source.is_unknown() || p.is_version_installed(tv, true))
-            .filter(|(_ls, p, _, _)| match &self.plugin {
+            .filter(|(_ls, p, _, _)| match &self.installed_tool {
                 Some(backend) => backend.contains(p.ba()),
                 None => true,
             })
