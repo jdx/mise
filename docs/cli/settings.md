@@ -3,13 +3,18 @@
 - **Usage**: `mise settings [FLAGS] [SETTING] [VALUE] <SUBCOMMAND>`
 - **Source code**: [`src/cli/settings.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings.rs)
 
-Manage settings
+Show current settings
+
+This is the contents of ~/.config/mise/config.toml
+
+Note that aliases are also stored in this file
+but managed separately with `mise aliases`
 
 ## Arguments
 
 ### `[SETTING]`
 
-Setting name to get/set
+Name of setting
 
 ### `[VALUE]`
 

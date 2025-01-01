@@ -78,7 +78,7 @@ impl ConfigSet {
                     let expected_type = if !self.key.starts_with("settings.") {
                         None
                     } else {
-                        SETTINGS_META.get(&(*last_key).to_string())
+                        SETTINGS_META.get(*last_key)
                     };
                     match expected_type {
                         Some(meta) => match meta.type_ {

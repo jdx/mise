@@ -166,8 +166,7 @@ fn codegen_registry() {
 fn codegen_settings() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("settings.rs");
-    let mut lines = vec![r#"
-#[derive(Config, Default, Debug, Clone, Serialize)]
+    let mut lines = vec![r#"#[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
 pub struct Settings {"#
         .to_string()];
@@ -246,11 +245,11 @@ pub struct Settings {"#
         .collect::<Vec<_>>();
     for (child, props) in &nested_settings {
         lines.push(format!(
-            r#"#[derive(Config, Default, Debug, Clone, Serialize)]
+            r#"
+#[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
 #[config(partial_attr(serde(deny_unknown_fields)))]
-pub struct Settings{name} {{
-"#,
+pub struct Settings{name} {{"#,
             name = child.to_upper_camel_case()
         ));
 
@@ -262,19 +261,24 @@ pub struct Settings{name} {{
 
     lines.push(
         r#"
-pub static SETTINGS_META: Lazy<IndexMap<String, SettingsMeta>> = Lazy::new(|| {
-    indexmap!{
-    "#
-        .to_string(),
+pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new(|| {
+    indexmap!{"#
+            .to_string(),
     );
     for (name, props) in &settings {
         let props = props.as_table().unwrap();
         if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
             lines.push(format!(
-                r#"    "{name}".to_string() => SettingsMeta {{
-        type_: SettingsType::{type_},
-    }},"#,
+                r#"    "{name}" => SettingsMeta {{
+        type_: SettingsType::{type_},"#,
             ));
+            if let Some(description) = props.get("description") {
+                let description = description.as_str().unwrap().to_string();
+                lines.push(format!(
+                    r####"        description: r###"{description}"###,"####
+                ));
+            }
+            lines.push("    },".to_string());
         }
     }
     for (name, props) in &nested_settings {
@@ -282,11 +286,17 @@ pub static SETTINGS_META: Lazy<IndexMap<String, SettingsMeta>> = Lazy::new(|| {
             let props = props.as_table().unwrap();
             if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
                 lines.push(format!(
-                    r#"    "{name}.{key}".to_string() => SettingsMeta {{
-        type_: SettingsType::{type_},
-    }},"#,
+                    r#"    "{name}.{key}" => SettingsMeta {{
+        type_: SettingsType::{type_},"#,
                 ));
             }
+            if let Some(description) = props.get("description") {
+                let description = description.as_str().unwrap().to_string();
+                lines.push(format!(
+                    r####"        description: r###"{description}"###,"####
+                ));
+            }
+            lines.push("    },".to_string());
         }
     }
     lines.push(
