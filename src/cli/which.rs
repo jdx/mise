@@ -1,9 +1,10 @@
-use eyre::{bail, Result};
-
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::dirs::SHIMS;
+use crate::file;
 use crate::toolset::{Toolset, ToolsetBuilder};
+use eyre::{bail, Result};
+use itertools::Itertools;
 
 /// Shows the path that a tool's bin points to.
 ///
@@ -12,8 +13,11 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Which {
     /// The bin to look up
-    #[clap()]
-    pub bin_name: String,
+    #[clap(required_unless_present = "complete")]
+    pub bin_name: Option<String>,
+
+    #[clap(long, hide = true)]
+    pub complete: bool,
 
     /// Show the plugin name instead of the path
     #[clap(long, conflicts_with = "version")]
@@ -31,31 +35,47 @@ pub struct Which {
 
 impl Which {
     pub fn run(self) -> Result<()> {
+        if self.complete {
+            return self.complete();
+        }
         let ts = self.get_toolset()?;
 
-        match ts.which(&self.bin_name) {
+        let bin_name = self.bin_name.clone().unwrap();
+        match ts.which(&bin_name) {
             Some((p, tv)) => {
                 if self.version {
                     miseprintln!("{}", tv.version);
                 } else if self.plugin {
                     miseprintln!("{p}");
                 } else {
-                    let path = p.which(&tv, &self.bin_name)?;
+                    let path = p.which(&tv, &bin_name)?;
                     miseprintln!("{}", path.unwrap().display());
                 }
                 Ok(())
             }
             None => {
-                if self.has_shim(&self.bin_name) {
-                    bail!("{} is a mise bin however it is not currently active. Use `mise use` to activate it in this directory.", self.bin_name)
+                if self.has_shim(&bin_name) {
+                    bail!("{bin_name} is a mise bin however it is not currently active. Use `mise use` to activate it in this directory.")
                 } else {
-                    bail!(
-                        "{} is not a mise bin. Perhaps you need to install it first.",
-                        self.bin_name
-                    )
+                    bail!("{bin_name} is not a mise bin. Perhaps you need to install it first.",)
                 }
             }
         }
+    }
+    fn complete(&self) -> Result<()> {
+        let ts = self.get_toolset()?;
+        let bins = ts
+            .list_paths()
+            .into_iter()
+            .flat_map(|p| file::ls(&p).unwrap_or_default())
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .unique()
+            .sorted()
+            .collect_vec();
+        for bin in bins {
+            println!("{}", bin);
+        }
+        Ok(())
     }
     fn get_toolset(&self) -> Result<Toolset> {
         let config = Config::try_get()?;

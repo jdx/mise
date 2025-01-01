@@ -804,7 +804,7 @@ It's a useful command to get the current state of your tools."#
     }
 "#
     flag "-p --plugin" hide=true {
-        arg "<PLUGIN_FLAG>"
+        arg "<TOOL_FLAG>"
     }
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
@@ -817,7 +817,7 @@ It's a useful command to get the current state of your tools."#
         arg "<PREFIX>"
     }
     flag "--no-header" help="Don't display headers"
-    arg "[PLUGIN]..." help="Only show tool versions from [PLUGIN]" required=false var=true
+    arg "[INSTALLED_TOOL]..." help="Only show tool versions from [TOOL]" required=false var=true
 }
 cmd "ls-remote" help="List runtime versions available for install." {
     alias "list-all" "list-remote" hide=true
@@ -1025,6 +1025,7 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`."
     flag "-b --backend" help="Show only tools for this backend" {
         arg "<BACKEND>"
     }
+    flag "--complete" help="Print all tools with descriptions for shell completions" hide=true
     flag "--hide-aliased" help="Hide aliased tools"
     arg "[NAME]" help="Show only the specified tool's full name" required=false
 }
@@ -1169,12 +1170,13 @@ By default, this command modifies `mise.toml` in the current directory."
         long_help "The TOML file to update\n\nDefaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`."
         arg "<FILE>"
     }
+    flag "--complete" help="Render completions" hide=true
     flag "-g --global" help="Set the environment variable in the global config file"
-    flag "--remove" help="Remove the environment variable from config file" var=true hide=true {
+    flag "--remove --rm --unset" help="Remove the environment variable from config file" var=true hide=true {
         long_help "Remove the environment variable from config file\n\nCan be used multiple times."
-        arg "<ENV_VAR>"
+        arg "<ENV_KEY>"
     }
-    arg "[ENV_VARS]..." help="Environment variable(s) to set\ne.g.: NODE_ENV=production" required=false var=true
+    arg "[ENV_VAR]..." help="Environment variable(s) to set\ne.g.: NODE_ENV=production" required=false var=true
 }
 cmd "settings" help="Manage settings" {
     long_help r"Show current settings
@@ -1624,7 +1626,7 @@ cmd "tool" help="Gets information about a tool" {
     flag "--requested" help="Only show requested versions"
     flag "--config-source" help="Only show config source"
     flag "--tool-options" help="Only show tool options"
-    arg "<BACKEND>" help="Tool name to get information about"
+    arg "<TOOL>" help="Tool name to get information about"
 }
 cmd "trust" help="Marks a config file as trusted" {
     long_help r"Marks a config file as trusted
@@ -1685,7 +1687,7 @@ By default, this command modifies `mise.toml` in the current directory."
         arg "<FILE>"
     }
     flag "-g --global" help="Use the global config file"
-    arg "[KEYS]..." help="Environment variable(s) to remove\ne.g.: NODE_ENV" required=false var=true
+    arg "[ENV_KEY]..." help="Environment variable(s) to remove\ne.g.: NODE_ENV" required=false var=true
 }
 cmd "unuse" help="Removes installed tool versions from mise.toml" {
     alias "rm" "remove"
@@ -2052,12 +2054,13 @@ Use this to figure out what version of a tool is currently active."
     $ mise which node --version
     20.0.0
 "
+    flag "--complete" hide=true
     flag "--plugin" help="Show the plugin name instead of the path"
     flag "--version" help="Show the version instead of the path"
     flag "-t --tool" help="Use a specific tool@version\ne.g.: `mise which npm --tool=node@20`" {
         arg "<TOOL@VERSION>"
     }
-    arg "<BIN_NAME>" help="The bin to look up"
+    arg "[BIN_NAME]" help="The bin to look up" required=false
 }
 cmd "render-help" hide=true help="internal command to generate markdown from help"
 cmd "render-mangen" hide=true help="internal command to generate markdown from help"
@@ -2066,10 +2069,16 @@ source_code_link_template "https://github.com/jdx/mise/blob/main/src/cli/{{path}
 complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
 complete "config_file" type="file"
 complete "new_plugin" run="mise plugins --all"
+complete "installed_tool" run="mise plugins --core --user"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
 complete "setting" run="mise settings --complete" descriptions=true
 complete "task" run="mise tasks ls --complete" descriptions=true
+complete "tool" run="mise registry --complete" descriptions=true
+complete "env_var" run=r#"mise set --complete | awk '{print $1"="}'"#
+complete "env_key" run="mise set --complete"
+complete "backend" run="mise backends"
+complete "bin_name" run="mise which --complete"
 
 complete "tool@version" run=r#"
 cur="{{words[CURRENT]}}"

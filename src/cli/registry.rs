@@ -1,10 +1,9 @@
 use crate::backend::backend_type::BackendType;
 use crate::config::SETTINGS;
 use crate::registry::{RegistryTool, REGISTRY};
-use crate::ui::table;
+use crate::ui::table::MiseTable;
 use eyre::{bail, Result};
 use itertools::Itertools;
-use tabled::{Table, Tabled};
 
 /// List available tools to install
 ///
@@ -21,6 +20,10 @@ pub struct Registry {
     #[clap(short, long)]
     backend: Option<BackendType>,
 
+    /// Print all tools with descriptions for shell completions
+    #[clap(long, hide = true)]
+    complete: bool,
+
     /// Hide aliased tools
     #[clap(long)]
     hide_aliased: bool,
@@ -28,6 +31,21 @@ pub struct Registry {
 
 impl Registry {
     pub fn run(self) -> Result<()> {
+        if let Some(name) = &self.name {
+            if let Some(rt) = REGISTRY.get(name.as_str()) {
+                miseprintln!("{}", rt.backends().join(" "));
+            } else {
+                bail!("tool not found in registry: {name}");
+            }
+        } else if self.complete {
+            self.complete()?;
+        } else {
+            self.display_table()?;
+        }
+        Ok(())
+    }
+
+    fn display_table(&self) -> Result<()> {
         let filter_backend = |rt: &RegistryTool| {
             if let Some(backend) = self.backend {
                 rt.backends()
@@ -39,38 +57,44 @@ impl Registry {
                 rt.backends()
             }
         };
-        if let Some(name) = &self.name {
-            if let Some(rt) = REGISTRY.get(name.as_str()) {
-                miseprintln!("{}", rt.backends().join(" "));
-            } else {
-                bail!("tool not found in registry: {name}");
-            }
-        } else {
-            let data = REGISTRY
-                .iter()
-                .filter(|(short, _)| !SETTINGS.disable_tools.contains(**short))
-                .filter(|(short, rt)| !self.hide_aliased || **short == rt.short)
-                .map(|(short, rt)| Row::from((short.to_string(), filter_backend(rt).join(" "))))
-                .filter(|row| !row.backends.is_empty())
-                .sorted_by(|a, b| a.short.cmp(&b.short));
-            let mut table = Table::new(data);
-            table::default_style(&mut table, false);
-            miseprintln!("{table}");
+        let mut table = MiseTable::new(false, &["Tool", "Backends"]);
+        let data = REGISTRY
+            .iter()
+            .filter(|(short, _)| !SETTINGS.disable_tools.contains(**short))
+            .filter(|(short, rt)| !self.hide_aliased || **short == rt.short)
+            .map(|(short, rt)| (short.to_string(), filter_backend(rt).join(" ")))
+            .filter(|(_, backends)| !backends.is_empty())
+            .sorted_by(|(a, _), (b, _)| a.cmp(b))
+            .map(|(short, backends)| vec![short, backends])
+            .collect_vec();
+        for row in data {
+            table.add_row(row);
         }
-        Ok(())
+        table.print()
     }
-}
 
-#[derive(Tabled, Eq, PartialEq, Ord, PartialOrd)]
-#[tabled(rename_all = "PascalCase")]
-struct Row {
-    short: String,
-    backends: String,
-}
-
-impl From<(String, String)> for Row {
-    fn from((short, backends): (String, String)) -> Self {
-        Self { short, backends }
+    fn complete(&self) -> Result<()> {
+        REGISTRY
+            .iter()
+            .filter(|(short, _)| !SETTINGS.disable_tools.contains(**short))
+            .filter(|(short, rt)| !self.hide_aliased || **short == rt.short)
+            .map(|(short, rt)| {
+                (
+                    short.to_string(),
+                    rt.description
+                        .or(rt.backends().first().cloned())
+                        .unwrap_or_default(),
+                )
+            })
+            .sorted_by(|(a, _), (b, _)| a.cmp(b))
+            .for_each(|(short, description)| {
+                println!(
+                    "{}:{}",
+                    short.replace(":", "\\:"),
+                    description.replace(":", "\\:")
+                );
+            });
+        Ok(())
     }
 }
 

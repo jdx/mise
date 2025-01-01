@@ -14,7 +14,7 @@ use crate::{config, env};
 pub struct Unset {
     /// Environment variable(s) to remove
     /// e.g.: NODE_ENV
-    #[clap(verbatim_doc_comment)]
+    #[clap(verbatim_doc_comment, value_name = "ENV_KEY")]
     keys: Vec<String>,
 
     /// Specify a file to use instead of `mise.toml`
