@@ -90,17 +90,21 @@ See [secrets](/environments/secrets) for ways to read encrypted files with `env.
 
 ### `env._.path`
 
-`PATH` is treated specially, it needs to be defined as a string/array in `mise.path`:
+`PATH` is treated specially. It needs to be defined as a string/array in `mise.path`:
 
 ```toml
 [env]
 _.path = [
     # adds an absolute path
     "~/.local/share/bin",
-    # adds a path relative to the mise.toml, not PWD
-    "./node_modules/.bin",
+    # adds paths relative to directory in which this file was found (see below for details), not PWD
+    "{{config_root}}/node_modules/.bin",
+    # adds paths relative to the exact file that this is found in (not PWD)
+    "tools/bin",
 ]
 ```
+
+Adding a relative path like `tools/bin` or `./tools/bin` is similar to adding a path rooted at `{{config_root}}`, but behaves differently if your config file is nested in a subdirectory like `/path/to/project/.config/mise/config.toml`. Including `tools/bin` will add the path `/path/to/project/.config/mise/tools/bin`, whereas including `{{config_root}}/tools/bin` will add the path `/path/to/project/tools/bin`.
 
 ### `env._.source`
 
