@@ -230,7 +230,9 @@ impl Row {
                 rows.reserve(table.len());
                 let meta = SETTINGS_META.get(k.as_str());
                 let desc = meta.map(|sm| sm.description.to_string());
-                let type_str = meta.map(|sm| settings_type_to_string(&sm.type_)).unwrap_or_default();
+                let type_str = meta
+                    .map(|sm| settings_type_to_string(&sm.type_))
+                    .unwrap_or_default();
 
                 for (subkey, subvalue) in table {
                     rows.push(Row {
@@ -248,7 +250,9 @@ impl Row {
             rows.push(Row {
                 key: k.clone(),
                 value: v.to_string(),
-                type_: meta.map(|sm| settings_type_to_string(&sm.type_)).unwrap_or_default(),
+                type_: meta
+                    .map(|sm| settings_type_to_string(&sm.type_))
+                    .unwrap_or_default(),
                 source,
                 toml_value: v,
                 description: meta.map(|sm| sm.description.to_string()),
