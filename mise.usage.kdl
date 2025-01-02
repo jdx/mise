@@ -94,7 +94,7 @@ Customize status output with `status` settings."#
     }
     flag "--status" help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=true
     flag "--shims" help="Use shims instead of modifying PATH\nEffectively the same as:" {
-        long_help "Use shims instead of modifying PATH\nEffectively the same as:\n\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\""
+        long_help "Use shims instead of modifying PATH\nEffectively the same as:\n\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\"\n\n`mise activate --shims` does not support all the features of `mise activate`.\nSee https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information"
     }
     flag "-q --quiet" help="Suppress non-error messages"
     flag "--no-hook-env" help="Do not automatically call hook-env" {
@@ -478,6 +478,29 @@ Sorts keys and cleans up whitespace in mise.toml"
 cmd "generate" subcommand_required=true help="[experimental] Generate files for various tools/services" {
     alias "gen"
     alias "g" hide=true
+    cmd "bootstrap" help="[experimental] Generate a script to download+execute mise" {
+        long_help r"[experimental] Generate a script to download+execute mise
+
+This is designed to be used in a project where contributors may not have mise installed."
+        after_long_help r"Examples:
+
+    $ mise generate bootstrap >./bin/mise
+    $ chmod +x ./bin/mise
+    $ ./bin/mise install – automatically downloads mise to .mise if not already installed
+"
+        flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
+            long_help "Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project\n\nThis is necessary if users may use a different version of mise outside the project."
+        }
+        flag "--localized-dir" help="Directory to put localized data into" {
+            arg "<LOCALIZED_DIR>"
+        }
+        flag "-V --version" help="Specify mise version to fetch" {
+            arg "<VERSION>"
+        }
+        flag "-w --write" help="instead of outputting the script to stdout, write to a file and make it executable" {
+            arg "<WRITE>"
+        }
+    }
     cmd "config" help="[experimental] Generate a mise.toml file" {
         alias "g"
         after_long_help r"Examples:
@@ -499,7 +522,7 @@ cmd "generate" subcommand_required=true help="[experimental] Generate files for 
 This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
 when you commit changes to your repository.
 
-Staged files are passed to the task via appended arguments"
+Staged files are passed to the task as `STAGED`."
         after_long_help r#"Examples:
 
     $ mise generate git-pre-commit --write --task=pre-commit
@@ -552,6 +575,26 @@ when you push changes to your repository."
             arg "<STYLE>" {
                 choices "simple" "detailed"
             }
+        }
+    }
+    cmd "task-stubs" help="[experimental] Generates shims to run mise tasks" {
+        long_help r"[experimental] Generates shims to run mise tasks
+
+By default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`
+so contributors to a project can execute mise tasks without installing mise into their system."
+        after_long_help r"Examples:
+
+    $ mise task add test -- echo 'running tests'
+    $ mise generate task-stubs
+    $ ./bin/test
+    running tests
+"
+        flag "-m --mise-bin" help="Path to a mise bin to use when running the task stub." {
+            long_help "Path to a mise bin to use when running the task stub.\n\nUse `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`"
+            arg "<MISE_BIN>"
+        }
+        flag "-d --dir" help="Directory to create task stubs inside of" {
+            arg "<DIR>"
         }
     }
 }
@@ -761,7 +804,7 @@ It's a useful command to get the current state of your tools."#
     }
 "#
     flag "-p --plugin" hide=true {
-        arg "<PLUGIN_FLAG>"
+        arg "<TOOL_FLAG>"
     }
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
@@ -774,7 +817,7 @@ It's a useful command to get the current state of your tools."#
         arg "<PREFIX>"
     }
     flag "--no-header" help="Don't display headers"
-    arg "[PLUGIN]..." help="Only show tool versions from [PLUGIN]" required=false var=true
+    arg "[INSTALLED_TOOL]..." help="Only show tool versions from [TOOL]" required=false var=true
 }
 cmd "ls-remote" help="List runtime versions available for install." {
     alias "list-all" "list-remote" hide=true
@@ -982,6 +1025,7 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`."
     flag "-b --backend" help="Show only tools for this backend" {
         arg "<BACKEND>"
     }
+    flag "--complete" help="Print all tools with descriptions for shell completions" hide=true
     flag "--hide-aliased" help="Hide aliased tools"
     arg "[NAME]" help="Show only the specified tool's full name" required=false
 }
@@ -1126,14 +1170,21 @@ By default, this command modifies `mise.toml` in the current directory."
         long_help "The TOML file to update\n\nDefaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`."
         arg "<FILE>"
     }
+    flag "--complete" help="Render completions" hide=true
     flag "-g --global" help="Set the environment variable in the global config file"
-    flag "--remove" help="Remove the environment variable from config file" var=true hide=true {
+    flag "--remove --rm --unset" help="Remove the environment variable from config file" var=true hide=true {
         long_help "Remove the environment variable from config file\n\nCan be used multiple times."
-        arg "<ENV_VAR>"
+        arg "<ENV_KEY>"
     }
-    arg "[ENV_VARS]..." help="Environment variable(s) to set\ne.g.: NODE_ENV=production" required=false var=true
+    arg "[ENV_VAR]..." help="Environment variable(s) to set\ne.g.: NODE_ENV=production" required=false var=true
 }
 cmd "settings" help="Manage settings" {
+    long_help r"Show current settings
+
+This is the contents of ~/.config/mise/config.toml
+
+Note that aliases are also stored in this file
+but managed separately with `mise aliases`"
     after_long_help r#"Examples:
     # list all settings
     $ mise settings
@@ -1148,11 +1199,12 @@ cmd "settings" help="Manage settings" {
     $ mise settings node.mirror_url https://npm.taobao.org/mirrors/node
 "#
     flag "-a --all" help="List all settings"
+    flag "--complete" help="Print all settings with descriptions for shell completions" hide=true
     flag "-l --local" help="Use the local config file instead of the global one" global=true
     flag "-J --json" help="Output in JSON format"
     flag "--json-extended" help="Output in JSON format with sources"
     flag "-T --toml" help="Output in TOML format"
-    arg "[KEY]" help="Setting name to get/set" required=false
+    arg "[SETTING]" help="Name of setting" required=false
     arg "[VALUE]" help="Setting value to set" required=false
     cmd "add" help="Adds a setting to the configuration file" {
         long_help r"Adds a setting to the configuration file
@@ -1164,7 +1216,7 @@ This modifies the contents of ~/.config/mise/config.toml"
     $ mise settings add disable_hints python_multi
 "
         flag "-l --local" help="Use the local config file instead of the global one"
-        arg "<KEY>" help="The setting to set"
+        arg "<SETTING>" help="The setting to set"
         arg "<VALUE>" help="The value to set"
     }
     cmd "get" help="Show a current setting" {
@@ -1180,7 +1232,7 @@ but managed separately with `mise aliases get`"
     true
 "
         flag "-l --local" help="Use the local config file instead of the global one"
-        arg "<KEY>" help="The setting to show"
+        arg "<SETTING>" help="The setting to show"
     }
     cmd "ls" help="Show current settings" {
         alias "list"
@@ -1200,12 +1252,13 @@ but managed separately with `mise aliases`"
     default_packages_file = "~/.default-python-packages"
     ...
 "#
-        flag "-a --all" help="Display settings set to the default"
-        flag "-l --local" help="Use the local config file instead of the global one"
+        flag "-a --all" help="List all settings"
+        flag "--complete" help="Print all settings with descriptions for shell completions" hide=true
+        flag "-l --local" help="Use the local config file instead of the global one" global=true
         flag "-J --json" help="Output in JSON format"
         flag "--json-extended" help="Output in JSON format with sources"
         flag "-T --toml" help="Output in TOML format"
-        arg "[KEY]" help="List keys under this key" required=false
+        arg "[SETTING]" help="Name of setting" required=false
     }
     cmd "set" help="Add/update a setting" {
         alias "create"
@@ -1217,7 +1270,7 @@ This modifies the contents of ~/.config/mise/config.toml"
     $ mise settings idiomatic_version_file=true
 "
         flag "-l --local" help="Use the local config file instead of the global one"
-        arg "<KEY>" help="The setting to set"
+        arg "<SETTING>" help="The setting to set"
         arg "<VALUE>" help="The value to set"
     }
     cmd "unset" help="Clears a setting" {
@@ -1310,6 +1363,7 @@ cmd "tasks" help="Manage tasks" {
     $ mise tasks ls
 "
     flag "--no-header" help="Do not print table header" global=true
+    flag "--complete" help="Display tasks for usage completion" hide=true
     flag "-x --extended" help="Show all columns" global=true
     flag "--hidden" help="Show hidden tasks" global=true
     flag "--sort" help="Sort by column. Default is name." global=true {
@@ -1441,6 +1495,7 @@ tasks will override the global ones if they have the same name."
     $ mise tasks ls
 "
         flag "--no-header" help="Do not print table header" global=true
+        flag "--complete" help="Display tasks for usage completion" hide=true
         flag "-x --extended" help="Show all columns" global=true
         flag "--hidden" help="Show hidden tasks" global=true
         flag "--sort" help="Sort by column. Default is name." global=true {
@@ -1571,7 +1626,7 @@ cmd "tool" help="Gets information about a tool" {
     flag "--requested" help="Only show requested versions"
     flag "--config-source" help="Only show config source"
     flag "--tool-options" help="Only show tool options"
-    arg "<BACKEND>" help="Tool name to get information about"
+    arg "<TOOL>" help="Tool name to get information about"
 }
 cmd "trust" help="Marks a config file as trusted" {
     long_help r"Marks a config file as trusted
@@ -1632,7 +1687,7 @@ By default, this command modifies `mise.toml` in the current directory."
         arg "<FILE>"
     }
     flag "-g --global" help="Use the global config file"
-    arg "[KEYS]..." help="Environment variable(s) to remove\ne.g.: NODE_ENV" required=false var=true
+    arg "[ENV_KEY]..." help="Environment variable(s) to remove\ne.g.: NODE_ENV" required=false var=true
 }
 cmd "unuse" help="Removes installed tool versions from mise.toml" {
     alias "rm" "remove"
@@ -1962,7 +2017,7 @@ It must be installed for this command to work, but you can install it with `mise
     flag "--manual" help="Show the manual page" {
         long_help "Show the manual page\n\nThis shows the manual page for Watchexec, if the output is a terminal and the 'man' program is available. If not, the manual page is printed to stdout in ROFF format (suitable for writing to a watchexec.1 file)."
     }
-    arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" required=false
+    arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`" required=false
     arg "[ARGS]..." help="Task and arguments to run" required=false double_dash="automatic" var=true
 }
 cmd "where" help="Display the installation path for a tool" {
@@ -1999,12 +2054,13 @@ Use this to figure out what version of a tool is currently active."
     $ mise which node --version
     20.0.0
 "
+    flag "--complete" hide=true
     flag "--plugin" help="Show the plugin name instead of the path"
     flag "--version" help="Show the version instead of the path"
     flag "-t --tool" help="Use a specific tool@version\ne.g.: `mise which npm --tool=node@20`" {
         arg "<TOOL@VERSION>"
     }
-    arg "<BIN_NAME>" help="The bin to look up"
+    arg "[BIN_NAME]" help="The bin to look up" required=false
 }
 cmd "render-help" hide=true help="internal command to generate markdown from help"
 cmd "render-mangen" hide=true help="internal command to generate markdown from help"
@@ -2013,12 +2069,16 @@ source_code_link_template "https://github.com/jdx/mise/blob/main/src/cli/{{path}
 complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
 complete "config_file" type="file"
 complete "new_plugin" run="mise plugins --all"
+complete "installed_tool" run="mise plugins --core --user"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
-complete "setting" run="mise settings --keys"
-complete "task" run=r#"
-mise tasks --json | jq -r '.[] | (.name | sub(":"; "\\:")) + ":" + (.description | sub(":"; "\\:"))'
-"# descriptions=true
+complete "setting" run="mise settings --complete" descriptions=true
+complete "task" run="mise tasks ls --complete" descriptions=true
+complete "tool" run="mise registry --complete" descriptions=true
+complete "env_var" run=r#"mise set --complete | awk '{print $1"="}'"#
+complete "env_key" run="mise set --complete"
+complete "backend" run="mise backends"
+complete "bin_name" run="mise which --complete"
 
 complete "tool@version" run=r#"
 cur="{{words[CURRENT]}}"

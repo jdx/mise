@@ -11,7 +11,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{env, file, github, plugins};
+use crate::{file, github, plugins};
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -93,15 +93,11 @@ impl RubyPlugin {
     }
 
     fn install_rubygems_hook(&self, tv: &ToolVersion) -> Result<()> {
-        let d = self.rubygems_plugins_path(tv);
-        let f = d.join("rubygems_plugin.rb");
-        file::create_dir_all(d)?;
+        let site_ruby_path = tv.install_path().join("lib/ruby/site_ruby");
+        let f = site_ruby_path.join("rubygems_plugin.rb");
+        file::create_dir_all(site_ruby_path)?;
         file::write(f, include_str!("assets/rubygems_plugin.rb"))?;
         Ok(())
-    }
-
-    fn rubygems_plugins_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("lib").join("rubygems_plugin")
     }
 
     fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
@@ -206,20 +202,10 @@ impl Backend for RubyPlugin {
         &self,
         _config: &Config,
         _ts: &Toolset,
-        tv: &ToolVersion,
+        _tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        // TODO: is there a way to avoid needing to set RUBYLIB?
-        // is there a directory I can put rubygems_plugin.rb in that will be automatically loaded?
-        let rubygems_plugin_path = self.rubygems_plugins_path(tv);
-        let mut map = BTreeMap::new();
-        if rubygems_plugin_path.exists() {
-            let rubygems_plugin_path = rubygems_plugin_path.to_string_lossy().to_string();
-            let rubylib = match env::PRISTINE_ENV.get("RUBYLIB") {
-                Some(rubylib) => format!("{}:{}", rubylib, rubygems_plugin_path),
-                None => rubygems_plugin_path,
-            };
-            map.insert("RUBYLIB".to_string(), rubylib);
-        }
+        let map = BTreeMap::new();
+        // No modification to RUBYLIB
         Ok(map)
     }
 }

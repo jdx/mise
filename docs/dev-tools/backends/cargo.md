@@ -96,7 +96,7 @@ Select the CLI bin name to install when multiple are available (passed as `cargo
 
 ```toml
 [tools]
-"cargo:github.com/username/demo" = { version = "tag:v1.0.0", bin = "demo" }
+"cargo:https://github.com/username/demo" = { version = "tag:v1.0.0", bin = "demo" }
 ```
 
 ### `crate`
@@ -106,7 +106,7 @@ Select the crate name to install when multiple are available (passed as
 
 ```toml
 [tools]
-"cargo:github.com/username/demo" = { version = "tag:v1.0.0", crate = "demo" }
+"cargo:https://github.com/username/demo" = { version = "tag:v1.0.0", crate = "demo" }
 ```
 
 ### `locked`
@@ -116,5 +116,5 @@ pass `false` to disable:
 
 ```toml
 [tools]
-"cargo:github.com/username/demo" = { version = "latest", locked = false }
+"cargo:https://github.com/username/demo" = { version = "latest", locked = false }
 ```

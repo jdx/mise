@@ -22,6 +22,10 @@ pub struct TasksLs {
     #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
     pub no_header: bool,
 
+    /// Display tasks for usage completion
+    #[clap(long, hide = true)]
+    pub complete: bool,
+
     /// Show all columns
     #[clap(short = 'x', long, global = true, verbatim_doc_comment)]
     pub extended: bool,
@@ -72,17 +76,28 @@ impl TasksLs {
             .sorted_by(|a, b| self.sort(a, b))
             .collect::<Vec<Task>>();
 
-        if self.usage {
+        if self.complete {
+            return self.complete(tasks);
+        } else if self.usage {
             self.display_usage(ts, tasks)?;
         } else if self.json {
-            self.display_json(ts, tasks)?;
+            self.display_json(tasks)?;
         } else {
-            self.display(ts, tasks)?;
+            self.display(tasks)?;
         }
         Ok(())
     }
 
-    fn display(&self, _ts: &Toolset, tasks: Vec<Task>) -> Result<()> {
+    fn complete(&self, tasks: Vec<Task>) -> Result<()> {
+        for t in tasks {
+            let name = t.display_name().replace(":", "\\:");
+            let description = t.description.replace(":", "\\:");
+            println!("{name}:{description}",);
+        }
+        Ok(())
+    }
+
+    fn display(&self, tasks: Vec<Task>) -> Result<()> {
         let mut table = MiseTable::new(
             self.no_header,
             if self.extended {
@@ -114,7 +129,7 @@ impl TasksLs {
         Ok(())
     }
 
-    fn display_json(&self, _ts: &Toolset, tasks: Vec<Task>) -> Result<()> {
+    fn display_json(&self, tasks: Vec<Task>) -> Result<()> {
         let array_items = tasks
             .into_iter()
             .map(|task| {

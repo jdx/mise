@@ -116,6 +116,9 @@ export const commands: { [key: string]: Command } = {
   generate: {
     hide: false,
     subcommands: {
+      bootstrap: {
+        hide: false,
+      },
       config: {
         hide: false,
       },
@@ -126,6 +129,9 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
       "task-docs": {
+        hide: false,
+      },
+      "task-stubs": {
         hide: false,
       },
     },

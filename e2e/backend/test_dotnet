@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+if ! command -v dotnet >/dev/null 2>&1; then
+  echo "dotnet is not installed"
+  exit 0
+fi
+
 export MISE_EXPERIMENTAL=1
 
 test() {

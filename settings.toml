@@ -61,6 +61,12 @@ type = "Bool"
 default = true
 description = "Use cosign to verify aqua tool signatures."
 
+[aqua.minisign]
+env = "MISE_AQUA_MINISIGN"
+type = "Bool"
+default = true
+description = "Use minisign to verify aqua tool signatures."
+
 [aqua.registry_url]
 env = "MISE_AQUA_REGISTRY_URL"
 type = "Url"
@@ -647,7 +653,7 @@ optional = true
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
 docs = """
 * Values:
-  * `true` - always compile with python-build instead of downloading [precompiled binaries](/python.html#precompiled-python-binaries).
+  * `true` - always compile with python-build instead of downloading [precompiled binaries](/lang/python.html#precompiled-python-binaries).
   * `false` - always download precompiled binaries.
   * [undefined] - use precompiled binary if one is available for the current platform, compile otherwise.
 """
@@ -712,8 +718,10 @@ description = "Integrate with uv to automatically create/source venvs if uv.lock
 
 [python.uv_venv_create_args]
 env = "MISE_PYTHON_UV_VENV_CREATE_ARGS"
-type = "String"
+type = "ListString"
+rust_type = "Vec<String>"
 optional = true
+parse_env = "list_by_colon"
 description = "Arguments to pass to uv when creating a venv."
 
 [python.venv_auto_create]
@@ -725,8 +733,10 @@ description = "Automatically create virtualenvs for python tools."
 
 [python.venv_create_args]
 env = "MISE_PYTHON_VENV_CREATE_ARGS"
-type = "String"
+type = "ListString"
+rust_type = "Vec<String>"
 optional = true
+parse_env = "list_by_colon"
 description = "Arguments to pass to python when creating a venv. (not used for uv venv creation)"
 
 [python.venv_stdlib]

@@ -33,6 +33,10 @@ if cosign/slsa-verifier is installed and the tool is configured to support it. T
 See the [aqua docs](https://aquaproj.github.io/docs/reference/security/cosign-slsa) for more on how this is
 configured in the [aqua registry](https://github.com/aquaproj/aqua-registry).
 
+You will see this verification happen when tools are installed, setting `--verbose` when installing tools will help
+make it easier to see if verification happened. If you happen to notice a tool offers gpg/slsa/cosign/minisign/etc, see if you can
+make a PR to the aqua registry for mise to pick it up.
+
 ## `mise.lock`
 
 mise has support for [lockfiles](https://mise.jdx.dev/configuration/settings.html#lockfile) which will
@@ -55,6 +59,10 @@ Please contribute to this effort by checking if a tool works in ubi or aqua and 
 [registry.toml](https://github.com/jdx/mise/blob/main/registry.toml) to add it. If it doesn't work
 in ubi or is missing from aqua, submit an issue or PR to the respective project to add it. New tools
 using asdf are not likely to be accepted unless they cannot be supported in any other way.
+
+Another way I can reduce the risk of asdf plugins is by forking plugins into the [mise-plugins org](https://github.com/mise-plugins) which only
+gives commit access to me and the mise advisory panel. On the [Roadmap for 2025](https://mise.jdx.dev/roadmap.html) is a goal to get
+everything either off of asdf/vfox or at least into the mise-plugins org.
 
 ## Supported Versions
 

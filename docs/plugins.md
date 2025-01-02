@@ -8,7 +8,7 @@ Meanwhile, plugins have expanded beyond tools and can provide functionality like
 
 Tool plugins should be avoided for security reasons. New tools will not be accepted into mise built with asdf/vfox plugins unless they are very popular and
 aqua/ubi is not an option for some reason.
-If you want to integrate a new tool into mise, you should either try to get it into the [aqua registry](https://mise.jdx.dev/dev-tools/backends/ubi.html)
+If you want to integrate a new tool into mise, you should either try to get it into the [aqua registry](https://mise.jdx.dev/dev-tools/backends/aqua.html)
 or see if it can be installed with [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html). Then add it to the [registry](https://github.com/jdx/mise/blob/main/registry.toml).
 Aqua is definitely preferred to ubi as it has better UX and more features like slsa verification and the ability to use different logic for older versions.
 
@@ -17,7 +17,7 @@ Aqua is definitely preferred to ubi as it has better UX and more features like s
 mise uses asdf's plugin ecosystem under the hood. These plugins contain shell scripts like
 `bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
 
-See <https://github.com/mise-plugins/registry> for the list of built-in plugins shorthands. See asdf's
+See <https://github.com/jdx/mise/blob/main/registry.toml> for the list of built-in plugins shorthands. See asdf's
 [Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
 more about how they work.
 

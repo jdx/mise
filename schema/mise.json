@@ -246,6 +246,11 @@
               "description": "Use cosign to verify aqua tool signatures.",
               "type": "boolean"
             },
+            "minisign": {
+              "default": true,
+              "description": "Use minisign to verify aqua tool signatures.",
+              "type": "boolean"
+            },
             "registry_url": {
               "description": "URL to fetch aqua registry from.",
               "type": "string"
@@ -648,7 +653,10 @@
             },
             "uv_venv_create_args": {
               "description": "Arguments to pass to uv when creating a venv.",
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "venv_auto_create": {
               "description": "Automatically create virtualenvs for python tools.",
@@ -657,7 +665,10 @@
             },
             "venv_create_args": {
               "description": "Arguments to pass to python when creating a venv. (not used for uv venv creation)",
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "venv_stdlib": {
               "description": "Prefer to use venv from Python's standard library.",

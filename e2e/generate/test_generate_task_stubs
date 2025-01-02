@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+assert "mise task add xxx -- echo 'running xxx'"
+assert "mise generate task-stubs"
+assert "./bin/xxx" "running xxx"

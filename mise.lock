@@ -1,13 +1,9 @@
 [tools.actionlint]
-version = "1.7.4"
+version = "1.7.5"
 backend = "aqua:rhysd/actionlint"
 
 [tools.actionlint.checksums]
-actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
-actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5ccd2564bf86192c1b661"
-"actionlint.exe-windows-x86_64" = "sha256:04ca117d9f33b77731fd3ef6a3670bd6b11b40c1b1cc5b7aaf6c28392d74d2e2"
-"actionlint_1.7.4_linux_amd64.tar.gz" = "sha256:fc0a6886bbb9a23a39eeec4b176193cadb54ddbe77cdbb19b637933919545395"
-"actionlint_1.7.4_linux_arm64.tar.gz" = "sha256:ede03682dc955381d057dde95bb85ce9ca418122209a8a313b617d4adec56416"
+"actionlint_1.7.5_darwin_arm64.tar.gz" = "sha256:397119f9baa3fd9fe195db340b30acdaea532826e19a047a9cc9d96add7c267d"
 
 [tools.bun]
 version = "1.1.42"
@@ -68,6 +64,14 @@ jq-linux-amd64 = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b8
 jq-linux-arm64 = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5"
 jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
 "jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
+
+[tools.minisign]
+version = "0.11"
+backend = "aqua:jedisct1/minisign"
+
+[tools.minisign.checksums]
+"minisign-0.11-linux.tar.gz" = "sha256:f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0"
+"minisign-0.11-macos.zip" = "sha256:e7c410ae8b8960d7087392472b040bda9b2f307c76df0384ac37f9ad103fc893"
 
 [tools."npm:markdownlint-cli"]
 version = "0.43.0"

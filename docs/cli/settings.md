@@ -1,15 +1,20 @@
 # `mise settings`
 
-- **Usage**: `mise settings [FLAGS] [KEY] [VALUE] <SUBCOMMAND>`
+- **Usage**: `mise settings [FLAGS] [SETTING] [VALUE] <SUBCOMMAND>`
 - **Source code**: [`src/cli/settings.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings.rs)
 
-Manage settings
+Show current settings
+
+This is the contents of ~/.config/mise/config.toml
+
+Note that aliases are also stored in this file
+but managed separately with `mise aliases`
 
 ## Arguments
 
-### `[KEY]`
+### `[SETTING]`
 
-Setting name to get/set
+Name of setting
 
 ### `[VALUE]`
 
@@ -41,10 +46,10 @@ Output in TOML format
 
 ## Subcommands
 
-- [`mise settings add [-l --local] <KEY> <VALUE>`](/cli/settings/add.md)
-- [`mise settings get [-l --local] <KEY>`](/cli/settings/get.md)
-- [`mise settings ls [FLAGS] [KEY]`](/cli/settings/ls.md)
-- [`mise settings set [-l --local] <KEY> <VALUE>`](/cli/settings/set.md)
+- [`mise settings add [-l --local] <SETTING> <VALUE>`](/cli/settings/add.md)
+- [`mise settings get [-l --local] <SETTING>`](/cli/settings/get.md)
+- [`mise settings ls [FLAGS] [SETTING]`](/cli/settings/ls.md)
+- [`mise settings set [-l --local] <SETTING> <VALUE>`](/cli/settings/set.md)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
 
 Examples:

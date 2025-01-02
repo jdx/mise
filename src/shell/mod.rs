@@ -23,14 +23,6 @@ pub enum ShellType {
 }
 
 impl ShellType {
-    pub fn load() -> Option<ShellType> {
-        env::var("MISE_SHELL")
-            .or(env::var("SHELL"))
-            .ok()?
-            .parse()
-            .ok()
-    }
-
     pub fn as_shell(&self) -> Box<dyn Shell> {
         match self {
             Self::Bash => Box::<bash::Bash>::default(),
@@ -92,5 +84,5 @@ pub struct ActivateOptions {
 }
 
 pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
-    shell.or_else(ShellType::load).map(|st| st.as_shell())
+    shell.or(*env::MISE_SHELL).map(|st| st.as_shell())
 }

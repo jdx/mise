@@ -1,5 +1,5 @@
 use crate::config;
-use crate::config::settings::SettingsPartial;
+use crate::config::settings::{SettingsPartial, SETTINGS_META};
 use crate::config::{Settings, ALL_TOML_CONFIG_FILES, SETTINGS};
 use crate::file::display_path;
 use crate::ui::table;
@@ -14,34 +14,41 @@ use tabled::{Table, Tabled};
 /// Note that aliases are also stored in this file
 /// but managed separately with `mise aliases`
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsLs {
-    /// List keys under this key
-    pub key: Option<String>,
+    /// Name of setting
+    pub setting: Option<String>,
 
-    /// Display settings set to the default
+    /// List all settings
     #[clap(long, short)]
-    pub all: bool,
+    all: bool,
+
+    /// Print all settings with descriptions for shell completions
+    #[clap(long, hide = true)]
+    complete: bool,
 
     /// Use the local config file instead of the global one
-    #[clap(long, short)]
+    #[clap(long, short, global = true)]
     pub local: bool,
 
     /// Output in JSON format
     #[clap(long, short = 'J', group = "output")]
-    pub json: bool,
+    json: bool,
 
     /// Output in JSON format with sources
     #[clap(long, group = "output")]
-    pub json_extended: bool,
+    json_extended: bool,
 
     /// Output in TOML format
     #[clap(long, short = 'T', group = "output")]
-    pub toml: bool,
+    toml: bool,
 }
 
 impl SettingsLs {
     pub fn run(self) -> Result<()> {
+        if self.complete {
+            return self.complete();
+        }
         let mut rows: Vec<Row> = if self.local {
             let source = config::local_toml_config_path();
             let partial = Settings::parse_settings_file(&source).unwrap_or_default();
@@ -70,7 +77,7 @@ impl SettingsLs {
             }));
             rows
         };
-        if let Some(key) = &self.key {
+        if let Some(key) = &self.setting {
             rows.retain(|r| &r.key == key || r.key.starts_with(&format!("{key}.")));
         }
         for k in Settings::hidden_configs() {
@@ -86,6 +93,13 @@ impl SettingsLs {
             let mut table = Table::new(rows);
             table::default_style(&mut table, false);
             miseprintln!("{}", table.to_string());
+        }
+        Ok(())
+    }
+
+    fn complete(&self) -> Result<()> {
+        for (k, sm) in SETTINGS_META.iter() {
+            println!("{k}:{}", sm.description.replace(":", "\\:"));
         }
         Ok(())
     }

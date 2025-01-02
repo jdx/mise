@@ -1,7 +1,8 @@
-name: Publish to WinGet
+name: winget
 on:
   release:
     types: [released]
+  workflow_dispatch:
 jobs:
   publish:
     runs-on: windows-latest
@@ -17,7 +18,8 @@ jobs:
       - run: git pull --rebase microsoft master
       - run: git push -f origin master
       - uses: vedantmgoyal9/winget-releaser@main
+        if: endsWith(github.event.payload.release.tag_name, '0')
         with:
-          identifier: mise.jdx
+          identifier: jdx.mise
           max-versions-to-keep: 5
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}

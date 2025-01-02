@@ -477,6 +477,10 @@ impl Task {
         Ok(())
     }
 
+    pub fn name_to_path(&self) -> PathBuf {
+        self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
+    }
+
     pub fn render_env(&self, ts: &Toolset) -> Result<EnvMap> {
         let config = Config::get();
         let mut tera = get_tera(self.config_root.as_deref());

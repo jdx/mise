@@ -3,19 +3,29 @@
 Issues
 marked ["enhancements"](https://github.com/jdx/mise/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
 are the best way to read about ideas for future
-functionality. As far as general scope however, these are likely going to be focuses for 2024:
+functionality. As far as general scope however, these are likely going to be focuses for 2025:
 
-- Tasks - this is the newest headline feature of mise and needs to be refined, tested, and iterated
-  on before it can come out of experimental
-- Documentation website - we've outgrown what is mostly a single README
-- Supply chain hardening - securing mise is very important and this topic has had a lot of interest
-  from the community. We plan to make several improvements on this front
-- Improved python development - better virtualenv integration, precompiled python binaries, and
-  other areas are topics that frequently come up to improve
-- Improved plugin development - it's unclear what we'll do exactly but in general we want to make
-  the experience of vending tools for asdf/mise to be better and safer.
-- GUI/TUI - While we're all big CLI fans, it still would be great to better visualize what tools are
-  available, what your configuration is, and other things via some kind of UI.
+- Removing experimental flag on features - several features are still marked as experimental. My hope
+  is all features will be GA by the end of 2025.
+- Supply chain hardening - in 2024 security was greatly enhanced in mise through migrating to aqua/ubi
+  backends for tools in the registry, but about 1/3 of the tools still rely on asdf plugins.
+  For tools we can't use aqua/ubi for, my goal is to fork them all into the [mise-plugins org](https://github.com/mise-plugins) by EOY
+  which only me and the advisory panel have commit access to.
+  Aqua tools also can benefit from further hardening through the use of slsa-verify and cosign and other verification methods.
+- Tasks improvements - tasks came out of experimental at the end of 2024 but there are still features
+  that I'd like to see from tasks such as prompts and error handling.
+- Hook improvements - hooks are very new in mise and still experimental. I suspect the design of hooks
+  will change a bit as we learn more about how they are used. It's unclear what exactly will happen here right now.
+- Improved python development - python improved a lot with better venv support and the precompiled
+  binaries provided by Astral. As users are adopting this more we're learning about how mise can still
+  be further improved for python development—which is the most complicated tool to support in mise by far.
+  Where possible, the plan is to leverage uv as much as we can since they're the real experts when it
+  comes to the python ecosystem.
+- Further Windows support - non-WSL Windows support was added in 2024 but it is not heavily used. There are
+  definitely bugs and gaps with Windows remaining but we should be able to get Windows much closer to UNIX
+  by the end of the year. More testing on Windows would be a big help here.
+- GUI/TUI - A few commands in mise make use of a TUI like `mise run`, `mise use`, and `mise up -i`,
+  I'd like to see more done with these type of UIs in 2025.
 
 ## Versioning
 

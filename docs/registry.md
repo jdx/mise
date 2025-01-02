@@ -294,7 +294,6 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | goconvey | [asdf:therounds-contrib/asdf-goconvey](https://github.com/therounds-contrib/asdf-goconvey) |
 | gocryptfs | [aqua:rfjakob/gocryptfs](https://github.com/rfjakob/gocryptfs) [ubi:rfjakob/gocryptfs](https://github.com/rfjakob/gocryptfs) |
 | gofumpt | [ubi:mvdan/gofumpt](https://github.com/mvdan/gofumpt) [asdf:looztra/asdf-gofumpt](https://github.com/looztra/asdf-gofumpt) |
-| gohugo | [ubi:gohugoio/hugo](https://github.com/gohugoio/hugo) [asdf:nklmilojevic/asdf-hugo](https://github.com/nklmilojevic/asdf-hugo) |
 | gojq | [aqua:itchyny/gojq](https://github.com/itchyny/gojq) [asdf:jimmidyson/asdf-gojq](https://github.com/jimmidyson/asdf-gojq) |
 | golangci-lint | [aqua:golangci/golangci-lint](https://github.com/golangci/golangci-lint) [ubi:golangci/golangci-lint](https://github.com/golangci/golangci-lint) [asdf:hypnoglow/asdf-golangci-lint](https://github.com/hypnoglow/asdf-golangci-lint) |
 | golangci-lint-langserver | [ubi:nametake/golangci-lint-langserver](https://github.com/nametake/golangci-lint-langserver) [go:github.com/nametake/golangci-lint-langserver](https://pkg.go.dev/github.com/nametake/golangci-lint-langserver) |
@@ -306,7 +305,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | goss | [aqua:goss-org/goss](https://github.com/goss-org/goss) [asdf:raimon49/asdf-goss](https://github.com/raimon49/asdf-goss) |
 | gotestsum | [aqua:gotestyourself/gotestsum](https://github.com/gotestyourself/gotestsum) [asdf:pmalek/mise-gotestsum](https://github.com/pmalek/mise-gotestsum) |
 | graalvm | [asdf:asdf-community/asdf-graalvm](https://github.com/asdf-community/asdf-graalvm) |
-| gradle | [asdf:rfrancis/asdf-gradle](https://github.com/rfrancis/asdf-gradle) [vfox:version-fox/vfox-gradle](https://github.com/version-fox/vfox-gradle) |
+| gradle | [aqua:gradle/gradle](https://github.com/gradle/gradle) [vfox:version-fox/vfox-gradle](https://github.com/version-fox/vfox-gradle) |
 | gradle-profiler | [asdf:joschi/asdf-gradle-profiler](https://github.com/joschi/asdf-gradle-profiler) |
 | grails | [asdf:weibemoura/asdf-grails](https://github.com/weibemoura/asdf-grails) |
 | grain | [asdf:cometkim/asdf-grain](https://github.com/cometkim/asdf-grain) |
@@ -344,7 +343,8 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | hostctl | [aqua:guumaster/hostctl](https://github.com/guumaster/hostctl) [asdf:svenluijten/asdf-hostctl](https://github.com/svenluijten/asdf-hostctl) |
 | httpie-go | [aqua:nojima/httpie-go](https://github.com/nojima/httpie-go) [asdf:abatilo/asdf-httpie-go](https://github.com/abatilo/asdf-httpie-go) |
 | hub | [aqua:mislav/hub](https://github.com/mislav/hub) [asdf:mise-plugins/asdf-hub](https://github.com/mise-plugins/asdf-hub) |
-| hugo | [aqua:gohugoio/hugo](https://github.com/gohugoio/hugo) [asdf:NeoHsu/asdf-hugo](https://github.com/NeoHsu/asdf-hugo) |
+| hugo | [aqua:gohugoio/hugo](https://github.com/gohugoio/hugo) [ubi:gohugoio/hugo](https://github.com/gohugoio/hugo) [asdf:NeoHsu/asdf-hugo](https://github.com/NeoHsu/asdf-hugo) [asdf:nklmilojevic/asdf-hugo](https://github.com/nklmilojevic/asdf-hugo) |
+| hugo-extended | [aqua:gohugoio/hugo/hugo-extended](https://github.com/gohugoio/hugo/hugo-extended) |
 | hurl | [aqua:Orange-OpenSource/hurl](https://github.com/Orange-OpenSource/hurl) [asdf:raimon49/asdf-hurl](https://github.com/raimon49/asdf-hurl) |
 | hwatch | [ubi:blacknon/hwatch](https://github.com/blacknon/hwatch) [asdf:chessmango/asdf-hwatch](https://github.com/chessmango/asdf-hwatch) |
 | hygen | [asdf:brentjanderson/asdf-hygen](https://github.com/brentjanderson/asdf-hygen) |
@@ -500,6 +500,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | minikube | [aqua:kubernetes/minikube](https://github.com/kubernetes/minikube) [asdf:alvarobp/asdf-minikube](https://github.com/alvarobp/asdf-minikube) |
 | minio | [asdf:aeons/asdf-minio](https://github.com/aeons/asdf-minio) |
 | minishift | [aqua:minishift/minishift](https://github.com/minishift/minishift) [asdf:sqtran/asdf-minishift](https://github.com/sqtran/asdf-minishift) |
+| minisign | [aqua:jedisct1/minisign](https://github.com/jedisct1/minisign) |
 | mint | [asdf:mint-lang/asdf-mint](https://github.com/mint-lang/asdf-mint) |
 | mirrord | [asdf:metalbear-co/asdf-mirrord](https://github.com/metalbear-co/asdf-mirrord) |
 | mitmproxy | [asdf:NeoHsu/asdf-mitmproxy](https://github.com/NeoHsu/asdf-mitmproxy) |

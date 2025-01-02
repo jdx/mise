@@ -5,13 +5,14 @@ set -euxo pipefail
 cache_day="max-age=86400,s-maxage=86400,public,immutable"
 cache_week="max-age=604800,s-maxage=604800,public,immutable"
 
-aws s3 cp "$RELEASE_DIR/$MISE_VERSION" "s3://$AWS_S3_BUCKET/$MISE_VERSION/" --cache-control "$cache_week" --no-progress --recursive --include "*" --exclude "*.tar.gz" --exclude "*.tar.xz"
+#aws s3 cp "$RELEASE_DIR/$MISE_VERSION" "s3://$AWS_S3_BUCKET/$MISE_VERSION/" --cache-control "$cache_week" --no-progress --recursive --include "*" --exclude "*.tar.gz" --exclude "*.tar.xz"
 
 aws s3 cp "$RELEASE_DIR" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --recursive --exclude "*.tar.gz" --exclude "*.tar.xz" --include "mise-latest-*"
 aws s3 cp "$RELEASE_DIR" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain" --recursive --exclude "*" --include "SHASUMS*"
 aws s3 cp "$RELEASE_DIR/VERSION" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
 aws s3 cp "$RELEASE_DIR/install.sh" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
 aws s3 cp "$RELEASE_DIR/install.sh.sig" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress
+aws s3 cp "$RELEASE_DIR/install.sh.minisig" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress
 aws s3 cp "./schema/mise.json" "s3://$AWS_S3_BUCKET/schema/mise.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 aws s3 cp "./schema/mise.plugin.json" "s3://$AWS_S3_BUCKET/schema/mise.plugin.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 aws s3 cp "./schema/mise-task.json" "s3://$AWS_S3_BUCKET/schema/mise-task.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
@@ -24,16 +25,14 @@ aws s3 cp artifacts/rpm/repodata/ "s3://$AWS_S3_BUCKET/rpm/repodata/" --cache-co
 aws s3 cp artifacts/deb/pool/ "s3://$AWS_S3_BUCKET/deb/pool/" --cache-control "$cache_week" --no-progress --recursive
 aws s3 cp artifacts/deb/dists/ "s3://$AWS_S3_BUCKET/deb/dists/" --cache-control "$cache_day" --no-progress --no-progress --recursive
 
+# delete ancient CLIs
+# since=`date --date '-3 years' +%F 2>/dev/null`
+# aws s3api list-objects-v2 --bucket "$AWS_S3_BUCKET" --query 'Contents[?LastModified < `'"$since"'`]' | jq -r '.[].Key' | grep "^(deb|rpm)\/"
+
 export CLOUDFLARE_ACCOUNT_ID=6e243906ff257b965bcae8025c2fc344
 
 # jdx.dev
 curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/90dfd7997bdcfa8579c52d8ee8dd4cd1/purge_cache" \
-  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data '{ "purge_everything": true }'
-
-# rtx.pub
-curl --fail-with-body -X POST "https://api.cloudflare.com/client/v4/zones/80d977fd09f01db52bec165778088891/purge_cache" \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{ "purge_everything": true }'

@@ -10,6 +10,7 @@ use crate::cli::self_update::SelfUpdate;
 #[cfg(not(test))]
 use crate::config::Settings;
 use crate::file::modified_duration;
+use crate::ui::style;
 use crate::{dirs, duration, env, file};
 
 /// Display the version of mise
@@ -69,7 +70,8 @@ pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
     let mise_bin = "mise";
     #[cfg(windows)]
     let mise_bin = "mise.exe";
-    if args.len() == 2 && *env::MISE_BIN_NAME == mise_bin {
+    if args.len() == 2 && *env::MISE_BIN_NAME == mise_bin || env::MISE_BIN_NAME.starts_with("mise-")
+    {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" || cmd == "v" {
             show_version()?;
@@ -82,18 +84,17 @@ pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
 
 fn show_version() -> std::io::Result<()> {
     if console::user_attended() {
-        miseprintln!(
-            "{}",
+        let banner = style::nred(
             r#"
               _                                        __              
    ____ ___  (_)_______        ___  ____        ____  / /___ _________
   / __ `__ \/ / ___/ _ \______/ _ \/ __ \______/ __ \/ / __ `/ ___/ _ \
  / / / / / / (__  )  __/_____/  __/ / / /_____/ /_/ / / /_/ / /__/  __/
 /_/ /_/ /_/_/____/\___/      \___/_/ /_/     / .___/_/\__,_/\___/\___/
-                                            /_/
-"#
-            .trim_start_matches("\n")
+                                            /_/"#
+                .trim_start_matches("\n"),
         );
+        miseprintln!("{banner}");
     }
     miseprintln!("{}", *VERSION);
     Ok(())

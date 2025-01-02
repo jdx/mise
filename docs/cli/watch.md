@@ -15,7 +15,7 @@ It must be installed for this command to work, but you can install it with `mise
 
 Tasks to run
 Can specify multiple tasks by separating with `:::`
-e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
+e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
 
 ### `[ARGS]...`
 

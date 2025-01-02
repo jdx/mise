@@ -460,7 +460,8 @@ const completionSpec: Fig.Spec = {
                     "args": {
                         "name": "tool",
                         "description": "Show aliases for <TOOL>",
-                        "isOptional": true
+                        "isOptional": true,
+                        "generators": completionGeneratorTemplate(`mise registry --complete`)
                     }
                 },
                 {
@@ -962,6 +963,51 @@ const completionSpec: Fig.Spec = {
             "description": "[experimental] Generate files for various tools/services",
             "subcommands": [
                 {
+                    "name": "bootstrap",
+                    "description": "[experimental] Generate a script to download+execute mise",
+                    "options": [
+                        {
+                            "name": [
+                                "-l",
+                                "--localize"
+                            ],
+                            "description": "Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project",
+                            "isRepeatable": false
+                        },
+                        {
+                            "name": "--localized-dir",
+                            "description": "Directory to put localized data into",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "localized_dir",
+                                "template": "folders"
+                            }
+                        },
+                        {
+                            "name": [
+                                "-V",
+                                "--version"
+                            ],
+                            "description": "Specify mise version to fetch",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "version"
+                            }
+                        },
+                        {
+                            "name": [
+                                "-w",
+                                "--write"
+                            ],
+                            "description": "Instead of outputting the script to stdout, write to a file and make it executable",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "write"
+                            }
+                        }
+                    ]
+                },
+                {
                     "name": [
                         "config",
                         "g"
@@ -1125,6 +1171,35 @@ const completionSpec: Fig.Spec = {
                                     "simple",
                                     "detailed"
                                 ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "task-stubs",
+                    "description": "[experimental] Generates shims to run mise tasks",
+                    "options": [
+                        {
+                            "name": [
+                                "-m",
+                                "--mise-bin"
+                            ],
+                            "description": "Path to a mise bin to use when running the task stub.",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "mise_bin"
+                            }
+                        },
+                        {
+                            "name": [
+                                "-d",
+                                "--dir"
+                            ],
+                            "description": "Directory to create task stubs inside of",
+                            "isRepeatable": false,
+                            "args": {
+                                "name": "dir",
+                                "template": "folders"
                             }
                         }
                     ]
@@ -1338,11 +1413,11 @@ const completionSpec: Fig.Spec = {
                 }
             ],
             "args": {
-                "name": "plugin",
-                "description": "Only show tool versions from [PLUGIN]",
+                "name": "installed_tool",
+                "description": "Only show tool versions from [TOOL]",
                 "isOptional": true,
                 "isVariadic": true,
-                "generators": pluginGenerator
+                "generators": completionGeneratorTemplate(`mise plugins --core --user`)
             }
         },
         {
@@ -1641,7 +1716,8 @@ const completionSpec: Fig.Spec = {
                 "name": "installed_tool",
                 "description": "Prune only these tools",
                 "isOptional": true,
-                "isVariadic": true
+                "isVariadic": true,
+                "generators": completionGeneratorTemplate(`mise plugins --core --user`)
             }
         },
         {
@@ -1656,7 +1732,8 @@ const completionSpec: Fig.Spec = {
                     "description": "Show only tools for this backend",
                     "isRepeatable": false,
                     "args": {
-                        "name": "backend"
+                        "name": "backend",
+                        "generators": completionGeneratorTemplate(`mise backends`)
                     }
                 },
                 {
@@ -1860,7 +1937,7 @@ const completionSpec: Fig.Spec = {
                 }
             ],
             "args": {
-                "name": "env_vars",
+                "name": "env_var",
                 "description": "Environment variable(s) to set\ne.g.: NODE_ENV=production",
                 "isOptional": true,
                 "isVariadic": true,
@@ -1887,8 +1964,9 @@ const completionSpec: Fig.Spec = {
                     ],
                     "args": [
                         {
-                            "name": "key",
-                            "description": "The setting to set"
+                            "name": "setting",
+                            "description": "The setting to set",
+                            "generators": settingsGenerator
                         },
                         {
                             "name": "value",
@@ -1910,8 +1988,9 @@ const completionSpec: Fig.Spec = {
                         }
                     ],
                     "args": {
-                        "name": "key",
-                        "description": "The setting to show"
+                        "name": "setting",
+                        "description": "The setting to show",
+                        "generators": settingsGenerator
                     }
                 },
                 {
@@ -1926,7 +2005,7 @@ const completionSpec: Fig.Spec = {
                                 "-a",
                                 "--all"
                             ],
-                            "description": "Display settings set to the default",
+                            "description": "List all settings",
                             "isRepeatable": false
                         },
                         {
@@ -1960,9 +2039,10 @@ const completionSpec: Fig.Spec = {
                         }
                     ],
                     "args": {
-                        "name": "key",
-                        "description": "List keys under this key",
-                        "isOptional": true
+                        "name": "setting",
+                        "description": "Name of setting",
+                        "isOptional": true,
+                        "generators": settingsGenerator
                     }
                 },
                 {
@@ -1983,8 +2063,9 @@ const completionSpec: Fig.Spec = {
                     ],
                     "args": [
                         {
-                            "name": "key",
-                            "description": "The setting to set"
+                            "name": "setting",
+                            "description": "The setting to set",
+                            "generators": settingsGenerator
                         },
                         {
                             "name": "value",
@@ -2058,9 +2139,10 @@ const completionSpec: Fig.Spec = {
             ],
             "args": [
                 {
-                    "name": "key",
-                    "description": "Setting name to get/set",
-                    "isOptional": true
+                    "name": "setting",
+                    "description": "Name of setting",
+                    "isOptional": true,
+                    "generators": settingsGenerator
                 },
                 {
                     "name": "value",
@@ -2684,8 +2766,9 @@ const completionSpec: Fig.Spec = {
                 }
             ],
             "args": {
-                "name": "backend",
-                "description": "Tool name to get information about"
+                "name": "tool",
+                "description": "Tool name to get information about",
+                "generators": completionGeneratorTemplate(`mise registry --complete`)
             }
         },
         {
@@ -2779,10 +2862,11 @@ const completionSpec: Fig.Spec = {
                 }
             ],
             "args": {
-                "name": "keys",
+                "name": "env_key",
                 "description": "Environment variable(s) to remove\ne.g.: NODE_ENV",
                 "isOptional": true,
-                "isVariadic": true
+                "isVariadic": true,
+                "generators": completionGeneratorTemplate(`mise set --complete`)
             }
         },
         {
@@ -3364,7 +3448,7 @@ const completionSpec: Fig.Spec = {
             "args": [
                 {
                     "name": "task",
-                    "description": "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2",
+                    "description": "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`",
                     "isOptional": true,
                     "generators": simpleTaskGenerator
                 },
@@ -3414,7 +3498,9 @@ const completionSpec: Fig.Spec = {
             ],
             "args": {
                 "name": "bin_name",
-                "description": "The bin to look up"
+                "description": "The bin to look up",
+                "isOptional": true,
+                "generators": completionGeneratorTemplate(`mise which --complete`)
             }
         }
     ],

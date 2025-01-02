@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+assert "mise x zig@0.13.0 -- zig version" "0.13.0"
+assert "mise x zig@ref:master -- zig version"

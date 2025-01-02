@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
@@ -47,8 +46,10 @@ impl Client {
     }
 
     fn _new() -> ClientBuilder {
+        let v = &*version::VERSION;
+        let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();
         ClientBuilder::new()
-            .user_agent(format!("mise/{}", &*version::VERSION))
+            .user_agent(format!("mise/{v} {shell}").trim())
             .gzip(true)
             .zstd(true)
     }
@@ -172,14 +173,16 @@ impl Client {
                 }
             }
 
-            file::create_dir_all(path.parent().unwrap())?;
-            let mut file = File::create(path)?;
+            let parent = path.parent().unwrap();
+            file::create_dir_all(parent)?;
+            let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
             while let Some(chunk) = resp.chunk().await? {
                 file.write_all(&chunk)?;
                 if let Some(pr) = pr {
                     pr.inc(chunk.len() as u64);
                 }
             }
+            file.persist(path)?;
             Ok::<(), eyre::Error>(())
         })?;
         Ok(())
