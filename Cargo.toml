@@ -85,7 +85,7 @@ indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
 indoc = "2"
-itertools = "0.13"
+itertools = "0.14"
 junction = "1"
 log = "0.4"
 minisign-verify = "0.2"
