@@ -20,6 +20,8 @@ disable_backends = ["rust", "java"]'
 assert_contains "mise settings --json-extended" "{
   \"all_compile\": {
     \"value\": false,
+    \"type\": \"boolean\",
+    \"description\": \"do not use precompiled binaries for any tool\",
     \"source\": \"$HOME/workdir/mise.toml\"
   },
   \"disable_backends\": {
@@ -27,6 +29,8 @@ assert_contains "mise settings --json-extended" "{
       \"rust\",
       \"java\"
     ],
+    \"type\": \"array\",
+    \"description\": \"Backends to disable such as \`asdf\` or \`pipx\`\",
     \"source\": \"$HOME/workdir/mise.toml\"
   }
 }"
