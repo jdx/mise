@@ -153,14 +153,14 @@ zstd = "0.13"
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.29", features = ["signal", "user"] }
-self_update = { version = "0.41", default-features = false, features = [
+self_update = { version = "0.42", default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
 ] }
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.41", default-features = false, features = [
+self_update = { version = "0.42", default-features = false, features = [
   "archive-zip",
   "signatures",
 ] }
