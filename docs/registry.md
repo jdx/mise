@@ -179,6 +179,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | dapr | [aqua:dapr/cli](https://github.com/dapr/cli) [asdf:asdf-community/asdf-dapr-cli](https://github.com/asdf-community/asdf-dapr-cli) |
 | dart | [asdf:PatOConnor43/asdf-dart](https://github.com/PatOConnor43/asdf-dart) [vfox:version-fox/vfox-dart](https://github.com/version-fox/vfox-dart) |
 | dasel | [aqua:TomWright/dasel](https://github.com/TomWright/dasel) [asdf:asdf-community/asdf-dasel](https://github.com/asdf-community/asdf-dasel) |
+| databricks-cli | [ubi:databricks/cli](https://github.com/databricks/cli) |
 | datree | [aqua:datreeio/datree](https://github.com/datreeio/datree) [asdf:lukeab/asdf-datree](https://github.com/lukeab/asdf-datree) |
 | daytona | [asdf:CrouchingMuppet/asdf-daytona](https://github.com/CrouchingMuppet/asdf-daytona) |
 | dbmate | [aqua:amacneil/dbmate](https://github.com/amacneil/dbmate) [asdf:juusujanar/asdf-dbmate](https://github.com/juusujanar/asdf-dbmate) |
