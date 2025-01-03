@@ -1,5 +1,16 @@
 # Changelog
 
+## [2025.1.1](https://github.com/jdx/mise/compare/v2025.1.0..v2025.1.1) - 2025-01-03
+
+### 📚 Documentation
+
+- Fix broken link to environment variables doc by [@xcapaldi](https://github.com/xcapaldi) in [#3938](https://github.com/jdx/mise/pull/3938)
+
+### New Contributors
+
+- @xcapaldi made their first contribution in [#3938](https://github.com/jdx/mise/pull/3938)
+- @auxesis made their first contribution in [#3914](https://github.com/jdx/mise/pull/3914)
+
 ## [2025.1.0](https://github.com/jdx/mise/compare/v2024.12.24..v2025.1.0) - 2025-01-01
 
 ### 🚀 Features
