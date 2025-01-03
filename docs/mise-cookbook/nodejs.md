@@ -8,7 +8,7 @@ A nice trick you can use is to add the node modules binaries to the PATH. This w
 
 ```toml [mise.toml]
 [env]
-_.path = ['./node_modules/.bin']
+_.path = ['{{config_root}}/node_modules/.bin']
 ```
 
 Example:
