@@ -71,11 +71,14 @@ impl Bootstrap {
 local script_dir=$( cd -- "$( dirname -- "${{BASH_SOURCE[0]}}" )" &> /dev/null && pwd )
 local project_dir=$( cd -- "$( dirname -- "$script_dir" )" &> /dev/null && pwd )
 local localized_dir="$project_dir/{localized_dir}"
+export MISE_BOOTSTRAP_PROJECT_DIR="$project_dir"
 export MISE_DATA_DIR="$localized_dir"
 export MISE_CONFIG_DIR="$localized_dir"
 export MISE_CACHE_DIR="$localized_dir/cache"
 export MISE_STATE_DIR="$localized_dir/state"
 export MISE_INSTALL_PATH="$localized_dir/mise-{version}"
+export MISE_TRUSTED_CONFIG_PATHS="$project_dir"
+export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise"
 "#
             )
         } else {
@@ -89,13 +92,14 @@ export MISE_INSTALL_PATH="$cache_home/mise-{version}"
         let vars = info::indent_by(vars.trim(), "    ");
         let script = format!(
             r#"
-#!/bin/sh
+#!/usr/bin/env bash
 set -eu
 
 __mise_bootstrap() {{
 {vars}
     install() {{
 {install}
+    cd "$MISE_BOOTSTRAP_PROJECT_DIR"
     }}
     local MISE_INSTALL_HELP=0
     test -f "$MISE_INSTALL_PATH" || install
