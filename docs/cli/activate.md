@@ -7,7 +7,7 @@ Initializes mise in the current shell session
 
 This should go into your shell's rc file or login shell.
 Otherwise, it will only take effect in the current session.
-(e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish)
+(e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish, or $PROFILE for powershell)
 
 Typically, this can be added with something like the following:
 
@@ -71,4 +71,5 @@ eval "$(mise activate bash)"
 eval "$(mise activate zsh)"
 mise activate fish | source
 execx($(mise activate xonsh))
+(&mise activate pwsh) | Out-String | Invoke-Expression
 ```
