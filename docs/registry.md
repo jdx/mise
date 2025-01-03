@@ -36,6 +36,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | air | [aqua:air-verse/air](https://github.com/air-verse/air) [asdf:pdemagny/asdf-air](https://github.com/pdemagny/asdf-air) |
 | aks-engine | [aqua:Azure/aks-engine](https://github.com/Azure/aks-engine) [asdf:robsonpeixoto/asdf-aks-engine](https://github.com/robsonpeixoto/asdf-aks-engine) |
 | allure | [asdf:comdotlinux/asdf-allure](https://github.com/comdotlinux/asdf-allure) |
+| allurectl | [ubi:allure-framework/allurectl](https://github.com/allure-framework/allurectl) |
 | alp | [aqua:tkuchiki/alp](https://github.com/tkuchiki/alp) [asdf:asdf-community/asdf-alp](https://github.com/asdf-community/asdf-alp) |
 | amass | [ubi:owasp-amass/amass](https://github.com/owasp-amass/amass) [asdf:dhoeric/asdf-amass](https://github.com/dhoeric/asdf-amass) |
 | amazon-ecr-credential-helper | [aqua:awslabs/amazon-ecr-credential-helper](https://github.com/awslabs/amazon-ecr-credential-helper) [asdf:dex4er/asdf-amazon-ecr-credential-helper](https://github.com/dex4er/asdf-amazon-ecr-credential-helper) |

@@ -53,6 +53,7 @@ aks-engine.backends = [
 aks-engine.test = ["aks-engine version", "Version: v{{version}}"]
 allure.backends = ["asdf:comdotlinux/asdf-allure"]
 allure.test = ["allure --version", "{{version}}"]
+allurectl.backends = ["ubi:allure-framework/allurectl"]
 alp.backends = ["aqua:tkuchiki/alp", "asdf:asdf-community/asdf-alp"]
 alp.test = ["alp --version", "{{version}}"]
 amass.backends = ["ubi:owasp-amass/amass", "asdf:dhoeric/asdf-amass"]
