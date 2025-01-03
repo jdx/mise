@@ -27,3 +27,4 @@ megalinter-reports/
 
 .vscode/
 testResults.xml
+.mise/
