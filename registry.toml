@@ -1154,6 +1154,8 @@ nancy.backends = [
 ]
 nano.backends = ["asdf:mfakane/asdf-nano"]
 nasm.backends = ["asdf:Dpbm/asdf-nasm"]
+navi.backends = ["aqua:denisidoro/navi", "ubi:denisidoro/navi"]
+navi.test = ["navi --version", "navi {{version}}"]
 neko.backends = ["asdf:asdf-community/asdf-neko"]
 neovim.backends = ["aqua:neovim/neovim", "asdf:richin13/asdf-neovim"]
 nerdctl.backends = ["aqua:containerd/nerdctl", "asdf:dmpe/asdf-nerdctl"]
