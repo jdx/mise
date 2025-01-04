@@ -521,6 +521,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | nancy | [aqua:sonatype-nexus-community/nancy](https://github.com/sonatype-nexus-community/nancy) [asdf:iilyak/asdf-nancy](https://github.com/iilyak/asdf-nancy) |
 | nano | [asdf:mfakane/asdf-nano](https://github.com/mfakane/asdf-nano) |
 | nasm | [asdf:Dpbm/asdf-nasm](https://github.com/Dpbm/asdf-nasm) |
+| navi | [aqua:denisidoro/navi](https://github.com/denisidoro/navi) [ubi:denisidoro/navi](https://github.com/denisidoro/navi) |
 | neko | [asdf:asdf-community/asdf-neko](https://github.com/asdf-community/asdf-neko) |
 | neovim | [aqua:neovim/neovim](https://github.com/neovim/neovim) [asdf:richin13/asdf-neovim](https://github.com/richin13/asdf-neovim) |
 | nerdctl | [aqua:containerd/nerdctl](https://github.com/containerd/nerdctl) [asdf:dmpe/asdf-nerdctl](https://github.com/dmpe/asdf-nerdctl) |
