@@ -64,12 +64,11 @@ impl Bootstrap {
             .unwrap()
             .as_str();
         
-        let shared_vars = format!(
-            r#"
-local script_dir=$( cd -- "$( dirname -- "${{BASH_SOURCE[0]}}" )" &> /dev/null && pwd )
+        let shared_vars = r#"
+local script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 local project_dir=$( cd -- "$( dirname -- "$script_dir" )" &> /dev/null && pwd )
 export MISE_BOOTSTRAP_PROJECT_DIR="$project_dir"
-"#);
+"#;
         
         let vars = if self.localize {
             // TODO: this will only work right if it is in the base directory, not an absolute path or has a subdirectory
@@ -83,8 +82,8 @@ export MISE_CONFIG_DIR="$localized_dir"
 export MISE_CACHE_DIR="$localized_dir/cache"
 export MISE_STATE_DIR="$localized_dir/state"
 export MISE_INSTALL_PATH="$localized_dir/mise-{version}"
-export MISE_TRUSTED_CONFIG_PATHS="$project_dir"
-export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise"
+export MISE_TRUSTED_CONFIG_PATHS="$project_dir${{MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}}"
+export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise${{MISE_IGNORED_CONFIG_PATHS:+:$MISE_IGNORED_CONFIG_PATHS}}"
 "#
             )
         } else {
