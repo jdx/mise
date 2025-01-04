@@ -1,8 +1,7 @@
 use crate::config::SETTINGS;
 use crate::http::HTTP;
 use crate::ui::info;
-use crate::Result;
-use crate::{file, minisign};
+use crate::{file, minisign, Result};
 use clap::ValueHint;
 use std::path::PathBuf;
 use xx::file::display_path;
@@ -63,13 +62,13 @@ impl Bootstrap {
             .get(1)
             .unwrap()
             .as_str();
-        
+
         let shared_vars = r#"
 local script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 local project_dir=$( cd -- "$( dirname -- "$script_dir" )" &> /dev/null && pwd )
 export MISE_BOOTSTRAP_PROJECT_DIR="$project_dir"
 "#;
-        
+
         let vars = if self.localize {
             // TODO: this will only work right if it is in the base directory, not an absolute path or has a subdirectory
             let localized_dir = self.localized_dir.to_string_lossy();
