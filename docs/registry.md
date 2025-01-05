@@ -36,6 +36,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | air | [aqua:air-verse/air](https://github.com/air-verse/air) [asdf:pdemagny/asdf-air](https://github.com/pdemagny/asdf-air) |
 | aks-engine | [aqua:Azure/aks-engine](https://github.com/Azure/aks-engine) [asdf:robsonpeixoto/asdf-aks-engine](https://github.com/robsonpeixoto/asdf-aks-engine) |
 | allure | [asdf:comdotlinux/asdf-allure](https://github.com/comdotlinux/asdf-allure) |
+| allurectl | [ubi:allure-framework/allurectl](https://github.com/allure-framework/allurectl) |
 | alp | [aqua:tkuchiki/alp](https://github.com/tkuchiki/alp) [asdf:asdf-community/asdf-alp](https://github.com/asdf-community/asdf-alp) |
 | amass | [ubi:owasp-amass/amass](https://github.com/owasp-amass/amass) [asdf:dhoeric/asdf-amass](https://github.com/dhoeric/asdf-amass) |
 | amazon-ecr-credential-helper | [aqua:awslabs/amazon-ecr-credential-helper](https://github.com/awslabs/amazon-ecr-credential-helper) [asdf:dex4er/asdf-amazon-ecr-credential-helper](https://github.com/dex4er/asdf-amazon-ecr-credential-helper) |
@@ -179,6 +180,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | dapr | [aqua:dapr/cli](https://github.com/dapr/cli) [asdf:asdf-community/asdf-dapr-cli](https://github.com/asdf-community/asdf-dapr-cli) |
 | dart | [asdf:PatOConnor43/asdf-dart](https://github.com/PatOConnor43/asdf-dart) [vfox:version-fox/vfox-dart](https://github.com/version-fox/vfox-dart) |
 | dasel | [aqua:TomWright/dasel](https://github.com/TomWright/dasel) [asdf:asdf-community/asdf-dasel](https://github.com/asdf-community/asdf-dasel) |
+| databricks-cli | [ubi:databricks/cli](https://github.com/databricks/cli) |
 | datree | [aqua:datreeio/datree](https://github.com/datreeio/datree) [asdf:lukeab/asdf-datree](https://github.com/lukeab/asdf-datree) |
 | daytona | [asdf:CrouchingMuppet/asdf-daytona](https://github.com/CrouchingMuppet/asdf-daytona) |
 | dbmate | [aqua:amacneil/dbmate](https://github.com/amacneil/dbmate) [asdf:juusujanar/asdf-dbmate](https://github.com/juusujanar/asdf-dbmate) |
@@ -520,6 +522,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | nancy | [aqua:sonatype-nexus-community/nancy](https://github.com/sonatype-nexus-community/nancy) [asdf:iilyak/asdf-nancy](https://github.com/iilyak/asdf-nancy) |
 | nano | [asdf:mfakane/asdf-nano](https://github.com/mfakane/asdf-nano) |
 | nasm | [asdf:Dpbm/asdf-nasm](https://github.com/Dpbm/asdf-nasm) |
+| navi | [aqua:denisidoro/navi](https://github.com/denisidoro/navi) [ubi:denisidoro/navi](https://github.com/denisidoro/navi) |
 | neko | [asdf:asdf-community/asdf-neko](https://github.com/asdf-community/asdf-neko) |
 | neovim | [aqua:neovim/neovim](https://github.com/neovim/neovim) [asdf:richin13/asdf-neovim](https://github.com/richin13/asdf-neovim) |
 | nerdctl | [aqua:containerd/nerdctl](https://github.com/containerd/nerdctl) [asdf:dmpe/asdf-nerdctl](https://github.com/dmpe/asdf-nerdctl) |

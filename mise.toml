@@ -10,7 +10,6 @@ bun = "1.1.42"
 cargo-binstall = "1.10.17"
 "cargo:cargo-edit" = "latest"
 "cargo:cargo-insta" = "latest"
-"cargo:cargo-show" = { version = "latest", os = ["linux", "macos"] }
 "cargo:git-cliff" = "latest"
 "cargo:toml-cli" = "latest"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }

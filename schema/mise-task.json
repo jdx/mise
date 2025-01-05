@@ -224,6 +224,10 @@
               "description": "specify a shell command to run the script with",
               "type": "string",
               "default": "sh -c"
+            },
+            "usage": {
+              "description": "Specify usage (https://usage.jdx.dev/) specs for the task",
+              "type": "string"
             }
           },
           "type": "object"

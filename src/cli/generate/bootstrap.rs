@@ -1,8 +1,7 @@
 use crate::config::SETTINGS;
 use crate::http::HTTP;
 use crate::ui::info;
-use crate::Result;
-use crate::{file, minisign};
+use crate::{file, minisign, Result};
 use clap::ValueHint;
 use std::path::PathBuf;
 use xx::file::display_path;
@@ -63,19 +62,27 @@ impl Bootstrap {
             .get(1)
             .unwrap()
             .as_str();
+
+        let shared_vars = r#"
+local script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+local project_dir=$( cd -- "$( dirname -- "$script_dir" )" &> /dev/null && pwd )
+export MISE_BOOTSTRAP_PROJECT_DIR="$project_dir"
+"#;
+
         let vars = if self.localize {
             // TODO: this will only work right if it is in the base directory, not an absolute path or has a subdirectory
             let localized_dir = self.localized_dir.to_string_lossy();
             format!(
                 r#"
-local script_dir=$( cd -- "$( dirname -- "${{BASH_SOURCE[0]}}" )" &> /dev/null && pwd )
-local project_dir=$( cd -- "$( dirname -- "$script_dir" )" &> /dev/null && pwd )
 local localized_dir="$project_dir/{localized_dir}"
+export MISE_BOOTSTRAP_PROJECT_DIR="$project_dir"
 export MISE_DATA_DIR="$localized_dir"
 export MISE_CONFIG_DIR="$localized_dir"
 export MISE_CACHE_DIR="$localized_dir/cache"
 export MISE_STATE_DIR="$localized_dir/state"
 export MISE_INSTALL_PATH="$localized_dir/mise-{version}"
+export MISE_TRUSTED_CONFIG_PATHS="$project_dir${{MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}}"
+export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise${{MISE_IGNORED_CONFIG_PATHS:+:$MISE_IGNORED_CONFIG_PATHS}}"
 "#
             )
         } else {
@@ -86,16 +93,19 @@ export MISE_INSTALL_PATH="$cache_home/mise-{version}"
 "#
             )
         };
+        let shared_vars = info::indent_by(shared_vars.trim(), "    ");
         let vars = info::indent_by(vars.trim(), "    ");
         let script = format!(
             r#"
-#!/bin/sh
+#!/usr/bin/env bash
 set -eu
 
 __mise_bootstrap() {{
+{shared_vars}
 {vars}
     install() {{
 {install}
+        cd "$MISE_BOOTSTRAP_PROJECT_DIR"
     }}
     local MISE_INSTALL_HELP=0
     test -f "$MISE_INSTALL_PATH" || install
