@@ -4,6 +4,9 @@ set -euxo pipefail
 git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
+mise uninstall cargo:cargo-show
+cargo install cargo-show
+
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
 if ! cargo show mise --json | jq -r '.versions.[].num' | grep -q "^$cur_version$"; then
   echo "Releasing $cur_version"
