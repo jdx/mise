@@ -1,10 +1,9 @@
 [tools.actionlint]
-version = "1.7.5"
+version = "1.7.6"
 backend = "aqua:rhysd/actionlint"
 
 [tools.actionlint.checksums]
-actionlint-macos-aarch64 = "sha256:84d2e2a03e3891bb55aacb09008fc750199242106d2899d8496208fe66b6137b"
-"actionlint_1.7.5_darwin_arm64.tar.gz" = "sha256:397119f9baa3fd9fe195db340b30acdaea532826e19a047a9cc9d96add7c267d"
+"actionlint_1.7.6_darwin_arm64.tar.gz" = "sha256:9a7c9cb2b627bb137ef68742eead2dd5b78f3ddc44876e84c37d323ba28b4710"
 
 [tools.bun]
 version = "1.1.42"
@@ -27,7 +26,7 @@ version = "0.13.0"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
-version = "1.41.1"
+version = "1.42.0"
 backend = "cargo:cargo-insta"
 
 [tools."cargo:cargo-show"]
