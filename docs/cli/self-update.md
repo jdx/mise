@@ -1,7 +1,7 @@
 # `mise self-update`
 
 - **Usage**: `mise self-update [FLAGS] [VERSION]`
-- **Source code**: [`src/cli/self_update.rs`](https://github.com/jdx/mise/blob/main/src/cli/self_update.rs)
+- **Source code**: [`src/cli/self-update.rs`](https://github.com/jdx/mise/blob/main/src/cli/self-update.rs)
 
 Updates mise itself.
 

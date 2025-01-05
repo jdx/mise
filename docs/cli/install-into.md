@@ -1,7 +1,7 @@
 # `mise install-into`
 
 - **Usage**: `mise install-into <TOOL@VERSION> <PATH>`
-- **Source code**: [`src/cli/install_into.rs`](https://github.com/jdx/mise/blob/main/src/cli/install_into.rs)
+- **Source code**: [`src/cli/install-into.rs`](https://github.com/jdx/mise/blob/main/src/cli/install-into.rs)
 
 Install a tool version to a specific path
 
