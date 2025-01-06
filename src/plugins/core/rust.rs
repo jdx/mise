@@ -32,7 +32,7 @@ impl RustPlugin {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
-        HTTP.download_file("https://sh.rustup.rs", &rustup_path(), Some(&ctx.pr))?;
+        HTTP.download_file(rustup_url(), &rustup_path(), Some(&ctx.pr))?;
         file::make_executable(rustup_path())?;
         file::create_dir_all(rustup_home())?;
         let cmd = CmdLineRunner::new(rustup_path())
@@ -202,6 +202,17 @@ const CARGO_BIN: &str = "cargo";
 
 #[cfg(windows)]
 const CARGO_BIN: &str = "cargo.exe";
+
+#[cfg(unix)]
+fn rustup_url() -> String {
+    "https://sh.rustup.rs".to_string()
+}
+
+#[cfg(windows)]
+fn rustup_url() -> String {
+    let arch = &*SETTINGS.arch();
+    format!("https://win.rustup.rs/{arch}")
+}
 
 fn rustup_path() -> PathBuf {
     dirs::CACHE.join("rust").join(RUSTUP_INIT_BIN)
