@@ -9,7 +9,7 @@ use crate::git::Git;
 /// This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
 /// when you commit changes to your repository.
 ///
-/// Staged files are passed to the task as `STAGED`.
+/// Staged files are passed to the task via appended arguments.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
 pub struct GitPreCommit {
@@ -51,10 +51,40 @@ impl GitPreCommit {
     fn generate(&self) -> String {
         let task = &self.task;
         format!(
-            r#"#!/bin/sh
-STAGED="$(git diff-index --cached --name-only HEAD | tr ' ' '\ ' | tr '\n' ' ' | xargs)"
-export STAGED
-exec mise run {task}
+            r#"#! /bin/sh
+
+set -eu
+
+TASK_NAME="{task}"
+
+: "${{TMPDIR:=/tmp}}"
+
+# get the reference to compare to
+REF="HEAD"
+if ! git rev-parse -q --verify "${{REF}}" > /dev/null; then
+  # use empty commit for new repositories
+  REF=$(git hash-object -t tree --stdin < /dev/null)
+fi
+
+PIPE=$(mktemp -u "${{TMPDIR%/}}/mise.${{TASK_NAME}}.XXXXXXXX")
+mkfifo -m 600 "${{PIPE}}"
+
+cleanup() {{
+  rm -f "${{PIPE}}"
+}}
+trap cleanup INT TERM
+
+# get files that have been added to the commit
+git diff-index --cached --name-only "${{REF}}" > "${{PIPE}}" &
+
+# add files to task arguments
+while read -r ARG; do
+  set -- "$@" "${{ARG}}"
+done < "${{PIPE}}"
+
+cleanup
+
+exec mise run "${{TASK_NAME}}" "$@"
 "#
         )
     }
