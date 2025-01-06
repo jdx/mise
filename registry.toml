@@ -800,13 +800,19 @@ has.backends = ["aqua:kdabir/has", "asdf:sylvainmetayer/asdf-has"]
 has.os = ["linux", "macos"]
 has.test = ["has --version", "v{{version}}"]
 haskell.backends = ["asdf:asdf-community/asdf-haskell"]
-hasura-cli.backends = ["asdf:gurukulkarni/asdf-hasura"]
+hasura-cli.backends = [
+    "aqua:hasura/graphql-engine",
+    "asdf:gurukulkarni/asdf-hasura"
+]
 haxe.backends = ["asdf:asdf-community/asdf-haxe"]
 hcl2json.backends = ["aqua:tmccombs/hcl2json", "asdf:dex4er/asdf-hcl2json"]
-hcloud.backends = ["asdf:chessmango/asdf-hcloud"]
+hcloud.backends = ["aqua:hetznercloud/cli", "asdf:chessmango/asdf-hcloud"]
 helm.backends = ["aqua:helm/helm", "asdf:Antiarchitect/asdf-helm"]
-helm-cr.backends = ["asdf:Antiarchitect/asdf-helm-cr"]
-helm-ct.backends = ["asdf:tablexi/asdf-helm-ct"]
+helm-cr.backends = [
+    "aqua:helm/chart-releaser",
+    "asdf:Antiarchitect/asdf-helm-cr"
+]
+helm-ct.backends = ["aqua:helm/chart-testing", "asdf:tablexi/asdf-helm-ct"]
 helm-diff.backends = ["asdf:dex4er/asdf-helm-diff"]
 helm-docs.backends = [
     "aqua:norwoodj/helm-docs",
@@ -817,10 +823,16 @@ helmsman.backends = ["ubi:Praqma/helmsman", "asdf:luisdavim/asdf-helmsman"]
 heroku.aliases = ["heroku-cli"]
 heroku.backends = ["asdf:mise-plugins/mise-heroku-cli"]
 hey.backends = ["asdf:raimon49/asdf-hey"]
-hishtory.backends = ["asdf:asdf-community/asdf-hishtory"]
+hishtory.backends = [
+    "ubi:ddworken/hishtory",
+    "asdf:asdf-community/asdf-hishtory"
+]
 hivemind.backends = ["ubi:DarthSim/hivemind", "go:github.com/DarthSim/hivemind"]
-hledger.backends = ["asdf:airtonix/asdf-hledger"]
-hledger-flow.backends = ["asdf:airtonix/asdf-hledger-flow"]
+hledger.backends = ["ubi:simonmichael/hledger", "asdf:airtonix/asdf-hledger"]
+hledger-flow.backends = [
+    "ubi:apauley/hledger-flow",
+    "asdf:airtonix/asdf-hledger-flow"
+]
 # takes forever
 # ghc.test = ["ghc --version", "The Glorious Glasgow Haskell Compilation System, version {{version}}"]
 hls.backends = ["asdf:sestrella/asdf-ghcup"]
@@ -839,8 +851,12 @@ hugo.backends = [
 hugo-extended.backends = ["aqua:gohugoio/hugo/hugo-extended"]
 hurl.backends = ["aqua:Orange-OpenSource/hurl", "asdf:raimon49/asdf-hurl"]
 hwatch.backends = ["ubi:blacknon/hwatch", "asdf:chessmango/asdf-hwatch"]
-hygen.backends = ["asdf:brentjanderson/asdf-hygen"]
-hyperfine.backends = ["ubi:sharkdp/hyperfine", "asdf:volf52/asdf-hyperfine"]
+hygen.backends = ["ubi:jondot/hygen", "asdf:brentjanderson/asdf-hygen"]
+hyperfine.backends = [
+    "aqua:sharkdp/hyperfine",
+    "ubi:sharkdp/hyperfine",
+    "asdf:volf52/asdf-hyperfine"
+]
 iam-policy-json-to-terraform.backends = [
     "aqua:flosell/iam-policy-json-to-terraform",
     "asdf:carlduevel/asdf-iam-policy-json-to-terraform"
@@ -856,7 +872,7 @@ idris2.backends = ["asdf:asdf-community/asdf-idris2"]
 imagemagick.backends = ["asdf:mangalakader/asdf-imagemagick"]
 imgpkg.backends = ["aqua:carvel-dev/imgpkg", "asdf:vmware-tanzu/asdf-carvel"]
 infracost.backends = ["aqua:infracost/infracost", "asdf:dex4er/asdf-infracost"]
-inlets.backends = ["asdf:nlamirault/asdf-inlets"]
+inlets.backends = ["aqua:inlets/inletsctl", "asdf:nlamirault/asdf-inlets"]
 io.backends = ["asdf:mracos/asdf-io"]
 istioctl.backends = [
     "aqua:istio/istio/istioctl",
@@ -865,11 +881,12 @@ istioctl.backends = [
 istioctl.test = ["istioctl version", "client version: {{version}}"]
 janet.backends = ["asdf:Jakski/asdf-janet"]
 java.backends = ["core:java"]
-jb.backends = ["aqua:jsonnet-bundler/jsonnet-bundler", "asdf:beardix/asdf-jb"]
-jb.test = ["jb --version 2>&1", "v{{version}}"]
 jbang.backends = ["asdf:jbangdev/jbang-asdf"]
 jfrog-cli.backends = ["asdf:LozanoMatheus/asdf-jfrog-cli"]
-jib.backends = ["asdf:joschi/asdf-jib"]
+jib.backends = [
+    "ubi:GoogleContainerTools/jib[tag_regex=-cli]",
+    "asdf:joschi/asdf-jib"
+]
 jiq.backends = ["aqua:fiatjaf/jiq", "asdf:chessmango/asdf-jiq"]
 jj.aliases = ["jujutsu"]
 jj.backends = ["aqua:jj-vcs/jj", "ubi:jj-vcs/jj"]
@@ -885,17 +902,24 @@ jqp.backends = [
     "asdf:https://gitlab.com/wt0f/asdf-jqp"
 ]
 jreleaser.backends = ["aqua:jreleaser/jreleaser", "asdf:joschi/asdf-jreleaser"]
-jsonnet.backends = ["asdf:Banno/asdf-jsonnet"]
+jsonnet-bundler.aliases = ["jb"]
+jsonnet-bundler.backends = [
+    "aqua:jsonnet-bundler/jsonnet-bundler",
+    "asdf:beardix/asdf-jb"
+]
+jsonnet-bundler.test = ["jb --version 2>&1", "v{{version}}"]
 julia.backends = ["asdf:rkyleg/asdf-julia"]
 just.backends = ["ubi:casey/just", "asdf:olofvndrhr/asdf-just"]
 jwt.backends = ["ubi:mike-engel/jwt-cli[exe=jwt]", "cargo:jwt-cli"]
 jwtui.backends = ["ubi:jwt-rs/jwt-ui[exe=jwtui]", "cargo:jwt-ui"]
 jx.backends = ["ubi:jenkins-x/jx", "asdf:vbehar/asdf-jx"]
 k0sctl.backends = ["ubi:k0sproject/k0sctl", "asdf:Its-Alex/asdf-plugin-k0sctl"]
-k14s.backends = ["asdf:k14s/asdf-k14s"]
 k2tf.backends = ["ubi:sl1pm4t/k2tf", "asdf:carlduevel/asdf-k2tf"]
 k3d.backends = ["ubi:k3d-io/k3d", "asdf:spencergilbert/asdf-k3d"]
-k3kcli.backends = ["asdf:xanmanning/asdf-k3kcli"]
+k3kcli.backends = [
+    "ubi:rancher/k3k[tag_regex=v\\d]",
+    "asdf:xanmanning/asdf-k3kcli"
+]
 k3s.backends = ["asdf:dmpe/asdf-k3s"]
 k3sup.backends = ["aqua:alexellis/k3sup", "asdf:cgroschupp/asdf-k3sup"]
 k6.backends = ["ubi:grafana/k6", "asdf:gr1m0h/asdf-k6"]
@@ -908,10 +932,13 @@ kafkactl.backends = [
 kapp.backends = ["aqua:carvel-dev/kapp", "asdf:vmware-tanzu/asdf-carvel"]
 kbld.backends = ["aqua:carvel-dev/kbld", "asdf:vmware-tanzu/asdf-carvel"]
 kcat.backends = ["asdf:douglasdgoulart/asdf-kcat"]
-kcctl.backends = ["asdf:joschi/asdf-kcctl"]
+kcctl.backends = ["ubi:kcctl/kcctl", "asdf:joschi/asdf-kcctl"]
 kcl.backends = ["asdf:starkers/asdf-kcl"]
 kconf.backends = ["aqua:particledecay/kconf", "asdf:particledecay/asdf-kconf"]
-ki.backends = ["asdf:comdotlinux/asdf-ki"]
+ki.backends = [
+    "ubi:Kotlin/kotlin-interactive-shell[exe=ki]",
+    "asdf:comdotlinux/asdf-ki"
+]
 killport.backends = ["ubi:jkfran/killport"]
 kind.backends = ["ubi:kubernetes-sigs/kind", "asdf:johnlayton/asdf-kind"]
 kiota.backends = ["aqua:microsoft/kiota", "asdf:asdf-community/asdf-kiota"]
@@ -919,7 +946,7 @@ kn.backends = ["aqua:knative/client", "asdf:joke/asdf-kn"]
 kn.test = ["kn version", "Version:"]
 ko.backends = ["aqua:ko-build/ko", "asdf:zasdaym/asdf-ko"]
 ko.test = ["ko version", "{{version}}"]
-koka.backends = ["asdf:susurri/asdf-koka"]
+koka.backends = ["ubi:koka-lang/koka", "asdf:susurri/asdf-koka"]
 kompose.backends = ["ubi:kubernetes/kompose", "asdf:technikhil314/asdf-kompose"]
 kops.backends = ["aqua:kubernetes/kops", "asdf:Antiarchitect/asdf-kops"]
 kotlin.backends = [
@@ -935,18 +962,23 @@ kpack.test = ["kp version", "{{version}}"]
 kpt.backends = ["aqua:kptdev/kpt", "asdf:nlamirault/asdf-kpt"]
 kpt.os = ["linux", "macos"]
 kpt.test = ["kpt version", "{{version}}"]
-krab.backends = ["asdf:ohkrab/asdf-krab"]
+krab.backends = ["ubi:ohkrab/krab", "asdf:ohkrab/asdf-krab"]
 krew.backends = ["aqua:kubernetes-sigs/krew", "asdf:bjw-s/asdf-krew"]
-kscript.backends = ["asdf:edgelevel/asdf-kscript"]
-ksonnet.backends = ["asdf:Banno/asdf-ksonnet"]
-ksops.backends = ["asdf:janpieper/asdf-ksops"]
+kscript.backends = ["ubi:kscripting/kscript", "asdf:edgelevel/asdf-kscript"]
+ksops.backends = [
+    "ubi:viaduct-ai/kustomize-sops[exe=ksops]",
+    "asdf:janpieper/asdf-ksops"
+]
 ktlint.backends = ["asdf:esensar/asdf-ktlint"]
 kube-capacity.backends = [
     "aqua:robscott/kube-capacity",
     "asdf:looztra/asdf-kube-capacity"
 ]
 kube-code-generator.backends = ["asdf:jimmidyson/asdf-kube-code-generator"]
-kube-controller-tools.backends = ["asdf:jimmidyson/asdf-kube-controller-tools"]
+kube-controller-tools.backends = [
+    "ubi:kubernetes-sigs/controller-tools[exe=controller-gen]",
+    "asdf:jimmidyson/asdf-kube-controller-tools"
+]
 kube-credential-cache.backends = [
     "aqua:ryodocx/kube-credential-cache",
     "asdf:ryodocx/kube-credential-cache"
@@ -970,8 +1002,6 @@ kubectl.backends = [
     "aqua:kubernetes/kubectl",
     "asdf:asdf-community/asdf-kubectl"
 ]
-kubectl-bindrole.backends = ["asdf:looztra/asdf-kubectl-bindrole"]
-kubectl-buildkit.backends = ["asdf:ezcater/asdf-kubectl-buildkit"]
 kubectl-convert.backends = [
     "aqua:kubernetes/kubectl-convert",
     "asdf:iul1an/asdf-kubectl-convert"
@@ -991,6 +1021,11 @@ kubectl-kuttl.test = [
     "kubectl-kuttl --version",
     "kubectl-kuttl version {{version}}"
 ]
+kubectl-rolesum.aliases = ['kubectl-bindrole']
+kubectl-rolesum.backends = [
+    "aqua:Ladicle/kubectl-rolesum",
+    "asdf:looztra/asdf-kubectl-bindrole"
+]
 kubectx.backends = [
     "aqua:ahmetb/kubectx",
     "asdf:https://gitlab.com/wt0f/asdf-kubectx"
@@ -1003,7 +1038,7 @@ kubefedctl.test = [
     "kubefedctl version",
     "kubefedctl version:"
 ] # may not have version in output
-kubefirst.backends = ["asdf:Claywd/asdf-kubefirst"]
+kubefirst.backends = ["ubi:konstructio/kubefirst", "asdf:Claywd/asdf-kubefirst"]
 kubelogin.backends = ["aqua:int128/kubelogin"]
 kubemqctl.backends = [
     "aqua:kubemq-io/kubemqctl",
@@ -1050,7 +1085,7 @@ kyverno.backends = [
     "asdf:https://github.com/hobaen/asdf-kyverno-cli.git"
 ]
 lab.backends = ["aqua:zaquestion/lab", "asdf:particledecay/asdf-lab"]
-lane.backends = ["asdf:CodeReaper/asdf-lane"]
+lane.backends = ["ubi:CodeReaper/lane", "asdf:CodeReaper/asdf-lane"]
 lazydocker.backends = [
     "aqua:jesseduffield/lazydocker",
     "ubi:jesseduffield/lazydocker"
@@ -1072,12 +1107,17 @@ levant.backends = [
     "asdf:asdf-community/asdf-hashicorp"
 ]
 lfe.backends = ["asdf:asdf-community/asdf-lfe"]
-libsql-server.backends = ["asdf:jonasb/asdf-libsql-server"]
-license-plist.backends = ["asdf:MacPaw/asdf-license-plist"]
+libsql-server.backends = [
+    "ubi:tursodatabase/libsql[tag_regex=libsql-server,exe=sqld]",
+    "asdf:jonasb/asdf-libsql-server"
+]
+license-plist.backends = [
+    "ubi:mono0926/LicensePlist[exe=license-plist]",
+    "asdf:MacPaw/asdf-license-plist"
+]
 lima.backends = ["aqua:lima-vm/lima", "asdf:CrouchingMuppet/asdf-lima"]
-link.backends = ["asdf:asdf-community/asdf-link"]
-linkerd.backends = ["asdf:kforsthoevel/asdf-linkerd"]
-liqoctl.backends = ["asdf:pdemagny/asdf-liqoctl"]
+linkerd.backends = ["aqua:linkerd/linkerd2", "asdf:kforsthoevel/asdf-linkerd"]
+liqoctl.backends = ["aqua:liqotech/liqo", "asdf:pdemagny/asdf-liqoctl"]
 liquibase.backends = ["asdf:saliougaye/asdf-liquibase"]
 litestream.backends = [
     "aqua:benbjohnson/litestream",
@@ -1086,7 +1126,10 @@ litestream.backends = [
 llvm-objcopy.backends = ["asdf:higebu/asdf-llvm"]
 llvm-objdump.backends = ["asdf:higebu/asdf-llvm"]
 logtalk.backends = ["asdf:LogtalkDotOrg/asdf-logtalk"]
-loki-logcli.backends = ["asdf:comdotlinux/asdf-loki-logcli"]
+loki-logcli.backends = [
+    "aqua:grafana/loki/logcli",
+    "asdf:comdotlinux/asdf-loki-logcli"
+]
 ls-lint.backends = ["aqua:loeffel-io/ls-lint", "asdf:Ameausoone/asdf-ls-lint"]
 lsd.backends = ["aqua:lsd-rs/lsd", "asdf:mise-plugins/asdf-lsd"]
 lua.backends = ["asdf:Stratus3D/asdf-lua"]
@@ -1095,12 +1138,14 @@ lua-language-server.backends = [
     "asdf:bellini666/asdf-lua-language-server"
 ]
 luajit.backends = ["asdf:smashedtoatoms/asdf-luaJIT"]
-lucy.backends = ["asdf:cometkim/asdf-lucy"]
-maestro.backends = ["asdf:dotanuki-labs/asdf-maestro"]
+maestro.backends = [
+    "ubi:mobile-dev-inc/maestro",
+    "asdf:dotanuki-labs/asdf-maestro"
+]
 mage.backends = ["aqua:magefile/mage", "asdf:mathew-fleisch/asdf-mage"]
 make.backends = ["asdf:yacchi/asdf-make"]
-mani.backends = ["asdf:anweber/asdf-mani"]
-mark.backends = ["asdf:jfreeland/asdf-mark"]
+mani.backends = ["ubi:alajmo/mani", "asdf:anweber/asdf-mani"]
+mark.backends = ["ubi:kovetskiy/mark", "asdf:jfreeland/asdf-mark"]
 markdownlint-cli2.backends = [
     "npm:markdownlint-cli2",
     "asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2"
@@ -1116,7 +1161,7 @@ mdbook-linkcheck.backends = ["asdf:cipherstash/asdf-mdbook-linkcheck"]
 melange.backends = ["aqua:chainguard-dev/melange", "asdf:omissis/asdf-melange"]
 melange.os = ["linux", "macos"]
 # melange.test = ["melange version", "v{{version}}"] sometimes releases without assets
-melt.backends = ["asdf:chessmango/asdf-melt"]
+melt.backends = ["ubi:charmbracelet/melt", "asdf:chessmango/asdf-melt"]
 memcached.backends = ["asdf:furkanural/asdf-memcached"]
 mercury.backends = ["asdf:susurri/asdf-mercury"]
 meson.backends = ["asdf:asdf-community/asdf-meson"]
@@ -1133,8 +1178,11 @@ minikube.backends = ["aqua:kubernetes/minikube", "asdf:alvarobp/asdf-minikube"]
 minio.backends = ["asdf:aeons/asdf-minio"]
 minishift.backends = ["aqua:minishift/minishift", "asdf:sqtran/asdf-minishift"]
 minisign.backends = ["aqua:jedisct1/minisign"]
-mint.backends = ["asdf:mint-lang/asdf-mint"]
-mirrord.backends = ["asdf:metalbear-co/asdf-mirrord"]
+mint.backends = ["ubi:mint-lang/mint", "asdf:mint-lang/asdf-mint"]
+mirrord.backends = [
+    "ubi:metalbear-co/mirrord",
+    "asdf:metalbear-co/asdf-mirrord"
+]
 mitmproxy.backends = ["asdf:NeoHsu/asdf-mitmproxy"]
 mkcert.backends = ["ubi:FiloSottile/mkcert", "asdf:salasrod/asdf-mkcert"]
 mlton.backends = ["asdf:asdf-community/asdf-mlton"]

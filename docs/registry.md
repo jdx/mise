@@ -324,23 +324,23 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | hamler | [asdf:scudelletti/asdf-hamler](https://github.com/scudelletti/asdf-hamler) |
 | has | [aqua:kdabir/has](https://github.com/kdabir/has) [asdf:sylvainmetayer/asdf-has](https://github.com/sylvainmetayer/asdf-has) |
 | haskell | [asdf:asdf-community/asdf-haskell](https://github.com/asdf-community/asdf-haskell) |
-| hasura-cli | [asdf:gurukulkarni/asdf-hasura](https://github.com/gurukulkarni/asdf-hasura) |
+| hasura-cli | [aqua:hasura/graphql-engine](https://github.com/hasura/graphql-engine) [asdf:gurukulkarni/asdf-hasura](https://github.com/gurukulkarni/asdf-hasura) |
 | haxe | [asdf:asdf-community/asdf-haxe](https://github.com/asdf-community/asdf-haxe) |
 | hcl2json | [aqua:tmccombs/hcl2json](https://github.com/tmccombs/hcl2json) [asdf:dex4er/asdf-hcl2json](https://github.com/dex4er/asdf-hcl2json) |
-| hcloud | [asdf:chessmango/asdf-hcloud](https://github.com/chessmango/asdf-hcloud) |
+| hcloud | [aqua:hetznercloud/cli](https://github.com/hetznercloud/cli) [asdf:chessmango/asdf-hcloud](https://github.com/chessmango/asdf-hcloud) |
 | helm | [aqua:helm/helm](https://github.com/helm/helm) [asdf:Antiarchitect/asdf-helm](https://github.com/Antiarchitect/asdf-helm) |
-| helm-cr | [asdf:Antiarchitect/asdf-helm-cr](https://github.com/Antiarchitect/asdf-helm-cr) |
-| helm-ct | [asdf:tablexi/asdf-helm-ct](https://github.com/tablexi/asdf-helm-ct) |
+| helm-cr | [aqua:helm/chart-releaser](https://github.com/helm/chart-releaser) [asdf:Antiarchitect/asdf-helm-cr](https://github.com/Antiarchitect/asdf-helm-cr) |
+| helm-ct | [aqua:helm/chart-testing](https://github.com/helm/chart-testing) [asdf:tablexi/asdf-helm-ct](https://github.com/tablexi/asdf-helm-ct) |
 | helm-diff | [asdf:dex4er/asdf-helm-diff](https://github.com/dex4er/asdf-helm-diff) |
 | helm-docs | [aqua:norwoodj/helm-docs](https://github.com/norwoodj/helm-docs) [asdf:sudermanjr/asdf-helm-docs](https://github.com/sudermanjr/asdf-helm-docs) |
 | helmfile | [ubi:helmfile/helmfile](https://github.com/helmfile/helmfile) [asdf:feniix/asdf-helmfile](https://github.com/feniix/asdf-helmfile) |
 | helmsman | [ubi:Praqma/helmsman](https://github.com/Praqma/helmsman) [asdf:luisdavim/asdf-helmsman](https://github.com/luisdavim/asdf-helmsman) |
 | heroku | [asdf:mise-plugins/mise-heroku-cli](https://github.com/mise-plugins/mise-heroku-cli) |
 | hey | [asdf:raimon49/asdf-hey](https://github.com/raimon49/asdf-hey) |
-| hishtory | [asdf:asdf-community/asdf-hishtory](https://github.com/asdf-community/asdf-hishtory) |
+| hishtory | [ubi:ddworken/hishtory](https://github.com/ddworken/hishtory) [asdf:asdf-community/asdf-hishtory](https://github.com/asdf-community/asdf-hishtory) |
 | hivemind | [ubi:DarthSim/hivemind](https://github.com/DarthSim/hivemind) [go:github.com/DarthSim/hivemind](https://pkg.go.dev/github.com/DarthSim/hivemind) |
-| hledger | [asdf:airtonix/asdf-hledger](https://github.com/airtonix/asdf-hledger) |
-| hledger-flow | [asdf:airtonix/asdf-hledger-flow](https://github.com/airtonix/asdf-hledger-flow) |
+| hledger | [ubi:simonmichael/hledger](https://github.com/simonmichael/hledger) [asdf:airtonix/asdf-hledger](https://github.com/airtonix/asdf-hledger) |
+| hledger-flow | [ubi:apauley/hledger-flow](https://github.com/apauley/hledger-flow) [asdf:airtonix/asdf-hledger-flow](https://github.com/airtonix/asdf-hledger-flow) |
 | hls | [asdf:sestrella/asdf-ghcup](https://github.com/sestrella/asdf-ghcup) |
 | hostctl | [aqua:guumaster/hostctl](https://github.com/guumaster/hostctl) [asdf:svenluijten/asdf-hostctl](https://github.com/svenluijten/asdf-hostctl) |
 | httpie-go | [aqua:nojima/httpie-go](https://github.com/nojima/httpie-go) [asdf:abatilo/asdf-httpie-go](https://github.com/abatilo/asdf-httpie-go) |
@@ -349,8 +349,8 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | hugo-extended | [aqua:gohugoio/hugo/hugo-extended](https://github.com/gohugoio/hugo/hugo-extended) |
 | hurl | [aqua:Orange-OpenSource/hurl](https://github.com/Orange-OpenSource/hurl) [asdf:raimon49/asdf-hurl](https://github.com/raimon49/asdf-hurl) |
 | hwatch | [ubi:blacknon/hwatch](https://github.com/blacknon/hwatch) [asdf:chessmango/asdf-hwatch](https://github.com/chessmango/asdf-hwatch) |
-| hygen | [asdf:brentjanderson/asdf-hygen](https://github.com/brentjanderson/asdf-hygen) |
-| hyperfine | [ubi:sharkdp/hyperfine](https://github.com/sharkdp/hyperfine) [asdf:volf52/asdf-hyperfine](https://github.com/volf52/asdf-hyperfine) |
+| hygen | [ubi:jondot/hygen](https://github.com/jondot/hygen) [asdf:brentjanderson/asdf-hygen](https://github.com/brentjanderson/asdf-hygen) |
+| hyperfine | [aqua:sharkdp/hyperfine](https://github.com/sharkdp/hyperfine) [ubi:sharkdp/hyperfine](https://github.com/sharkdp/hyperfine) [asdf:volf52/asdf-hyperfine](https://github.com/volf52/asdf-hyperfine) |
 | iam-policy-json-to-terraform | [aqua:flosell/iam-policy-json-to-terraform](https://github.com/flosell/iam-policy-json-to-terraform) [asdf:carlduevel/asdf-iam-policy-json-to-terraform](https://github.com/carlduevel/asdf-iam-policy-json-to-terraform) |
 | iamlive | [aqua:iann0036/iamlive](https://github.com/iann0036/iamlive) [asdf:chessmango/asdf-iamlive](https://github.com/chessmango/asdf-iamlive) |
 | ibmcloud | [asdf:triangletodd/asdf-ibmcloud](https://github.com/triangletodd/asdf-ibmcloud) |
@@ -359,15 +359,14 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | imagemagick | [asdf:mangalakader/asdf-imagemagick](https://github.com/mangalakader/asdf-imagemagick) |
 | imgpkg | [aqua:carvel-dev/imgpkg](https://github.com/carvel-dev/imgpkg) [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
 | infracost | [aqua:infracost/infracost](https://github.com/infracost/infracost) [asdf:dex4er/asdf-infracost](https://github.com/dex4er/asdf-infracost) |
-| inlets | [asdf:nlamirault/asdf-inlets](https://github.com/nlamirault/asdf-inlets) |
+| inlets | [aqua:inlets/inletsctl](https://github.com/inlets/inletsctl) [asdf:nlamirault/asdf-inlets](https://github.com/nlamirault/asdf-inlets) |
 | io | [asdf:mracos/asdf-io](https://github.com/mracos/asdf-io) |
 | istioctl | [aqua:istio/istio/istioctl](https://github.com/istio/istio/istioctl) [asdf:virtualstaticvoid/asdf-istioctl](https://github.com/virtualstaticvoid/asdf-istioctl) |
 | janet | [asdf:Jakski/asdf-janet](https://github.com/Jakski/asdf-janet) |
 | java | [core:java](https://mise.jdx.dev/lang/java.html) |
-| jb | [aqua:jsonnet-bundler/jsonnet-bundler](https://github.com/jsonnet-bundler/jsonnet-bundler) [asdf:beardix/asdf-jb](https://github.com/beardix/asdf-jb) |
 | jbang | [asdf:jbangdev/jbang-asdf](https://github.com/jbangdev/jbang-asdf) |
 | jfrog-cli | [asdf:LozanoMatheus/asdf-jfrog-cli](https://github.com/LozanoMatheus/asdf-jfrog-cli) |
-| jib | [asdf:joschi/asdf-jib](https://github.com/joschi/asdf-jib) |
+| jib | [ubi:GoogleContainerTools/jib](https://github.com/GoogleContainerTools/jib) [asdf:joschi/asdf-jib](https://github.com/joschi/asdf-jib) |
 | jiq | [aqua:fiatjaf/jiq](https://github.com/fiatjaf/jiq) [asdf:chessmango/asdf-jiq](https://github.com/chessmango/asdf-jiq) |
 | jj | [aqua:jj-vcs/jj](https://github.com/jj-vcs/jj) [ubi:jj-vcs/jj](https://github.com/jj-vcs/jj) |
 | jless | [aqua:PaulJuliusMartinez/jless](https://github.com/PaulJuliusMartinez/jless) [asdf:jc00ke/asdf-jless](https://github.com/jc00ke/asdf-jless) |
@@ -377,17 +376,16 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | jq | [aqua:jqlang/jq](https://github.com/jqlang/jq) [asdf:mise-plugins/asdf-jq](https://github.com/mise-plugins/asdf-jq) |
 | jqp | [aqua:noahgorstein/jqp](https://github.com/noahgorstein/jqp) [asdf:https://gitlab.com/wt0f/asdf-jqp](https://gitlab.com/wt0f/asdf-jqp) |
 | jreleaser | [aqua:jreleaser/jreleaser](https://github.com/jreleaser/jreleaser) [asdf:joschi/asdf-jreleaser](https://github.com/joschi/asdf-jreleaser) |
-| jsonnet | [asdf:Banno/asdf-jsonnet](https://github.com/Banno/asdf-jsonnet) |
+| jsonnet-bundler | [aqua:jsonnet-bundler/jsonnet-bundler](https://github.com/jsonnet-bundler/jsonnet-bundler) [asdf:beardix/asdf-jb](https://github.com/beardix/asdf-jb) |
 | julia | [asdf:rkyleg/asdf-julia](https://github.com/rkyleg/asdf-julia) |
 | just | [ubi:casey/just](https://github.com/casey/just) [asdf:olofvndrhr/asdf-just](https://github.com/olofvndrhr/asdf-just) |
 | jwt | [ubi:mike-engel/jwt-cli](https://github.com/mike-engel/jwt-cli) [cargo:jwt-cli](https://crates.io/crates/jwt-cli) |
 | jwtui | [ubi:jwt-rs/jwt-ui](https://github.com/jwt-rs/jwt-ui) [cargo:jwt-ui](https://crates.io/crates/jwt-ui) |
 | jx | [ubi:jenkins-x/jx](https://github.com/jenkins-x/jx) [asdf:vbehar/asdf-jx](https://github.com/vbehar/asdf-jx) |
 | k0sctl | [ubi:k0sproject/k0sctl](https://github.com/k0sproject/k0sctl) [asdf:Its-Alex/asdf-plugin-k0sctl](https://github.com/Its-Alex/asdf-plugin-k0sctl) |
-| k14s | [asdf:k14s/asdf-k14s](https://github.com/k14s/asdf-k14s) |
 | k2tf | [ubi:sl1pm4t/k2tf](https://github.com/sl1pm4t/k2tf) [asdf:carlduevel/asdf-k2tf](https://github.com/carlduevel/asdf-k2tf) |
 | k3d | [ubi:k3d-io/k3d](https://github.com/k3d-io/k3d) [asdf:spencergilbert/asdf-k3d](https://github.com/spencergilbert/asdf-k3d) |
-| k3kcli | [asdf:xanmanning/asdf-k3kcli](https://github.com/xanmanning/asdf-k3kcli) |
+| k3kcli | [ubi:rancher/k3k](https://github.com/rancher/k3k) [asdf:xanmanning/asdf-k3kcli](https://github.com/xanmanning/asdf-k3kcli) |
 | k3s | [asdf:dmpe/asdf-k3s](https://github.com/dmpe/asdf-k3s) |
 | k3sup | [aqua:alexellis/k3sup](https://github.com/alexellis/k3sup) [asdf:cgroschupp/asdf-k3sup](https://github.com/cgroschupp/asdf-k3sup) |
 | k6 | [ubi:grafana/k6](https://github.com/grafana/k6) [asdf:gr1m0h/asdf-k6](https://github.com/gr1m0h/asdf-k6) |
@@ -397,30 +395,29 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | kapp | [aqua:carvel-dev/kapp](https://github.com/carvel-dev/kapp) [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
 | kbld | [aqua:carvel-dev/kbld](https://github.com/carvel-dev/kbld) [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
 | kcat | [asdf:douglasdgoulart/asdf-kcat](https://github.com/douglasdgoulart/asdf-kcat) |
-| kcctl | [asdf:joschi/asdf-kcctl](https://github.com/joschi/asdf-kcctl) |
+| kcctl | [ubi:kcctl/kcctl](https://github.com/kcctl/kcctl) [asdf:joschi/asdf-kcctl](https://github.com/joschi/asdf-kcctl) |
 | kcl | [asdf:starkers/asdf-kcl](https://github.com/starkers/asdf-kcl) |
 | kconf | [aqua:particledecay/kconf](https://github.com/particledecay/kconf) [asdf:particledecay/asdf-kconf](https://github.com/particledecay/asdf-kconf) |
-| ki | [asdf:comdotlinux/asdf-ki](https://github.com/comdotlinux/asdf-ki) |
+| ki | [ubi:Kotlin/kotlin-interactive-shell](https://github.com/Kotlin/kotlin-interactive-shell) [asdf:comdotlinux/asdf-ki](https://github.com/comdotlinux/asdf-ki) |
 | killport | [ubi:jkfran/killport](https://github.com/jkfran/killport) |
 | kind | [ubi:kubernetes-sigs/kind](https://github.com/kubernetes-sigs/kind) [asdf:johnlayton/asdf-kind](https://github.com/johnlayton/asdf-kind) |
 | kiota | [aqua:microsoft/kiota](https://github.com/microsoft/kiota) [asdf:asdf-community/asdf-kiota](https://github.com/asdf-community/asdf-kiota) |
 | kn | [aqua:knative/client](https://github.com/knative/client) [asdf:joke/asdf-kn](https://github.com/joke/asdf-kn) |
 | ko | [aqua:ko-build/ko](https://github.com/ko-build/ko) [asdf:zasdaym/asdf-ko](https://github.com/zasdaym/asdf-ko) |
-| koka | [asdf:susurri/asdf-koka](https://github.com/susurri/asdf-koka) |
+| koka | [ubi:koka-lang/koka](https://github.com/koka-lang/koka) [asdf:susurri/asdf-koka](https://github.com/susurri/asdf-koka) |
 | kompose | [ubi:kubernetes/kompose](https://github.com/kubernetes/kompose) [asdf:technikhil314/asdf-kompose](https://github.com/technikhil314/asdf-kompose) |
 | kops | [aqua:kubernetes/kops](https://github.com/kubernetes/kops) [asdf:Antiarchitect/asdf-kops](https://github.com/Antiarchitect/asdf-kops) |
 | kotlin | [asdf:asdf-community/asdf-kotlin](https://github.com/asdf-community/asdf-kotlin) [vfox:version-fox/vfox-kotlin](https://github.com/version-fox/vfox-kotlin) |
 | kpack | [ubi:vmware-tanzu/kpack-cli](https://github.com/vmware-tanzu/kpack-cli) [asdf:asdf-community/asdf-kpack-cli](https://github.com/asdf-community/asdf-kpack-cli) |
 | kpt | [aqua:kptdev/kpt](https://github.com/kptdev/kpt) [asdf:nlamirault/asdf-kpt](https://github.com/nlamirault/asdf-kpt) |
-| krab | [asdf:ohkrab/asdf-krab](https://github.com/ohkrab/asdf-krab) |
+| krab | [ubi:ohkrab/krab](https://github.com/ohkrab/krab) [asdf:ohkrab/asdf-krab](https://github.com/ohkrab/asdf-krab) |
 | krew | [aqua:kubernetes-sigs/krew](https://github.com/kubernetes-sigs/krew) [asdf:bjw-s/asdf-krew](https://github.com/bjw-s/asdf-krew) |
-| kscript | [asdf:edgelevel/asdf-kscript](https://github.com/edgelevel/asdf-kscript) |
-| ksonnet | [asdf:Banno/asdf-ksonnet](https://github.com/Banno/asdf-ksonnet) |
-| ksops | [asdf:janpieper/asdf-ksops](https://github.com/janpieper/asdf-ksops) |
+| kscript | [ubi:kscripting/kscript](https://github.com/kscripting/kscript) [asdf:edgelevel/asdf-kscript](https://github.com/edgelevel/asdf-kscript) |
+| ksops | [ubi:viaduct-ai/kustomize-sops](https://github.com/viaduct-ai/kustomize-sops) [asdf:janpieper/asdf-ksops](https://github.com/janpieper/asdf-ksops) |
 | ktlint | [asdf:esensar/asdf-ktlint](https://github.com/esensar/asdf-ktlint) |
 | kube-capacity | [aqua:robscott/kube-capacity](https://github.com/robscott/kube-capacity) [asdf:looztra/asdf-kube-capacity](https://github.com/looztra/asdf-kube-capacity) |
 | kube-code-generator | [asdf:jimmidyson/asdf-kube-code-generator](https://github.com/jimmidyson/asdf-kube-code-generator) |
-| kube-controller-tools | [asdf:jimmidyson/asdf-kube-controller-tools](https://github.com/jimmidyson/asdf-kube-controller-tools) |
+| kube-controller-tools | [ubi:kubernetes-sigs/controller-tools](https://github.com/kubernetes-sigs/controller-tools) [asdf:jimmidyson/asdf-kube-controller-tools](https://github.com/jimmidyson/asdf-kube-controller-tools) |
 | kube-credential-cache | [aqua:ryodocx/kube-credential-cache](https://github.com/ryodocx/kube-credential-cache) [asdf:ryodocx/kube-credential-cache](https://github.com/ryodocx/kube-credential-cache) |
 | kube-linter | [aqua:stackrox/kube-linter](https://github.com/stackrox/kube-linter) [asdf:devlincashman/asdf-kube-linter](https://github.com/devlincashman/asdf-kube-linter) |
 | kube-score | [aqua:zegl/kube-score](https://github.com/zegl/kube-score) [asdf:bageljp/asdf-kube-score](https://github.com/bageljp/asdf-kube-score) |
@@ -429,14 +426,13 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | kubecolor | [aqua:hidetatz/kubecolor](https://github.com/hidetatz/kubecolor) [asdf:dex4er/asdf-kubecolor](https://github.com/dex4er/asdf-kubecolor) |
 | kubeconform | [aqua:yannh/kubeconform](https://github.com/yannh/kubeconform) [asdf:lirlia/asdf-kubeconform](https://github.com/lirlia/asdf-kubeconform) |
 | kubectl | [aqua:kubernetes/kubectl](https://github.com/kubernetes/kubectl) [asdf:asdf-community/asdf-kubectl](https://github.com/asdf-community/asdf-kubectl) |
-| kubectl-bindrole | [asdf:looztra/asdf-kubectl-bindrole](https://github.com/looztra/asdf-kubectl-bindrole) |
-| kubectl-buildkit | [asdf:ezcater/asdf-kubectl-buildkit](https://github.com/ezcater/asdf-kubectl-buildkit) |
 | kubectl-convert | [aqua:kubernetes/kubectl-convert](https://github.com/kubernetes/kubectl-convert) [asdf:iul1an/asdf-kubectl-convert](https://github.com/iul1an/asdf-kubectl-convert) |
 | kubectl-kots | [aqua:replicatedhq/kots](https://github.com/replicatedhq/kots) [asdf:ganta/asdf-kubectl-kots](https://github.com/ganta/asdf-kubectl-kots) |
 | kubectl-kuttl | [aqua:kudobuilder/kuttl](https://github.com/kudobuilder/kuttl) [asdf:jimmidyson/asdf-kuttl](https://github.com/jimmidyson/asdf-kuttl) |
+| kubectl-rolesum | [aqua:Ladicle/kubectl-rolesum](https://github.com/Ladicle/kubectl-rolesum) [asdf:looztra/asdf-kubectl-bindrole](https://github.com/looztra/asdf-kubectl-bindrole) |
 | kubectx | [aqua:ahmetb/kubectx](https://github.com/ahmetb/kubectx) [asdf:https://gitlab.com/wt0f/asdf-kubectx](https://gitlab.com/wt0f/asdf-kubectx) |
 | kubefedctl | [aqua:kubernetes-retired/kubefed](https://github.com/kubernetes-retired/kubefed) [asdf:kvokka/asdf-kubefedctl](https://github.com/kvokka/asdf-kubefedctl) |
-| kubefirst | [asdf:Claywd/asdf-kubefirst](https://github.com/Claywd/asdf-kubefirst) |
+| kubefirst | [ubi:konstructio/kubefirst](https://github.com/konstructio/kubefirst) [asdf:Claywd/asdf-kubefirst](https://github.com/Claywd/asdf-kubefirst) |
 | kubelogin | [aqua:int128/kubelogin](https://github.com/int128/kubelogin) |
 | kubemqctl | [aqua:kubemq-io/kubemqctl](https://github.com/kubemq-io/kubemqctl) [asdf:johnlayton/asdf-kubemqctl](https://github.com/johnlayton/asdf-kubemqctl) |
 | kubent | [aqua:doitintl/kube-no-trouble](https://github.com/doitintl/kube-no-trouble) [asdf:virtualstaticvoid/asdf-kubent](https://github.com/virtualstaticvoid/asdf-kubent) |
@@ -452,7 +448,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | kwt | [aqua:carvel-dev/kwt](https://github.com/carvel-dev/kwt) [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
 | kyverno | [aqua:kyverno/kyverno](https://github.com/kyverno/kyverno) [asdf:https://github.com/hobaen/asdf-kyverno-cli.git](https://github.com/hobaen/asdf-kyverno-cli) |
 | lab | [aqua:zaquestion/lab](https://github.com/zaquestion/lab) [asdf:particledecay/asdf-lab](https://github.com/particledecay/asdf-lab) |
-| lane | [asdf:CodeReaper/asdf-lane](https://github.com/CodeReaper/asdf-lane) |
+| lane | [ubi:CodeReaper/lane](https://github.com/CodeReaper/lane) [asdf:CodeReaper/asdf-lane](https://github.com/CodeReaper/asdf-lane) |
 | lazydocker | [aqua:jesseduffield/lazydocker](https://github.com/jesseduffield/lazydocker) [ubi:jesseduffield/lazydocker](https://github.com/jesseduffield/lazydocker) |
 | lazygit | [aqua:jesseduffield/lazygit](https://github.com/jesseduffield/lazygit) [asdf:nklmilojevic/asdf-lazygit](https://github.com/nklmilojevic/asdf-lazygit) |
 | lean | [asdf:asdf-community/asdf-lean](https://github.com/asdf-community/asdf-lean) |
@@ -460,29 +456,27 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | leiningen | [asdf:miorimmax/asdf-lein](https://github.com/miorimmax/asdf-lein) |
 | levant | [aqua:hashicorp/levant](https://github.com/hashicorp/levant) [asdf:asdf-community/asdf-hashicorp](https://github.com/asdf-community/asdf-hashicorp) |
 | lfe | [asdf:asdf-community/asdf-lfe](https://github.com/asdf-community/asdf-lfe) |
-| libsql-server | [asdf:jonasb/asdf-libsql-server](https://github.com/jonasb/asdf-libsql-server) |
-| license-plist | [asdf:MacPaw/asdf-license-plist](https://github.com/MacPaw/asdf-license-plist) |
+| libsql-server | [ubi:tursodatabase/libsql](https://github.com/tursodatabase/libsql) [asdf:jonasb/asdf-libsql-server](https://github.com/jonasb/asdf-libsql-server) |
+| license-plist | [ubi:mono0926/LicensePlist](https://github.com/mono0926/LicensePlist) [asdf:MacPaw/asdf-license-plist](https://github.com/MacPaw/asdf-license-plist) |
 | lima | [aqua:lima-vm/lima](https://github.com/lima-vm/lima) [asdf:CrouchingMuppet/asdf-lima](https://github.com/CrouchingMuppet/asdf-lima) |
-| link | [asdf:asdf-community/asdf-link](https://github.com/asdf-community/asdf-link) |
-| linkerd | [asdf:kforsthoevel/asdf-linkerd](https://github.com/kforsthoevel/asdf-linkerd) |
-| liqoctl | [asdf:pdemagny/asdf-liqoctl](https://github.com/pdemagny/asdf-liqoctl) |
+| linkerd | [aqua:linkerd/linkerd2](https://github.com/linkerd/linkerd2) [asdf:kforsthoevel/asdf-linkerd](https://github.com/kforsthoevel/asdf-linkerd) |
+| liqoctl | [aqua:liqotech/liqo](https://github.com/liqotech/liqo) [asdf:pdemagny/asdf-liqoctl](https://github.com/pdemagny/asdf-liqoctl) |
 | liquibase | [asdf:saliougaye/asdf-liquibase](https://github.com/saliougaye/asdf-liquibase) |
 | litestream | [aqua:benbjohnson/litestream](https://github.com/benbjohnson/litestream) [asdf:threkk/asdf-litestream](https://github.com/threkk/asdf-litestream) |
 | llvm-objcopy | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | llvm-objdump | [asdf:higebu/asdf-llvm](https://github.com/higebu/asdf-llvm) |
 | logtalk | [asdf:LogtalkDotOrg/asdf-logtalk](https://github.com/LogtalkDotOrg/asdf-logtalk) |
-| loki-logcli | [asdf:comdotlinux/asdf-loki-logcli](https://github.com/comdotlinux/asdf-loki-logcli) |
+| loki-logcli | [aqua:grafana/loki/logcli](https://github.com/grafana/loki/logcli) [asdf:comdotlinux/asdf-loki-logcli](https://github.com/comdotlinux/asdf-loki-logcli) |
 | ls-lint | [aqua:loeffel-io/ls-lint](https://github.com/loeffel-io/ls-lint) [asdf:Ameausoone/asdf-ls-lint](https://github.com/Ameausoone/asdf-ls-lint) |
 | lsd | [aqua:lsd-rs/lsd](https://github.com/lsd-rs/lsd) [asdf:mise-plugins/asdf-lsd](https://github.com/mise-plugins/asdf-lsd) |
 | lua | [asdf:Stratus3D/asdf-lua](https://github.com/Stratus3D/asdf-lua) |
 | lua-language-server | [aqua:LuaLS/lua-language-server](https://github.com/LuaLS/lua-language-server) [asdf:bellini666/asdf-lua-language-server](https://github.com/bellini666/asdf-lua-language-server) |
 | luajit | [asdf:smashedtoatoms/asdf-luaJIT](https://github.com/smashedtoatoms/asdf-luaJIT) |
-| lucy | [asdf:cometkim/asdf-lucy](https://github.com/cometkim/asdf-lucy) |
-| maestro | [asdf:dotanuki-labs/asdf-maestro](https://github.com/dotanuki-labs/asdf-maestro) |
+| maestro | [ubi:mobile-dev-inc/maestro](https://github.com/mobile-dev-inc/maestro) [asdf:dotanuki-labs/asdf-maestro](https://github.com/dotanuki-labs/asdf-maestro) |
 | mage | [aqua:magefile/mage](https://github.com/magefile/mage) [asdf:mathew-fleisch/asdf-mage](https://github.com/mathew-fleisch/asdf-mage) |
 | make | [asdf:yacchi/asdf-make](https://github.com/yacchi/asdf-make) |
-| mani | [asdf:anweber/asdf-mani](https://github.com/anweber/asdf-mani) |
-| mark | [asdf:jfreeland/asdf-mark](https://github.com/jfreeland/asdf-mark) |
+| mani | [ubi:alajmo/mani](https://github.com/alajmo/mani) [asdf:anweber/asdf-mani](https://github.com/anweber/asdf-mani) |
+| mark | [ubi:kovetskiy/mark](https://github.com/kovetskiy/mark) [asdf:jfreeland/asdf-mark](https://github.com/jfreeland/asdf-mark) |
 | markdownlint-cli2 | [npm:markdownlint-cli2](https://www.npmjs.com/package/markdownlint-cli2) [asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2](https://github.com/paulo-ferraz-oliveira/asdf-markdownlint-cli2) |
 | marp-cli | [aqua:marp-team/marp-cli](https://github.com/marp-team/marp-cli) [asdf:xataz/asdf-marp-cli](https://github.com/xataz/asdf-marp-cli) |
 | mask | [aqua:jacobdeichert/mask](https://github.com/jacobdeichert/mask) [asdf:aaaaninja/asdf-mask](https://github.com/aaaaninja/asdf-mask) |
@@ -491,7 +485,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | mdbook | [aqua:rust-lang/mdBook](https://github.com/rust-lang/mdBook) [asdf:cipherstash/asdf-mdbook](https://github.com/cipherstash/asdf-mdbook) |
 | mdbook-linkcheck | [asdf:cipherstash/asdf-mdbook-linkcheck](https://github.com/cipherstash/asdf-mdbook-linkcheck) |
 | melange | [aqua:chainguard-dev/melange](https://github.com/chainguard-dev/melange) [asdf:omissis/asdf-melange](https://github.com/omissis/asdf-melange) |
-| melt | [asdf:chessmango/asdf-melt](https://github.com/chessmango/asdf-melt) |
+| melt | [ubi:charmbracelet/melt](https://github.com/charmbracelet/melt) [asdf:chessmango/asdf-melt](https://github.com/chessmango/asdf-melt) |
 | memcached | [asdf:furkanural/asdf-memcached](https://github.com/furkanural/asdf-memcached) |
 | mercury | [asdf:susurri/asdf-mercury](https://github.com/susurri/asdf-mercury) |
 | meson | [asdf:asdf-community/asdf-meson](https://github.com/asdf-community/asdf-meson) |
@@ -503,8 +497,8 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | minio | [asdf:aeons/asdf-minio](https://github.com/aeons/asdf-minio) |
 | minishift | [aqua:minishift/minishift](https://github.com/minishift/minishift) [asdf:sqtran/asdf-minishift](https://github.com/sqtran/asdf-minishift) |
 | minisign | [aqua:jedisct1/minisign](https://github.com/jedisct1/minisign) |
-| mint | [asdf:mint-lang/asdf-mint](https://github.com/mint-lang/asdf-mint) |
-| mirrord | [asdf:metalbear-co/asdf-mirrord](https://github.com/metalbear-co/asdf-mirrord) |
+| mint | [ubi:mint-lang/mint](https://github.com/mint-lang/mint) [asdf:mint-lang/asdf-mint](https://github.com/mint-lang/asdf-mint) |
+| mirrord | [ubi:metalbear-co/mirrord](https://github.com/metalbear-co/mirrord) [asdf:metalbear-co/asdf-mirrord](https://github.com/metalbear-co/asdf-mirrord) |
 | mitmproxy | [asdf:NeoHsu/asdf-mitmproxy](https://github.com/NeoHsu/asdf-mitmproxy) |
 | mkcert | [ubi:FiloSottile/mkcert](https://github.com/FiloSottile/mkcert) [asdf:salasrod/asdf-mkcert](https://github.com/salasrod/asdf-mkcert) |
 | mlton | [asdf:asdf-community/asdf-mlton](https://github.com/asdf-community/asdf-mlton) |
