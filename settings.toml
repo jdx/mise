@@ -868,13 +868,13 @@ description = "Set to true to enable verbose output during ruby installation."
 env = "MISE_CARGO_HOME"
 type = "Path"
 optional = true
-description = "Path to the cargo home directory. Defaults to ~/.cargo or %USERPROFILE%\\.cargo"
+description = "Path to the cargo home directory. Defaults to `~/.cargo` or `%USERPROFILE%\\.cargo`"
 
 [rust.rustup_home]
 env = "MISE_RUSTUP_HOME"
 type = "Path"
 optional = true
-description = "Path to the rustup home directory. Defaults to ~/.rustup or %USERPROFILE%\\.rustup"
+description = "Path to the rustup home directory. Defaults to `~/.rustup` or `%USERPROFILE%\\.rustup`"
 
 [shorthands_file]
 env = "MISE_SHORTHANDS_FILE"
