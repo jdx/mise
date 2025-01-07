@@ -322,7 +322,13 @@ impl AquaPackage {
     }
 
     pub fn asset(&self, v: &str) -> Result<String> {
-        self.parse_aqua_str(&self.asset, v, &Default::default())
+        // derive asset from url if not set and url contains a path
+        if self.asset.is_empty() && self.url.split("/").count() > "//".len() {
+            let asset = self.url.rsplit("/").next().unwrap_or("");
+            self.parse_aqua_str(asset, v, &Default::default())
+        } else {
+            self.parse_aqua_str(&self.asset, v, &Default::default())
+        }
     }
 
     pub fn asset_strs(&self, v: &str) -> Result<IndexSet<String>> {
