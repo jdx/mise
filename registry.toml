@@ -1227,7 +1227,10 @@ nomad-pack.backends = ["asdf:asdf-community/asdf-hashicorp"]
 notation.backends = ["aqua:notaryproject/notation", "asdf:bodgit/asdf-notation"]
 nova.backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 nsc.backends = ["ubi:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
-oapi-codegen.backends = ["go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen", "asdf:dylanrayboss/asdf-oapi-codegen"]
+oapi-codegen.backends = [
+    "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
+    "asdf:dylanrayboss/asdf-oapi-codegen"
+]
 oc.backends = ["asdf:sqtran/asdf-oc"]
 ocaml.backends = ["asdf:asdf-community/asdf-ocaml"]
 oci.backends = ["asdf:yasn77/asdf-oci"]
@@ -1314,9 +1317,15 @@ polaris.backends = [
 popeye.backends = ["aqua:derailed/popeye", "asdf:nlamirault/asdf-popeye"]
 postgis.backends = ["asdf:knu/asdf-postgis"]
 postgres.backends = ["asdf:smashedtoatoms/asdf-postgres"]
-powerline-go.backends = ["ubi:justjanne/powerline-go", "asdf:dex4er/asdf-powerline-go"]
+powerline-go.backends = [
+    "ubi:justjanne/powerline-go",
+    "asdf:dex4er/asdf-powerline-go"
+]
 powerpipe.backends = ["aqua:turbot/powerpipe", "asdf:jc00ke/asdf-powerpipe"]
-powershell-core.backends = ["aqua:PowerShell/PowerShell", "asdf:daveneeley/asdf-powershell-core"]
+powershell-core.backends = [
+    "aqua:PowerShell/PowerShell",
+    "asdf:daveneeley/asdf-powershell-core"
+]
 pre-commit.backends = [
     "aqua:pre-commit/pre-commit",
     "asdf:jonathanmorley/asdf-pre-commit"
@@ -1349,16 +1358,25 @@ protoc-gen-go-grpc.test = [
     "protoc-gen-go-grpc"
 ] # TODO: use version_prefix and put version back in
 protoc-gen-grpc-web.backends = ["asdf:pbr0ck3r/asdf-protoc-gen-grpc-web"]
-protoc-gen-js.backends = ["ubi:protocolbuffers/protobuf-javascript[exe=protoc-gen-js]", "asdf:pbr0ck3r/asdf-protoc-gen-js"]
+protoc-gen-js.backends = [
+    "ubi:protocolbuffers/protobuf-javascript[exe=protoc-gen-js]",
+    "asdf:pbr0ck3r/asdf-protoc-gen-js"
+]
 protolint.backends = [
     "aqua:yoheimuta/protolint",
     "asdf:spencergilbert/asdf-protolint"
 ]
 protonge.backends = ["asdf:augustobmoura/asdf-protonge"]
-psc-package.backends = ["ubi:purescript/psc-package", "asdf:nsaunders/asdf-psc-package"]
+psc-package.backends = [
+    "ubi:purescript/psc-package",
+    "asdf:nsaunders/asdf-psc-package"
+]
 pulumi.backends = ["aqua:pulumi/pulumi", "asdf:canha/asdf-pulumi"]
 purerl.backends = ["ubi:purerl/purerl", "asdf:GoNZooo/asdf-purerl"]
-purescript.backends = ["ubi:purescript/purescript[exe=purs]", "asdf:jrrom/asdf-purescript"]
+purescript.backends = [
+    "ubi:purescript/purescript[exe=purs]",
+    "asdf:jrrom/asdf-purescript"
+]
 purty.backends = ["asdf:nsaunders/asdf-purty"]
 python.backends = ["core:python"]
 qdns.backends = ["ubi:natesales/q", "asdf:moritz-makandra/asdf-plugin-qdns"]
@@ -1376,7 +1394,10 @@ rbac-lookup.backends = [
 rclone.backends = ["ubi:rclone/rclone", "asdf:johnlayton/asdf-rclone"]
 rebar.backends = ["asdf:Stratus3D/asdf-rebar"]
 rebar.depends = ["erlang"]
-reckoner.backends = ["ubi:FairwindsOps/reckoner", "asdf:FairwindsOps/asdf-reckoner"]
+reckoner.backends = [
+    "ubi:FairwindsOps/reckoner",
+    "asdf:FairwindsOps/asdf-reckoner"
+]
 redis.backends = ["asdf:smashedtoatoms/asdf-redis"]
 redis-cli.backends = ["asdf:NeoHsu/asdf-redis-cli"]
 redo.backends = ["ubi:barthr/redo", "asdf:chessmango/asdf-redo"]
