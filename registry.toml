@@ -1044,6 +1044,7 @@ kubemqctl.backends = [
     "aqua:kubemq-io/kubemqctl",
     "asdf:johnlayton/asdf-kubemqctl"
 ]
+kubens.backends = ["aqua:ahmetb/kubectx/kubens"]
 kubent.backends = [
     "aqua:doitintl/kube-no-trouble",
     "asdf:virtualstaticvoid/asdf-kubent"
