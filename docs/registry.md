@@ -680,7 +680,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | sourcery | [asdf:mise-plugins/mise-sourcery](https://github.com/mise-plugins/mise-sourcery) |
 | spacectl | [aqua:spacelift-io/spacectl](https://github.com/spacelift-io/spacectl) [asdf:bodgit/asdf-spacectl](https://github.com/bodgit/asdf-spacectl) |
 | spago | [ubi:purescript/spago](https://github.com/purescript/spago) [asdf:jrrom/asdf-spago](https://github.com/jrrom/asdf-spago) |
-| spark | [asdf:mise-plugins/mise-spark](https://github.com/mise-plugins/mise-spark) |
+| spark | [aqua:apache/spark](https://github.com/apache/spark) [asdf:mise-plugins/mise-spark](https://github.com/mise-plugins/mise-spark) |
 | spectral | [aqua:stoplightio/spectral](https://github.com/stoplightio/spectral) [asdf:vbyrd/asdf-spectral](https://github.com/vbyrd/asdf-spectral) |
 | spin | [aqua:spinnaker/spin](https://github.com/spinnaker/spin) [asdf:pavloos/asdf-spin](https://github.com/pavloos/asdf-spin) |
 | spring-boot | [asdf:mise-plugins/mise-spring-boot](https://github.com/mise-plugins/mise-spring-boot) |
