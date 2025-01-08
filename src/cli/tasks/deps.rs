@@ -57,16 +57,19 @@ impl TasksDeps {
         let tasks = config.tasks()?;
         let tasks = self.tasks.as_ref().map(|t| {
             t.iter()
-              .map(|tn| {
-                  tasks.get(tn)
-                    .cloned()
-                    .or_else(|| {
-                        tasks.values().find(|task| task.display_name().as_str() == tn.as_str())
-                          .cloned()
-                    })
-                    .ok_or_else(|| self.err_no_task(tn.as_str()))
-              })
-              .collect::<Result<Vec<Task>>>()
+                .map(|tn| {
+                    tasks
+                        .get(tn)
+                        .cloned()
+                        .or_else(|| {
+                            tasks
+                                .values()
+                                .find(|task| task.display_name().as_str() == tn.as_str())
+                                .cloned()
+                        })
+                        .ok_or_else(|| self.err_no_task(tn.as_str()))
+                })
+                .collect::<Result<Vec<Task>>>()
         });
         match tasks {
             Some(Ok(tasks)) => Ok(tasks),
@@ -74,7 +77,7 @@ impl TasksDeps {
             None => Ok(vec![]),
         }
     }
-    
+
     ///
     /// Print dependencies as a tree
     ///
@@ -139,10 +142,11 @@ impl TasksDeps {
         let config = Config::get();
         let tasks = config
             .tasks()
-            .map(|t| t
-              .into_iter()
-              .map(|(_, v)| v.display_name())
-              .collect::<Vec<_>>())
+            .map(|t| {
+                t.iter()
+                    .map(|(_, v)| v.display_name())
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
         let task_names = tasks.into_iter().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();

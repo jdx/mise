@@ -25,10 +25,11 @@ impl TasksInfo {
         let config = Config::get();
         let tasks = config.tasks()?;
 
-        let task = tasks.get(&self.task)
-          .or_else(|| {
-              tasks.values().find(|task| task.display_name().as_str() == self.task.as_str())
-          });
+        let task = tasks.get(&self.task).or_else(|| {
+            tasks
+                .values()
+                .find(|task| task.display_name().as_str() == self.task.as_str())
+        });
 
         if let Some(task) = task {
             let ts = config.get_toolset()?;
@@ -49,7 +50,7 @@ impl TasksInfo {
     }
 
     fn display(&self, task: &Task, env: &EnvMap) -> Result<()> {
-        info::inline_section("Task", &task.display_name())?;
+        info::inline_section("Task", task.display_name())?;
         if !task.aliases.is_empty() {
             info::inline_section("Aliases", task.aliases.join(", "))?;
         }
