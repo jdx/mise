@@ -161,12 +161,32 @@
               "type": "boolean"
             },
             "outputs": {
-              "description": "files created by this task",
-              "items": {
-                "description": "glob pattern or path to files created by this task",
-                "type": "string"
-              },
-              "type": "array"
+              "oneOf": [
+                {
+                  "description": "files created by this task",
+                  "items": {
+                    "description": "glob pattern or path to files created by this task",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "description": "glob pattern or path to files created by this task",
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "auto": {
+                      "description": "automatically touch an internal tracked file instead of specifying outputs",
+                      "enum": [true],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["auto"],
+                  "type": "object"
+                }
+              ]
             },
             "quiet": {
               "description": "do not display mise information for this task",
@@ -213,12 +233,20 @@
               "type": "string"
             },
             "sources": {
-              "description": "files that this task depends on",
-              "items": {
-                "description": "glob pattern or path to files that this task depends on",
-                "type": "string"
-              },
-              "type": "array"
+              "oneOf": [
+                {
+                  "description": "files that this task depends on",
+                  "items": {
+                    "description": "glob pattern or path to files that this task depends on",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "description": "glob pattern or path to files that this task depends on",
+                  "type": "string"
+                }
+              ]
             },
             "shell": {
               "description": "specify a shell command to run the script with",
