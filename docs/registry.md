@@ -414,7 +414,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | krew | [aqua:kubernetes-sigs/krew](https://github.com/kubernetes-sigs/krew) [asdf:bjw-s/asdf-krew](https://github.com/bjw-s/asdf-krew) |
 | kscript | [ubi:kscripting/kscript](https://github.com/kscripting/kscript) [asdf:edgelevel/asdf-kscript](https://github.com/edgelevel/asdf-kscript) |
 | ksops | [ubi:viaduct-ai/kustomize-sops](https://github.com/viaduct-ai/kustomize-sops) [asdf:janpieper/asdf-ksops](https://github.com/janpieper/asdf-ksops) |
-| ktlint | [asdf:mise-plugins/mise-ktlint](https://github.com/mise-plugins/mise-ktlint) |
+| ktlint | [aqua:pinterest/ktlint](https://github.com/pinterest/ktlint) [asdf:mise-plugins/mise-ktlint](https://github.com/mise-plugins/mise-ktlint) |
 | kube-capacity | [aqua:robscott/kube-capacity](https://github.com/robscott/kube-capacity) [asdf:looztra/asdf-kube-capacity](https://github.com/looztra/asdf-kube-capacity) |
 | kube-code-generator | [asdf:mise-plugins/mise-kube-code-generator](https://github.com/mise-plugins/mise-kube-code-generator) |
 | kube-controller-tools | [ubi:kubernetes-sigs/controller-tools](https://github.com/kubernetes-sigs/controller-tools) [asdf:jimmidyson/asdf-kube-controller-tools](https://github.com/jimmidyson/asdf-kube-controller-tools) |
