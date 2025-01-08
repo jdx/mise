@@ -38,58 +38,59 @@
               ]
             },
             "depends": {
-              "description": "other tasks to run before this task",
-              "items": {
-                "oneOf": [
-                  {
-                    "description": "task with args to run before this task",
+              "oneOf": [
+                {
+                  "description": "task with args to run before this task",
+                  "type": "string"
+                },
+                {
+                  "description": "task with args to run before this task",
+                  "items": {
+                    "description": "task name and args",
                     "type": "string"
                   },
-                  {
-                    "description": "task with args to run before this task",
-                    "items": {
-                      "description": "task name and args",
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                ]
-              },
-              "type": "array"
+                  "type": "array"
+                }
+              ]
             },
             "depends_post": {
-              "description": "other tasks to run after this task",
-              "items": {
-                "oneOf": [
-                  {
-                    "description": "task with args to run after this task",
+              "oneOf": [
+                {
+                  "description": "task with args to run after this task",
+                  "type": "string"
+                },
+                {
+                  "description": "task with args to run after this task",
+                  "items": {
+                    "description": "task name and args",
                     "type": "string"
                   },
-                  {
-                    "description": "task with args to run after this task",
-                    "items": {
-                      "description": "task name and args",
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                ]
-              },
-              "type": "array"
+                  "type": "array"
+                }
+              ]
             },
             "wait_for": {
-              "description": "if these tasks run, wait for them to complete first",
-              "items": {
-                "description": "task to run before this task",
-                "type": "string"
-              },
-              "type": "array"
+              "oneOf": [
+                {
+                  "description": "task with args to wait for completion first",
+                  "type": "string"
+                },
+                {
+                  "description": "task with args to wait for completion first",
+                  "items": {
+                    "description": "task name and args",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
             },
             "description": {
               "description": "description of task",
               "type": "string"
             },
             "dir": {
+              "default": "{{ config_root }}",
               "description": "directory to run script in, default is current working directory",
               "type": "string"
             },
@@ -157,6 +158,7 @@
               "type": "object"
             },
             "hide": {
+              "default": false,
               "description": "do not display this task",
               "type": "boolean"
             },
@@ -189,10 +191,25 @@
               ]
             },
             "quiet": {
+              "default": false,
               "description": "do not display mise information for this task",
               "type": "boolean"
             },
+            "silent": {
+              "default": false,
+              "description": "suppress all output for this task",
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "enum": ["stdout", "stderr"],
+                  "type": "string"
+                }
+              ]
+            },
             "raw": {
+              "default": false,
               "description": "directly connect task to stdin/stdout/stderr",
               "type": "boolean"
             },
@@ -250,8 +267,7 @@
             },
             "shell": {
               "description": "specify a shell command to run the script with",
-              "type": "string",
-              "default": "sh -c"
+              "type": "string"
             },
             "usage": {
               "description": "Specify usage (https://usage.jdx.dev/) specs for the task",
