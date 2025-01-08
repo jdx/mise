@@ -435,6 +435,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | kubefirst | [ubi:konstructio/kubefirst](https://github.com/konstructio/kubefirst) [asdf:Claywd/asdf-kubefirst](https://github.com/Claywd/asdf-kubefirst) |
 | kubelogin | [aqua:int128/kubelogin](https://github.com/int128/kubelogin) |
 | kubemqctl | [aqua:kubemq-io/kubemqctl](https://github.com/kubemq-io/kubemqctl) [asdf:johnlayton/asdf-kubemqctl](https://github.com/johnlayton/asdf-kubemqctl) |
+| kubens | [aqua:ahmetb/kubectx/kubens](https://github.com/ahmetb/kubectx/kubens) |
 | kubent | [aqua:doitintl/kube-no-trouble](https://github.com/doitintl/kube-no-trouble) [asdf:virtualstaticvoid/asdf-kubent](https://github.com/virtualstaticvoid/asdf-kubent) |
 | kubergrunt | [aqua:gruntwork-io/kubergrunt](https://github.com/gruntwork-io/kubergrunt) [asdf:NeoHsu/asdf-kubergrunt](https://github.com/NeoHsu/asdf-kubergrunt) |
 | kubeseal | [aqua:bitnami-labs/sealed-secrets](https://github.com/bitnami-labs/sealed-secrets) [asdf:stefansedich/asdf-kubeseal](https://github.com/stefansedich/asdf-kubeseal) |
