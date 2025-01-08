@@ -321,11 +321,12 @@ impl Run {
                                 // only show this if it's the first failure, or we haven't killed all the remaining tasks
                                 // otherwise we'll get unhelpful error messages about being killed by mise which we expect
                                 let prefix = task.estyled_prefix();
-                                self.eprint(
-                                    &task,
-                                    &prefix,
-                                    &format!("{} {err:?}", style::ered("ERROR")),
-                                );
+                                let err_body = if SETTINGS.verbose {
+                                    format!("{} {err:?}", style::ered("ERROR"))
+                                } else {
+                                    format!("{} {err}", style::ered("ERROR"))
+                                };
+                                self.eprint(&task, &prefix, &err_body);
                             }
                             let _ = tx_err.send((task.clone(), status));
                         }
