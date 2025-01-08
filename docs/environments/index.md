@@ -104,7 +104,7 @@ _.path = [
 ]
 ```
 
-Adding a relative path like `tools/bin` or `./tools/bin` is similar to adding a path rooted at `{{config_root}}`, but behaves differently if your config file is nested in a subdirectory like `/path/to/project/.config/mise/config.toml`. Including `tools/bin` will add the path `/path/to/project/.config/mise/tools/bin`, whereas including `{{config_root}}/tools/bin` will add the path `/path/to/project/tools/bin`.
+Adding a relative path like `tools/bin` or `./tools/bin` is similar to adding a path rooted at <span v-pre>`{{config_root}}`</span>, but behaves differently if your config file is nested in a subdirectory like `/path/to/project/.config/mise/config.toml`. Including `tools/bin` will add the path `/path/to/project/.config/mise/tools/bin`, whereas including <span v-pre>`{{config_root}}/tools/bin`</span> will add the path `/path/to/project/tools/bin`.
 
 ### `env._.source`
 
