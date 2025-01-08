@@ -444,7 +444,7 @@ impl AquaFile {
 }
 
 fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
-    if orig.r#type != avo.r#type {
+    if avo.r#type != AquaPackageType::GithubRelease {
         orig.r#type = avo.r#type.clone();
     }
     if !avo.repo_owner.is_empty() {
