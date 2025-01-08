@@ -975,7 +975,9 @@ ksops.backends = [
     "ubi:viaduct-ai/kustomize-sops[exe=ksops]",
     "asdf:janpieper/asdf-ksops"
 ]
-ktlint.backends = ["asdf:mise-plugins/mise-ktlint"]
+ktlint.depends = ["java"]
+ktlint.backends = ["aqua:pinterest/ktlint", "asdf:mise-plugins/mise-ktlint"]
+ktlint.test = ["ktlint --version", "ktlint version {{version}}"]
 kube-capacity.backends = [
     "aqua:robscott/kube-capacity",
     "asdf:looztra/asdf-kube-capacity"
