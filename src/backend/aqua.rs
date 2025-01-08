@@ -532,6 +532,11 @@ impl AquaBackend {
         for (src, dst) in self.srcs(pkg, tv)? {
             if src != dst && src.exists() && !dst.exists() {
                 if cfg!(windows) {
+                    let dst = if dst.extension().is_none() {
+                        dst.with_extension("exe")
+                    } else {
+                        dst
+                    };
                     file::copy(&src, &dst)?;
                 } else {
                     let src = PathBuf::from(".").join(src.file_name().unwrap().to_str().unwrap());
