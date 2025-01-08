@@ -47,22 +47,23 @@ Not all backends support this—notably asdf plugins do not.
 
 ## asdf plugins
 
-asdf plugins are by far the biggest source of potential problems since they are typically not written
-by the tool vendor and do not have checksum or signature verification—or if they do it isn't tied into
-mise lockfiles.
+asdf plugins in asdf (but not with mise's default tools) are dangerous. They are typically owned by random developers
+unconnected to either asdf or the tool vendor. They may get hacked or maliciously inject code into
+their plugin that could trivially execute code on your machine.
 
-I'm actively moving away from using asdf plugins where possible towards backends like aqua and ubi.
-This has the added benefit of supporting Windows if the tool itself supports it.
-If a tool uses an asdf plugin you will receive a prompt in mise before installing it to check the plugin's source code.
+asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry.toml) whenever possible.
+Sometimes it is not possible to use more secure backends like aqua/ubi because tools have complex install
+setups or need to export env vars. As of 2025-01-08, <25% of tools use asdf plugins as the default backend.
+All of these are hosted in the [mise-plugins org](https://github.com/mise-plugins) to secure the supply
+chain so you do not need to rely on plugins maintained by anyone except me.
 
-Please contribute to this effort by checking if a tool works in ubi or aqua and submitting a PR to
+Of course if you _manually_ add plugins not from the mise-plugins org you will want to ensure they
+are coming from a trusted source.
+
+Please contribute to this effort to migrate away from asdf plugins by checking if a tool works in ubi or aqua and submitting a PR to
 [registry.toml](https://github.com/jdx/mise/blob/main/registry.toml) to add it. If it doesn't work
 in ubi or is missing from aqua, submit an issue or PR to the respective project to add it. New tools
-using asdf are not likely to be accepted unless they cannot be supported in any other way.
-
-Another way I can reduce the risk of asdf plugins is by forking plugins into the [mise-plugins org](https://github.com/mise-plugins) which only
-gives commit access to me and the mise advisory panel. On the [Roadmap for 2025](https://mise.jdx.dev/roadmap.html) is a goal to get
-everything either off of asdf/vfox or at least into the mise-plugins org.
+using asdf are **not** likely to be accepted unless they cannot be supported with any other backend.
 
 ## Supported Versions
 
