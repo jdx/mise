@@ -6,7 +6,10 @@
 
 [tools]
 1password.aliases = ["1password-cli", "op"]
-1password.backends = ["asdf:mise-plugins/mise-1password-cli", "aqua:1password/cli"]
+1password.backends = [
+    "asdf:mise-plugins/mise-1password-cli",
+    "aqua:1password/cli"
+]
 # 1password.test = ["op --version", "{{version}}"] fails on CI for some reason
 aapt2.backends = ["asdf:mise-plugins/mise-aapt2"]
 aapt2.test = ["aapt2 version 2>&1", "Android Asset Packaging Tool (aapt)"]
@@ -392,10 +395,7 @@ conftest.backends = [
     "aqua:open-policy-agent/conftest",
     "asdf:looztra/asdf-conftest"
 ]
-consul.backends = [
-    "aqua:hashicorp/consul",
-    "asdf:mise-plugins/mise-hashicorp"
-]
+consul.backends = ["aqua:hashicorp/consul", "asdf:mise-plugins/mise-hashicorp"]
 container-structure-test.backends = [
     "aqua:GoogleContainerTools/container-structure-test",
     "asdf:FeryET/asdf-container-structure-test"
@@ -521,7 +521,10 @@ dotenv-linter.backends = [
     "ubi:dotenv-linter/dotenv-linter",
     "asdf:wesleimp/asdf-dotenv-linter"
 ]
-dotnet.backends = ["asdf:mise-plugins/mise-dotnet", "vfox:mise-plugins/vfox-dotnet"]
+dotnet.backends = [
+    "asdf:mise-plugins/mise-dotnet",
+    "vfox:mise-plugins/vfox-dotnet"
+]
 dotnet-core.backends = ["asdf:mise-plugins/mise-dotnet-core"]
 dotty.backends = ["asdf:mise-plugins/mise-dotty"]
 dprint.backends = ["aqua:dprint/dprint", "asdf:asdf-community/asdf-dprint"]
@@ -615,7 +618,10 @@ flatc.backends = [
     "asdf:TheOpenDictionary/asdf-flatc"
 ]
 flatc.test = ["flatc --version", "flatc version {{version}}"]
-flutter.backends = ["asdf:mise-plugins/mise-flutter", "vfox:mise-plugins/vfox-flutter"]
+flutter.backends = [
+    "asdf:mise-plugins/mise-flutter",
+    "vfox:mise-plugins/vfox-flutter"
+]
 fluttergen.backends = [
     "ubi:FlutterGen/flutter_gen[exe=fluttergen]",
     "asdf:FlutterGen/asdf-fluttergen"
@@ -1103,10 +1109,7 @@ lefthook.backends = [
     "asdf:jtzero/asdf-lefthook"
 ]
 leiningen.backends = ["asdf:mise-plugins/mise-lein"]
-levant.backends = [
-    "aqua:hashicorp/levant",
-    "asdf:mise-plugins/mise-hashicorp"
-]
+levant.backends = ["aqua:hashicorp/levant", "asdf:mise-plugins/mise-hashicorp"]
 lfe.backends = ["asdf:mise-plugins/mise-lfe"]
 libsql-server.backends = [
     "ubi:tursodatabase/libsql[tag_regex=libsql-server,exe=sqld]",
@@ -1154,7 +1157,10 @@ markdownlint-cli2.backends = [
 marp-cli.backends = ["aqua:marp-team/marp-cli", "asdf:xataz/asdf-marp-cli"]
 mask.backends = ["aqua:jacobdeichert/mask", "asdf:aaaaninja/asdf-mask"]
 mask.test = ["mask --version", "mask {{version}}"]
-maven.backends = ["asdf:mise-plugins/mise-maven", "vfox:mise-plugins/vfox-maven"]
+maven.backends = [
+    "asdf:mise-plugins/mise-maven",
+    "vfox:mise-plugins/vfox-maven"
+]
 mc.backends = ["asdf:mise-plugins/mise-mc"]
 mdbook.backends = ["aqua:rust-lang/mdBook", "asdf:cipherstash/asdf-mdbook"]
 mdbook.test = ["mdbook --version", "mdbook v{{version}}"]
@@ -1274,10 +1280,7 @@ overmind.backends = [
 ]
 pachctl.backends = ["aqua:pachyderm/pachyderm", "asdf:abatilo/asdf-pachctl"]
 # pachctl.test = ["pachctl version", "{{version}}"] # test fails on ci but seems to work locally
-packer.backends = [
-    "aqua:hashicorp/packer",
-    "asdf:mise-plugins/mise-hashicorp"
-]
+packer.backends = ["aqua:hashicorp/packer", "asdf:mise-plugins/mise-hashicorp"]
 pandoc.backends = ["ubi:jgm/pandoc", "asdf:Fbrisset/asdf-pandoc"]
 patat.backends = ["ubi:jaspervdj/patat", "asdf:airtonix/asdf-patat"]
 pdm.backends = ["pipx:pdm", "asdf:1oglop1/asdf-pdm"]
@@ -1554,7 +1557,10 @@ spruce.backends = ["aqua:geofffranks/spruce", "asdf:woneill/asdf-spruce"]
 sqlite.backends = ["asdf:mise-plugins/mise-sqlite"]
 sqlite3def.backends = ["aqua:sqldef/sqldef/sqlite3def"]
 sshuttle.backends = ["asdf:mise-plugins/mise-sshuttle"]
-stack.backends = ["aqua:commercialhaskell/stack", "asdf:mise-plugins/mise-ghcup"]
+stack.backends = [
+    "aqua:commercialhaskell/stack",
+    "asdf:mise-plugins/mise-ghcup"
+]
 # stack.test = ["stack --version", "Version {{version}}"] # flaky
 starboard.backends = [
     "aqua:aquasecurity/starboard",
