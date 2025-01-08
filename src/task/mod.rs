@@ -264,8 +264,11 @@ impl Task {
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
         for dep in depends.clone() {
-            depends.extend(dep.all_depends()?);
+            let mut extra = dep.all_depends()?;
+            extra.retain(|t| t.name != self.name); // prevent depending on ourself
+            depends.extend(extra);
         }
+        let depends = depends.into_iter().unique().collect();
         Ok(depends)
     }
 

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# ensures depends_post and depends can be used on separate tasks
+cat <<EOF >mise.toml
+[tasks.one]
+run = "echo one"
+
+[tasks.two]
+depends = ["one"]
+run = "echo two"
+
+[tasks.three]
+depends_post = ["two"]
+run = "echo three"
+EOF
+assert "mise task deps" "one
+three
+two
+├── three
+└── one"
+assert "mise run three"
+
+# TODO: this does not work with how mise is designed currently. Tasks can only ever be run once per run session. This will require hefty refactoring if it is ever supported
+# uses depends and depends_post on the same task
+#cat <<EOF >mise.toml
+#tasks."util:donothing" = ""
+#[tasks.hi]
+#depends = "util:donothing"
+#run = "echo hi"
+#depends_post = "util:donothing"
+#EOF
+#assert "mise run hi"
