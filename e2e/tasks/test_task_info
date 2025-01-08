@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+mkdir -p mise-tasks && echo "" > mise-tasks/build.sh && chmod +x mise-tasks/build.sh
+assert "mise task info build" 'Task: build
+Description:
+Source: ~/workdir/mise-tasks/build.sh
+File: ~/workdir/mise-tasks/build.sh
+
+Usage Spec:
+  name "build"
+  bin "build"'
+
+assert_contains "mise task info build.sh --json" '"name": "build"'
