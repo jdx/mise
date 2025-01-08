@@ -7,11 +7,9 @@ functionality. As far as general scope however, these are likely going to be foc
 
 - Removing experimental flag on features - several features are still marked as experimental. My hope
   is all features will be GA by the end of 2025.
-- Supply chain hardening - in 2024 security was greatly enhanced in mise through migrating to aqua/ubi
-  backends for tools in the registry, but about 1/3 of the tools still rely on asdf plugins.
-  For tools we can't use aqua/ubi for, my goal is to fork them all into the [mise-plugins org](https://github.com/mise-plugins) by EOY
-  which only me and the advisory panel have commit access to.
-  Aqua tools also can benefit from further hardening through the use of slsa-verify and cosign and other verification methods.
+- Supply chain hardening - much progress was made here by adopting ubi and aqua and switching to those backends
+  for the majority of tools. In 2025, we'll continue migrating more tools where possible away from asdf.
+  Aqua tools also can benefit from further hardening through the use of slsa-verify, cosign and other verification methods.
 - Tasks improvements - tasks came out of experimental at the end of 2024 but there are still features
   that I'd like to see from tasks such as prompts and error handling.
 - Hook improvements - hooks are very new in mise and still experimental. I suspect the design of hooks
