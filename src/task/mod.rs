@@ -640,7 +640,7 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
 
     fn write_self(&self) -> std::io::Result<()> {
         if let Some(w) = self.0.node_weight(self.1) {
-            miseprint!("{}", w.name)?;
+            miseprint!("{}", w.display_name())?;
         }
         Ok(())
     }

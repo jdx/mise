@@ -49,3 +49,9 @@ Depends on: hello:*
 Usage Spec:
   name "hello:all"
   bin "hello:all"'
+
+echo '' >mise.toml
+
+mkdir -p mise-tasks && echo "" >mise-tasks/build.sh && chmod +x mise-tasks/build.sh
+assert "mise task deps build" "build"
+assert "mise task deps build.sh" "build"
