@@ -370,6 +370,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | jiq | [aqua:fiatjaf/jiq](https://github.com/fiatjaf/jiq) [asdf:chessmango/asdf-jiq](https://github.com/chessmango/asdf-jiq) |
 | jj | [aqua:jj-vcs/jj](https://github.com/jj-vcs/jj) [ubi:jj-vcs/jj](https://github.com/jj-vcs/jj) |
 | jless | [aqua:PaulJuliusMartinez/jless](https://github.com/PaulJuliusMartinez/jless) [asdf:jc00ke/asdf-jless](https://github.com/jc00ke/asdf-jless) |
+| jlpkg | [ubi:fredrikekre/jlpkg](https://github.com/fredrikekre/jlpkg) |
 | jmespath | [aqua:jmespath/jp](https://github.com/jmespath/jp) [asdf:skyzyx/asdf-jmespath](https://github.com/skyzyx/asdf-jmespath) |
 | jmeter | [asdf:mise-plugins/mise-jmeter](https://github.com/mise-plugins/mise-jmeter) |
 | jnv | [aqua:ynqa/jnv](https://github.com/ynqa/jnv) [asdf:raimon49/asdf-jnv](https://github.com/raimon49/asdf-jnv) |
