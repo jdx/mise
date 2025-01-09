@@ -220,7 +220,8 @@ impl Task {
             return true;
         }
         let pat = pat.rsplitn(2, '.').last().unwrap_or_default();
-        self.name == pat || self.aliases.contains(&pat.to_string())
+        self.name.rsplitn(2, '.').last().unwrap_or_default() == pat
+            || self.aliases.contains(&pat.to_string())
     }
 
     pub fn task_dir() -> PathBuf {
@@ -241,7 +242,7 @@ impl Task {
     }
 
     pub fn prefix(&self) -> String {
-        format!("[{}]", self.name)
+        format!("[{}]", self.display_name())
     }
 
     pub fn run(&self) -> &Vec<String> {
