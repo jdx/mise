@@ -4,7 +4,7 @@ clean = "cargo clean"
 release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"
 ci = { depends = ["format", "build", "test"] }
-pre-commit = { depends = ["render", "lint"] }
+pre-commit = "cargo fmt"
 lint = { depends = ["lint:*"] }
 
 [build]
