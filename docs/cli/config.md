@@ -2,7 +2,7 @@
 
 - **Usage**: `mise config [--no-header] [-J --json] <SUBCOMMAND>`
 - **Aliases**: `cfg`
-- **Source code**: [`src/cli/config.rs`](https://github.com/jdx/mise/blob/main/src/cli/config.rs)
+- **Source code**: [`src/cli/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/mod.rs)
 
 Manage config files
 
