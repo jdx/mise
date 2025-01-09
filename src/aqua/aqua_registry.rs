@@ -350,12 +350,8 @@ impl AquaPackage {
 
     pub fn url(&self, v: &str) -> Result<String> {
         let mut url = self.url.clone();
-        if cfg!(windows) {
-            if Path::new(&url).extension().is_none()
-                && (self.format.is_empty() || self.format == "raw")
-            {
-                url.push_str(".exe");
-            }
+        if cfg!(windows) && Path::new(&url).extension().is_none() && (self.format.is_empty() || self.format == "raw") {
+            url.push_str(".exe");
         }
         self.parse_aqua_str(&url, v, &Default::default())
     }
