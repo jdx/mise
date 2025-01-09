@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2025.1.2"
+version = "2025.1.3"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -142,7 +142,7 @@ url = "2"
 usage-lib = { version = "1", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 # vfox = { path = "../vfox.rs" }
-vfox = { version = "0.3", default-features = false }
+vfox = { version = "1", default-features = false }
 walkdir = "2"
 which = "7"
 xx = { version = "2", features = ["glob"] }
