@@ -1,4 +1,11 @@
-source_code_link_template "https://github.com/jdx/mise/blob/main/src/cli/{{path}}.rs"
+source_code_link_template r#"
+{%- set path = path | replace(from='-', to='_') -%}
+{%- if cmd.subcommands | length > 0 -%}
+{%- set path = path | split(pat="/") | slice(end=1) | concat(with="mod.rs") | join(sep="/") -%}
+{%- else -%}
+{%- set path = path ~ ".rs" -%}
+{%- endif -%}
+https://github.com/jdx/mise/blob/main/src/cli/{{path}}"#
 
 complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
 complete "config_file" type="file"
