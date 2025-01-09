@@ -4,7 +4,6 @@ clean = "cargo clean"
 release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"
 ci = { depends = ["format", "build", "test"] }
-pre-commit = "cargo fmt"
 lint = { depends = ["lint:*"] }
 
 [build]
@@ -137,3 +136,10 @@ hide = true
 tools = { gh = "2.60.0" }
 run = "echo {{arg(name='greeting')}}; sleep 2; echo 2; sleep 2; echo 3; sleep 0.4; echo 4; sleep 1"
 description = "a task for testing"
+
+[pre-commit]
+depends = ["pre-commit:*"]
+["pre-commit:fmt"]
+run = "cargo fmt --all -- --check"
+["pre-commit:check"]
+run = "cargo check --all-features"
