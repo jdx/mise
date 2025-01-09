@@ -83,8 +83,8 @@ jobs:
             command: mise exec dotnet@latest -- dotnet --list-sdks
           - plugin: flutter
             command: mise exec flutter@latest -- flutter --version
-          - plugin: crystal
-            command: mise exec crystal@latest -- crystal -v
+          # - plugin: crystal
+          #   command: mise exec crystal@latest -- crystal -v
           - plugin: neovim
             command: mise exec neovim@latest -- nvim --version
           - plugin: php
@@ -136,14 +136,13 @@ jobs:
           - levant
           - consul
           - boundary
-          - postgres
+          # - postgres
           - rust
           - action-validator
           - dotnet-core
           - neovim
           - poetry
           # TODO: - haskell not working due to already existing on image
-          - link
           - lua
           - redis
           - gcloud
