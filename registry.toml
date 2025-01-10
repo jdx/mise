@@ -612,7 +612,7 @@ flarectl.backends = [
     "ubi:cloudflare/cloudflare-go[exe=flarectl]",
     "asdf:mise-plugins/asdf-flarectl"
 ]
-flarectl.test = ["flarectl --version", "flarectl version {{version}}"]
+# flarectl.test = ["flarectl --version", "flarectl version {{version}}"] # TODO: no release assets in 4.0
 flatc.backends = [
     "ubi:google/flatbuffers[exe=flatc]",
     "asdf:TheOpenDictionary/asdf-flatc"
