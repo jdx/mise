@@ -653,7 +653,7 @@ optional = true
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
 docs = """
 * Values:
-  * `true` - always compile with python-build instead of downloading [precompiled binaries](/python.html#precompiled-python-binaries).
+  * `true` - always compile with python-build instead of downloading [precompiled binaries](/lang/python.html#precompiled-python-binaries).
   * `false` - always download precompiled binaries.
   * [undefined] - use precompiled binary if one is available for the current platform, compile otherwise.
 """
@@ -718,8 +718,10 @@ description = "Integrate with uv to automatically create/source venvs if uv.lock
 
 [python.uv_venv_create_args]
 env = "MISE_PYTHON_UV_VENV_CREATE_ARGS"
-type = "String"
+type = "ListString"
+rust_type = "Vec<String>"
 optional = true
+parse_env = "list_by_colon"
 description = "Arguments to pass to uv when creating a venv."
 
 [python.venv_auto_create]
@@ -731,8 +733,10 @@ description = "Automatically create virtualenvs for python tools."
 
 [python.venv_create_args]
 env = "MISE_PYTHON_VENV_CREATE_ARGS"
-type = "String"
+type = "ListString"
+rust_type = "Vec<String>"
 optional = true
+parse_env = "list_by_colon"
 description = "Arguments to pass to python when creating a venv. (not used for uv venv creation)"
 
 [python.venv_stdlib]
@@ -864,13 +868,13 @@ description = "Set to true to enable verbose output during ruby installation."
 env = "MISE_CARGO_HOME"
 type = "Path"
 optional = true
-description = "Path to the cargo home directory. Defaults to ~/.cargo or %USERPROFILE%\\.cargo"
+description = "Path to the cargo home directory. Defaults to `~/.cargo` or `%USERPROFILE%\\.cargo`"
 
 [rust.rustup_home]
 env = "MISE_RUSTUP_HOME"
 type = "Path"
 optional = true
-description = "Path to the rustup home directory. Defaults to ~/.rustup or %USERPROFILE%\\.rustup"
+description = "Path to the rustup home directory. Defaults to `~/.rustup` or `%USERPROFILE%\\.rustup`"
 
 [shorthands_file]
 env = "MISE_SHORTHANDS_FILE"
@@ -910,7 +914,7 @@ description = "The age private key to use for sops secret decryption."
 env = "MISE_SOPS_AGE_KEY_FILE"
 type = "Path"
 optional = true
-default_docs = "~/.config/mise/age.key"
+default_docs = "~/.config/mise/age.txt"
 description = "Path to the age private key file to use for sops secret decryption."
 
 [sops.age_recipients]

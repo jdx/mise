@@ -15,6 +15,7 @@ pub struct GithubRelease {
     pub tag_name: String,
     // pub name: Option<String>,
     // pub body: Option<String>,
+    pub draft: bool,
     pub prerelease: bool,
     // pub created_at: String,
     // pub published_at: Option<String>,
@@ -95,10 +96,11 @@ fn list_releases_(repo: &str) -> Result<Vec<GithubRelease>> {
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
             let (more, h) = crate::http::HTTP_FETCH.json_headers::<Vec<GithubRelease>, _>(next)?;
-            releases.extend(more.into_iter().filter(|r| !r.prerelease));
+            releases.extend(more);
             headers = h;
         }
     }
+    releases.retain(|r| !r.draft && !r.prerelease);
 
     Ok(releases)
 }

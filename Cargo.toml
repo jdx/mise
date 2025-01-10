@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2024.12.19"
+version = "2025.1.3"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -85,7 +85,7 @@ indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
 indoc = "2"
-itertools = "0.13"
+itertools = "0.14"
 junction = "1"
 log = "0.4"
 minisign-verify = "0.2"
@@ -96,7 +96,7 @@ once_cell = "1"
 openssl = { version = "0.10", optional = true }
 os-release = "0.1"
 path-absolutize = "3"
-petgraph = "0.6"
+petgraph = "0.7"
 rand = "0.8"
 rayon = "1"
 regex = "1"
@@ -136,13 +136,12 @@ thiserror = "2"
 tokio = { version = "1", features = ["io-std", "rt", "time"] }
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
-ubi = { version = "0.2", default-features = false }
+ubi = { version = "0.3", default-features = false }
 url = "2"
-# usage-lib = { path = "../usage/lib", features = ["clap", "docs"] }
-usage-lib = { version = "1", features = ["clap", "docs"] }
+usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 # vfox = { path = "../vfox.rs" }
-vfox = { version = "0.3", default-features = false }
+vfox = { version = "1", default-features = false }
 walkdir = "2"
 which = "7"
 xx = { version = "2", features = ["glob"] }
@@ -153,14 +152,14 @@ zstd = "0.13"
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.29", features = ["signal", "user"] }
-self_update = { version = "0.41", default-features = false, features = [
+self_update = { version = "0.42", default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
 ] }
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.41", default-features = false, features = [
+self_update = { version = "0.42", default-features = false, features = [
   "archive-zip",
   "signatures",
 ] }

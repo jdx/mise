@@ -1,6 +1,6 @@
 # `mise ls`
 
-- **Usage**: `mise ls [FLAGS] [PLUGIN]...`
+- **Usage**: `mise ls [FLAGS] [INSTALLED_TOOL]...`
 - **Aliases**: `list`
 - **Source code**: [`src/cli/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls.rs)
 
@@ -14,9 +14,9 @@ It's a useful command to get the current state of your tools.
 
 ## Arguments
 
-### `[PLUGIN]...`
+### `[INSTALLED_TOOL]...`
 
-Only show tool versions from [PLUGIN]
+Only show tool versions from [TOOL]
 
 ## Flags
 

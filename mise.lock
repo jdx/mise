@@ -1,13 +1,12 @@
 [tools.actionlint]
-version = "1.7.4"
+version = "1.7.6"
 backend = "aqua:rhysd/actionlint"
 
 [tools.actionlint.checksums]
-actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
-actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5ccd2564bf86192c1b661"
-"actionlint.exe-windows-x86_64" = "sha256:04ca117d9f33b77731fd3ef6a3670bd6b11b40c1b1cc5b7aaf6c28392d74d2e2"
-"actionlint_1.7.4_linux_amd64.tar.gz" = "sha256:fc0a6886bbb9a23a39eeec4b176193cadb54ddbe77cdbb19b637933919545395"
-"actionlint_1.7.4_linux_arm64.tar.gz" = "sha256:ede03682dc955381d057dde95bb85ce9ca418122209a8a313b617d4adec56416"
+actionlint-linux-x86_64 = "sha256:bf567ce887b8b045fdd6001411aea1971e90a49e4f5172801fb648902843c9ec"
+actionlint-macos-aarch64 = "sha256:baa69aa6ae140310d9d86127d916abd42cd2ad446aef0a04f2a7fe7f54da7d67"
+"actionlint_1.7.6_darwin_arm64.tar.gz" = "sha256:9a7c9cb2b627bb137ef68742eead2dd5b78f3ddc44876e84c37d323ba28b4710"
+"actionlint_1.7.6_linux_amd64.tar.gz" = "sha256:5d1a70d9de15fee5371e6f9e20cc29b284e814d6ee1b882f9749e91caf716eba"
 
 [tools.bun]
 version = "1.1.42"
@@ -30,12 +29,8 @@ version = "0.13.0"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
-version = "1.41.1"
+version = "1.42.0"
 backend = "cargo:cargo-insta"
-
-[tools."cargo:cargo-show"]
-version = "0.6.0"
-backend = "cargo:cargo-show"
 
 [tools."cargo:git-cliff"]
 version = "2.7.0"
@@ -46,7 +41,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "1.7.4"
+version = "2.0.0"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
@@ -72,6 +67,10 @@ jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea
 [tools.minisign]
 version = "0.11"
 backend = "aqua:jedisct1/minisign"
+
+[tools.minisign.checksums]
+"minisign-0.11-linux.tar.gz" = "sha256:f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0"
+"minisign-0.11-macos.zip" = "sha256:e7c410ae8b8960d7087392472b040bda9b2f307c76df0384ac37f9ad103fc893"
 
 [tools."npm:markdownlint-cli"]
 version = "0.43.0"

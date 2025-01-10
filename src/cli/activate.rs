@@ -43,6 +43,9 @@ pub struct Activate {
     /// Effectively the same as:
     ///
     ///     PATH="$HOME/.local/share/mise/shims:$PATH"
+    ///
+    /// `mise activate --shims` does not support all the features of `mise activate`.
+    /// See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
     #[clap(long, verbatim_doc_comment)]
     shims: bool,
 

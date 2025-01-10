@@ -321,11 +321,12 @@ impl Run {
                                 // only show this if it's the first failure, or we haven't killed all the remaining tasks
                                 // otherwise we'll get unhelpful error messages about being killed by mise which we expect
                                 let prefix = task.estyled_prefix();
-                                self.eprint(
-                                    &task,
-                                    &prefix,
-                                    &format!("{} {err:?}", style::ered("ERROR")),
-                                );
+                                let err_body = if SETTINGS.verbose {
+                                    format!("{} {err:?}", style::ered("ERROR"))
+                                } else {
+                                    format!("{} {err}", style::ered("ERROR"))
+                                };
+                                self.eprint(&task, &prefix, &err_body);
                             }
                             let _ = tx_err.send((task.clone(), status));
                         }
@@ -445,7 +446,6 @@ impl Run {
         }
         if let Some(root) = config.project_root.clone().or(task.config_root.clone()) {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
-            env.insert("root".into(), root.display().to_string());
         }
         env.insert("MISE_TASK_NAME".into(), task.name.clone());
         let task_file = task.file.as_ref().unwrap_or(&task.config_source);
@@ -472,7 +472,7 @@ impl Run {
             self.eprint(
                 task,
                 &prefix,
-                &format!("finished in {}", time::format_duration(timer.elapsed())),
+                &format!("Finished in {}", time::format_duration(timer.elapsed())),
             );
         }
 

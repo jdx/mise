@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+mise settings set python.compile true
+assert "mise settings get python.compile" "true"
+mise settings unset python.compile
+assert_fail "mise settings get python.compile" "mise ERROR Unknown setting: python.compile"

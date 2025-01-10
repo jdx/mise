@@ -106,8 +106,17 @@ impl TestTool {
     }
 
     fn test(&self, tool: &ToolArg, cmd: &str, expected: &str) -> Result<()> {
+        let mut args = vec![tool.clone()];
+        args.extend(
+            tool.ba
+                .backend()?
+                .get_all_dependencies(false)?
+                .into_iter()
+                .map(|ba| ba.to_string().parse())
+                .collect::<Result<Vec<ToolArg>>>()?,
+        );
         let mut ts = ToolsetBuilder::new()
-            .with_args(&[tool.clone()])
+            .with_args(&args)
             .with_default_to_latest(true)
             .build(&Config::get())?;
         let opts = InstallOptions {
@@ -144,7 +153,7 @@ impl TestTool {
         } else {
             cmd!("sh", "-c", cmd)
         };
-        cmd = cmd.stderr_to_stdout().stdout_capture();
+        cmd = cmd.stdout_capture();
         for (k, v) in env.iter() {
             cmd = cmd.env(k, v);
         }

@@ -573,6 +573,8 @@ const completionSpec: Fig.Spec = {
             name: "tool",
             description: "Show aliases for <TOOL>",
             isOptional: true,
+            generators: completionGeneratorTemplate(`mise registry --complete`),
+            debounce: true,
           },
         },
         {
@@ -1356,11 +1358,11 @@ const completionSpec: Fig.Spec = {
         },
       ],
       args: {
-        name: "plugin",
-        description: "Only show tool versions from [PLUGIN]",
+        name: "installed_tool",
+        description: "Only show tool versions from [TOOL]",
         isOptional: true,
         isVariadic: true,
-        generators: pluginGenerator,
+        generators: completionGeneratorTemplate(`mise plugins --core --user`),
         debounce: true,
       },
     },
@@ -1613,6 +1615,8 @@ const completionSpec: Fig.Spec = {
         description: "Prune only these tools",
         isOptional: true,
         isVariadic: true,
+        generators: completionGeneratorTemplate(`mise plugins --core --user`),
+        debounce: true,
       },
     },
     {
@@ -1625,6 +1629,8 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
           args: {
             name: "backend",
+            generators: completionGeneratorTemplate(`mise backends`),
+            debounce: true,
           },
         },
         {
@@ -1787,7 +1793,7 @@ const completionSpec: Fig.Spec = {
         },
       ],
       args: {
-        name: "env_vars",
+        name: "env_var",
         description:
           "Environment variable(s) to set\ne.g.: NODE_ENV=production",
         isOptional: true,
@@ -1848,7 +1854,7 @@ const completionSpec: Fig.Spec = {
           options: [
             {
               name: ["-a", "--all"],
-              description: "Display settings set to the default",
+              description: "List all settings",
               isRepeatable: false,
             },
             {
@@ -1875,7 +1881,7 @@ const completionSpec: Fig.Spec = {
           ],
           args: {
             name: "setting",
-            description: "List keys under this key",
+            description: "Name of setting",
             isOptional: true,
             generators: settingsGenerator,
             debounce: true,
@@ -1952,7 +1958,7 @@ const completionSpec: Fig.Spec = {
       args: [
         {
           name: "setting",
-          description: "Setting name to get/set",
+          description: "Name of setting",
           isOptional: true,
           generators: settingsGenerator,
           debounce: true,
@@ -2493,8 +2499,10 @@ const completionSpec: Fig.Spec = {
         },
       ],
       args: {
-        name: "backend",
+        name: "tool",
         description: "Tool name to get information about",
+        generators: completionGeneratorTemplate(`mise registry --complete`),
+        debounce: true,
       },
     },
     {
@@ -2553,8 +2561,6 @@ const completionSpec: Fig.Spec = {
         description: "Tool(s) to remove",
         isOptional: true,
         isVariadic: true,
-        generators: installedToolVersionGenerator,
-        debounce: true,
       },
     },
     {
@@ -2577,10 +2583,12 @@ const completionSpec: Fig.Spec = {
         },
       ],
       args: {
-        name: "keys",
+        name: "env_key",
         description: "Environment variable(s) to remove\ne.g.: NODE_ENV",
         isOptional: true,
         isVariadic: true,
+        generators: completionGeneratorTemplate(`mise set --complete`),
+        debounce: true,
       },
     },
     {
@@ -2602,8 +2610,6 @@ const completionSpec: Fig.Spec = {
         name: "installed_tool@version",
         description: "Tool(s) to remove",
         isVariadic: true,
-        generators: installedToolVersionGenerator,
-        debounce: true,
       },
     },
     {
@@ -3070,7 +3076,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "task",
           description:
-            "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2",
+            "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`",
           isOptional: true,
           generators: simpleTaskGenerator,
           debounce: true,
@@ -3123,6 +3129,9 @@ const completionSpec: Fig.Spec = {
       args: {
         name: "bin_name",
         description: "The bin to look up",
+        isOptional: true,
+        generators: completionGeneratorTemplate(`mise which --complete`),
+        debounce: true,
       },
     },
   ],

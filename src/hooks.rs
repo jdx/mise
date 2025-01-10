@@ -78,7 +78,7 @@ pub fn run_one_hook(ts: &Toolset, hook: Hooks, shell: Option<&dyn Shell>) {
         trace!("running hook {hook} in {root:?}");
         match (hook, hook_env::dir_change()) {
             (Hooks::Enter, Some((old, new))) => {
-                if !root.starts_with(&new) {
+                if !new.starts_with(root) {
                     continue;
                 }
                 if !new.starts_with(root) {

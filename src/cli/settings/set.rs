@@ -51,32 +51,36 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     if !config.contains_key("settings") {
         config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
-    let mut settings = config["settings"].as_table_mut().unwrap();
-    if key.contains(".") {
-        let (parent_key, child_key) = key.split_once('.').unwrap();
-
-        key = child_key;
-        settings = settings
-            .entry(parent_key)
-            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-            .as_table_mut()
-            .unwrap();
-    }
-
-    let value = match settings.get(key).map(|c| c.as_array()) {
-        Some(Some(array)) if add => {
-            let mut array = array.clone();
-            array.extend(value.as_array().unwrap().iter().cloned());
-            array.into()
+    if let Some(mut settings) = config["settings"].as_table_mut() {
+        if let Some((parent_key, child_key)) = key.split_once('.') {
+            key = child_key;
+            settings = settings
+                .entry(parent_key)
+                .or_insert({
+                    let mut t = toml_edit::Table::new();
+                    t.set_implicit(true);
+                    toml_edit::Item::Table(t)
+                })
+                .as_table_mut()
+                .unwrap();
         }
-        _ => value,
-    };
-    settings.insert(key, value.into());
 
-    // validate
-    let _: SettingsFile = toml::from_str(&config.to_string())?;
+        let value = match settings.get(key).map(|c| c.as_array()) {
+            Some(Some(array)) if add => {
+                let mut array = array.clone();
+                array.extend(value.as_array().unwrap().iter().cloned());
+                array.into()
+            }
+            _ => value,
+        };
+        settings.insert(key, value.into());
 
-    file::write(path, config.to_string())
+        // validate
+        let _: SettingsFile = toml::from_str(&config.to_string())?;
+
+        file::write(path, config.to_string())?;
+    }
+    Ok(())
 }
 
 fn parse_list_by_comma(value: &str) -> Result<toml_edit::Value> {

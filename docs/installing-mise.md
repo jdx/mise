@@ -287,6 +287,17 @@ this is not necessary.
 See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for more information.
 :::
 
+### Powershell
+
+::: warning
+See [about_Profiles](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles) docs to find your actual profile location.
+You will need to first create the parent directory if it does not exist.
+:::
+
+```powershell
+echo '~/.local/bin/mise activate mise activate pwsh | Out-String | Invoke-Expression' >> $HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+```
+
 ### Nushell
 
 Nu

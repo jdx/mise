@@ -1,5 +1,5 @@
 use crate::config;
-use crate::config::settings::SettingsPartial;
+use crate::config::settings::{SettingsPartial, SettingsType, SETTINGS_META};
 use crate::config::{Settings, ALL_TOML_CONFIG_FILES, SETTINGS};
 use crate::file::display_path;
 use crate::ui::table;
@@ -14,34 +14,54 @@ use tabled::{Table, Tabled};
 /// Note that aliases are also stored in this file
 /// but managed separately with `mise aliases`
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsLs {
-    /// List keys under this key
+    /// Name of setting
     pub setting: Option<String>,
 
-    /// Display settings set to the default
+    /// List all settings
     #[clap(long, short)]
-    pub all: bool,
+    all: bool,
+
+    /// Print all settings with descriptions for shell completions
+    #[clap(long, hide = true)]
+    complete: bool,
 
     /// Use the local config file instead of the global one
-    #[clap(long, short)]
+    #[clap(long, short, global = true)]
     pub local: bool,
 
     /// Output in JSON format
     #[clap(long, short = 'J', group = "output")]
-    pub json: bool,
+    json: bool,
 
     /// Output in JSON format with sources
     #[clap(long, group = "output")]
-    pub json_extended: bool,
+    json_extended: bool,
 
     /// Output in TOML format
     #[clap(long, short = 'T', group = "output")]
-    pub toml: bool,
+    toml: bool,
+}
+
+fn settings_type_to_string(st: &SettingsType) -> String {
+    match st {
+        SettingsType::Bool => "boolean".to_string(),
+        SettingsType::String => "string".to_string(),
+        SettingsType::Integer => "number".to_string(),
+        SettingsType::Duration => "number".to_string(),
+        SettingsType::Path => "string".to_string(),
+        SettingsType::Url => "string".to_string(),
+        SettingsType::ListString => "array".to_string(),
+        SettingsType::ListPath => "array".to_string(),
+    }
 }
 
 impl SettingsLs {
     pub fn run(self) -> Result<()> {
+        if self.complete {
+            return self.complete();
+        }
         let mut rows: Vec<Row> = if self.local {
             let source = config::local_toml_config_path();
             let partial = Settings::parse_settings_file(&source).unwrap_or_default();
@@ -90,6 +110,13 @@ impl SettingsLs {
         Ok(())
     }
 
+    fn complete(&self) -> Result<()> {
+        for (k, sm) in SETTINGS_META.iter() {
+            println!("{k}:{}", sm.description.replace(":", "\\:"));
+        }
+        Ok(())
+    }
+
     fn print_json(&self, rows: Vec<Row>) -> Result<()> {
         let mut table = serde_json::Map::new();
         for row in rows {
@@ -115,6 +142,10 @@ impl SettingsLs {
                 "value".to_string(),
                 toml_value_to_json_value(row.toml_value),
             );
+            entry.insert("type".to_string(), row.type_.into());
+            if let Some(description) = row.description {
+                entry.insert("description".to_string(), description.into());
+            }
             if let Some(source) = row.source {
                 entry.insert("source".to_string(), source.to_string_lossy().into());
             }
@@ -173,6 +204,10 @@ struct Row {
     source: Option<PathBuf>,
     #[tabled(skip)]
     toml_value: toml::Value,
+    #[tabled(skip)]
+    description: Option<String>,
+    #[tabled(skip)]
+    type_: String,
 }
 
 impl Row {
@@ -192,21 +227,35 @@ impl Row {
         let mut rows = vec![];
         if let Some(table) = v.as_table() {
             if !table.is_empty() {
+                rows.reserve(table.len());
+                let meta = SETTINGS_META.get(k.as_str());
+                let desc = meta.map(|sm| sm.description.to_string());
+                let type_str = meta
+                    .map(|sm| settings_type_to_string(&sm.type_))
+                    .unwrap_or_default();
+
                 for (subkey, subvalue) in table {
                     rows.push(Row {
                         key: format!("{k}.{subkey}"),
                         value: subvalue.to_string(),
+                        type_: type_str.clone(),
                         source: source.clone(),
                         toml_value: subvalue.clone(),
+                        description: desc.clone(),
                     });
                 }
             }
         } else {
+            let meta = SETTINGS_META.get(k.as_str());
             rows.push(Row {
-                key: k,
+                key: k.clone(),
                 value: v.to_string(),
+                type_: meta
+                    .map(|sm| settings_type_to_string(&sm.type_))
+                    .unwrap_or_default(),
                 source,
                 toml_value: v,
+                description: meta.map(|sm| sm.description.to_string()),
             });
         }
         rows

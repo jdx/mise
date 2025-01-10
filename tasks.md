@@ -131,8 +131,6 @@ User to run as
 
 ## `pre-commit`
 
-- Depends: render, lint
-
 - **Usage**: `pre-commit`
 
 ## `release`

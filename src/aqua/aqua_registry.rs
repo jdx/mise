@@ -12,7 +12,7 @@ use itertools::Itertools;
 use serde_derive::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use url::Url;
 
@@ -349,7 +349,14 @@ impl AquaPackage {
     }
 
     pub fn url(&self, v: &str) -> Result<String> {
-        self.parse_aqua_str(&self.url, v, &Default::default())
+        let mut url = self.url.clone();
+        if cfg!(windows)
+            && Path::new(&url).extension().is_none()
+            && (self.format.is_empty() || self.format == "raw")
+        {
+            url.push_str(".exe");
+        }
+        self.parse_aqua_str(&url, v, &Default::default())
     }
 
     fn parse_aqua_str(
@@ -444,6 +451,9 @@ impl AquaFile {
 }
 
 fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
+    if avo.r#type != AquaPackageType::GithubRelease {
+        orig.r#type = avo.r#type.clone();
+    }
     if !avo.repo_owner.is_empty() {
         orig.repo_owner = avo.repo_owner.clone();
     }
