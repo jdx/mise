@@ -1,5 +1,40 @@
 # Changelog
 
+## [2025.1.4](https://github.com/jdx/mise/compare/v2025.1.3..v2025.1.4) - 2025-01-10
+
+### 🚀 Features
+
+- update JSON output for task info/ls by [@hverlin](https://github.com/hverlin) in [#4034](https://github.com/jdx/mise/pull/4034)
+- **breaking** bump usage to 2.x by [@jdx](https://github.com/jdx) in [#4049](https://github.com/jdx/mise/pull/4049)
+
+### 🐛 Bug Fixes
+
+- ignore github releases marked as draft by [@jdx](https://github.com/jdx) in [#4030](https://github.com/jdx/mise/pull/4030)
+- `mise run` shorthand with tasks that have an extension by [@jdx](https://github.com/jdx) in [#4029](https://github.com/jdx/mise/pull/4029)
+- use consistent casing by [@jdx](https://github.com/jdx) in [a4d4133](https://github.com/jdx/mise/commit/a4d41338139355b0dd86a068fd89790eb7e34584)
+- support latest ansible packages by [@jdx](https://github.com/jdx) in [#4045](https://github.com/jdx/mise/pull/4045)
+- use go backend for goconvey/ginkgo by [@jdx](https://github.com/jdx) in [#4047](https://github.com/jdx/mise/pull/4047)
+- Improve fig spec with better generators by [@miguelmig](https://github.com/miguelmig) in [#3762](https://github.com/jdx/mise/pull/3762)
+
+### 📚 Documentation
+
+- set prose-wrap with prettier by [@jdx](https://github.com/jdx) in [#4038](https://github.com/jdx/mise/pull/4038)
+- Fix "Example of a NodeJS file task with arguments" by [@highb](https://github.com/highb) in [#4046](https://github.com/jdx/mise/pull/4046)
+
+### 🧪 Testing
+
+- disable some non-working plugins by [@jdx](https://github.com/jdx) in [106ee40](https://github.com/jdx/mise/commit/106ee40b463923bb5c6444e0c0127dabc502d9ee)
+- remove test for flarectl by [@jdx](https://github.com/jdx) in [a63b449](https://github.com/jdx/mise/commit/a63b44910d55ad2cdc801a472f0c196c605cce25)
+
+### Chore
+
+- added `cargo check` to pre-commit by [@jdx](https://github.com/jdx) in [73eb25a](https://github.com/jdx/mise/commit/73eb25a88bbfe1b979bb5483ca3c81a689be184f)
+- fix release-plz pr creation by [@jdx](https://github.com/jdx) in [8299c6b](https://github.com/jdx/mise/commit/8299c6b943119ffda94d18445c5b789948b6f9c0)
+- use -q in pre-commit:check by [@jdx](https://github.com/jdx) in [099b2d8](https://github.com/jdx/mise/commit/099b2d88d3ed31ace30c67be816170dc50f87b6d)
+- fix release-plz pr creation by [@jdx](https://github.com/jdx) in [c2accc5](https://github.com/jdx/mise/commit/c2accc5f7192202d0a8249ae7f3ab0ea7f100e1b)
+- make prettier/pre-commit much faster by [@jdx](https://github.com/jdx) in [#4036](https://github.com/jdx/mise/pull/4036)
+- fix release-plz edit command by [@jdx](https://github.com/jdx) in [86b5816](https://github.com/jdx/mise/commit/86b5816660f5a13d45c1795132a29e881645e271)
+
 ## [2025.1.3](https://github.com/jdx/mise/compare/v2025.1.2..v2025.1.3) - 2025-01-09
 
 ### 🐛 Bug Fixes
