@@ -9,4 +9,9 @@ end
 if ! set -q _usage_spec_mise_2025_1_3
   set -g _usage_spec_mise_2025_1_3 (mise usage | string collect)
 end
-complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2025_1_3" -- (commandline -cop) (commandline -t))'
+set -l tokens
+if commandline -x >/dev/null 2>&1
+    complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2025_1_3" -- (commandline -xpc) (commandline -t))'
+else
+    complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2025_1_3" -- (commandline -opc) (commandline -t))'
+end

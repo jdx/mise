@@ -41,7 +41,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "1.7.4"
+version = "2.0.0"
 backend = "cargo:usage-cli"
 
 [tools.cosign]

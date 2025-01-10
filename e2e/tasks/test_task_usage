@@ -10,7 +10,7 @@ assert_json_partial_array "mise task ls --json" "name,description,source" "[
     \"source\": \"$PWD/mise-tasks/test.sh\"
   }
 ]"
-assert "mise task ls --usage" 'cmd "test" help="sh"'
+assert "mise task ls --usage" 'cmd test help=sh'
 
 assert "mise task add --file test --description no-sh"
 assert "mise task ls" "test     no-sh
@@ -45,5 +45,5 @@ assert_json_partial_array "mise task ls --json" "name,description,source" "$(
 EOF
 )"
 
-assert "mise task ls --usage" 'cmd "test" help="no-sh"
-cmd "test.sh" help="sh"'
+assert "mise task ls --usage" 'cmd test help=no-sh
+cmd test.sh help=sh'

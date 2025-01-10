@@ -7,8 +7,8 @@ Source: ~/workdir/mise-tasks/build.sh
 File: ~/workdir/mise-tasks/build.sh
 
 Usage Spec:
-  name "build"
-  bin "build"'
+  name build
+  bin build'
 
 assert_contains "mise task info build.sh --json" '"name": "build"'
 
