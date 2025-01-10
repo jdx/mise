@@ -1,12 +1,12 @@
-use comfy_table::{Attribute, Cell, Row};
-use eyre::Result;
-use itertools::Itertools;
-
 use crate::config::Config;
 use crate::file::display_rel_path;
 use crate::task::Task;
 use crate::toolset::Toolset;
 use crate::ui::table::MiseTable;
+use comfy_table::{Attribute, Cell, Row};
+use eyre::Result;
+use itertools::Itertools;
+use serde_json::json;
 
 /// List available tasks to execute
 /// These may be included from the config file or from the project's .mise/tasks directory
@@ -133,20 +133,27 @@ impl TasksLs {
         let array_items = tasks
             .into_iter()
             .map(|task| {
-                let mut inner = serde_json::Map::new();
-                inner.insert("name".to_string(), task.display_name().into());
-                if !task.aliases.is_empty() {
-                    inner.insert("aliases".to_string(), task.aliases.join(", ").into());
-                }
-                if task.hide {
-                    inner.insert("hide".to_string(), task.hide.into());
-                }
-                inner.insert("description".to_string(), task.description.into());
-                inner.insert(
-                    "source".to_string(),
-                    task.config_source.to_string_lossy().into(),
-                );
-                inner
+                json!({
+                  "name": task.display_name(),
+                  "aliases": task.aliases,
+                  "description": task.description,
+                  "source": task.config_source,
+                  "depends": task.depends,
+                  "depends_post": task.depends_post,
+                  "wait_for": task.wait_for,
+                  "env": task.env,
+                  "dir": task.dir,
+                  "hide": task.hide,
+                  "raw": task.raw,
+                  "sources": task.sources,
+                  "outputs": task.outputs,
+                  "shell": task.shell,
+                  "quiet": task.quiet,
+                  "silent": task.silent,
+                  "tools": task.tools,
+                  "run": task.run(),
+                  "file": task.file,
+                })
             })
             .collect::<serde_json::Value>();
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
