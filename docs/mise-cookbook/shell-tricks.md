@@ -4,7 +4,8 @@ A collection of shell utities leveraging mise.
 
 ## Prompt colouring
 
-In ZSH to set the prompt colour whenever mise updates the environment (e.g. on cd into a project, or due to modification of the .mise\*.toml):
+In ZSH to set the prompt colour whenever mise updates the environment (e.g. on cd into a project, or due to modification
+of the .mise\*.toml):
 
 ```shell
 # activate mise like normal
@@ -37,7 +38,8 @@ Now, when mise makes any updates to the environment the prompt will go blue.
 
 ## Inspect what changed after mise hook
 
-Using record-query you can inspect the `__MISE_DIFF` and `__MISE_SESSION` variables to see what's changing in your environment due to the mise hook.
+Using record-query you can inspect the `__MISE_DIFF` and `__MISE_SESSION` variables to see what's changing in your
+environment due to the mise hook.
 
 ```toml [~/.config/mise/config.toml]
 [tools]

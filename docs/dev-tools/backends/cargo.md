@@ -1,14 +1,13 @@
 # Cargo Backend
 
-You may install packages directly from [Cargo Crates](https://crates.io/) even if there
-isn't an asdf plugin for it.
+You may install packages directly from [Cargo Crates](https://crates.io/) even if there isn't an asdf plugin for it.
 
-The code for this is inside the mise repository at [`./src/backend/cargo.rs`](https://github.com/jdx/mise/blob/main/src/backend/cargo.rs).
+The code for this is inside the mise repository at
+[`./src/backend/cargo.rs`](https://github.com/jdx/mise/blob/main/src/backend/cargo.rs).
 
 ## Dependencies
 
-This relies on having `cargo` installed. You can either install it on your
-system via [rustup](https://rustup.rs/):
+This relies on having `cargo` installed. You can either install it on your system via [rustup](https://rustup.rs/):
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -22,8 +21,8 @@ mise use -g rust
 
 ## Usage
 
-The following installs the latest version of [eza](https://crates.io/crates/eza) and
-sets it as the active version on PATH:
+The following installs the latest version of [eza](https://crates.io/crates/eza) and sets it as the active version on
+PATH:
 
 ```sh
 $ mise use -g cargo:eza
@@ -42,8 +41,8 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ### Using Git
 
-You can install any package from a Git repository using the `mise` command. This allows you to
-install a particular tag, branch, or commit revision:
+You can install any package from a Git repository using the `mise` command. This allows you to install a particular tag,
+branch, or commit revision:
 
 ```sh
 # Install a specific tag
@@ -69,8 +68,8 @@ import Settings from '/components/settings.vue';
 
 ## Tool Options
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `cargo` backend—these
-go in `[tools]` in `mise.toml`.
+The following [tool-options](/dev-tools/#tool-options) are available for the `cargo` backend—these go in `[tools]` in
+`mise.toml`.
 
 ### `features`
 
@@ -101,8 +100,7 @@ Select the CLI bin name to install when multiple are available (passed as `cargo
 
 ### `crate`
 
-Select the crate name to install when multiple are available (passed as
-`cargo install --git=<repo> <crate>`):
+Select the crate name to install when multiple are available (passed as `cargo install --git=<repo> <crate>`):
 
 ```toml
 [tools]
@@ -111,8 +109,8 @@ Select the crate name to install when multiple are available (passed as
 
 ### `locked`
 
-Use Cargo.lock (passes `cargo install --locked`) when building CLI. This is the default behavior,
-pass `false` to disable:
+Use Cargo.lock (passes `cargo install --locked`) when building CLI. This is the default behavior, pass `false` to
+disable:
 
 ```toml
 [tools]

@@ -2,7 +2,8 @@
 
 [Vfox](https://github.com/version-fox/vfox) plugins may be used in mise to install tools.
 
-The code for this is inside the mise repository at [`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
+The code for this is inside the mise repository at
+[`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
 
 ## Dependencies
 
@@ -61,5 +62,4 @@ terraform      vfox:enochchau/vfox-terraform
 vlang          vfox:ahai-code/vfox-vlang
 ```
 
-And they will be installed when running commands such as `mise use -g cmake` without needing to
-specify `vfox:cmake`.
+And they will be installed when running commands such as `mise use -g cmake` without needing to specify `vfox:cmake`.

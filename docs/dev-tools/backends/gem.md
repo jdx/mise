@@ -1,11 +1,12 @@
 # gem Backend
 
-mise can be used to install CLIs from RubyGems. The code for this is inside of the mise repository at [`./src/backend/gem.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
+mise can be used to install CLIs from RubyGems. The code for this is inside of the mise repository at
+[`./src/backend/gem.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
 
 ## Dependencies
 
-This relies on having `gem` (provided with ruby) installed. You can install it with or without mise.
-Here is how to install `ruby` with mise:
+This relies on having `gem` (provided with ruby) installed. You can install it with or without mise. Here is how to
+install `ruby` with mise:
 
 ```sh
 mise use -g ruby
@@ -13,7 +14,8 @@ mise use -g ruby
 
 ## Usage
 
-The following installs the latest version of [rubocop](https://rubygems.org/gems/rubocop) and sets it as the active version on PATH:
+The following installs the latest version of [rubocop](https://rubygems.org/gems/rubocop) and sets it as the active
+version on PATH:
 
 ```sh
 mise use -g gem:rubocop
@@ -29,8 +31,8 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ## Ruby upgrades
 
-If the ruby version used by a gem package changes, (by mise or system ruby), you may need to
-reinstall the gem. This can be done with:
+If the ruby version used by a gem package changes, (by mise or system ruby), you may need to reinstall the gem. This can
+be done with:
 
 ```sh
 mise install -f gem:rubocop

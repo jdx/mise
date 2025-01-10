@@ -13,4 +13,5 @@ Finally, here is how to create [presets](presets.md) and some [shell tricks](she
 
 ## Contributing
 
-If you would like to share your setup, please share it in this [cookbook thread](https://github.com/jdx/mise/discussions/3645).
+If you would like to share your setup, please share it in this
+[cookbook thread](https://github.com/jdx/mise/discussions/3645).

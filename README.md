@@ -16,15 +16,18 @@
 
 ## What is it?
 
-- Like [asdf](https://asdf-vm.com) (or [nvm](https://github.com/nvm-sh/nvm) or [pyenv](https://github.com/pyenv/pyenv) but for any language) it manages [dev tools](https://mise.jdx.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.jdx.dev/registry.html).
-- Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](https://mise.jdx.dev/environments/) for different project directories.
-- Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](https://mise.jdx.dev/tasks/) used to build and test projects.
+- Like [asdf](https://asdf-vm.com) (or [nvm](https://github.com/nvm-sh/nvm) or [pyenv](https://github.com/pyenv/pyenv)
+  but for any language) it manages [dev tools](https://mise.jdx.dev/dev-tools/) like node, python, cmake, terraform, and
+  [hundreds more](https://mise.jdx.dev/registry.html).
+- Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](https://mise.jdx.dev/environments/)
+  for different project directories.
+- Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](https://mise.jdx.dev/tasks/) used
+  to build and test projects.
 
 ## 30 Second Demo
 
-The following shows using mise to install different versions
-of [node](https://nodejs.org).
-Note that calling `which node` gives us a real path to node, not a shim.
+The following shows using mise to install different versions of [node](https://nodejs.org). Note that calling
+`which node` gives us a real path to node, not a shim.
 
 [![demo](./docs/demo.gif)](./docs/demo.gif)
 

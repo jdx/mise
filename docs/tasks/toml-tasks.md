@@ -92,8 +92,8 @@ run_windows = 'cargo test --features windows'
 
 ### Specifying which directory to use
 
-Tasks are executed with `cwd` set to the directory containing `mise.toml`. You can use the directory
-from where the task was run with `dir = "{{cwd}}"`:
+Tasks are executed with `cwd` set to the directory containing `mise.toml`. You can use the directory from where the task
+was run with `dir = "{{cwd}}"`:
 
 ```toml
 [tasks.test]
@@ -115,7 +115,8 @@ alias = 'b' # `mise run b`
 ```
 
 - This alias can be used to run the task
-- The description will be displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html)` with no arguments.
+- The description will be displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html)`
+  with no arguments.
 
 ```shell
 ❯ mise run
@@ -127,7 +128,8 @@ Tasks
 
 ### Dependencies
 
-You can specify dependencies for a task. Dependencies are run before the task itself. If a dependency fails, the task will not run.
+You can specify dependencies for a task. Dependencies are run before the task itself. If a dependency fails, the task
+will not run.
 
 ```toml
 [tasks.build]
@@ -137,7 +139,8 @@ run = 'cargo build'
 depends = ['build']
 ```
 
-There are other ways to specify dependencies, see [wait_for](/tasks/task-configuration.html#wait-for) and [depends_post](/tasks/task-configuration.html#depends-post)
+There are other ways to specify dependencies, see [wait_for](/tasks/task-configuration.html#wait-for) and
+[depends_post](/tasks/task-configuration.html#depends-post)
 
 ### Environment variables
 
@@ -156,7 +159,8 @@ cargo clippy
 
 ### Sources / Outputs
 
-If you want to skip executing a task if certain files haven't changed (up-to-date), you should specify `sources` and `outputs`:
+If you want to skip executing a task if certain files haven't changed (up-to-date), you should specify `sources` and
+`outputs`:
 
 ```toml
 [tasks.build]
@@ -182,7 +186,9 @@ echo "This will not fail the task"
 '''
 ```
 
-You can specify a `shell` command to run the script with (default is [`sh -c`](/configuration/settings.html#unix_default_inline_shell_args) or [`cmd /c`](/configuration/settings.html#windows_default_inline_shell_args)):
+You can specify a `shell` command to run the script with (default is
+[`sh -c`](/configuration/settings.html#unix_default_inline_shell_args) or
+[`cmd /c`](/configuration/settings.html#windows_default_inline_shell_args)):
 
 ```toml
 [tasks.lint]
@@ -309,16 +315,17 @@ puts 'Hello, ruby!'
 
 ::: details What's a shebang? What's the difference between `#!/usr/bin/env` and `#!/usr/bin/env -S`
 
-A shebang is the character sequence `#!` at the beginning of a script file that tells the system which program should be used to interpret/execute the script.
-The [env command](https://manpages.ubuntu.com/manpages/jammy/man1/env.1.html) comes from GNU Coreutils. `mise` does not use `env` but will behave similarly.
+A shebang is the character sequence `#!` at the beginning of a script file that tells the system which program should be
+used to interpret/execute the script. The [env command](https://manpages.ubuntu.com/manpages/jammy/man1/env.1.html)
+comes from GNU Coreutils. `mise` does not use `env` but will behave similarly.
 
 For example, `#!/usr/bin/env python` will run the script with the Python interpreter found in the `PATH`.
 
-The `-S` flag allows passing multiple arguments to the interpreter.
-It treats the rest of the line as a single argument string to be split.
+The `-S` flag allows passing multiple arguments to the interpreter. It treats the rest of the line as a single argument
+string to be split.
 
-This is useful when you need to specify interpreter flags or options.
-Example: `#!/usr/bin/env -S python -u` will run Python with unbuffered output.
+This is useful when you need to specify interpreter flags or options. Example: `#!/usr/bin/env -S python -u` will run
+Python with unbuffered output.
 
 :::
 
@@ -341,8 +348,8 @@ Task files can be fetched via http:
 file = "https://example.com/build.sh"
 ```
 
-Currently, they're fetched everytime they're executed, but we may add some cache support later.
-This could be extended with other protocols like mentioned in [this ticket](https://github.com/jdx/mise/issues/2488) if there were interest.
+Currently, they're fetched everytime they're executed, but we may add some cache support later. This could be extended
+with other protocols like mentioned in [this ticket](https://github.com/jdx/mise/issues/2488) if there were interest.
 
 ## Arguments
 
@@ -353,8 +360,7 @@ By default, arguments are passed to the last script in the `run` array. So if a 
 run = ['cargo test', './scripts/test-e2e.sh']
 ```
 
-Then running `mise run test foo bar` will pass `foo bar` to `./scripts/test-e2e.sh` but not to
-`cargo test`.
+Then running `mise run test foo bar` will pass `foo bar` to `./scripts/test-e2e.sh` but not to `cargo test`.
 
 You can also define arguments using templates:
 
@@ -366,19 +372,16 @@ run = [
 ]
 ```
 
-Then running `mise run test foo bar` will pass `foo bar` to `cargo test`.
-`mise run test --e2e-args baz` will pass `baz` to `./scripts/test-e2e.sh`.
-If any arguments are defined with templates then mise will not pass the arguments to the last script
-in the `run` array.
+Then running `mise run test foo bar` will pass `foo bar` to `cargo test`. `mise run test --e2e-args baz` will pass `baz`
+to `./scripts/test-e2e.sh`. If any arguments are defined with templates then mise will not pass the arguments to the
+last script in the `run` array.
 
-:::tip
-Using templates to define arguments will make them work with completion and help messages.
-:::
+:::tip Using templates to define arguments will make them work with completion and help messages. :::
 
 ### Positional Arguments
 
-These are defined in scripts with <span v-pre>`{{arg()}}`</span>. They are used for positional
-arguments where the order matters.
+These are defined in scripts with <span v-pre>`{{arg()}}`</span>. They are used for positional arguments where the order
+matters.
 
 Example:
 
@@ -389,16 +392,16 @@ run = 'cargo test {{arg(name="file")}}'
 # runs: cargo test my-test-file
 ```
 
-- `i`: The index of the argument. This can be used to specify the order of arguments. Defaults to
-  the order they're defined in the scripts.
+- `i`: The index of the argument. This can be used to specify the order of arguments. Defaults to the order they're
+  defined in the scripts.
 - `name`: The name of the argument. This is used for help/error messages.
 - `var`: If `true`, multiple arguments can be passed.
 - `default`: The default value if the argument is not provided.
 
 ### Options
 
-These are defined in scripts with <span v-pre>`{{option()}}`</span>. They are used for named
-arguments where the order doesn't matter.
+These are defined in scripts with <span v-pre>`{{option()}}`</span>. They are used for named arguments where the order
+doesn't matter.
 
 Example:
 
@@ -415,8 +418,7 @@ run = 'cargo test {{option(name="file")}}'
 
 ### Flags
 
-Flags are like options except they don't take values. They are defined in scripts with <span v-pre>
-`{{flag()}}`</span>.
+Flags are like options except they don't take values. They are defined in scripts with <span v-pre> `{{flag()}}`</span>.
 
 Examples:
 

@@ -1,16 +1,14 @@
 # Python
 
-The following are instructions for using the python mise core plugin. The core plugin will be used
-so long as no plugin is manually
-installed named "python" using `mise plugins install python [GIT_URL]`.
+The following are instructions for using the python mise core plugin. The core plugin will be used so long as no plugin
+is manually installed named "python" using `mise plugins install python [GIT_URL]`.
 
-The code for this is inside of the mise repository
-at [`./src/plugins/core/python.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/python.rs).
+The code for this is inside of the mise repository at
+[`./src/plugins/core/python.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/python.rs).
 
 ## Usage
 
-The following installs the latest version of python-3.11.x and makes it the global
-default:
+The following installs the latest version of python-3.11.x and makes it the global default:
 
 ```sh
 mise use -g python@3.11
@@ -28,8 +26,7 @@ $ python3.11 -V
 
 ## Settings
 
-`python-build` already has
-a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
+`python-build` already has a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
 additional to that python in mise has a few extra configuration variables.
 
 Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
@@ -41,53 +38,44 @@ import Settings from '/components/settings.vue';
 
 ## Default Python packages
 
-mise can automatically install a default set of Python packages with pip right after installing a
-Python version. To enable this feature, provide a `$HOME/.default-python-packages` file that lists
-one package per line, for example:
+mise can automatically install a default set of Python packages with pip right after installing a Python version. To
+enable this feature, provide a `$HOME/.default-python-packages` file that lists one package per line, for example:
 
 ```text
 ansible
 pipenv
 ```
 
-You can specify a non-default location of this file by setting a `MISE_PYTHON_DEFAULT_PACKAGES_FILE`
-variable.
+You can specify a non-default location of this file by setting a `MISE_PYTHON_DEFAULT_PACKAGES_FILE` variable.
 
 ## Precompiled python binaries
 
-By default, mise will
-download [precompiled binaries](https://github.com/astral-sh/python-build-standalone)
-for python instead of compiling them with python-build. This makes installing python much faster.
+By default, mise will download [precompiled binaries](https://github.com/astral-sh/python-build-standalone) for python
+instead of compiling them with python-build. This makes installing python much faster.
 
-In addition to being faster, it also means you don't have to install all of the system dependencies
-either.
+In addition to being faster, it also means you don't have to install all of the system dependencies either.
 
-That said, there are
-some [quirks](https://github.com/astral-sh/python-build-standalone/blob/main/docs/quirks.rst)
-with the precompiled binaries to be aware of.
+That said, there are some [quirks](https://github.com/astral-sh/python-build-standalone/blob/main/docs/quirks.rst) with
+the precompiled binaries to be aware of.
 
 If you'd like to disable these binaries, set `mise settings python.compile=1`.
 
-These binaries may not work on older CPUs however you may opt into binaries which
-are more compatible with older CPUs by setting `MISE_PYTHON_PRECOMPILED_ARCH` with
-a different version. See <https://gregoryszorc.com/docs/python-build-standalone/main/running.html> for
-more information
-on this option. Set it to "x86_64" for the most compatible binaries.
+These binaries may not work on older CPUs however you may opt into binaries which are more compatible with older CPUs by
+setting `MISE_PYTHON_PRECOMPILED_ARCH` with a different version. See
+<https://gregoryszorc.com/docs/python-build-standalone/main/running.html> for more information on this option. Set it to
+"x86_64" for the most compatible binaries.
 
 ## python-build
 
-Optionally, mise
-uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/python-build) (part of pyenv)
-to compile python runtimes,
-you need to ensure
-its [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) are installed
-before installing python with
-python-build.
+Optionally, mise uses [python-build](https://github.com/pyenv/pyenv/tree/master/plugins/python-build) (part of pyenv) to
+compile python runtimes, you need to ensure its
+[dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environment) are installed before installing python
+with python-build.
 
 ## Troubleshooting errors with Homebrew
 
-If you normally use Homebrew and you see errors regarding OpenSSL,
-your best bet might be using the following command to install Python:
+If you normally use Homebrew and you see errors regarding OpenSSL, your best bet might be using the following command to
+install Python:
 
 ```sh
 CFLAGS="-I$(brew --prefix openssl)/include" \
@@ -95,15 +83,10 @@ LDFLAGS="-L$(brew --prefix openssl)/lib" \
 mise install python@latest;
 ```
 
-Homebrew installs its own OpenSSL version, which may collide with system-expected ones.
-You could even add that to your
-`.profile`,
-`.bashrc`,
-`.zshrc`...
-to avoid setting them every time
+Homebrew installs its own OpenSSL version, which may collide with system-expected ones. You could even add that to your
+`.profile`, `.bashrc`, `.zshrc`... to avoid setting them every time
 
-Additionally, if you encounter issues with python-build,
-you may benefit from unlinking pkg-config prior to install
+Additionally, if you encounter issues with python-build, you may benefit from unlinking pkg-config prior to install
 ([reason](https://github.com/pyenv/pyenv/issues/2823#issuecomment-1769081965)).
 
 ```sh
@@ -124,8 +107,7 @@ brew link pkg-config
 
 ## Automatic virtualenv activation
 
-Python comes with virtualenv support built in, use it with `mise.toml` configuration like
-one of the following:
+Python comes with virtualenv support built in, use it with `mise.toml` configuration like one of the following:
 
 ```toml
 [tools]

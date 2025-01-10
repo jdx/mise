@@ -8,9 +8,8 @@ This page lists various ways to install `mise` on your system.
 
 ### <https://mise.run>
 
-Note that it isn't necessary for `mise` to be on `PATH`. If you run the activate script in your
-shell's rc
-file, mise will automatically add itself to `PATH`.
+Note that it isn't necessary for `mise` to be on `PATH`. If you run the activate script in your shell's rc file, mise
+will automatically add itself to `PATH`.
 
 ```sh
 curl https://mise.run | sh
@@ -35,11 +34,9 @@ curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt > install.sh
 sh ./install.sh
 ```
 
-::: tip
-As long as you don't change the version with `MISE_VERSION`, the install script will be pinned to whatever the latest
-version was when it was downloaded with checksums inside the file. This makes downloading the file and putting it into
-a project a great way to ensure that anyone installing with that script fetches the exact same mise bin.
-:::
+::: tip As long as you don't change the version with `MISE_VERSION`, the install script will be pinned to whatever the
+latest version was when it was downloaded with checksums inside the file. This makes downloading the file and putting it
+into a project a great way to ensure that anyone installing with that script fetches the exact same mise bin. :::
 
 or if you're allergic to `| sh`:
 
@@ -92,8 +89,8 @@ For Alpine Linux:
 apk add mise
 ```
 
-_mise lives in
-the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/mise/APKBUILD)._
+_mise lives in the
+[community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/mise/APKBUILD)._
 
 ### apt
 
@@ -176,8 +173,8 @@ brew install mise
 
 ### npm
 
-mise is available on npm as a precompiled binary. This isn't a Node.js package—just distributed
-via npm. This is useful for JS projects that want to setup mise via `package.json` or `npx`.
+mise is available on npm as a precompiled binary. This isn't a Node.js package—just distributed via npm. This is useful
+for JS projects that want to setup mise via `package.json` or `npx`.
 
 ```sh
 npm install -g @jdxcode/mise
@@ -212,8 +209,7 @@ For the Nix package manager, at release 23.05 or later:
 nix-env -iA mise
 ```
 
-You can also import the package directly using
-`mise-flake.packages.${system}.mise`. It supports all default Nix
+You can also import the package directly using `mise-flake.packages.${system}.mise`. It supports all default Nix
 systems.
 
 ### yum
@@ -226,8 +222,7 @@ yum install -y mise
 
 ### Windows - Scoop
 
-> [!NOTE]
-> We're currently waiting for mise to be merged to the Scoop main bucket:
+> [!NOTE] We're currently waiting for mise to be merged to the Scoop main bucket:
 >
 > - <https://github.com/ScoopInstaller/Main/pull/6374>
 
@@ -245,9 +240,7 @@ winget install jdx.mise
 
 ### Windows - Chocolatey
 
-::: info
-chocolatey version is currently outdated.
-:::
+::: info chocolatey version is currently outdated. :::
 
 ```sh
 choco install mise
@@ -255,10 +248,10 @@ choco install mise
 
 ### Windows - manual
 
-Download the latest release from [GitHub](https://github.com/jdx/mise/releases) and add the binary
-to your PATH.
+Download the latest release from [GitHub](https://github.com/jdx/mise/releases) and add the binary to your PATH.
 
-If your shell does not support `mise activate`, you would want to edit PATH to include the shims directory (by default: `%LOCALAPPDATA%\mise\shims`).
+If your shell does not support `mise activate`, you would want to edit PATH to include the shims directory (by default:
+`%LOCALAPPDATA%\mise\shims`).
 
 ## Shells
 
@@ -280,19 +273,15 @@ echo 'eval "$(mise activate zsh)"' >> "${ZDOTDIR-$HOME}/.zshrc"
 echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-::: tip
-For homebrew and possibly other installs mise is automatically activated so
-this is not necessary.
+::: tip For homebrew and possibly other installs mise is automatically activated so this is not necessary.
 
-See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for more information.
-:::
+See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for more information. :::
 
 ### Powershell
 
-::: warning
-See [about_Profiles](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles) docs to find your actual profile location.
-You will need to first create the parent directory if it does not exist.
-:::
+::: warning See
+[about_Profiles](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles)
+docs to find your actual profile location. You will need to first create the parent directory if it does not exist. :::
 
 ```powershell
 echo '~/.local/bin/mise activate mise activate pwsh | Out-String | Invoke-Expression' >> $HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
@@ -300,9 +289,8 @@ echo '~/.local/bin/mise activate mise activate pwsh | Out-String | Invoke-Expres
 
 ### Nushell
 
-Nu
-does [not support `eval`](https://www.nushell.sh/book/how_nushell_code_gets_run.html#eval-function)
-Install Mise by appending `env.nu` and `config.nu`:
+Nu does [not support `eval`](https://www.nushell.sh/book/how_nushell_code_gets_run.html#eval-function) Install Mise by
+appending `env.nu` and `config.nu`:
 
 ```nushell
 '
@@ -312,8 +300,7 @@ let mise_path = $nu.default-config-dir | path join mise.nu
 "\nuse ($nu.default-config-dir | path join mise.nu)" | save $nu.config-path --append
 ```
 
-If you prefer to keep your dotfiles clean you can save it to a different directory then
-update `$env.NU_LIB_DIRS`:
+If you prefer to keep your dotfiles clean you can save it to a different directory then update `$env.NU_LIB_DIRS`:
 
 ```nushell
 "\n$env.NU_LIB_DIRS ++= ($mise_path | path dirname | to nuon)" | save $nu.env-path --append
@@ -321,9 +308,9 @@ update `$env.NU_LIB_DIRS`:
 
 ### Xonsh
 
-Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a
-bit off startup time by using a pure Python import: add the code below to, for
-example, `~/.config/xonsh/mise.py` config file and `import mise` it in `~/.config/xonsh/rc.xsh`:
+Since `.xsh` files are [not compiled](https://github.com/xonsh/xonsh/issues/3953) you may shave a bit off startup time
+by using a pure Python import: add the code below to, for example, `~/.config/xonsh/mise.py` config file and
+`import mise` it in `~/.config/xonsh/rc.xsh`:
 
 ```python
 from pathlib         import Path
@@ -340,10 +327,9 @@ Or continue to use `rc.xsh`/`.xonshrc`:
 echo 'execx($(~/bin/mise activate xonsh))' >> ~/.config/xonsh/rc.xsh # or ~/.xonshrc
 ```
 
-Given that `mise` replaces both shell env `$PATH` and OS environ `PATH`, watch out that your configs
-don't have these two set differently (might
-throw `os.environ['PATH'] = xonsh.built_ins.XSH.env.get_detyped('PATH')` at the end of a config to
-make sure they match)
+Given that `mise` replaces both shell env `$PATH` and OS environ `PATH`, watch out that your configs don't have these
+two set differently (might throw `os.environ['PATH'] = xonsh.built_ins.XSH.env.get_detyped('PATH')` at the end of a
+config to make sure they match)
 
 ### Elvish
 
@@ -363,20 +349,16 @@ edit:add-var mise~ {|@args| mise:mise $@args }
 
 ### Something else?
 
-Adding a new shell is not hard at all since very little shell code is
-in this project.
-[See here](https://github.com/jdx/mise/tree/main/src/shell) for how
-the others are implemented. If your shell isn't currently supported
-I'd be happy to help you get yours integrated.
+Adding a new shell is not hard at all since very little shell code is in this project.
+[See here](https://github.com/jdx/mise/tree/main/src/shell) for how the others are implemented. If your shell isn't
+currently supported I'd be happy to help you get yours integrated.
 
 ## Autocompletion
 
-::: tip
-Some installation methods automatically install autocompletion scripts.
-:::
+::: tip Some installation methods automatically install autocompletion scripts. :::
 
-The [`mise completion`](/cli/completion.html) command can generate autocompletion scripts for your shell.
-This requires `usage` to be installed. If you don't have it, install it with:
+The [`mise completion`](/cli/completion.html) command can generate autocompletion scripts for your shell. This requires
+`usage` to be installed. If you don't have it, install it with:
 
 ```shell
 mise use -g usage
@@ -415,8 +397,8 @@ Then source your shell's rc file or restart your shell.
 
 ## Uninstalling
 
-Use `mise implode` to uninstall mise. This will remove the mise binary and all of its data. Use
-`mise implode --help` for more information.
+Use `mise implode` to uninstall mise. This will remove the mise binary and all of its data. Use `mise implode --help`
+for more information.
 
 Alternatively, manually remove the following directories to fully clean up:
 

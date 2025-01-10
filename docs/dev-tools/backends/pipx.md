@@ -7,12 +7,13 @@ You may install python packages directly from:
 - GitHub
 - Http
 
-The code for this is inside of the mise repository at [`./src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
+The code for this is inside of the mise repository at
+[`./src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
 
 ## Dependencies
 
-This relies on having `pipx` installed. You can install it with or without mise.
-Here is how to install `pipx` with mise:
+This relies on having `pipx` installed. You can install it with or without mise. Here is how to install `pipx` with
+mise:
 
 ```sh
 mise use -g python
@@ -23,8 +24,8 @@ Other installation instructions can be found [here](https://pipx.pypa.io/latest/
 
 ## Usage
 
-The following installs the latest version of [black](https://github.com/psf/black)
-and sets it as the active version on PATH:
+The following installs the latest version of [black](https://github.com/psf/black) and sets it as the active version on
+PATH:
 
 ```sh
 $ mise use -g pipx:psf/black
@@ -41,8 +42,8 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ## Python upgrades
 
-If the python version used by a pipx package changes, (by mise or system python), you may need to
-reinstall the package. This can be done with:
+If the python version used by a pipx package changes, (by mise or system python), you may need to reinstall the package.
+This can be done with:
 
 ```sh
 mise install -f pipx:psf/black
@@ -81,8 +82,8 @@ import Settings from '/components/settings.vue';
 
 ## Tool Options
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `pipx` backend—these
-go in `[tools]` in `mise.toml`.
+The following [tool-options](/dev-tools/#tool-options) are available for the `pipx` backend—these go in `[tools]` in
+`mise.toml`.
 
 ### `extras`
 

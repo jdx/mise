@@ -4,7 +4,8 @@ Here are some tips on managing Node.js projects with mise.
 
 ## Add node modules binaries to the PATH
 
-A nice trick you can use is to add the node modules binaries to the PATH. This will make CLIs installed with npm available without `npx`.
+A nice trick you can use is to add the node modules binaries to the PATH. This will make CLIs installed with npm
+available without `npx`.
 
 ```toml [mise.toml]
 [env]
