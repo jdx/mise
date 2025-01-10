@@ -1,8 +1,10 @@
 #![allow(unknown_lints)]
 #![allow(clippy::literal_string_with_formatting_args)]
+use std::env;
 use std::fmt::Display;
 
 use indoc::formatdoc;
+use xx::regex;
 
 use crate::config::Settings;
 use crate::shell::{ActivateOptions, Shell};
@@ -15,7 +17,7 @@ impl Shell for Bash {
         let exe = opts.exe;
         let flags = opts.flags;
         let settings = Settings::get();
-        let exe = exe.to_string_lossy();
+        let exe = get_cygpath(&exe.to_string_lossy());
         let mut out = formatdoc! {r#"
             export MISE_SHELL=bash
             export __MISE_ORIG_PATH="$PATH"
@@ -56,7 +58,7 @@ impl Shell for Bash {
             {chpwd_load}
             chpwd_functions+=(_mise_hook)
             _mise_hook
-            "#, 
+            "#,
             chpwd_functions = include_str!("../assets/bash_zsh_support/chpwd/function.sh"),
             chpwd_load = include_str!("../assets/bash_zsh_support/chpwd/load.sh")
             });
@@ -101,13 +103,21 @@ impl Shell for Bash {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
+        let v = env::split_paths(&v)
+            .map(|p| get_cygpath(p.to_str().unwrap()))
+            .collect::<Vec<String>>()
+            .join(":");
         let k = shell_escape::unix::escape(k.into());
         let v = shell_escape::unix::escape(v.into());
         format!("export {k}={v}\n")
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        format!("export {k}=\"{v}:${k}\"\n")
+        let path = env::split_paths(&v)
+            .map(|p| get_cygpath(p.to_str().unwrap()))
+            .collect::<Vec<String>>()
+            .join(":");
+        format!("export {k}=\"{path}:${k}\"\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -119,6 +129,44 @@ impl Display for Bash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "bash")
     }
+}
+
+fn get_cygpath(s: &str) -> String {
+    match () {
+        _ if is_windows_cygwin() => get_cygwinpath(s),
+        _ if is_windows_msys() => get_msyspath(s),
+        _ => s.to_string(),
+    }
+}
+
+fn is_windows_msys() -> bool {
+    cfg!(windows) && env::var("MSYSTEM").is_ok()
+}
+
+fn get_msyspath(s: &str) -> String {
+    let regex_path = regex!(r"^([A-Za-z]):\\");
+    let mut p = regex_path
+        .replace_all(s, "/$1/")
+        .replace("\\", "/")
+        .to_string();
+    let regex_git = regex!(r#"/[A-Za-z](/.*)?/Git(/mingw64|/usr)/bin"#);
+    p = regex_git.replace_all(&p, "$2/bin").to_string();
+    p
+}
+
+fn is_windows_cygwin() -> bool {
+    cfg!(windows) && env::var("PWD").map_or(false, |v| v.starts_with("/"))
+}
+
+fn get_cygwinpath(s: &str) -> String {
+    let regex_path = regex!(r"^([A-Za-z]):\\");
+    let mut p = regex_path
+        .replace_all(s, "/cygdrive/$1/")
+        .replace("\\", "/")
+        .to_string();
+    let regex_git = regex!(r#"/cygdrive/[A-Za-z](/.*?)?/cygwin64(/usr/local)?/bin"#);
+    p = regex_git.replace_all(&p, "$2/bin").to_string();
+    p
 }
 
 #[cfg(test)]
@@ -163,5 +211,33 @@ mod tests {
     fn test_deactivate() {
         let deactivate = Bash::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
+    }
+
+    #[test]
+    fn test_get_msyspath() {
+        assert_eq!(
+            get_msyspath("C:\\Users\\User\\Program"),
+            "/C/Users/User/Program"
+        );
+        assert_eq!(
+            get_msyspath("C:\\Program Files\\Git\\mingw64\\bin"),
+            "/mingw64/bin"
+        );
+        assert_eq!(get_msyspath("D:\\Git\\mingw64\\bin"), "/mingw64/bin");
+        assert_eq!(get_msyspath("C:\\Program Files\\Git\\usr\\bin"), "/usr/bin");
+    }
+
+    #[test]
+    fn test_get_cygwinpath() {
+        assert_eq!(
+            get_cygwinpath("C:\\Users\\User\\Program"),
+            "/cygdrive/C/Users/User/Program"
+        );
+        assert_eq!(
+            get_cygwinpath("C:\\Program Files\\cygwin64\\usr\\local\\bin"),
+            "/usr/local/bin"
+        );
+        assert_eq!(get_cygwinpath("C:\\Program Files\\cygwin64\\bin"), "/bin");
+        assert_eq!(get_cygwinpath("D:\\cygwin64\\bin"), "/bin");
     }
 }
