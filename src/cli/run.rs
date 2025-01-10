@@ -472,7 +472,7 @@ impl Run {
             self.eprint(
                 task,
                 &prefix,
-                &format!("finished in {}", time::format_duration(timer.elapsed())),
+                &format!("Finished in {}", time::format_duration(timer.elapsed())),
             );
         }
 

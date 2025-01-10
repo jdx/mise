@@ -56,7 +56,7 @@ git commit -m "chore: release $version"
 git push origin release --force
 
 if [[ "$(gh pr list --label release)" == "" ]]; then
-  gh pr create --title "chore: release $version" --body "$changelog" --label "release"
+  gh pr create --title "chore: release $version" --body "$changelog" --label "release" --head release
 else
-  gh pr edit --title "chore: release $version" --body "$changelog"
+  gh pr edit --title "chore: release $version" --body "$changelog" --head release
 fi
