@@ -271,7 +271,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | ghidra | [asdf:mise-plugins/mise-ghidra](https://github.com/mise-plugins/mise-ghidra) |
 | ghorg | [aqua:gabrie30/ghorg](https://github.com/gabrie30/ghorg) [asdf:gbloquel/asdf-ghorg](https://github.com/gbloquel/asdf-ghorg) |
 | ghq | [aqua:x-motemen/ghq](https://github.com/x-motemen/ghq) [asdf:kajisha/asdf-ghq](https://github.com/kajisha/asdf-ghq) |
-| ginkgo | [asdf:mise-plugins/mise-ginkgo](https://github.com/mise-plugins/mise-ginkgo) |
+| ginkgo | [go:github.com/onsi/ginkgo/v2/ginkgo](https://pkg.go.dev/github.com/onsi/ginkgo/v2/ginkgo) [asdf:mise-plugins/mise-ginkgo](https://github.com/mise-plugins/mise-ginkgo) |
 | git-chglog | [aqua:git-chglog/git-chglog](https://github.com/git-chglog/git-chglog) [asdf:GoodwayGroup/asdf-git-chglog](https://github.com/GoodwayGroup/asdf-git-chglog) |
 | git-cliff | [aqua:orhun/git-cliff](https://github.com/orhun/git-cliff) [asdf:jylenhof/asdf-git-cliff](https://github.com/jylenhof/asdf-git-cliff) |
 | gitconfig | [ubi:0ghny/gitconfig](https://github.com/0ghny/gitconfig) [asdf:0ghny/asdf-gitconfig](https://github.com/0ghny/asdf-gitconfig) |
@@ -294,7 +294,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | go-junit-report | [ubi:jstemmer/go-junit-report](https://github.com/jstemmer/go-junit-report) [asdf:jwillker/asdf-go-junit-report](https://github.com/jwillker/asdf-go-junit-report) |
 | go-sdk | [asdf:mise-plugins/mise-go-sdk](https://github.com/mise-plugins/mise-go-sdk) |
 | go-swagger | [aqua:go-swagger/go-swagger](https://github.com/go-swagger/go-swagger) [asdf:jfreeland/asdf-go-swagger](https://github.com/jfreeland/asdf-go-swagger) |
-| goconvey | [asdf:mise-plugins/mise-goconvey](https://github.com/mise-plugins/mise-goconvey) |
+| goconvey | [go:github.com/smartystreets/goconvey](https://pkg.go.dev/github.com/smartystreets/goconvey) [asdf:mise-plugins/mise-goconvey](https://github.com/mise-plugins/mise-goconvey) |
 | gocryptfs | [aqua:rfjakob/gocryptfs](https://github.com/rfjakob/gocryptfs) [ubi:rfjakob/gocryptfs](https://github.com/rfjakob/gocryptfs) |
 | gofumpt | [ubi:mvdan/gofumpt](https://github.com/mvdan/gofumpt) [asdf:looztra/asdf-gofumpt](https://github.com/looztra/asdf-gofumpt) |
 | gojq | [aqua:itchyny/gojq](https://github.com/itchyny/gojq) [asdf:jimmidyson/asdf-gojq](https://github.com/jimmidyson/asdf-gojq) |
