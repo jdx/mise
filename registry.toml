@@ -677,7 +677,8 @@ ghcup.test = [
 ghidra.backends = ["asdf:mise-plugins/mise-ghidra"]
 ghorg.backends = ["aqua:gabrie30/ghorg", "asdf:gbloquel/asdf-ghorg"]
 ghq.backends = ["aqua:x-motemen/ghq", "asdf:kajisha/asdf-ghq"]
-ginkgo.backends = ["asdf:mise-plugins/mise-ginkgo"]
+ginkgo.backends = ["go:github.com/onsi/ginkgo/v2/ginkgo", "asdf:mise-plugins/mise-ginkgo"]
+ginkgo.test = ['ginkgo version', 'Ginkgo Version {{version}}']
 git-chglog.backends = [
     "aqua:git-chglog/git-chglog",
     "asdf:GoodwayGroup/asdf-git-chglog"
@@ -734,7 +735,7 @@ go-swagger.backends = [
 ]
 go-swagger.os = ["linux", "macos"]
 go-swagger.test = ["swagger version", "version: v{{version}}"]
-goconvey.backends = ["asdf:mise-plugins/mise-goconvey"]
+goconvey.backends = ["go:github.com/smartystreets/goconvey", "asdf:mise-plugins/mise-goconvey"]
 gocryptfs.backends = ["aqua:rfjakob/gocryptfs", "ubi:rfjakob/gocryptfs"]
 gofumpt.backends = ["ubi:mvdan/gofumpt", "asdf:looztra/asdf-gofumpt"]
 gojq.backends = ["aqua:itchyny/gojq", "asdf:jimmidyson/asdf-gojq"]
