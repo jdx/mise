@@ -131,17 +131,7 @@ User to run as
 
 ## `pre-commit`
 
-- Depends: pre-commit:*
-
 - **Usage**: `pre-commit`
-
-## `pre-commit:check`
-
-- **Usage**: `pre-commit:check`
-
-## `pre-commit:fmt`
-
-- **Usage**: `pre-commit:fmt`
 
 ## `release`
 
