@@ -377,7 +377,7 @@ impl Doctor {
         let path = env
             .get(&*PATH_KEY)
             .ok_or_else(|| eyre::eyre!("Path not found"))?;
-        Ok(split_paths(path).map(PathBuf::from).collect())
+        Ok(split_paths(path).collect())
     }
 
     fn analyze_paths(&mut self, ts: &Toolset) -> eyre::Result<()> {
