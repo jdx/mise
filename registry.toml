@@ -65,9 +65,11 @@ amazon-ecr-credential-helper.backends = [
     "aqua:awslabs/amazon-ecr-credential-helper",
     "asdf:dex4er/asdf-amazon-ecr-credential-helper"
 ]
-# this isn't working with pipx yet since it is missing ansible
-# ansible-base.backends = ["pipx:ansible-base[with=ansible]", "asdf:mise-plugins/mise-pyapp"]
-ansible-base.backends = ["asdf:mise-plugins/mise-pyapp"]
+ansible.backends = ["pipx:ansible[uvx=false,pipx_args=--include-deps]"]
+ansible.test = ['ansible --version', 'ansible']
+ansible-core.aliases = ["ansible-base"]
+ansible-core.backends = ["pipx:ansible-core"]
+ansible-core.test = ['ansible --version', 'ansible [core {{version}}]']
 ant.backends = ["asdf:mise-plugins/mise-ant"]
 apko.backends = [
     "aqua:chainguard-dev/apko",

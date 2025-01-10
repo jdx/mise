@@ -40,7 +40,8 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | alp | [aqua:tkuchiki/alp](https://github.com/tkuchiki/alp) [asdf:asdf-community/asdf-alp](https://github.com/asdf-community/asdf-alp) |
 | amass | [ubi:owasp-amass/amass](https://github.com/owasp-amass/amass) [asdf:dhoeric/asdf-amass](https://github.com/dhoeric/asdf-amass) |
 | amazon-ecr-credential-helper | [aqua:awslabs/amazon-ecr-credential-helper](https://github.com/awslabs/amazon-ecr-credential-helper) [asdf:dex4er/asdf-amazon-ecr-credential-helper](https://github.com/dex4er/asdf-amazon-ecr-credential-helper) |
-| ansible-base | [asdf:mise-plugins/mise-pyapp](https://github.com/mise-plugins/mise-pyapp) |
+| ansible | [pipx:ansible](https://pypi.org/project/ansible) |
+| ansible-core | [pipx:ansible-core](https://pypi.org/project/ansible-core) |
 | ant | [asdf:mise-plugins/mise-ant](https://github.com/mise-plugins/mise-ant) |
 | apko | [aqua:chainguard-dev/apko](https://github.com/chainguard-dev/apko) [ubi:chainguard-dev/apko](https://github.com/chainguard-dev/apko) [asdf:omissis/asdf-apko](https://github.com/omissis/asdf-apko) |
 | apollo-ios | [asdf:mise-plugins/mise-apollo-ios-cli](https://github.com/mise-plugins/mise-apollo-ios-cli) |
