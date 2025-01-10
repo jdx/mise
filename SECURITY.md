@@ -7,63 +7,63 @@ Please open a ticket or send me an email if you have thoughts on how mise can be
 
 ## Core CLI Security
 
-Development of the "core CLI" is done on jdx/mise which only a single developer (me, @jdx) has access to.
-Other contributors may only submit contributions via public Pull Requests. Reducing the number
-of developers with access down to 1 minimizes the chance of keys being leaked.
+Development of the "core CLI" is done on jdx/mise which only a single developer (me, @jdx) has access to. Other
+contributors may only submit contributions via public Pull Requests. Reducing the number of developers with access down
+to 1 minimizes the chance of keys being leaked.
 
-This does create a [bus factor](https://en.wikipedia.org/wiki/Bus_factor) problem. If I suddenly died one day
-or otherwise wasn't able to continue development at all there are some successors listed in my GitHub account
-that can take over my account if need be.
+This does create a [bus factor](https://en.wikipedia.org/wiki/Bus_factor) problem. If I suddenly died one day or
+otherwise wasn't able to continue development at all there are some successors listed in my GitHub account that can take
+over my account if need be.
 
 The dependencies in the core CLI are a security vector. I've tried to be judicious about what dependencies make it into
-the project. I only select dependencies with broad usage across the Rust community where possible.
-I'm open to PRs or suggestions on reducing dependency count even at the cost of functionality because it will make
-mise more secure.
+the project. I only select dependencies with broad usage across the Rust community where possible. I'm open to PRs or
+suggestions on reducing dependency count even at the cost of functionality because it will make mise more secure.
 
 ## mise.jdx.dev
 
-mise.jdx.dev is the asset host for mise. It's used to host precompiled mise CLI binaries, and hosts a "[VERSION](https://mise.jdx.dev/VERSION)"
-which mise uses to occasionally check for a new version being released. Everything hosted there uses a single
-vendor to reduce surface area.
+mise.jdx.dev is the asset host for mise. It's used to host precompiled mise CLI binaries, and hosts a
+"[VERSION](https://mise.jdx.dev/VERSION)" which mise uses to occasionally check for a new version being released.
+Everything hosted there uses a single vendor to reduce surface area.
 
 ## Cosign and slsa verification
 
-mise will verify signatures of tools using [cosign](https://docs.sigstore.dev/) and [slsa-verifier](https://github.com/slsa-framework/slsa-verifier)
-if cosign/slsa-verifier is installed and the tool is configured to support it. Typically, these will be tools using aqua as the backend.
-See the [aqua docs](https://aquaproj.github.io/docs/reference/security/cosign-slsa) for more on how this is
-configured in the [aqua registry](https://github.com/aquaproj/aqua-registry).
+mise will verify signatures of tools using [cosign](https://docs.sigstore.dev/) and
+[slsa-verifier](https://github.com/slsa-framework/slsa-verifier) if cosign/slsa-verifier is installed and the tool is
+configured to support it. Typically, these will be tools using aqua as the backend. See the
+[aqua docs](https://aquaproj.github.io/docs/reference/security/cosign-slsa) for more on how this is configured in the
+[aqua registry](https://github.com/aquaproj/aqua-registry).
 
-You will see this verification happen when tools are installed, setting `--verbose` when installing tools will help
-make it easier to see if verification happened. If you happen to notice a tool offers gpg/slsa/cosign/minisign/etc, see if you can
-make a PR to the aqua registry for mise to pick it up.
+You will see this verification happen when tools are installed, setting `--verbose` when installing tools will help make
+it easier to see if verification happened. If you happen to notice a tool offers gpg/slsa/cosign/minisign/etc, see if
+you can make a PR to the aqua registry for mise to pick it up.
 
 ## `mise.lock`
 
-mise has support for [lockfiles](https://mise.jdx.dev/configuration/settings.html#lockfile) which will
-store/verify the checksum of tool tarballs. Committing this into your repository is a good way to ensure
-that the exact same version of a tool is installed across all developers and CI/CD systems.
+mise has support for [lockfiles](https://mise.jdx.dev/configuration/settings.html#lockfile) which will store/verify the
+checksum of tool tarballs. Committing this into your repository is a good way to ensure that the exact same version of a
+tool is installed across all developers and CI/CD systems.
 
 Not all backends support this—notably asdf plugins do not.
 
 ## asdf plugins
 
 asdf plugins in asdf (but not with mise's default tools) are dangerous. They are typically owned by random developers
-unconnected to either asdf or the tool vendor. They may get hacked or maliciously inject code into
-their plugin that could trivially execute code on your machine.
+unconnected to either asdf or the tool vendor. They may get hacked or maliciously inject code into their plugin that
+could trivially execute code on your machine.
 
-asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry.toml) whenever possible.
-Sometimes it is not possible to use more secure backends like aqua/ubi because tools have complex install
-setups or need to export env vars. As of 2025-01-08, <25% of tools use asdf plugins as the default backend.
-All of these are hosted in the [mise-plugins org](https://github.com/mise-plugins) to secure the supply
-chain so you do not need to rely on plugins maintained by anyone except me.
+asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry.toml) whenever
+possible. Sometimes it is not possible to use more secure backends like aqua/ubi because tools have complex install
+setups or need to export env vars. As of 2025-01-08, <25% of tools use asdf plugins as the default backend. All of these
+are hosted in the [mise-plugins org](https://github.com/mise-plugins) to secure the supply chain so you do not need to
+rely on plugins maintained by anyone except me.
 
-Of course if you _manually_ add plugins not from the mise-plugins org you will want to ensure they
-are coming from a trusted source.
+Of course if you _manually_ add plugins not from the mise-plugins org you will want to ensure they are coming from a
+trusted source.
 
-Please contribute to this effort to migrate away from asdf plugins by checking if a tool works in ubi or aqua and submitting a PR to
-[registry.toml](https://github.com/jdx/mise/blob/main/registry.toml) to add it. If it doesn't work
-in ubi or is missing from aqua, submit an issue or PR to the respective project to add it. New tools
-using asdf are **not** likely to be accepted unless they cannot be supported with any other backend.
+Please contribute to this effort to migrate away from asdf plugins by checking if a tool works in ubi or aqua and
+submitting a PR to [registry.toml](https://github.com/jdx/mise/blob/main/registry.toml) to add it. If it doesn't work in
+ubi or is missing from aqua, submit an issue or PR to the respective project to add it. New tools using asdf are **not**
+likely to be accepted unless they cannot be supported with any other backend.
 
 ## Supported Versions
 
@@ -138,8 +138,7 @@ MFPobhR7zlCShd7TdY1a41uxTGB+Wmn4DO0s/wzSgdgxIzG+TM1X47owe7l5RiI1
 
 ## Release gpg key
 
-This is the gpg key used to sign deb releases and the SHASUMS files
-contained within releases.
+This is the gpg key used to sign deb releases and the SHASUMS files contained within releases.
 
 <details>
   <summary>Release gpg key</summary>

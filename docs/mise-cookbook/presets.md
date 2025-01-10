@@ -1,6 +1,7 @@
 # Presets
 
-You can create your own presets by leveraging [mise tasks](../tasks/index.md) to reduce boilerplate and make it easier to set up new projects.
+You can create your own presets by leveraging [mise tasks](../tasks/index.md) to reduce boilerplate and make it easier
+to set up new projects.
 
 ## Example python preset
 

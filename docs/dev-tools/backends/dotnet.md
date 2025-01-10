@@ -1,11 +1,12 @@
 # Dotnet backend
 
-The code for this is inside the mise repository at [`./src/backend/dotnet.rs`](https://github.com/jdx/mise/blob/main/src/backend/dotnet.rs).
+The code for this is inside the mise repository at
+[`./src/backend/dotnet.rs`](https://github.com/jdx/mise/blob/main/src/backend/dotnet.rs).
 
 ## Usage
 
-The following installs the latest version of [GitVersion.Tool](https://gitversion.net/) and
-sets it as the active version on PATH:
+The following installs the latest version of [GitVersion.Tool](https://gitversion.net/) and sets it as the active
+version on PATH:
 
 ```sh
 $ mise use -g dotnet:GitVersion.Tool@5.12.0
@@ -51,5 +52,5 @@ import Settings from '/components/settings.vue';
 
 ## Tool Options
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `dotnet` backend—these
-go in `[tools]` in `mise.toml`.
+The following [tool-options](/dev-tools/#tool-options) are available for the `dotnet` backend—these go in `[tools]` in
+`mise.toml`.

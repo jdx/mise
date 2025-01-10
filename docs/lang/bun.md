@@ -1,7 +1,7 @@
 # Bun
 
-The following are instructions for using the bun mise core plugin. This is used when there isn't a
-git plugin installed named "bun".
+The following are instructions for using the bun mise core plugin. This is used when there isn't a git plugin installed
+named "bun".
 
 The code for this is inside the mise repository at
 [`./src/plugins/core/bun.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/bun.rs).

@@ -1,10 +1,10 @@
 # Deno
 
-The following are instructions for using the deno mise core plugin. This is used when there isn't a
-git plugin installed named "deno".
+The following are instructions for using the deno mise core plugin. This is used when there isn't a git plugin installed
+named "deno".
 
-If you want to use [asdf-deno](https://github.com/asdf-community/asdf-deno)
-then run `mise plugins install deno https://github.com/asdf-community/asdf-deno`.
+If you want to use [asdf-deno](https://github.com/asdf-community/asdf-deno) then run
+`mise plugins install deno https://github.com/asdf-community/asdf-deno`.
 
 The code for this is inside the mise repository at
 [`./src/plugins/core/deno.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/deno.rs).

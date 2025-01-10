@@ -14,7 +14,5 @@ In addition to asdf plugins, you can also directly install CLIs with some packag
 - [ubi](/dev-tools/backends/ubi)
 - [vfox](/dev-tools/backends/vfox) <Badge type="warning" text="experimental" />
 
-::: tip
-If you'd like to contribute a new backend to mise, they're not difficult to write.
-See [`./src/backend/`](https://github.com/jdx/mise/tree/main/src/backend) for examples.
-:::
+::: tip If you'd like to contribute a new backend to mise, they're not difficult to write. See
+[`./src/backend/`](https://github.com/jdx/mise/tree/main/src/backend) for examples. :::

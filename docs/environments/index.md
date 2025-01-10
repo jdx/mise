@@ -1,11 +1,9 @@
 # Environments
 
-> Like [direnv](https://github.com/direnv/direnv) it
-> manages _environment variables_ for
-> different project directories.
+> Like [direnv](https://github.com/direnv/direnv) it manages _environment variables_ for different project directories.
 
-Use mise to specify environment variables used for different projects. Create a `mise.toml` file
-in the root of your project directory:
+Use mise to specify environment variables used for different projects. Create a `mise.toml` file in the root of your
+project directory:
 
 ```toml
 [env]
@@ -33,9 +31,9 @@ $ mise unset NODE_ENV
 
 ## Lazy eval
 
-Environment variables typically are resolved before tools—that way you can configure tool installation
-with environment variables. However, sometimes you want to access environment variables produced by
-tools. To do that, turn the value into a map with `tools = true`:
+Environment variables typically are resolved before tools—that way you can configure tool installation with environment
+variables. However, sometimes you want to access environment variables produced by tools. To do that, turn the value
+into a map with `tools = true`:
 
 ```toml
 [env]
@@ -55,29 +53,25 @@ _.file = { path = [".env.json"], redact = true }
 
 ## `env._` directives
 
-`env._.*` define special behavior for setting environment variables. (e.g.: reading env vars
-from a file). Since nested environment variables do not make sense,
-we make use of this fact by creating a key named "\_" which is a
-TOML table for the configuration of these directives.
+`env._.*` define special behavior for setting environment variables. (e.g.: reading env vars from a file). Since nested
+environment variables do not make sense, we make use of this fact by creating a key named "\_" which is a TOML table for
+the configuration of these directives.
 
 ### `env._.file`
 
-In `mise.toml`: `env._.file` can be used to specify a [dotenv](https://dotenv.org) file to load.
-It can be a string or array and uses relative or absolute paths:
+In `mise.toml`: `env._.file` can be used to specify a [dotenv](https://dotenv.org) file to load. It can be a string or
+array and uses relative or absolute paths:
 
 ```toml
 [env]
 _.file = '.env'
 ```
 
-::: info
-This uses [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have problems with
-the way `env._.file` works, you will likely need to post an issue there,
-not to mise since there is not much mise can do about the way that crate works.
-:::
+::: info This uses [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have problems with the way
+`env._.file` works, you will likely need to post an issue there, not to mise since there is not much mise can do about
+the way that crate works. :::
 
-Or set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any
-directory.
+Or set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any directory.
 
 You can also use json or yaml files:
 
@@ -104,7 +98,11 @@ _.path = [
 ]
 ```
 
-Adding a relative path like `tools/bin` or `./tools/bin` is similar to adding a path rooted at <span v-pre>`{{config_root}}`</span>, but behaves differently if your config file is nested in a subdirectory like `/path/to/project/.config/mise/config.toml`. Including `tools/bin` will add the path `/path/to/project/.config/mise/tools/bin`, whereas including <span v-pre>`{{config_root}}/tools/bin`</span> will add the path `/path/to/project/tools/bin`.
+Adding a relative path like `tools/bin` or `./tools/bin` is similar to adding a path rooted at
+<span v-pre>`{{config_root}}`</span>, but behaves differently if your config file is nested in a subdirectory like
+`/path/to/project/.config/mise/config.toml`. Including `tools/bin` will add the path
+`/path/to/project/.config/mise/tools/bin`, whereas including <span v-pre>`{{config_root}}/tools/bin`</span> will add the
+path `/path/to/project/tools/bin`.
 
 ### `env._.source`
 
@@ -115,25 +113,24 @@ Source an external bash script and pull exported environment variables out of it
 _.source = "./script.sh"
 ```
 
-::: info
-This **must** be a script that runs in bash as if it were executed like this:
+::: info This **must** be a script that runs in bash as if it were executed like this:
 
 ```sh
 source ./script.sh
 ```
 
-The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/issues/1448)
-for a potential alternative that would work with binaries or other script languages.
-:::
+The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/issues/1448) for a potential alternative that
+would work with binaries or other script languages. :::
 
 ## Plugin-provided `env._` Directives
 
-Plugins can provide their own `env._` directives. See [mise-env-sample](https://github.com/jdx/mise-env-sample) for an example of one.
+Plugins can provide their own `env._` directives. See [mise-env-sample](https://github.com/jdx/mise-env-sample) for an
+example of one.
 
 ## Multiple `env._` Directives
 
-It may be necessary to use multiple `env._` directives, however TOML fails with this syntax
-because it has 2 identical keys in a table:
+It may be necessary to use multiple `env._` directives, however TOML fails with this syntax because it has 2 identical
+keys in a table:
 
 ```toml
 [env]

@@ -4,21 +4,21 @@ See available tasks with `mise tasks`. To show tasks hidden with property `hide=
 
 List dependencies of tasks with `mise task deps [tasks]...`.
 
-Run a task with `mise task run <task>`, `mise run <task>`, `mise r <task>`, or just `mise <task>`—however
-that last one you should never put into scripts or documentation because if mise ever adds a command with that name in a
-future mise version, the task will be shadowed and must be run with one of the other forms.
+Run a task with `mise task run <task>`, `mise run <task>`, `mise r <task>`, or just `mise <task>`—however that last one
+you should never put into scripts or documentation because if mise ever adds a command with that name in a future mise
+version, the task will be shadowed and must be run with one of the other forms.
 
 Most mise users will have an alias for `mise run` like `alias mr='mise run'`.
 
-By default, tasks will execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option,
-`jobs` setting or `MISE_JOBS` environment variable. The output normally will be by line, prefixed with the task
-label. By printing line-by-line we avoid interleaving output from parallel executions. However, if
---jobs == 1, the output will be set to `interleave`.
+By default, tasks will execute with a maximum of 4 parallel jobs. Customize this with the `--jobs` option, `jobs`
+setting or `MISE_JOBS` environment variable. The output normally will be by line, prefixed with the task label. By
+printing line-by-line we avoid interleaving output from parallel executions. However, if --jobs == 1, the output will be
+set to `interleave`.
 
 To just print stdout/stderr directly, use `--interleave`, the `task_output` setting, or `MISE_TASK_OUTPUT=interleave`.
 
-Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
-it running in parallel with any other task-a RWMutex will get a write lock in this case.
+Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent it running
+in parallel with any other task-a RWMutex will get a write lock in this case.
 
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 
@@ -28,16 +28,14 @@ mise run build --release
 
 If there are multiple commands, the args are only passed to the last command.
 
-:::tip
-You can define arguments/flags for tasks which will provide validation, parsing, autocomplete, and documentation.
+:::tip You can define arguments/flags for tasks which will provide validation, parsing, autocomplete, and documentation.
 
 - [Arguments in File Tasks](/tasks/file-tasks#arguments)
 - [Arguments in TOML Tasks](/tasks/toml-tasks#arguments)
 
 Autocomplete will work automatically for tasks if the `usage` CLI is installed and mise completions are working.
 
-Markdown documentation can be generated with [`mise generate task-docs`](/cli/generate/task-docs).
-:::
+Markdown documentation can be generated with [`mise generate task-docs`](/cli/generate/task-docs). :::
 
 Multiple tasks/arguments can be separated with this `:::` delimiter:
 
@@ -45,7 +43,8 @@ Multiple tasks/arguments can be separated with this `:::` delimiter:
 mise run build arg1 arg2 ::: test arg3 arg4
 ```
 
-mise will run the task named "default" if no task is specified—and you've created one named "default". You can also alias a different task to "default".
+mise will run the task named "default" if no task is specified—and you've created one named "default". You can also
+alias a different task to "default".
 
 ```bash
 mise run
@@ -53,17 +52,14 @@ mise run
 
 ## Task Grouping
 
-Tasks can be grouped semantically by using name prefixes separated with `:`s.
-For example all testing related tasks may begin with `test:`. Nested grouping
-can also be used to further refine groups and simplify pattern matching.
-For example running `mise run test:**:local` will match`test:units:local`,
-`test:integration:local` and `test:e2e:happy:local`
-(See [Wildcards](#wildcards) for more information).
+Tasks can be grouped semantically by using name prefixes separated with `:`s. For example all testing related tasks may
+begin with `test:`. Nested grouping can also be used to further refine groups and simplify pattern matching. For example
+running `mise run test:**:local` will match`test:units:local`, `test:integration:local` and `test:e2e:happy:local` (See
+[Wildcards](#wildcards) for more information).
 
 ## Wildcards
 
-Glob style wildcards are supported when running tasks or specifying tasks
-dependencies.
+Glob style wildcards are supported when running tasks or specifying tasks dependencies.
 
 Available Wildcard Patterns:
 
@@ -92,8 +88,8 @@ wait_for = ["render"] # does not add as a dependency, but if it is already runni
 
 ## Running on file changes
 
-It's often handy to only execute a task if the files it uses changes. For example, we might only want
-to run `cargo build` if an ".rs" file changes. This can be done with the following config:
+It's often handy to only execute a task if the files it uses changes. For example, we might only want to run
+`cargo build` if an ".rs" file changes. This can be done with the following config:
 
 ```toml
 [tasks.build]
@@ -103,8 +99,8 @@ sources = ['Cargo.toml', 'src/**/*.rs'] # skip running if these files haven't ch
 outputs = ['target/debug/mycli']
 ```
 
-Now if `target/debug/mycli` is newer than `Cargo.toml` or any ".rs" file, the task will be skipped. This uses last modified timestamps.
-It wouldn't be hard to add checksum support.
+Now if `target/debug/mycli` is newer than `Cargo.toml` or any ".rs" file, the task will be skipped. This uses last
+modified timestamps. It wouldn't be hard to add checksum support.
 
 ## Watching files
 
@@ -114,11 +110,10 @@ Run a task when the source changes with [`mise watch`](/cli/watch.html)
 mise watch build
 ```
 
-Currently, this just shells out to `watchexec` (which you can install however you want including with mise: `mise use -g watchexec@latest`.
-This may change in the future.)
+Currently, this just shells out to `watchexec` (which you can install however you want including with mise:
+`mise use -g watchexec@latest`. This may change in the future.)
 
 ## `mise run` shorthand
 
-Tasks can be run with `mise run <TASK>` or `mise <TASK>`—if the name doesn't conflict with a mise command.
-Because mise may later add a command with a conflicting name, it's recommended to use `mise run <TASK>` in
-scripts and documentation.
+Tasks can be run with `mise run <TASK>` or `mise <TASK>`—if the name doesn't conflict with a mise command. Because mise
+may later add a command with a conflicting name, it's recommended to use `mise run <TASK>` in scripts and documentation.
