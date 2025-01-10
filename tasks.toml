@@ -142,4 +142,4 @@ depends = ["pre-commit:*"]
 ["pre-commit:fmt"]
 run = "cargo fmt --all -- --check"
 ["pre-commit:check"]
-run = "cargo check --all-features"
+run = "cargo check -q --all-features"
