@@ -68,6 +68,7 @@ wait_for = ["render:completions"]
 run = [
   "usage generate fig --file mise.usage.kdl --out-file xtasks/fig/src/mise.ts",
   "tsx xtasks/fig/addCustomGenerators.ts xtasks/fig/src/mise.ts xtasks/fig/src/mise.ts",
+  "bun run lint-fig:fix",
 ]
 depends = ['docs:setup']
 

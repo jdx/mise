@@ -54,6 +54,25 @@ const customGenerators: GeneratorIdentifier[] = [
   },
 ];
 
+const get_object_literal_name = (node: ts.Node): string => {
+  if (node.kind !== ts.SyntaxKind.ObjectLiteralExpression) {
+    throw "Not an Object Literal Expr";
+  }
+
+  const objectLiteralExpr = node as ts.ObjectLiteralExpression;
+  let name = "";
+
+  const properties = objectLiteralExpr.properties;
+  properties.forEach((p) => {
+    if (ts.isPropertyAssignment(p) && p.name.getText() == '"name"') {
+      const value = p.getChildAt(2);
+      name = value.getText().replaceAll('"', "");
+    }
+  });
+
+  return name;
+};
+
 const get_identifier = (node: ts.Node): ts.Identifier | undefined => {
   let name = "";
 
@@ -79,6 +98,18 @@ const get_identifier = (node: ts.Node): ts.Identifier | undefined => {
   return;
 };
 
+const has_property = (node: ts.Node, propertyName: string): boolean => {
+  if (node.kind !== ts.SyntaxKind.ObjectLiteralExpression) {
+    return false;
+  }
+
+  const objectLiteralExpr = node as ts.ObjectLiteralExpression;
+  const properties = objectLiteralExpr.properties;
+  return properties.some(
+    (p) => ts.isPropertyAssignment(p) && p.name.getText() === propertyName
+  );
+};
+
 function transformer<T extends ts.Node>(context: ts.TransformationContext) {
   return (rootNode: T) => {
     function visit(node: ts.Node): ts.Node {
@@ -91,7 +122,23 @@ function transformer<T extends ts.Node>(context: ts.TransformationContext) {
           return ts.factory.updatePropertyAssignment(node, node.name, id);
         }
       }
-      return ts.visitEachChild(node, visit, context);
+      const newNode = ts.visitEachChild(node, visit, context);
+      if (
+        newNode &&
+        has_property(newNode, '"generators"') &&
+        !has_property(newNode, '"debounce"')
+      ) {
+        const objLiteralExpr = newNode as ts.ObjectLiteralExpression;
+        const debounceProperty = ts.factory.createPropertyAssignment(
+          '"debounce"',
+          ts.factory.createIdentifier("true")
+        );
+        return ts.factory.updateObjectLiteralExpression(objLiteralExpr, [
+          ...objLiteralExpr.properties,
+          debounceProperty,
+        ]);
+      }
+      return newNode;
     }
     return ts.visitNode(rootNode, visit);
   };
@@ -107,7 +154,7 @@ const main = async (fileName: string, outFile?: string) => {
       "example.ts",
       contents,
       ts.ScriptTarget.Latest,
-      true,
+      true
     );
     const result = ts.transform(sourceFile, [transformer]);
     const transformedSourceFile = result.transformed[0];
@@ -116,12 +163,12 @@ const main = async (fileName: string, outFile?: string) => {
     const output = printer.printNode(
       ts.EmitHint.Unspecified,
       transformedSourceFile,
-      sourceFile,
+      sourceFile
     );
 
     fsAsync.writeFile(
       outFile ?? `${fileName.replace(".ts", "")}.out.ts`,
-      generatorFileContents + "\n" + output,
+      generatorFileContents + "\n" + output
     );
   } catch (e) {
     console.error(e);

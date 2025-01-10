@@ -9,14 +9,18 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint-fig": "eslint 'xtasks/fig/**/*.ts' && npx prettier --check 'xtasks/fig/**/*.ts' --parser typescript",
+    "lint-fig:fix": "eslint 'xtasks/fig/**/*.ts' --fix && npx prettier --write 'xtasks/fig/**/*.ts' --parser typescript"
   },
-  "author": "",
+  "author": "@jdx",
   "license": "ISC",
   "devDependencies": {
+    "@fig/eslint-config-autocomplete": "^2.0.0",
     "@tsconfig/node18": "^18.2.4",
     "@withfig/autocomplete-tools": "^2.10.0",
     "@withfig/autocomplete-types": "^1.31.0",
+    "eslint": "^8.57.0",
     "toml": "^3.0.0",
     "ts-pattern": "^5.4.0",
     "tsx": "^4.19.1",
