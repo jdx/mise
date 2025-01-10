@@ -2,7 +2,4 @@
 #MISE wait_for=["render:settings"]
 set -euo pipefail
 
-# shellcheck disable=SC2046
-
-prettier -c $(git ls-files '*.yml' '*.yaml')
-prettier -c .
+prettier --cache --ignore-unknown --log-level warn -c "$@" .

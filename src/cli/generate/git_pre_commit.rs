@@ -54,6 +54,7 @@ impl GitPreCommit {
             r#"#!/bin/sh
 STAGED="$(git diff-index --cached --name-only HEAD | tr ' ' '\ ' | tr '\n' ' ' | xargs)"
 export STAGED
+export MISE_PRE_COMMIT=1
 exec mise run {task}
 "#
         )

@@ -138,8 +138,5 @@ run = "echo {{arg(name='greeting')}}; sleep 2; echo 2; sleep 2; echo 3; sleep 0.
 description = "a task for testing"
 
 [pre-commit]
-depends = ["pre-commit:*"]
-["pre-commit:fmt"]
-run = "cargo fmt --all -- --check"
-["pre-commit:check"]
-run = "cargo check -q --all-features"
+env = {PRE_COMMIT = 1}
+run = ["mise run lint"]
