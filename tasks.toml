@@ -138,5 +138,5 @@ run = "echo {{arg(name='greeting')}}; sleep 2; echo 2; sleep 2; echo 3; sleep 0.
 description = "a task for testing"
 
 [pre-commit]
-env = {PRE_COMMIT = 1}
+env = { PRE_COMMIT = 1 }
 run = ["mise run lint"]
