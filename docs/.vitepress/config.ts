@@ -264,7 +264,7 @@ function cliReference(commands: { [key: string]: Command }) {
         x.collapsed = true;
         x.items = Object.keys(command.subcommands)
           .filter(
-            (subcommand) => command.subcommands![subcommand].hide !== true
+            (subcommand) => command.subcommands![subcommand].hide !== true,
           )
           .map((subcommand) => ({
             text: `mise ${name} ${subcommand}`,

@@ -13,11 +13,7 @@
     "lint-fig": "eslint 'xtasks/fig/**/*.ts' && npx prettier --check 'xtasks/fig/**/*.ts' --parser typescript",
     "lint-fig:fix": "eslint 'xtasks/fig/**/*.ts' --fix && npx prettier --write 'xtasks/fig/**/*.ts' --parser typescript"
   },
-  "prettier": {
-    "trailingComma": "es5",
-    "printWidth": 80
-  },
-  "author": "",
+  "author": "@jdx",
   "license": "ISC",
   "devDependencies": {
     "@fig/eslint-config-autocomplete": "^2.0.0",
