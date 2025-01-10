@@ -102,6 +102,15 @@ Additional arguments to pass to `pipx` when installing the package.
 "pipx:black" = { version = "latest", pipx_args = "--preinstall" }
 ```
 
+### `uvx`
+
+Set to `false` to always disable uv for this tool.
+
+```toml
+[tools]
+"pipx:ansible" = { version = "latest", uvx = "false", pipx_args = "--include-deps" }
+```
+
 ### `uvx_args`
 
 Additional arguments to pass to `uvx` when installing the package.
