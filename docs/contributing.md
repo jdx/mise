@@ -1,21 +1,16 @@
 # Contributing
 
-Before submitting a PR, unless it's something obvious, consider filing an issue or simply mention what you plan to do in
-the [Discord](https://discord.gg/UBa7pJUN7Z). PRs are often either rejected or need to change significantly after
-submission so make sure before you start working on something it won't be a wasted effort.
+Before submitting a PR, unless it's something obvious, consider filing an issue or simply mention what you plan to do in the [Discord](https://discord.gg/UBa7pJUN7Z).
+PRs are often either rejected or need to change significantly after submission so make sure before you start working on something it won't be a wasted effort.
 
-Issues ideal for contributors can be found with the
-["help wanted"](https://github.com/jdx/mise/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) and
-["good first issue"](https://github.com/jdx/mise/labels/good%20first%20issue) labels. These are isssues that I feel are
-self-contained therefore don't require super in-depth understanding of the codebase or that require knowledge about
-something I don't understand very well myself.
+Issues ideal for contributors can be found with the ["help wanted"](https://github.com/jdx/mise/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) and ["good first issue"](https://github.com/jdx/mise/labels/good%20first%20issue) labels. These are isssues that I feel are self-contained therefore don't require super in-depth understanding of the codebase or that require knowledge about something I don't understand very well myself.
 
 ## Testing
 
 ### Unit Tests
 
-Unit tests are used for fast, relatively simple logic. They can be run with `cargo test`. The dev container is
-recommended for executing since it does not require having a proper local setup.
+Unit tests are used for fast, relatively simple logic. They can be run with `cargo test`. The dev container is recommended
+for executing since it does not require having a proper local setup.
 
 To run locally you will need to first disable mise if you are using it.
 
@@ -58,10 +53,8 @@ pwsh e2e-win\run.ps1 task # run tests matching `*task*`
 
 ## Dependencies
 
-- [rust](https://www.rust-lang.org/) stable 1.70.0+ (I test with the beta channel locally, but CI uses stable, you can
-  use whatever)
-- [just](https://github.com/casey/just) this should be removed in favor of mise tasks but it's still used for some
-  things.
+- [rust](https://www.rust-lang.org/) stable 1.70.0+ (I test with the beta channel locally, but CI uses stable, you can use whatever)
+- [just](https://github.com/casey/just) this should be removed in favor of mise tasks but it's still used for some things.
 
 ## Tasks
 
@@ -91,13 +84,14 @@ test:e2e                                                     ~/src/mise/.mise.to
 
 ## Setup
 
-Shouldn't require anything special I'm aware of, but `mise run build` is a good sanity check to run and make sure it's
-all working.
+Shouldn't require anything special I'm aware of, but `mise run build` is a good sanity check to run and make sure it's all working.
 
 ## Dev Container
 
-::: danger The docker setup quit working and since I don't use it I haven't bothered to fix it. For now you'll need to
-run outside of docker or you can try to fix the docker setup. :::
+::: danger
+The docker setup quit working and since I don't use it I haven't bothered to fix it. For now you'll need to run outside of
+docker or you can try to fix the docker setup.
+:::
 
 There is a docker setup that makes development with mise easier. It is especially helpful for running the E2E tests.
 Here's some example ways to use it:
@@ -112,20 +106,22 @@ mise run docker:e2e # shortcut for `mise run docker:mise run test:e2e`
 
 ## Pre-commit hook
 
-You can optionally run a pre-commit hook which lints the codebase and updates generated code. To do this, install
-[lefthook](https://github.com/evilmartians/lefthook) and run `lefthook install`.
+You can optionally run a pre-commit hook which lints the codebase and updates generated code.
+To do this, install [lefthook](https://github.com/evilmartians/lefthook) and run `lefthook install`.
 
 ## Running the CLI
 
-Even if using the devcontainer, it's a good idea to create a shim to make it easy to launch mise. I use the following
-shim in `~/.local/bin/@mise`:
+Even if using the devcontainer, it's a good idea to create a shim to make it easy to launch mise. I use the following shim
+in `~/.local/bin/@mise`:
 
 ```sh
 #!/bin/sh
 exec cargo run -q --all-features --manifest-path ~/src/mise/Cargo.toml -- "$@"
 ```
 
-::: info Don't forget to change the manifest path to the correct path for your setup. :::
+::: info
+Don't forget to change the manifest path to the correct path for your setup.
+:::
 
 Then if that is in PATH just use `@mise` to run mise by compiling it on the fly.
 
@@ -153,8 +149,7 @@ mise run render
 
 ## Adding a new setting
 
-To add a new setting, add it to [`settings.toml`](https://github.com/jdx/mise/blob/main/settings.toml) in the root of
-the project and run `mise run render` to update the codebase.
+To add a new setting, add it to [`settings.toml`](https://github.com/jdx/mise/blob/main/settings.toml) in the root of the project and run `mise run render` to update the codebase.
 
 ## Testing packaging
 

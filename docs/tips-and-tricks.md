@@ -4,11 +4,11 @@ An assortment of helpful tips for using `mise`.
 
 ## macOS Rosetta
 
-If you have a need to run tools as x86_64 on Apple Silicon, this can be done with mise however you'll currently need to
-use the x86_64 version of mise itself. A common reason for doing this is to support compiling node <=14.
+If you have a need to run tools as x86_64 on Apple Silicon, this can be done with mise however you'll currently
+need to use the x86_64 version of mise itself. A common reason for doing this is to support compiling node <=14.
 
-You can do this either with the [`MISE_ARCH`](https://mise.jdx.dev/configuration/settings.html#arch) setting or by using
-a dedicated rosetta mise bin as described below:
+You can do this either with the [`MISE_ARCH`](https://mise.jdx.dev/configuration/settings.html#arch)
+setting or by using a dedicated rosetta mise bin as described below:
 
 First, you'll need a copy of mise that's built for x86_64:
 
@@ -20,7 +20,9 @@ $ ~/.local/bin/mise-x64 --version
 mise 2024.x.x
 ```
 
-::: warning If `~/.local/bin` is not in PATH, you'll need to prefix all commands with `~/.local/bin/mise-x64`. :::
+::: warning
+If `~/.local/bin` is not in PATH, you'll need to prefix all commands with `~/.local/bin/mise-x64`.
+:::
 
 Now you can use `mise-x64` to install tools:
 
@@ -30,8 +32,8 @@ mise-x64 use -g node@20
 
 ## Shebang
 
-You can specify a tool and its version in a shebang without needing to first set up a `mise.toml`/`.tool-versions`
-config:
+You can specify a tool and its version in a shebang without needing to first
+set up a `mise.toml`/`.tool-versions` config:
 
 ```typescript
 #!/usr/bin/env -S mise x node@20 -- node
@@ -39,7 +41,8 @@ config:
 console.log(`Running node: ${process.version}`);
 ```
 
-This can also be useful in environments where mise isn't activated (such as a non-interactive session).
+This can also be useful in environments where mise isn't activated
+(such as a non-interactive session).
 
 ## Bootstrap script
 
@@ -51,14 +54,15 @@ chmod +x setup-mise.sh
 ./setup-mise.sh
 ```
 
-::: tip This file contains checksums so it's more secure to commit it into your project rather than calling
-`curl https://mise.run` dynamically—though of course this means it will only fetch the version of mise that was current
-when the script was created. :::
+::: tip
+This file contains checksums so it's more secure to commit it into your project rather than
+calling `curl https://mise.run` dynamically—though of course this means it will only fetch
+the version of mise that was current when the script was created.
+:::
 
 ## Installation via zsh zinit
 
-[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH, wich this snippet you will get mise
-(and usage for shell completion):
+[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH, wich this snippet you will get mise (and usage for shell completion):
 
 ```sh
 zinit as="command" lucid from="gh-r" for \
@@ -120,13 +124,13 @@ As long as the task name doesn't conflict with a mise-provided command you can s
 mise test
 ```
 
-::: warning Don't do this inside of scripts because mise may add a command in a future version and could conflict with
-your task. :::
+::: warning
+Don't do this inside of scripts because mise may add a command in a future version and could conflict with your task.
+:::
 
 ## Software verification
 
-Install cosign, slsa-verifier, and gpg (cosign and slsa-verifier can be installed with mise) in order to verify tools
-automatically.
+Install cosign, slsa-verifier, and gpg (cosign and slsa-verifier can be installed with mise) in order to verify tools automatically.
 
 ```sh
 brew install gpg
@@ -135,15 +139,13 @@ mise use -g cosign slsa-verifier
 
 ## [`mise up --bump`](/cli/upgrade.html)
 
-Use `mise up --bump` to upgrade all software to the latest version and update `mise.toml` files. This keeps the same
-semver range as before, so if you had `node = "20"` and node 22 is the latest, `mise up --bump node` will change
-`mise.toml` to `node = "22"`.
+Use `mise up --bump` to upgrade all software to the latest version and update `mise.toml` files. This keeps the same semver range as before,
+so if you had `node = "20"` and node 22 is the latest, `mise up --bump node` will change `mise.toml` to `node = "22"`.
 
 ## cargo-binstall
 
-cargo-binstall is sort of like ubi but specific to rust tools. It fetches binaries for cargo releases. mise will use
-this automatically for `cargo:` tools if it is installed so if you use `cargo:` you should add this to make `mise i` go
-much faster.
+cargo-binstall is sort of like ubi but specific to rust tools. It fetches binaries for cargo releases. mise will use this automatically for `cargo:` tools if it is installed
+so if you use `cargo:` you should add this to make `mise i` go much faster.
 
 ```sh
 mise use -g cargo-binstall
@@ -151,13 +153,13 @@ mise use -g cargo-binstall
 
 ## [`mise cache clear`](/cli/cache.html)
 
-mise caches things for obvious reasons but sometimes you want it to use fresh data (maybe it's not noticing a new
-release). Run `mise cache clear` to remove the cache which basically just run `rm -rf ~/.cache/mise/*`.
+mise caches things for obvious reasons but sometimes you want it to use fresh data (maybe it's not noticing a new release). Run `mise cache clear` to remove the cache which
+basically just run `rm -rf ~/.cache/mise/*`.
 
 ## [`mise en`](/cli/en.html)
 
-`mise en` is a great alternative to `mise activate` if you don't want to always be using mise for some reason. It sets
-up the mise environment in your current directory but doesn't keep running and updating the env vars after that.
+`mise en` is a great alternative to `mise activate` if you don't want to always be using mise for some reason. It sets up the mise environment in your current directory
+but doesn't keep running and updating the env vars after that.
 
 ## Auto-install when entering a project
 
@@ -201,16 +203,15 @@ This is helpful figuring out which order the config files are loaded in to figur
 
 ## `mise.lock`
 
-If you enable experimental mode, mise will update `mise.lock` with full versions and tarball checksums (if supported by
-the backend). These can be updated with [`mise up`](/cli/upgrade.html). You need to manually create the lockfile, then
-mise will add the tools to it:
+If you enable experimental mode, mise will update `mise.lock` with full versions and tarball checksums (if supported by the backend).
+These can be updated with [`mise up`](/cli/upgrade.html). You need to manually create the lockfile, then mise will add the tools to it:
 
 ```sh
 touch mise.lock
 mise i
 ```
 
-Note that at least currently mise needs to actually install the tool to get the tarball checksum (otherwise it would
-need to download the tarball just to get the checksum of it since normally that gets deleted). So you may need to run
-something like `mise uninstall --all` first in order to have it reinstall everything. It will store the full versions
-even if it doesn't know the checksum though so it'll still lock the version just not have a checksum to go with it.
+Note that at least currently mise needs to actually install the tool to get the tarball checksum (otherwise it would need to download the tarball just
+to get the checksum of it since normally that gets deleted). So you may need to run something like `mise uninstall --all` first in order to have it
+reinstall everything. It will store the full versions even if it doesn't know the checksum though so it'll still lock the version just not have a checksum
+to go with it.

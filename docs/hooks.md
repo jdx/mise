@@ -1,8 +1,8 @@
 # Hooks <Badge type="warning" text="experimental" />
 
-You can have mise automatically execute scripts during a `mise activate` session. You cannot use these without the
-`mise activate` shell hook installed in your shell—except the `preinstall` and `postinstall` hooks. The configuration
-goes into `mise.toml`.
+You can have mise automatically execute scripts during a `mise activate` session. You cannot use these
+without the `mise activate` shell hook installed in your shell—except the `preinstall` and `postinstall` hooks.
+The configuration goes into `mise.toml`.
 
 ## CD hook
 
@@ -15,8 +15,7 @@ cd = "echo 'I changed directories'"
 
 ## Enter hook
 
-This hook is run when the project is entered. Changing directories while in the project will not trigger this hook
-again.
+This hook is run when the project is entered. Changing directories while in the project will not trigger this hook again.
 
 ```toml
 [hooks]
@@ -54,8 +53,7 @@ script = "cargo fmt"
 
 This hook will have the following environment variables set:
 
-- `MISE_WATCH_FILES_MODIFIED`: A colon-separated list of the files that have been modified. Colons are escaped with a
-  backslash.
+- `MISE_WATCH_FILES_MODIFIED`: A colon-separated list of the files that have been modified. Colons are escaped with a backslash.
 
 ## Hook execution
 
@@ -63,8 +61,7 @@ Hooks are executed with the following environment variables set:
 
 - `MISE_ORIGINAL_CWD`: The directory that the user is in.
 - `MISE_PROJECT_DIR`: The root directory of the project.
-- `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change
-  occurred).
+- `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
 
 ## Shell hooks
 
@@ -76,10 +73,12 @@ shell = "bash"
 script = "source completions.sh"
 ```
 
-::: warning I feel this should be obvious but in case it's not, this isn't going to do any sort of cleanup when you
-_leave_ the directory like using `[env]` does in `mise.toml`. You're literally just executing shell code when you enter
-the directory which mise has no way to track at all. I don't think there is a solution to this problem and it's likely
-the reason direnv has never implemented something similar.
+::: warning
+I feel this should be obvious but in case it's not, this isn't going to do any sort of cleanup
+when you _leave_ the directory like using `[env]` does in `mise.toml`. You're literally just
+executing shell code when you enter the directory which mise has no way to track at all.
+I don't think there is a solution to this problem and it's likely the reason direnv has never
+implemented something similar.
 
 I think in most situations this is probably fine, though worth keeping in mind.
 

@@ -2,8 +2,8 @@
 
 ## Aliased Backends
 
-Tools can be aliased so that something like `node` which normally maps to `core:node` can be changed to something like
-`asdf:company/our-custom-node` instead.
+Tools can be aliased so that something like `node` which normally maps to `core:node` can be changed
+to something like `asdf:company/our-custom-node` instead.
 
 ```toml
 [alias]
@@ -13,9 +13,9 @@ erlang = 'asdf:https://github.com/company/our-custom-erlang'
 
 ## Aliased Versions
 
-mise supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS versions of
-runtimes. For example, you may want to specify `lts-hydrogen` as the version for <node@20.x> so you can use set it with
-`node lts-hydrogen` in `mise.toml`/`.tool-versions`.
+mise supports aliasing the versions of runtimes. One use-case for this is to define aliases for LTS
+versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for <node@20.x>
+so you can use set it with `node lts-hydrogen` in `mise.toml`/`.tool-versions`.
 
 User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/mise/config.toml`:
 
@@ -24,7 +24,8 @@ User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/
 my_custom_20 = '20'
 ```
 
-Plugins can also provide aliases via a `bin/list-aliases` script. Here is an example showing node.js versions:
+Plugins can also provide aliases via a `bin/list-aliases` script. Here is an example showing node.js
+versions:
 
 ```bash
 #!/usr/bin/env bash
@@ -34,8 +35,10 @@ echo "lts-gallium 16"
 echo "lts-fermium 14"
 ```
 
-::: info Because this is mise-specific functionality not currently used by asdf it isn't likely to be in any plugin
-currently, but plugin authors can add this script without impacting asdf users. :::
+::: info
+Because this is mise-specific functionality not currently used by asdf it isn't likely to be in any
+plugin currently, but plugin authors can add this script without impacting asdf users.
+:::
 
 ## Templates
 

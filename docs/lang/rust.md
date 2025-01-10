@@ -1,13 +1,13 @@
 # Rust <Badge type="warning" text="experimental" />
 
-Rust/cargo can be installed which uses rustup under the hood. mise will install rustup if it is not already installed
-and add the requested targets. By default, mise uses the default location of rustup/cargo (`~/.rustup` and `~/.cargo`),
-but you can change this by setting the `MISE_RUSTUP_HOME` and `MISE_CARGO_HOME` environment variables if you'd like to
-isolate mise's rustup/cargo from your other rustup/cargo installations.
+Rust/cargo can be installed which uses rustup under the hood. mise will install rustup if it is not
+already installed and add the requested targets. By default, mise uses the default location of rustup/cargo
+(`~/.rustup` and `~/.cargo`), but you can change this by setting the `MISE_RUSTUP_HOME` and `MISE_CARGO_HOME`
+environment variables if you'd like to isolate mise's rustup/cargo from your other rustup/cargo installations.
 
-Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup. All
-mise does is set the `RUST_TOOLCHAIN` environment variable to the requested version and rustup will automatically
-install it if it doesn't exist.
+Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup.
+All mise does is set the `RUST_TOOLCHAIN` environment variable to the requested version and rustup will
+automatically install it if it doesn't exist.
 
 ## Usage
 

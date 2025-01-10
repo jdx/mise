@@ -40,7 +40,8 @@ const board = [
 
 # Team
 
-Jeff Dickey is the primary developer behind mise. He does the bulk of development for the project.
+Jeff Dickey is the primary developer behind mise. He does the bulk
+of development for the project.
 
 <VPTeamMembers :members="members" />
 
@@ -56,5 +57,5 @@ The advisory board helps make important decisions about the project such as:
 
 ## Contributors
 
-mise is an open source project which welcomes [contributions](https://github.com/jdx/mise/graphs/contributors). We're
-grateful for those that have volunteered their work for the project.
+mise is an open source project which welcomes [contributions](https://github.com/jdx/mise/graphs/contributors).
+We're grateful for those that have volunteered their work for the project.

@@ -5,8 +5,7 @@ We recommend that your project pins the tools to a specific version to ensure th
 
 ## Any CI provider
 
-Continuous integration pipelines allow running arbitrary commands. You can use this to install Mise and run
-`mise install` to install the tools:
+Continuous integration pipelines allow running arbitrary commands. You can use this to install Mise and run `mise install` to install the tools:
 
 ```yaml
 script: |
@@ -25,8 +24,7 @@ Alternatively, you can add the [shims](/dev-tools/shims.md) directory to your `P
 
 ## GitHub Actions
 
-If you use GitHub Actions, we provide a [mise-action](https://github.com/jdx/mise-action) that wraps the installation of
-Mise and the tools. All you need to do is to add the action to your workflow:
+If you use GitHub Actions, we provide a [mise-action](https://github.com/jdx/mise-action) that wraps the installation of Mise and the tools. All you need to do is to add the action to your workflow:
 
 ```yaml
 name: test
@@ -60,8 +58,9 @@ jobs:
 
 ## GitLab CI
 
-You can use any docker image with `mise` installed to run your CI jobs. Here's an example using `debian-slim` as base
-image: ::: details
+You can use any docker image with `mise` installed to run your CI jobs.
+Here's an example using `debian-slim` as base image:
+::: details
 
 ```dockerfile
 FROM debian:12-slim
@@ -100,9 +99,7 @@ build-job:
 
 ## Xcode Cloud
 
-If you are using Xcode Cloud, you can use custom `ci_post_clone.sh`
-[build script](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts) to install Mise. Here's an
-example:
+If you are using Xcode Cloud, you can use custom `ci_post_clone.sh` [build script](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts) to install Mise. Here's an example:
 
 ```bash
 #!/bin/sh
