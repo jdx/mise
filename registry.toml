@@ -902,7 +902,6 @@ java.backends = ["core:java"]
 jbang.backends = ["asdf:mise-plugins/jbang-asdf"]
 jfrog-cli.backends = ["asdf:mise-plugins/mise-jfrog-cli"]
 jib.backends = [
-    "ubi:GoogleContainerTools/jib[tag_regex=-cli]",
     "asdf:joschi/asdf-jib"
 ]
 jiq.backends = ["aqua:fiatjaf/jiq", "asdf:chessmango/asdf-jiq"]
