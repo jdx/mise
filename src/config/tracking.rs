@@ -22,6 +22,9 @@ impl Tracker {
 
     pub fn list_all() -> Result<Vec<PathBuf>> {
         let mut output = vec![];
+        if !TRACKED_CONFIGS.exists() {
+            return Ok(output);
+        }
         for path in read_dir(&*TRACKED_CONFIGS)? {
             let path = path?.path();
             if !path.is_symlink() {
