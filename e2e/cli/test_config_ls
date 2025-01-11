@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+assert "mise set FOO=bar"
+assert "mise env"
+assert "mise cfg --tracked-configs" "$PWD/mise.toml"

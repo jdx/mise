@@ -1,4 +1,5 @@
 use crate::config::config_file::ConfigFile;
+use crate::config::tracking::Tracker;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::ui::table::MiseTable;
@@ -8,11 +9,15 @@ use itertools::Itertools;
 
 /// List config files currently in use
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias="list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigLs {
     /// Do not print table header
     #[clap(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
+
+    /// List all tracked config files
+    #[clap(long, verbatim_doc_comment)]
+    pub tracked_configs: bool,
 
     /// Output in JSON format
     #[clap(short = 'J', long, verbatim_doc_comment)]
@@ -21,7 +26,9 @@ pub struct ConfigLs {
 
 impl ConfigLs {
     pub fn run(self) -> Result<()> {
-        if self.json {
+        if self.tracked_configs {
+            self.display_tracked_configs()?;
+        } else if self.json {
             self.display_json()?;
         } else {
             self.display()?;
@@ -77,6 +84,14 @@ impl ConfigLs {
             })
             .collect::<serde_json::Value>();
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
+        Ok(())
+    }
+
+    fn display_tracked_configs(&self) -> Result<()> {
+        let tracked_configs = Tracker::list_all()?.into_iter().unique().sorted();
+        for path in tracked_configs {
+            println!("{}", path.display());
+        }
         Ok(())
     }
 }

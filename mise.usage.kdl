@@ -162,7 +162,9 @@ cmd completion help="Generate shell completions" {
 cmd config help="Manage config files" {
     alias cfg
     alias toml hide=#true
+    after_long_help "Examples:\n\n    $ mise config ls\n    Path                        Tools\n    ~/.config/mise/config.toml  pitchfork\n    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-edit, cargo:cargo-insta\n"
     flag --no-header help="Do not print table header"
+    flag --tracked-configs help="List all tracked config files"
     flag "-J --json" help="Output in JSON format"
     cmd generate help="[experimental] Generate a mise.toml file" {
         alias g
@@ -186,6 +188,7 @@ cmd config help="Manage config files" {
         alias list
         after_long_help "Examples:\n\n    $ mise config ls\n    Path                        Tools\n    ~/.config/mise/config.toml  pitchfork\n    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-edit, cargo:cargo-insta\n"
         flag --no-header help="Do not print table header"
+        flag --tracked-configs help="List all tracked config files"
         flag "-J --json" help="Output in JSON format"
     }
     cmd set help="Set the value of a setting in a mise.toml file" {
