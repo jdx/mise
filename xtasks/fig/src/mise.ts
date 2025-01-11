@@ -1362,6 +1362,11 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--prunable",
+          description: "List only tools that can be pruned with `mise prune`",
+          isRepeatable: false,
+        },
+        {
           name: "--no-header",
           description: "Don't display headers",
           isRepeatable: false,
