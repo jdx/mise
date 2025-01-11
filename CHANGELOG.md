@@ -1,5 +1,32 @@
 # Changelog
 
+## [2025.1.5](https://github.com/jdx/mise/compare/v2025.1.4..v2025.1.5) - 2025-01-11
+
+### 🚀 Features
+
+- added gdu and dua to registry by [@sassdavid](https://github.com/sassdavid) in [#4052](https://github.com/jdx/mise/pull/4052)
+- added prefix-dev/pixi by [@jdx](https://github.com/jdx) in [#4056](https://github.com/jdx/mise/pull/4056)
+- added `mise cfg --tracked-configs` by [@jdx](https://github.com/jdx) in [#4059](https://github.com/jdx/mise/pull/4059)
+- added `mise version --json` flag by [@jdx](https://github.com/jdx) in [#4061](https://github.com/jdx/mise/pull/4061)
+- added `mise ls --prunable` flag by [@jdx](https://github.com/jdx) in [#4062](https://github.com/jdx/mise/pull/4062)
+
+### 🐛 Bug Fixes
+
+- switch jib back to asdf by [@jdx](https://github.com/jdx) in [#4055](https://github.com/jdx/mise/pull/4055)
+- `mise unuse` bug not pruning if not in config file by [@jdx](https://github.com/jdx) in [#4058](https://github.com/jdx/mise/pull/4058)
+
+### 📚 Documentation
+
+- explain pipx better by [@jdx](https://github.com/jdx) in [42dcb3b](https://github.com/jdx/mise/commit/42dcb3bc5a6547d3d148c391ceccfd9228e34669)
+
+### 🧪 Testing
+
+- added test case for `mise rm` by [@jdx](https://github.com/jdx) in [f7511b6](https://github.com/jdx/mise/commit/f7511b696c2ada7af878074e89b0dfc1edb73197)
+
+### New Contributors
+
+- @sassdavid made their first contribution in [#4052](https://github.com/jdx/mise/pull/4052)
+
 ## [2025.1.4](https://github.com/jdx/mise/compare/v2025.1.3..v2025.1.4) - 2025-01-10
 
 ### 🚀 Features
