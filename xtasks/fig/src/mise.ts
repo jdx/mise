@@ -2739,6 +2739,13 @@ const completionSpec: Fig.Spec = {
     {
       name: ["version", "v"],
       description: "Display the version of mise",
+      options: [
+        {
+          name: ["-J", "--json"],
+          description: "Print the version information in JSON format",
+          isRepeatable: false,
+        },
+      ],
     },
     {
       name: ["watch", "w"],

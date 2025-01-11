@@ -136,7 +136,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise unuse [--no-prune] [--global] <INSTALLED_TOOL@VERSION>...`](/cli/unuse.md)
 - [`mise upgrade [FLAGS] [TOOL@VERSION]...`](/cli/upgrade.md)
 - [`mise use [FLAGS] [TOOL@VERSION]...`](/cli/use.md)
-- [`mise version`](/cli/version.md)
+- [`mise version [-J --json]`](/cli/version.md)
 - [`mise watch [FLAGS] [TASK] [ARGS]...`](/cli/watch.md)
 - [`mise where <TOOL@VERSION>`](/cli/where.md)
 - [`mise which [FLAGS] [BIN_NAME]`](/cli/which.md)

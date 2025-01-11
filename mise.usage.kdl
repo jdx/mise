@@ -951,6 +951,7 @@ cmd version help="Display the version of mise" {
     alias v
     long_help "Display the version of mise\n\nDisplays the version, os, architecture, and the date of the build.\n\nIf the version is out of date, it will display a warning."
     after_long_help "Examples:\n\n    $ mise version\n    $ mise --version\n    $ mise -v\n    $ mise -V\n"
+    flag "-J --json" help="Print the version information in JSON format"
 }
 cmd watch help="Run task(s) and watch for changes to rerun it" {
     alias w
