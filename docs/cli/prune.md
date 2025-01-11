@@ -10,6 +10,8 @@ Versions which are no longer the latest specified in any of those configs are de
 Versions installed only with environment variables `MISE_<PLUGIN>_VERSION` will be deleted,
 as will versions only referenced on the command line `mise exec <PLUGIN>@<VERSION>`.
 
+You can list prunable tools with `mise ls --prunable`
+
 ## Arguments
 
 ### `[INSTALLED_TOOL]...`
