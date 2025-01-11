@@ -1,6 +1,18 @@
 # pipx Backend
 
-You may install python packages directly from:
+pipx is a tool for running Python CLIs in isolated virtualenvs. This is necessary for Python CLIs
+because it prevents conflicting dependencies between CLIs or between a CLI and Python projects. In essence,
+this backend lets you add Python CLIs to mise.
+
+To be clear, pipx is not pip and it's not used to manage Python dependencies generally.
+mise is a tool manager, not a dependency manager like pip, uv, or poetry. You can, however, use mise to install said package
+managers. You'd want to use the pipx backend to install a CLI like "black", not a library like "NumPy" or "requests".
+
+Somewhat confusingly, the pipx backend will actually default to using [`uvx`](https://docs.astral.sh/uv/guides/tools/) (the equivalent of pipx for uv)
+if uv is installed. This should just mean that it installs much faster, but see below to disable or configure
+since occasionally tools don't work with uvx.
+
+The pipx backend supports the following sources:
 
 - PyPI
 - Git
