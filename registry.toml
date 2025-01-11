@@ -541,10 +541,7 @@ dtm.backends = [
     "ubi:devstream-io/devstream[exe=dtm]",
     "asdf:zhenyuanlau/asdf-dtm"
 ]
-dua.backends = [
-    "aqua:Byron/dua-cli",
-    "ubi:Byron/dua-cli[exe=dua]"
-]
+dua.backends = ["aqua:Byron/dua-cli", "ubi:Byron/dua-cli[exe=dua]"]
 dua.test = ["dua --version", "dua {{version}}"]
 duf.backends = ["aqua:muesli/duf", "asdf:NeoHsu/asdf-duf"]
 dust.backends = ["ubi:bootandy/dust", "asdf:looztra/asdf-dust"]
