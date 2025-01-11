@@ -914,8 +914,6 @@ jmespath.test = ["jp --version", "jp version {{version}}"]
 jmeter.backends = ["asdf:mise-plugins/mise-jmeter"]
 jnv.backends = ["aqua:ynqa/jnv", "asdf:raimon49/asdf-jnv"]
 jq.backends = ["aqua:jqlang/jq", "asdf:mise-plugins/asdf-jq"]
-pixi.backends = ["ubi:prefix-dev/pixi"]
-pixi.test = ["pixi -V", "pixi {{version}}"]
 jq.description = "Command-line JSON processor"
 jqp.backends = [
     "aqua:noahgorstein/jqp",
@@ -1322,6 +1320,8 @@ pivnet.backends = [
     "asdf:mise-plugins/tanzu-plug-in-for-asdf"
 ]
 pivnet.test = ["pivnet version", ""] # version returns "dev" on windows
+pixi.backends = ["ubi:prefix-dev/pixi"]
+pixi.test = ["pixi -V", "pixi {{version}}"]
 pkl.backends = ["aqua:apple/pkl", "asdf:mise-plugins/asdf-pkl"]
 please.backends = [
     "aqua:thought-machine/please",

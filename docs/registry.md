@@ -576,6 +576,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | pipx | [asdf:mise-plugins/mise-pipx](https://github.com/mise-plugins/mise-pipx) |
 | pitchfork | [ubi:jdx/pitchfork](https://github.com/jdx/pitchfork) |
 | pivnet | [aqua:pivotal-cf/pivnet-cli](https://github.com/pivotal-cf/pivnet-cli) [asdf:mise-plugins/tanzu-plug-in-for-asdf](https://github.com/mise-plugins/tanzu-plug-in-for-asdf) |
+| pixi | [ubi:prefix-dev/pixi](https://github.com/prefix-dev/pixi) |
 | pkl | [aqua:apple/pkl](https://github.com/apple/pkl) [asdf:mise-plugins/asdf-pkl](https://github.com/mise-plugins/asdf-pkl) |
 | please | [aqua:thought-machine/please](https://github.com/thought-machine/please) [asdf:asdf-community/asdf-please](https://github.com/asdf-community/asdf-please) |
 | pluto | [ubi:FairwindsOps/pluto](https://github.com/FairwindsOps/pluto) [asdf:FairwindsOps/asdf-pluto](https://github.com/FairwindsOps/asdf-pluto) |
