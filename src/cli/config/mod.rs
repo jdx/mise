@@ -1,5 +1,6 @@
 use clap::Subcommand;
 use eyre::Result;
+
 pub(crate) mod generate;
 mod get;
 mod ls;
@@ -12,19 +13,15 @@ pub struct Config {
     #[clap(subcommand)]
     command: Option<Commands>,
 
-    /// Do not print table header
-    #[clap(long, alias = "no-headers", verbatim_doc_comment)]
-    no_header: bool,
-
-    /// Output in JSON format
-    #[clap(short = 'J', long, verbatim_doc_comment)]
-    pub json: bool,
+    #[clap(flatten)]
+    pub ls: ls::ConfigLs,
 }
 
 #[derive(Debug, Subcommand)]
 enum Commands {
     Generate(generate::ConfigGenerate),
     Get(get::ConfigGet),
+    #[clap(visible_alias = "list")]
     Ls(ls::ConfigLs),
     Set(set::ConfigSet),
 }
@@ -42,10 +39,7 @@ impl Commands {
 
 impl Config {
     pub fn run(self) -> Result<()> {
-        let cmd = self.command.unwrap_or(Commands::Ls(ls::ConfigLs {
-            no_header: self.no_header,
-            json: self.json,
-        }));
+        let cmd = self.command.unwrap_or(Commands::Ls(self.ls));
 
         cmd.run()
     }

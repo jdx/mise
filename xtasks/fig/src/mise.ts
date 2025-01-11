@@ -774,6 +774,11 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--tracked-configs",
+              description: "List all tracked config files",
+              isRepeatable: false,
+            },
+            {
               name: ["-J", "--json"],
               description: "Output in JSON format",
               isRepeatable: false,
@@ -825,6 +830,11 @@ const completionSpec: Fig.Spec = {
         {
           name: "--no-header",
           description: "Do not print table header",
+          isRepeatable: false,
+        },
+        {
+          name: "--tracked-configs",
+          description: "List all tracked config files",
           isRepeatable: false,
         },
         {
