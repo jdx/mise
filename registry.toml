@@ -901,10 +901,7 @@ janet.backends = ["asdf:mise-plugins/mise-janet"]
 java.backends = ["core:java"]
 jbang.backends = ["asdf:mise-plugins/jbang-asdf"]
 jfrog-cli.backends = ["asdf:mise-plugins/mise-jfrog-cli"]
-jib.backends = [
-    "ubi:GoogleContainerTools/jib[tag_regex=-cli]",
-    "asdf:joschi/asdf-jib"
-]
+jib.backends = ["asdf:joschi/asdf-jib"]
 jiq.backends = ["aqua:fiatjaf/jiq", "asdf:chessmango/asdf-jiq"]
 jj.aliases = ["jujutsu"]
 jj.backends = ["aqua:jj-vcs/jj", "ubi:jj-vcs/jj"]
