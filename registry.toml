@@ -541,6 +541,11 @@ dtm.backends = [
     "ubi:devstream-io/devstream[exe=dtm]",
     "asdf:zhenyuanlau/asdf-dtm"
 ]
+dua.backends = [
+    "aqua:Byron/dua-cli",
+    "ubi:Byron/dua-cli[exe=dua]"
+]
+dua.test = ["dua --version", "dua {{version}}"]
 duf.backends = ["aqua:muesli/duf", "asdf:NeoHsu/asdf-duf"]
 dust.backends = ["ubi:bootandy/dust", "asdf:looztra/asdf-dust"]
 dvc.backends = ["asdf:mise-plugins/mise-dvc"]
@@ -663,6 +668,7 @@ gator.backends = [
 gauche.backends = ["asdf:mise-plugins/mise-gauche"]
 gcc-arm-none-eabi.backends = ["asdf:mise-plugins/mise-gcc-arm-none-eabi"]
 gcloud.backends = ["asdf:mise-plugins/mise-gcloud"]
+gdu.backends = ["aqua:dundee/gdu"]
 getenvoy.backends = ["asdf:mise-plugins/mise-getenvoy"]
 ghc.backends = ["asdf:mise-plugins/mise-ghcup"]
 ghcup.backends = [

@@ -216,6 +216,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | drone | [ubi:harness/drone-cli](https://github.com/harness/drone-cli) [asdf:virtualstaticvoid/asdf-drone](https://github.com/virtualstaticvoid/asdf-drone) |
 | dt | [aqua:so-dang-cool/dt](https://github.com/so-dang-cool/dt) [asdf:so-dang-cool/asdf-dt](https://github.com/so-dang-cool/asdf-dt) |
 | dtm | [ubi:devstream-io/devstream](https://github.com/devstream-io/devstream) [asdf:zhenyuanlau/asdf-dtm](https://github.com/zhenyuanlau/asdf-dtm) |
+| dua | [aqua:Byron/dua-cli](https://github.com/Byron/dua-cli) [ubi:Byron/dua-cli](https://github.com/Byron/dua-cli) |
 | duf | [aqua:muesli/duf](https://github.com/muesli/duf) [asdf:NeoHsu/asdf-duf](https://github.com/NeoHsu/asdf-duf) |
 | dust | [ubi:bootandy/dust](https://github.com/bootandy/dust) [asdf:looztra/asdf-dust](https://github.com/looztra/asdf-dust) |
 | dvc | [asdf:mise-plugins/mise-dvc](https://github.com/mise-plugins/mise-dvc) |
@@ -265,6 +266,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | gauche | [asdf:mise-plugins/mise-gauche](https://github.com/mise-plugins/mise-gauche) |
 | gcc-arm-none-eabi | [asdf:mise-plugins/mise-gcc-arm-none-eabi](https://github.com/mise-plugins/mise-gcc-arm-none-eabi) |
 | gcloud | [asdf:mise-plugins/mise-gcloud](https://github.com/mise-plugins/mise-gcloud) |
+| gdu | [aqua:dundee/gdu](https://github.com/dundee/gdu) |
 | getenvoy | [asdf:mise-plugins/mise-getenvoy](https://github.com/mise-plugins/mise-getenvoy) |
 | ghc | [asdf:mise-plugins/mise-ghcup](https://github.com/mise-plugins/mise-ghcup) |
 | ghcup | [ubi:haskell/ghcup-hs](https://github.com/haskell/ghcup-hs) [asdf:mise-plugins/mise-ghcup](https://github.com/mise-plugins/mise-ghcup) |
