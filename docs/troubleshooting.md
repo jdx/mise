@@ -43,12 +43,6 @@ to update it. `mise cache clean` can be used to wipe the internal cache and `mis
 used
 to remove everything except config.
 
-Before submitting a ticket, it's a good idea to test what you were doing with asdf. That way we can
-rule
-out if the issue is with mise or if it's with a particular plugin. For example,
-if `mise install python@latest`
-doesn't work, try running `asdf install python latest` to see if it's an issue with asdf-python.
-
 Lastly, there is `mise doctor` which will show diagnostic information and any warnings about issues
 detected with your setup. If you submit a bug report, please include the output of `mise doctor`.
 
