@@ -131,14 +131,18 @@ echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ::: code-group
 
 ```sh [bash]
-echo 'eval "$(/opt/homebrew/bin/mise activate bash)"' >> ~/.bashrc
+echo 'eval "$(mise activate bash)"' >> ~/.bashrc
 ```
 
 ```sh [zsh]
-echo 'eval "$(/opt/homebrew/bin/mise activate zsh)"' >> ~/.zshrc
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 ```
 
-- Activation will be handled automatically if you use `fish` shell and installed via `homebrew`. This can be disabled with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`.
+```sh [fish]
+# do nothing! mise is automatically activated when using brew and fish
+# you can disable this behavior with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`
+```
+
 - Make sure you restart your shell session after modifying your rc file in order for it to take effect.
 
 == Windows
@@ -155,7 +159,7 @@ Only shims are supported for now on Windows.
   [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
   ```
 
-== Debian/Ubuntu (apt)
+== Other package managers
 
 ::: code-group
 
