@@ -27,7 +27,6 @@ You can verify the installation by running:
   when activated.
 
 == Brew
-Using [brew](https://brew.sh/) package manager
 
 ```shell
 brew install mise
@@ -51,8 +50,6 @@ choco install mise
 
 == Debian/Ubuntu (apt)
 
-For installation on Ubuntu/Debian:
-
 ::: code-group
 
 ```sh [amd64]
@@ -74,8 +71,6 @@ sudo apt install -y mise
 ```
 
 == Fedora (dnf)
-
-For installation on Fedora:
 
 ```sh
 sudo dnf install -y dnf-plugins-core
@@ -139,6 +134,8 @@ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 ```
 
 == Windows
+
+::: code-group
 
 ```powershell [powershell]
 $shimPath = "$env:USERPROFILE\AppData\Local\mise\shims"
