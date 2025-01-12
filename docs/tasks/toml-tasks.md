@@ -447,9 +447,17 @@ The value will be `true` if the flag is passed, and `false` otherwise.
 More advanced usage specs can be added to the task's `usage` field:
 
 ```toml
-[tasks.test]
+[tasks.add-user]
+description = "Add a user"
 usage = '''
-arg "file" description="The file to test" default="src/main.rs"
+arg "<user>" default="unknown"
+complete "user" run="mise run list-users-completion"
 '''
-run = 'cargo test {{arg(name="file")}}'
+run = 'echo {{arg(name="user")}}'
+
+[tasks.list-users-completion]
+hide = true
+quiet = true # this is mandatory to make completion work (makes the mise command just print "alice bob charlie")
+description = "List users"
+run = 'echo "alice bob charlie"'
 ```
