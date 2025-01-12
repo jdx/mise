@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD034 -->
+
 # Getting Started
 
 This will show you how to install mise and get started with it. This is a suitable way when using an interactive shell like `bash`, `zsh`, or `fish`.
@@ -103,7 +105,7 @@ See [this guide](dev-tools/shims.md) for more information.
 
 :::tabs key:installing-mise
 
-== `curl https://mise.run | sh`
+== https://mise.run
 
 ::: code-group
 
