@@ -584,7 +584,7 @@ etcd.backends = [
 ]
 etcd.test = ["etcd --version", "etcd Version: {{version}}"]
 evans.backends = ["aqua:ktr0731/evans", "asdf:goki90210/asdf-evans"]
-eza.backends = ["asdf:mise-plugins/mise-eza"]
+eza.backends = ["asdf:mise-plugins/mise-eza"] # eza does not offer precompiled macos binaries
 fd.backends = [
     "aqua:sharkdp/fd",
     "ubi:sharkdp/fd",
