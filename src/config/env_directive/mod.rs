@@ -356,15 +356,25 @@ impl EnvResults {
             .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         Ok(output)
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.env.is_empty()
+            && self.vars.is_empty()
+            && self.env_remove.is_empty()
+            && self.env_files.is_empty()
+            && self.env_paths.is_empty()
+            && self.env_scripts.is_empty()
+    }
 }
+
 impl Debug for EnvResults {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut ds = f.debug_struct("EnvResults");
         if !self.env.is_empty() {
-            ds.field("env", &self.env);
+            ds.field("env", &self.env.keys().collect::<Vec<_>>());
         }
         if !self.vars.is_empty() {
-            ds.field("vars", &self.vars);
+            ds.field("vars", &self.vars.keys().collect::<Vec<_>>());
         }
         if !self.env_remove.is_empty() {
             ds.field("env_remove", &self.env_remove);

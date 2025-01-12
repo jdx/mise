@@ -175,6 +175,7 @@ impl AquaBackend {
                 HTTP.head(&url)?;
                 Ok(url)
             }
+            ref t => bail!("unsupported aqua package type: {t}"),
         }
     }
 
