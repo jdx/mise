@@ -43,6 +43,10 @@ winget install jdx.mise
 scoop install mise
 ```
 
+```shell [chocolatey]
+choco install mise
+```
+
 == Debian/Ubuntu (apt)
 
 For installation on Ubuntu/Debian:
@@ -65,6 +69,16 @@ wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/
 echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
 sudo apt update
 sudo apt install -y mise
+```
+
+== Fedora (dnf)
+
+For installation on Fedora:
+
+```sh
+sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+sudo dnf install -y mise
 ```
 
 :::
