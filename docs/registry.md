@@ -40,7 +40,8 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | alp | [aqua:tkuchiki/alp](https://github.com/tkuchiki/alp) [asdf:asdf-community/asdf-alp](https://github.com/asdf-community/asdf-alp) |
 | amass | [ubi:owasp-amass/amass](https://github.com/owasp-amass/amass) [asdf:dhoeric/asdf-amass](https://github.com/dhoeric/asdf-amass) |
 | amazon-ecr-credential-helper | [aqua:awslabs/amazon-ecr-credential-helper](https://github.com/awslabs/amazon-ecr-credential-helper) [asdf:dex4er/asdf-amazon-ecr-credential-helper](https://github.com/dex4er/asdf-amazon-ecr-credential-helper) |
-| ansible-base | [asdf:mise-plugins/mise-pyapp](https://github.com/mise-plugins/mise-pyapp) |
+| ansible | [pipx:ansible](https://pypi.org/project/ansible) |
+| ansible-core | [pipx:ansible-core](https://pypi.org/project/ansible-core) |
 | ant | [asdf:mise-plugins/mise-ant](https://github.com/mise-plugins/mise-ant) |
 | apko | [aqua:chainguard-dev/apko](https://github.com/chainguard-dev/apko) [ubi:chainguard-dev/apko](https://github.com/chainguard-dev/apko) [asdf:omissis/asdf-apko](https://github.com/omissis/asdf-apko) |
 | apollo-ios | [asdf:mise-plugins/mise-apollo-ios-cli](https://github.com/mise-plugins/mise-apollo-ios-cli) |
@@ -215,6 +216,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | drone | [ubi:harness/drone-cli](https://github.com/harness/drone-cli) [asdf:virtualstaticvoid/asdf-drone](https://github.com/virtualstaticvoid/asdf-drone) |
 | dt | [aqua:so-dang-cool/dt](https://github.com/so-dang-cool/dt) [asdf:so-dang-cool/asdf-dt](https://github.com/so-dang-cool/asdf-dt) |
 | dtm | [ubi:devstream-io/devstream](https://github.com/devstream-io/devstream) [asdf:zhenyuanlau/asdf-dtm](https://github.com/zhenyuanlau/asdf-dtm) |
+| dua | [aqua:Byron/dua-cli](https://github.com/Byron/dua-cli) [ubi:Byron/dua-cli](https://github.com/Byron/dua-cli) |
 | duf | [aqua:muesli/duf](https://github.com/muesli/duf) [asdf:NeoHsu/asdf-duf](https://github.com/NeoHsu/asdf-duf) |
 | dust | [ubi:bootandy/dust](https://github.com/bootandy/dust) [asdf:looztra/asdf-dust](https://github.com/looztra/asdf-dust) |
 | dvc | [asdf:mise-plugins/mise-dvc](https://github.com/mise-plugins/mise-dvc) |
@@ -264,13 +266,14 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | gauche | [asdf:mise-plugins/mise-gauche](https://github.com/mise-plugins/mise-gauche) |
 | gcc-arm-none-eabi | [asdf:mise-plugins/mise-gcc-arm-none-eabi](https://github.com/mise-plugins/mise-gcc-arm-none-eabi) |
 | gcloud | [asdf:mise-plugins/mise-gcloud](https://github.com/mise-plugins/mise-gcloud) |
+| gdu | [aqua:dundee/gdu](https://github.com/dundee/gdu) |
 | getenvoy | [asdf:mise-plugins/mise-getenvoy](https://github.com/mise-plugins/mise-getenvoy) |
 | ghc | [asdf:mise-plugins/mise-ghcup](https://github.com/mise-plugins/mise-ghcup) |
 | ghcup | [ubi:haskell/ghcup-hs](https://github.com/haskell/ghcup-hs) [asdf:mise-plugins/mise-ghcup](https://github.com/mise-plugins/mise-ghcup) |
 | ghidra | [asdf:mise-plugins/mise-ghidra](https://github.com/mise-plugins/mise-ghidra) |
 | ghorg | [aqua:gabrie30/ghorg](https://github.com/gabrie30/ghorg) [asdf:gbloquel/asdf-ghorg](https://github.com/gbloquel/asdf-ghorg) |
 | ghq | [aqua:x-motemen/ghq](https://github.com/x-motemen/ghq) [asdf:kajisha/asdf-ghq](https://github.com/kajisha/asdf-ghq) |
-| ginkgo | [asdf:mise-plugins/mise-ginkgo](https://github.com/mise-plugins/mise-ginkgo) |
+| ginkgo | [go:github.com/onsi/ginkgo/v2/ginkgo](https://pkg.go.dev/github.com/onsi/ginkgo/v2/ginkgo) [asdf:mise-plugins/mise-ginkgo](https://github.com/mise-plugins/mise-ginkgo) |
 | git-chglog | [aqua:git-chglog/git-chglog](https://github.com/git-chglog/git-chglog) [asdf:GoodwayGroup/asdf-git-chglog](https://github.com/GoodwayGroup/asdf-git-chglog) |
 | git-cliff | [aqua:orhun/git-cliff](https://github.com/orhun/git-cliff) [asdf:jylenhof/asdf-git-cliff](https://github.com/jylenhof/asdf-git-cliff) |
 | gitconfig | [ubi:0ghny/gitconfig](https://github.com/0ghny/gitconfig) [asdf:0ghny/asdf-gitconfig](https://github.com/0ghny/asdf-gitconfig) |
@@ -293,7 +296,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | go-junit-report | [ubi:jstemmer/go-junit-report](https://github.com/jstemmer/go-junit-report) [asdf:jwillker/asdf-go-junit-report](https://github.com/jwillker/asdf-go-junit-report) |
 | go-sdk | [asdf:mise-plugins/mise-go-sdk](https://github.com/mise-plugins/mise-go-sdk) |
 | go-swagger | [aqua:go-swagger/go-swagger](https://github.com/go-swagger/go-swagger) [asdf:jfreeland/asdf-go-swagger](https://github.com/jfreeland/asdf-go-swagger) |
-| goconvey | [asdf:mise-plugins/mise-goconvey](https://github.com/mise-plugins/mise-goconvey) |
+| goconvey | [go:github.com/smartystreets/goconvey](https://pkg.go.dev/github.com/smartystreets/goconvey) [asdf:mise-plugins/mise-goconvey](https://github.com/mise-plugins/mise-goconvey) |
 | gocryptfs | [aqua:rfjakob/gocryptfs](https://github.com/rfjakob/gocryptfs) [ubi:rfjakob/gocryptfs](https://github.com/rfjakob/gocryptfs) |
 | gofumpt | [ubi:mvdan/gofumpt](https://github.com/mvdan/gofumpt) [asdf:looztra/asdf-gofumpt](https://github.com/looztra/asdf-gofumpt) |
 | gojq | [aqua:itchyny/gojq](https://github.com/itchyny/gojq) [asdf:jimmidyson/asdf-gojq](https://github.com/jimmidyson/asdf-gojq) |
@@ -366,7 +369,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | java | [core:java](https://mise.jdx.dev/lang/java.html) |
 | jbang | [asdf:mise-plugins/jbang-asdf](https://github.com/mise-plugins/jbang-asdf) |
 | jfrog-cli | [asdf:mise-plugins/mise-jfrog-cli](https://github.com/mise-plugins/mise-jfrog-cli) |
-| jib | [ubi:GoogleContainerTools/jib](https://github.com/GoogleContainerTools/jib) [asdf:joschi/asdf-jib](https://github.com/joschi/asdf-jib) |
+| jib | [asdf:joschi/asdf-jib](https://github.com/joschi/asdf-jib) |
 | jiq | [aqua:fiatjaf/jiq](https://github.com/fiatjaf/jiq) [asdf:chessmango/asdf-jiq](https://github.com/chessmango/asdf-jiq) |
 | jj | [aqua:jj-vcs/jj](https://github.com/jj-vcs/jj) [ubi:jj-vcs/jj](https://github.com/jj-vcs/jj) |
 | jless | [aqua:PaulJuliusMartinez/jless](https://github.com/PaulJuliusMartinez/jless) [asdf:jc00ke/asdf-jless](https://github.com/jc00ke/asdf-jless) |
@@ -573,6 +576,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | pipx | [asdf:mise-plugins/mise-pipx](https://github.com/mise-plugins/mise-pipx) |
 | pitchfork | [ubi:jdx/pitchfork](https://github.com/jdx/pitchfork) |
 | pivnet | [aqua:pivotal-cf/pivnet-cli](https://github.com/pivotal-cf/pivnet-cli) [asdf:mise-plugins/tanzu-plug-in-for-asdf](https://github.com/mise-plugins/tanzu-plug-in-for-asdf) |
+| pixi | [ubi:prefix-dev/pixi](https://github.com/prefix-dev/pixi) |
 | pkl | [aqua:apple/pkl](https://github.com/apple/pkl) [asdf:mise-plugins/asdf-pkl](https://github.com/mise-plugins/asdf-pkl) |
 | please | [aqua:thought-machine/please](https://github.com/thought-machine/please) [asdf:asdf-community/asdf-please](https://github.com/asdf-community/asdf-please) |
 | pluto | [ubi:FairwindsOps/pluto](https://github.com/FairwindsOps/pluto) [asdf:FairwindsOps/asdf-pluto](https://github.com/FairwindsOps/asdf-pluto) |

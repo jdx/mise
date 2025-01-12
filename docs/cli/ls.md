@@ -52,6 +52,10 @@ Display missing tool versions
 
 Display versions matching this prefix
 
+### `--prunable`
+
+List only tools that can be pruned with `mise prune`
+
 ### `--no-header`
 
 Don't display headers

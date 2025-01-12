@@ -58,6 +58,72 @@ assert() {
   fi
 }
 
+assert_json() {
+  local actual
+  actual="$(quiet_assert_succeed "$1")"
+  if jq -e . >/dev/null <<<"$actual"; then
+    ok "[$1] output is valid JSON"
+  else
+    fail "[$1] output is not valid JSON"
+  fi
+
+  actual_json="$(jq . <<<"$actual")"
+  expected_json="$(jq . <<<"$2")"
+  if [[ $actual_json == "$expected_json" ]]; then
+    ok "[$1] output is equal to '$2'"
+  else
+    diff --side-by-side <(jq . <<<"$expected_json") <(jq . <<<"$actual_json") || true
+    fail "JSON output from [$1] is different from expected"
+  fi
+}
+
+assert_json_partial_array() {
+  local command="$1" fields="$2" expected="$3"
+
+  local actual
+  actual="$(quiet_assert_succeed "$command")"
+
+  local filter="map({$fields})"
+  local actual_filtered expected_filtered
+
+  actual_filtered="$(jq -S "$filter" <<<"$actual")"
+  expected_filtered="$(jq -S "$filter" <<<"$expected")"
+
+  if [[ "$actual_filtered" == "$expected_filtered" ]]; then
+    ok "[$command] partial array match successful"
+  else
+    echo "Expected:"
+    echo "$expected_filtered"
+    echo "Got:"
+    echo "$actual_filtered"
+    fail "[$command] partial array match failed"
+  fi
+}
+
+assert_json_partial_object() {
+  local command="$1" fields="$2" expected="$3"
+
+  local actual
+  actual="$(quiet_assert_succeed "$command")"
+
+  # shellcheck disable=SC2016
+  local filter='with_entries(select(.key as $k | ($fields | split(",")) | contains([$k])))'
+  local actual_filtered expected_filtered
+
+  actual_filtered="$(jq -S --arg fields "$fields" "$filter" <<<"$actual")"
+  expected_filtered="$(jq -S --arg fields "$fields" "$filter" <<<"$expected")"
+
+  if [[ "$actual_filtered" == "$expected_filtered" ]]; then
+    ok "[$command] partial object match successful"
+  else
+    echo "Expected:"
+    echo "$expected_filtered"
+    echo "Got:"
+    echo "$actual_filtered"
+    fail "[$command] partial object match failed"
+  fi
+}
+
 assert_not() {
   local actual
   debug "$ $1"

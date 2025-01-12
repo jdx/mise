@@ -1,7 +1,7 @@
 # `mise settings`
 
 - **Usage**: `mise settings [FLAGS] [SETTING] [VALUE] <SUBCOMMAND>`
-- **Source code**: [`src/cli/settings.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings.rs)
+- **Source code**: [`src/cli/settings/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/mod.rs)
 
 Show current settings
 

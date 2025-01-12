@@ -2,4 +2,8 @@
 #MISE wait_for=["build"]
 set -euo pipefail
 
-cargo clippy --all-features -- -Dwarnings
+if [[ "${MISE_PRE_COMMIT:-}" == 1 ]]; then
+  cargo check -q --all-features
+else
+  cargo clippy --all-features -- -Dwarnings
+fi

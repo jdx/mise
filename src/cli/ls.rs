@@ -10,6 +10,7 @@ use versions::Versioning;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
+use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
@@ -65,6 +66,10 @@ pub struct Ls {
     #[clap(long, requires = "installed_tool")]
     prefix: Option<String>,
 
+    /// List only tools that can be pruned with `mise prune`
+    #[clap(long)]
+    prunable: bool,
+
     /// Don't display headers
     #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
     no_header: bool,
@@ -78,7 +83,11 @@ impl Ls {
             .or_else(|| self.tool_flag.clone().map(|p| vec![p]));
         self.verify_plugin()?;
 
-        let mut runtimes = self.get_runtime_list(&config)?;
+        let mut runtimes = if self.prunable {
+            self.get_prunable_runtime_list()?
+        } else {
+            self.get_runtime_list(&config)?
+        };
         if self.current || self.global {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally
@@ -165,6 +174,13 @@ impl Ls {
         table.truncate(true).print()
     }
 
+    fn get_prunable_runtime_list(&self) -> Result<Vec<RuntimeRow>> {
+        let installed_tool = self.installed_tool.clone().unwrap_or_default();
+        Ok(prune::prunable_tools(installed_tool.iter().collect())?
+            .into_iter()
+            .map(|(p, tv)| (self, p, tv, ToolSource::Unknown))
+            .collect())
+    }
     fn get_runtime_list(&self, config: &Config) -> Result<Vec<RuntimeRow>> {
         let mut trs = config.get_tool_request_set()?.clone();
         if self.global {

@@ -15,6 +15,7 @@ cat <<EOF >tasks.toml
 run = 'echo "testing!"'
 [test-with-args]
 run = 'echo "{{arg()}} {{flag(name="force")}} {{option(name="user")}}"'
+depends = ["test -v", "test"]
 EOF
 
 mkdir -p .mise/tasks
@@ -45,3 +46,124 @@ filetask3          ./mytasks/filetask3.sh
 lint               ./mise.toml
 test               ./tasks.toml
 test-with-args     ./tasks.toml"
+
+assert_json "mise task ls --json" "$(
+  cat <<EOF
+[
+  {
+   "name": "filetask2",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/mytasks/filetask2",
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": {},
+   "dir": null,
+   "hide": false,
+   "raw": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "run": [],
+   "file": "$(pwd)/mytasks/filetask2"
+ },
+ {
+   "name": "filetask3",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/mytasks/filetask3.sh",
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": {},
+   "dir": null,
+   "hide": false,
+   "raw": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "run": [],
+   "file": "$(pwd)/mytasks/filetask3.sh"
+ },
+ {
+   "name": "lint",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/mise.toml",
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": {},
+   "dir": null,
+   "hide": false,
+   "raw": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "run": [
+     "echo \"linting!\""
+   ],
+   "file": null
+ },
+ {
+   "name": "test",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/tasks.toml",
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": {},
+   "dir": null,
+   "hide": false,
+   "raw": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "run": [
+     "echo \"testing!\""
+   ],
+   "file": null
+ },
+ {
+   "name": "test-with-args",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/tasks.toml",
+   "depends": [
+      ["test","-v"],
+      "test"
+   ],
+   "depends_post": [],
+   "wait_for": [],
+   "env": {},
+   "dir": null,
+   "hide": false,
+   "raw": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "run": [
+     "echo \"{{arg()}} {{flag(name=\"force\")}} {{option(name=\"user\")}}\""
+   ],
+   "file": null
+ }
+]
+EOF
+)"

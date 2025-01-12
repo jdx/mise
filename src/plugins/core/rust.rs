@@ -11,7 +11,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, file, github, plugins};
+use crate::{dirs, env, file, github, plugins};
 use eyre::Result;
 use xx::regex;
 
@@ -223,6 +223,7 @@ fn rustup_home() -> PathBuf {
         .rust
         .rustup_home
         .clone()
+        .or(env::var_path("RUSTUP_HOME"))
         .unwrap_or(dirs::HOME.join(".rustup"))
 }
 
@@ -231,6 +232,7 @@ fn cargo_home() -> PathBuf {
         .rust
         .cargo_home
         .clone()
+        .or(env::var_path("CARGO_HOME"))
         .unwrap_or(dirs::HOME.join(".cargo"))
 }
 

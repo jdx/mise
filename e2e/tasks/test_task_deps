@@ -47,8 +47,8 @@ Source: ~/workdir/mise.toml
 Depends on: hello:*
 
 Usage Spec:
-  name "hello:all"
-  bin "hello:all"'
+  name hello:all
+  bin hello:all'
 
 echo '' >mise.toml
 

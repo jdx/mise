@@ -65,9 +65,11 @@ amazon-ecr-credential-helper.backends = [
     "aqua:awslabs/amazon-ecr-credential-helper",
     "asdf:dex4er/asdf-amazon-ecr-credential-helper"
 ]
-# this isn't working with pipx yet since it is missing ansible
-# ansible-base.backends = ["pipx:ansible-base[with=ansible]", "asdf:mise-plugins/mise-pyapp"]
-ansible-base.backends = ["asdf:mise-plugins/mise-pyapp"]
+ansible.backends = ["pipx:ansible[uvx=false,pipx_args=--include-deps]"]
+ansible.test = ['ansible --version', 'ansible']
+ansible-core.aliases = ["ansible-base"]
+ansible-core.backends = ["pipx:ansible-core"]
+ansible-core.test = ['ansible --version', 'ansible [core {{version}}]']
 ant.backends = ["asdf:mise-plugins/mise-ant"]
 apko.backends = [
     "aqua:chainguard-dev/apko",
@@ -539,6 +541,8 @@ dtm.backends = [
     "ubi:devstream-io/devstream[exe=dtm]",
     "asdf:zhenyuanlau/asdf-dtm"
 ]
+dua.backends = ["aqua:Byron/dua-cli", "ubi:Byron/dua-cli[exe=dua]"]
+dua.test = ["dua --version", "dua {{version}}"]
 duf.backends = ["aqua:muesli/duf", "asdf:NeoHsu/asdf-duf"]
 dust.backends = ["ubi:bootandy/dust", "asdf:looztra/asdf-dust"]
 dvc.backends = ["asdf:mise-plugins/mise-dvc"]
@@ -580,7 +584,9 @@ etcd.backends = [
 ]
 etcd.test = ["etcd --version", "etcd Version: {{version}}"]
 evans.backends = ["aqua:ktr0731/evans", "asdf:goki90210/asdf-evans"]
-eza.backends = ["asdf:mise-plugins/mise-eza"]
+eza.backends = [
+    "asdf:mise-plugins/mise-eza"
+] # eza does not offer precompiled macos binaries
 fd.backends = [
     "aqua:sharkdp/fd",
     "ubi:sharkdp/fd",
@@ -612,7 +618,7 @@ flarectl.backends = [
     "ubi:cloudflare/cloudflare-go[exe=flarectl]",
     "asdf:mise-plugins/asdf-flarectl"
 ]
-flarectl.test = ["flarectl --version", "flarectl version {{version}}"]
+# flarectl.test = ["flarectl --version", "flarectl version {{version}}"] # TODO: no release assets in 4.0
 flatc.backends = [
     "ubi:google/flatbuffers[exe=flatc]",
     "asdf:TheOpenDictionary/asdf-flatc"
@@ -661,6 +667,7 @@ gator.backends = [
 gauche.backends = ["asdf:mise-plugins/mise-gauche"]
 gcc-arm-none-eabi.backends = ["asdf:mise-plugins/mise-gcc-arm-none-eabi"]
 gcloud.backends = ["asdf:mise-plugins/mise-gcloud"]
+gdu.backends = ["aqua:dundee/gdu"]
 getenvoy.backends = ["asdf:mise-plugins/mise-getenvoy"]
 ghc.backends = ["asdf:mise-plugins/mise-ghcup"]
 ghcup.backends = [
@@ -675,7 +682,11 @@ ghcup.test = [
 ghidra.backends = ["asdf:mise-plugins/mise-ghidra"]
 ghorg.backends = ["aqua:gabrie30/ghorg", "asdf:gbloquel/asdf-ghorg"]
 ghq.backends = ["aqua:x-motemen/ghq", "asdf:kajisha/asdf-ghq"]
-ginkgo.backends = ["asdf:mise-plugins/mise-ginkgo"]
+ginkgo.backends = [
+    "go:github.com/onsi/ginkgo/v2/ginkgo",
+    "asdf:mise-plugins/mise-ginkgo"
+]
+ginkgo.test = ['ginkgo version', 'Ginkgo Version {{version}}']
 git-chglog.backends = [
     "aqua:git-chglog/git-chglog",
     "asdf:GoodwayGroup/asdf-git-chglog"
@@ -732,7 +743,10 @@ go-swagger.backends = [
 ]
 go-swagger.os = ["linux", "macos"]
 go-swagger.test = ["swagger version", "version: v{{version}}"]
-goconvey.backends = ["asdf:mise-plugins/mise-goconvey"]
+goconvey.backends = [
+    "go:github.com/smartystreets/goconvey",
+    "asdf:mise-plugins/mise-goconvey"
+]
 gocryptfs.backends = ["aqua:rfjakob/gocryptfs", "ubi:rfjakob/gocryptfs"]
 gofumpt.backends = ["ubi:mvdan/gofumpt", "asdf:looztra/asdf-gofumpt"]
 gojq.backends = ["aqua:itchyny/gojq", "asdf:jimmidyson/asdf-gojq"]
@@ -889,10 +903,7 @@ janet.backends = ["asdf:mise-plugins/mise-janet"]
 java.backends = ["core:java"]
 jbang.backends = ["asdf:mise-plugins/jbang-asdf"]
 jfrog-cli.backends = ["asdf:mise-plugins/mise-jfrog-cli"]
-jib.backends = [
-    "ubi:GoogleContainerTools/jib[tag_regex=-cli]",
-    "asdf:joschi/asdf-jib"
-]
+jib.backends = ["asdf:joschi/asdf-jib"]
 jiq.backends = ["aqua:fiatjaf/jiq", "asdf:chessmango/asdf-jiq"]
 jj.aliases = ["jujutsu"]
 jj.backends = ["aqua:jj-vcs/jj", "ubi:jj-vcs/jj"]
@@ -1308,6 +1319,8 @@ pivnet.backends = [
     "asdf:mise-plugins/tanzu-plug-in-for-asdf"
 ]
 pivnet.test = ["pivnet version", ""] # version returns "dev" on windows
+pixi.backends = ["ubi:prefix-dev/pixi"]
+pixi.test = ["pixi -V", "pixi {{version}}"]
 pkl.backends = ["aqua:apple/pkl", "asdf:mise-plugins/asdf-pkl"]
 please.backends = [
     "aqua:thought-machine/please",

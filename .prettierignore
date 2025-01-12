@@ -1,4 +1,13 @@
+*.rs
+*.snap
+.idea
 .venv
+*.gif
+*.png
+*.lock
+*.lockb
+.cliffignore
+*.kdl
 CHANGELOG.md
 aqua-registry/
 docs/.vitepress/cache
@@ -7,7 +16,8 @@ docs/cli
 docs/environments.md
 docs/public/site.webmanifest
 docs/registry.md
+e2e
 src/assets/bash_zsh_support/
 tasks.md
+test/data
 tmp
-xtasks/fig/src/mise.ts

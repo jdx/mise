@@ -1,4 +1,12 @@
-source_code_link_template "https://github.com/jdx/mise/blob/main/src/cli/{{path}}.rs"
+source_code_link_template #"""
+{%- set path = path | replace(from='-', to='_') -%}
+{%- if cmd.subcommands | length > 0 -%}
+{%- set path = path | split(pat="/") | slice(end=1) | concat(with="mod.rs") | join(sep="/") -%}
+{%- else -%}
+{%- set path = path ~ ".rs" -%}
+{%- endif -%}
+https://github.com/jdx/mise/blob/main/src/cli/{{path}}
+"""#
 
 complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
 complete "config_file" type="file"
@@ -6,15 +14,15 @@ complete "new_plugin" run="mise plugins --all"
 complete "installed_tool" run="mise plugins --core --user"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
-complete "setting" run="mise settings --complete" descriptions=true
-complete "task" run="mise tasks ls --complete" descriptions=true
-complete "tool" run="mise registry --complete" descriptions=true
-complete "env_var" run=r#"mise set --complete | awk '{print $1"="}'"#
+complete "setting" run="mise settings --complete" descriptions=#true
+complete "task" run="mise tasks ls --complete" descriptions=#true
+complete "tool" run="mise registry --complete" descriptions=#true
+complete "env_var" run=#"mise set --complete | awk '{print $1"="}'"#
 complete "env_key" run="mise set --complete"
 complete "backend" run="mise backends"
 complete "bin_name" run="mise which --complete"
 
-complete "tool@version" run=r#"
+complete "tool@version" run=#"""
 cur="{{words[CURRENT]}}"
 case $cur in
   *@*)
@@ -59,4 +67,4 @@ case $cur in
     done
     ;;
 esac
-"#
+"""#

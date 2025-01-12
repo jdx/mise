@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2025.1.2"
+version = "2025.1.6"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -138,11 +138,10 @@ toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
 ubi = { version = "0.3", default-features = false }
 url = "2"
-# usage-lib = { path = "../usage/lib", features = ["clap", "docs"] }
-usage-lib = { version = "1", features = ["clap", "docs"] }
+usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 # vfox = { path = "../vfox.rs" }
-vfox = { version = "0.3", default-features = false }
+vfox = { version = "1", default-features = false }
 walkdir = "2"
 which = "7"
 xx = { version = "2", features = ["glob"] }
