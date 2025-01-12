@@ -91,7 +91,7 @@ pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
     let mise_bin = "mise";
     #[cfg(windows)]
     let mise_bin = "mise.exe";
-    if args.len() == 2 && *env::MISE_BIN_NAME == mise_bin || env::MISE_BIN_NAME.starts_with("mise-")
+    if args.len() == 2 && (*env::MISE_BIN_NAME == mise_bin || env::MISE_BIN_NAME.starts_with("mise-"))
     {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" || cmd == "v" {
