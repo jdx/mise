@@ -103,7 +103,7 @@ See [this guide](dev-tools/shims.md) for more information.
 
 :::tabs key:installing-mise
 
-== Linux/macOS
+== `curl https://mise.run | sh`
 
 ::: code-group
 
@@ -118,13 +118,6 @@ echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 ```sh [fish]
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ```
-
-- Make sure you restart your shell session after modifying your rc file in order for it to take
-  effect.
-- Also note that
-  this uses `~/.local/bin/mise` as the binary location since that's what <https://mise.run> uses by
-  default. If you've
-  installed mise by some other means it may be on `PATH` or somewhere different.
 
 == Brew
 
@@ -142,8 +135,6 @@ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 # do nothing! mise is automatically activated when using brew and fish
 # you can disable this behavior with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`
 ```
-
-- Make sure you restart your shell session after modifying your rc file in order for it to take effect.
 
 == Windows
 
@@ -174,6 +165,8 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 :::
+
+Make sure you restart your shell session after modifying your rc file in order for it to take effect.
 
 ## 3. Using `mise`
 
