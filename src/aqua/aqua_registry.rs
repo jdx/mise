@@ -34,7 +34,8 @@ pub struct AquaRegistry {
     repo_exists: bool,
 }
 
-#[derive(Debug, Deserialize, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, strum::Display)]
+#[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum AquaPackageType {
     GithubArchive,
@@ -42,6 +43,8 @@ pub enum AquaPackageType {
     #[default]
     GithubRelease,
     Http,
+    GoInstall,
+    Cargo,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]

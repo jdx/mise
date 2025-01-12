@@ -728,7 +728,7 @@ impl Toolset {
         )?;
         if log::log_enabled!(log::Level::Trace) {
             trace!("{env_results:#?}");
-        } else {
+        } else if !env_results.is_empty() {
             debug!("{env_results:?}");
         }
         Ok(env_results)

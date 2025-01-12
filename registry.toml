@@ -585,8 +585,13 @@ etcd.backends = [
 etcd.test = ["etcd --version", "etcd Version: {{version}}"]
 evans.backends = ["aqua:ktr0731/evans", "asdf:goki90210/asdf-evans"]
 eza.backends = [
-    "asdf:mise-plugins/mise-eza"
-] # eza does not offer precompiled macos binaries
+    {full = "aqua:eza-community/eza", platforms = [
+        "linux"
+    ]},
+    # "ubi:cargo-bins/cargo-quickinstall[exe=eza,tag_regex=^eza-]", # does not fetch tags right, needs to load everything
+    "asdf:mise-plugins/mise-eza",
+    "cargo:eza"
+]
 fd.backends = [
     "aqua:sharkdp/fd",
     "ubi:sharkdp/fd",

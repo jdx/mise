@@ -616,7 +616,7 @@ impl Config {
         );
         if log::log_enabled!(log::Level::Trace) {
             trace!("{env_results:#?}");
-        } else {
+        } else if !env_results.is_empty() {
             debug!("{env_results:?}");
         }
         Ok(env_results)
@@ -1147,7 +1147,7 @@ fn load_vars(ctx: tera::Context, config_files: &ConfigMap) -> Result<EnvResults>
     time!("load_vars done");
     if log::log_enabled!(log::Level::Trace) {
         trace!("{vars_results:#?}");
-    } else {
+    } else if !vars_results.is_empty() {
         debug!("{vars_results:?}");
     }
     Ok(vars_results)
