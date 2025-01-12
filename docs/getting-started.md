@@ -147,17 +147,15 @@ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 
 == Windows
 
-Only shims are supported for now on Windows.
+- When using `scoop`, mise is automatically activated
+- If not using powershell, add `<homedir>\AppData\Local\mise\shims` to `PATH`.
 
-- When using `scoop`, the shims are automatically added to your `PATH`.
-- With `winget`, you need to add `<homedir>\AppData\Local\mise\shims` to your `PATH`.
-
-  ```powershell
-  $shimPath = "$env:USERPROFILE\AppData\Local\mise\shims"
-  $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $newPath = $currentPath + ";" + $shimPath
-  [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-  ```
+```powershell [powershell]
+$shimPath = "$env:USERPROFILE\AppData\Local\mise\shims"
+$currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$newPath = $currentPath + ";" + $shimPath
+[Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+```
 
 == Other package managers
 
