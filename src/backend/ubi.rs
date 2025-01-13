@@ -93,7 +93,8 @@ impl Backend for UbiBackend {
 
             let mut builder = UbiBuilder::new()
                 .project(&name)
-                .install_dir(path_with_bin.clone());
+                .install_dir(path_with_bin.clone())
+                .extract_all();
 
             if let Some(token) = &*GITHUB_TOKEN {
                 builder = builder.github_token(token);
@@ -103,9 +104,9 @@ impl Backend for UbiBackend {
                 builder = builder.tag(v);
             }
 
-            if let Some(exe) = opts.get("exe") {
-                builder = builder.exe(exe);
-            }
+            // if let Some(exe) = opts.get("exe") {
+            //     builder = builder.exe(exe);
+            // }
             if let Some(matching) = opts.get("matching") {
                 builder = builder.matching(matching);
             }
