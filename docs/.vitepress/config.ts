@@ -248,6 +248,15 @@ export default defineConfig({
       "link",
       { rel: "canonical", href: canonicalUrl },
     ]);
+    pageData.frontmatter.head.push([
+      "link",
+      {
+        rel: "sitemap",
+        href: "https://mise.jdx.dev/sitemap.xml",
+        type: "application/xml",
+        title: "Sitemap",
+      },
+    ]);
   },
 });
 
