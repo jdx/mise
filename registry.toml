@@ -1362,7 +1362,7 @@ promtool.backends = [
     "asdf:asdf-community/asdf-promtool"
 ]
 promtool.test = ["promtool --version", "promtool, version {{version}}"]
-protobuf.backends = ["vfox:mise-plugins/vfox-protobuf"]
+protoc.aliases = ["protobuf"]
 protoc.backends = [
     "aqua:protocolbuffers/protobuf/protoc",
     "asdf:paxosglobal/asdf-protoc"
