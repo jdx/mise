@@ -1,7 +1,7 @@
 # SPM Backend <Badge type="warning" text="experimental" />
 
 ::: warning
-Mise is not a replacement for a project dependency manager. Please continue to `swift` 
+Mise is not a replacement for a project dependency manager. Please continue to `swift`
 to manage your project's package dependencies.
 :::
 
