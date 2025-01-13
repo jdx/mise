@@ -290,7 +290,7 @@ docs = """
 Enables profile-specific config files such as `.mise.development.toml`.
 Use this for different env vars or different tool versions in
 development/staging/production environments. See
-[Configuration Environments](/configuration/environments) for more on how
+[Configuration Environments](/configuration/environments.html) for more on how
 to use this feature.
 
 Multiple envs can be set by separating them with a comma, e.g. `MISE_ENV=ci,test`.
@@ -596,7 +596,7 @@ env = "MISE_PARANOID"
 type = "Bool"
 description = "Enables extra-secure behavior."
 docs = """
-Enables extra-secure behavior. See [Paranoid](/paranoid).
+Enables extra-secure behavior. See [Paranoid](/paranoid.html).
 """
 
 [pin]
@@ -1086,7 +1086,7 @@ a quick way for mise to query for new versions. This host regularly grabs all th
 latest versions of core and community plugins. It's faster than running a plugin's
 `list-all` command and gets around GitHub rate limiting problems when using it.
 
-See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
+See [FAQ](/faq.html#new-version-of-a-tool-is-not-available) for more information.
 """
 
 [verbose]

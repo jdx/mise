@@ -130,7 +130,7 @@ export default defineConfig({
           { text: "Tips & Tricks", link: "/tips-and-tricks" },
           {
             text: "Cookbook",
-            link: "/mise-cookbook",
+            link: "/mise-cookbook/",
             collapsed: true,
             items: [
               { text: "C++", link: "/mise-cookbook/cpp" },
