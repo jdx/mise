@@ -731,7 +731,10 @@ go-containerregistry.backends = [
     "aqua:google/go-containerregistry",
     "asdf:dex4er/asdf-go-containerregistry"
 ]
-go-getter.backends = ["aqua:hashicorp/go-getter", "asdf:mise-plugins/mise-go-getter"]
+go-getter.backends = [
+    "aqua:hashicorp/go-getter",
+    "asdf:mise-plugins/mise-go-getter"
+]
 go-getter.test = ["go-getter -help", "Usage of go-getter"]
 go-jira.backends = ["aqua:go-jira/jira", "asdf:dguihal/asdf-go-jira"]
 go-jsonnet.backends = [
