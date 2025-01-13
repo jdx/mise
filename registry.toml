@@ -731,7 +731,8 @@ go-containerregistry.backends = [
     "aqua:google/go-containerregistry",
     "asdf:dex4er/asdf-go-containerregistry"
 ]
-go-getter.backends = ["asdf:mise-plugins/mise-go-getter"]
+go-getter.backends = ["aqua:hashicorp/go-getter", "asdf:mise-plugins/mise-go-getter"]
+go-getter.test = ["go-getter -help", "Usage of go-getter"]
 go-jira.backends = ["aqua:go-jira/jira", "asdf:dguihal/asdf-go-jira"]
 go-jsonnet.backends = [
     "aqua:google/go-jsonnet",
@@ -955,7 +956,8 @@ kapp.backends = ["aqua:carvel-dev/kapp", "asdf:vmware-tanzu/asdf-carvel"]
 kbld.backends = ["aqua:carvel-dev/kbld", "asdf:vmware-tanzu/asdf-carvel"]
 kcat.backends = ["asdf:mise-plugins/mise-kcat"]
 kcctl.backends = ["ubi:kcctl/kcctl", "asdf:joschi/asdf-kcctl"]
-kcl.backends = ["asdf:mise-plugins/mise-kcl"]
+kcl.backends = ["aqua:kcl-lang/cli", "asdf:mise-plugins/mise-kcl"]
+kcl.test = ["kcl --version", "kcl version {{version}}"]
 kconf.backends = ["aqua:particledecay/kconf", "asdf:particledecay/asdf-kconf"]
 ki.backends = [
     "ubi:Kotlin/kotlin-interactive-shell[exe=ki]",
