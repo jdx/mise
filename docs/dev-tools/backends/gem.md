@@ -1,5 +1,10 @@
 # gem Backend
 
+::: warning
+Mise is not a replacement for a project dependency manager. Please continue to use `gem`
+to manage your project's package dependencies.
+:::
+
 mise can be used to install CLIs from RubyGems. The code for this is inside of the mise repository at [`./src/backend/gem.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
 
 ## Dependencies

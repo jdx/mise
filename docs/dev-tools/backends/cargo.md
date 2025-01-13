@@ -1,5 +1,10 @@
 # Cargo Backend
 
+::: warning
+Mise is not a replacement for a project dependency manager. Please continue to use `cargo`
+to manage your project's package dependencies.
+:::
+
 You may install packages directly from [Cargo Crates](https://crates.io/) even if there
 isn't an asdf plugin for it.
 

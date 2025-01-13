@@ -1,5 +1,10 @@
 # pipx Backend
 
+::: warning
+Mise is not a replacement for a project dependency manager. Please continue to use `pip`, `uv`,
+`poetry`, or another tool to manage your project's package dependencies.
+:::
+
 pipx is a tool for running Python CLIs in isolated virtualenvs. This is necessary for Python CLIs
 because it prevents conflicting dependencies between CLIs or between a CLI and Python projects. In essence,
 this backend lets you add Python CLIs to mise.

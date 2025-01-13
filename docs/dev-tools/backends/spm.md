@@ -1,5 +1,10 @@
 # SPM Backend <Badge type="warning" text="experimental" />
 
+::: warning
+Mise is not a replacement for a project dependency manager. Please continue to `swift` 
+to manage your project's package dependencies.
+:::
+
 You may install executables managed by [Swift Package Manager](https://www.swift.org/documentation/package-manager) directly from GitHub releases.
 
 The code for this is inside of the mise repository at [`./src/backend/spm.rs`](https://github.com/jdx/mise/blob/main/src/backend/spm.rs).

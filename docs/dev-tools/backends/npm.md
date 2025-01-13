@@ -1,6 +1,11 @@
 # npm Backend
 
-You may install packages directly from [npmjs.org](https://npmjs.org/) even if there
+::: warning
+Mise is not a replacement for a project dependency manager. Please continue to use `npm`, `yarn`,
+`pnpm`, `bun`, or another tool to manage your project's package dependencies.
+:::
+
+You may install tools directly from [npmjs.org](https://npmjs.org/) even if there
 isn't an asdf plugin for it.
 
 The code for this is inside of the mise repository at [`./src/backend/npm.rs`](https://github.com/jdx/mise/blob/main/src/backend/npm.rs).

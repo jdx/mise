@@ -1,5 +1,10 @@
 # Dotnet backend
 
+::: warning
+Mise is not a replacement for a project dependency manager. Please continue to use `nuget`
+or another tool to manage your project's package dependencies.
+:::
+
 The code for this is inside the mise repository at [`./src/backend/dotnet.rs`](https://github.com/jdx/mise/blob/main/src/backend/dotnet.rs).
 
 ## Usage
