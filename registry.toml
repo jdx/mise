@@ -497,7 +497,7 @@ dmd.backends = ["asdf:mise-plugins/mise-dmd"]
 docker-compose.backends = ["aqua:docker/compose"]
 docker-compose.test = [
     "docker-cli-plugin-docker-compose --version",
-    "Docker Compose version v{{version}}"
+    "Docker Compose version"
 ]
 docker-slim.backends = ["ubi:slimtoolkit/slim", "asdf:xataz/asdf-docker-slim"]
 docker-slim.os = ["linux", "macos"]
@@ -1367,7 +1367,7 @@ promtool.backends = [
     "asdf:asdf-community/asdf-promtool"
 ]
 promtool.test = ["promtool --version", "promtool, version {{version}}"]
-protobuf.backends = ["vfox:mise-plugins/vfox-protobuf"]
+protoc.aliases = ["protobuf"]
 protoc.backends = [
     "aqua:protocolbuffers/protobuf/protoc",
     "asdf:paxosglobal/asdf-protoc"

@@ -592,7 +592,6 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | powershell-core | [aqua:PowerShell/PowerShell](https://github.com/PowerShell/PowerShell) [asdf:daveneeley/asdf-powershell-core](https://github.com/daveneeley/asdf-powershell-core) |
 | pre-commit | [aqua:pre-commit/pre-commit](https://github.com/pre-commit/pre-commit) [asdf:jonathanmorley/asdf-pre-commit](https://github.com/jonathanmorley/asdf-pre-commit) |
 | promtool | [aqua:prometheus/prometheus](https://github.com/prometheus/prometheus) [asdf:asdf-community/asdf-promtool](https://github.com/asdf-community/asdf-promtool) |
-| protobuf | [vfox:mise-plugins/vfox-protobuf](https://github.com/mise-plugins/vfox-protobuf) |
 | protoc | [aqua:protocolbuffers/protobuf/protoc](https://github.com/protocolbuffers/protobuf/protoc) [asdf:paxosglobal/asdf-protoc](https://github.com/paxosglobal/asdf-protoc) |
 | protoc-gen-connect-go | [go:connectrpc.com/connect/cmd/protoc-gen-connect-go](https://pkg.go.dev/connectrpc.com/connect/cmd/protoc-gen-connect-go) [asdf:dylanrayboss/asdf-protoc-gen-connect-go](https://github.com/dylanrayboss/asdf-protoc-gen-connect-go) |
 | protoc-gen-go | [aqua:protocolbuffers/protobuf-go/protoc-gen-go](https://github.com/protocolbuffers/protobuf-go/protoc-gen-go) [asdf:pbr0ck3r/asdf-protoc-gen-go](https://github.com/pbr0ck3r/asdf-protoc-gen-go) |
