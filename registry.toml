@@ -83,6 +83,8 @@ apollo-router.backends = [
     "asdf:safx/asdf-apollo-router"
 ]
 apollo-rover.backends = ["ubi:apollographql/rover"]
+aqua.backends = ["ubi:aquaproj/aqua"]
+aqua.test = ["aqua version", "aqua version {{version}}"]
 arduino.aliases = ["arduino"]
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
 argc.backends = ["ubi:sigoden/argc"]
@@ -368,6 +370,8 @@ cmake.backends = [
     "vfox:mise-plugins/vfox-cmake"
 ]
 cmctl.backends = ["aqua:cert-manager/cmctl", "asdf:asdf-community/asdf-cmctl"]
+cmdx.backends = ["ubi:suzuki-shunsuke/cmdx"]
+cmdx.test = ["cmdx version", "cmdx version {{version}}"]
 cockroach.backends = [
     "aqua:cockroachdb/cockroach",
     "asdf:salasrod/asdf-cockroach"

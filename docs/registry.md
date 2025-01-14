@@ -47,6 +47,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | apollo-ios | [asdf:mise-plugins/mise-apollo-ios-cli](https://github.com/mise-plugins/mise-apollo-ios-cli) |
 | apollo-router | [ubi:apollographql/router](https://github.com/apollographql/router) [asdf:safx/asdf-apollo-router](https://github.com/safx/asdf-apollo-router) |
 | apollo-rover | [ubi:apollographql/rover](https://github.com/apollographql/rover) |
+| aqua | [ubi:aquaproj/aqua](https://github.com/aquaproj/aqua) |
 | arduino | [aqua:arduino/arduino-cli](https://github.com/arduino/arduino-cli) [asdf:egnor/asdf-arduino-cli](https://github.com/egnor/asdf-arduino-cli) |
 | argc | [ubi:sigoden/argc](https://github.com/sigoden/argc) |
 | argo | [aqua:argoproj/argo-workflows](https://github.com/argoproj/argo-workflows) [asdf:sudermanjr/asdf-argo](https://github.com/sudermanjr/asdf-argo) |
@@ -144,6 +145,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | clusterctl | [aqua:kubernetes-sigs/cluster-api](https://github.com/kubernetes-sigs/cluster-api) [asdf:pfnet-research/asdf-clusterctl](https://github.com/pfnet-research/asdf-clusterctl) |
 | cmake | [asdf:mise-plugins/mise-cmake](https://github.com/mise-plugins/mise-cmake) [vfox:mise-plugins/vfox-cmake](https://github.com/mise-plugins/vfox-cmake) |
 | cmctl | [aqua:cert-manager/cmctl](https://github.com/cert-manager/cmctl) [asdf:asdf-community/asdf-cmctl](https://github.com/asdf-community/asdf-cmctl) |
+| cmdx | [ubi:suzuki-shunsuke/cmdx](https://github.com/suzuki-shunsuke/cmdx) |
 | cockroach | [aqua:cockroachdb/cockroach](https://github.com/cockroachdb/cockroach) [asdf:salasrod/asdf-cockroach](https://github.com/salasrod/asdf-cockroach) |
 | cocoapods | [asdf:mise-plugins/mise-cocoapods](https://github.com/mise-plugins/mise-cocoapods) |
 | codefresh | [ubi:codefresh-io/cli](https://github.com/codefresh-io/cli) [asdf:gurukulkarni/asdf-codefresh](https://github.com/gurukulkarni/asdf-codefresh) |
