@@ -322,6 +322,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | grype | [ubi:anchore/grype](https://github.com/anchore/grype) [asdf:poikilotherm/asdf-grype](https://github.com/poikilotherm/asdf-grype) |
 | guile | [asdf:mise-plugins/mise-guile](https://github.com/mise-plugins/mise-guile) |
 | gum | [aqua:charmbracelet/gum](https://github.com/charmbracelet/gum) [asdf:lwiechec/asdf-gum](https://github.com/lwiechec/asdf-gum) |
+| gup | [aqua:nao1215/gup](https://github.com/nao1215/gup) |
 | gwvault | [aqua:GoodwayGroup/gwvault](https://github.com/GoodwayGroup/gwvault) [asdf:GoodwayGroup/asdf-gwvault](https://github.com/GoodwayGroup/asdf-gwvault) |
 | hadolint | [ubi:hadolint/hadolint](https://github.com/hadolint/hadolint) [asdf:devlincashman/asdf-hadolint](https://github.com/devlincashman/asdf-hadolint) |
 | hamler | [asdf:mise-plugins/mise-hamler](https://github.com/mise-plugins/mise-hamler) |
