@@ -108,7 +108,7 @@ impl Backend for RustPlugin {
             .with_pr(&ctx.pr)
             .arg("toolchain")
             .arg("install")
-            .opt_arg(profile.as_ref().and_then(|_| Some("--profile")))
+            .opt_arg(profile.as_ref().map(|_| "--profile"))
             .opt_arg(profile)
             .arg(&tv.version)
             .prepend_path(self.list_bin_paths(&tv)?)?
