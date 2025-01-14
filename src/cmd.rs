@@ -248,6 +248,13 @@ impl<'a> CmdLineRunner<'a> {
         None
     }
 
+    pub fn opt_arg<S: AsRef<OsStr>>(mut self, arg: Option<S>) -> Self {
+        if let Some(arg) = arg {
+            self.cmd.arg(arg);
+        }
+        self
+    }
+
     pub fn arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
         self.cmd.arg(arg.as_ref());
         self
