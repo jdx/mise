@@ -7,6 +7,7 @@ use crate::path_env::PathEnv;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
+use serde_json::Value;
 use std::cmp::PartialEq;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
@@ -200,13 +201,19 @@ impl EnvResults {
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect::<EnvMap>();
             ctx.insert("env", &env_vars);
-            ctx.insert(
-                "vars",
-                &r.vars
+
+            let mut vars: EnvMap = if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
+                existing_vars
                     .iter()
-                    .map(|(k, (v, _))| (k.clone(), v.clone()))
-                    .collect::<EnvMap>(),
-            );
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            } else {
+                EnvMap::new()
+            };
+
+            vars.extend(r.vars.iter().map(|(k, (v, _))| (k.clone(), v.clone())));
+
+            ctx.insert("vars", &vars);
             let redact = directive.options().redact;
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
