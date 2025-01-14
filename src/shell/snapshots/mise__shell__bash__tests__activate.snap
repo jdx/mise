@@ -73,7 +73,7 @@ if [ -z "${_mise_cmd_not_found:-}" ]; then
     fi
 
     command_not_found_handle() {
-        if /some/dir/mise hook-not-found -s bash -- "$1"; then
+        if [ "$1" != "mise" ] && /some/dir/mise hook-not-found -s bash -- "$1"; then
           _mise_hook
           "$@"
         elif [ -n "$(declare -f _command_not_found_handle)" ]; then
