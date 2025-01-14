@@ -735,7 +735,7 @@ go-getter.backends = [
     "aqua:hashicorp/go-getter",
     "asdf:mise-plugins/mise-go-getter"
 ]
-go-getter.test = ["go-getter -help", "Usage of go-getter"]
+# go-getter.test = ["go-getter -help", "Usage of go-getter"] # goes to stderr
 go-jira.backends = ["aqua:go-jira/jira", "asdf:dguihal/asdf-go-jira"]
 go-jsonnet.backends = [
     "aqua:google/go-jsonnet",
