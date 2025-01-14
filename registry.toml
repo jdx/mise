@@ -1355,6 +1355,7 @@ popeye.backends = ["aqua:derailed/popeye", "asdf:nlamirault/asdf-popeye"]
 postgis.backends = ["asdf:mise-plugins/mise-postgis"]
 postgres.backends = ["asdf:mise-plugins/mise-postgres"]
 powerline-go.backends = [
+    "aqua:justjanne/powerline-go",
     "ubi:justjanne/powerline-go",
     "asdf:dex4er/asdf-powerline-go"
 ]
