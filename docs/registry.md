@@ -587,7 +587,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | popeye | [aqua:derailed/popeye](https://github.com/derailed/popeye) [asdf:nlamirault/asdf-popeye](https://github.com/nlamirault/asdf-popeye) |
 | postgis | [asdf:mise-plugins/mise-postgis](https://github.com/mise-plugins/mise-postgis) |
 | postgres | [asdf:mise-plugins/mise-postgres](https://github.com/mise-plugins/mise-postgres) |
-| powerline-go | [ubi:justjanne/powerline-go](https://github.com/justjanne/powerline-go) [asdf:dex4er/asdf-powerline-go](https://github.com/dex4er/asdf-powerline-go) |
+| powerline-go | [aqua:justjanne/powerline-go](https://github.com/justjanne/powerline-go) [ubi:justjanne/powerline-go](https://github.com/justjanne/powerline-go) [asdf:dex4er/asdf-powerline-go](https://github.com/dex4er/asdf-powerline-go) |
 | powerpipe | [aqua:turbot/powerpipe](https://github.com/turbot/powerpipe) [asdf:jc00ke/asdf-powerpipe](https://github.com/jc00ke/asdf-powerpipe) |
 | powershell-core | [aqua:PowerShell/PowerShell](https://github.com/PowerShell/PowerShell) [asdf:daveneeley/asdf-powershell-core](https://github.com/daveneeley/asdf-powershell-core) |
 | pre-commit | [aqua:pre-commit/pre-commit](https://github.com/pre-commit/pre-commit) [asdf:jonathanmorley/asdf-pre-commit](https://github.com/jonathanmorley/asdf-pre-commit) |
