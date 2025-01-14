@@ -497,7 +497,7 @@ dmd.backends = ["asdf:mise-plugins/mise-dmd"]
 docker-compose.backends = ["aqua:docker/compose"]
 docker-compose.test = [
     "docker-cli-plugin-docker-compose --version",
-    "Docker Compose version v{{version}}"
+    "Docker Compose version"
 ]
 docker-slim.backends = ["ubi:slimtoolkit/slim", "asdf:xataz/asdf-docker-slim"]
 docker-slim.os = ["linux", "macos"]
