@@ -292,7 +292,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | glow | [aqua:charmbracelet/glow](https://github.com/charmbracelet/glow) [asdf:mise-plugins/asdf-glow](https://github.com/mise-plugins/asdf-glow) |
 | go | [core:go](https://mise.jdx.dev/lang/go.html) |
 | go-containerregistry | [aqua:google/go-containerregistry](https://github.com/google/go-containerregistry) [asdf:dex4er/asdf-go-containerregistry](https://github.com/dex4er/asdf-go-containerregistry) |
-| go-getter | [asdf:mise-plugins/mise-go-getter](https://github.com/mise-plugins/mise-go-getter) |
+| go-getter | [aqua:hashicorp/go-getter](https://github.com/hashicorp/go-getter) [asdf:mise-plugins/mise-go-getter](https://github.com/mise-plugins/mise-go-getter) |
 | go-jira | [aqua:go-jira/jira](https://github.com/go-jira/jira) [asdf:dguihal/asdf-go-jira](https://github.com/dguihal/asdf-go-jira) |
 | go-jsonnet | [aqua:google/go-jsonnet](https://github.com/google/go-jsonnet) [asdf:https://gitlab.com/craigfurman/asdf-go-jsonnet](https://gitlab.com/craigfurman/asdf-go-jsonnet) |
 | go-junit-report | [ubi:jstemmer/go-junit-report](https://github.com/jstemmer/go-junit-report) [asdf:jwillker/asdf-go-junit-report](https://github.com/jwillker/asdf-go-junit-report) |
@@ -402,7 +402,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | kbld | [aqua:carvel-dev/kbld](https://github.com/carvel-dev/kbld) [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
 | kcat | [asdf:mise-plugins/mise-kcat](https://github.com/mise-plugins/mise-kcat) |
 | kcctl | [ubi:kcctl/kcctl](https://github.com/kcctl/kcctl) [asdf:joschi/asdf-kcctl](https://github.com/joschi/asdf-kcctl) |
-| kcl | [asdf:mise-plugins/mise-kcl](https://github.com/mise-plugins/mise-kcl) |
+| kcl | [aqua:kcl-lang/cli](https://github.com/kcl-lang/cli) [asdf:mise-plugins/mise-kcl](https://github.com/mise-plugins/mise-kcl) |
 | kconf | [aqua:particledecay/kconf](https://github.com/particledecay/kconf) [asdf:particledecay/asdf-kconf](https://github.com/particledecay/asdf-kconf) |
 | ki | [ubi:Kotlin/kotlin-interactive-shell](https://github.com/Kotlin/kotlin-interactive-shell) [asdf:comdotlinux/asdf-ki](https://github.com/comdotlinux/asdf-ki) |
 | killport | [ubi:jkfran/killport](https://github.com/jkfran/killport) |
