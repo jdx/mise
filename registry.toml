@@ -812,6 +812,8 @@ grpcurl.backends = [
 grype.backends = ["ubi:anchore/grype", "asdf:poikilotherm/asdf-grype"]
 guile.backends = ["asdf:mise-plugins/mise-guile"]
 gum.backends = ["aqua:charmbracelet/gum", "asdf:lwiechec/asdf-gum"]
+gup.backends = ["aqua:nao1215/gup"]
+gup.test = ["gup version", "gup version v{{version}}"]
 gwvault.backends = [
     "aqua:GoodwayGroup/gwvault",
     "asdf:GoodwayGroup/asdf-gwvault"
