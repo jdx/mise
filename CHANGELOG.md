@@ -1,5 +1,32 @@
 # Changelog
 
+## [2025.1.7](https://github.com/jdx/mise/compare/v2025.1.6..v2025.1.7) - 2025-01-15
+
+### 🚀 Features
+
+- **(registry)** add gup by [@scop](https://github.com/scop) in [#4107](https://github.com/jdx/mise/pull/4107)
+- **(registry)** add aqua and cmdx by [@scop](https://github.com/scop) in [#4106](https://github.com/jdx/mise/pull/4106)
+- use aqua for eza on linux by [@jdx](https://github.com/jdx) in [#4075](https://github.com/jdx/mise/pull/4075)
+- allow to specify Rust profile by [@roele](https://github.com/roele) in [#4101](https://github.com/jdx/mise/pull/4101)
+
+### 🐛 Bug Fixes
+
+- use vars in [env] templates by [@hverlin](https://github.com/hverlin) in [#4100](https://github.com/jdx/mise/pull/4100)
+- panic when directory name contains japanese characters by [@roele](https://github.com/roele) in [#4104](https://github.com/jdx/mise/pull/4104)
+- incorrect config_root for project/.mise/config.toml by [@roele](https://github.com/roele) in [#4108](https://github.com/jdx/mise/pull/4108)
+
+### 🚜 Refactor
+
+- **(registry)** alias protobuf to protoc by [@scop](https://github.com/scop) in [#4087](https://github.com/jdx/mise/pull/4087)
+- **(registry)** use aqua for go-getter and kcl by [@scop](https://github.com/scop) in [#4088](https://github.com/jdx/mise/pull/4088)
+- **(registry)** use aqua for powerline-go by [@scop](https://github.com/scop) in [#4105](https://github.com/jdx/mise/pull/4105)
+
+### 📚 Documentation
+
+- clean up activation instructions by [@jdx](https://github.com/jdx) in [e235c74](https://github.com/jdx/mise/commit/e235c74daa8f5e5f9e1bb89c70a6cff96c08956e)
+- correct urls for crawler by [@jdx](https://github.com/jdx) in [21cb77b](https://github.com/jdx/mise/commit/21cb77b1f79a57e6ebd3fec367bd5b223239a3ed)
+- added sitemap meta tag by [@jdx](https://github.com/jdx) in [033aa14](https://github.com/jdx/mise/commit/033aa149e8b7a45ea750c09c31438709420214c8)
+
 ## [2025.1.6](https://github.com/jdx/mise/compare/v2025.1.5..v2025.1.6) - 2025-01-12
 
 ### 🐛 Bug Fixes

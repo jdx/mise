@@ -59,6 +59,10 @@ impl RustPlugin {
     fn target_triple(&self, tv: &ToolVersion) -> String {
         format!("{}-{}", tv.version, TARGET)
     }
+
+    fn tv_profile(&self, tv: &ToolVersion) -> Option<String> {
+        tv.request.options().get("profile").cloned()
+    }
 }
 
 impl Backend for RustPlugin {
@@ -98,10 +102,14 @@ impl Backend for RustPlugin {
     fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         self.setup_rustup(ctx, &tv)?;
 
+        let profile = self.tv_profile(&tv);
+
         CmdLineRunner::new(RUSTUP_BIN)
             .with_pr(&ctx.pr)
             .arg("toolchain")
             .arg("install")
+            .opt_arg(profile.as_ref().map(|_| "--profile"))
+            .opt_arg(profile)
             .arg(&tv.version)
             .prepend_path(self.list_bin_paths(&tv)?)?
             .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, &tv)?)
