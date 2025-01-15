@@ -98,7 +98,7 @@ impl SPMBackend {
             repo.clone(package_repo.url.as_str(), Some(&ctx.pr))?;
         }
         debug!("Checking out revision: {revision}");
-        repo.update(Some(revision.to_string()))?;
+        repo.update_tag(revision.to_string())?;
 
         Ok(repo.dir)
     }
