@@ -240,7 +240,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | esy | [asdf:mise-plugins/mise-esy](https://github.com/mise-plugins/mise-esy) |
 | etcd | [aqua:etcd-io/etcd](https://github.com/etcd-io/etcd) [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) [vfox:mise-plugins/vfox-etcd](https://github.com/mise-plugins/vfox-etcd) |
 | evans | [aqua:ktr0731/evans](https://github.com/ktr0731/evans) [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
-| eza | [aqua:eza-community/eza](https://github.com/eza-community/eza) [asdf:mise-plugins/mise-eza](https://github.com/mise-plugins/mise-eza) [cargo:eza](https://crates.io/crates/eza) |
+| eza | [asdf:mise-plugins/mise-eza](https://github.com/mise-plugins/mise-eza) [cargo:eza](https://crates.io/crates/eza) |
 | fd | [aqua:sharkdp/fd](https://github.com/sharkdp/fd) [ubi:sharkdp/fd](https://github.com/sharkdp/fd) [asdf:https://gitlab.com/wt0f/asdf-fd](https://gitlab.com/wt0f/asdf-fd) |
 | ffmpeg | [asdf:mise-plugins/mise-ffmpeg](https://github.com/mise-plugins/mise-ffmpeg) |
 | figma-export | [ubi:RedMadRobot/figma-export](https://github.com/RedMadRobot/figma-export) [asdf:younke/asdf-figma-export](https://github.com/younke/asdf-figma-export) |
@@ -331,6 +331,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | haxe | [asdf:mise-plugins/mise-haxe](https://github.com/mise-plugins/mise-haxe) |
 | hcl2json | [aqua:tmccombs/hcl2json](https://github.com/tmccombs/hcl2json) [asdf:dex4er/asdf-hcl2json](https://github.com/dex4er/asdf-hcl2json) |
 | hcloud | [aqua:hetznercloud/cli](https://github.com/hetznercloud/cli) [asdf:chessmango/asdf-hcloud](https://github.com/chessmango/asdf-hcloud) |
+| helix | [ubi:helix-editor/helix](https://github.com/helix-editor/helix) |
 | helm | [aqua:helm/helm](https://github.com/helm/helm) [asdf:Antiarchitect/asdf-helm](https://github.com/Antiarchitect/asdf-helm) |
 | helm-cr | [aqua:helm/chart-releaser](https://github.com/helm/chart-releaser) [asdf:Antiarchitect/asdf-helm-cr](https://github.com/Antiarchitect/asdf-helm-cr) |
 | helm-ct | [aqua:helm/chart-testing](https://github.com/helm/chart-testing) [asdf:tablexi/asdf-helm-ct](https://github.com/tablexi/asdf-helm-ct) |

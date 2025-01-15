@@ -832,6 +832,7 @@ hasura-cli.backends = [
 haxe.backends = ["asdf:mise-plugins/mise-haxe"]
 hcl2json.backends = ["aqua:tmccombs/hcl2json", "asdf:dex4er/asdf-hcl2json"]
 hcloud.backends = ["aqua:hetznercloud/cli", "asdf:chessmango/asdf-hcloud"]
+helix.backends = ["ubi:helix-editor/helix[extract_all=true]"]
 helm.backends = ["aqua:helm/helm", "asdf:Antiarchitect/asdf-helm"]
 helm-cr.backends = [
     "aqua:helm/chart-releaser",
