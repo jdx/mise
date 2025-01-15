@@ -334,6 +334,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | haxe | [asdf:mise-plugins/mise-haxe](https://github.com/mise-plugins/mise-haxe) |
 | hcl2json | [aqua:tmccombs/hcl2json](https://github.com/tmccombs/hcl2json) [asdf:dex4er/asdf-hcl2json](https://github.com/dex4er/asdf-hcl2json) |
 | hcloud | [aqua:hetznercloud/cli](https://github.com/hetznercloud/cli) [asdf:chessmango/asdf-hcloud](https://github.com/chessmango/asdf-hcloud) |
+| helix | [ubi:helix-editor/helix](https://github.com/helix-editor/helix) |
 | helm | [aqua:helm/helm](https://github.com/helm/helm) [asdf:Antiarchitect/asdf-helm](https://github.com/Antiarchitect/asdf-helm) |
 | helm-cr | [aqua:helm/chart-releaser](https://github.com/helm/chart-releaser) [asdf:Antiarchitect/asdf-helm-cr](https://github.com/Antiarchitect/asdf-helm-cr) |
 | helm-ct | [aqua:helm/chart-testing](https://github.com/helm/chart-testing) [asdf:tablexi/asdf-helm-ct](https://github.com/tablexi/asdf-helm-ct) |
