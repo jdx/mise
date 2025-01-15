@@ -130,7 +130,7 @@ export default defineConfig({
           { text: "Tips & Tricks", link: "/tips-and-tricks" },
           {
             text: "Cookbook",
-            link: "/mise-cookbook",
+            link: "/mise-cookbook/",
             collapsed: true,
             items: [
               { text: "C++", link: "/mise-cookbook/cpp" },
@@ -247,6 +247,15 @@ export default defineConfig({
     pageData.frontmatter.head.push([
       "link",
       { rel: "canonical", href: canonicalUrl },
+    ]);
+    pageData.frontmatter.head.push([
+      "link",
+      {
+        rel: "sitemap",
+        href: "https://mise.jdx.dev/sitemap.xml",
+        type: "application/xml",
+        title: "Sitemap",
+      },
     ]);
   },
 });
