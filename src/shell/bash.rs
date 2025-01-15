@@ -71,7 +71,7 @@ impl Shell for Bash {
                 fi
 
                 command_not_found_handle() {{
-                    if [ "$1" != "mise" ] && {exe} hook-not-found -s bash -- "$1"; then
+                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s bash -- "$1"; then
                       _mise_hook
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handle)" ]; then
