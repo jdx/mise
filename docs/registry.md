@@ -558,7 +558,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | opensearch | [asdf:mise-plugins/mise-opensearch](https://github.com/mise-plugins/mise-opensearch) |
 | opensearch-cli | [asdf:mise-plugins/mise-opensearch-cli](https://github.com/mise-plugins/mise-opensearch-cli) |
 | openshift-install | [asdf:mise-plugins/mise-openshift-install](https://github.com/mise-plugins/mise-openshift-install) |
-| opentofu | [ubi:opentofu/opentofu](https://github.com/opentofu/opentofu) [asdf:virtualroot/asdf-opentofu](https://github.com/virtualroot/asdf-opentofu) |
+| opentofu | [aqua:opentofu/opentofu](https://github.com/opentofu/opentofu) [ubi:opentofu/opentofu](https://github.com/opentofu/opentofu) [asdf:virtualroot/asdf-opentofu](https://github.com/virtualroot/asdf-opentofu) |
 | operator-sdk | [aqua:operator-framework/operator-sdk](https://github.com/operator-framework/operator-sdk) [asdf:Medium/asdf-operator-sdk](https://github.com/Medium/asdf-operator-sdk) |
 | opsgenie-lamp | [asdf:mise-plugins/mise-opsgenie-lamp](https://github.com/mise-plugins/mise-opsgenie-lamp) |
 | oras | [aqua:oras-project/oras](https://github.com/oras-project/oras) [asdf:bodgit/asdf-oras](https://github.com/bodgit/asdf-oras) |
