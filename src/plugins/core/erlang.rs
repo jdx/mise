@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
-use crate::file::{display_path, TarOptions};
+use crate::file::display_path;
+#[cfg(unix)]
+use crate::file::TarOptions;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
@@ -67,6 +69,7 @@ impl ErlangPlugin {
         Ok(())
     }
 
+    #[cfg(not(windows))]
     fn install_precompiled(
         &self,
         ctx: &InstallContext,
@@ -105,6 +108,40 @@ impl ErlangPlugin {
                 format: file::TarFormat::TarGz,
             },
         )?;
+        Ok(Some(tv))
+    }
+
+    #[cfg(windows)]
+    fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<Option<ToolVersion>> {
+        if SETTINGS.erlang.compile == Some(true) {
+            return Ok(None);
+        }
+        let release_tag = format!("OTP-{}", tv.version);
+        let gh_release = match github::get_release("erlang/otp", &release_tag) {
+            Ok(release) => release,
+            Err(e) => {
+                debug!("Failed to get release: {}", e);
+                return Ok(None);
+            }
+        };
+        let zip_name = format!("otp_{OS}_{version}.zip", version = tv.version);
+        let asset = match gh_release.assets.iter().find(|a| a.name == zip_name) {
+            Some(asset) => asset,
+            None => {
+                debug!("No asset found for {}", release_tag);
+                return Ok(None);
+            }
+        };
+        ctx.pr.set_message(format!("Downloading {}", zip_name));
+        let zip_path = tv.download_path().join(&zip_name);
+        HTTP.download_file(&asset.browser_download_url, &zip_path, Some(&ctx.pr))?;
+        self.verify_checksum(ctx, &mut tv, &zip_path)?;
+        ctx.pr.set_message(format!("Extracting {}", zip_name));
+        file::unzip(&zip_path, &tv.install_path())?;
         Ok(Some(tv))
     }
 
@@ -169,17 +206,20 @@ impl Backend for ErlangPlugin {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(target_os = "windows")))]
 pub const ARCH: &str = "x86_64";
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", not(target_os = "windows")))]
 const ARCH: &str = "aarch64";
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 const ARCH: &str = "unknown";
 
+#[cfg(windows)]
+const OS: &str = "win64";
+
 #[cfg(macos)]
 const OS: &str = "apple-darwin";
 
-#[cfg(not(macos))]
+#[cfg(not(any(windows, macos)))]
 const OS: &str = "unknown";
