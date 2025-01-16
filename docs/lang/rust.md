@@ -32,6 +32,25 @@ mise use -g rust@1.82
 cargo build
 ```
 
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `rust` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `profile`
+
+The `profile` option allows you to specify the type of release to install. The following values
+are supported:
+
+- `minimal`: Includes as few components as possible to get a working compiler (rustc, rust-std, and cargo)
+- `default` (default): Includes all of components in the minimal profile, and adds rust-docs, rustfmt, and clippy
+- `complete`: Includes all the components available through rustup. This should never be used, as it includes every component ever included in the metadata and thus will almost always fail.
+
+```toml
+[tools]
+"rust" = { version = "1.83.0", profile = "minimal" }
+```
+
 ## Settings
 
 <script setup>

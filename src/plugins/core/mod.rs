@@ -14,7 +14,6 @@ use crate::toolset::ToolVersion;
 mod bun;
 mod deno;
 mod elixir;
-#[cfg(unix)]
 mod erlang;
 mod go;
 mod java;
@@ -27,27 +26,11 @@ mod swift;
 mod zig;
 
 pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
-    #[cfg(unix)]
     let plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(bun::BunPlugin::new()),
         Arc::new(deno::DenoPlugin::new()),
         Arc::new(elixir::ElixirPlugin::new()),
         Arc::new(erlang::ErlangPlugin::new()),
-        Arc::new(go::GoPlugin::new()),
-        Arc::new(java::JavaPlugin::new()),
-        Arc::new(node::NodePlugin::new()),
-        Arc::new(python::PythonPlugin::new()),
-        Arc::new(ruby::RubyPlugin::new()),
-        Arc::new(rust::RustPlugin::new()),
-        Arc::new(swift::SwiftPlugin::new()),
-        Arc::new(zig::ZigPlugin::new()),
-    ];
-    #[cfg(windows)]
-    let plugins: Vec<Arc<dyn Backend>> = vec![
-        Arc::new(bun::BunPlugin::new()),
-        Arc::new(deno::DenoPlugin::new()),
-        Arc::new(elixir::ElixirPlugin::new()),
-        // Arc::new(erlang::ErlangPlugin::new()),
         Arc::new(go::GoPlugin::new()),
         Arc::new(java::JavaPlugin::new()),
         Arc::new(node::NodePlugin::new()),

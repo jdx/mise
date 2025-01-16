@@ -56,7 +56,7 @@ impl Shell for Fish {
 
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
-            
+
             function __mise_env_eval --on-event fish_prompt --description {description};
                 {exe} hook-env{flags} -s fish | source;
 
@@ -92,7 +92,8 @@ impl Shell for Fish {
             end
 
             function fish_command_not_found
-                if {exe} hook-not-found -s fish -- $argv[1]
+                if test "$argv[1]" != "mise" -a "$argv[1]" != "mise-"*
+                    and {exe} hook-not-found -s fish -- $argv[1]
                     {exe} hook-env{flags} -s fish | source
                 else if functions -q __mise_fish_command_not_found
                     __mise_fish_command_not_found $argv

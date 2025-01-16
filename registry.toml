@@ -83,6 +83,8 @@ apollo-router.backends = [
     "asdf:safx/asdf-apollo-router"
 ]
 apollo-rover.backends = ["ubi:apollographql/rover"]
+aqua.backends = ["ubi:aquaproj/aqua"]
+aqua.test = ["aqua version", "aqua version {{version}}"]
 arduino.aliases = ["arduino"]
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
 argc.backends = ["ubi:sigoden/argc"]
@@ -368,6 +370,8 @@ cmake.backends = [
     "vfox:mise-plugins/vfox-cmake"
 ]
 cmctl.backends = ["aqua:cert-manager/cmctl", "asdf:asdf-community/asdf-cmctl"]
+cmdx.backends = ["ubi:suzuki-shunsuke/cmdx"]
+cmdx.test = ["cmdx version", "cmdx version {{version}}"]
 cockroach.backends = [
     "aqua:cockroachdb/cockroach",
     "asdf:salasrod/asdf-cockroach"
@@ -731,7 +735,11 @@ go-containerregistry.backends = [
     "aqua:google/go-containerregistry",
     "asdf:dex4er/asdf-go-containerregistry"
 ]
-go-getter.backends = ["asdf:mise-plugins/mise-go-getter"]
+go-getter.backends = [
+    "aqua:hashicorp/go-getter",
+    "asdf:mise-plugins/mise-go-getter"
+]
+# go-getter.test = ["go-getter -help", "Usage of go-getter"] # goes to stderr
 go-jira.backends = ["aqua:go-jira/jira", "asdf:dguihal/asdf-go-jira"]
 go-jsonnet.backends = [
     "aqua:google/go-jsonnet",
@@ -812,6 +820,8 @@ grpcurl.backends = [
 grype.backends = ["ubi:anchore/grype", "asdf:poikilotherm/asdf-grype"]
 guile.backends = ["asdf:mise-plugins/mise-guile"]
 gum.backends = ["aqua:charmbracelet/gum", "asdf:lwiechec/asdf-gum"]
+gup.backends = ["aqua:nao1215/gup"]
+gup.test = ["gup version", "gup version v{{version}}"]
 gwvault.backends = [
     "aqua:GoodwayGroup/gwvault",
     "asdf:GoodwayGroup/asdf-gwvault"
@@ -832,6 +842,7 @@ hasura-cli.backends = [
 haxe.backends = ["asdf:mise-plugins/mise-haxe"]
 hcl2json.backends = ["aqua:tmccombs/hcl2json", "asdf:dex4er/asdf-hcl2json"]
 hcloud.backends = ["aqua:hetznercloud/cli", "asdf:chessmango/asdf-hcloud"]
+helix.backends = ["ubi:helix-editor/helix[extract_all=true]"]
 helm.backends = ["aqua:helm/helm", "asdf:Antiarchitect/asdf-helm"]
 helm-cr.backends = [
     "aqua:helm/chart-releaser",
@@ -955,7 +966,8 @@ kapp.backends = ["aqua:carvel-dev/kapp", "asdf:vmware-tanzu/asdf-carvel"]
 kbld.backends = ["aqua:carvel-dev/kbld", "asdf:vmware-tanzu/asdf-carvel"]
 kcat.backends = ["asdf:mise-plugins/mise-kcat"]
 kcctl.backends = ["ubi:kcctl/kcctl", "asdf:joschi/asdf-kcctl"]
-kcl.backends = ["asdf:mise-plugins/mise-kcl"]
+kcl.backends = ["aqua:kcl-lang/cli", "asdf:mise-plugins/mise-kcl"]
+kcl.test = ["kcl --version", "kcl version {{version}}"]
 kconf.backends = ["aqua:particledecay/kconf", "asdf:particledecay/asdf-kconf"]
 ki.backends = [
     "ubi:Kotlin/kotlin-interactive-shell[exe=ki]",
@@ -1346,6 +1358,7 @@ popeye.backends = ["aqua:derailed/popeye", "asdf:nlamirault/asdf-popeye"]
 postgis.backends = ["asdf:mise-plugins/mise-postgis"]
 postgres.backends = ["asdf:mise-plugins/mise-postgres"]
 powerline-go.backends = [
+    "aqua:justjanne/powerline-go",
     "ubi:justjanne/powerline-go",
     "asdf:dex4er/asdf-powerline-go"
 ]

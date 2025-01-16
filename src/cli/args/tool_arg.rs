@@ -153,14 +153,18 @@ impl Display for ToolArg {
 fn parse_input(s: &str) -> (&str, Option<&str>) {
     let (backend, version) = s
         .split_once('@')
-        .map(|(f, v)| (f, Some(v)))
+        .map(|(f, v)| (f, if v.is_empty() { None } else { Some(v) }))
         .unwrap_or((s, None));
 
     // special case for packages with npm scopes like "npm:@antfu/ni"
     if backend == "npm:" {
         if let Some(v) = version {
             return if let Some(i) = v.find('@') {
-                (&s[..backend.len() + i + 1], Some(&v[i + 1..]))
+                let ver = &v[i + 1..];
+                (
+                    &s[..backend.len() + i + 1],
+                    if ver.is_empty() { None } else { Some(ver) },
+                )
             } else {
                 (&s[..backend.len() + v.len() + 1], None)
             };
@@ -228,7 +232,11 @@ mod tests {
             assert_eq!(backend, f);
             assert_eq!(version, v);
         };
+        t("erlang", "erlang", None);
+        t("erlang@", "erlang", None);
+        t("erlang@27.2", "erlang", Some("27.2"));
         t("npm:@antfu/ni", "npm:@antfu/ni", None);
+        t("npm:@antfu/ni@", "npm:@antfu/ni", None);
         t("npm:@antfu/ni@1.0.0", "npm:@antfu/ni", Some("1.0.0"));
         t("npm:@antfu/ni@1.0.0@1", "npm:@antfu/ni", Some("1.0.0@1"));
         t("npm:", "npm:", None);
