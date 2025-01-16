@@ -209,6 +209,13 @@ node = "22"
 
 Follow the [walkthrough](/walkthrough) for more examples on how to use mise.
 
+::: warning
+Many tools in mise require the use of the GitHub API. Unauthenticated requests to the GitHub API are
+often rate limited. If you see 4xx errors while using mise, you can set `MISE_GITHUB_TOKEN` or `GITHUB_TOKEN`
+to a token [generated from here](https://github.com/settings/tokens/new?description=MISE_GITHUB_TOKEN) which
+will likely fix the issue. The token does not require any scopes.
+:::
+
 ### Set up the autocompletion
 
 See [autocompletion](/installing-mise.html#autocompletion) to learn how to set up autocompletion for your shell.
