@@ -128,7 +128,7 @@ impl ErlangPlugin {
                 return Ok(None);
             }
         };
-        let zip_name =  format!("otp_{OS}_{version}.zip", version = tv.version);
+        let zip_name = format!("otp_{OS}_{version}.zip", version = tv.version);
         let asset = match gh_release.assets.iter().find(|a| a.name == zip_name) {
             Some(asset) => asset,
             None => {
