@@ -1,5 +1,24 @@
 # Changelog
 
+## [2025.1.8](https://github.com/jdx/mise/compare/v2025.1.7..v2025.1.8) - 2025-01-16
+
+### 🚀 Features
+
+- upgrade ubi by [@jdx](https://github.com/jdx) in [#4078](https://github.com/jdx/mise/pull/4078)
+
+### 🐛 Bug Fixes
+
+- **(spm)** install from annotated tag by [@MontakOleg](https://github.com/MontakOleg) in [#4120](https://github.com/jdx/mise/pull/4120)
+- Fixes infinite loop in auto install not found bash function by [@bnorick](https://github.com/bnorick) in [#4094](https://github.com/jdx/mise/pull/4094)
+
+### 📚 Documentation
+
+- correct link to gem.rs source by [@petrblaho](https://github.com/petrblaho) in [#4119](https://github.com/jdx/mise/pull/4119)
+
+### New Contributors
+
+- @petrblaho made their first contribution in [#4119](https://github.com/jdx/mise/pull/4119)
+
 ## [2025.1.7](https://github.com/jdx/mise/compare/v2025.1.6..v2025.1.7) - 2025-01-15
 
 ### 🚀 Features
