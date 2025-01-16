@@ -64,14 +64,6 @@ jq-linux-arm64 = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4
 jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
 "jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
 
-[tools.minisign]
-version = "0.11"
-backend = "aqua:jedisct1/minisign"
-
-[tools.minisign.checksums]
-"minisign-0.11-linux.tar.gz" = "sha256:f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0"
-"minisign-0.11-macos.zip" = "sha256:e7c410ae8b8960d7087392472b040bda9b2f307c76df0384ac37f9ad103fc893"
-
 [tools."npm:markdownlint-cli"]
 version = "0.43.0"
 backend = "npm:markdownlint-cli"
