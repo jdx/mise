@@ -1294,9 +1294,11 @@ opensearch.backends = ["asdf:mise-plugins/mise-opensearch"]
 opensearch-cli.backends = ["asdf:mise-plugins/mise-opensearch-cli"]
 openshift-install.backends = ["asdf:mise-plugins/mise-openshift-install"]
 opentofu.backends = [
+    "aqua:opentofu/opentofu",
     "ubi:opentofu/opentofu[exe=tofu]",
     "asdf:virtualroot/asdf-opentofu"
 ]
+opentofu.test = ["tofu --version", "OpenTofu v{{version}}"]
 operator-sdk.backends = [
     "aqua:operator-framework/operator-sdk",
     "asdf:Medium/asdf-operator-sdk"
