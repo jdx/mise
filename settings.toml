@@ -61,6 +61,13 @@ type = "Bool"
 default = true
 description = "Use cosign to verify aqua tool signatures."
 
+[aqua.cosign_extra_args]
+env = "MISE_AQUA_COSIGN_EXTRA_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+optional = true
+description = "Extra arguments to pass to cosign when verifying aqua tool signatures."
+
 [aqua.minisign]
 env = "MISE_AQUA_MINISIGN"
 type = "Bool"
