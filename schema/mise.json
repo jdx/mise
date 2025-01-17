@@ -246,6 +246,13 @@
               "description": "Use cosign to verify aqua tool signatures.",
               "type": "boolean"
             },
+            "cosign_extra_args": {
+              "description": "Extra arguments to pass to cosign when verifying aqua tool signatures.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "minisign": {
               "default": true,
               "description": "Use minisign to verify aqua tool signatures.",
