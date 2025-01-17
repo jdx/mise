@@ -2576,6 +2576,8 @@ const completionSpec: Fig.Spec = {
         description: "Tool(s) to remove",
         isOptional: true,
         isVariadic: true,
+        generators: installedToolVersionGenerator,
+        debounce: true,
       },
     },
     {
@@ -2625,6 +2627,8 @@ const completionSpec: Fig.Spec = {
         name: "installed_tool@version",
         description: "Tool(s) to remove",
         isVariadic: true,
+        generators: installedToolVersionGenerator,
+        debounce: true,
       },
     },
     {
