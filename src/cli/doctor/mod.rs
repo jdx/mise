@@ -93,7 +93,10 @@ impl Doctor {
                 .map(|(k, p)| (k, p.to_string_lossy().to_string()))
                 .collect(),
         );
-        data.insert("env_vars".into(), mise_env_vars().into_iter().collect());
+        data.insert(
+            "env_vars".into(),
+            mise_env_vars().into_iter().collect(),
+        );
         data.insert(
             "settings".into(),
             serde_json::from_str(&cmd!("mise", "settings", "-J").read()?)?,
@@ -414,9 +417,17 @@ fn mise_dirs() -> Vec<(String, &'static Path)> {
 }
 
 fn mise_env_vars() -> Vec<(String, String)> {
+    const REDACT_KEYS: &[&str] = &["MISE_GITHUB_TOKEN"];
     env::vars()
         .filter(|(k, _)| k.starts_with("MISE_"))
-        .filter(|(k, _)| k != "MISE_GITHUB_TOKEN")
+        .map(|(k, v)| {
+            let v = if REDACT_KEYS.contains(&k.as_str()) {
+                style::ndim("REDACTED").to_string()
+            } else {
+                v
+            };
+            (k, v)
+        })
         .collect()
 }
 
