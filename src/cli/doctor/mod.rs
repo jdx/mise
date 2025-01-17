@@ -93,10 +93,7 @@ impl Doctor {
                 .map(|(k, p)| (k, p.to_string_lossy().to_string()))
                 .collect(),
         );
-        data.insert(
-            "env_vars".into(),
-            mise_env_vars().into_iter().collect(),
-        );
+        data.insert("env_vars".into(), mise_env_vars().into_iter().collect());
         data.insert(
             "settings".into(),
             serde_json::from_str(&cmd!("mise", "settings", "-J").read()?)?,
