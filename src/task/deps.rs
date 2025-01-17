@@ -23,6 +23,7 @@ impl Deps {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
         let mut stack = vec![];
+        let mut seen = HashSet::new();
 
         let mut add_idx = |task: &Task, graph: &mut DiGraph<Task, ()>| {
             *indexes
@@ -45,6 +46,10 @@ impl Deps {
             .flatten_ok()
             .collect::<eyre::Result<Vec<_>>>()?;
         while let Some(a) = stack.pop() {
+            if seen.contains(&a) {
+                // prevent infinite loop
+                continue;
+            }
             let a_idx = add_idx(&a, &mut graph);
             let (pre, post) = a.resolve_depends(&all_tasks_to_run)?;
             for b in pre {
@@ -57,6 +62,7 @@ impl Deps {
                 graph.update_edge(b_idx, a_idx, ());
                 stack.push(b.clone());
             }
+            seen.insert(a);
         }
         let (tx, _) = channel::unbounded();
         let sent = HashSet::new();

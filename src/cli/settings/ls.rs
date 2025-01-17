@@ -1,5 +1,5 @@
 use crate::config;
-use crate::config::settings::{SettingsPartial, SETTINGS_META};
+use crate::config::settings::{SettingsPartial, SettingsType, SETTINGS_META};
 use crate::config::{Settings, ALL_TOML_CONFIG_FILES, SETTINGS};
 use crate::file::display_path;
 use crate::ui::table;
@@ -42,6 +42,19 @@ pub struct SettingsLs {
     /// Output in TOML format
     #[clap(long, short = 'T', group = "output")]
     toml: bool,
+}
+
+fn settings_type_to_string(st: &SettingsType) -> String {
+    match st {
+        SettingsType::Bool => "boolean".to_string(),
+        SettingsType::String => "string".to_string(),
+        SettingsType::Integer => "number".to_string(),
+        SettingsType::Duration => "number".to_string(),
+        SettingsType::Path => "string".to_string(),
+        SettingsType::Url => "string".to_string(),
+        SettingsType::ListString => "array".to_string(),
+        SettingsType::ListPath => "array".to_string(),
+    }
 }
 
 impl SettingsLs {
@@ -129,6 +142,10 @@ impl SettingsLs {
                 "value".to_string(),
                 toml_value_to_json_value(row.toml_value),
             );
+            entry.insert("type".to_string(), row.type_.into());
+            if let Some(description) = row.description {
+                entry.insert("description".to_string(), description.into());
+            }
             if let Some(source) = row.source {
                 entry.insert("source".to_string(), source.to_string_lossy().into());
             }
@@ -187,6 +204,10 @@ struct Row {
     source: Option<PathBuf>,
     #[tabled(skip)]
     toml_value: toml::Value,
+    #[tabled(skip)]
+    description: Option<String>,
+    #[tabled(skip)]
+    type_: String,
 }
 
 impl Row {
@@ -206,21 +227,35 @@ impl Row {
         let mut rows = vec![];
         if let Some(table) = v.as_table() {
             if !table.is_empty() {
+                rows.reserve(table.len());
+                let meta = SETTINGS_META.get(k.as_str());
+                let desc = meta.map(|sm| sm.description.to_string());
+                let type_str = meta
+                    .map(|sm| settings_type_to_string(&sm.type_))
+                    .unwrap_or_default();
+
                 for (subkey, subvalue) in table {
                     rows.push(Row {
                         key: format!("{k}.{subkey}"),
                         value: subvalue.to_string(),
+                        type_: type_str.clone(),
                         source: source.clone(),
                         toml_value: subvalue.clone(),
+                        description: desc.clone(),
                     });
                 }
             }
         } else {
+            let meta = SETTINGS_META.get(k.as_str());
             rows.push(Row {
-                key: k,
+                key: k.clone(),
                 value: v.to_string(),
+                type_: meta
+                    .map(|sm| settings_type_to_string(&sm.type_))
+                    .unwrap_or_default(),
                 source,
                 toml_value: v,
+                description: meta.map(|sm| sm.description.to_string()),
             });
         }
         rows

@@ -61,6 +61,13 @@ type = "Bool"
 default = true
 description = "Use cosign to verify aqua tool signatures."
 
+[aqua.cosign_extra_args]
+env = "MISE_AQUA_COSIGN_EXTRA_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+optional = true
+description = "Extra arguments to pass to cosign when verifying aqua tool signatures."
+
 [aqua.minisign]
 env = "MISE_AQUA_MINISIGN"
 type = "Bool"
@@ -290,7 +297,7 @@ docs = """
 Enables profile-specific config files such as `.mise.development.toml`.
 Use this for different env vars or different tool versions in
 development/staging/production environments. See
-[Configuration Environments](/configuration/environments) for more on how
+[Configuration Environments](/configuration/environments.html) for more on how
 to use this feature.
 
 Multiple envs can be set by separating them with a comma, e.g. `MISE_ENV=ci,test`.
@@ -596,7 +603,7 @@ env = "MISE_PARANOID"
 type = "Bool"
 description = "Enables extra-secure behavior."
 docs = """
-Enables extra-secure behavior. See [Paranoid](/paranoid).
+Enables extra-secure behavior. See [Paranoid](/paranoid.html).
 """
 
 [pin]
@@ -868,13 +875,13 @@ description = "Set to true to enable verbose output during ruby installation."
 env = "MISE_CARGO_HOME"
 type = "Path"
 optional = true
-description = "Path to the cargo home directory. Defaults to ~/.cargo or %USERPROFILE%\\.cargo"
+description = "Path to the cargo home directory. Defaults to `~/.cargo` or `%USERPROFILE%\\.cargo`"
 
 [rust.rustup_home]
 env = "MISE_RUSTUP_HOME"
 type = "Path"
 optional = true
-description = "Path to the rustup home directory. Defaults to ~/.rustup or %USERPROFILE%\\.rustup"
+description = "Path to the rustup home directory. Defaults to `~/.rustup` or `%USERPROFILE%\\.rustup`"
 
 [shorthands_file]
 env = "MISE_SHORTHANDS_FILE"
@@ -914,7 +921,7 @@ description = "The age private key to use for sops secret decryption."
 env = "MISE_SOPS_AGE_KEY_FILE"
 type = "Path"
 optional = true
-default_docs = "~/.config/mise/age.key"
+default_docs = "~/.config/mise/age.txt"
 description = "Path to the age private key file to use for sops secret decryption."
 
 [sops.age_recipients]
@@ -1086,7 +1093,7 @@ a quick way for mise to query for new versions. This host regularly grabs all th
 latest versions of core and community plugins. It's faster than running a plugin's
 `list-all` command and gets around GitHub rate limiting problems when using it.
 
-See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
+See [FAQ](/faq.html#new-version-of-a-tool-is-not-available) for more information.
 """
 
 [verbose]

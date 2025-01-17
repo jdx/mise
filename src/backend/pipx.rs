@@ -87,7 +87,10 @@ impl Backend for PIPXBackend {
             .parse::<PipxRequest>()?
             .pipx_request(&tv.version, &tv.request.options());
 
-        if self.uv_is_installed() && SETTINGS.pipx.uvx != Some(false) {
+        if self.uv_is_installed()
+            && SETTINGS.pipx.uvx != Some(false)
+            && tv.request.options().get("uvx") != Some(&"false".to_string())
+        {
             ctx.pr
                 .set_message(format!("uv tool install {pipx_request}"));
             let mut cmd = Self::uvx_cmd(

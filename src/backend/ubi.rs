@@ -73,6 +73,9 @@ impl Backend for UbiBackend {
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         let mut v = tv.version.to_string();
+        let opts = tv.request.options();
+        let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
+        let bin_dir = tv.install_path();
 
         if let Err(err) = github::get_release(&self.tool_name(), &tv.version) {
             // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
@@ -86,14 +89,10 @@ impl Backend for UbiBackend {
         }
 
         let install = |v: &str| {
-            let opts = tv.request.options();
             // Workaround because of not knowing how to pull out the value correctly without quoting
-            let path_with_bin = tv.install_path().join("bin");
             let name = self.tool_name();
 
-            let mut builder = UbiBuilder::new()
-                .project(&name)
-                .install_dir(path_with_bin.clone());
+            let mut builder = UbiBuilder::new().project(&name).install_dir(&bin_dir);
 
             if let Some(token) = &*GITHUB_TOKEN {
                 builder = builder.github_token(token);
@@ -103,7 +102,9 @@ impl Backend for UbiBackend {
                 builder = builder.tag(v);
             }
 
-            if let Some(exe) = opts.get("exe") {
+            if extract_all {
+                builder = builder.extract_all();
+            } else if let Some(exe) = opts.get("exe") {
                 builder = builder.exe(exe);
             }
             if let Some(matching) = opts.get("matching") {
@@ -127,7 +128,6 @@ impl Backend for UbiBackend {
             })
         })?;
 
-        let bin_dir = tv.install_path().join("bin");
         let mut possible_exes = vec![tv
             .request
             .options()
@@ -209,6 +209,22 @@ impl Backend for UbiBackend {
             tv.checksums.insert(checksum_key, format!("sha256:{hash}"));
         }
         Ok(())
+    }
+
+    fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<std::path::PathBuf>> {
+        let opts = tv.request.options();
+        if let Some(bin_path) = opts.get("bin_path") {
+            Ok(vec![tv.install_path().join(bin_path)])
+        } else if opts.get("extract_all").is_some_and(|v| v == "true") {
+            Ok(vec![tv.install_path()])
+        } else {
+            let bin_path = tv.install_path().join("bin");
+            if bin_path.exists() {
+                Ok(vec![bin_path])
+            } else {
+                Ok(vec![tv.install_path()])
+            }
+        }
     }
 }
 

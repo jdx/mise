@@ -158,10 +158,6 @@ impl RubyPlugin {
         Ok(updated_at < DAILY)
     }
 
-    fn ruby_path(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin/ruby")
-    }
-
     fn gem_path(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin/gem")
     }
@@ -195,39 +191,6 @@ impl RubyPlugin {
                 .execute()?;
         }
         Ok(())
-    }
-
-    fn test_ruby(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
-    ) -> Result<()> {
-        pr.set_message("ruby -v".into());
-        CmdLineRunner::new(self.ruby_path(tv))
-            .with_pr(pr)
-            .arg("-v")
-            .envs(config.env()?)
-            .execute()
-    }
-
-    fn test_gem(
-        &self,
-        config: &Config,
-        tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
-    ) -> Result<()> {
-        if !regex!(r#"^\d"#).is_match(&self.tool_name()) {
-            // don't expect gem for artichoke
-            return Ok(());
-        }
-        pr.set_message("gem -v".into());
-        CmdLineRunner::new(self.gem_path(tv))
-            .with_pr(pr)
-            .arg("-v")
-            .envs(config.env()?)
-            .env(&*PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
-            .execute()
     }
 
     fn ruby_build_version(&self) -> Result<String> {
@@ -389,9 +352,7 @@ impl Backend for RubyPlugin {
         let config = Config::get();
         self.install_cmd(&config, &tv, &ctx.pr)?.execute()?;
 
-        self.test_ruby(&config, &tv, &ctx.pr)?;
         self.install_rubygems_hook(&tv)?;
-        self.test_gem(&config, &tv, &ctx.pr)?;
         if let Err(err) = self.install_default_gems(&config, &tv, &ctx.pr) {
             warn!("failed to install default ruby gems {err:#}");
         }

@@ -346,7 +346,9 @@ This is the path to the config file.
 
 Default: `$HOME`
 
+::: v-pre
 This is the path which is used as `{{config_root}}` for the global config file.
+:::
 
 ### `MISE_ENV_FILE`
 

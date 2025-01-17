@@ -74,7 +74,7 @@ chmod +x "$RELEASE_DIR"/install.sh
 shellcheck "$RELEASE_DIR"/install.sh
 gpg -u 8B81C9D17413A06D --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_DIR"/install.sh
 minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m "$RELEASE_DIR"/install.sh </dev/zero
-cp "$RELEASE_DIR"/{install.sh,install.sh.minisig} "$RELEASE_DIR/$MISE_VERSION"
+cp "$RELEASE_DIR"/{install.sh,install.sh.sig,install.sh.minisig} "$RELEASE_DIR/$MISE_VERSION"
 
 if [[ "$DRY_RUN" != 1 ]]; then
   echo "::group::Publish npm @jdxcode/mise"

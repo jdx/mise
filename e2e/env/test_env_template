@@ -4,20 +4,20 @@ cat <<EOF >mise.toml
 [env]
 ENV_TMPL_EXEC = "{{ exec(command='echo foo') }}"
 EOF
-assert "mise env -s zsh | grep ENV_TMPL_EXEC" "export ENV_TMPL_EXEC=foo"
+assert_contains "mise env -s zsh | grep ENV_TMPL_EXEC" "export ENV_TMPL_EXEC=foo"
 
 cat <<EOF >mise.toml
 [env]
 B = "{{ env.A }}"
 EOF
-A=a assert "mise env -s bash | grep B" "export B=a"
+A=a assert_contains "mise env -s bash | grep B" "export B=a"
 
 cat <<EOF >mise.toml
 [env]
 A = "a"
 B = "{{ env.A }}"
 EOF
-assert "mise env -s bash | grep B" "export B=a"
+assert_contains "mise env -s bash | grep B" "export B=a"
 
 cat <<EOF >mise.toml
 [env]
@@ -61,3 +61,24 @@ cat <<EOF >env.sh
 export BAR="\$PATH"
 EOF
 assert_contains "mise env -s bash | grep BAR" "export BAR='/foo:"
+
+cat <<EOF >mise.toml
+[vars]
+MY_VAR = "my_var"
+
+[env]
+FOO = "{{vars.MY_VAR}}"
+EOF
+
+assert_json_partial_object "mise env --json" "FOO" '{
+  "FOO": "my_var"
+}'
+
+cat <<EOF >mise.local.toml
+[vars]
+MY_VAR = "mise.local.toml"
+EOF
+
+assert_json_partial_object "mise env --json" "FOO" '{
+  "FOO": "mise.local.toml"
+}'

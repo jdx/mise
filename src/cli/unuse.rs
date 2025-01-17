@@ -1,11 +1,11 @@
-use eyre::Result;
-
 use crate::cli::args::ToolArg;
 use crate::cli::prune::prune;
 use crate::config;
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
 use crate::file::display_path;
+use eyre::Result;
+use itertools::Itertools;
 
 /// Removes installed tool versions from mise.toml
 ///
@@ -40,18 +40,11 @@ impl Unuse {
         }
         if removed.is_empty() {
             debug!("no tools to remove");
-            return Ok(());
+        } else {
+            cf.save()?;
+            let removals = removed.iter().join(", ");
+            info!("removed: {removals} from {}", display_path(cf.get_path()));
         }
-        cf.save()?;
-        info!(
-            "removed: {} from {}",
-            removed
-                .iter()
-                .map(|ta| ta.to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            display_path(cf.get_path())
-        );
 
         if !self.no_prune {
             prune(self.installed_tool.iter().map(|ta| &ta.ba).collect(), false)?;

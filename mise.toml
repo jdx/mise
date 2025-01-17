@@ -6,17 +6,15 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 "actionlint" = "latest"
-bun = "1.1.42"
+bun = "1.1.44"
 cargo-binstall = "1.10.17"
 "cargo:cargo-edit" = "latest"
 "cargo:cargo-insta" = "latest"
-"cargo:cargo-show" = { version = "latest", os = ["linux", "macos"] }
 "cargo:git-cliff" = "latest"
 "cargo:toml-cli" = "latest"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
 cosign = "latest"
 "jq" = "latest"
-minisign = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
 "pipx:toml-sort" = "latest"

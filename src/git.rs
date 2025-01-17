@@ -89,6 +89,14 @@ impl Git {
 
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
         let gitref = gitref.map_or_else(|| self.current_branch(), Ok)?;
+        self.update_ref(gitref, false)
+    }
+
+    pub fn update_tag(&self, gitref: String) -> Result<(String, String)> {
+        self.update_ref(gitref, true)
+    }
+
+    fn update_ref(&self, gitref: String, is_tag_ref: bool) -> Result<(String, String)> {
         debug!("updating {} to {}", self.dir.display(), gitref);
         // if SETTINGS.libgit2 {
         //     if let Ok(repo) = self.repo() {
@@ -113,13 +121,19 @@ impl Git {
             Err(err) => Err(eyre!("git failed: {cmd:?} {err:#}")),
         };
         debug!("updating {} to {} with git", self.dir.display(), gitref);
+
+        let refspec = if is_tag_ref {
+            format!("refs/tags/{}:refs/tags/{}", gitref, gitref)
+        } else {
+            format!("{}:{}", gitref, gitref)
+        };
         exec(git_cmd!(
             &self.dir,
             "fetch",
             "--prune",
             "--update-head-ok",
             "origin",
-            &format!("{}:{}", gitref, gitref),
+            &refspec
         ))?;
         let prev_rev = self.current_sha()?;
         exec(git_cmd!(

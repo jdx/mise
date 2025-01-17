@@ -19,6 +19,8 @@ use super::trust::Trust;
 /// Versions which are no longer the latest specified in any of those configs are deleted.
 /// Versions installed only with environment variables `MISE_<PLUGIN>_VERSION` will be deleted,
 /// as will versions only referenced on the command line `mise exec <PLUGIN>@<VERSION>`.
+///
+/// You can list prunable tools with `mise ls --prunable`
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Prune {
@@ -66,7 +68,7 @@ impl Prune {
     }
 }
 
-pub fn prune(tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
+pub fn prunable_tools(tools: Vec<&BackendArg>) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
     let config = Config::try_get()?;
     let ts = ToolsetBuilder::new().build(&config)?;
     let mut to_delete = ts
@@ -87,7 +89,12 @@ pub fn prune(tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
         }
     }
 
-    delete(dry_run, to_delete.into_values().collect())
+    Ok(to_delete.into_values().collect())
+}
+
+pub fn prune(tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
+    let to_delete = prunable_tools(tools)?;
+    delete(dry_run, to_delete)
 }
 
 fn delete(dry_run: bool, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Result<()> {

@@ -467,7 +467,7 @@ fn hashed_path_filename(path: &Path) -> String {
     let hash = hash_to_str(&canonicalized_path);
     let trunc_str = |s: &OsStr| {
         let mut s = s.to_str().unwrap().to_string();
-        s.truncate(20);
+        s = s.chars().take(20).collect();
         s
     };
     let trust_path = dirs::TRUSTED_CONFIGS.join(hash_to_str(&hash));

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+assert "mise install dummy@1.0.0"
+assert "mise rm dummy"
+assert_empty "mise ls"
+
 assert "mise use dummy@1.0.0"
 assert_contains "mise ls dummy" "1.0.0"
 assert "mise unuse dummy"

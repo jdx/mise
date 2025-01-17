@@ -23,7 +23,13 @@ pub struct TasksInfo {
 impl TasksInfo {
     pub fn run(self) -> Result<()> {
         let config = Config::get();
-        let task = config.tasks()?.get(&self.task);
+        let tasks = config.tasks()?;
+
+        let task = tasks.get(&self.task).or_else(|| {
+            tasks
+                .values()
+                .find(|task| task.display_name().as_str() == self.task.as_str())
+        });
 
         if let Some(task) = task {
             let ts = config.get_toolset()?;
@@ -44,7 +50,7 @@ impl TasksInfo {
     }
 
     fn display(&self, task: &Task, env: &EnvMap) -> Result<()> {
-        info::inline_section("Task", &task.name)?;
+        info::inline_section("Task", task.display_name())?;
         if !task.aliases.is_empty() {
             info::inline_section("Aliases", task.aliases.join(", "))?;
         }
@@ -95,18 +101,23 @@ impl TasksInfo {
     fn display_json(&self, task: &Task, env: &EnvMap) -> Result<()> {
         let (spec, _) = task.parse_usage_spec(None, env)?;
         let o = json!({
-            "name": task.name.to_string(),
-            "aliases": task.aliases.join(", "),
-            "description": task.description.to_string(),
+            "name": task.display_name(),
+            "aliases": task.aliases,
+            "description": task.description,
             "source": task.config_source,
-            "depends": task.depends.iter().join(", "),
-            "depends_post": task.depends_post.iter().join(", "),
+            "depends": task.depends,
+            "depends_post": task.depends_post,
+            "wait_for": task.wait_for,
             "env": task.env,
             "dir": task.dir,
             "hide": task.hide,
             "raw": task.raw,
             "sources": task.sources,
             "outputs": task.outputs,
+            "shell": task.shell,
+            "quiet": task.quiet,
+            "silent": task.silent,
+            "tools": task.tools,
             "run": task.run(),
             "file": task.file,
             "usage_spec": spec,

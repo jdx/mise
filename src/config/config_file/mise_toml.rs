@@ -29,6 +29,8 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::watch_files::WatchFile;
 use crate::{dirs, file};
 
+use super::config_root;
+
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
     #[serde(rename = "_")]
@@ -93,7 +95,7 @@ pub struct EnvList(pub(crate) Vec<EnvDirective>);
 impl MiseToml {
     pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
-        context.insert("config_root", path.parent().unwrap().to_str().unwrap());
+        context.insert("config_root", config_root(path).to_str().unwrap());
         Self {
             path: path.to_path_buf(),
             context,
