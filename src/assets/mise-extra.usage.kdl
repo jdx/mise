@@ -42,9 +42,9 @@ case $cur in
     done
     ;;
 esac
-"#
+"""#
 
-complete "installed_tool@version" run=r#"
+complete "installed_tool@version" run=#"""
 cur="{{words[CURRENT]}}"
 case $cur in
   *@*)
