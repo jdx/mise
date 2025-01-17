@@ -1,5 +1,33 @@
 # Changelog
 
+## [2025.1.9](https://github.com/jdx/mise/compare/v2025.1.8..v2025.1.9) - 2025-01-17
+
+### 🚀 Features
+
+- **(aqua)** pass --verbose flag down to cosign and added aqua.cosign_extra_args setting by [@jdx](https://github.com/jdx) in [#4148](https://github.com/jdx/mise/pull/4148)
+- **(doctor)** display redacted github token by [@jdx](https://github.com/jdx) in [#4149](https://github.com/jdx/mise/pull/4149)
+
+### 🐛 Bug Fixes
+
+- Fixes fish_command_not_found glob error by [@halostatue](https://github.com/halostatue) in [#4133](https://github.com/jdx/mise/pull/4133)
+- completions for `mise use` by [@jdx](https://github.com/jdx) in [#4147](https://github.com/jdx/mise/pull/4147)
+
+### 🛡️ Security
+
+- **(ruby)** remove ruby/gem tests by [@jdx](https://github.com/jdx) in [#4130](https://github.com/jdx/mise/pull/4130)
+
+### 📦️ Dependency Updates
+
+- update dependency bun to v1.1.44 by [@renovate[bot]](https://github.com/renovate[bot]) in [#4134](https://github.com/jdx/mise/pull/4134)
+
+### Chore
+
+- add install.sh.sig to releases by [@jdx](https://github.com/jdx) in [1b6ea86](https://github.com/jdx/mise/commit/1b6ea8644edcf3a6ff68fc6d511622c44f1f1f9a)
+
+### New Contributors
+
+- @halostatue made their first contribution in [#4133](https://github.com/jdx/mise/pull/4133)
+
 ## [2025.1.8](https://github.com/jdx/mise/compare/v2025.1.7..v2025.1.8) - 2025-01-17
 
 ### 🚀 Features
