@@ -414,9 +414,17 @@ fn mise_dirs() -> Vec<(String, &'static Path)> {
 }
 
 fn mise_env_vars() -> Vec<(String, String)> {
+    const REDACT_KEYS: &[&str] = &["MISE_GITHUB_TOKEN"];
     env::vars()
         .filter(|(k, _)| k.starts_with("MISE_"))
-        .filter(|(k, _)| k != "MISE_GITHUB_TOKEN")
+        .map(|(k, v)| {
+            let v = if REDACT_KEYS.contains(&k.as_str()) {
+                style::ndim("REDACTED").to_string()
+            } else {
+                v
+            };
+            (k, v)
+        })
         .collect()
 }
 

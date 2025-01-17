@@ -442,6 +442,9 @@ impl AquaBackend {
                 let mut cmd = CmdLineRunner::new(cosign_bin)
                     .arg("verify-blob")
                     .arg(checksum_path);
+                if log::log_enabled!(log::Level::Debug) {
+                    cmd = cmd.arg("--verbose");
+                }
                 if cosign.experimental == Some(true) {
                     cmd = cmd.env("COSIGN_EXPERIMENTAL", "1");
                 }
@@ -465,6 +468,9 @@ impl AquaBackend {
                 }
                 for opt in cosign.opts(pkg, v)? {
                     cmd = cmd.arg(opt);
+                }
+                for arg in SETTINGS.aqua.cosign_extra_args.clone().unwrap_or_default() {
+                    cmd = cmd.arg(arg);
                 }
                 cmd = cmd.with_pr(&ctx.pr);
                 cmd.execute()?;
