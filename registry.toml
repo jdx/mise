@@ -1560,6 +1560,9 @@ skaffold.backends = [
     "asdf:nklmilojevic/asdf-skaffold"
 ]
 skate.backends = ["aqua:charmbracelet/skate", "asdf:chessmango/asdf-skate"]
+slangroom-exec.backends = ["aqua:dyne/slangroom-exec"]
+slangroom-exec.os = ["linux", "macos"]
+slangroom-exec.test = ["slangroom-exec --version", "slangroom-exec "]
 sloth.backends = ["aqua:slok/sloth", "asdf:slok/asdf-sloth"]
 slsa-verifier.backends = ["ubi:slsa-framework/slsa-verifier"]
 slsa-verifier.test = ["slsa-verifier version", "{{version}}"]

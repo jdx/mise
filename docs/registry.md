@@ -673,6 +673,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | sinker | [aqua:plexsystems/sinker](https://github.com/plexsystems/sinker) [asdf:elementalvoid/asdf-sinker](https://github.com/elementalvoid/asdf-sinker) |
 | skaffold | [aqua:GoogleContainerTools/skaffold](https://github.com/GoogleContainerTools/skaffold) [asdf:nklmilojevic/asdf-skaffold](https://github.com/nklmilojevic/asdf-skaffold) |
 | skate | [aqua:charmbracelet/skate](https://github.com/charmbracelet/skate) [asdf:chessmango/asdf-skate](https://github.com/chessmango/asdf-skate) |
+| slangroom-exec | [aqua:dyne/slangroom-exec](https://github.com/dyne/slangroom-exec) |
 | sloth | [aqua:slok/sloth](https://github.com/slok/sloth) [asdf:slok/asdf-sloth](https://github.com/slok/asdf-sloth) |
 | slsa-verifier | [ubi:slsa-framework/slsa-verifier](https://github.com/slsa-framework/slsa-verifier) |
 | smithy | [asdf:mise-plugins/mise-smithy](https://github.com/mise-plugins/mise-smithy) |
