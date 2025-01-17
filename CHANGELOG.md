@@ -1,5 +1,33 @@
 # Changelog
 
+## [2025.1.8](https://github.com/jdx/mise/compare/v2025.1.7..v2025.1.8) - 2025-01-17
+
+### 🚀 Features
+
+- upgrade ubi by [@jdx](https://github.com/jdx) in [#4078](https://github.com/jdx/mise/pull/4078)
+- enable erlang for Windows by [@roele](https://github.com/roele) in [#4128](https://github.com/jdx/mise/pull/4128)
+- use aqua for opentofu by [@jdx](https://github.com/jdx) in [#4129](https://github.com/jdx/mise/pull/4129)
+
+### 🐛 Bug Fixes
+
+- **(spm)** install from annotated tag by [@MontakOleg](https://github.com/MontakOleg) in [#4120](https://github.com/jdx/mise/pull/4120)
+- Fixes infinite loop in auto install not found bash function by [@bnorick](https://github.com/bnorick) in [#4094](https://github.com/jdx/mise/pull/4094)
+- installing with empty version fails by [@roele](https://github.com/roele) in [#4123](https://github.com/jdx/mise/pull/4123)
+
+### 📚 Documentation
+
+- correct link to gem.rs source by [@petrblaho](https://github.com/petrblaho) in [#4119](https://github.com/jdx/mise/pull/4119)
+- fix {{config_root}} got interpolated by vitepress by [@peter50216](https://github.com/peter50216) in [#4122](https://github.com/jdx/mise/pull/4122)
+
+### Chore
+
+- remove minisign from mise.toml by [@jdx](https://github.com/jdx) in [b115ba9](https://github.com/jdx/mise/commit/b115ba962fce4e63e0d6ce85f41704f302ef3e9a)
+
+### New Contributors
+
+- @peter50216 made their first contribution in [#4122](https://github.com/jdx/mise/pull/4122)
+- @petrblaho made their first contribution in [#4119](https://github.com/jdx/mise/pull/4119)
+
 ## [2025.1.7](https://github.com/jdx/mise/compare/v2025.1.6..v2025.1.7) - 2025-01-15
 
 ### 🚀 Features
