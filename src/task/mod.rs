@@ -26,6 +26,7 @@ use std::{ffi, fmt, path};
 use xx::regex;
 
 mod deps;
+pub mod file_providers;
 mod task_dep;
 mod task_script_parser;
 pub mod task_sources;

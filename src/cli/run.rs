@@ -15,7 +15,7 @@ use crate::config::{Config, SETTINGS};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::file::display_path;
-use crate::http::HTTP;
+use crate::task::file_providers::TaskFileProviders;
 use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -873,19 +873,24 @@ impl Run {
     }
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let http_re = regex!("https?://");
+        let task_file_providers = TaskFileProviders::new(self.tmpdir.clone());
+
         for t in tasks {
-            if let Some(file) = t.file.clone() {
+            if let Some(file) = &t.file {
                 let source = file.to_string_lossy().to_string();
-                if http_re.is_match(&source) {
-                    let filename = file.file_name().unwrap().to_string_lossy().to_string();
-                    let tmp_path = self.tmpdir.join(&filename);
-                    HTTP.download_file(&source, &tmp_path, None)?;
-                    file::make_executable(&tmp_path)?;
-                    t.file = Some(tmp_path);
+
+                let provider = task_file_providers.get_provider(&source);
+
+                if provider.is_none() {
+                    bail!("No provider found for file: {}", source);
                 }
+
+                let local_path = provider.unwrap().get_local_path(&source).unwrap();
+
+                t.file = Some(local_path);
             }
         }
+
         Ok(())
     }
 }
