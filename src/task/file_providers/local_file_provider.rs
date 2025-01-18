@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::TaskFileProvider;
 
@@ -9,11 +9,7 @@ impl TaskFileProvider for LocalTaskFileProvider {
         file.starts_with("/") || file.starts_with("./") || file.starts_with("../")
     }
 
-    fn get_local_path(
-        &self,
-        _: &PathBuf,
-        file: &str,
-    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    fn get_local_path(&self, _: &Path, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
         Ok(PathBuf::from(file))
     }
 }

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{file, http::HTTP};
 
@@ -13,7 +13,7 @@ impl TaskFileProvider for HttpTaskFileProvider {
 
     fn get_local_path(
         &self,
-        tmpdir: &PathBuf,
+        tmpdir: &Path,
         file: &str,
     ) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let url = url::Url::parse(file)?;

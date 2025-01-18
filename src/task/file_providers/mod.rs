@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod http_file_provider;
 mod local_file_provider;
@@ -10,7 +10,7 @@ pub trait TaskFileProvider {
     fn is_match(&self, file: &str) -> bool;
     fn get_local_path(
         &self,
-        tmpdir: &PathBuf,
+        tmpdir: &Path,
         file: &str,
     ) -> Result<PathBuf, Box<dyn std::error::Error>>;
 }
