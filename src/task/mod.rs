@@ -28,6 +28,7 @@ use xx::regex;
 mod deps;
 mod task_dep;
 mod task_script_parser;
+pub mod file_providers;
 pub mod task_sources;
 
 use crate::config::config_file::ConfigFile;
