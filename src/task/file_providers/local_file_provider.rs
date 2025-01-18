@@ -9,11 +9,7 @@ impl TaskFileProvider for LocalTaskFileProvider {
     fn is_match(&self, file: &str) -> bool {
         let path = Path::new(file);
 
-        if path.is_relative() || path.is_absolute() {
-            return true;
-        }
-
-        false
+        path.is_relative() || path.is_absolute()
     }
 
     fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
