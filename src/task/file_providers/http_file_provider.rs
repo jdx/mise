@@ -63,7 +63,7 @@ mod tests {
             let tmpdir = tempfile::tempdir().unwrap();
             let mock = format!("{}{}", server.url(), path);
             let path = provider
-                .get_local_path(&tmpdir.path().to_path_buf(), &mock)
+                .get_local_path(tmpdir.path(), &mock)
                 .unwrap();
             assert!(path.exists());
             assert!(path.is_file());
