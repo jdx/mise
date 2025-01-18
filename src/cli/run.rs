@@ -873,15 +873,19 @@ impl Run {
     }
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
+        let task_file_providers = TaskFileProviders::new(self.tmpdir.clone());
+
         for t in tasks {
             if let Some(file) = &t.file {
                 let source = file.to_string_lossy().to_string();
 
-                let providers = TaskFileProviders::get_providers();
+                let provider = task_file_providers.get_provider(&source);
 
-                let provider = providers.iter().find(|p| p.is_match(&source)).unwrap();
+                if provider.is_none() {
+                    bail!("No provider found for file: {}", source);
+                }
 
-                let local_path = provider.get_local_path(&self.tmpdir, &source).unwrap();
+                let local_path = provider.unwrap().get_local_path(&source).unwrap();
 
                 t.file = Some(local_path);
             }
