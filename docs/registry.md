@@ -570,7 +570,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | patat | [ubi:jaspervdj/patat](https://github.com/jaspervdj/patat) [asdf:airtonix/asdf-patat](https://github.com/airtonix/asdf-patat) |
 | pdm | [pipx:pdm](https://pypi.org/project/pdm) [asdf:1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm) |
 | peco | [aqua:peco/peco](https://github.com/peco/peco) [asdf:asdf-community/asdf-peco](https://github.com/asdf-community/asdf-peco) |
-| periphery | [asdf:mise-plugins/mise-periphery](https://github.com/mise-plugins/mise-periphery) |
+| periphery | [aqua:peripheryapp/periphery](https://github.com/peripheryapp/periphery) [asdf:mise-plugins/mise-periphery](https://github.com/mise-plugins/mise-periphery) |
 | perl | [aqua:skaji/relocatable-perl](https://github.com/skaji/relocatable-perl) [asdf:ouest/asdf-perl](https://github.com/ouest/asdf-perl) |
 | php | [asdf:mise-plugins/mise-php](https://github.com/mise-plugins/mise-php) [vfox:mise-plugins/vfox-php](https://github.com/mise-plugins/vfox-php) |
 | pint | [aqua:cloudflare/pint](https://github.com/cloudflare/pint) [asdf:sam-burrell/asdf-pint](https://github.com/sam-burrell/asdf-pint) |
