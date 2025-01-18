@@ -879,10 +879,7 @@ impl Run {
 
                 let providers = TaskFileProviders::get_providers();
 
-                let provider = providers
-                    .iter()
-                    .find(|p| p.is_match(&source))
-                    .unwrap();
+                let provider = providers.iter().find(|p| p.is_match(&source)).unwrap();
 
                 let local_path = provider.get_local_path(&self.tmpdir, &source).unwrap();
 

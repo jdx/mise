@@ -26,9 +26,9 @@ use std::{ffi, fmt, path};
 use xx::regex;
 
 mod deps;
+pub mod file_providers;
 mod task_dep;
 mod task_script_parser;
-pub mod file_providers;
 pub mod task_sources;
 
 use crate::config::config_file::ConfigFile;
