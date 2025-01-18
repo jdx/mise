@@ -1377,7 +1377,9 @@ const completionSpec: Fig.Spec = {
         description: "Only show tool versions from [TOOL]",
         isOptional: true,
         isVariadic: true,
-        generators: completionGeneratorTemplate(`mise plugins --core --user`),
+        generators: completionGeneratorTemplate(
+          `mise ls -i | awk '{print $1}' | uniq`
+        ),
         debounce: true,
       },
     },
@@ -1630,7 +1632,9 @@ const completionSpec: Fig.Spec = {
         description: "Prune only these tools",
         isOptional: true,
         isVariadic: true,
-        generators: completionGeneratorTemplate(`mise plugins --core --user`),
+        generators: completionGeneratorTemplate(
+          `mise ls -i | awk '{print $1}' | uniq`
+        ),
         debounce: true,
       },
     },
