@@ -606,9 +606,9 @@ impl Run {
         &self,
         task: &Task,
         env: &mut EnvMap,
-        get_args: impl Fn() -> Vec<String>
+        get_args: impl Fn() -> Vec<String>,
     ) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(self.cd.clone(), &env)?;
+        let (spec, _) = task.parse_usage_spec(self.cd.clone(), env)?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args: Vec<String> = get_args();
             let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
