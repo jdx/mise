@@ -1,17 +1,20 @@
 use std::path::PathBuf;
 
+use md5::Digest;
+use sha2::Sha256;
+
 use crate::{file, http::HTTP};
 
 use super::TaskFileProvider;
 
 #[derive(Debug)]
 pub struct HttpTaskFileProvider {
-    tmpdir: PathBuf,
+    cache_path: PathBuf,
 }
 
 impl HttpTaskFileProvider {
-    pub fn new(tmpdir: PathBuf) -> Self {
-        Self { tmpdir }
+    pub fn new(cache_path: PathBuf) -> Self {
+        Self { cache_path }
     }
 }
 
@@ -21,15 +24,25 @@ impl TaskFileProvider for HttpTaskFileProvider {
     }
 
     fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let url = url::Url::parse(file)?;
-        let filename = url
-            .path_segments()
-            .and_then(|segments| segments.last())
-            .unwrap();
-        let tmp_path = self.tmpdir.join(filename);
-        HTTP.download_file(file, &tmp_path, None)?;
-        file::make_executable(&tmp_path)?;
-        Ok(tmp_path)
+        // Cache key is the full URL in sha256
+        let mut hasher = Sha256::new();
+        hasher.update(file);
+        let cache_key = format!("{:x}", hasher.finalize());
+        let cached_file_path = self.cache_path.join(&cache_key);
+
+        if cached_file_path.exists() {
+            debug!("Using cached file: {:?}", cached_file_path);
+            if let Ok(path) = cached_file_path.canonicalize() {
+                return Ok(path);
+            }
+        }
+
+        debug!("Downloading file: {}", file);
+
+        HTTP.download_file(file, &cached_file_path, None)?;
+        file::make_executable(&cached_file_path)?;
+
+        Ok(cached_file_path)
     }
 }
 

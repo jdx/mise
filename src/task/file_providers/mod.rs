@@ -1,3 +1,4 @@
+use std::sync::LazyLock as Lazy;
 use std::{fmt::Debug, path::PathBuf};
 
 mod http_file_provider;
@@ -6,25 +7,23 @@ mod local_file_provider;
 pub use http_file_provider::HttpTaskFileProvider;
 pub use local_file_provider::LocalTaskFileProvider;
 
+use crate::dirs;
+
+static CACHE_FILE_PROVIDERS: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("tasks-file-provider"));
+
 pub trait TaskFileProvider: Debug {
     fn is_match(&self, file: &str) -> bool;
     fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>>;
 }
 
-pub struct TaskFileProviders {
-    tmpdir: PathBuf,
-}
+pub struct TaskFileProviders;
 
 impl TaskFileProviders {
     fn get_providers(&self) -> Vec<Box<dyn TaskFileProvider>> {
         vec![
-            Box::new(HttpTaskFileProvider::new(self.tmpdir.clone())),
+            Box::new(HttpTaskFileProvider::new(CACHE_FILE_PROVIDERS.clone())),
             Box::new(LocalTaskFileProvider), // Must be the last provider
         ]
-    }
-
-    pub fn new(tmpdir: PathBuf) -> Self {
-        Self { tmpdir }
     }
 
     pub fn get_provider(&self, file: &str) -> Option<Box<dyn TaskFileProvider>> {
@@ -34,20 +33,19 @@ impl TaskFileProviders {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
 
     use super::*;
 
     #[test]
     fn test_get_providers() {
-        let task_file_providers = TaskFileProviders::new(env::temp_dir());
+        let task_file_providers = TaskFileProviders;
         let providers = task_file_providers.get_providers();
         assert_eq!(providers.len(), 2);
     }
 
     #[test]
     fn test_local_file_match_local_provider() {
-        let task_file_providers = TaskFileProviders::new(env::temp_dir());
+        let task_file_providers = TaskFileProviders;
         let cases = vec!["file.txt", "./file.txt", "../file.txt", "/file.txt"];
 
         for file in cases {
@@ -59,7 +57,7 @@ mod tests {
 
     #[test]
     fn test_http_file_match_http_provider() {
-        let task_file_providers = TaskFileProviders::new(env::temp_dir());
+        let task_file_providers = TaskFileProviders;
         let cases = vec![
             "http://example.com/file.txt",
             "https://example.com/file.txt",

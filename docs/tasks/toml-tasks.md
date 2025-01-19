@@ -341,8 +341,11 @@ Task files can be fetched via http:
 file = "https://example.com/build.sh"
 ```
 
-Currently, they're fetched everytime they're executed, but we may add some cache support later.
-This could be extended with other protocols like mentioned in [this ticket](https://github.com/jdx/mise/issues/2488) if there were interest.
+Each task file is cached in the `MISE_CACHE_DIR` directory. If the file is updated, it will not be re-downloaded unless the cache is cleared.
+
+:::tip
+You can reset the cache by running `mise cache clear`.
+:::
 
 ## Arguments
 

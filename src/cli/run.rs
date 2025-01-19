@@ -873,7 +873,7 @@ impl Run {
     }
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let task_file_providers = TaskFileProviders::new(self.tmpdir.clone());
+        let task_file_providers = TaskFileProviders;
 
         for t in tasks {
             if let Some(file) = &t.file {
