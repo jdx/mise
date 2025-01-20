@@ -102,6 +102,8 @@ let $PATH = $HOME . '/.local/share/mise/shims:' . $PATH
 vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
 ```
 
+For a better Treesitter and LSP integration, check out the [neovim cookbook](./mise-cookbook/neovim.md).
+
 ## emacs
 
 ### Traditional shims way

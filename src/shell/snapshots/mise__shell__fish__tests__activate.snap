@@ -66,7 +66,7 @@ if functions -q fish_command_not_found; and not functions -q __mise_fish_command
 end
 
 function fish_command_not_found
-    if string match -qrv '^(?:mise$|mise-)' $argv[1] &&
+    if string match -qrv -- '^(?:mise$|mise-)' $argv[1] &&
         /some/dir/mise hook-not-found -s fish -- $argv[1]
         /some/dir/mise hook-env --status -s fish | source
     else if functions -q __mise_fish_command_not_found
