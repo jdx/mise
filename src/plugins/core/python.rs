@@ -27,6 +27,14 @@ pub struct PythonPlugin {
     ba: BackendArg,
 }
 
+pub fn python_path(tv: &ToolVersion) -> PathBuf {
+    if cfg!(windows) {
+        tv.install_path().join("python.exe")
+    } else {
+        tv.install_path().join("bin/python")
+    }
+}
+
 impl PythonPlugin {
     pub fn new() -> Self {
         let ba = plugins::core::new_backend_arg("python");
@@ -70,14 +78,6 @@ impl PythonPlugin {
         let git = Git::new(self.python_build_path());
         plugins::core::run_fetch_task_with_timeout(move || git.update(None))?;
         Ok(())
-    }
-
-    fn python_path(&self, tv: &ToolVersion) -> PathBuf {
-        if cfg!(windows) {
-            tv.install_path().join("python.exe")
-        } else {
-            tv.install_path().join("bin/python")
-        }
     }
 
     fn fetch_precompiled_remote_versions(&self) -> eyre::Result<&Vec<(String, String, String)>> {
@@ -322,7 +322,7 @@ impl PythonPlugin {
             if !virtualenv.exists() {
                 if SETTINGS.python.venv_auto_create {
                     info!("setting up virtualenv at: {}", virtualenv.display());
-                    let mut cmd = CmdLineRunner::new(self.python_path(tv))
+                    let mut cmd = CmdLineRunner::new(python_path(tv))
                         .arg("-m")
                         .arg("venv")
                         .arg(&virtualenv)
@@ -351,7 +351,7 @@ impl PythonPlugin {
 
     // fn check_venv_python(&self, virtualenv: &Path, tv: &ToolVersion) -> eyre::Result<()> {
     //     let symlink = virtualenv.join("bin/python");
-    //     let target = self.python_path(tv);
+    //     let target = python_path(tv);
     //     let symlink_target = symlink.read_link().unwrap_or_default();
     //     ensure!(
     //         symlink_target == target,
@@ -370,7 +370,7 @@ impl PythonPlugin {
         pr: &Box<dyn SingleReport>,
     ) -> eyre::Result<()> {
         pr.set_message("python --version".into());
-        CmdLineRunner::new(self.python_path(tv))
+        CmdLineRunner::new(python_path(tv))
             .with_pr(pr)
             .arg("--version")
             .envs(config.env()?)
