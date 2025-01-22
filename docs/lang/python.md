@@ -54,6 +54,7 @@ You can specify a non-default location of this file by setting a `MISE_PYTHON_DE
 variable.
 
 ## `.python-version` file support
+
 mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions. However it can also read python-specific version files named `.python-version`.
 
 ## Precompiled python binaries
