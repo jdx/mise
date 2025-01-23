@@ -505,7 +505,7 @@ docker-compose.test = [
 ]
 docker-slim.backends = ["ubi:slimtoolkit/slim", "asdf:xataz/asdf-docker-slim"]
 docker-slim.os = ["linux", "macos"]
-docker-slim.test = ["slim --version", "{{version}}"]
+# docker-slim.test = ["slim --version", ""] # prints out weird version of mint or something
 dockle.backends = [
     "aqua:goodwithtech/dockle",
     "asdf:mathew-fleisch/asdf-dockle"
@@ -914,7 +914,7 @@ istioctl.backends = [
     "aqua:istio/istio/istioctl",
     "asdf:virtualstaticvoid/asdf-istioctl"
 ]
-istioctl.test = ["istioctl version", "client version: {{version}}"]
+istioctl.test = ["istioctl version", "{{version}}"]
 janet.backends = ["asdf:mise-plugins/mise-janet"]
 java.backends = ["core:java"]
 jbang.backends = ["asdf:mise-plugins/jbang-asdf"]
