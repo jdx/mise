@@ -227,6 +227,22 @@ impl ToolRequestSetBuilder {
             }
             merge(trs, arg_ts);
         }
+
+        let tool_args = env::TOOL_ARGS.read().unwrap();
+        let mut arg_trs = ToolRequestSet::new();
+        for arg in tool_args.iter() {
+            if let Some(tvr) = &arg.tvr {
+                arg_trs.add_version(tvr.clone(), &ToolSource::Argument);
+            } else {
+                if !trs.tools.contains_key(&arg.ba) {
+                    // no active version, so use "latest"
+                    let tr = ToolRequest::new(arg.ba.clone(), "latest", ToolSource::Argument)?;
+                    arg_trs.add_version(tr, &ToolSource::Argument);
+                }
+            }
+        }
+        merge(trs, arg_trs);
+
         Ok(())
     }
 }
