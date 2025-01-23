@@ -591,11 +591,11 @@ default = []
 description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var."
 parse_env = "list_by_colon"
 
-[override_tool_versions_filename]
-env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAME"
+[override_tool_versions_filenames]
+env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES"
 type = "ListString"
 default = []
-description = "If set, mise will ignore .tool-versions files and use these filename instead. Can be set to `none` to disable .tool-versions. This must be an env var."
+description = "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions. This must be an env var."
 parse_env = "list_by_colon"
 
 [paranoid]
