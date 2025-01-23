@@ -482,6 +482,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | lua | [asdf:mise-plugins/mise-lua](https://github.com/mise-plugins/mise-lua) |
 | lua-language-server | [aqua:LuaLS/lua-language-server](https://github.com/LuaLS/lua-language-server) [asdf:bellini666/asdf-lua-language-server](https://github.com/bellini666/asdf-lua-language-server) |
 | luajit | [asdf:mise-plugins/mise-luaJIT](https://github.com/mise-plugins/mise-luaJIT) |
+| lychee | [aqua:lycheeverse/lychee](https://github.com/lycheeverse/lychee) |
 | maestro | [ubi:mobile-dev-inc/maestro](https://github.com/mobile-dev-inc/maestro) [asdf:dotanuki-labs/asdf-maestro](https://github.com/dotanuki-labs/asdf-maestro) |
 | mage | [aqua:magefile/mage](https://github.com/magefile/mage) [asdf:mathew-fleisch/asdf-mage](https://github.com/mathew-fleisch/asdf-mage) |
 | make | [asdf:mise-plugins/mise-make](https://github.com/mise-plugins/mise-make) |
