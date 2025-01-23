@@ -50,7 +50,7 @@ impl Install {
         let config = Config::try_get()?;
         match &self.tool {
             Some(runtime) => {
-                crate::env::TOOL_ARGS.write().unwrap().clone_from(&runtime);
+                crate::env::TOOL_ARGS.write().unwrap().clone_from(runtime);
                 self.install_runtimes(&config, runtime)?
             }
             None => self.install_missing_runtimes(&config)?,
