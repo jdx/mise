@@ -6,7 +6,7 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 "actionlint" = "latest"
-aws-cli = "2.22.35" # pinning due to https://www.cloudflarestatus.com/incidents/t5nrjmpxc1cj
+aws-cli = "2.22.35"                                                 # pinning due to https://www.cloudflarestatus.com/incidents/t5nrjmpxc1cj
 bun = "1.1.44"
 cargo-binstall = "1.10.17"
 "cargo:cargo-edit" = "latest"
