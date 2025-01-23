@@ -272,7 +272,7 @@ jobs:
           merge-multiple: true
       - run: echo "${{ secrets.MINISIGN_KEY }}" >minisign.key
       - run: ls -R artifacts
-      - run: scripts/release.sh
+      - run: mise x -- scripts/release.sh
         env:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
