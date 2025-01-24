@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env -S mise x aws-cli@2.22.35 -- bash
 set -euxo pipefail
 
 #cache_hour="max-age=3600,s-maxage=3600,public,immutable"
