@@ -318,6 +318,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | grain | [asdf:mise-plugins/mise-grain](https://github.com/mise-plugins/mise-grain) |
 | granted | [aqua:common-fate/granted](https://github.com/common-fate/granted) [asdf:dex4er/asdf-granted](https://github.com/dex4er/asdf-granted) |
 | grex | [aqua:pemistahl/grex](https://github.com/pemistahl/grex) [asdf:ouest/asdf-grex](https://github.com/ouest/asdf-grex) |
+| gron | [aqua:tomnomnom/gron](https://github.com/tomnomnom/gron) [ubi:tomnomnom/gron](https://github.com/tomnomnom/gron) |
 | groovy | [asdf:mise-plugins/mise-groovy](https://github.com/mise-plugins/mise-groovy) [vfox:mise-plugins/vfox-groovy](https://github.com/mise-plugins/vfox-groovy) |
 | grpc-health-probe | [aqua:grpc-ecosystem/grpc-health-probe](https://github.com/grpc-ecosystem/grpc-health-probe) [asdf:zufardhiyaulhaq/asdf-grpc-health-probe](https://github.com/zufardhiyaulhaq/asdf-grpc-health-probe) |
 | grpcurl | [aqua:fullstorydev/grpcurl](https://github.com/fullstorydev/grpcurl) [asdf:asdf-community/asdf-grpcurl](https://github.com/asdf-community/asdf-grpcurl) |
