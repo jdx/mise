@@ -1,4 +1,3 @@
-use crate::backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
@@ -8,6 +7,7 @@ use crate::env_diff::EnvMap;
 use crate::file::{display_path, which_non_pristine};
 use crate::toolset::ToolsetBuilder;
 use crate::Result;
+use crate::{backend, plugins};
 use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 
@@ -48,9 +48,7 @@ impl EnvResults {
                 }
             });
             let python_path = tv.map(|tv| {
-                tv.install_path()
-                    .join("bin")
-                    .join("python")
+                plugins::core::python::python_path(tv)
                     .to_string_lossy()
                     .to_string()
             });

@@ -579,9 +579,9 @@
             "type": "string"
           }
         },
-        "override_tool_versions_filename": {
+        "override_tool_versions_filenames": {
           "default": [],
-          "description": "If set, mise will ignore .tool-versions files and use these filename instead. Can be set to `none` to disable .tool-versions. This must be an env var.",
+          "description": "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions. This must be an env var.",
           "type": "array",
           "items": {
             "type": "string"

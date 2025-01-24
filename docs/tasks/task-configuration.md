@@ -26,7 +26,7 @@ run = ["echo hello"]
 
 ### `run_windows`
 
-An alterative script to run when `mise run` is executed on windows:
+An alternative script to run when `mise run` is executed on windows:
 
 ```toml
 [tasks.build]

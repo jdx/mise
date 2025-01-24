@@ -318,6 +318,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | grain | [asdf:mise-plugins/mise-grain](https://github.com/mise-plugins/mise-grain) |
 | granted | [aqua:common-fate/granted](https://github.com/common-fate/granted) [asdf:dex4er/asdf-granted](https://github.com/dex4er/asdf-granted) |
 | grex | [aqua:pemistahl/grex](https://github.com/pemistahl/grex) [asdf:ouest/asdf-grex](https://github.com/ouest/asdf-grex) |
+| gron | [aqua:tomnomnom/gron](https://github.com/tomnomnom/gron) [ubi:tomnomnom/gron](https://github.com/tomnomnom/gron) |
 | groovy | [asdf:mise-plugins/mise-groovy](https://github.com/mise-plugins/mise-groovy) [vfox:mise-plugins/vfox-groovy](https://github.com/mise-plugins/vfox-groovy) |
 | grpc-health-probe | [aqua:grpc-ecosystem/grpc-health-probe](https://github.com/grpc-ecosystem/grpc-health-probe) [asdf:zufardhiyaulhaq/asdf-grpc-health-probe](https://github.com/zufardhiyaulhaq/asdf-grpc-health-probe) |
 | grpcurl | [aqua:fullstorydev/grpcurl](https://github.com/fullstorydev/grpcurl) [asdf:asdf-community/asdf-grpcurl](https://github.com/asdf-community/asdf-grpcurl) |
@@ -570,7 +571,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | patat | [ubi:jaspervdj/patat](https://github.com/jaspervdj/patat) [asdf:airtonix/asdf-patat](https://github.com/airtonix/asdf-patat) |
 | pdm | [pipx:pdm](https://pypi.org/project/pdm) [asdf:1oglop1/asdf-pdm](https://github.com/1oglop1/asdf-pdm) |
 | peco | [aqua:peco/peco](https://github.com/peco/peco) [asdf:asdf-community/asdf-peco](https://github.com/asdf-community/asdf-peco) |
-| periphery | [asdf:mise-plugins/mise-periphery](https://github.com/mise-plugins/mise-periphery) |
+| periphery | [aqua:peripheryapp/periphery](https://github.com/peripheryapp/periphery) [asdf:mise-plugins/mise-periphery](https://github.com/mise-plugins/mise-periphery) |
 | perl | [aqua:skaji/relocatable-perl](https://github.com/skaji/relocatable-perl) [asdf:ouest/asdf-perl](https://github.com/ouest/asdf-perl) |
 | php | [asdf:mise-plugins/mise-php](https://github.com/mise-plugins/mise-php) [vfox:mise-plugins/vfox-php](https://github.com/mise-plugins/vfox-php) |
 | pint | [aqua:cloudflare/pint](https://github.com/cloudflare/pint) [asdf:sam-burrell/asdf-pint](https://github.com/sam-burrell/asdf-pint) |

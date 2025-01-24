@@ -1,5 +1,80 @@
 # Changelog
 
+## [2025.1.14](https://github.com/jdx/mise/compare/v2025.1.13..v2025.1.14) - 2025-01-24
+
+### 🚀 Features
+
+- **(registry)** add gron by [@MontakOleg](https://github.com/MontakOleg) in [#4204](https://github.com/jdx/mise/pull/4204)
+
+### 🐛 Bug Fixes
+
+- spurious semver warning on `mise outdated` by [@jdx](https://github.com/jdx) in [#4199](https://github.com/jdx/mise/pull/4199)
+
+### Chore
+
+- lint issue in Dockerfile by [@jdx](https://github.com/jdx) in [47ad5d6](https://github.com/jdx/mise/commit/47ad5d67890188478cf8c8f2e6796b6752546e6c)
+- fix some typos in markdown file by [@chuangjinglu](https://github.com/chuangjinglu) in [#4198](https://github.com/jdx/mise/pull/4198)
+- pin aws-cli by [@jdx](https://github.com/jdx) in [f7311fd](https://github.com/jdx/mise/commit/f7311fd8fc85b6920c5a484862865adc9ef7261d)
+- use arm64 runners for docker by [@jdx](https://github.com/jdx) in [#4200](https://github.com/jdx/mise/pull/4200)
+
+### New Contributors
+
+- @chuangjinglu made their first contribution in [#4198](https://github.com/jdx/mise/pull/4198)
+
+## [2025.1.13](https://github.com/jdx/mise/compare/v2025.1.12..v2025.1.13) - 2025-01-24
+
+### Chore
+
+- fixing aws-cli in release.sh by [@jdx](https://github.com/jdx) in [5b4a65a](https://github.com/jdx/mise/commit/5b4a65a84e07141de9ed69798921b4b0ef69aa02)
+- fixing aws-cli in release.sh by [@jdx](https://github.com/jdx) in [4c67db5](https://github.com/jdx/mise/commit/4c67db59ecfb55eb724dc05bca7eb7281a625929)
+
+## [2025.1.12](https://github.com/jdx/mise/compare/v2025.1.11..v2025.1.12) - 2025-01-24
+
+### Chore
+
+- setup mise for release task by [@jdx](https://github.com/jdx) in [78d3dfb](https://github.com/jdx/mise/commit/78d3dfb164776cfb39a1920485c21fcd6ecd3ebe)
+
+## [2025.1.11](https://github.com/jdx/mise/compare/v2025.1.10..v2025.1.11) - 2025-01-23
+
+### Chore
+
+- pin aws-cli by [@jdx](https://github.com/jdx) in [ca16daf](https://github.com/jdx/mise/commit/ca16daf5e5dbb9159d853570528087b24f63500b)
+
+## [2025.1.10](https://github.com/jdx/mise/compare/v2025.1.9..v2025.1.10) - 2025-01-23
+
+### 🚀 Features
+
+- **(registry)** use aqua for periphery by [@MontakOleg](https://github.com/MontakOleg) in [#4157](https://github.com/jdx/mise/pull/4157)
+- split remote task by [@acesyde](https://github.com/acesyde) in [#4156](https://github.com/jdx/mise/pull/4156)
+
+### 🐛 Bug Fixes
+
+- **(docs)** environment variable MISE_OVERRIDE_TOOL_VERSIONS_FILENAME should be plural by [@roele](https://github.com/roele) in [#4183](https://github.com/jdx/mise/pull/4183)
+- completions were missing non-asdf tools by [@jdx](https://github.com/jdx) in [55b31a4](https://github.com/jdx/mise/commit/55b31a452b807ada4e2ba40c8b5588b77b79642e)
+- broken link for `/tasks/task-configuration` by [@134130](https://github.com/134130) in [#4155](https://github.com/jdx/mise/pull/4155)
+- whitespace in mise.run script by [@jdx](https://github.com/jdx) in [#4153](https://github.com/jdx/mise/pull/4153)
+- confusing error in fish_command_not_found by [@MrGreenTea](https://github.com/MrGreenTea) in [#4162](https://github.com/jdx/mise/pull/4162)
+- use correct python path for venv creation in windows by [@tisoft](https://github.com/tisoft) in [#4164](https://github.com/jdx/mise/pull/4164)
+
+### 📚 Documentation
+
+- neovim cookbook by [@EricDriussi](https://github.com/EricDriussi) in [#4161](https://github.com/jdx/mise/pull/4161)
+
+### 🧪 Testing
+
+- fix a couple of tool tests by [@jdx](https://github.com/jdx) in [#4186](https://github.com/jdx/mise/pull/4186)
+
+### Chore
+
+- added issue auto-closer by [@jdx](https://github.com/jdx) in [3c831c1](https://github.com/jdx/mise/commit/3c831c19a644fbb2f393f969ebaa5137f9415793)
+
+### New Contributors
+
+- @tisoft made their first contribution in [#4164](https://github.com/jdx/mise/pull/4164)
+- @MrGreenTea made their first contribution in [#4162](https://github.com/jdx/mise/pull/4162)
+- @EricDriussi made their first contribution in [#4161](https://github.com/jdx/mise/pull/4161)
+- @134130 made their first contribution in [#4155](https://github.com/jdx/mise/pull/4155)
+
 ## [2025.1.9](https://github.com/jdx/mise/compare/v2025.1.8..v2025.1.9) - 2025-01-17
 
 ### 🚀 Features

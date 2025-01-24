@@ -2,7 +2,7 @@ min_usage_version "1.3"
 name mise
 bin mise
 about "The front-end to your dev env"
-long_about "\nmise is a tool for managing runtime versions. https://github.com/jdx/mise\n\nIt's a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.\nthat works for any language. It's also great for managing linters/tools like\njq and shellcheck.\n\nIt is inspired by asdf and uses asdf's plugin ecosystem under the hood:\nhttps://asdf-vm.com/"
+long_about "mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise"
 usage "Usage: mise [OPTIONS] [TASK] [COMMAND]"
 flag "-C --cd" help="Change directory before running command" global=#true {
     arg <DIR>
@@ -1168,7 +1168,7 @@ https://github.com/jdx/mise/blob/main/src/cli/{{path}}
 complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
 complete "config_file" type="file"
 complete "new_plugin" run="mise plugins --all"
-complete "installed_tool" run="mise plugins --core --user"
+complete "installed_tool" run="mise ls -i | awk '{print $1}' | uniq"
 complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
 complete "setting" run="mise settings --complete" descriptions=#true
@@ -1193,7 +1193,7 @@ case $cur in
     done
     ;;
   *)
-    plugins=$(mise plugins --all)
+    plugins=$(mise registry | awk '{print $1}')
     for plugin in $plugins; do
       echo "$plugin@"
     done

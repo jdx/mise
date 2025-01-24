@@ -272,7 +272,13 @@ jobs:
           merge-multiple: true
       - run: echo "${{ secrets.MINISIGN_KEY }}" >minisign.key
       - run: ls -R artifacts
-      - run: scripts/release.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
+      - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - run: mise x -- scripts/release.sh
         env:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
