@@ -1,5 +1,12 @@
 # Changelog
 
+## [2025.1.13](https://github.com/jdx/mise/compare/v2025.1.12..v2025.1.13) - 2025-01-24
+
+### Chore
+
+- fixing aws-cli in release.sh by [@jdx](https://github.com/jdx) in [5b4a65a](https://github.com/jdx/mise/commit/5b4a65a84e07141de9ed69798921b4b0ef69aa02)
+- fixing aws-cli in release.sh by [@jdx](https://github.com/jdx) in [4c67db5](https://github.com/jdx/mise/commit/4c67db59ecfb55eb724dc05bca7eb7281a625929)
+
 ## [2025.1.12](https://github.com/jdx/mise/compare/v2025.1.11..v2025.1.12) - 2025-01-24
 
 ### Chore
