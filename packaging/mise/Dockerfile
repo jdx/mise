@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
-FROM rust as builder
+FROM rust AS builder
 LABEL maintainer="jdx"
 
 WORKDIR /usr/src/mise
 COPY . /usr/src/mise/
 RUN cargo build --release
 
-FROM rust as runtime
+FROM rust AS runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV MISE_DATA_DIR="/mise"
