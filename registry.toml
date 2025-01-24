@@ -803,6 +803,8 @@ grain.backends = ["asdf:mise-plugins/mise-grain"]
 granted.backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
 grex.backends = ["aqua:pemistahl/grex", "asdf:ouest/asdf-grex"]
 grex.test = ["grex --version", "grex {{version}}"]
+gron.backends = ["aqua:tomnomnom/gron", "ubi:tomnomnom/gron"]
+gron.test = ["gron --version", "gron version dev"]
 groovy.backends = [
     "asdf:mise-plugins/mise-groovy",
     "vfox:mise-plugins/vfox-groovy"
