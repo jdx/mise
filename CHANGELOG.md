@@ -1,5 +1,26 @@
 # Changelog
 
+## [2025.1.14](https://github.com/jdx/mise/compare/v2025.1.13..v2025.1.14) - 2025-01-24
+
+### 🚀 Features
+
+- **(registry)** add gron by [@MontakOleg](https://github.com/MontakOleg) in [#4204](https://github.com/jdx/mise/pull/4204)
+
+### 🐛 Bug Fixes
+
+- spurious semver warning on `mise outdated` by [@jdx](https://github.com/jdx) in [#4199](https://github.com/jdx/mise/pull/4199)
+
+### Chore
+
+- lint issue in Dockerfile by [@jdx](https://github.com/jdx) in [47ad5d6](https://github.com/jdx/mise/commit/47ad5d67890188478cf8c8f2e6796b6752546e6c)
+- fix some typos in markdown file by [@chuangjinglu](https://github.com/chuangjinglu) in [#4198](https://github.com/jdx/mise/pull/4198)
+- pin aws-cli by [@jdx](https://github.com/jdx) in [f7311fd](https://github.com/jdx/mise/commit/f7311fd8fc85b6920c5a484862865adc9ef7261d)
+- use arm64 runners for docker by [@jdx](https://github.com/jdx) in [#4200](https://github.com/jdx/mise/pull/4200)
+
+### New Contributors
+
+- @chuangjinglu made their first contribution in [#4198](https://github.com/jdx/mise/pull/4198)
+
 ## [2025.1.13](https://github.com/jdx/mise/compare/v2025.1.12..v2025.1.13) - 2025-01-24
 
 ### Chore
