@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM rust AS builder
 LABEL maintainer="jdx"
+LABEL org.opencontainers.image.source=https://github.com/jdx/mise
+LABEL org.opencontainers.image.description="mise is a tool for managing your development environment"
+LABEL org.opencontainers.image.licenses=MIT
 
 WORKDIR /usr/src/mise
 COPY . /usr/src/mise/
