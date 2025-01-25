@@ -7,16 +7,22 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
 use eyre::{bail, eyre, Result};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 /// Test a tool installs and executes
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TestTool {
-    #[clap(required_unless_present = "all")]
+    /// Tool name to test
+    #[clap(required_unless_present_any = ["all", "all_config"])]
     pub tool: Option<ToolArg>,
-    #[clap(long, short, conflicts_with = "tool")]
+    /// Test every tool specified in registry.toml
+    #[clap(long, short, conflicts_with = "tool", conflicts_with = "all_config")]
     pub all: bool,
+    /// Test all tools specified in config files
+    #[clap(long, conflicts_with = "tool", conflicts_with = "all")]
+    pub all_config: bool,
     /// Also test tools not defined in registry.toml, guessing how to test it
     #[clap(long)]
     pub include_non_defined: bool,
@@ -43,6 +49,9 @@ impl TestTool {
             "---".to_string(),
             "---".to_string(),
         ])?;
+        let config = Config::get();
+        let ts = ToolsetBuilder::new().build(&config)?;
+        let tools: BTreeSet<String> = ts.versions.keys().map(|t| t.short.clone()).collect();
         let mut found = self.all;
         for (i, (short, rt)) in REGISTRY.iter().enumerate() {
             if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
@@ -56,6 +65,9 @@ impl TestTool {
                 }
                 found = true;
                 tool = t.clone();
+            }
+            if self.all_config && !tools.contains(rt.short) {
+                continue;
             }
             if self.all && rt.short != *short {
                 // means this is an alias
@@ -89,7 +101,7 @@ impl TestTool {
                 }
             };
         }
-        if !found {
+        if !found && self.tool.is_some() {
             bail!("{} not found", self.tool.unwrap().short);
         }
         if !errored.is_empty() {
