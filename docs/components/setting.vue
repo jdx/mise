@@ -26,6 +26,7 @@ defineProps(["setting", "level"]);
     </li>
     <li v-if="setting.env">
       Env: <code>{{ setting.env }}</code>
+      <span v-if="setting.parseEnv">({{setting.parseEnv}} separated)</span>
     </li>
     <li>
       Default: <code>{{ setting.default }}</code>
