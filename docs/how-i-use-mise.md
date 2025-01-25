@@ -11,7 +11,7 @@ it might be useful to actually write down the way I use it in case
 anyone is interested.
 
 This is an advanced article. I'm not going to take the time to explain
-the tools and techniques here. If you're curious, file an issue or ask
+the tools and techniques here. If you're curious, open a discussion or ask
 me in the Discord.
 
 ## My setup
