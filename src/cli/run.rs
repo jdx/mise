@@ -15,7 +15,7 @@ use crate::config::{Config, SETTINGS};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::file::display_path;
-use crate::task::task_file_providers::TaskFileProviders;
+use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -878,7 +878,9 @@ impl Run {
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
         let no_cache = self.no_cache || SETTINGS.task_remote_no_cache.unwrap_or(false);
-        let task_file_providers = TaskFileProviders::new(no_cache);
+        let task_file_providers = TaskFileProvidersBuilder::new()
+            .with_cache(!no_cache)
+            .build();
 
         for t in tasks {
             if let Some(file) = &t.file {
