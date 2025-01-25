@@ -74,7 +74,7 @@ sudo apt install -y mise
 
 ```sh
 sudo dnf install -y dnf-plugins-core
-sudo dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+sudo dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
 sudo dnf install -y mise
 ```
 
