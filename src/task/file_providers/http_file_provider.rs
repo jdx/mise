@@ -63,7 +63,13 @@ impl TaskFileProvider for HttpTaskFileProvider {
             }
             true => {
                 debug!("Cache mode disabled");
-                let destination = env::temp_dir().join(file);
+                let url = url::Url::parse(file)?;
+                let filename = url
+                    .path_segments()
+                    .and_then(|segments| segments.last())
+                    .unwrap();
+
+                let destination = env::temp_dir().join(filename);
                 if destination.exists() {
                     file::remove_file(&destination)?;
                 }
