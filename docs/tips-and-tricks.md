@@ -62,7 +62,7 @@ the version of mise that was current when the script was created.
 
 ## Installation via zsh zinit
 
-[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH, wich this snippet you will get mise (and usage for shell completion):
+[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH, which this snippet you will get mise (and usage for shell completion):
 
 ```sh
 zinit as="command" lucid from="gh-r" for \

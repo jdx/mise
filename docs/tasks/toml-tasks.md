@@ -459,5 +459,5 @@ run = 'echo {{arg(name="user")}}'
 hide = true
 quiet = true # this is mandatory to make completion work (makes the mise command just print "alice bob charlie")
 description = "List users"
-run = 'echo "alice bob charlie"'
+run = 'echo "alice\nbob\ncharlie"'
 ```

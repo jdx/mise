@@ -14,7 +14,7 @@ prettier -w $(git ls-files '*.yml' '*.yaml')
 prettier -w .
 markdownlint --fix .
 taplo fmt
-SHELLCHECK_OPTS="--exclude=SC1090" actionlint
+SHELLCHECK_OPTS="--exclude=SC1090 --exclude=SC2046" actionlint
 toml-sort -i settings.toml --spaces-indent-inline-array 4
 toml-sort -i registry.toml --spaces-indent-inline-array 4
 

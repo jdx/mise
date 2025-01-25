@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env -S mise x aws-cli@2.22.35 -- bash
 set -euxo pipefail
 
 #cache_hour="max-age=3600,s-maxage=3600,public,immutable"
@@ -7,6 +7,8 @@ cache_week="max-age=604800,s-maxage=604800,public,immutable"
 
 #aws s3 cp "$RELEASE_DIR/$MISE_VERSION" "s3://$AWS_S3_BUCKET/$MISE_VERSION/" --cache-control "$cache_week" --no-progress --recursive --include "*" --exclude "*.tar.gz" --exclude "*.tar.xz"
 
+which -a aws
+aws --version
 aws s3 cp "$RELEASE_DIR" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --recursive --exclude "*.tar.gz" --exclude "*.tar.xz" --include "mise-latest-*"
 aws s3 cp "$RELEASE_DIR" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain" --recursive --exclude "*" --include "SHASUMS*"
 aws s3 cp "$RELEASE_DIR/VERSION" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain"

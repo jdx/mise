@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::hooks::Hooks;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{config, hooks};
+use crate::{config, env, hooks};
 use eyre::Result;
 use itertools::Itertools;
 
@@ -50,7 +50,7 @@ impl Install {
         let config = Config::try_get()?;
         match &self.tool {
             Some(runtime) => {
-                crate::env::TOOL_ARGS.write().unwrap().clone_from(runtime);
+                env::TOOL_ARGS.write().unwrap().clone_from(runtime);
                 self.install_runtimes(&config, runtime)?
             }
             None => self.install_missing_runtimes(&config)?,
