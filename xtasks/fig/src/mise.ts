@@ -1762,11 +1762,6 @@ const completionSpec: Fig.Spec = {
             name: "output",
           },
         },
-        {
-          name: "--no-cache",
-          description: "Don't cache the remote task file and always fetch it",
-          isRepeatable: false,
-        },
       ],
       generateSpec: usageGenerateSpec(["mise tasks --usage"]),
       cache: false,
@@ -2406,12 +2401,6 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "output",
               },
-            },
-            {
-              name: "--no-cache",
-              description:
-                "Don't cache the remote task file and always fetch it",
-              isRepeatable: false,
             },
           ],
           args: [
