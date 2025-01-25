@@ -1,4 +1,7 @@
+use crate::hash;
 use std::collections::BTreeMap;
+use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
@@ -790,11 +793,32 @@ impl Run {
         if task.sources.is_empty() && outputs.is_empty() {
             return Ok(false);
         }
+        // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
+        // perhaps using some manifest in a state directory or something, maybe leveraging atime?
         let run = || -> Result<bool> {
+            let root = self.cwd(task)?;
             let mut sources = task.sources.clone();
             sources.push(task.config_source.to_string_lossy().to_string());
-            let sources = self.get_last_modified(&self.cwd(task)?, &sources)?;
-            let outputs = self.get_last_modified(&self.cwd(task)?, &outputs)?;
+            let source_metadatas = self.get_file_metadatas(&root, &sources)?;
+            let source_metadata_hash = self.file_metadatas_to_hash(&source_metadatas);
+            let source_metadata_hash_path = self.sources_hash_path(task);
+            if let Some(dir) = source_metadata_hash_path.parent() {
+                file::create_dir_all(dir)?;
+            }
+            if self
+                .source_metadata_existing_hash(task)
+                .is_some_and(|h| h != source_metadata_hash)
+            {
+                debug!(
+                    "source metadata hash mismatch in {}",
+                    source_metadata_hash_path.display()
+                );
+                file::write(&source_metadata_hash_path, &source_metadata_hash)?;
+                return Ok(false);
+            }
+            let sources = self.get_last_modified_from_metadatas(&source_metadatas);
+            let outputs = self.get_last_modified(&root, &outputs)?;
+            file::write(&source_metadata_hash_path, &source_metadata_hash)?;
             trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {
                 (Some(sources), Some(outputs)) => Ok(sources < outputs),
@@ -807,6 +831,23 @@ impl Run {
         }))
     }
 
+    fn sources_hash_path(&self, task: &Task) -> PathBuf {
+        let mut hasher = DefaultHasher::new();
+        task.hash(&mut hasher);
+        task.config_source.hash(&mut hasher);
+        let hash = format!("{:x}", hasher.finish());
+        dirs::STATE.join("task-sources").join(&hash)
+    }
+
+    fn source_metadata_existing_hash(&self, task: &Task) -> Option<String> {
+        let path = self.sources_hash_path(task);
+        if path.exists() {
+            Some(file::read_to_string(&path).unwrap_or_default())
+        } else {
+            None
+        }
+    }
+
     fn add_failed_task(&self, task: Task, status: Option<i32>) {
         self.failed_tasks
             .lock()
@@ -816,6 +857,54 @@ impl Run {
 
     fn is_stopping(&self) -> bool {
         !self.failed_tasks.lock().unwrap().is_empty()
+    }
+
+    fn get_file_metadatas(
+        &self,
+        root: &Path,
+        patterns_or_paths: &[String],
+    ) -> Result<Vec<(PathBuf, fs::Metadata)>> {
+        if patterns_or_paths.is_empty() {
+            return Ok(vec![]);
+        }
+        let (patterns, paths): (Vec<&String>, Vec<&String>) =
+            patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
+
+        let mut metadatas = BTreeMap::new();
+        for pattern in patterns {
+            let files = glob(root.join(pattern).to_str().unwrap())?;
+            for file in files.flatten() {
+                if let Ok(metadata) = file.metadata() {
+                    metadatas.insert(file, metadata);
+                }
+            }
+        }
+
+        for path in paths {
+            let file = root.join(path);
+            if let Ok(metadata) = file.metadata() {
+                metadatas.insert(file, metadata);
+            }
+        }
+
+        let metadatas = metadatas
+            .into_iter()
+            .filter(|(_, m)| m.is_file())
+            .collect_vec();
+
+        Ok(metadatas)
+    }
+
+    fn file_metadatas_to_hash(&self, metadatas: &[(PathBuf, fs::Metadata)]) -> String {
+        let paths: Vec<_> = metadatas.iter().map(|(p, _)| p).collect();
+        hash::hash_to_str(&paths)
+    }
+
+    fn get_last_modified_from_metadatas(
+        &self,
+        metadatas: &[(PathBuf, fs::Metadata)],
+    ) -> Option<SystemTime> {
+        metadatas.iter().flat_map(|(_, m)| m.modified()).max()
     }
 
     fn get_last_modified(
