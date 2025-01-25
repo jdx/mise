@@ -1,22 +1,43 @@
 use std::path::PathBuf;
 
-use crate::{env, file, hash, http::HTTP};
+use crate::{dirs, env, file, hash, http::HTTP};
 
 use super::TaskFileProvider;
 
 #[derive(Debug)]
-pub struct RemoteTaskHttp {
-    cache_path: PathBuf,
-    no_cache: bool,
+pub struct RemoteTaskHttpBuilder {
+    store_path: PathBuf,
+    use_cache: bool,
 }
 
-impl RemoteTaskHttp {
-    pub fn new(cache_path: PathBuf, no_cache: bool) -> Self {
+impl RemoteTaskHttpBuilder {
+    pub fn new() -> Self {
         Self {
-            cache_path,
-            no_cache,
+            store_path: env::temp_dir(),
+            use_cache: false,
         }
     }
+
+    pub fn with_cache(mut self, use_cache: bool) -> Self {
+        if use_cache {
+            self.store_path = dirs::CACHE.join("remote-http-tasks-cache");
+            self.use_cache = true;
+        }
+        self
+    }
+
+    pub fn build(self) -> RemoteTaskHttp {
+        RemoteTaskHttp {
+            storage_path: self.store_path,
+            is_cached: self.use_cache,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct RemoteTaskHttp {
+    storage_path: PathBuf,
+    is_cached: bool,
 }
 
 impl RemoteTaskHttp {
@@ -50,11 +71,11 @@ impl TaskFileProvider for RemoteTaskHttp {
     }
 
     fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        match self.no_cache {
-            false => {
+        match self.is_cached {
+            true => {
                 trace!("Cache mode enabled");
                 let cache_key = self.get_cache_key(file);
-                let destination = self.cache_path.join(&cache_key);
+                let destination = self.storage_path.join(&cache_key);
 
                 if destination.exists() {
                     debug!("Using cached file: {:?}", destination);
@@ -65,7 +86,7 @@ impl TaskFileProvider for RemoteTaskHttp {
                 self.download_file(file, &destination)?;
                 Ok(destination)
             }
-            true => {
+            false => {
                 trace!("Cache mode disabled");
                 let url = url::Url::parse(file)?;
                 let filename = url
@@ -87,13 +108,11 @@ impl TaskFileProvider for RemoteTaskHttp {
 #[cfg(test)]
 mod tests {
 
-    use std::env;
-
     use super::*;
 
     #[test]
     fn test_is_match() {
-        let provider = RemoteTaskHttp::new(env::temp_dir(), true);
+        let provider = RemoteTaskHttpBuilder::new().build();
 
         // Positive cases
         assert!(provider.is_match("http://myhost.com/test.txt"));
@@ -125,7 +144,7 @@ mod tests {
                 .expect(2)
                 .create();
 
-            let provider = RemoteTaskHttp::new(env::temp_dir(), true);
+            let provider = RemoteTaskHttpBuilder::new().build();
             let mock = format!("{}{}", server.url(), request_path);
 
             for _ in 0..2 {
@@ -156,7 +175,7 @@ mod tests {
                 .expect(1)
                 .create();
 
-            let provider = RemoteTaskHttp::new(env::temp_dir(), false);
+            let provider = RemoteTaskHttpBuilder::new().with_cache(true).build();
             let mock = format!("{}{}", server.url(), request_path);
 
             for _ in 0..2 {
