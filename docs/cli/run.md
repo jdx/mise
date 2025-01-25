@@ -101,6 +101,8 @@ Change how tasks information is output when running tasks
 - `quiet` - Don't show extra output
 - `silent` - Don't show any output including stdout and stderr from the task except for errors
 
+### `--no-cache`
+
 Examples:
 
 ```
