@@ -347,6 +347,12 @@ Each task file is cached in the `MISE_CACHE_DIR` directory. If the file is updat
 You can reset the cache by running `mise cache clear`.
 :::
 
+You can also choose to not use the cache during the run execution by adding `--no-cache` to the command.
+
+```shell
+mise run my-task-name --no-cache
+```
+
 ## Arguments
 
 By default, arguments are passed to the last script in the `run` array. So if a task was defined as:
