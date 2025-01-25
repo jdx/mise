@@ -7,7 +7,6 @@ mod remote_task_http;
 pub use local_task::LocalTask;
 pub use remote_task_http::RemoteTaskHttp;
 
-use crate::config::Settings;
 use crate::dirs;
 
 static REMOTE_TASK_CACHE_DIR: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("remote-tasks-cache"));
@@ -22,8 +21,7 @@ pub struct TaskFileProviders {
 }
 
 impl TaskFileProviders {
-    pub fn new() -> Self {
-        let no_cache = Settings::get().task_remote_no_cache.unwrap_or(false);
+    pub fn new(no_cache: bool) -> Self {
         Self { no_cache }
     }
 
@@ -49,14 +47,14 @@ mod tests {
 
     #[test]
     fn test_get_providers() {
-        let task_file_providers = TaskFileProviders::new();
+        let task_file_providers = TaskFileProviders::new(false);
         let providers = task_file_providers.get_providers();
         assert_eq!(providers.len(), 2);
     }
 
     #[test]
     fn test_local_file_match_local_provider() {
-        let task_file_providers = TaskFileProviders::new();
+        let task_file_providers = TaskFileProviders::new(false);
         let cases = vec!["file.txt", "./file.txt", "../file.txt", "/file.txt"];
 
         for file in cases {
@@ -68,7 +66,7 @@ mod tests {
 
     #[test]
     fn test_http_file_match_http_remote_task_provider() {
-        let task_file_providers = TaskFileProviders::new();
+        let task_file_providers = TaskFileProviders::new(false);
         let cases = vec![
             "http://example.com/file.txt",
             "https://example.com/file.txt",
