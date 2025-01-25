@@ -584,6 +584,13 @@ mise use -g bun
 ```
 """
 
+[os]
+env = "MISE_OS"
+type = "String"
+optional = true
+description = "OS to use for precompiled binaries."
+default_docs = '"linux" | "macos" | "windows"'
+
 [override_config_filenames]
 env = "MISE_OVERRIDE_CONFIG_FILENAMES"
 type = "ListString"

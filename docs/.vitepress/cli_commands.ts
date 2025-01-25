@@ -280,7 +280,7 @@ export const commands: { [key: string]: Command } = {
     },
   },
   "test-tool": {
-    hide: true,
+    hide: false,
   },
   tool: {
     hide: false,
