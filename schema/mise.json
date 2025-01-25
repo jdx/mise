@@ -571,6 +571,10 @@
             }
           }
         },
+        "os": {
+          "description": "OS to use for precompiled binaries.",
+          "type": "string"
+        },
         "override_config_filenames": {
           "default": [],
           "description": "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var.",

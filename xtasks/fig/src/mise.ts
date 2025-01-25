@@ -2481,6 +2481,49 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
+      name: "test-tool",
+      description: "Test a tool installs and executes",
+      options: [
+        {
+          name: ["-a", "--all"],
+          description: "Test every tool specified in registry.toml",
+          isRepeatable: false,
+        },
+        {
+          name: "--all-config",
+          description: "Test all tools specified in config files",
+          isRepeatable: false,
+        },
+        {
+          name: "--include-non-defined",
+          description:
+            "Also test tools not defined in registry.toml, guessing how to test it",
+          isRepeatable: false,
+        },
+        {
+          name: ["-j", "--jobs"],
+          description: "Number of jobs to run in parallel\n[default: 4]",
+          isRepeatable: false,
+          args: {
+            name: "jobs",
+          },
+        },
+        {
+          name: "--raw",
+          description:
+            "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
+          isRepeatable: false,
+        },
+      ],
+      args: {
+        name: "tool",
+        description: "Tool name to test",
+        isOptional: true,
+        generators: completionGeneratorTemplate(`mise registry --complete`),
+        debounce: true,
+      },
+    },
+    {
       name: "tool",
       description: "Gets information about a tool",
       options: [

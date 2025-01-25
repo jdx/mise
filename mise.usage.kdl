@@ -852,15 +852,16 @@ cmd tasks help="Manage tasks" {
         mount run="mise tasks --usage"
     }
 }
-cmd test-tool hide=#true help="Test a tool installs and executes" {
+cmd test-tool help="Test a tool installs and executes" {
     after_long_help "Examples:\n\n    $ mise test-tool ripgrep\n"
-    flag "-a --all"
+    flag "-a --all" help="Test every tool specified in registry.toml"
+    flag --all-config help="Test all tools specified in config files"
     flag --include-non-defined help="Also test tools not defined in registry.toml, guessing how to test it"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
-    arg "[TOOL]" required=#false
+    arg "[TOOL]" help="Tool name to test" required=#false
 }
 cmd tool help="Gets information about a tool" {
     after_long_help "Examples:\n\n    $ mise tool node\n    Backend:            core\n    Installed Versions: 20.0.0 22.0.0\n    Active Version:     20.0.0\n    Requested Version:  20\n    Config Source:      ~/.config/mise/mise.toml\n    Tool Options:       [none]\n"

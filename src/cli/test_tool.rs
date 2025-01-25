@@ -52,7 +52,7 @@ impl TestTool {
         let config = Config::get();
         let ts = ToolsetBuilder::new().build(&config)?;
         let tools: BTreeSet<String> = ts.versions.keys().map(|t| t.short.clone()).collect();
-        let mut found = self.all;
+        let mut found = false;
         for (i, (short, rt)) in REGISTRY.iter().enumerate() {
             if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
             {
