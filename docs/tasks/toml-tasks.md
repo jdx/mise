@@ -347,11 +347,7 @@ Each task file is cached in the `MISE_CACHE_DIR` directory. If the file is updat
 You can reset the cache by running `mise cache clear`.
 :::
 
-You can also choose to not use the cache during the run execution by adding `--no-cache` to the command.
-
-```shell
-mise run my-task-name --no-cache
-```
+You can use the `MISE_TASK_REMOTE_NO_CACHE` environment variable to disable caching of remote tasks.
 
 ## Arguments
 

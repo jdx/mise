@@ -875,6 +875,10 @@
             "silent"
           ]
         },
+        "task_remote_no_cache": {
+          "description": "Mise will always fetch the latest tasks from the remote, by default the cache is used.",
+          "type": "boolean"
+        },
         "task_run_auto_install": {
           "default": true,
           "description": "Automatically install missing tools when executing tasks.",

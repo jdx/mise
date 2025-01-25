@@ -1,19 +1,16 @@
 use std::path::PathBuf;
 
-use md5::Digest;
-use sha2::Sha256;
-
-use crate::{env, file, http::HTTP};
+use crate::{env, file, hash, http::HTTP};
 
 use super::TaskFileProvider;
 
 #[derive(Debug)]
-pub struct HttpTaskFileProvider {
+pub struct RemoteTaskHttp {
     cache_path: PathBuf,
     no_cache: bool,
 }
 
-impl HttpTaskFileProvider {
+impl RemoteTaskHttp {
     pub fn new(cache_path: PathBuf, no_cache: bool) -> Self {
         Self {
             cache_path,
@@ -22,11 +19,9 @@ impl HttpTaskFileProvider {
     }
 }
 
-impl HttpTaskFileProvider {
+impl RemoteTaskHttp {
     fn get_cache_key(&self, file: &str) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(file);
-        format!("{:x}", hasher.finalize())
+        hash::hash_sha256_to_str(file)
     }
 
     fn download_file(
@@ -40,15 +35,24 @@ impl HttpTaskFileProvider {
     }
 }
 
-impl TaskFileProvider for HttpTaskFileProvider {
+impl TaskFileProvider for RemoteTaskHttp {
     fn is_match(&self, file: &str) -> bool {
-        file.starts_with("http://") || file.starts_with("https://")
+        let url = url::Url::parse(file);
+
+        // Check if the URL is valid and the scheme is http or https
+        // and the path is not empty
+        // and the path is not a directory
+        url.is_ok_and(|url| {
+            (url.scheme() == "http" || url.scheme() == "https")
+                && url.path().len() > 1
+                && !url.path().ends_with('/')
+        })
     }
 
     fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
         match self.no_cache {
             false => {
-                debug!("Cache mode enabled");
+                trace!("Cache mode enabled");
                 let cache_key = self.get_cache_key(file);
                 let destination = self.cache_path.join(&cache_key);
 
@@ -62,7 +66,7 @@ impl TaskFileProvider for HttpTaskFileProvider {
                 Ok(destination)
             }
             true => {
-                debug!("Cache mode disabled");
+                trace!("Cache mode disabled");
                 let url = url::Url::parse(file)?;
                 let filename = url
                     .path_segments()
@@ -89,38 +93,46 @@ mod tests {
 
     #[test]
     fn test_is_match() {
-        let provider = HttpTaskFileProvider::new(env::temp_dir(), true);
-        assert!(provider.is_match("http://test.txt"));
-        assert!(provider.is_match("https://test.txt"));
+        let provider = RemoteTaskHttp::new(env::temp_dir(), true);
+
+        // Positive cases
+        assert!(provider.is_match("http://myhost.com/test.txt"));
+        assert!(provider.is_match("https://myhost.com/test.txt"));
         assert!(provider.is_match("https://mydomain.com/myfile.py"));
         assert!(provider.is_match("https://subdomain.mydomain.com/myfile.sh"));
         assert!(provider.is_match("https://subdomain.mydomain.com/myfile.sh?query=1"));
+
+        // Negative cases
+        assert!(!provider.is_match("https://myhost.com/js/"));
+        assert!(!provider.is_match("https://myhost.com"));
+        assert!(!provider.is_match("https://myhost.com/"));
     }
 
     #[test]
-    fn test_http_task_file_provider_get_local_path_without_cache() {
+    fn test_http_remote_task_get_local_path_without_cache() {
         let paths = vec![
-            "/myfile.py",
-            "/subpath/myfile.sh",
-            "/myfile.sh?query=1&sdfsdf=2",
+            ("/myfile.py", "myfile.py"),
+            ("/subpath/myfile.sh", "myfile.sh"),
+            ("/myfile.sh?query=1&sdfsdf=2", "myfile.sh"),
         ];
         let mut server = mockito::Server::new();
 
-        for path in paths {
-            let mocked_server = server
-                .mock("GET", path)
+        for (request_path, expected_file_name) in paths {
+            let mocked_server: mockito::Mock = server
+                .mock("GET", request_path)
                 .with_status(200)
                 .with_body("Random content")
                 .expect(2)
                 .create();
 
-            let provider = HttpTaskFileProvider::new(env::temp_dir(), true);
-            let mock = format!("{}{}", server.url(), path);
+            let provider = RemoteTaskHttp::new(env::temp_dir(), true);
+            let mock = format!("{}{}", server.url(), request_path);
 
             for _ in 0..2 {
-                let path = provider.get_local_path(&mock).unwrap();
-                assert!(path.exists());
-                assert!(path.is_file());
+                let local_path = provider.get_local_path(&mock).unwrap();
+                assert!(local_path.exists());
+                assert!(local_path.is_file());
+                assert!(local_path.ends_with(expected_file_name));
             }
 
             mocked_server.assert();
@@ -128,29 +140,30 @@ mod tests {
     }
 
     #[test]
-    fn test_http_task_file_provider_get_local_path_with_cache() {
+    fn test_http_remote_task_get_local_path_with_cache() {
         let paths = vec![
-            "/myfile.py",
-            "/subpath/myfile.sh",
-            "/myfile.sh?query=1&sdfsdf=2",
+            ("/myfile.py", "myfile.py"),
+            ("/subpath/myfile.sh", "myfile.sh"),
+            ("/myfile.sh?query=1&sdfsdf=2", "myfile.sh"),
         ];
         let mut server = mockito::Server::new();
 
-        for path in paths {
+        for (request_path, not_expected_file_name) in paths {
             let mocked_server = server
-                .mock("GET", path)
+                .mock("GET", request_path)
                 .with_status(200)
                 .with_body("Random content")
                 .expect(1)
                 .create();
 
-            let provider = HttpTaskFileProvider::new(env::temp_dir(), false);
-            let mock = format!("{}{}", server.url(), path);
+            let provider = RemoteTaskHttp::new(env::temp_dir(), false);
+            let mock = format!("{}{}", server.url(), request_path);
 
             for _ in 0..2 {
                 let path = provider.get_local_path(&mock).unwrap();
                 assert!(path.exists());
                 assert!(path.is_file());
+                assert!(!path.ends_with(not_expected_file_name));
             }
 
             mocked_server.assert();
