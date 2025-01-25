@@ -1762,6 +1762,10 @@ const completionSpec: Fig.Spec = {
             name: "output",
           },
         },
+        {
+          name: "--no-cache",
+          isRepeatable: false,
+        },
       ],
       generateSpec: usageGenerateSpec(["mise tasks --usage"]),
       cache: false,
@@ -2401,6 +2405,10 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "output",
               },
+            },
+            {
+              name: "--no-cache",
+              isRepeatable: false,
             },
           ],
           args: [

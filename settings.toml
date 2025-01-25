@@ -1030,6 +1030,12 @@ docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 """
 
+[task_remote_no_cache]
+env = "MISE_TASK_REMOTE_NO_CACHE"
+type = "Bool"
+optional = true
+description = "Mise will always fetch the latest tasks from the remote, by default the cache is used."
+
 [task_run_auto_install]
 env = "MISE_TASK_RUN_AUTO_INSTALL"
 type = "Bool"

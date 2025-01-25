@@ -15,7 +15,7 @@ use crate::config::{Config, SETTINGS};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::file::display_path;
-use crate::task::file_providers::TaskFileProviders;
+use crate::task::task_file_providers::TaskFileProviders;
 use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -194,6 +194,10 @@ pub struct Run {
 
     #[clap(skip)]
     pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
+
+    // Do not use cache on remote tasks
+    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    pub no_cache: bool,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -873,7 +877,8 @@ impl Run {
     }
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let task_file_providers = TaskFileProviders::new(self.tmpdir.clone());
+        let no_cache = self.no_cache || SETTINGS.task_remote_no_cache.unwrap_or(false);
+        let task_file_providers = TaskFileProviders::new(no_cache);
 
         for t in tasks {
             if let Some(file) = &t.file {

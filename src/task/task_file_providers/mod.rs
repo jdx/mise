@@ -1,10 +1,15 @@
+use std::sync::LazyLock as Lazy;
 use std::{fmt::Debug, path::PathBuf};
 
-mod http_file_provider;
-mod local_file_provider;
+mod local_task;
+mod remote_task_http;
 
-pub use http_file_provider::HttpTaskFileProvider;
-pub use local_file_provider::LocalTaskFileProvider;
+pub use local_task::LocalTask;
+pub use remote_task_http::RemoteTaskHttp;
+
+use crate::dirs;
+
+static REMOTE_TASK_CACHE_DIR: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("remote-tasks-cache"));
 
 pub trait TaskFileProvider: Debug {
     fn is_match(&self, file: &str) -> bool;
@@ -12,19 +17,22 @@ pub trait TaskFileProvider: Debug {
 }
 
 pub struct TaskFileProviders {
-    tmpdir: PathBuf,
+    no_cache: bool,
 }
 
 impl TaskFileProviders {
-    fn get_providers(&self) -> Vec<Box<dyn TaskFileProvider>> {
-        vec![
-            Box::new(HttpTaskFileProvider::new(self.tmpdir.clone())),
-            Box::new(LocalTaskFileProvider), // Must be the last provider
-        ]
+    pub fn new(no_cache: bool) -> Self {
+        Self { no_cache }
     }
 
-    pub fn new(tmpdir: PathBuf) -> Self {
-        Self { tmpdir }
+    fn get_providers(&self) -> Vec<Box<dyn TaskFileProvider>> {
+        vec![
+            Box::new(RemoteTaskHttp::new(
+                REMOTE_TASK_CACHE_DIR.clone(),
+                self.no_cache,
+            )),
+            Box::new(LocalTask), // Must be the last provider
+        ]
     }
 
     pub fn get_provider(&self, file: &str) -> Option<Box<dyn TaskFileProvider>> {
@@ -34,32 +42,31 @@ impl TaskFileProviders {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
 
     use super::*;
 
     #[test]
     fn test_get_providers() {
-        let task_file_providers = TaskFileProviders::new(env::temp_dir());
+        let task_file_providers = TaskFileProviders::new(false);
         let providers = task_file_providers.get_providers();
         assert_eq!(providers.len(), 2);
     }
 
     #[test]
     fn test_local_file_match_local_provider() {
-        let task_file_providers = TaskFileProviders::new(env::temp_dir());
+        let task_file_providers = TaskFileProviders::new(false);
         let cases = vec!["file.txt", "./file.txt", "../file.txt", "/file.txt"];
 
         for file in cases {
             let provider = task_file_providers.get_provider(file);
             assert!(provider.is_some());
-            assert!(format!("{:?}", provider.unwrap()).contains("LocalTaskFileProvider"));
+            assert!(format!("{:?}", provider.unwrap()).contains("LocalTask"));
         }
     }
 
     #[test]
-    fn test_http_file_match_http_provider() {
-        let task_file_providers = TaskFileProviders::new(env::temp_dir());
+    fn test_http_file_match_http_remote_task_provider() {
+        let task_file_providers = TaskFileProviders::new(false);
         let cases = vec![
             "http://example.com/file.txt",
             "https://example.com/file.txt",
@@ -69,7 +76,7 @@ mod tests {
         for file in cases {
             let provider = task_file_providers.get_provider(file);
             assert!(provider.is_some());
-            assert!(format!("{:?}", provider.unwrap()).contains("HttpTaskFileProvider"));
+            assert!(format!("{:?}", provider.unwrap()).contains("RemoteTaskHttp"));
         }
     }
 }
