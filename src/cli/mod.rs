@@ -412,15 +412,8 @@ impl Cli {
     }
 }
 
-const LONG_ABOUT: &str = "
-mise is a tool for managing runtime versions. https://github.com/jdx/mise
-
-It's a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
-that works for any language. It's also great for managing linters/tools like
-jq and shellcheck.
-
-It is inspired by asdf and uses asdf's plugin ecosystem under the hood:
-https://asdf-vm.com/";
+const LONG_ABOUT: &str =
+    "mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise";
 
 const LONG_TASK_ABOUT: &str = r#"Task to run.
 

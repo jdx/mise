@@ -2,7 +2,7 @@ min_usage_version "1.3"
 name mise
 bin mise
 about "The front-end to your dev env"
-long_about "\nmise is a tool for managing runtime versions. https://github.com/jdx/mise\n\nIt's a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.\nthat works for any language. It's also great for managing linters/tools like\njq and shellcheck.\n\nIt is inspired by asdf and uses asdf's plugin ecosystem under the hood:\nhttps://asdf-vm.com/"
+long_about "mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise"
 usage "Usage: mise [OPTIONS] [TASK] [COMMAND]"
 flag "-C --cd" help="Change directory before running command" global=#true {
     arg <DIR>

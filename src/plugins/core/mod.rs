@@ -18,7 +18,7 @@ mod erlang;
 mod go;
 mod java;
 mod node;
-mod python;
+pub(crate) mod python;
 #[cfg_attr(windows, path = "ruby_windows.rs")]
 mod ruby;
 mod rust;
