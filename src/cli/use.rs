@@ -101,6 +101,7 @@ impl Use {
         if self.tool.is_empty() && self.remove.is_empty() {
             self.tool = vec![self.tool_selector()?];
         }
+        env::TOOL_ARGS.write().unwrap().clone_from(&self.tool);
         let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new()
             .with_global_only(self.global)

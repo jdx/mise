@@ -1,4 +1,4 @@
-use crate::cli::args::{ENV_ARG, PROFILE_ARG};
+use crate::cli::args::{ToolArg, ENV_ARG, PROFILE_ARG};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
@@ -14,6 +14,7 @@ use std::sync::RwLock;
 use std::{path, process};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
+pub static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
 #[cfg(unix)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 #[cfg(windows)]
