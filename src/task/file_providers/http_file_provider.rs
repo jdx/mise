@@ -3,18 +3,40 @@ use std::path::PathBuf;
 use md5::Digest;
 use sha2::Sha256;
 
-use crate::{file, http::HTTP};
+use crate::{env, file, http::HTTP};
 
 use super::TaskFileProvider;
 
 #[derive(Debug)]
 pub struct HttpTaskFileProvider {
     cache_path: PathBuf,
+    no_cache: bool,
 }
 
 impl HttpTaskFileProvider {
-    pub fn new(cache_path: PathBuf) -> Self {
-        Self { cache_path }
+    pub fn new(cache_path: PathBuf, no_cache: bool) -> Self {
+        Self {
+            cache_path,
+            no_cache,
+        }
+    }
+}
+
+impl HttpTaskFileProvider {
+    fn get_cache_key(&self, file: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(file);
+        format!("{:x}", hasher.finalize())
+    }
+
+    fn download_file(
+        &self,
+        file: &str,
+        destination: &PathBuf,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        HTTP.download_file(file, destination, None)?;
+        file::make_executable(destination)?;
+        Ok(())
     }
 }
 
@@ -24,25 +46,31 @@ impl TaskFileProvider for HttpTaskFileProvider {
     }
 
     fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        // Cache key is the full URL in sha256
-        let mut hasher = Sha256::new();
-        hasher.update(file);
-        let cache_key = format!("{:x}", hasher.finalize());
-        let cached_file_path = self.cache_path.join(&cache_key);
+        match self.no_cache {
+            false => {
+                debug!("Cache mode enabled");
+                let cache_key = self.get_cache_key(file);
+                let destination = self.cache_path.join(&cache_key);
 
-        if cached_file_path.exists() {
-            debug!("Using cached file: {:?}", cached_file_path);
-            if let Ok(path) = cached_file_path.canonicalize() {
-                return Ok(path);
+                if destination.exists() {
+                    debug!("Using cached file: {:?}", destination);
+                    return Ok(destination);
+                }
+
+                debug!("Downloading file: {}", file);
+                self.download_file(file, &destination)?;
+                Ok(destination)
+            }
+            true => {
+                debug!("Cache mode disabled");
+                let destination = env::temp_dir().join(file);
+                if destination.exists() {
+                    file::remove_file(&destination)?;
+                }
+                self.download_file(file, &destination)?;
+                Ok(destination)
             }
         }
-
-        debug!("Downloading file: {}", file);
-
-        HTTP.download_file(file, &cached_file_path, None)?;
-        file::make_executable(&cached_file_path)?;
-
-        Ok(cached_file_path)
     }
 }
 
@@ -55,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_is_match() {
-        let provider = HttpTaskFileProvider::new(env::temp_dir());
+        let provider = HttpTaskFileProvider::new(env::temp_dir(), true);
         assert!(provider.is_match("http://test.txt"));
         assert!(provider.is_match("https://test.txt"));
         assert!(provider.is_match("https://mydomain.com/myfile.py"));
@@ -64,7 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn test_http_task_file_provider_get_local_path() {
+    fn test_http_task_file_provider_get_local_path_without_cache() {
         let paths = vec![
             "/myfile.py",
             "/subpath/myfile.sh",
@@ -77,13 +105,47 @@ mod tests {
                 .mock("GET", path)
                 .with_status(200)
                 .with_body("Random content")
+                .expect(2)
                 .create();
 
-            let provider = HttpTaskFileProvider::new(env::temp_dir());
+            let provider = HttpTaskFileProvider::new(env::temp_dir(), true);
             let mock = format!("{}{}", server.url(), path);
-            let path = provider.get_local_path(&mock).unwrap();
-            assert!(path.exists());
-            assert!(path.is_file());
+
+            for _ in 0..2 {
+                let path = provider.get_local_path(&mock).unwrap();
+                assert!(path.exists());
+                assert!(path.is_file());
+            }
+
+            mocked_server.assert();
+        }
+    }
+
+    #[test]
+    fn test_http_task_file_provider_get_local_path_with_cache() {
+        let paths = vec![
+            "/myfile.py",
+            "/subpath/myfile.sh",
+            "/myfile.sh?query=1&sdfsdf=2",
+        ];
+        let mut server = mockito::Server::new();
+
+        for path in paths {
+            let mocked_server = server
+                .mock("GET", path)
+                .with_status(200)
+                .with_body("Random content")
+                .expect(1)
+                .create();
+
+            let provider = HttpTaskFileProvider::new(env::temp_dir(), false);
+            let mock = format!("{}{}", server.url(), path);
+
+            for _ in 0..2 {
+                let path = provider.get_local_path(&mock).unwrap();
+                assert!(path.exists());
+                assert!(path.is_file());
+            }
 
             mocked_server.assert();
         }

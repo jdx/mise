@@ -194,6 +194,10 @@ pub struct Run {
 
     #[clap(skip)]
     pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
+
+    /// Don't cache the remote task file and always fetch it
+    #[clap(long, verbatim_doc_comment)]
+    pub no_cache: bool,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -873,7 +877,7 @@ impl Run {
     }
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let task_file_providers = TaskFileProviders;
+        let task_file_providers = TaskFileProviders::new(self.no_cache);
 
         for t in tasks {
             if let Some(file) = &t.file {

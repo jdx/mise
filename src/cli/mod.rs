@@ -391,6 +391,7 @@ impl Cli {
                         keep_order_output: Default::default(),
                         task_prs: Default::default(),
                         timed_outputs: Default::default(),
+                        no_cache: false,
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
