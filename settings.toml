@@ -365,6 +365,17 @@ default = "5s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
 aliases = ["fetch_remote_version_timeout"]
 
+[gix]
+env = "MISE_GIX"
+type = "Bool"
+hide = true
+default = true
+description = "Use gix for git operations, set to false to shell out to git."
+docs = """
+Use gix for git operations. This is generally faster but may not be as compatible if the
+system's gix is not the same version as the one used by mise.
+"""
+
 [global_config_file]
 env = "MISE_GLOBAL_CONFIG_FILE"
 type = "Path"
@@ -487,6 +498,7 @@ hide = true
 [libgit2]
 env = "MISE_LIBGIT2"
 type = "Bool"
+hide = true
 default = true
 description = "Use libgit2 for git operations, set to false to shell out to git."
 docs = """

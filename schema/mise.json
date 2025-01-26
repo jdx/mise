@@ -433,6 +433,11 @@
           "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
           "type": "string"
         },
+        "gix": {
+          "default": true,
+          "description": "Use gix for git operations, set to false to shell out to git.",
+          "type": "boolean"
+        },
         "global_config_file": {
           "description": "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var.",
           "type": "string"
