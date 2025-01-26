@@ -1,9 +1,11 @@
 use std::{fmt::Debug, path::PathBuf};
 
 mod local_task;
+mod remote_task_git;
 mod remote_task_http;
 
-pub use local_task::LocalTask;
+use local_task::LocalTask;
+use remote_task_git::RemoteTaskGitBuilder;
 use remote_task_http::RemoteTaskHttpBuilder;
 
 pub trait TaskFileProvider: Debug {
@@ -41,6 +43,11 @@ impl TaskFileProviders {
 
     fn get_providers(&self) -> Vec<Box<dyn TaskFileProvider>> {
         vec![
+            Box::new(
+                RemoteTaskGitBuilder::new()
+                    .with_cache(self.use_cache)
+                    .build(),
+            ),
             Box::new(
                 RemoteTaskHttpBuilder::new()
                     .with_cache(self.use_cache)

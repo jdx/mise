@@ -161,13 +161,13 @@ mod tests {
     #[test]
     fn test_http_remote_task_get_local_path_with_cache() {
         let paths = vec![
-            ("/myfile.py", "myfile.py"),
-            ("/subpath/myfile.sh", "myfile.sh"),
-            ("/myfile.sh?query=1&sdfsdf=2", "myfile.sh"),
+            "/myfile.py",
+            "/subpath/myfile.sh",
+            "/myfile.sh?query=1&sdfsdf=2",
         ];
         let mut server = mockito::Server::new();
 
-        for (request_path, not_expected_file_name) in paths {
+        for request_path in paths {
             let mocked_server = server
                 .mock("GET", request_path)
                 .with_status(200)
@@ -176,13 +176,14 @@ mod tests {
                 .create();
 
             let provider = RemoteTaskHttpBuilder::new().with_cache(true).build();
-            let mock = format!("{}{}", server.url(), request_path);
+            let request_url = format!("{}{}", server.url(), request_path);
+            let cache_key = provider.get_cache_key(&request_url);
 
             for _ in 0..2 {
-                let path = provider.get_local_path(&mock).unwrap();
+                let path = provider.get_local_path(&request_url).unwrap();
                 assert!(path.exists());
                 assert!(path.is_file());
-                assert!(!path.ends_with(not_expected_file_name));
+                assert!(path.ends_with(&cache_key));
             }
 
             mocked_server.assert();
