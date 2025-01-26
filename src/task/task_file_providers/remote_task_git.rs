@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use regex::Regex;
+use xx::git;
 
-use crate::{dirs, env};
+use crate::{dirs, env, hash};
 
 use super::TaskFileProvider;
 
@@ -42,38 +43,33 @@ pub struct RemoteTaskGit {
     is_cached: bool,
 }
 
+#[derive(Debug, Clone)]
 struct GitRepoStructure {
     url: String,
-    user: Option<String>,
-    host: String,
-    repo: String,
-    query: Option<String>,
+    url_without_path: String,
     path: String,
 }
 
 impl GitRepoStructure {
-    pub fn new(
-        url: &str,
-        user: Option<String>,
-        host: &str,
-        repo: &str,
-        query: Option<String>,
-        path: &str,
-    ) -> Self {
+    pub fn new(url: &str, url_without_path: &str, path: &str) -> Self {
         Self {
             url: url.to_string(),
-            user,
-            host: host.to_string(),
-            repo: repo.to_string(),
-            query,
+            url_without_path: url_without_path.to_string(),
             path: path.to_string(),
         }
     }
 }
 
 impl RemoteTaskGit {
-    fn get_cache_key(&self, file: &str) -> String {
-        "".to_string()
+    fn get_cache_key(&self, repo_structure: &GitRepoStructure) -> String {
+        hash::hash_sha256_to_str(&repo_structure.url_without_path)
+    }
+
+    fn get_repo_structure(&self, file: &str) -> GitRepoStructure {
+        if self.detect_ssh(file).is_ok() {
+            return self.detect_ssh(file).unwrap();
+        }
+        self.detect_https(file).unwrap()
     }
 
     fn detect_ssh(&self, file: &str) -> Result<GitRepoStructure, Box<dyn std::error::Error>> {
@@ -85,14 +81,9 @@ impl RemoteTaskGit {
 
         let captures = re.captures(file).unwrap();
 
-        Ok(GitRepoStructure::new(
-            file,
-            Some(captures.name("user").unwrap().as_str().to_string()),
-            captures.name("host").unwrap().as_str(),
-            captures.name("repo").unwrap().as_str(),
-            captures.name("query").map(|m| m.as_str().to_string()),
-            captures.name("path").unwrap().as_str(),
-        ))
+        let path = captures.name("path").unwrap().as_str();
+
+        Ok(GitRepoStructure::new(file, &file.replace(path, ""), path))
     }
 
     fn detect_https(&self, file: &str) -> Result<GitRepoStructure, Box<dyn std::error::Error>> {
@@ -104,14 +95,9 @@ impl RemoteTaskGit {
 
         let captures = re.captures(file).unwrap();
 
-        Ok(GitRepoStructure::new(
-            file,
-            None,
-            captures.name("host").unwrap().as_str(),
-            captures.name("repo").unwrap().as_str(),
-            captures.name("query").map(|m| m.as_str().to_string()),
-            captures.name("path").unwrap().as_str(),
-        ))
+        let path = captures.name("path").unwrap().as_str();
+
+        Ok(GitRepoStructure::new(file, &file.replace(path, ""), path))
     }
 }
 
@@ -129,7 +115,32 @@ impl TaskFileProvider for RemoteTaskGit {
     }
 
     fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        Ok(PathBuf::new())
+        let repo_structure = self.get_repo_structure(file);
+        let cache_key = self.get_cache_key(&repo_structure);
+        let destination = self.storage_path.join(&cache_key);
+        let repo_file_path = repo_structure.path.clone();
+        let full_path = destination.join(&repo_file_path);
+
+        match self.is_cached {
+            true => {
+                trace!("Cache mode enabled");
+
+                if full_path.exists() {
+                    return Ok(full_path);
+                }
+            }
+            false => {
+                trace!("Cache mode disabled");
+
+                if full_path.exists() {
+                    crate::file::remove_dir(full_path)?;
+                }
+            }
+        }
+
+        let git_cloned = git::clone(repo_structure.url.as_str(), destination)?;
+
+        Ok(git_cloned.dir.join(&repo_file_path))
     }
 }
 
@@ -204,6 +215,78 @@ mod tests {
         for url in test_cases {
             let result = remote_task_git.detect_https(url);
             assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_compare_ssh_get_cache_key() {
+        let remote_task_git = RemoteTaskGitBuilder::new().build();
+
+        let test_cases = vec![
+            (
+                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
+                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v2.0.0",
+                false,
+            ),
+            (
+                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
+                "git::ssh://user@myserver.com/example.git//myfile?ref=master",
+                false,
+            ),
+            (
+                "git::ssh://git@github.com/example.git//myfile?ref=v1.0.0",
+                "git::ssh://git@github.com/example.git//subfolder/mysecondfile?ref=v1.0.0",
+                true,
+            ),
+            (
+                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
+                "git::ssh://git@github.com:myorg/example.git//subfolder/mysecondfile?ref=v1.0.0",
+                true,
+            ),
+        ];
+
+        for (first_url, second_url, expected) in test_cases {
+            let first_repo = remote_task_git.detect_ssh(first_url).unwrap();
+            let second_repo = remote_task_git.detect_ssh(second_url).unwrap();
+            let first_cache_key = remote_task_git.get_cache_key(&first_repo);
+            let second_cache_key = remote_task_git.get_cache_key(&second_repo);
+            assert_eq!(expected, first_cache_key == second_cache_key);
+        }
+    }
+
+    #[test]
+    fn test_compare_https_get_cache_key() {
+        let remote_task_git = RemoteTaskGitBuilder::new().build();
+
+        let test_cases = vec![
+            (
+                "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
+                "git::https://github.com/myorg/example.git//myfile?ref=v2.0.0",
+                false,
+            ),
+            (
+                "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
+                "git::https://bitbucket.com/myorg/example.git//myfile?ref=v1.0.0",
+                false,
+            ),
+            (
+                "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
+                "git::https://github.com/myorg/example.git//subfolder/myfile?ref=v1.0.0",
+                true,
+            ),
+            (
+                "git::https://github.com/example.git//myfile?ref=v1.0.0",
+                "git::https://github.com/example.git//subfolder/myfile?ref=v1.0.0",
+                true,
+            ),
+        ];
+
+        for (first_url, second_url, expected) in test_cases {
+            let first_repo = remote_task_git.detect_https(first_url).unwrap();
+            let second_repo = remote_task_git.detect_https(second_url).unwrap();
+            let first_cache_key = remote_task_git.get_cache_key(&first_repo);
+            let second_cache_key = remote_task_git.get_cache_key(&second_repo);
+            assert_eq!(expected, first_cache_key == second_cache_key);
         }
     }
 }
