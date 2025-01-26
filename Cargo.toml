@@ -185,8 +185,17 @@ test-log = "0.2"
 
 [features]
 default = ["native-tls", "vfox/vendored-lua"]
-native-tls = ["reqwest/native-tls", "ubi/native-tls", "gix/blocking-http-transport-reqwest-native-tls"]
-rustls = ["reqwest/rustls-tls", "self_update/rustls", "ubi/rustls-tls", "gix/blocking-http-transport-reqwest-rust-tls"]
+native-tls = [
+  "reqwest/native-tls",
+  "ubi/native-tls",
+  "gix/blocking-http-transport-reqwest-native-tls",
+]
+rustls = [
+  "reqwest/rustls-tls",
+  "self_update/rustls",
+  "ubi/rustls-tls",
+  "gix/blocking-http-transport-reqwest-rust-tls",
+]
 rustls-native-roots = [
   "reqwest/rustls-tls-native-roots",
   "self_update/rustls",
