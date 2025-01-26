@@ -147,7 +147,7 @@ xx = { version = "2", features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 zstd = "0.13"
-gix = { version = "<1", features = [ "worktree-mutation" ] }
+gix = { version = "<1", features = ["worktree-mutation"] }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
