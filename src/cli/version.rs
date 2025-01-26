@@ -5,7 +5,7 @@ use eyre::Result;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
-use crate::build_time::{git_sha, BUILD_TIME};
+use crate::build_time::BUILD_TIME;
 use crate::cli::self_update::SelfUpdate;
 #[cfg(not(test))]
 use crate::config::Settings;
@@ -44,7 +44,6 @@ impl Version {
             "os": *OS,
             "arch": *ARCH,
             "build_time": BUILD_TIME.to_string(),
-            "git_sha": git_sha(),
         });
         println!("{}", serde_json::to_string_pretty(&json)?);
         Ok(())
@@ -67,11 +66,7 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
         v.push_str("-DEBUG");
     };
     let build_time = BUILD_TIME.format("%Y-%m-%d");
-    let extra = match git_sha() {
-        Some(sha) => format!("({} {})", sha, build_time),
-        _ => format!("({})", build_time),
-    };
-    format!("{v} {os}-{arch} {extra}", os = *OS, arch = *ARCH)
+    format!("{v} {os}-{arch} ({build_time})", os = *OS, arch = *ARCH)
 });
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
