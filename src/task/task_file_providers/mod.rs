@@ -71,7 +71,7 @@ mod tests {
     fn test_get_providers() {
         let task_file_providers = TaskFileProvidersBuilder::new().build();
         let providers = task_file_providers.get_providers();
-        assert_eq!(providers.len(), 2);
+        assert_eq!(providers.len(), 3);
     }
 
     #[test]
@@ -82,7 +82,8 @@ mod tests {
         for file in cases {
             let provider = task_file_providers.get_provider(file);
             assert!(provider.is_some());
-            assert!(format!("{:?}", provider.unwrap()).contains("LocalTask"));
+            let provider_name = format!("{:?}", provider.unwrap());
+            assert!(provider_name.contains("LocalTask"));
         }
     }
 
@@ -98,7 +99,26 @@ mod tests {
         for file in cases {
             let provider = task_file_providers.get_provider(file);
             assert!(provider.is_some());
-            assert!(format!("{:?}", provider.unwrap()).contains("RemoteTaskHttp"));
+            let provider_name = format!("{:?}", provider.unwrap());
+            assert!(provider_name.contains("RemoteTaskHttp"));
+        }
+    }
+
+    #[test]
+    fn test_git_file_match_git_remote_task_provider() {
+        let task_file_providers = TaskFileProvidersBuilder::new().build();
+        let cases = vec![
+            "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
+            "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
+            "git::ssh://user@myserver.com/example.git//subfolder/myfile.py",
+            "git::https://myserver.com/example.git//subfolder/myfile.sh",
+        ];
+
+        for file in cases {
+            let provider = task_file_providers.get_provider(file);
+            assert!(provider.is_some());
+            let provider_name = format!("{:?}", provider.unwrap());
+            assert!(provider_name.contains("RemoteTaskGit"));
         }
     }
 }
