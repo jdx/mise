@@ -126,6 +126,7 @@ impl TaskFileProvider for RemoteTaskGit {
                 trace!("Cache mode enabled");
 
                 if full_path.exists() {
+                    debug!("Using cached file: {:?}", full_path);
                     return Ok(full_path);
                 }
             }
