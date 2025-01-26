@@ -1,5 +1,37 @@
 # Changelog
 
+## [2025.1.15](https://github.com/jdx/mise/compare/v2025.1.14..v2025.1.15) - 2025-01-26
+
+### 🚀 Features
+
+- add http cache by [@acesyde](https://github.com/acesyde) in [#4160](https://github.com/jdx/mise/pull/4160)
+- expose `test-tool` command by [@jdx](https://github.com/jdx) in [#4224](https://github.com/jdx/mise/pull/4224)
+
+### 🐛 Bug Fixes
+
+- elixir installation failed by [@roele](https://github.com/roele) in [#4144](https://github.com/jdx/mise/pull/4144)
+- re-run tasks when files removed or permissions change by [@jdx](https://github.com/jdx) in [#4223](https://github.com/jdx/mise/pull/4223)
+
+### 🚜 Refactor
+
+- use builder pattern by [@acesyde](https://github.com/acesyde) in [#4220](https://github.com/jdx/mise/pull/4220)
+
+### 📚 Documentation
+
+- **(how-i-use-mise)** switch to discussion by [@risu729](https://github.com/risu729) in [#4225](https://github.com/jdx/mise/pull/4225)
+- add hint about environment variable parsing by [@roele](https://github.com/roele) in [#4219](https://github.com/jdx/mise/pull/4219)
+
+### Chore
+
+- added vscode workspace by [@jdx](https://github.com/jdx) in [a0d181f](https://github.com/jdx/mise/commit/a0d181f8d60270d09d06156ebc500a2fa85f74db)
+- switch from git2 to gix by [@jdx](https://github.com/jdx) in [#4226](https://github.com/jdx/mise/pull/4226)
+- remove git2 from built by [@jdx](https://github.com/jdx) in [#4227](https://github.com/jdx/mise/pull/4227)
+- use mise-plugins/mise-jib by [@jdx](https://github.com/jdx) in [#4228](https://github.com/jdx/mise/pull/4228)
+
+### New Contributors
+
+- @vgnh made their first contribution in [#4216](https://github.com/jdx/mise/pull/4216)
+
 ## [2025.1.14](https://github.com/jdx/mise/compare/v2025.1.13..v2025.1.14) - 2025-01-24
 
 ### 🚀 Features
