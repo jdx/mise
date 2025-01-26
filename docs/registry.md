@@ -374,7 +374,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | java | [core:java](https://mise.jdx.dev/lang/java.html) |
 | jbang | [asdf:mise-plugins/jbang-asdf](https://github.com/mise-plugins/jbang-asdf) |
 | jfrog-cli | [asdf:mise-plugins/mise-jfrog-cli](https://github.com/mise-plugins/mise-jfrog-cli) |
-| jib | [asdf:joschi/asdf-jib](https://github.com/joschi/asdf-jib) |
+| jib | [asdf:mise-plugins/mise-jib](https://github.com/mise-plugins/mise-jib) |
 | jiq | [aqua:fiatjaf/jiq](https://github.com/fiatjaf/jiq) [asdf:chessmango/asdf-jiq](https://github.com/chessmango/asdf-jiq) |
 | jj | [aqua:jj-vcs/jj](https://github.com/jj-vcs/jj) [ubi:jj-vcs/jj](https://github.com/jj-vcs/jj) |
 | jless | [aqua:PaulJuliusMartinez/jless](https://github.com/PaulJuliusMartinez/jless) [asdf:jc00ke/asdf-jless](https://github.com/jc00ke/asdf-jless) |
