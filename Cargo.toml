@@ -103,6 +103,9 @@ reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "gzip",
   "zstd",
+  "charset",
+  "http2",
+  "macos-system-configuration",
 ] }
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [
