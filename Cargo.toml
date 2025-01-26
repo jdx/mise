@@ -147,23 +147,19 @@ xx = { version = "2", features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 zstd = "0.13"
-gix = { version = "<1", features = [
-  "worktree-mutation",
-  "blocking-network-client",
-  "blocking-http-transport-reqwest",
-] }
+gix = { version = "<1", features = ["worktree-mutation"] }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.29", features = ["signal", "user"] }
-self_update = { version = "0.42", default-features = false, features = [
+self_update = { version = "0.42", optional = true, default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
 ] }
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.42", default-features = false, features = [
+self_update = { version = "0.42", optional = true, default-features = false, features = [
   "archive-zip",
   "signatures",
 ] }
@@ -184,22 +180,25 @@ pretty_assertions = "1"
 test-log = "0.2"
 
 [features]
-default = ["native-tls", "vfox/vendored-lua"]
+default = ["native-tls", "vfox/vendored-lua", "self_update"]
 native-tls = [
   "reqwest/native-tls",
   "ubi/native-tls",
   "gix/blocking-http-transport-reqwest-native-tls",
+  "vfox/native-tls",
 ]
 rustls = [
   "reqwest/rustls-tls",
   "self_update/rustls",
   "ubi/rustls-tls",
   "gix/blocking-http-transport-reqwest-rust-tls",
+  "vfox/rustls",
 ]
 rustls-native-roots = [
   "reqwest/rustls-tls-native-roots",
   "self_update/rustls",
   "ubi/rustls-tls-native-roots",
+  "vfox/rustls-native-roots",
 ]
 
 [package.metadata.binstall]
