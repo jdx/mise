@@ -198,7 +198,17 @@ fn platform_directory() -> String {
     } else if cfg!(windows) {
         "windows10".into()
     } else {
-        platform().replace(".", "")
+        if let Ok(os_release) = &*os_release::OS_RELEASE {
+            let arch = SETTINGS.arch();
+            if os_release.id == "ubuntu" && arch == "aarch64" {
+                let retval = format!("{}{}-{}", os_release.id, os_release.version_id, arch);
+                retval.replace(".", "")
+            } else {
+                platform().replace(".", "")
+            }
+        } else {
+            platform().replace(".", "")
+        }
     }
 }
 
