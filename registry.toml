@@ -547,6 +547,8 @@ dtm.backends = [
 ]
 dua.backends = ["aqua:Byron/dua-cli", "ubi:Byron/dua-cli[exe=dua]"]
 dua.test = ["dua --version", "dua {{version}}"]
+duckdb.backends = ["ubi:duckdb/duckdb"]
+duckdb.test = ["duckdb --version", "{{version}}"]
 duf.backends = ["aqua:muesli/duf", "asdf:NeoHsu/asdf-duf"]
 dust.backends = ["ubi:bootandy/dust", "asdf:looztra/asdf-dust"]
 dvc.backends = ["asdf:mise-plugins/mise-dvc"]
