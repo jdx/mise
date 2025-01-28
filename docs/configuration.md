@@ -263,7 +263,7 @@ They support aliases, which means you can have an `.nvmrc` file with `lts/hydrog
 in mise and nvm. Here are some of the supported idiomatic version files:
 
 | Plugin    | Idiomatic Files                                    |
-|-----------|----------------------------------------------------|
+| --------- | -------------------------------------------------- |
 | crystal   | `.crystal-version`                                 |
 | elixir    | `.exenv-version`                                   |
 | go        | `.go-version`, `go.mod`                            |

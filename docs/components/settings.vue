@@ -3,7 +3,9 @@ import { data } from "/settings.data.ts";
 import Setting from "/components/setting.vue";
 const { child } = defineProps(["child", "level"]);
 
-const settings = child ? (data.find((f) => f.key === child)?.settings ?? []) : data;
+const settings = child
+  ? (data.find((f) => f.key === child)?.settings ?? [])
+  : data;
 </script>
 
 <!--  <ul>-->
