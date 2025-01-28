@@ -46,4 +46,6 @@ github.com/jesseduffield/lazygit
 ## `.go-version` file support
 
 mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
-However it can also read go-specific version files named `.go-version`.
+However, it can also read go-specific version files named `.go-version`.
+
+See [idiomatic version files](/configuration.html#idiomatic-version-files)

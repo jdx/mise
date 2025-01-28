@@ -156,3 +156,7 @@ Or to compile with python-build:
 ```bash
 MISE_PYTHON_COMPILE=1 PYTHON_BUILD_FREE_THREADING=1 mise install python
 ```
+
+## `.python-version` support
+
+`.python-version`/`.python-versions` files are supported by mise. See [idiomatic version files](/configuration.html#idiomatic-version-files).
