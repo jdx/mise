@@ -2,6 +2,7 @@
 
 Links to articles, videos, and other resources that are relevant to mise.
 
+- 2025-01-26 - devtools.fm: Jeff Dickey - Mise, Usage, and Pitchfork and the Future of Polyglot Tools - <https://www.devtools.fm/episode/129>
 - 2025-01-12 - [fr] Mise-En-Place: Simplifiez la Gestion de vos Environnements et Tâches – <https://blog.stephane-robert.info/docs/developper/autres-outils/mise-en-place/>
 - 2024-11-20 - Migrating from nvm to mise - <https://dev.to/hverlin/migrating-from-nvm-to-mise-4mfp>
 - 2024-06-27 - Managing Development Tool Versions with mise - <https://haril.dev/en/blog/2024/06/27/Easy-devtools-version-management-mise>
