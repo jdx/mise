@@ -50,10 +50,17 @@ _.python.venv = { path = ".venv", create = true, python = "3.10" } # use a speci
 _.python.venv = { path = ".venv", create = true, python_create_args = ["--without-pip"] } # pass args to python -m venv
 _.python.venv = { path = ".venv", create = true, uv_create_args = ["--system-site-packages"] } # pass args to uv venv
 # Install seed packages (pip, setuptools, and wheel) into the virtual environment.
-_.python.venv = { path = ".venv", create = true, python.uv_venv_create_args = ['--seed'] }
+_.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
 ```
 
 The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
+
+## mise & uv
+
+If you have installed `uv` (for example, with `mise use -g uv@latest`, `mise` will use it to create virtual environments. Otherwise, it will use the built-in `python -m venv` command.
+
+Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
+
 
 ## Default Python packages
 
