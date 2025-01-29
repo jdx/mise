@@ -61,7 +61,6 @@ If you have installed `uv` (for example, with `mise use -g uv@latest`, `mise` wi
 
 Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 
-
 ## Default Python packages
 
 mise can automatically install a default set of Python packages with pip right after installing a
