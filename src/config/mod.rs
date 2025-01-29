@@ -1051,6 +1051,9 @@ fn load_all_config_files(
         .collect_vec()
         .into_par_iter()
         .map(|f| {
+            if f.is_dir() {
+                return Ok(None);
+            }
             let cf = match parse_config_file(f, idiomatic_filenames) {
                 Ok(cfg) => cfg,
                 Err(err) => {
