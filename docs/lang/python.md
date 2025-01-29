@@ -61,7 +61,7 @@ If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` w
 
 Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 
-See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-+-uv) for more examples.
+See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for more examples.
 
 ## Default Python packages
 
