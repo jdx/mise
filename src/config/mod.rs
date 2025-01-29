@@ -1051,6 +1051,9 @@ fn load_all_config_files(
         .collect_vec()
         .into_par_iter()
         .map(|f| {
+            if f.is_dir() {
+                return Ok(None);
+            }
             let cf = match parse_config_file(f, idiomatic_filenames) {
                 Ok(cfg) => cfg,
                 Err(err) => {
@@ -1237,6 +1240,9 @@ fn reset() {
 #[cfg(unix)]
 mod tests {
     use insta::assert_debug_snapshot;
+    use std::collections::BTreeMap;
+    use std::fs::{self, File};
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -1244,5 +1250,37 @@ mod tests {
     fn test_load() {
         let config = Config::load().unwrap();
         assert_debug_snapshot!(config);
+    }
+
+    #[test]
+    fn test_load_all_config_files_skips_directories() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let temp_path = temp_dir.path();
+
+        let sub_dir = temp_path.join("subdir");
+        fs::create_dir(&sub_dir)?;
+
+        let file1_path = temp_path.join("config1.toml");
+        let file2_path = temp_path.join("config2.toml");
+        File::create(&file1_path)?;
+        File::create(&file2_path)?;
+
+        fs::write(&file1_path, "key1 = 'value1'")?;
+        fs::write(&file2_path, "key2 = 'value2'")?;
+
+        let config_filenames = vec![file1_path.clone(), file2_path.clone(), sub_dir.clone()];
+        let idiomatic_filenames = BTreeMap::new();
+
+        let result = load_all_config_files(&config_filenames, &idiomatic_filenames)?;
+
+        // the result should have only two entries for the files, the directory should not be present
+        assert_eq!(result.len(), 2);
+
+        // Check that the directory is not in the result
+        assert!(result.contains_key(&file1_path));
+        assert!(result.contains_key(&file2_path));
+        assert!(!result.contains_key(&sub_dir));
+
+        Ok(())
     }
 }

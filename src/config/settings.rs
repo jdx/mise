@@ -120,11 +120,6 @@ impl Settings {
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = false;
         }
-        if !settings.idiomatic_version_file_disable_tools.is_empty() {
-            settings
-                .disable_tools
-                .extend(settings.idiomatic_version_file_disable_tools.clone());
-        }
         if settings.raw {
             settings.jobs = 1;
         }
