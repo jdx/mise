@@ -1,5 +1,33 @@
 # Changelog
 
+## [2025.1.16](https://github.com/jdx/mise/compare/v2025.1.15..v2025.1.16) - 2025-01-29
+
+### 🚀 Features
+
+- **(registry)** add duckdb by [@swfz](https://github.com/swfz) in [#4248](https://github.com/jdx/mise/pull/4248)
+
+### 🐛 Bug Fixes
+
+- Swift on Ubuntu 24.04 arm64 generates the incorrect download URL by [@spyder-ian](https://github.com/spyder-ian) in [#4235](https://github.com/jdx/mise/pull/4235)
+- Do not attempt to parse directories by [@adamcohen2](https://github.com/adamcohen2) in [#4256](https://github.com/jdx/mise/pull/4256)
+- path option should take precedence over global configuration by [@roele](https://github.com/roele) in [#4249](https://github.com/jdx/mise/pull/4249)
+
+### 📚 Documentation
+
+- Add devtools.fm episode about mise to external-resources.md by [@CanRau](https://github.com/CanRau) in [#4253](https://github.com/jdx/mise/pull/4253)
+- Update sections about idiomatic version files by [@hverlin](https://github.com/hverlin) in [#4252](https://github.com/jdx/mise/pull/4252)
+
+### Chore
+
+- make self_update optional by [@jdx](https://github.com/jdx) in [#4230](https://github.com/jdx/mise/pull/4230)
+- added some defaul reqwest features by [@jdx](https://github.com/jdx) in [#4232](https://github.com/jdx/mise/pull/4232)
+
+### New Contributors
+
+- @adamcohen2 made their first contribution in [#4256](https://github.com/jdx/mise/pull/4256)
+- @CanRau made their first contribution in [#4253](https://github.com/jdx/mise/pull/4253)
+- @spyder-ian made their first contribution in [#4235](https://github.com/jdx/mise/pull/4235)
+
 ## [2025.1.15](https://github.com/jdx/mise/compare/v2025.1.14..v2025.1.15) - 2025-01-26
 
 ### 🚀 Features
