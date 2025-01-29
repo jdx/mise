@@ -3,6 +3,7 @@
 /node_modules/
 package-lock.json
 .mise.lock
+/mise.local.toml
 
 *.log
 *.profraw

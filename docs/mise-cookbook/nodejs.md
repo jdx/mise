@@ -87,7 +87,7 @@ node = '22'
 [hooks]
 # Enabling corepack will install the `pnpm` package manager specified in your package.json
 # alternatively, you can also install `pnpm` with mise
-post_install = 'npx corepack enable'
+postinstall = 'npx corepack enable'
 
 [env]
 _.path = ['./node_modules/.bin']
