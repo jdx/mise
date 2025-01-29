@@ -4,6 +4,7 @@ backend = "aqua:rhysd/actionlint"
 
 [tools.actionlint.checksums]
 "actionlint_1.7.7_darwin_arm64.tar.gz" = "sha256:2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc033873db"
+"actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
 
 [tools.bun]
 version = "1.1.44"

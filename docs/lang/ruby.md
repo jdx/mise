@@ -51,7 +51,7 @@ rubocop --pre # install prerelease version
 ## `.ruby-version` and `Gemfile` support
 
 mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
-However it can also read ruby-specific version files `.ruby-version` or `Gemfile`
+However, it can also read ruby-specific version files `.ruby-version` or `Gemfile`
 (if it specifies a ruby version).
 
 Create a `.ruby-version` file for the current version of ruby:
@@ -59,6 +59,8 @@ Create a `.ruby-version` file for the current version of ruby:
 ```sh
 ruby -v > .ruby-version
 ```
+
+See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
 
 ### Manually updating ruby-build
 
