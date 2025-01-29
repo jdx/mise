@@ -157,11 +157,17 @@
                         },
                         "python_create_args": {
                           "description": "additional arguments to pass to python when creating a virtual environment",
-                          "type": "string"
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         },
                         "uv_create_args": {
                           "description": "additional arguments to pass to uv when creating a virtual environment",
-                          "type": "string"
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": ["path"],

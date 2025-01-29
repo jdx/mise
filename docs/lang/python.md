@@ -26,18 +26,42 @@ $ python3.11 -V
 3.11.0
 ```
 
-## Settings
+See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examples.
 
-`python-build` already has
-a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
-additional to that python in mise has a few extra configuration variables.
+## `.python-version` support
 
-Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
+`.python-version`/`.python-versions` files are supported by mise. See [idiomatic version files](/configuration.html#idiomatic-version-files).
 
-<script setup>
-import Settings from '/components/settings.vue';
-</script>
-<Settings child="python" :level="3" />
+## Automatic virtualenv activation
+
+Python comes with virtualenv support built in, use it with `mise.toml` configuration like
+one of the following:
+
+```toml
+[tools]
+python = "3.11" # [optional] will be used for the venv
+
+[env]
+_.python.venv = ".venv" # relative to this file's directory
+_.python.venv = "/root/.venv" # can be absolute
+_.python.venv = "{{env.HOME}}/.cache/venv/myproj" # can use templates
+_.python.venv = { path = ".venv", create = true } # create the venv if it doesn't exist
+_.python.venv = { path = ".venv", create = true, python = "3.10" } # use a specific python version
+_.python.venv = { path = ".venv", create = true, python_create_args = ["--without-pip"] } # pass args to python -m venv
+_.python.venv = { path = ".venv", create = true, uv_create_args = ["--system-site-packages"] } # pass args to uv venv
+# Install seed packages (pip, setuptools, and wheel) into the virtual environment.
+_.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
+```
+
+The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
+
+## mise & uv
+
+If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` will use it to create virtual environments. Otherwise, it will use the built-in `python -m venv` command.
+
+Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
+
+See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for more examples.
 
 ## Default Python packages
 
@@ -84,6 +108,20 @@ its [dependencies](https://github.com/pyenv/pyenv/wiki#suggested-build-environme
 before installing python with
 python-build.
 
+## Installing free-threaded python
+
+Free-threaded python can be installed via python-build by running the following:
+
+```bash
+MISE_PYTHON_COMPILE=0 MISE_PYTHON_PRECOMPILED_FLAVOR=freethreaded+pgo-full mise install python
+```
+
+Or to compile with python-build:
+
+```bash
+MISE_PYTHON_COMPILE=1 PYTHON_BUILD_FREE_THREADING=1 mise install python
+```
+
 ## Troubleshooting errors with Homebrew
 
 If you normally use Homebrew and you see errors regarding OpenSSL,
@@ -122,41 +160,15 @@ CFLAGS="-I$(brew --prefix openssl)/include" \
 brew link pkg-config
 ```
 
-## Automatic virtualenv activation
+## Settings
 
-Python comes with virtualenv support built in, use it with `mise.toml` configuration like
-one of the following:
+`python-build` already has
+a [handful of settings](https://github.com/pyenv/pyenv/tree/master/plugins/python-build), in
+additional to that python in mise has a few extra configuration variables.
 
-```toml
-[tools]
-python = "3.11" # [optional] will be used for the venv
+Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environment variable.
 
-[env]
-_.python.venv = ".venv" # relative to this file's directory
-_.python.venv = "/root/.venv" # can be absolute
-_.python.venv = "{{env.HOME}}/.cache/venv/myproj" # can use templates
-_.python.venv = { path = ".venv", create = true } # create the venv if it doesn't exist
-_.python.venv = { path = ".venv", create = true, python = "3.10" } # use a specific python version
-_.python.venv = { path = ".venv", create = true, python_create_args = ["--without-pip"] } # pass args to python -m venv
-_.python.venv = { path = ".venv", create = true, uv_create_args = ["--system-site-packages"] } # pass args to uv venv
-```
-
-The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
-
-## Installing free-threaded python
-
-Free-threaded python can be installed via python-build by running the following:
-
-```bash
-MISE_PYTHON_COMPILE=0 MISE_PYTHON_PRECOMPILED_FLAVOR=freethreaded+pgo-full mise install python
-```
-
-Or to compile with python-build:
-
-```bash
-MISE_PYTHON_COMPILE=1 PYTHON_BUILD_FREE_THREADING=1 mise install python
-```
-
-## `.python-version` support
-
-`.python-version`/`.python-versions` files are supported by mise. See [idiomatic version files](/configuration.html#idiomatic-version-files).
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="python" :level="3" />
