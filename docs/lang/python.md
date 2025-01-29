@@ -55,7 +55,6 @@ _.python.venv = { path = ".venv", create = true, python.uv_venv_create_args = ['
 
 The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
 
-
 ## Default Python packages
 
 mise can automatically install a default set of Python packages with pip right after installing a
@@ -165,4 +164,3 @@ Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environm
 import Settings from '/components/settings.vue';
 </script>
 <Settings child="python" :level="3" />
-
