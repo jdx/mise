@@ -97,3 +97,58 @@ _.python.venv = { path = ".venv" }
 ### Syncing python versions installed by mise and uv
 
 You can use [uv sync python --uv](/cli/sync/python.html#uv) to sync the python version installed by `mise` with the python version specified in the `.python-version` file in the `uv` project.
+
+### uv scripts
+
+You can take advantage of `uv run` in [`shebang`](/tasks/toml-tasks.html#shell-shebang) in toml or file tasks. 
+Note that using `--script` is required if the filename does not end in `.py`.
+
+Here is an example toml task:
+```toml [mise.toml]
+[tools]
+uv = 'latest'
+
+[tasks.print_peps]
+run = """
+#!/usr/bin/env -S uv run --script
+# /// script
+# dependencies = ["requests<3", "rich"]
+# ///
+
+import requests
+from rich.pretty import pprint
+
+resp = requests.get("https://peps.python.org/api/peps.json")
+data = resp.json()
+pprint([(k, v["title"]) for k, v in data.items()][:10])
+"""
+```
+
+Or as a file task:
+
+```python [mise-tasks/print_peps.py]
+#!/usr/bin/env -S uv run --script
+# /// script
+# dependencies = ["requests<3", "rich"]
+# ///
+
+import requests
+from rich.pretty import pprint
+
+resp = requests.get("https://peps.python.org/api/peps.json")
+data = resp.json()
+pprint([(k, v["title"]) for k, v in data.items()][:10])
+```
+
+You can then run it with `mise run print_peps`:
+
+```shell
+❯ mise run print_peps 
+[print_peps] $ ~/uv-project/mise-tasks/print_peps.py
+Installed 9 packages in 8ms
+[
+│   ('1', 'PEP Purpose and Guidelines'),
+│   ('2', 'Procedure for Adding New Modules'),
+    #...
+]
+```
