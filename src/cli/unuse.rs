@@ -4,6 +4,7 @@ use crate::config;
 use crate::config::config_file::ConfigFile;
 use crate::config::{config_file, Config};
 use crate::file::display_path;
+use crate::toolset::ToolRequest;
 use eyre::Result;
 use itertools::Itertools;
 
@@ -31,12 +32,20 @@ impl Unuse {
         let config = Config::get();
         let mut cf = self.get_config_file(&config)?;
         let tools = cf.to_tool_request_set()?.tools;
-        let mut removed = vec![];
+        let mut removed: Vec<&ToolArg> = vec![];
         for ta in &self.installed_tool {
-            if tools.contains_key(&ta.ba) {
-                removed.push(ta);
+            if let Some(tool_requests) = tools.get(&ta.ba) {
+                let tools_to_remove: Vec<&ToolRequest> = tool_requests
+                    .iter()
+                    .filter(|tv| {
+                        tv.version() == ta.version.as_ref().map_or("latest", |v| v.as_str())
+                    })
+                    .collect();
+                for _tool in tools_to_remove {
+                    removed.push(ta);
+                    cf.remove_tool(&ta.ba)?;
+                }
             }
-            cf.remove_tool(&ta.ba)?;
         }
         if removed.is_empty() {
             debug!("no tools to remove");
