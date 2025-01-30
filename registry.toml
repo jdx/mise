@@ -598,6 +598,8 @@ eza.backends = [
     "asdf:mise-plugins/mise-eza",
     "cargo:eza"
 ]
+falco.backends = ["asdf:https://github.com/ronnnnn/asdf-falco"]
+falco.test = ["falco -V", "{{version}}"]
 fd.backends = [
     "aqua:sharkdp/fd",
     "ubi:sharkdp/fd",
