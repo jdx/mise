@@ -129,6 +129,22 @@ pub fn reshim(ts: &Toolset, force: bool) -> Result<()> {
 #[cfg(windows)]
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
     let shim = shim.trim_end_matches(".cmd");
+    // write a shim file without extension for use in Git Bash/Cygwin
+    file::write(
+        symlink_path.with_extension(""),
+        formatdoc! {r#"
+        #!/bin/bash
+
+        exec mise x -- {shim} "$@"
+        "#},
+    )
+    .wrap_err_with(|| {
+        eyre!(
+            "Failed to create symlink from {} to {}",
+            display_path(mise_bin),
+            display_path(symlink_path)
+        )
+    })?;
     file::write(
         symlink_path.with_extension("cmd"),
         formatdoc! {r#"
@@ -180,7 +196,7 @@ pub fn get_shim_diffs(
 fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
     let mise_bin = mise_bin.as_ref();
 
-    Ok(list_executables_in_dir(&dirs::SHIMS)?
+    Ok(list_shims()?
         .into_par_iter()
         .filter(|bin| {
             let path = dirs::SHIMS.join(bin);
@@ -211,6 +227,27 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
         .collect())
 }
 
+fn list_shims() -> Result<HashSet<String>> {
+    Ok(dirs::SHIMS
+        .read_dir()?
+        .par_bridge()
+        .map(|bin| {
+            let bin = bin?;
+            // files and symlinks which are executable or extensionless files (Git Bash/Cygwin)
+            if (file::is_executable(&bin.path()) || bin.path().extension().is_none())
+                && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
+            {
+                Ok(Some(bin.file_name().into_string().unwrap()))
+            } else {
+                Ok(None)
+            }
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect())
+}
+
 fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
     Ok(toolset
         .list_installed_versions()?
@@ -222,9 +259,12 @@ fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
             });
             if cfg!(windows) {
                 bins.into_iter()
-                    .map(|b| {
+                    .flat_map(|b| {
                         let p = PathBuf::from(&b);
-                        p.with_extension("cmd").to_string_lossy().to_string()
+                        vec![
+                            p.with_extension("").to_string_lossy().to_string(),
+                            p.with_extension("cmd").to_string_lossy().to_string(),
+                        ]
                     })
                     .collect()
             } else {
