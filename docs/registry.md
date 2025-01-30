@@ -244,7 +244,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | etcd | [aqua:etcd-io/etcd](https://github.com/etcd-io/etcd) [asdf:particledecay/asdf-etcd](https://github.com/particledecay/asdf-etcd) [vfox:mise-plugins/vfox-etcd](https://github.com/mise-plugins/vfox-etcd) |
 | evans | [aqua:ktr0731/evans](https://github.com/ktr0731/evans) [asdf:goki90210/asdf-evans](https://github.com/goki90210/asdf-evans) |
 | eza | [aqua:eza-community/eza](https://github.com/eza-community/eza) [asdf:mise-plugins/mise-eza](https://github.com/mise-plugins/mise-eza) [cargo:eza](https://crates.io/crates/eza) |
-| falco | [asdf:ronnnnn/asdf-falco](https://github.com/ronnnnn/asdf-falco) |
+| falco | [asdf:https://github.com/ronnnnn/asdf-falco](https://github.com/ronnnnn/asdf-falco) |
 | fd | [aqua:sharkdp/fd](https://github.com/sharkdp/fd) [ubi:sharkdp/fd](https://github.com/sharkdp/fd) [asdf:https://gitlab.com/wt0f/asdf-fd](https://gitlab.com/wt0f/asdf-fd) |
 | ffmpeg | [asdf:mise-plugins/mise-ffmpeg](https://github.com/mise-plugins/mise-ffmpeg) |
 | figma-export | [ubi:RedMadRobot/figma-export](https://github.com/RedMadRobot/figma-export) [asdf:younke/asdf-figma-export](https://github.com/younke/asdf-figma-export) |
