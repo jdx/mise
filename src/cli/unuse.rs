@@ -8,7 +8,6 @@ use crate::toolset::ToolRequest;
 use eyre::Result;
 use itertools::Itertools;
 
-use super::args::BackendArg;
 
 /// Removes installed tool versions from mise.toml
 ///
