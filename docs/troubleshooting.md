@@ -18,9 +18,12 @@ different project.
 See [shims vs path](/dev-tools/shims.html#shims-vs-path) for more info.
 :::
 
+In some cases, OSX may skip loading dot files when launching applications through launchctl (UI). This 
+is particularly troublesome for IDE extensions trying to use mise binaries. To circumvent this issue,
+run `echo "setenv PATH ${HOME}/.local/share/mise/shims:${PATH}" >> /etc/launchd.conf`.
+
 Also see the [shebang](/tips-and-tricks#shebang) example for a way to make scripts call mise to get
-the runtime.
-That is another way to use mise without activation.
+the runtime. That is another way to use mise without activation.
 
 ## mise is failing or not working right
 
