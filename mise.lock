@@ -7,12 +7,11 @@ backend = "aqua:rhysd/actionlint"
 "actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
 
 [tools.bun]
-version = "1.1.44"
+version = "1.2.1"
 backend = "core:bun"
 
 [tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:f192297d4570165efaf0ed0ff9939f70c554a639cc56cb7d56963948ea18502e"
-"bun-linux-x64-baseline.zip" = "sha256:902f414cf6f83996fca2babb9386d30555529505c0d26d29a99030bb900905d3"
+"bun-linux-x64-baseline.zip" = "sha256:e4f2a8796ee2f4357e02f38747a3d80aa48a3deca80aa41b21a3b8841855bf1e"
 
 [tools.cargo-binstall]
 version = "1.10.17"
