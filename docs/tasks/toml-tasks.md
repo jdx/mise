@@ -361,7 +361,7 @@ file = "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0"
 
 :::
 
-Url format must follow these patterns `git::<protocol>://<url>//<path>?<query>`
+Url format must follow these patterns `git::<protocol>://<url>//<path>?<ref>`
 
 Required fields:
 
@@ -371,7 +371,7 @@ Required fields:
 
 Optional fields:
 
-- `query`: The git reference (branch, tag, commit).
+- `ref`: The git reference (branch, tag, commit).
 
 #### Cache
 
