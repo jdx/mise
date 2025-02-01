@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import * as toml from "toml";
+import {load} from "js-toml";
 import markdownit from "markdown-it";
 
 const md = markdownit();
@@ -9,7 +9,7 @@ export default {
   load() {
     const settings = {};
     const raw = fs.readFileSync("./settings.toml", "utf-8");
-    const doc = toml.parse(raw);
+    const doc = load(raw);
 
     function getParseEnv(parseEnv) {
       if (parseEnv === "list_by_comma") {
