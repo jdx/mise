@@ -26,4 +26,18 @@ assert_succeed "mise run remote_lint_https_latest" # Cache should be used
 # Test remote tasks with with ref
 #################################################################################
 
-# TODO: Add test for remote task with ref
+cat <<EOF >mise.toml
+[tasks.remote_lint_https_ref]
+file  = "git::https://github.com/jdx/mise.git//xtasks/lint/clippy?ref=v2025.1.17"
+EOF
+
+assert_contains "mise tasks" "remote_lint_https_ref"
+assert_succeed "mise run remote_lint_https_ref" # Remote task should be downloaded
+
+mise cache clear # Clear cache to force redownload
+
+assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_https_ref" # Remote task should be redownloaded
+
+assert_succeed "mise run remote_lint_https_ref --no-cache" # Remote task should be redownloaded
+
+assert_succeed "mise run remote_lint_https_ref" # Cache should be used

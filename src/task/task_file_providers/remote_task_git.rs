@@ -149,7 +149,7 @@ impl TaskFileProvider for RemoteTaskGit {
                 trace!("Cache mode disabled");
 
                 if full_path.exists() {
-                    crate::file::remove_dir(full_path)?;
+                    crate::file::remove_all(&destination)?;
                 }
             }
         }
