@@ -1,5 +1,32 @@
 # Changelog
 
+## [2025.1.17](https://github.com/jdx/mise/compare/v2025.1.16..v2025.1.17) - 2025-01-31
+
+### 🚀 Features
+
+- **(registry)** use aqua for duckdb by [@mangkoran](https://github.com/mangkoran) in [#4270](https://github.com/jdx/mise/pull/4270)
+
+### 🐛 Bug Fixes
+
+- mise does not operate well under Git Bash on Windows by [@roele](https://github.com/roele) in [#4048](https://github.com/jdx/mise/pull/4048)
+- mise rm removes/reports wrong version of tool by [@roele](https://github.com/roele) in [#4272](https://github.com/jdx/mise/pull/4272)
+
+### 📚 Documentation
+
+- Update python documentation by [@hverlin](https://github.com/hverlin) in [#4260](https://github.com/jdx/mise/pull/4260)
+- fix postinstall typo in nodejs cookbook by [@arafays](https://github.com/arafays) in [#4251](https://github.com/jdx/mise/pull/4251)
+- Fix typo by [@henrebotha](https://github.com/henrebotha) in [#4277](https://github.com/jdx/mise/pull/4277)
+
+### Hooks.md
+
+- MISE_PROJECT_DIR -> MISE_PROJECT_ROOT by [@jubr](https://github.com/jubr) in [#4269](https://github.com/jdx/mise/pull/4269)
+
+### New Contributors
+
+- @mangkoran made their first contribution in [#4270](https://github.com/jdx/mise/pull/4270)
+- @jubr made their first contribution in [#4269](https://github.com/jdx/mise/pull/4269)
+- @arafays made their first contribution in [#4251](https://github.com/jdx/mise/pull/4251)
+
 ## [2025.1.16](https://github.com/jdx/mise/compare/v2025.1.15..v2025.1.16) - 2025-01-29
 
 ### 🚀 Features

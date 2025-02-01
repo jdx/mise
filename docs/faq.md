@@ -191,6 +191,6 @@ usage (<https://usage.jdx.dev/>) is a spec and CLI for defining CLI tools.
 
 Arguments, flags, environment variables, and config files can all be defined in a Usage spec. It can be thought of like OpenAPI (swagger) for CLIs.
 
-`usage` can be installed with `mise` using `mise use -g usage` and is required to get the autocompetion working. See [autocompletion](/installing-mise.html#autocompletion).
+`usage` can be installed with `mise` using `mise use -g usage` and is required to get the autocompletion working. See [autocompletion](/installing-mise.html#autocompletion).
 
 You can leverage usage in file tasks to get auto-completion working, see [file tasks arguments](/tasks/file-tasks.html#arguments).
