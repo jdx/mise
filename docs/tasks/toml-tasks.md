@@ -345,7 +345,7 @@ file = "https://example.com/build.sh"
 
 Please note that the file will be downloaded and executed. Make sure you trust the source.
 
-#### Git
+#### Git <Badge type="warning" text="experimental" />
 
 ::: code-group
 

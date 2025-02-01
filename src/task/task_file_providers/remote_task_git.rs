@@ -156,6 +156,10 @@ impl TaskFileProvider for RemoteTaskGit {
 
         let git_cloned = git::clone(repo_structure.url_without_path.as_str(), destination)?;
 
+        if let Some(branch) = repo_structure.branch {
+            git_cloned.update(Some(branch))?;
+        }
+
         Ok(git_cloned.dir.join(&repo_file_path))
     }
 }
