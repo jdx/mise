@@ -7,20 +7,21 @@ cargo init --name hello_cargo
 #################################################################################
 
 cat <<EOF >mise.toml
-[tasks.remote_lint_ssh_latest]
-file  = "git::ssh://git@github.com:jdx/mise.git//xtasks/lint/clippy"
+[tasks.remote_lint_https_latest]
+file  = "git::https://github.com/jdx/mise.git//xtasks/lint/clippy"
 EOF
 
-assert_contains "mise tasks" "remote_lint_ssh_latest"
-assert_succeed "mise run remote_lint_ssh_latest" # Remote task should be downloaded
+assert_contains "mise tasks" "remote_lint_https_latest"
+assert_succeed "mise run remote_lint_https_latest" # Remote task should be downloaded
 
 mise cache clear # Clear cache to force redownload
 
-assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_ssh_latest" # Remote task should be redownloaded
+assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_https_latest" # Remote task should be redownloaded
 
-assert_succeed "mise run remote_lint_ssh_latest --no-cache" # Remote task should be redownloaded
+assert_succeed "mise run remote_lint_https_latest --no-cache" # Remote task should be redownloaded
 
-assert_succeed "mise run remote_lint_ssh_latest" # Cache should be used
+assert_succeed "mise run remote_lint_https_latest" # Cache should be used
+
 
 #################################################################################
 # Test remote tasks with with ref
