@@ -195,6 +195,8 @@ bbr-s3-config-validator.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
 benthos.backends = ["aqua:benthosdev/benthos", "asdf:benthosdev/benthos-asdf"]
 bfs.backends = ["asdf:mise-plugins/mise-bfs"]
 binnacle.backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
+biome.backends = ["aqua:biomejs/biome", "ubi:biomejs/biome"]
+biome.test = ["biome --version", "Version: {{version}}"]
 bitwarden.backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
 bitwarden.test = [
     "bw --version",
@@ -1121,6 +1123,8 @@ kustomize.backends = [
     "asdf:Banno/asdf-kustomize"
 ]
 kustomize.test = ["kustomize version", "v{{version}}"]
+kwokctl.backends = ["aqua:kubernetes-sigs/kwok/kwokctl"]
+kwokctl.test = ["kwokctl --version", "kwokctl version v{{version}}"]
 kwt.backends = ["aqua:carvel-dev/kwt", "asdf:vmware-tanzu/asdf-carvel"]
 kyverno.backends = [
     "aqua:kyverno/kyverno",

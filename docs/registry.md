@@ -87,6 +87,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | benthos | [aqua:benthosdev/benthos](https://github.com/benthosdev/benthos) [asdf:benthosdev/benthos-asdf](https://github.com/benthosdev/benthos-asdf) |
 | bfs | [asdf:mise-plugins/mise-bfs](https://github.com/mise-plugins/mise-bfs) |
 | binnacle | [aqua:Traackr/binnacle](https://github.com/Traackr/binnacle) [asdf:Traackr/asdf-binnacle](https://github.com/Traackr/asdf-binnacle) |
+| biome | [aqua:biomejs/biome](https://github.com/biomejs/biome) [ubi:biomejs/biome](https://github.com/biomejs/biome) |
 | bitwarden | [aqua:bitwarden/clients](https://github.com/bitwarden/clients) [asdf:vixus0/asdf-bitwarden](https://github.com/vixus0/asdf-bitwarden) |
 | bitwarden-secrets-manager | [ubi:bitwarden/sdk](https://github.com/bitwarden/sdk) [asdf:asdf-community/asdf-bitwarden-secrets-manager](https://github.com/asdf-community/asdf-bitwarden-secrets-manager) |
 | black | [aqua:psf/black](https://github.com/psf/black) |
@@ -455,6 +456,7 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | kubevela | [aqua:kubevela/kubevela](https://github.com/kubevela/kubevela) [asdf:gustavclausen/asdf-kubevela](https://github.com/gustavclausen/asdf-kubevela) |
 | kubie | [aqua:sbstp/kubie](https://github.com/sbstp/kubie) [asdf:johnhamelink/asdf-kubie](https://github.com/johnhamelink/asdf-kubie) |
 | kustomize | [aqua:kubernetes-sigs/kustomize](https://github.com/kubernetes-sigs/kustomize) [asdf:Banno/asdf-kustomize](https://github.com/Banno/asdf-kustomize) |
+| kwokctl | [aqua:kubernetes-sigs/kwok/kwokctl](https://github.com/kubernetes-sigs/kwok/kwokctl) |
 | kwt | [aqua:carvel-dev/kwt](https://github.com/carvel-dev/kwt) [asdf:vmware-tanzu/asdf-carvel](https://github.com/vmware-tanzu/asdf-carvel) |
 | kyverno | [aqua:kyverno/kyverno](https://github.com/kyverno/kyverno) [asdf:https://github.com/hobaen/asdf-kyverno-cli.git](https://github.com/hobaen/asdf-kyverno-cli) |
 | lab | [aqua:zaquestion/lab](https://github.com/zaquestion/lab) [asdf:particledecay/asdf-lab](https://github.com/particledecay/asdf-lab) |
