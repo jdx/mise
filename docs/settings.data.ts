@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import {load} from "js-toml";
+import { load } from "js-toml";
 import markdownit from "markdown-it";
 
 const md = markdownit();
