@@ -86,8 +86,8 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 | bbr-s3-config-validator | [asdf:mise-plugins/tanzu-plug-in-for-asdf](https://github.com/mise-plugins/tanzu-plug-in-for-asdf) |
 | benthos | [aqua:benthosdev/benthos](https://github.com/benthosdev/benthos) [asdf:benthosdev/benthos-asdf](https://github.com/benthosdev/benthos-asdf) |
 | bfs | [asdf:mise-plugins/mise-bfs](https://github.com/mise-plugins/mise-bfs) |
-| biome | [aqua:biomejs/biome](https://github.com/biomejs/biome) [ubi:biomejs/biome](https://github.com/biomejs/biome) |
 | binnacle | [aqua:Traackr/binnacle](https://github.com/Traackr/binnacle) [asdf:Traackr/asdf-binnacle](https://github.com/Traackr/asdf-binnacle) |
+| biome | [aqua:biomejs/biome](https://github.com/biomejs/biome) [ubi:biomejs/biome](https://github.com/biomejs/biome) |
 | bitwarden | [aqua:bitwarden/clients](https://github.com/bitwarden/clients) [asdf:vixus0/asdf-bitwarden](https://github.com/vixus0/asdf-bitwarden) |
 | bitwarden-secrets-manager | [ubi:bitwarden/sdk](https://github.com/bitwarden/sdk) [asdf:asdf-community/asdf-bitwarden-secrets-manager](https://github.com/asdf-community/asdf-bitwarden-secrets-manager) |
 | black | [aqua:psf/black](https://github.com/psf/black) |
