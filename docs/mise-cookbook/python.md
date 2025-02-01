@@ -96,7 +96,7 @@ _.python.venv = { path = ".venv" }
 
 ### Syncing python versions installed by mise and uv
 
-You can use [uv sync python --uv](/cli/sync/python.html#uv) to sync the python version installed by `mise` with the python version specified in the `.python-version` file in the `uv` project.
+You can use [mise sync python --uv](/cli/sync/python.html#uv) to sync the python version installed by `mise` with the python version specified in the `.python-version` file in the `uv` project.
 
 ### uv scripts
 
