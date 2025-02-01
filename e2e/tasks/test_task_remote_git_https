@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-cargo init --name hello_cargo 
+cargo init --name hello_cargo
 
 #################################################################################
 # Test remote tasks with no ref
@@ -21,7 +21,6 @@ assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_https_latest
 assert_succeed "mise run remote_lint_https_latest --no-cache" # Remote task should be redownloaded
 
 assert_succeed "mise run remote_lint_https_latest" # Cache should be used
-
 
 #################################################################################
 # Test remote tasks with with ref

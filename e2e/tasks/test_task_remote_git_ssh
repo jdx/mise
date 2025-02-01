@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-cargo init --name hello_cargo 
+cargo init --name hello_cargo
 
 #################################################################################
 # Test remote tasks with no ref
