@@ -45,24 +45,29 @@ pub struct RemoteTaskGit {
 
 #[derive(Debug, Clone)]
 struct GitRepoStructure {
-    url: String,
     url_without_path: String,
     path: String,
+    branch: Option<String>,
 }
 
 impl GitRepoStructure {
-    pub fn new(url: &str, url_without_path: &str, path: &str) -> Self {
+    pub fn new(url_without_path: &str, path: &str, branch: Option<String>) -> Self {
         Self {
-            url: url.to_string(),
             url_without_path: url_without_path.to_string(),
             path: path.to_string(),
+            branch,
         }
     }
 }
 
 impl RemoteTaskGit {
     fn get_cache_key(&self, repo_structure: &GitRepoStructure) -> String {
-        hash::hash_sha256_to_str(&repo_structure.url_without_path)
+        let key = format!(
+            "{}{}",
+            &repo_structure.url_without_path,
+            &repo_structure.branch.to_owned().unwrap_or("".to_string())
+        );
+        hash::hash_sha256_to_str(&key)
     }
 
     fn get_repo_structure(&self, file: &str) -> GitRepoStructure {
@@ -73,7 +78,7 @@ impl RemoteTaskGit {
     }
 
     fn detect_ssh(&self, file: &str) -> Result<GitRepoStructure, Box<dyn std::error::Error>> {
-        let re = Regex::new(r"^git::ssh://((?P<user>[^@]+)@)(?P<host>[^/]+)/(?P<repo>[^/]+)\.git//(?P<path>[^?]+)(\?(?P<query>[^?]+))?$").unwrap();
+        let re = Regex::new(r"^git::ssh://(?P<url>((?P<user>[^@]+)@)(?P<host>[^/]+)/(?P<repo>[^/]+)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap();
 
         if !re.is_match(file) {
             return Err("Invalid SSH URL".into());
@@ -81,13 +86,17 @@ impl RemoteTaskGit {
 
         let captures = re.captures(file).unwrap();
 
+        let url_without_path = captures.name("url").unwrap().as_str();
+
         let path = captures.name("path").unwrap().as_str();
 
-        Ok(GitRepoStructure::new(file, &file.replace(path, ""), path))
+        let branch: Option<String> = captures.name("branch").map(|m| m.as_str().to_string());
+
+        Ok(GitRepoStructure::new(url_without_path, path, branch))
     }
 
     fn detect_https(&self, file: &str) -> Result<GitRepoStructure, Box<dyn std::error::Error>> {
-        let re = Regex::new(r"^git::https://(?P<host>[^/]+)/(?P<repo>[^/]+(?:/[^/]+)?)\.git//(?P<path>[^?]+)(\?(?P<query>[^?]+))?$").unwrap();
+        let re = Regex::new(r"^git::(?P<url>https://(?P<host>[^/]+)/(?P<repo>[^/]+(?:/[^/]+)?)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap();
 
         if !re.is_match(file) {
             return Err("Invalid HTTPS URL".into());
@@ -95,9 +104,13 @@ impl RemoteTaskGit {
 
         let captures = re.captures(file).unwrap();
 
+        let url_without_path = captures.name("url").unwrap().as_str();
+
         let path = captures.name("path").unwrap().as_str();
 
-        Ok(GitRepoStructure::new(file, &file.replace(path, ""), path))
+        let branch: Option<String> = captures.name("branch").map(|m| m.as_str().to_string());
+
+        Ok(GitRepoStructure::new(url_without_path, path, branch))
     }
 }
 
@@ -121,6 +134,8 @@ impl TaskFileProvider for RemoteTaskGit {
         let repo_file_path = repo_structure.path.clone();
         let full_path = destination.join(&repo_file_path);
 
+        debug!("Repo structure: {:?}", repo_structure);
+
         match self.is_cached {
             true => {
                 trace!("Cache mode enabled");
@@ -139,7 +154,7 @@ impl TaskFileProvider for RemoteTaskGit {
             }
         }
 
-        let git_cloned = git::clone(repo_structure.url.as_str(), destination)?;
+        let git_cloned = git::clone(repo_structure.url_without_path.as_str(), destination)?;
 
         Ok(git_cloned.dir.join(&repo_file_path))
     }
@@ -157,7 +172,6 @@ mod tests {
         let test_cases = vec![
             "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
             "git::ssh://git@github.com:myorg/example.git//terraform/myfile?ref=master",
-            "git::ssh://git@github.com:myorg/example.git//terraform/myfile?depth=1",
             "git::ssh://git@myserver.com/example.git//terraform/myfile",
             "git::ssh://user@myserver.com/example.git//myfile?ref=master",
         ];
@@ -192,7 +206,6 @@ mod tests {
         let test_cases = vec![
             "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
             "git::https://github.com/myorg/example.git//terraform/myfile?ref=master",
-            "git::https://github.com/myorg/example.git//terraform/myfile?depth=1",
             "git::https://myserver.com/example.git//terraform/myfile",
             "git::https://myserver.com/example.git//myfile?ref=master",
         ];
@@ -216,6 +229,72 @@ mod tests {
         for url in test_cases {
             let result = remote_task_git.detect_https(url);
             assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_extract_ssh_url_information() {
+        let remote_task_git = RemoteTaskGitBuilder::new().build();
+
+        let test_cases: Vec<(&str, &str, &str, Option<String>)> = vec![
+            (
+                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
+                "git@github.com:myorg/example.git",
+                "myfile",
+                Some("v1.0.0".to_string()),
+            ),
+            (
+                "git::ssh://git@github.com:myorg/example.git//terraform/myfile?ref=master",
+                "git@github.com:myorg/example.git",
+                "terraform/myfile",
+                Some("master".to_string()),
+            ),
+            (
+                "git::ssh://git@myserver.com/example.git//terraform/myfile",
+                "git@myserver.com/example.git",
+                "terraform/myfile",
+                None,
+            ),
+        ];
+
+        for (url, expected_repo, expected_path, expected_branch) in test_cases {
+            let repo = remote_task_git.detect_ssh(url).unwrap();
+            assert_eq!(expected_repo, repo.url_without_path);
+            assert_eq!(expected_path, repo.path);
+            assert_eq!(expected_branch, repo.branch);
+        }
+    }
+
+    #[test]
+    fn test_extract_https_url_information() {
+        let remote_task_git = RemoteTaskGitBuilder::new().build();
+
+        let test_cases: Vec<(&str, &str, &str, Option<String>)> = vec![
+            (
+                "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
+                "https://github.com/myorg/example.git",
+                "myfile",
+                Some("v1.0.0".to_string()),
+            ),
+            (
+                "git::https://github.com/myorg/example.git//terraform/myfile?ref=master",
+                "https://github.com/myorg/example.git",
+                "terraform/myfile",
+                Some("master".to_string()),
+            ),
+            (
+                "git::https://myserver.com/example.git//terraform/myfile",
+                "https://myserver.com/example.git",
+                "terraform/myfile",
+                None,
+            ),
+        ];
+
+        for (url, expected_repo, expected_path, expected_branch) in test_cases {
+            let repo = remote_task_git.detect_https(url).unwrap();
+            assert_eq!(expected_repo, repo.url_without_path);
+            assert_eq!(expected_path, repo.path);
+            assert_eq!(expected_branch, repo.branch);
         }
     }
 

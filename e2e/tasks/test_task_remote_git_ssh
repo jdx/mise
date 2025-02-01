@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+REMOTE_CACHED_TASKS_DIR="$MISE_CACHE_DIR/remote-git-tasks-cache"
+
+count_dirs() {
+  find "$REMOTE_CACHED_TASKS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l
+}
+
+list_dirs() {
+  find "$REMOTE_CACHED_TASKS_DIR" -mindepth 1 -maxdepth 1 -type d
+}
+
+#################################################################################
+# Test remote tasks with no ref
+#################################################################################
+
+cat <<EOF >mise.toml
+[tasks.remote_lint_ssh_latest]
+file  = "git::ssh://git@github.com:jdx/mise.git//xtasks/lint/clippy"
+EOF
+
+assert_contains "mise tasks" "remote_lint_ssh_latest"
+assert_succeed "mise run remote_lint_ssh_latest" # Remote task should be downloaded
+assert_equals "$(count_dirs)" "1"
+
+mise cache clear # Clear cache to force redownload
+
+assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_ssh_latest" # Remote task should be redownloaded
+assert_equals "$(count_dirs)" "1"
+
+assert_succeed "mise run remote_lint_ssh_latest --no-cache" # Remote task should be redownloaded
+assert_equals "$(count_dirs)" "1"
+cache_before=$(list_dirs)
+
+assert_succeed "mise run remote_lint_ssh_latest" # Cache should be used
+assert_equals "$(count_dirs)" "1"
+cache_after=$(list_dirs)
+assert_succeed "diff $cache_before $cache_after"
+
+#################################################################################
+# Test remote tasks with with ref
+#################################################################################
+
+# TODO: Add test for remote task with ref
