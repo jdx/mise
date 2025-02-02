@@ -1,5 +1,28 @@
 # Changelog
 
+## [2025.2.0](https://github.com/jdx/mise/compare/v2025.1.17..v2025.2.0) - 2025-02-02
+
+### 🚀 Features
+
+- **(registry)** add kwokctl by [@mangkoran](https://github.com/mangkoran) in [#4282](https://github.com/jdx/mise/pull/4282)
+- add biome to registry by [@kit494way](https://github.com/kit494way) in [#4283](https://github.com/jdx/mise/pull/4283)
+- add gittool/gitversion by [@acesyde](https://github.com/acesyde) in [#4289](https://github.com/jdx/mise/pull/4289)
+
+### 📚 Documentation
+
+- add filtering support to registry docs page by [@roele](https://github.com/roele) in [#4285](https://github.com/jdx/mise/pull/4285)
+- improve registry filtering performance by [@roele](https://github.com/roele) in [#4287](https://github.com/jdx/mise/pull/4287)
+- fix registry table rendering for mobile by [@roele](https://github.com/roele) in [#4288](https://github.com/jdx/mise/pull/4288)
+
+### Chore
+
+- updated deps by [@jdx](https://github.com/jdx) in [#4290](https://github.com/jdx/mise/pull/4290)
+- do not run autofix on renovate PRs by [@jdx](https://github.com/jdx) in [41c5ce4](https://github.com/jdx/mise/commit/41c5ce4c6581f856bf0d756e3fe99ec2fae2e7bd)
+
+### New Contributors
+
+- @ELLIOTTCABLE made their first contribution in [#4280](https://github.com/jdx/mise/pull/4280)
+
 ## [2025.1.17](https://github.com/jdx/mise/compare/v2025.1.16..v2025.1.17) - 2025-01-31
 
 ### 🚀 Features
