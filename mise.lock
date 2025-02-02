@@ -7,31 +7,29 @@ backend = "aqua:rhysd/actionlint"
 "actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
 
 [tools.bun]
-version = "1.1.44"
+version = "1.2.2"
 backend = "core:bun"
 
 [tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:f192297d4570165efaf0ed0ff9939f70c554a639cc56cb7d56963948ea18502e"
-"bun-linux-x64-baseline.zip" = "sha256:902f414cf6f83996fca2babb9386d30555529505c0d26d29a99030bb900905d3"
+"bun-darwin-aarch64.zip" = "sha256:c4d58e06c5c33885b526f4d91a38ca9ebdb9fc3fb4cd547f7d3302055c98e41c"
 
 [tools.cargo-binstall]
-version = "1.10.17"
+version = "1.10.22"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
-"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:81abb7de75ef130844bb58965bdb93969afadd0821cf5e1e1bd0517e48963199"
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:d073d4e8901e176b0f625845f9a0bbd926a063017991d7cc0c863e6b884d2d59"
+"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:97ce4a2f18181f052dda266b042d8bb220e48ffe40ca75e796ae4c5e418b9e01"
 
 [tools."cargo:cargo-edit"]
-version = "0.13.0"
+version = "0.13.1"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
-version = "1.42.0"
+version = "1.42.1"
 backend = "cargo:cargo-insta"
 
 [tools."cargo:git-cliff"]
-version = "2.7.0"
+version = "2.8.0"
 backend = "cargo:git-cliff"
 
 [tools."cargo:toml-cli"]
@@ -39,7 +37,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "2.0.0"
+version = "2.0.4"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
@@ -63,7 +61,7 @@ jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea
 "jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
 
 [tools."npm:markdownlint-cli"]
-version = "0.43.0"
+version = "0.44.0"
 backend = "npm:markdownlint-cli"
 
 [tools."npm:prettier"]
@@ -75,11 +73,11 @@ version = "0.24.2"
 backend = "pipx:toml-sort"
 
 [tools.pre-commit]
-version = "4.0.1"
+version = "4.1.0"
 backend = "aqua:pre-commit/pre-commit"
 
 [tools.pre-commit.checksums]
-"pre-commit-4.0.1.pyz" = "sha256:f3e65c943795be7879e7ea2beda248321b6c8ae851dabc785522a432fb8ce003"
+"pre-commit-4.1.0.pyz" = "sha256:df3ac88cb2d7825af90e887e1eafbdb85481b800541d86e4d437b37f8abf8a39"
 
 [tools.ripgrep]
 version = "14.1.1"

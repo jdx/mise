@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2025.1.17"
+version = "2025.2.0"
 edition = "2021"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -96,7 +96,7 @@ openssl = { version = "0.10", optional = true }
 os-release = "0.1"
 path-absolutize = "3"
 petgraph = "0.7"
-rand = "0.8"
+rand = "0.9"
 rayon = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = [
