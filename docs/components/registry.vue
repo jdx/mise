@@ -48,8 +48,8 @@ export default {
   },
   computed: {
     filteredData() {
-      if (this.filter.trim() === '') return this.data;
-      return this.data.filter(entry => {
+      if (this.filter.trim() === "") return this.data;
+      return this.data.filter((entry) => {
         const searchTerm = this.filter.toLowerCase();
         const short = entry.short.toString().toLowerCase();
 
@@ -62,8 +62,10 @@ export default {
   },
   methods: {
     highlightMatches(text) {
-      if (this.filter.trim() === '') return text;
-      const matchExists = text.toLowerCase().includes(this.filter.toLowerCase());
+      if (this.filter.trim() === "") return text;
+      const matchExists = text
+        .toLowerCase()
+        .includes(this.filter.toLowerCase());
       if (!matchExists) return text;
 
       const re = new RegExp(this.filter, "ig");
