@@ -14,7 +14,7 @@
       </tr>
     </thead>
     <tbody>
-      <tr v-for="(entry, index) in filteredData" :key="index">
+      <tr v-for="(entry, index) in filteredData" :key="`backend-${index}`">
         <td v-html="highlightMatches(entry.short)"></td>
         <td>
           <span v-for="(backend, index) in entry.backends">
@@ -48,6 +48,7 @@ export default {
   },
   computed: {
     filteredData() {
+      if (this.filter.trim() === "") return this.data;
       return this.data.filter((entry) => {
         const searchTerm = this.filter.toLowerCase();
         const short = entry.short.toString().toLowerCase();
@@ -61,6 +62,7 @@ export default {
   },
   methods: {
     highlightMatches(text) {
+      if (this.filter.trim() === "") return text;
       const matchExists = text
         .toLowerCase()
         .includes(this.filter.toLowerCase());
