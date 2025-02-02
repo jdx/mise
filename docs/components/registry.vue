@@ -5,7 +5,7 @@
     placeholder="Filter by Short or Full"
     v-model="filter"
   />
-  <table class="filtered-table">
+  <table>
     <thead>
       <tr>
         <th>Short</th>
@@ -83,11 +83,9 @@ export default {
   width: 100%;
   padding: 10px;
   margin-bottom: 10px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-}
-.filtered-table {
-  display: table;
-  width: 100%;
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  font-size: 15px;
+  color: var(--vp-c-text-2);
 }
 </style>
