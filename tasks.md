@@ -172,12 +172,6 @@ User to run as
 
 - **Usage**: `render:mangen`
 
-## `render:registry`
-
-- Depends: build
-
-- **Usage**: `render:registry`
-
 ## `render:settings`
 
 - Depends: docs:setup

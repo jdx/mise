@@ -50,10 +50,6 @@ mise completion zsh > completions/_mise
 mise completion fish > completions/mise.fish
 '''
 
-["render:registry"]
-depends = ["build"]
-run = "./scripts/render-registry.js"
-
 ["render:settings"]
 run = "tsx xtasks/render/settings.ts"
 depends = ['docs:setup']
