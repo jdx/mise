@@ -5,8 +5,7 @@ use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
-use rand::seq::SliceRandom;
-use rand::thread_rng;
+use rand::prelude::*;
 use std::sync::LazyLock as Lazy;
 use tera::{Context, Tera, Value};
 use versions::{Requirement, Versioning};
@@ -74,7 +73,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                     match args.get("alphabet") {
                         Some(Value::String(alphabet)) => {
                             let alphabet = alphabet.chars().collect::<Vec<char>>();
-                            let mut rng = thread_rng();
+                            let mut rng = rand::rng();
                             let result =
                                 (0..n).map(|_| alphabet.choose(&mut rng).unwrap()).collect();
                             Ok(Value::String(result))
