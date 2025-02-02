@@ -727,6 +727,7 @@ gitsign.os = ["linux", "macos"]
 gitsign.test = ["gitsign --version", "gitsign version v{{version}}"]
 gitu.backends = ["ubi:altsem/gitu", "cargo:gitu"]
 gitui.backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui"]
+gitversion.backends = ["aqua:gittools/gitversion", "ubi:gittools/gitversion"]
 glab.backends = ["asdf:mise-plugins/mise-glab"]
 gleam.backends = ["aqua:gleam-lang/gleam", "asdf:asdf-community/asdf-gleam"]
 # gleam.test = ["gleam --version", "gleam {{version}}"] reporting wrong version
