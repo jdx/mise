@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.2.1](https://github.com/jdx/mise/compare/v2025.2.0..v2025.2.1) - 2025-02-03
+
+### Chore
+
+- fix winget releaser job by [@jdx](https://github.com/jdx) in [e67c653](https://github.com/jdx/mise/commit/e67c653de35ff83d4ee280bf5cb2381741a2108e)
+
 ## [2025.2.0](https://github.com/jdx/mise/compare/v2025.1.17..v2025.2.0) - 2025-02-02
 
 ### 🚀 Features
