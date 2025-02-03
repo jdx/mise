@@ -4,7 +4,6 @@ clean = "cargo clean"
 release = "cargo release"
 signal-test = "node ./test/fixtures/signal-test.js"
 ci = { depends = ["format", "build", "test"] }
-pre-commit = { depends = ["render", "lint"] }
 lint = { depends = ["lint:*"] }
 
 [build]
@@ -51,10 +50,6 @@ mise completion zsh > completions/_mise
 mise completion fish > completions/mise.fish
 '''
 
-["render:registry"]
-depends = ["build"]
-run = "./scripts/render-registry.js"
-
 ["render:settings"]
 run = "tsx xtasks/render/settings.ts"
 depends = ['docs:setup']
@@ -69,6 +64,7 @@ wait_for = ["render:completions"]
 run = [
   "usage generate fig --file mise.usage.kdl --out-file xtasks/fig/src/mise.ts",
   "tsx xtasks/fig/addCustomGenerators.ts xtasks/fig/src/mise.ts xtasks/fig/src/mise.ts",
+  "bun run lint-fig:fix",
 ]
 depends = ['docs:setup']
 
@@ -137,3 +133,7 @@ hide = true
 tools = { gh = "2.60.0" }
 run = "echo {{arg(name='greeting')}}; sleep 2; echo 2; sleep 2; echo 3; sleep 0.4; echo 4; sleep 1"
 description = "a task for testing"
+
+[pre-commit]
+env = { PRE_COMMIT = 1 }
+run = ["mise run lint"]

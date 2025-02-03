@@ -12,7 +12,7 @@ use itertools::Itertools;
 use serde_derive::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use url::Url;
 
@@ -34,7 +34,8 @@ pub struct AquaRegistry {
     repo_exists: bool,
 }
 
-#[derive(Debug, Deserialize, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, strum::Display)]
+#[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum AquaPackageType {
     GithubArchive,
@@ -42,6 +43,8 @@ pub enum AquaPackageType {
     #[default]
     GithubRelease,
     Http,
+    GoInstall,
+    Cargo,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -206,6 +209,7 @@ impl AquaRegistry {
             .next()
             .wrap_err(format!("no package found for {id} in {path:?}"))?;
         if let Some(version_filter) = &pkg.version_filter {
+            // TODO: should this use AquaPackage::expr_parser somehow?
             pkg.version_filter_expr = Some(Parser::new().compile(version_filter)?);
         }
         Ok(pkg)
@@ -245,24 +249,8 @@ impl AquaPackage {
     }
 
     fn version_override(&self, v: &str) -> &AquaPackage {
-        let ver = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v));
-        let mut expr = Parser::new();
+        let expr = self.expr_parser(v);
         let ctx = self.expr_ctx(v);
-        expr.add_function("semver", |c| {
-            if c.args.len() != 1 {
-                return Err("semver() takes exactly one argument".to_string().into());
-            }
-            let semver = c.args[0].as_string().unwrap().replace(' ', "");
-            if let Some(check_version) = versions::Requirement::new(&semver) {
-                if let Some(ver) = &ver {
-                    Ok(check_version.matches(ver).into())
-                } else {
-                    Err("invalid version".to_string().into())
-                }
-            } else {
-                Err("invalid semver".to_string().into())
-            }
-        });
         vec![self]
             .into_iter()
             .chain(self.version_overrides.iter())
@@ -349,7 +337,14 @@ impl AquaPackage {
     }
 
     pub fn url(&self, v: &str) -> Result<String> {
-        self.parse_aqua_str(&self.url, v, &Default::default())
+        let mut url = self.url.clone();
+        if cfg!(windows)
+            && Path::new(&url).extension().is_none()
+            && (self.format.is_empty() || self.format == "raw")
+        {
+            url.push_str(".exe");
+        }
+        self.parse_aqua_str(&url, v, &Default::default())
     }
 
     fn parse_aqua_str(
@@ -391,8 +386,29 @@ impl AquaPackage {
     }
 
     fn expr(&self, v: &str, program: Program) -> Result<Value> {
-        let expr = Parser::new();
+        let expr = self.expr_parser(v);
         expr.run(program, &self.expr_ctx(v)).map_err(|e| eyre!(e))
+    }
+
+    fn expr_parser(&self, v: &str) -> Parser {
+        let ver = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v));
+        let mut expr = Parser::new();
+        expr.add_function("semver", move |c| {
+            if c.args.len() != 1 {
+                return Err("semver() takes exactly one argument".to_string().into());
+            }
+            let semver = c.args[0].as_string().unwrap().replace(' ', "");
+            if let Some(check_version) = versions::Requirement::new(&semver) {
+                if let Some(ver) = &ver {
+                    Ok(check_version.matches(ver).into())
+                } else {
+                    Err("invalid version".to_string().into())
+                }
+            } else {
+                Err("invalid semver".to_string().into())
+            }
+        });
+        expr
     }
 
     fn expr_ctx(&self, v: &str) -> Context {
@@ -444,6 +460,9 @@ impl AquaFile {
 }
 
 fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
+    if avo.r#type != AquaPackageType::GithubRelease {
+        orig.r#type = avo.r#type.clone();
+    }
     if !avo.repo_owner.is_empty() {
         orig.repo_owner = avo.repo_owner.clone();
     }

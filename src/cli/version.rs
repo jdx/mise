@@ -5,7 +5,7 @@ use eyre::Result;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
-use crate::build_time::{git_sha, BUILD_TIME};
+use crate::build_time::BUILD_TIME;
 use crate::cli::self_update::SelfUpdate;
 #[cfg(not(test))]
 use crate::config::Settings;
@@ -20,7 +20,35 @@ use crate::{dirs, duration, env, file};
 /// If the version is out of date, it will display a warning.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "v", after_long_help = AFTER_LONG_HELP)]
-pub struct Version {}
+pub struct Version {
+    /// Print the version information in JSON format
+    #[clap(short = 'J', long)]
+    json: bool,
+}
+
+impl Version {
+    pub fn run(self) -> Result<()> {
+        if self.json {
+            self.json()?
+        } else {
+            show_version()?;
+            show_latest();
+        }
+        Ok(())
+    }
+
+    fn json(&self) -> Result<()> {
+        let json = serde_json::json!({
+            "version": *VERSION,
+            "latest": get_latest_version(duration::DAILY),
+            "os": *OS,
+            "arch": *ARCH,
+            "build_time": BUILD_TIME.to_string(),
+        });
+        println!("{}", serde_json::to_string_pretty(&json)?);
+        Ok(())
+    }
+}
 
 pub static OS: Lazy<String> = Lazy::new(|| env::consts::OS.into());
 pub static ARCH: Lazy<String> = Lazy::new(|| {
@@ -38,11 +66,7 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
         v.push_str("-DEBUG");
     };
     let build_time = BUILD_TIME.format("%Y-%m-%d");
-    let extra = match git_sha() {
-        Some(sha) => format!("({} {})", sha, build_time),
-        _ => format!("({})", build_time),
-    };
-    format!("{v} {os}-{arch} {extra}", os = *OS, arch = *ARCH)
+    format!("{v} {os}-{arch} ({build_time})", os = *OS, arch = *ARCH)
 });
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -57,20 +81,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 pub static V: Lazy<Versioning> = Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());
 
-impl Version {
-    pub fn run(self) -> Result<()> {
-        show_version()?;
-        show_latest();
-        Ok(())
-    }
-}
-
 pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
     #[cfg(unix)]
     let mise_bin = "mise";
     #[cfg(windows)]
     let mise_bin = "mise.exe";
-    if args.len() == 2 && *env::MISE_BIN_NAME == mise_bin || env::MISE_BIN_NAME.starts_with("mise-")
+    if args.len() == 2
+        && (*env::MISE_BIN_NAME == mise_bin || env::MISE_BIN_NAME.starts_with("mise-"))
     {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" || cmd == "v" {

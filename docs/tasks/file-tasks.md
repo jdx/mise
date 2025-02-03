@@ -185,12 +185,12 @@ const fs = require("fs");
 const { usage_user, usage_force, usage_output_file } = process.env;
 
 if (usage_force === "true") {
-  fs.rmSync(usage_file, { force: true });
+  fs.rmSync(usage_output_file, { force: true });
 }
 
 const user = usage_user ?? "world";
-fs.appendFileSync(usage_file, `Hello, ${user}\n`);
-console.log(`Greeting written to ${usage_file}`);
+fs.appendFileSync(usage_output_file, `Hello, ${user}\n`);
+console.log(`Greeting written to ${usage_output_file}`);
 ```
 
 Run it with:

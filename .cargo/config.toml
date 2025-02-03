@@ -1,3 +1,6 @@
+#paths = ["../vfox.rs"]
+#paths = ["../usage/lib"]
+
 [env]
 RUST_TEST_THREADS = '1'
 

@@ -12,7 +12,7 @@ use crate::ui::table;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Tool {
     /// Tool name to get information about
-    backend: BackendArg,
+    tool: BackendArg,
     /// Output in JSON format
     #[clap(long, short = 'J')]
     json: bool,
@@ -57,9 +57,9 @@ impl Tool {
     pub fn run(self) -> Result<()> {
         let mut ts = ToolsetBuilder::new().build(&Config::get())?;
         ts.resolve()?;
-        let tvl = ts.versions.get(&self.backend);
+        let tvl = ts.versions.get(&self.tool);
         let tv = tvl.map(|tvl| tvl.versions.first().unwrap());
-        let ba = tv.map(|tv| tv.ba()).unwrap_or_else(|| &self.backend);
+        let ba = tv.map(|tv| tv.ba()).unwrap_or_else(|| &self.tool);
         let backend = ba.backend().ok();
         let info = ToolInfo {
             backend: ba.full(),

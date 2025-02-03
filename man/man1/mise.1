@@ -6,15 +6,7 @@ mise \- The front\-end to your dev env
 .SH SYNOPSIS
 \fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-E\fR|\fB\-\-env\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-output\fR] [\fB\-\-raw\fR] [\fB\-\-no\-config\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-silent\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fITASK\fR] [\fITASK_ARGS\fR] [\fITASK_ARGS_LAST\fR] [\fIsubcommands\fR]
 .SH DESCRIPTION
-.PP
-mise is a tool for managing runtime versions. https://github.com/jdx/mise
-.PP
-It\*(Aqs a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
-that works for any language. It\*(Aqs also great for managing linters/tools like
-jq and shellcheck.
-.PP
-It is inspired by asdf and uses asdf\*(Aqs plugin ecosystem under the hood:
-https://asdf\-vm.com/
+mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise
 .SH OPTIONS
 .TP
 \fB\-C\fR, \fB\-\-cd\fR=\fIDIR\fR
@@ -159,6 +151,9 @@ Synchronize tools from other version managers with mise
 .TP
 mise\-tasks(1)
 Manage tasks
+.TP
+mise\-test\-tool(1)
+Test a tool installs and executes
 .TP
 mise\-tool(1)
 Gets information about a tool

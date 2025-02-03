@@ -55,7 +55,38 @@ then this will be ignored.
 
 ```toml
 [tools]
-"ubi:BurntSushi/ripgrep" = { matching = "musl" }
+"ubi:BurntSushi/ripgrep" = { version = "latest", matching = "musl" }
+```
+
+### `extract_all`
+
+Set to `true` to extract all files in the tarball instead of just the "bin". Not compatible with `exe`.
+
+```toml
+[tools]
+"ubi:helix-editor/helix" = { version = "latest", extract_all = "true" }
+```
+
+### `bin_path`
+
+The directory in the tarball where the binary(s) are located. This is useful when the binary is not in the root of the tarball.
+This only makes sense when `extract_all` is set to `true`.
+
+```toml
+[tools]
+"ubi:BurntSushi/ripgrep" = { version = "latest", extract_all = "true", bin_path = "target/release" }
+```
+
+### `tag_regex`
+
+Set a regex to filter out tags that don't match the regex. This is useful when a vendor has a bunch of
+releases for unrelated CLIs in the same repo. For example, `cargo-bins/cargo-binstall` has a bunch of
+releases for unrelated CLIs that are not `cargo-binstall`. This option can be used to filter out those
+releases.
+
+```toml
+[tools]
+"ubi:cargo-bins/cargo-binstall" = { version = "latest", tag_regex = "^\d+\." }
 ```
 
 ## Supported Ubi Syntax

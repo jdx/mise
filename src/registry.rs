@@ -48,13 +48,15 @@ impl RegistryTool {
             }
             backend_types
         });
-        let platform = format!("{OS}-{ARCH}");
+        let os = SETTINGS.os.clone().unwrap_or(OS.to_string());
+        let arch = SETTINGS.arch.clone().unwrap_or(ARCH.to_string());
+        let platform = format!("{os}-{arch}");
         self.backends
             .iter()
             .filter(|rb| {
                 rb.platforms.is_empty()
-                    || rb.platforms.contains(&OS)
-                    || rb.platforms.contains(&ARCH)
+                    || rb.platforms.contains(&&*os)
+                    || rb.platforms.contains(&&*arch)
                     || rb.platforms.contains(&&*platform)
             })
             .map(|rb| rb.full)

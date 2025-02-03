@@ -84,7 +84,7 @@ fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> 
             let s = s.trim().to_string();
             trace!("cache key element: {} -> {}", tmpl.trim(), s);
             let mut s = hash_to_str(&s);
-            s.truncate(10);
+            s = s.chars().take(10).collect();
             s
         })
         .collect::<Vec<String>>();

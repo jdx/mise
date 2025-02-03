@@ -1,6 +1,7 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::file::display_path;
+use crate::git::Git;
 use crate::plugins::PluginType;
 use crate::{dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
@@ -9,7 +10,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use versions::Versioning;
 
@@ -55,7 +56,11 @@ fn init_plugins() -> MutexResult<InstallStatePlugins> {
         .filter_map(|d| {
             time!("init_plugins {d}");
             let path = dirs::PLUGINS.join(&d);
-            if path.join("metadata.lua").exists() {
+            if is_banned_plugin(&path) {
+                info!("removing banned plugin {d}");
+                let _ = file::remove_all(&path);
+                None
+            } else if path.join("metadata.lua").exists() {
                 Some((d, PluginType::Vfox))
             } else if path.join("bin").join("list-all").exists() {
                 Some((d, PluginType::Asdf))
@@ -126,6 +131,16 @@ fn init_tools() -> MutexResult<InstallStateTools> {
 pub fn list_plugins() -> Result<Arc<BTreeMap<String, PluginType>>> {
     let plugins = init_plugins()?;
     Ok(plugins)
+}
+
+fn is_banned_plugin(path: &Path) -> bool {
+    if path.ends_with("gradle") {
+        let repo = Git::new(path);
+        if let Some(url) = repo.get_remote_url() {
+            return url == "https://github.com/rfrancis/asdf-gradle.git";
+        }
+    }
+    false
 }
 
 pub fn get_tool_full(short: &str) -> Result<Option<String>> {

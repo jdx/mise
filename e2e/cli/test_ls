@@ -34,3 +34,5 @@ mise use cargo-binstall
 mise i cargo:usage-cli
 assert_contains "mise ls" "cargo:usage-cli"
 assert_not_contains "mise ls" "cargo-usage-cli" # if the backend meta file isn't working right these will be displayed
+
+assert_contains "mise ls --prunable" "cargo:usage-cli"

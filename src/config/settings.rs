@@ -40,7 +40,7 @@ pub enum SettingsType {
 pub struct SettingsMeta {
     // pub key: String,
     pub type_: SettingsType,
-    // pub description: String,
+    pub description: &'static str,
 }
 
 #[derive(
@@ -119,11 +119,6 @@ impl Settings {
         settings = sb.load()?;
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = false;
-        }
-        if !settings.idiomatic_version_file_disable_tools.is_empty() {
-            settings
-                .disable_tools
-                .extend(settings.idiomatic_version_file_disable_tools.clone());
         }
         if settings.raw {
             settings.jobs = 1;

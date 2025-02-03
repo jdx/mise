@@ -6,3 +6,8 @@ assert "./bin/mise version"
 assert "mise task add xxx -- echo 'running xxx'"
 assert "mise generate task-stubs --mise-bin ./bin/mise"
 assert "./bin/xxx" "running xxx"
+
+assert "mise generate bootstrap -l -w"
+assert_contains "./bin/mise tasks ls" "xxx"
+
+assert_not_contains "MISE_IGNORED_CONFIG_PATHS=$(pwd) ./bin/mise tasks ls" "xxx"

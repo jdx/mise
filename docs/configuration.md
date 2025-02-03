@@ -148,7 +148,7 @@ min_version = '2024.11.1'
 
 - You can find the JSON schema for `mise.toml` [here](https://github.com/jdx/mise/blob/main/schema/mise.json) or at <https://mise.jdx.dev/schema/mise.json>.
 - Some editors can load it automatically to provide autocompletion and validation for when editing a `mise.toml` file ([VSCode](https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings), [IntelliJ](https://www.jetbrains.com/help/idea/json.html#ws_json_using_schemas), [neovim](https://github.com/b0o/SchemaStore.nvim), etc.). It is also available in the [JSON schema store](https://www.schemastore.org/json/).
-- Note that for `included tasks` (see [task configuration](/tasks/#task-configuration), there is another schema: <https://mise.jdx.dev/schema/mise-task.json>)
+- Note that for `included tasks` (see [task configuration](/tasks/task-configuration), there is another schema: <https://mise.jdx.dev/schema/mise-task.json>)
 
 ## Global config: `~/.config/mise/config.toml`
 
@@ -257,7 +257,7 @@ Both `mise.toml` and `.tool-versions` support "scopes" which modify the behavior
 mise supports "idiomatic version files" just like asdf. They're language-specific files
 like `.node-version`
 and `.python-version`. These are ideal for setting the runtime version of a project without forcing
-other developers to use a specific tool like mise/asdf.
+other developers to use a specific tool like mise or asdf.
 
 They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
 in mise and nvm. Here are some of the supported idiomatic version files:
@@ -274,8 +274,8 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | terraform | `.terraform-version`, `.packer-version`, `main.tf` |
 | yarn      | `.yarnrc`                                          |
 
-In mise these are enabled by default. You can disable them
-with `mise settings idiomatic_version_file=false`.
+In mise these are enabled by default. You can disable them with [`mise settings idiomatic_version_file false](/configuration/settings.html#idiomatic_version_file) or for specific tools with [`mise settings idiomatic_version_file_disable_tools python`](/configuration/settings.html#idiomatic_version_file_disable_tools).
+
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
 `bin/parse-version-file`. However, these are [cached](/cache-behavior) so it's not a huge deal.
 You may not even notice.
@@ -346,7 +346,9 @@ This is the path to the config file.
 
 Default: `$HOME`
 
+::: v-pre
 This is the path which is used as `{{config_root}}` for the global config file.
+:::
 
 ### `MISE_ENV_FILE`
 

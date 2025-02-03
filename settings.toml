@@ -61,6 +61,13 @@ type = "Bool"
 default = true
 description = "Use cosign to verify aqua tool signatures."
 
+[aqua.cosign_extra_args]
+env = "MISE_AQUA_COSIGN_EXTRA_ARGS"
+type = "ListString"
+rust_type = "Vec<String>"
+optional = true
+description = "Extra arguments to pass to cosign when verifying aqua tool signatures."
+
 [aqua.minisign]
 env = "MISE_AQUA_MINISIGN"
 type = "Bool"
@@ -290,7 +297,7 @@ docs = """
 Enables profile-specific config files such as `.mise.development.toml`.
 Use this for different env vars or different tool versions in
 development/staging/production environments. See
-[Configuration Environments](/configuration/environments) for more on how
+[Configuration Environments](/configuration/environments.html) for more on how
 to use this feature.
 
 Multiple envs can be set by separating them with a comma, e.g. `MISE_ENV=ci,test`.
@@ -357,6 +364,17 @@ type = "Duration"
 default = "5s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
 aliases = ["fetch_remote_version_timeout"]
+
+[gix]
+env = "MISE_GIX"
+type = "Bool"
+hide = true
+default = true
+description = "Use gix for git operations, set to false to shell out to git."
+docs = """
+Use gix for git operations. This is generally faster but may not be as compatible if the
+system's gix is not the same version as the one used by mise.
+"""
 
 [global_config_file]
 env = "MISE_GLOBAL_CONFIG_FILE"
@@ -480,6 +498,7 @@ hide = true
 [libgit2]
 env = "MISE_LIBGIT2"
 type = "Bool"
+hide = true
 default = true
 description = "Use libgit2 for git operations, set to false to shell out to git."
 docs = """
@@ -577,6 +596,13 @@ mise use -g bun
 ```
 """
 
+[os]
+env = "MISE_OS"
+type = "String"
+optional = true
+description = "OS to use for precompiled binaries."
+default_docs = '"linux" | "macos" | "windows"'
+
 [override_config_filenames]
 env = "MISE_OVERRIDE_CONFIG_FILENAMES"
 type = "ListString"
@@ -584,11 +610,11 @@ default = []
 description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var."
 parse_env = "list_by_colon"
 
-[override_tool_versions_filename]
-env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAME"
+[override_tool_versions_filenames]
+env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES"
 type = "ListString"
 default = []
-description = "If set, mise will ignore .tool-versions files and use these filename instead. Can be set to `none` to disable .tool-versions. This must be an env var."
+description = "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions. This must be an env var."
 parse_env = "list_by_colon"
 
 [paranoid]
@@ -596,7 +622,7 @@ env = "MISE_PARANOID"
 type = "Bool"
 description = "Enables extra-secure behavior."
 docs = """
-Enables extra-secure behavior. See [Paranoid](/paranoid).
+Enables extra-secure behavior. See [Paranoid](/paranoid.html).
 """
 
 [pin]
@@ -868,13 +894,13 @@ description = "Set to true to enable verbose output during ruby installation."
 env = "MISE_CARGO_HOME"
 type = "Path"
 optional = true
-description = "Path to the cargo home directory. Defaults to ~/.cargo or %USERPROFILE%\\.cargo"
+description = "Path to the cargo home directory. Defaults to `~/.cargo` or `%USERPROFILE%\\.cargo`"
 
 [rust.rustup_home]
 env = "MISE_RUSTUP_HOME"
 type = "Path"
 optional = true
-description = "Path to the rustup home directory. Defaults to ~/.rustup or %USERPROFILE%\\.rustup"
+description = "Path to the rustup home directory. Defaults to `~/.rustup` or `%USERPROFILE%\\.rustup`"
 
 [shorthands_file]
 env = "MISE_SHORTHANDS_FILE"
@@ -914,7 +940,7 @@ description = "The age private key to use for sops secret decryption."
 env = "MISE_SOPS_AGE_KEY_FILE"
 type = "Path"
 optional = true
-default_docs = "~/.config/mise/age.key"
+default_docs = "~/.config/mise/age.txt"
 description = "Path to the age private key file to use for sops secret decryption."
 
 [sops.age_recipients]
@@ -1023,6 +1049,12 @@ docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 """
 
+[task_remote_no_cache]
+env = "MISE_TASK_REMOTE_NO_CACHE"
+type = "Bool"
+optional = true
+description = "Mise will always fetch the latest tasks from the remote, by default the cache is used."
+
 [task_run_auto_install]
 env = "MISE_TASK_RUN_AUTO_INSTALL"
 type = "Bool"
@@ -1086,7 +1118,7 @@ a quick way for mise to query for new versions. This host regularly grabs all th
 latest versions of core and community plugins. It's faster than running a plugin's
 `list-all` command and gets around GitHub rate limiting problems when using it.
 
-See [FAQ](/faq#new-version-of-a-tool-is-not-available) for more information.
+See [FAQ](/faq.html#new-version-of-a-tool-is-not-available) for more information.
 """
 
 [verbose]

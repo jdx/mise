@@ -18,7 +18,6 @@ jobs:
       - run: git pull --rebase microsoft master
       - run: git push -f origin master
       - uses: vedantmgoyal9/winget-releaser@main
-        if: endsWith(github.event.payload.release.tag_name, '0')
         with:
           identifier: jdx.mise
           max-versions-to-keep: 5

@@ -1,3 +1,5 @@
+#![allow(unknown_lints)]
+#![allow(clippy::literal_string_with_formatting_args)]
 use crate::config::Settings;
 use std::borrow::Cow;
 use std::fmt::Display;

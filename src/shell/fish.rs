@@ -1,3 +1,5 @@
+#![allow(unknown_lints)]
+#![allow(clippy::literal_string_with_formatting_args)]
 use std::fmt::{Display, Formatter};
 
 use crate::config::Settings;
@@ -54,7 +56,7 @@ impl Shell for Fish {
 
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
-            
+
             function __mise_env_eval --on-event fish_prompt --description {description};
                 {exe} hook-env{flags} -s fish | source;
 
@@ -90,7 +92,8 @@ impl Shell for Fish {
             end
 
             function fish_command_not_found
-                if {exe} hook-not-found -s fish -- $argv[1]
+                if string match -qrv -- '^(?:mise$|mise-)' $argv[1] &&
+                    {exe} hook-not-found -s fish -- $argv[1]
                     {exe} hook-env{flags} -s fish | source
                 else if functions -q __mise_fish_command_not_found
                     __mise_fish_command_not_found $argv

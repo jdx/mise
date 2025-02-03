@@ -15,13 +15,13 @@ but managed separately with `mise aliases`
 
 ### `[SETTING]`
 
-List keys under this key
+Name of setting
 
 ## Flags
 
 ### `-a --all`
 
-Display settings set to the default
+List all settings
 
 ### `-l --local`
 

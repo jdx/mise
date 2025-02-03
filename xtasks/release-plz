@@ -5,7 +5,7 @@ git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
-if ! cargo show mise --json | jq -r '.versions.[].num' | grep -q "^$cur_version$"; then
+if ! curl https://crates.io/api/v1/crates/mise | jq -r '.versions[0].num' | grep -q "$cur_version"; then
   echo "Releasing $cur_version"
   cargo publish
   changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
@@ -38,6 +38,7 @@ sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/versio
 
 mise run render ::: lint-fix
 
+mise up
 cargo update
 git add \
   Cargo.lock \
@@ -54,5 +55,9 @@ git clean -df
 git checkout -B release
 git commit -m "chore: release $version"
 git push origin release --force
-gh pr create --title "chore: release $version" --body "$changelog" --label "release" ||
+
+if [[ "$(gh pr list --label release)" == "" ]]; then
+  gh pr create --title "chore: release $version" --body "$changelog" --label "release" --head release
+else
   gh pr edit --title "chore: release $version" --body "$changelog"
+fi

@@ -47,66 +47,87 @@ impl ConfigSet {
         if file.is_none() {
             file = top_toml_config();
         }
-        if let Some(file) = file {
-            let mut config: toml_edit::DocumentMut = std::fs::read_to_string(&file)?.parse()?;
-            let mut container = config.as_item_mut();
-            let parts = self.key.split('.').collect::<Vec<&str>>();
-            for key in parts.iter().take(parts.len() - 1) {
-                container = container.as_table_mut().unwrap().entry(key).or_insert({
+        let Some(file) = file else {
+            bail!("No mise.toml file found");
+        };
+        let mut config: toml_edit::DocumentMut = std::fs::read_to_string(&file)?.parse()?;
+        let mut container = config.as_item_mut();
+        let parts = self.key.split('.').collect::<Vec<&str>>();
+        let last_key = parts.last().unwrap();
+        for (idx, key) in parts.iter().take(parts.len() - 1).enumerate() {
+            container = container
+                .as_table_like_mut()
+                .unwrap()
+                .entry(key)
+                .or_insert({
                     let mut t = toml_edit::Table::new();
                     t.set_implicit(true);
                     toml_edit::Item::Table(t)
                 });
+            // if the key is a tool with a simple value, we want to convert it to a inline table preserving the version
+            let is_simple_tool_version =
+                self.key.starts_with("tools.") && idx == 1 && !container.is_table_like();
+            if is_simple_tool_version {
+                let mut inline_table = toml_edit::InlineTable::new();
+                inline_table.insert("version", container.as_value().unwrap().clone());
+                *container = toml_edit::Item::Value(toml_edit::Value::InlineTable(inline_table));
             }
-            let last_key = parts.last().unwrap();
-
-            let type_to_use = match self.type_ {
-                TomlValueTypes::Infer => {
-                    let expected_type = if !self.key.starts_with("settings.") {
-                        None
-                    } else {
-                        SETTINGS_META.get(&(*last_key).to_string())
-                    };
-                    match expected_type {
-                        Some(meta) => match meta.type_ {
-                            SettingsType::Bool => TomlValueTypes::Bool,
-                            SettingsType::String => TomlValueTypes::String,
-                            SettingsType::Integer => TomlValueTypes::Integer,
-                            SettingsType::Duration => TomlValueTypes::String,
-                            SettingsType::Path => TomlValueTypes::String,
-                            SettingsType::Url => TomlValueTypes::String,
-                            SettingsType::ListString => TomlValueTypes::List,
-                            SettingsType::ListPath => TomlValueTypes::List,
-                        },
-                        None => TomlValueTypes::String,
-                    }
-                }
-                _ => self.type_,
-            };
-
-            let value = match type_to_use {
-                TomlValueTypes::String => toml_edit::value(self.value),
-                TomlValueTypes::Integer => toml_edit::value(self.value.parse::<i64>()?),
-                TomlValueTypes::Float => toml_edit::value(self.value.parse::<f64>()?),
-                TomlValueTypes::Bool => toml_edit::value(self.value.parse::<bool>()?),
-                TomlValueTypes::List => {
-                    let mut list = toml_edit::Array::new();
-                    for item in self.value.split(',').map(|s| s.trim()) {
-                        list.push(item);
-                    }
-                    toml_edit::Item::Value(toml_edit::Value::Array(list))
-                }
-                TomlValueTypes::Infer => bail!("Type not found"),
-            };
-
-            container.as_table_mut().unwrap().insert(last_key, value);
-
-            let raw = config.to_string();
-            MiseToml::from_str(&raw, &file)?;
-            std::fs::write(&file, raw)?;
-        } else {
-            bail!("No mise.toml file found");
         }
+
+        let type_to_use = match self.type_ {
+            TomlValueTypes::Infer => {
+                let expected_type = if !self.key.starts_with("settings.") {
+                    None
+                } else {
+                    SETTINGS_META.get(*last_key)
+                };
+                match expected_type {
+                    Some(meta) => match meta.type_ {
+                        SettingsType::Bool => TomlValueTypes::Bool,
+                        SettingsType::String => TomlValueTypes::String,
+                        SettingsType::Integer => TomlValueTypes::Integer,
+                        SettingsType::Duration => TomlValueTypes::String,
+                        SettingsType::Path => TomlValueTypes::String,
+                        SettingsType::Url => TomlValueTypes::String,
+                        SettingsType::ListString => TomlValueTypes::List,
+                        SettingsType::ListPath => TomlValueTypes::List,
+                    },
+                    None => match self.value.as_str() {
+                        "true" | "false" => TomlValueTypes::Bool,
+                        _ => TomlValueTypes::String,
+                    },
+                }
+            }
+            _ => self.type_,
+        };
+
+        let value = match type_to_use {
+            TomlValueTypes::String => toml_edit::value(self.value),
+            TomlValueTypes::Integer => toml_edit::value(self.value.parse::<i64>()?),
+            TomlValueTypes::Float => toml_edit::value(self.value.parse::<f64>()?),
+            TomlValueTypes::Bool => toml_edit::value(self.value.parse::<bool>()?),
+            TomlValueTypes::List => {
+                let mut list = toml_edit::Array::new();
+                for item in self.value.split(',').map(|s| s.trim()) {
+                    list.push(item);
+                }
+                toml_edit::Item::Value(toml_edit::Value::Array(list))
+            }
+            TomlValueTypes::Infer => bail!("Type not found"),
+        };
+
+        container
+            .as_table_like_mut()
+            .unwrap_or({
+                let mut t = toml_edit::Table::new();
+                t.set_implicit(true);
+                toml_edit::Item::Table(t).as_table_like_mut().unwrap()
+            })
+            .insert(last_key, value);
+
+        let raw = config.to_string();
+        MiseToml::from_str(&raw, &file)?;
+        std::fs::write(&file, raw)?;
         Ok(())
     }
 }

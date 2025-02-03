@@ -48,6 +48,7 @@ mod render_help;
 mod render_mangen;
 mod reshim;
 pub mod run;
+#[cfg_attr(not(feature = "self_update"), path = "self_update_stub.rs")]
 pub mod self_update;
 mod set;
 mod settings;
@@ -219,6 +220,7 @@ pub enum Commands {
     Registry(registry::Registry),
     Reshim(reshim::Reshim),
     Run(run::Run),
+    #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
     Set(set::Set),
     Settings(settings::Settings),
@@ -283,6 +285,7 @@ impl Commands {
             Self::Registry(cmd) => cmd.run(),
             Self::Reshim(cmd) => cmd.run(),
             Self::Run(cmd) => cmd.run(),
+            #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run(),
             Self::Set(cmd) => cmd.run(),
             Self::Settings(cmd) => cmd.run(),
@@ -391,6 +394,7 @@ impl Cli {
                         keep_order_output: Default::default(),
                         task_prs: Default::default(),
                         timed_outputs: Default::default(),
+                        no_cache: Default::default(),
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
@@ -411,15 +415,8 @@ impl Cli {
     }
 }
 
-const LONG_ABOUT: &str = "
-mise is a tool for managing runtime versions. https://github.com/jdx/mise
-
-It's a replacement for tools like nvm, nodenv, rbenv, rvm, chruby, pyenv, etc.
-that works for any language. It's also great for managing linters/tools like
-jq and shellcheck.
-
-It is inspired by asdf and uses asdf's plugin ecosystem under the hood:
-https://asdf-vm.com/";
+const LONG_ABOUT: &str =
+    "mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise";
 
 const LONG_TASK_ABOUT: &str = r#"Task to run.
 

@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD034 -->
+
 # Getting Started
 
 This will show you how to install mise and get started with it. This is a suitable way when using an interactive shell like `bash`, `zsh`, or `fish`.
@@ -25,7 +27,6 @@ You can verify the installation by running:
   when activated.
 
 == Brew
-Using [brew](https://brew.sh/) package manager
 
 ```shell
 brew install mise
@@ -43,9 +44,11 @@ winget install jdx.mise
 scoop install mise
 ```
 
-== Debian/Ubuntu (apt)
+```shell [chocolatey]
+choco install mise
+```
 
-For installation on Ubuntu/Debian:
+== Debian/Ubuntu (apt)
 
 ::: code-group
 
@@ -65,6 +68,14 @@ wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/
 echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
 sudo apt update
 sudo apt install -y mise
+```
+
+== Fedora (dnf)
+
+```sh
+sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
+sudo dnf install -y mise
 ```
 
 :::
@@ -89,7 +100,7 @@ See [this guide](dev-tools/shims.md) for more information.
 
 :::tabs key:installing-mise
 
-== Linux/macOS
+== https://mise.run
 
 ::: code-group
 
@@ -105,43 +116,38 @@ echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
-- Make sure you restart your shell session after modifying your rc file in order for it to take
-  effect.
-- Also note that
-  this uses `~/.local/bin/mise` as the binary location since that's what <https://mise.run> uses by
-  default. If you've
-  installed mise by some other means it may be on `PATH` or somewhere different.
-
 == Brew
 
 ::: code-group
 
 ```sh [bash]
-echo 'eval "$(/opt/homebrew/bin/mise activate bash)"' >> ~/.bashrc
+echo 'eval "$(mise activate bash)"' >> ~/.bashrc
 ```
 
 ```sh [zsh]
-echo 'eval "$(/opt/homebrew/bin/mise activate zsh)"' >> ~/.zshrc
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 ```
 
-- Activation will be handled automatically if you use `fish` shell and installed via `homebrew`. This can be disabled with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`.
-- Make sure you restart your shell session after modifying your rc file in order for it to take effect.
+```sh [fish]
+# do nothing! mise is automatically activated when using brew and fish
+# you can disable this behavior with `set -Ux MISE_FISH_AUTO_ACTIVATE 0`
+```
 
 == Windows
 
-Only shims are supported for now on Windows.
+::: code-group
 
-- When using `scoop`, the shims are automatically added to your `PATH`.
-- With `winget`, you need to add `<homedir>\AppData\Local\mise\shims` to your `PATH`.
+```powershell [powershell]
+$shimPath = "$env:USERPROFILE\AppData\Local\mise\shims"
+$currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$newPath = $currentPath + ";" + $shimPath
+[Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+```
 
-  ```powershell
-  $shimPath = "$env:USERPROFILE\AppData\Local\mise\shims"
-  $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $newPath = $currentPath + ";" + $shimPath
-  [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-  ```
+- When using `scoop`, mise is automatically activated
+- If not using powershell, add `<homedir>\AppData\Local\mise\shims` to `PATH`.
 
-== Debian/Ubuntu (apt)
+== Other package managers
 
 ::: code-group
 
@@ -158,6 +164,8 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 ```
 
 :::
+
+Make sure you restart your shell session after modifying your rc file in order for it to take effect.
 
 ## 3. Using `mise`
 
@@ -200,6 +208,13 @@ node = "22"
 ```
 
 Follow the [walkthrough](/walkthrough) for more examples on how to use mise.
+
+::: warning
+Many tools in mise require the use of the GitHub API. Unauthenticated requests to the GitHub API are
+often rate limited. If you see 4xx errors while using mise, you can set `MISE_GITHUB_TOKEN` or `GITHUB_TOKEN`
+to a token [generated from here](https://github.com/settings/tokens/new?description=MISE_GITHUB_TOKEN) which
+will likely fix the issue. The token does not require any scopes.
+:::
 
 ### Set up the autocompletion
 

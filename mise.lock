@@ -1,44 +1,35 @@
 [tools.actionlint]
-version = "1.7.4"
+version = "1.7.7"
 backend = "aqua:rhysd/actionlint"
 
 [tools.actionlint.checksums]
-actionlint-linux-x86_64 = "sha256:39cae525cdb54af5d91dcf27f55e040d37ecea01dd4153490c4dc84f5d251d46"
-actionlint-macos-aarch64 = "sha256:f381afca13b39e095e4cee25e2b2abbb39ae8b2848f5ccd2564bf86192c1b661"
-"actionlint.exe-windows-x86_64" = "sha256:04ca117d9f33b77731fd3ef6a3670bd6b11b40c1b1cc5b7aaf6c28392d74d2e2"
-"actionlint_1.7.4_linux_amd64.tar.gz" = "sha256:fc0a6886bbb9a23a39eeec4b176193cadb54ddbe77cdbb19b637933919545395"
-"actionlint_1.7.4_linux_arm64.tar.gz" = "sha256:ede03682dc955381d057dde95bb85ce9ca418122209a8a313b617d4adec56416"
+"actionlint_1.7.7_darwin_arm64.tar.gz" = "sha256:2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc033873db"
+"actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
 
 [tools.bun]
-version = "1.1.42"
+version = "1.2.2"
 backend = "core:bun"
 
 [tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:64a70fe290bd6391a09d555d4e4e1a8df56543e526bb1381ab344a385348572c"
-"bun-linux-x64-baseline.zip" = "sha256:19584af4189e6434124a556e830427f0f44b7ebed8530eacf4fe369bd14b93d6"
+"bun-darwin-aarch64.zip" = "sha256:c4d58e06c5c33885b526f4d91a38ca9ebdb9fc3fb4cd547f7d3302055c98e41c"
 
 [tools.cargo-binstall]
-version = "1.10.17"
+version = "1.10.22"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
-"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:81abb7de75ef130844bb58965bdb93969afadd0821cf5e1e1bd0517e48963199"
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:d073d4e8901e176b0f625845f9a0bbd926a063017991d7cc0c863e6b884d2d59"
+"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:97ce4a2f18181f052dda266b042d8bb220e48ffe40ca75e796ae4c5e418b9e01"
 
 [tools."cargo:cargo-edit"]
-version = "0.13.0"
+version = "0.13.1"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
-version = "1.41.1"
+version = "1.42.1"
 backend = "cargo:cargo-insta"
 
-[tools."cargo:cargo-show"]
-version = "0.6.0"
-backend = "cargo:cargo-show"
-
 [tools."cargo:git-cliff"]
-version = "2.7.0"
+version = "2.8.0"
 backend = "cargo:git-cliff"
 
 [tools."cargo:toml-cli"]
@@ -46,7 +37,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "1.7.4"
+version = "2.0.4"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
@@ -69,16 +60,8 @@ jq-linux-arm64 = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4
 jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
 "jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
 
-[tools.minisign]
-version = "0.11"
-backend = "aqua:jedisct1/minisign"
-
-[tools.minisign.checksums]
-"minisign-0.11-linux.tar.gz" = "sha256:f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0"
-"minisign-0.11-macos.zip" = "sha256:e7c410ae8b8960d7087392472b040bda9b2f307c76df0384ac37f9ad103fc893"
-
 [tools."npm:markdownlint-cli"]
-version = "0.43.0"
+version = "0.44.0"
 backend = "npm:markdownlint-cli"
 
 [tools."npm:prettier"]
@@ -90,11 +73,11 @@ version = "0.24.2"
 backend = "pipx:toml-sort"
 
 [tools.pre-commit]
-version = "4.0.1"
+version = "4.1.0"
 backend = "aqua:pre-commit/pre-commit"
 
 [tools.pre-commit.checksums]
-"pre-commit-4.0.1.pyz" = "sha256:f3e65c943795be7879e7ea2beda248321b6c8ae851dabc785522a432fb8ce003"
+"pre-commit-4.1.0.pyz" = "sha256:df3ac88cb2d7825af90e887e1eafbdb85481b800541d86e4d437b37f8abf8a39"
 
 [tools.ripgrep]
 version = "14.1.1"

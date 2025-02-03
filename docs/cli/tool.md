@@ -1,13 +1,13 @@
 # `mise tool`
 
-- **Usage**: `mise tool [FLAGS] <BACKEND>`
+- **Usage**: `mise tool [FLAGS] <TOOL>`
 - **Source code**: [`src/cli/tool.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool.rs)
 
 Gets information about a tool
 
 ## Arguments
 
-### `<BACKEND>`
+### `<TOOL>`
 
 Tool name to get information about
 

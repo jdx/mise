@@ -49,14 +49,7 @@ impl Backend for AquaBackend {
     fn _list_remote_versions(&self) -> Result<Vec<String>> {
         let pkg = AQUA_REGISTRY.package(&self.id)?;
         if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
-            let versions = if let Some("github_tag") = pkg.version_source.as_deref() {
-                github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
-            } else {
-                github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
-                    .into_iter()
-                    .map(|r| r.tag_name)
-                    .collect_vec()
-            };
+            let versions = get_versions(&pkg)?;
             Ok(versions
                 .into_iter()
                 .filter_map(|v| {
@@ -154,7 +147,8 @@ impl Backend for AquaBackend {
 
 impl AquaBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        let mut id = ba.tool_name.as_str();
+        let full = ba.full();
+        let mut id = full.split_once(":").unwrap_or(("", &full)).1;
         if !id.contains("/") {
             id = REGISTRY
                 .get(id)
@@ -181,6 +175,7 @@ impl AquaBackend {
                 HTTP.head(&url)?;
                 Ok(url)
             }
+            ref t => bail!("unsupported aqua package type: {t}"),
         }
     }
 
@@ -447,6 +442,9 @@ impl AquaBackend {
                 let mut cmd = CmdLineRunner::new(cosign_bin)
                     .arg("verify-blob")
                     .arg(checksum_path);
+                if log::log_enabled!(log::Level::Debug) {
+                    cmd = cmd.arg("--verbose");
+                }
                 if cosign.experimental == Some(true) {
                     cmd = cmd.env("COSIGN_EXPERIMENTAL", "1");
                 }
@@ -470,6 +468,9 @@ impl AquaBackend {
                 }
                 for opt in cosign.opts(pkg, v)? {
                     cmd = cmd.arg(opt);
+                }
+                for arg in SETTINGS.aqua.cosign_extra_args.clone().unwrap_or_default() {
+                    cmd = cmd.arg(arg);
                 }
                 cmd = cmd.with_pr(&ctx.pr);
                 cmd.execute()?;
@@ -579,6 +580,21 @@ impl AquaBackend {
             .collect();
         Ok(files)
     }
+}
+
+fn get_versions(pkg: &AquaPackage) -> Result<Vec<String>> {
+    if let Some("github_tag") = pkg.version_source.as_deref() {
+        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?;
+        return Ok(versions);
+    }
+    let mut versions = github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?
+        .into_iter()
+        .map(|r| r.tag_name)
+        .collect_vec();
+    if versions.is_empty() {
+        versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))?;
+    }
+    Ok(versions)
 }
 
 fn validate(pkg: &AquaPackage) -> Result<()> {

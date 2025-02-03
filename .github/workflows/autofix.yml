@@ -3,6 +3,8 @@ name: autofix.ci
 on:
   workflow_call:
   pull_request:
+    branches-ignore:
+      - "renovate/*"
 
 permissions:
   contents: read

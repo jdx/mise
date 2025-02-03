@@ -27,6 +27,7 @@ use xx::regex;
 
 mod deps;
 mod task_dep;
+pub mod task_file_providers;
 mod task_script_parser;
 pub mod task_sources;
 
@@ -220,7 +221,8 @@ impl Task {
             return true;
         }
         let pat = pat.rsplitn(2, '.').last().unwrap_or_default();
-        self.name == pat || self.aliases.contains(&pat.to_string())
+        self.name.rsplitn(2, '.').last().unwrap_or_default() == pat
+            || self.aliases.contains(&pat.to_string())
     }
 
     pub fn task_dir() -> PathBuf {
@@ -241,7 +243,7 @@ impl Task {
     }
 
     pub fn prefix(&self) -> String {
-        format!("[{}]", self.name)
+        format!("[{}]", self.display_name())
     }
 
     pub fn run(&self) -> &Vec<String> {
@@ -264,8 +266,11 @@ impl Task {
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
         for dep in depends.clone() {
-            depends.extend(dep.all_depends()?);
+            let mut extra = dep.all_depends()?;
+            extra.retain(|t| t.name != self.name); // prevent depending on ourself
+            depends.extend(extra);
         }
+        let depends = depends.into_iter().unique().collect();
         Ok(depends)
     }
 
@@ -640,7 +645,7 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
 
     fn write_self(&self) -> std::io::Result<()> {
         if let Some(w) = self.0.node_weight(self.1) {
-            miseprint!("{}", w.name)?;
+            miseprint!("{}", w.display_name())?;
         }
         Ok(())
     }

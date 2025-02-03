@@ -341,8 +341,13 @@ Task files can be fetched via http:
 file = "https://example.com/build.sh"
 ```
 
-Currently, they're fetched everytime they're executed, but we may add some cache support later.
-This could be extended with other protocols like mentioned in [this ticket](https://github.com/jdx/mise/issues/2488) if there were interest.
+Each task file is cached in the `MISE_CACHE_DIR` directory. If the file is updated, it will not be re-downloaded unless the cache is cleared.
+
+:::tip
+You can reset the cache by running `mise cache clear`.
+:::
+
+You can use the `MISE_TASK_REMOTE_NO_CACHE` environment variable to disable caching of remote tasks.
 
 ## Arguments
 
@@ -447,9 +452,17 @@ The value will be `true` if the flag is passed, and `false` otherwise.
 More advanced usage specs can be added to the task's `usage` field:
 
 ```toml
-[tasks.test]
+[tasks.add-user]
+description = "Add a user"
 usage = '''
-arg "file" description="The file to test" default="src/main.rs"
+arg "<user>" default="unknown"
+complete "user" run="mise run list-users-completion"
 '''
-run = 'cargo test {{arg(name="file")}}'
+run = 'echo {{arg(name="user")}}'
+
+[tasks.list-users-completion]
+hide = true
+quiet = true # this is mandatory to make completion work (makes the mise command just print "alice bob charlie")
+description = "List users"
+run = 'echo "alice\nbob\ncharlie"'
 ```

@@ -10,6 +10,7 @@ use versions::Versioning;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
+use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
@@ -25,12 +26,12 @@ use crate::ui::table::MiseTable;
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Ls {
-    /// Only show tool versions from [PLUGIN]
-    #[clap(conflicts_with = "plugin_flag")]
-    plugin: Option<Vec<BackendArg>>,
+    /// Only show tool versions from [TOOL]
+    #[clap(conflicts_with = "tool_flag")]
+    installed_tool: Option<Vec<BackendArg>>,
 
-    #[clap(long = "plugin", short, hide = true)]
-    plugin_flag: Option<BackendArg>,
+    #[clap(long = "plugin", short = 'p', hide = true)]
+    tool_flag: Option<BackendArg>,
 
     /// Only show tool versions currently specified in a mise.toml
     #[clap(long, short)]
@@ -62,8 +63,12 @@ pub struct Ls {
     missing: bool,
 
     /// Display versions matching this prefix
-    #[clap(long, requires = "plugin")]
+    #[clap(long, requires = "installed_tool")]
     prefix: Option<String>,
+
+    /// List only tools that can be pruned with `mise prune`
+    #[clap(long)]
+    prunable: bool,
 
     /// Don't display headers
     #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
@@ -73,12 +78,16 @@ pub struct Ls {
 impl Ls {
     pub fn run(mut self) -> Result<()> {
         let config = Config::try_get()?;
-        self.plugin = self
-            .plugin
-            .or_else(|| self.plugin_flag.clone().map(|p| vec![p]));
+        self.installed_tool = self
+            .installed_tool
+            .or_else(|| self.tool_flag.clone().map(|p| vec![p]));
         self.verify_plugin()?;
 
-        let mut runtimes = self.get_runtime_list(&config)?;
+        let mut runtimes = if self.prunable {
+            self.get_prunable_runtime_list()?
+        } else {
+            self.get_runtime_list(&config)?
+        };
         if self.current || self.global {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally
@@ -101,7 +110,7 @@ impl Ls {
     }
 
     fn verify_plugin(&self) -> Result<()> {
-        if let Some(plugins) = &self.plugin {
+        if let Some(plugins) = &self.installed_tool {
             for ba in plugins {
                 if let Some(plugin) = ba.backend()?.plugin() {
                     ensure!(plugin.is_installed(), "{ba} is not installed");
@@ -112,7 +121,7 @@ impl Ls {
     }
 
     fn display_json(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        if let Some(plugins) = &self.plugin {
+        if let Some(plugins) = &self.installed_tool {
             // only runtimes for 1 plugin
             let runtimes: Vec<JSONToolVersion> = runtimes
                 .into_iter()
@@ -165,6 +174,13 @@ impl Ls {
         table.truncate(true).print()
     }
 
+    fn get_prunable_runtime_list(&self) -> Result<Vec<RuntimeRow>> {
+        let installed_tool = self.installed_tool.clone().unwrap_or_default();
+        Ok(prune::prunable_tools(installed_tool.iter().collect())?
+            .into_iter()
+            .map(|(p, tv)| (self, p, tv, ToolSource::Unknown))
+            .collect())
+    }
     fn get_runtime_list(&self, config: &Config) -> Result<Vec<RuntimeRow>> {
         let mut trs = config.get_tool_request_set()?.clone();
         if self.global {
@@ -185,7 +201,7 @@ impl Ls {
             .list_all_versions()?
             .into_iter()
             .map(|(b, tv)| ((b, tv.version.clone()), tv))
-            .filter(|((b, _), _)| match &self.plugin {
+            .filter(|((b, _), _)| match &self.installed_tool {
                 Some(p) => p.contains(b.ba()),
                 None => true,
             })
@@ -199,7 +215,7 @@ impl Ls {
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
             // if it isn't installed and it's not specified, don't show it
             .filter(|(_ls, p, tv, source)| !source.is_unknown() || p.is_version_installed(tv, true))
-            .filter(|(_ls, p, _, _)| match &self.plugin {
+            .filter(|(_ls, p, _, _)| match &self.installed_tool {
                 Some(backend) => backend.contains(p.ba()),
                 None => true,
             })
@@ -295,11 +311,16 @@ impl From<RuntimeRow<'_>> for JSONToolVersion {
                 Some(source.as_json())
             },
             installed: !matches!(vs, VersionStatus::Missing(_)),
-            active: matches!(vs, VersionStatus::Active(_, _)),
+            active: match vs {
+                VersionStatus::Active(_, _) => true,
+                VersionStatus::Symlink(_, active) => active,
+                _ => false,
+            },
         }
     }
 }
 
+#[derive(Debug)]
 enum VersionStatus {
     Active(String, bool),
     Inactive(String),

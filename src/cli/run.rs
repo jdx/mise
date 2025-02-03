@@ -1,4 +1,7 @@
+use crate::hash;
 use std::collections::BTreeMap;
+use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
@@ -15,7 +18,7 @@ use crate::config::{Config, SETTINGS};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::file::display_path;
-use crate::http::HTTP;
+use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -194,6 +197,10 @@ pub struct Run {
 
     #[clap(skip)]
     pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
+
+    // Do not use cache on remote tasks
+    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    pub no_cache: bool,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -321,11 +328,12 @@ impl Run {
                                 // only show this if it's the first failure, or we haven't killed all the remaining tasks
                                 // otherwise we'll get unhelpful error messages about being killed by mise which we expect
                                 let prefix = task.estyled_prefix();
-                                self.eprint(
-                                    &task,
-                                    &prefix,
-                                    &format!("{} {err:?}", style::ered("ERROR")),
-                                );
+                                let err_body = if SETTINGS.verbose {
+                                    format!("{} {err:?}", style::ered("ERROR"))
+                                } else {
+                                    format!("{} {err}", style::ered("ERROR"))
+                                };
+                                self.eprint(&task, &prefix, &err_body);
                             }
                             let _ = tx_err.send((task.clone(), status));
                         }
@@ -471,7 +479,7 @@ impl Run {
             self.eprint(
                 task,
                 &prefix,
-                &format!("finished in {}", time::format_duration(timer.elapsed())),
+                &format!("Finished in {}", time::format_duration(timer.elapsed())),
             );
         }
 
@@ -785,11 +793,32 @@ impl Run {
         if task.sources.is_empty() && outputs.is_empty() {
             return Ok(false);
         }
+        // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
+        // perhaps using some manifest in a state directory or something, maybe leveraging atime?
         let run = || -> Result<bool> {
+            let root = self.cwd(task)?;
             let mut sources = task.sources.clone();
             sources.push(task.config_source.to_string_lossy().to_string());
-            let sources = self.get_last_modified(&self.cwd(task)?, &sources)?;
-            let outputs = self.get_last_modified(&self.cwd(task)?, &outputs)?;
+            let source_metadatas = self.get_file_metadatas(&root, &sources)?;
+            let source_metadata_hash = self.file_metadatas_to_hash(&source_metadatas);
+            let source_metadata_hash_path = self.sources_hash_path(task);
+            if let Some(dir) = source_metadata_hash_path.parent() {
+                file::create_dir_all(dir)?;
+            }
+            if self
+                .source_metadata_existing_hash(task)
+                .is_some_and(|h| h != source_metadata_hash)
+            {
+                debug!(
+                    "source metadata hash mismatch in {}",
+                    source_metadata_hash_path.display()
+                );
+                file::write(&source_metadata_hash_path, &source_metadata_hash)?;
+                return Ok(false);
+            }
+            let sources = self.get_last_modified_from_metadatas(&source_metadatas);
+            let outputs = self.get_last_modified(&root, &outputs)?;
+            file::write(&source_metadata_hash_path, &source_metadata_hash)?;
             trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {
                 (Some(sources), Some(outputs)) => Ok(sources < outputs),
@@ -802,6 +831,23 @@ impl Run {
         }))
     }
 
+    fn sources_hash_path(&self, task: &Task) -> PathBuf {
+        let mut hasher = DefaultHasher::new();
+        task.hash(&mut hasher);
+        task.config_source.hash(&mut hasher);
+        let hash = format!("{:x}", hasher.finish());
+        dirs::STATE.join("task-sources").join(&hash)
+    }
+
+    fn source_metadata_existing_hash(&self, task: &Task) -> Option<String> {
+        let path = self.sources_hash_path(task);
+        if path.exists() {
+            Some(file::read_to_string(&path).unwrap_or_default())
+        } else {
+            None
+        }
+    }
+
     fn add_failed_task(&self, task: Task, status: Option<i32>) {
         self.failed_tasks
             .lock()
@@ -811,6 +857,54 @@ impl Run {
 
     fn is_stopping(&self) -> bool {
         !self.failed_tasks.lock().unwrap().is_empty()
+    }
+
+    fn get_file_metadatas(
+        &self,
+        root: &Path,
+        patterns_or_paths: &[String],
+    ) -> Result<Vec<(PathBuf, fs::Metadata)>> {
+        if patterns_or_paths.is_empty() {
+            return Ok(vec![]);
+        }
+        let (patterns, paths): (Vec<&String>, Vec<&String>) =
+            patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
+
+        let mut metadatas = BTreeMap::new();
+        for pattern in patterns {
+            let files = glob(root.join(pattern).to_str().unwrap())?;
+            for file in files.flatten() {
+                if let Ok(metadata) = file.metadata() {
+                    metadatas.insert(file, metadata);
+                }
+            }
+        }
+
+        for path in paths {
+            let file = root.join(path);
+            if let Ok(metadata) = file.metadata() {
+                metadatas.insert(file, metadata);
+            }
+        }
+
+        let metadatas = metadatas
+            .into_iter()
+            .filter(|(_, m)| m.is_file())
+            .collect_vec();
+
+        Ok(metadatas)
+    }
+
+    fn file_metadatas_to_hash(&self, metadatas: &[(PathBuf, fs::Metadata)]) -> String {
+        let paths: Vec<_> = metadatas.iter().map(|(p, _)| p).collect();
+        hash::hash_to_str(&paths)
+    }
+
+    fn get_last_modified_from_metadatas(
+        &self,
+        metadatas: &[(PathBuf, fs::Metadata)],
+    ) -> Option<SystemTime> {
+        metadatas.iter().flat_map(|(_, m)| m.modified()).max()
     }
 
     fn get_last_modified(
@@ -872,19 +966,27 @@ impl Run {
     }
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let http_re = regex!("https?://");
+        let no_cache = self.no_cache || SETTINGS.task_remote_no_cache.unwrap_or(false);
+        let task_file_providers = TaskFileProvidersBuilder::new()
+            .with_cache(!no_cache)
+            .build();
+
         for t in tasks {
-            if let Some(file) = t.file.clone() {
+            if let Some(file) = &t.file {
                 let source = file.to_string_lossy().to_string();
-                if http_re.is_match(&source) {
-                    let filename = file.file_name().unwrap().to_string_lossy().to_string();
-                    let tmp_path = self.tmpdir.join(&filename);
-                    HTTP.download_file(&source, &tmp_path, None)?;
-                    file::make_executable(&tmp_path)?;
-                    t.file = Some(tmp_path);
+
+                let provider = task_file_providers.get_provider(&source);
+
+                if provider.is_none() {
+                    bail!("No provider found for file: {}", source);
                 }
+
+                let local_path = provider.unwrap().get_local_path(&source).unwrap();
+
+                t.file = Some(local_path);
             }
         }
+
         Ok(())
     }
 }

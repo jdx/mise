@@ -7,16 +7,22 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
 use eyre::{bail, eyre, Result};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 /// Test a tool installs and executes
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TestTool {
-    #[clap(required_unless_present = "all")]
+    /// Tool name to test
+    #[clap(required_unless_present_any = ["all", "all_config"])]
     pub tool: Option<ToolArg>,
-    #[clap(long, short, conflicts_with = "tool")]
+    /// Test every tool specified in registry.toml
+    #[clap(long, short, conflicts_with = "tool", conflicts_with = "all_config")]
     pub all: bool,
+    /// Test all tools specified in config files
+    #[clap(long, conflicts_with = "tool", conflicts_with = "all")]
+    pub all_config: bool,
     /// Also test tools not defined in registry.toml, guessing how to test it
     #[clap(long)]
     pub include_non_defined: bool,
@@ -43,7 +49,10 @@ impl TestTool {
             "---".to_string(),
             "---".to_string(),
         ])?;
-        let mut found = self.all;
+        let config = Config::get();
+        let ts = ToolsetBuilder::new().build(&config)?;
+        let tools: BTreeSet<String> = ts.versions.keys().map(|t| t.short.clone()).collect();
+        let mut found = false;
         for (i, (short, rt)) in REGISTRY.iter().enumerate() {
             if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
             {
@@ -56,6 +65,9 @@ impl TestTool {
                 }
                 found = true;
                 tool = t.clone();
+            }
+            if self.all_config && !tools.contains(rt.short) {
+                continue;
             }
             if self.all && rt.short != *short {
                 // means this is an alias
@@ -89,7 +101,7 @@ impl TestTool {
                 }
             };
         }
-        if !found {
+        if !found && self.tool.is_some() {
             bail!("{} not found", self.tool.unwrap().short);
         }
         if !errored.is_empty() {
@@ -106,8 +118,17 @@ impl TestTool {
     }
 
     fn test(&self, tool: &ToolArg, cmd: &str, expected: &str) -> Result<()> {
+        let mut args = vec![tool.clone()];
+        args.extend(
+            tool.ba
+                .backend()?
+                .get_all_dependencies(false)?
+                .into_iter()
+                .map(|ba| ba.to_string().parse())
+                .collect::<Result<Vec<ToolArg>>>()?,
+        );
         let mut ts = ToolsetBuilder::new()
-            .with_args(&[tool.clone()])
+            .with_args(&args)
             .with_default_to_latest(true)
             .build(&Config::get())?;
         let opts = InstallOptions {
@@ -144,7 +165,7 @@ impl TestTool {
         } else {
             cmd!("sh", "-c", cmd)
         };
-        cmd = cmd.stderr_to_stdout().stdout_capture();
+        cmd = cmd.stdout_capture();
         for (k, v) in env.iter() {
             cmd = cmd.env(k, v);
         }

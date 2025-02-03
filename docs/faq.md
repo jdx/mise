@@ -150,17 +150,19 @@ should be usable in mise. The commands in mise are slightly
 different, such as `mise install node@20.0.0` vs `asdf install node 20.0.0`—this is done so
 multiple tools can be specified at once. However, asdf-style syntax is still supported: (`mise
 install node 20.0.0`). This is the case for most commands, though the help for the command may
-say that asdf-style syntax is supported.
+say that asdf-style syntax is supported. When in doubt, just try asdf syntax and see if it works—it probably does.
 
-When in doubt, just try asdf syntax and see if it works. If it doesn't open a ticket. It may
-not be possible to support every command identically, but
-we should attempt to make things as consistent as possible.
+UPDATE (2025-01-01): mise was designed to be compatible with the asdf written in bash (<=0.15). The new asdf written in go (>=0.16)
+has commands mise does not support like `asdf set`. `mise set` is an existing command that is completely different than `asdf set`—in mise that sets env vars.
 
 This isn't important for usability reasons so much as making it so plugins continue to work that
-call asdf commands.
+call asdf commands inside of the plugin code.
 
 Using commands like `mise use` may output `.tool-versions` files that are not compatible with asdf,
-such as using fuzzy versions. You can set `MISE_PIN=1` to make it output asdf-compatible versions.
+such as using fuzzy versions. You can set `--pin` or `MISE_PIN=1` to make `mise use` output asdf-compatible versions
+in `.tool-versions`. Alternatively, you can have `mise.toml` and `.tool-versions` sitting side-by-side. `mise.toml` tools
+will override tools defined in a `.tool-versions` in the same directory.
+
 That said, in general compatibility with asdf is no longer a design goal. It's long been the case
 that there is no reason to prefer asdf to mise so users should migrate. While plenty of users have
 teams which use both in tandem, issues with such a setup are unlikely to be prioritized.
@@ -189,6 +191,6 @@ usage (<https://usage.jdx.dev/>) is a spec and CLI for defining CLI tools.
 
 Arguments, flags, environment variables, and config files can all be defined in a Usage spec. It can be thought of like OpenAPI (swagger) for CLIs.
 
-`usage` can be installed with `mise` using `mise use -g usage` and is required to get the autocompetion working. See [autocompletion](/installing-mise.html#autocompletion).
+`usage` can be installed with `mise` using `mise use -g usage` and is required to get the autocompletion working. See [autocompletion](/installing-mise.html#autocompletion).
 
 You can leverage usage in file tasks to get auto-completion working, see [file tasks arguments](/tasks/file-tasks.html#arguments).

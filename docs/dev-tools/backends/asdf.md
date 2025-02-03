@@ -11,5 +11,3 @@ need to set env vars other than PATH.
 ## Writing asdf plugins for mise
 
 See the asdf documentation for more information on [writing plugins](https://asdf-vm.com/plugins/create.html).
-
-_TODO: document special features only available in mise._

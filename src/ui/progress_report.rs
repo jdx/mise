@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![allow(clippy::literal_string_with_formatting_args)]
+
 use std::sync::Mutex;
 use std::time::Duration;
 

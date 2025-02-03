@@ -1,10 +1,9 @@
-use crate::env;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use duct::Expression;
 use eyre::{eyre, Result, WrapErr};
-use git2::{FetchOptions, ProxyOptions};
+use gix::{self};
 use once_cell::sync::OnceCell;
 use xx::file;
 
@@ -16,7 +15,7 @@ use crate::ui::progress_report::SingleReport;
 
 pub struct Git {
     pub dir: PathBuf,
-    pub repo: OnceCell<git2::Repository>,
+    pub repo: OnceCell<gix::Repository>,
 }
 
 macro_rules! git_cmd {
@@ -47,14 +46,10 @@ impl Git {
         }
     }
 
-    pub fn repo(&self) -> Result<&git2::Repository> {
+    pub fn repo(&self) -> Result<&gix::Repository> {
         self.repo.get_or_try_init(|| {
-            // if !SETTINGS.libgit2 {
-            //     trace!("libgit2 is disabled");
-            //     return Err(eyre!("libgit2 is disabled"));
-            // }
-            trace!("opening git repository via libgit2 at {:?}", self.dir);
-            git2::Repository::open(&self.dir)
+            trace!("opening git repository via gix at {:?}", self.dir);
+            gix::open(&self.dir)
                 .wrap_err_with(|| format!("failed to open git repository at {:?}", self.dir))
                 .inspect_err(|err| warn!("{err:#}"))
         })
@@ -64,40 +59,17 @@ impl Git {
         self.dir.join(".git").is_dir()
     }
 
-    // pub fn update_libgit2(
-    //     &self,
-    //     repo: &git2::Repository,
-    //     gitref: &str,
-    // ) -> Result<(String, String)> {
-    //     let mut fetch_options = get_fetch_options()?;
-    //     let remote_name = "origin";
-    //     let mut remote = repo.find_remote(remote_name)?;
-    //     remote.fetch(&[gitref], Some(&mut fetch_options), None)?;
-    //     let prev_rev = self.current_sha()?;
-    //     let refname = format!("{remote_name}/{gitref}");
-    //     let (obj, reference) = repo.revparse_ext(&refname)?;
-    //     repo.checkout_tree(&obj, None)?;
-    //     let commit = obj.peel_to_commit()?;
-    //     repo.branch(gitref, &commit, true)?;
-    //     if let Some(reference) = reference.and_then(|r| r.name().map(|s| s.to_string())) {
-    //         repo.set_head(&reference)?;
-    //     }
-    //     let post_rev = self.current_sha()?;
-    //     touch_dir(&self.dir)?;
-    //     Ok((prev_rev, post_rev))
-    // }
-
     pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
         let gitref = gitref.map_or_else(|| self.current_branch(), Ok)?;
+        self.update_ref(gitref, false)
+    }
+
+    pub fn update_tag(&self, gitref: String) -> Result<(String, String)> {
+        self.update_ref(gitref, true)
+    }
+
+    fn update_ref(&self, gitref: String, is_tag_ref: bool) -> Result<(String, String)> {
         debug!("updating {} to {}", self.dir.display(), gitref);
-        // if SETTINGS.libgit2 {
-        //     if let Ok(repo) = self.repo() {
-        //         match self.update_libgit2(repo, &gitref) {
-        //             Ok(res) => return Ok(res),
-        //             Err(err) => warn!("libgit2 failed: {err}"),
-        //         }
-        //     }
-        // }
         let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
         {
             Ok(res) => {
@@ -113,13 +85,19 @@ impl Git {
             Err(err) => Err(eyre!("git failed: {cmd:?} {err:#}")),
         };
         debug!("updating {} to {} with git", self.dir.display(), gitref);
+
+        let refspec = if is_tag_ref {
+            format!("refs/tags/{}:refs/tags/{}", gitref, gitref)
+        } else {
+            format!("{}:{}", gitref, gitref)
+        };
         exec(git_cmd!(
             &self.dir,
             "fetch",
             "--prune",
             "--update-head-ok",
             "origin",
-            &format!("{}:{}", gitref, gitref),
+            &refspec
         ))?;
         let prev_rev = self.current_sha()?;
         exec(git_cmd!(
@@ -143,15 +121,16 @@ impl Git {
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
-        if SETTINGS.libgit2 {
-            if let Err(err) = git2::build::RepoBuilder::new()
-                .fetch_options(get_fetch_options()?)
-                .clone(url, &self.dir)
-            {
-                warn!("git clone failed: {err:#}");
-            } else {
-                return Ok(());
-            }
+        if SETTINGS.libgit2 || SETTINGS.gix {
+            let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
+
+            let (mut prepare_checkout, _) = prepare_clone
+                .fetch_then_checkout(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
+
+            prepare_checkout
+                .main_worktree(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
+
+            return Ok(());
         }
         match get_git_version() {
             Ok(version) => trace!("git version: {}", version),
@@ -178,12 +157,11 @@ impl Git {
     pub fn current_branch(&self) -> Result<String> {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
-            let branch = repo
-                .head()
-                .wrap_err_with(|| format!("failed to get current branch in {dir:?}"))?
-                .shorthand()
-                .unwrap()
-                .to_string();
+            let head = repo.head()?;
+            let branch = head
+                .referent_name()
+                .map(|name| name.shorten().to_string())
+                .unwrap_or_else(|| head.id().unwrap().to_string());
             debug!("current branch for {dir:?}: {branch}");
             return Ok(branch);
         }
@@ -195,8 +173,8 @@ impl Git {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
             let head = repo.head()?;
-            let head = head.peel_to_commit()?;
-            let sha = head.id().to_string();
+            let id = head.id();
+            let sha = id.unwrap().to_string();
             debug!("current sha for {dir:?}: {sha}");
             return Ok(sha);
         }
@@ -209,8 +187,8 @@ impl Git {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
             let head = repo.head()?;
-            let head = head.peel_to_commit()?;
-            let sha = head.as_object().short_id()?.as_str().unwrap().to_string();
+            let id = head.id();
+            let sha = id.unwrap().to_string()[..7].to_string();
             debug!("current sha for {dir:?}: {sha}");
             return Ok(sha);
         }
@@ -223,7 +201,7 @@ impl Git {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
             let head = repo.head()?;
-            let head = head.shorthand().unwrap().to_string();
+            let head = head.name().shorten().to_string();
             debug!("current abbrev ref for {dir:?}: {head}");
             return Ok(head);
         }
@@ -238,10 +216,12 @@ impl Git {
             return None;
         }
         if let Ok(repo) = self.repo() {
-            let remote = repo.find_remote("origin").ok()?;
-            let url = remote.url()?;
-            trace!("remote url for {dir:?}: {url}");
-            return Some(url.to_string());
+            if let Ok(remote) = repo.find_remote("origin") {
+                if let Some(url) = remote.url(gix::remote::Direction::Fetch) {
+                    trace!("remote url for {dir:?}: {url}");
+                    return Some(url.to_string());
+                }
+            }
         }
         let res = git_cmd_read!(&self.dir, "config", "--get", "remote.origin.url");
         match res {
@@ -275,16 +255,6 @@ impl Git {
     }
 }
 
-fn get_fetch_options() -> Result<FetchOptions<'static>> {
-    let mut fetch_options = FetchOptions::new();
-    if let Some(proxy_url) = env::HTTP_PROXY.as_ref() {
-        let mut proxy_options = ProxyOptions::new();
-        proxy_options.url(proxy_url);
-        fetch_options.proxy_options(proxy_options);
-    }
-    Ok(fetch_options)
-}
-
 fn get_git_version() -> Result<String> {
     let version = cmd!("git", "--version").read()?;
     Ok(version.trim().into())
@@ -295,25 +265,3 @@ impl Debug for Git {
         f.debug_struct("Git").field("dir", &self.dir).finish()
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use tempfile::tempdir;
-//
-//     use super::*;
-//
-//     #[test]
-//     fn test_clone_and_update() {
-//         let dir = tempdir().unwrap().into_path();
-//         let git = Git::new(dir);
-//         git.clone("https://github.com/mise-plugins/rtx-tiny")
-//             .unwrap();
-//         let prev_rev = "c85ab2bea15e8b785592ce1a75db341e38ac4d33".to_string();
-//         let latest = git.current_sha().unwrap();
-//         let update_result = git.update(Some(prev_rev.clone())).unwrap();
-//         assert_eq!(update_result, (latest.to_string(), prev_rev.to_string()));
-//         assert_str_eq!(git.current_sha_short().unwrap(), "c85ab2b");
-//         let update_result = git.update(None).unwrap();
-//         assert_eq!(update_result, (prev_rev, latest));
-//     }
-// }

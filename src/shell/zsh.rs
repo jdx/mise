@@ -1,3 +1,5 @@
+#![allow(unknown_lints)]
+#![allow(clippy::literal_string_with_formatting_args)]
 use std::fmt::Display;
 
 use indoc::formatdoc;
@@ -46,7 +48,7 @@ impl Shell for Zsh {
 
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
-            
+
             _mise_hook() {{
               eval "$({exe} hook-env{flags} -s zsh)";
             }}
@@ -69,7 +71,7 @@ impl Shell for Zsh {
                 [ -n "$(declare -f command_not_found_handler)" ] && eval "${{$(declare -f command_not_found_handler)/command_not_found_handler/_command_not_found_handler}}"
 
                 function command_not_found_handler() {{
-                    if {exe} hook-not-found -s zsh -- "$1"; then
+                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s zsh -- "$1"; then
                       _mise_hook
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handler)" ]; then

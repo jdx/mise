@@ -8,6 +8,7 @@ Here we are sharing a few mise setups that other people have found useful.
 - [Python](python.md)
 - [Ruby](ruby.md)
 - [Terraform](terraform.md)
+- [Neovim](neovim.md)
 
 Finally, here is how to create [presets](presets.md) and some [shell tricks](shell-tricks.md) you might find useful.
 

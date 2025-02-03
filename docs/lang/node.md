@@ -59,7 +59,11 @@ You can specify a non-default location of this file by setting a `MISE_NODE_DEFA
 
 ## `.nvmrc` and `.node-version` support
 
-mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions. To ease migration, you can have also have it read an existing `.nvmrc` or `.node-version` file to find out what version of Node.js should be used. This will be used if `node` isn't defined in `mise.toml`/`.tool-versions`.
+mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
+
+To ease migration, you can have also it read an existing `.nvmrc` or `.node-version` file to find out what version of Node.js should be used. This will be used if `node` isn't defined in `mise.toml`/`.tool-versions`.
+
+See [idiomatic version files](/configuration.html#idiomatic-version-files)
 
 ## "nodejs" -> "node" Alias
 

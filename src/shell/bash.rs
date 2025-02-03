@@ -1,3 +1,5 @@
+#![allow(unknown_lints)]
+#![allow(clippy::literal_string_with_formatting_args)]
 use std::fmt::Display;
 
 use indoc::formatdoc;
@@ -54,7 +56,7 @@ impl Shell for Bash {
             {chpwd_load}
             chpwd_functions+=(_mise_hook)
             _mise_hook
-            "#, 
+            "#,
             chpwd_functions = include_str!("../assets/bash_zsh_support/chpwd/function.sh"),
             chpwd_load = include_str!("../assets/bash_zsh_support/chpwd/load.sh")
             });
@@ -69,7 +71,7 @@ impl Shell for Bash {
                 fi
 
                 command_not_found_handle() {{
-                    if {exe} hook-not-found -s bash -- "$1"; then
+                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s bash -- "$1"; then
                       _mise_hook
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handle)" ]; then
