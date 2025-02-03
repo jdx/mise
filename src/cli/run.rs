@@ -429,6 +429,11 @@ impl Run {
             }
             return Ok(());
         }
+        if let Some(message) = &task.confirm {
+            if !ui::confirm(message).unwrap_or(true) {
+                return Err(eyre!("task cancelled"));
+            }
+        }
 
         let config = Config::get();
         let mut tools = self.tool.clone();

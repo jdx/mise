@@ -1012,6 +1012,10 @@
                 }
               ]
             },
+            "confirm": {
+              "description": "confirmation message before running this task",
+              "type": "string"
+            },
             "depends": {
               "oneOf": [
                 {
