@@ -473,6 +473,7 @@ cmd ls-remote help="List runtime versions available for install." {
 cmd outdated help="Shows outdated tool versions" {
     long_help "Shows outdated tool versions\n\nSee `mise upgrade` to upgrade these versions."
     after_long_help "Examples:\n\n    $ mise outdated\n    Plugin  Requested  Current  Latest\n    python  3.11       3.11.0   3.11.1\n    node    20         20.0.0   20.1.0\n\n    $ mise outdated node\n    Plugin  Requested  Current  Latest\n    node    20         20.0.0   20.1.0\n\n    $ mise outdated --json\n    {\"python\": {\"requested\": \"3.11\", \"current\": \"3.11.0\", \"latest\": \"3.11.1\"}, ...}\n"
+    flag "-a --all" help="Show outdated tools from all tracked config files"
     flag "-l --bump" help="Compares against the latest versions available, not what matches the current config" {
         long_help "Compares against the latest versions available, not what matches the current config\n\nFor example, if you have `node = \"20\"` in your config by default `mise outdated` will only\nshow other 20.x versions, not 21.x or 22.x versions.\n\nUsing this flag, if there are 21.x or newer versions it will display those instead of 20.x."
     }

@@ -17,6 +17,10 @@ If not specified, all tools in global and local configs will be shown
 
 ## Flags
 
+### `-a --all`
+
+Show outdated tools from all tracked config files
+
 ### `-l --bump`
 
 Compares against the latest versions available, not what matches the current config

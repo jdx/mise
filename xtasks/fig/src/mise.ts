@@ -1418,6 +1418,11 @@ const completionSpec: Fig.Spec = {
       description: "Shows outdated tool versions",
       options: [
         {
+          name: ["-a", "--all"],
+          description: "Show outdated tools from all tracked config files",
+          isRepeatable: false,
+        },
+        {
           name: ["-l", "--bump"],
           description:
             "Compares against the latest versions available, not what matches the current config",
