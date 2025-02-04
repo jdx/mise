@@ -50,6 +50,7 @@ impl RemoteTaskHttp {
         file: &str,
         destination: &PathBuf,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        trace!("Downloading file: {}", file);
         HTTP.download_file(file, destination, None)?;
         file::make_executable(destination)?;
         Ok(())
@@ -71,37 +72,29 @@ impl TaskFileProvider for RemoteTaskHttp {
     }
 
     fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let cache_key = self.get_cache_key(file);
+        let destination = self.storage_path.join(&cache_key);
+
         match self.is_cached {
             true => {
                 trace!("Cache mode enabled");
-                let cache_key = self.get_cache_key(file);
-                let destination = self.storage_path.join(&cache_key);
 
                 if destination.exists() {
                     debug!("Using cached file: {:?}", destination);
                     return Ok(destination);
                 }
-
-                debug!("Downloading file: {}", file);
-                self.download_file(file, &destination)?;
-                Ok(destination)
             }
             false => {
                 trace!("Cache mode disabled");
-                let url = url::Url::parse(file)?;
-                let filename = url
-                    .path_segments()
-                    .and_then(|segments| segments.last())
-                    .unwrap();
 
-                let destination = env::temp_dir().join(filename);
                 if destination.exists() {
                     file::remove_file(&destination)?;
                 }
-                self.download_file(file, &destination)?;
-                Ok(destination)
             }
         }
+
+        self.download_file(file, &destination)?;
+        Ok(destination)
     }
 }
 
@@ -130,13 +123,13 @@ mod tests {
     #[test]
     fn test_http_remote_task_get_local_path_without_cache() {
         let paths = vec![
-            ("/myfile.py", "myfile.py"),
-            ("/subpath/myfile.sh", "myfile.sh"),
-            ("/myfile.sh?query=1&sdfsdf=2", "myfile.sh"),
+            "/myfile.py",
+            "/subpath/myfile.sh",
+            "/myfile.sh?query=1&sdfsdf=2",
         ];
         let mut server = mockito::Server::new();
 
-        for (request_path, expected_file_name) in paths {
+        for request_path in paths {
             let mocked_server: mockito::Mock = server
                 .mock("GET", request_path)
                 .with_status(200)
@@ -145,13 +138,14 @@ mod tests {
                 .create();
 
             let provider = RemoteTaskHttpBuilder::new().build();
-            let mock = format!("{}{}", server.url(), request_path);
+            let request_url = format!("{}{}", server.url(), request_path);
+            let cache_key = provider.get_cache_key(&request_url);
 
             for _ in 0..2 {
-                let local_path = provider.get_local_path(&mock).unwrap();
+                let local_path = provider.get_local_path(&request_url).unwrap();
                 assert!(local_path.exists());
                 assert!(local_path.is_file());
-                assert!(local_path.ends_with(expected_file_name));
+                assert!(local_path.ends_with(&cache_key));
             }
 
             mocked_server.assert();
@@ -161,13 +155,13 @@ mod tests {
     #[test]
     fn test_http_remote_task_get_local_path_with_cache() {
         let paths = vec![
-            ("/myfile.py", "myfile.py"),
-            ("/subpath/myfile.sh", "myfile.sh"),
-            ("/myfile.sh?query=1&sdfsdf=2", "myfile.sh"),
+            "/myfile.py",
+            "/subpath/myfile.sh",
+            "/myfile.sh?query=1&sdfsdf=2",
         ];
         let mut server = mockito::Server::new();
 
-        for (request_path, not_expected_file_name) in paths {
+        for request_path in paths {
             let mocked_server = server
                 .mock("GET", request_path)
                 .with_status(200)
@@ -176,13 +170,14 @@ mod tests {
                 .create();
 
             let provider = RemoteTaskHttpBuilder::new().with_cache(true).build();
-            let mock = format!("{}{}", server.url(), request_path);
+            let request_url = format!("{}{}", server.url(), request_path);
+            let cache_key = provider.get_cache_key(&request_url);
 
             for _ in 0..2 {
-                let path = provider.get_local_path(&mock).unwrap();
+                let path = provider.get_local_path(&request_url).unwrap();
                 assert!(path.exists());
                 assert!(path.is_file());
-                assert!(!path.ends_with(not_expected_file_name));
+                assert!(path.ends_with(&cache_key));
             }
 
             mocked_server.assert();
