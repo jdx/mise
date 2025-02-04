@@ -44,3 +44,26 @@ arg "myarg" "myarg description" default="foo"
 run = 'echo {{arg(name="myarg")}}'
 EOF
 assert "mise run a" "foo"
+
+cat <<'EOF' >mise.toml
+[tasks.usage-env]
+usage = '''
+arg "myarg" "myarg description" default="foo"
+'''
+run = 'echo myarg=$usage_myarg'
+EOF
+
+assert "mise run usage-env" "myarg=foo"
+assert "mise run usage-env bar" "myarg=bar"
+
+cat <<'EOF' >mise.toml
+[tasks.usage-env]
+usage = '''
+flag "-m --myflag <myflag>" default="foo"
+'''
+run = 'echo myflag=$usage_myflag'
+EOF
+
+assert "mise run usage-env" "myflag=foo"
+assert "mise run usage-env -m bar" "myflag=bar"
+assert "mise run usage-env --myflag bar" "myflag=bar"
