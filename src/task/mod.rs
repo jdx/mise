@@ -136,6 +136,7 @@ impl Debug for EitherStringOrIntOrBool {
     }
 }
 
+
 impl Task {
     pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         Ok(Self {
@@ -243,7 +244,13 @@ impl Task {
     }
 
     pub fn prefix(&self) -> String {
-        format!("[{}]", self.display_name())
+        let args = if !self.args.is_empty(){
+            self.args.join(" ")
+        } else {
+            "".to_string()
+        };
+
+        format!("[{}{}]", self.display_name(), args)
     }
 
     pub fn run(&self) -> &Vec<String> {
@@ -388,7 +395,7 @@ impl Task {
             ]
         });
         let idx = self
-            .display_name()
+            .prefix()
             .chars()
             .map(|c| c as usize)
             .sum::<usize>()
