@@ -646,7 +646,7 @@ fluttergen.backends = [
     "asdf:FlutterGen/asdf-fluttergen"
 ]
 fluttergen.os = ["linux", "macos"]
-fluttergen.test = ["fluttergen --version", "FlutterGen v{{version}}"]
+fluttergen.test = ["fluttergen --version", "v{{version}}"]
 flux2.backends = ["aqua:fluxcd/flux2", "asdf:tablexi/asdf-flux2"]
 flux2.test = ["flux --version", "flux version {{version}}"]
 fly.backends = [
