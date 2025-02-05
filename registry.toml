@@ -1752,6 +1752,7 @@ tonnage.backends = [
     "ubi:elementalvoid/tonnage",
     "asdf:elementalvoid/asdf-tonnage"
 ]
+topgrade.backends = ["aqua:topgrade-rs/topgrade"]
 traefik.backends = ["ubi:traefik/traefik", "asdf:Dabolus/asdf-traefik"]
 transifex.backends = ["ubi:transifex/cli[exe=tx]", "asdf:ORCID/asdf-transifex"]
 trdsql.backends = ["aqua:noborus/trdsql", "asdf:johnlayton/asdf-trdsql"]
