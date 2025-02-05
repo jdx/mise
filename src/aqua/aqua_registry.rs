@@ -123,6 +123,7 @@ pub struct AquaCosign {
     pub signature: Option<AquaCosignSignature>,
     pub key: Option<AquaCosignSignature>,
     pub certificate: Option<AquaCosignSignature>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     opts: Vec<String>,
 }
 
