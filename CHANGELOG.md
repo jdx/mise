@@ -1,5 +1,15 @@
 # Changelog
 
+## [2025.2.2](https://github.com/jdx/mise/compare/v2025.2.1..v2025.2.2) - 2025-02-05
+
+### 📚 Documentation
+
+- Add PowerShell example by [@jahanson](https://github.com/jahanson) in [#3857](https://github.com/jdx/mise/pull/3857)
+
+### New Contributors
+
+- @jahanson made their first contribution in [#3857](https://github.com/jdx/mise/pull/3857)
+
 ## [2025.2.1](https://github.com/jdx/mise/compare/v2025.2.0..v2025.2.1) - 2025-02-03
 
 ### Chore
