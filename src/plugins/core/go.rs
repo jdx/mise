@@ -257,7 +257,7 @@ fn parse_gomod_file(body: &str) -> String {
         .lines()
         .find(|line| line.trim().starts_with("go "))
         .unwrap_or_default();
-    let v = regex!(r#"^[^0-9]*"#).replace_all(&v, "").trim().to_string();
+    let v = regex!(r#"^[^0-9]*"#).replace_all(v, "").trim().to_string();
     // make sure it's like 1.23.0
     if !regex!(r"^([0-9.])*$").is_match(&v) {
         return "".to_string();
