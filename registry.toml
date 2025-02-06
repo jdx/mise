@@ -1574,7 +1574,10 @@ skaffold.backends = [
 ]
 skate.backends = ["aqua:charmbracelet/skate", "asdf:chessmango/asdf-skate"]
 sloth.backends = ["aqua:slok/sloth", "asdf:slok/asdf-sloth"]
-slsa-verifier.backends = ["ubi:slsa-framework/slsa-verifier"]
+slsa-verifier.backends = [
+    "aqua:slsa-framework/slsa-verifier",
+    "ubi:slsa-framework/slsa-verifier"
+]
 slsa-verifier.test = ["slsa-verifier version", "{{version}}"]
 smithy.backends = ["asdf:mise-plugins/mise-smithy"]
 smlnj.backends = ["asdf:mise-plugins/mise-smlnj"]
