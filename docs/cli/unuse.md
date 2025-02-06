@@ -1,6 +1,6 @@
 # `mise unuse`
 
-- **Usage**: `mise unuse [--no-prune] [--global] <INSTALLED_TOOL@VERSION>...`
+- **Usage**: `mise unuse [--no-prune] [-g --global] <INSTALLED_TOOL@VERSION>...`
 - **Aliases**: `rm`, `remove`
 - **Source code**: [`src/cli/unuse.rs`](https://github.com/jdx/mise/blob/main/src/cli/unuse.rs)
 
@@ -20,7 +20,7 @@ Tool(s) to remove
 
 Do not also prune the installed version
 
-### `--global`
+### `-g --global`
 
 Remove tool from global config
 
@@ -28,5 +28,8 @@ Examples:
 
 ```
 # will uninstall specific version
-$ mise remove node@18.0.0
+$ mise unuse node@18.0.0
+
+# will uninstall specific version from global config
+$ mise unuse -g node@18.0.0
 ```
