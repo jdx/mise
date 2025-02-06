@@ -134,7 +134,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise trust [FLAGS] [CONFIG_FILE]`](/cli/trust.md)
 - [`mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]...`](/cli/uninstall.md)
 - [`mise unset [-f --file <FILE>] [-g --global] [ENV_KEY]...`](/cli/unset.md)
-- [`mise unuse [--no-prune] [--global] <INSTALLED_TOOL@VERSION>...`](/cli/unuse.md)
+- [`mise unuse [--no-prune] [-g --global] <INSTALLED_TOOL@VERSION>...`](/cli/unuse.md)
 - [`mise upgrade [FLAGS] [TOOL@VERSION]...`](/cli/upgrade.md)
 - [`mise use [FLAGS] [TOOL@VERSION]...`](/cli/use.md)
 - [`mise version [-J --json]`](/cli/version.md)
