@@ -91,7 +91,7 @@
             },
             "dir": {
               "default": "{{ config_root }}",
-              "description": "directory to run script in",
+              "description": "directory to run script in, default is current working directory",
               "type": "string"
             },
             "env": {
