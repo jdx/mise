@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+#################################################################################
+# Prerequisites
+#################################################################################
+
+# Only create the ssh key if the CI env var is set
+if [ -n "$CI" ]; then
+    TEMP_SSH_KEY="temp_ssh_key"
+    ssh-keygen -t ed25519 -f "$TEMP_SSH_KEY" -N ""
+    eval "$(ssh-agent -s)"
+    ssh-add "$TEMP_SSH_KEY"
+else
+    echo "Skipping test as CI env var is not set"
+fi
+
 cargo init --name hello_cargo
 
 #################################################################################
