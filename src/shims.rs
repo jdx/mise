@@ -267,6 +267,9 @@ fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
                         ]
                     })
                     .collect()
+            } else if cfg!(macos) {
+                // some bins might be uppercased but on mac APFS is case insensitive
+                bins.into_iter().map(|b| b.to_lowercase()).collect()
             } else {
                 bins
             }
