@@ -925,6 +925,8 @@ istioctl.test = ["istioctl version", "{{version}}"]
 janet.backends = ["asdf:mise-plugins/mise-janet"]
 java.backends = ["core:java"]
 jbang.backends = ["asdf:mise-plugins/jbang-asdf"]
+jc.backends = ["aqua:kellyjonbrazil/jc", "ubi:kellyjonbrazil/jc", "pipx:jc"]
+jc.test = ["jc --version", "jc version:  {{version}}"]
 jd.backends = [
     "aqua:josephburnett/jd",
     "ubi:josephburnett/jd",
