@@ -4,10 +4,19 @@
 # Prerequisites
 #################################################################################
 
+# Variables
 TEMP_SSH_KEY="temp_ssh_key"
-ssh-keygen -t ed25519 -f "$TEMP_SSH_KEY" -N ""
+
+# 1. Create a temporary SSH key
+ssh-keygen -t ed25519 -f "$TEMP_SSH_KEY" -N "" -q
+
+# 2. Add the key to the SSH agent
 eval "$(ssh-agent -s)"
 ssh-add "$TEMP_SSH_KEY"
+
+# 3. Add GitHub's SSH key fingerprint to known_hosts
+mkdir -p ~/.ssh
+ssh-keyscan -t rsa github.com >>~/.ssh/known_hosts
 
 cargo init --name hello_cargo
 
@@ -56,4 +65,5 @@ assert_succeed "mise run remote_lint_ssh_ref" # Cache should be used
 #################################################################################
 
 ssh-add -d "$TEMP_SSH_KEY"
-rm -f "$TEMP_SSH_KEY"
+ssh-agent -k
+rm -f "$TEMP_SSH_KEY" "$TEMP_SSH_KEY.pub"
