@@ -3,7 +3,7 @@ use crate::backend::aqua;
 use crate::backend::aqua::{arch, os};
 use crate::config::SETTINGS;
 use crate::duration::{DAILY, WEEKLY};
-use crate::git::Git;
+use crate::git::{CloneOptions, Git};
 use crate::{dirs, file, hashmap, http};
 use expr::{Context, Parser, Program, Value};
 use eyre::{eyre, ContextCompat, Result};
@@ -175,7 +175,7 @@ impl AquaRegistry {
             fetch_latest_repo(&repo)?;
         } else if let Some(aqua_registry_url) = &SETTINGS.aqua.registry_url {
             info!("cloning aqua registry to {path:?}");
-            repo.clone(aqua_registry_url, None)?;
+            repo.clone(aqua_registry_url, CloneOptions::default())?;
             repo_exists = true;
         }
         Ok(Self { path, repo_exists })

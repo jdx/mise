@@ -5,6 +5,7 @@ backend = "aqua:rhysd/actionlint"
 [tools.actionlint.checksums]
 "actionlint_1.7.7_darwin_arm64.tar.gz" = "sha256:2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc033873db"
 "actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+"actionlint_1.7.7_linux_arm64.tar.gz" = "sha256:401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
 
 [tools.bun]
 version = "1.2.2"
@@ -12,6 +13,7 @@ backend = "core:bun"
 
 [tools.bun.checksums]
 "bun-darwin-aarch64.zip" = "sha256:c4d58e06c5c33885b526f4d91a38ca9ebdb9fc3fb4cd547f7d3302055c98e41c"
+"bun-linux-aarch64.zip" = "sha256:d1dbaa3e9af24549fad92bdbe4fb21fa53302cd048a8f004e85a240984c93d4d"
 "bun-linux-x64-baseline.zip" = "sha256:cad7756a6ee16f3432a328f8023fc5cd431106822eacfa6d6d3afbad6fdc24db"
 
 [tools.cargo-binstall]
@@ -20,6 +22,7 @@ backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
 "cargo-binstall-aarch64-apple-darwin.zip" = "sha256:97ce4a2f18181f052dda266b042d8bb220e48ffe40ca75e796ae4c5e418b9e01"
+"cargo-binstall-aarch64-unknown-linux-musl.tgz" = "sha256:b8c32b1b007482f42f6c4b5f8cfeb168f9674ec6448bfa29ae0c4ba01b7a370b"
 "cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:74d7c647c7e60bb8464fa551702fdd38a7241f5cedb2c4edc3b11639cd1dae47"
 
 [tools."cargo:cargo-edit"]
@@ -115,6 +118,7 @@ version = "2.6.0"
 backend = "ubi:slsa-framework/slsa-verifier"
 
 [tools.slsa-verifier.checksums]
+slsa-verifier-linux-aarch64 = "sha256:92b28eb2db998f9a6a048336928b29a38cb100076cd587e443ca0a2543d7c93d"
 slsa-verifier-linux-x86_64 = "sha256:1c9c0d6a272063f3def6d233fa3372adbaff1f5a3480611a07c744e73246b62d"
 slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff545460add0cb4a087aec056189c"
 "slsa-verifier.exe-windows-x86_64" = "sha256:37ca29ad748e8ea7be76d3ae766e8fa505362240431f6ea7f0648c727e2f2507"

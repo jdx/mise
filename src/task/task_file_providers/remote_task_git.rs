@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 
 use regex::Regex;
-use xx::git;
 
-use crate::{dirs, env, hash};
+use crate::{
+    dirs, env,
+    git::{self, CloneOptions},
+    hash,
+};
 
 use super::TaskFileProvider;
 
@@ -154,13 +157,17 @@ impl TaskFileProvider for RemoteTaskGit {
             }
         }
 
-        let git_cloned = git::clone(repo_structure.url_without_path.as_str(), destination)?;
+        let git_repo = git::Git::new(destination);
 
-        if let Some(branch) = repo_structure.branch {
-            git_cloned.update(Some(branch))?;
+        let mut clone_options = CloneOptions::default();
+
+        if let Some(branch) = &repo_structure.branch {
+            clone_options = clone_options.branch(branch);
         }
 
-        Ok(git_cloned.dir.join(&repo_file_path))
+        git_repo.clone(repo_structure.url_without_path.as_str(), clone_options)?;
+
+        Ok(full_path)
     }
 }
 
