@@ -2673,7 +2673,7 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--global",
+          name: ["-g", "--global"],
           description: "Remove tool from global config",
           isRepeatable: false,
         },

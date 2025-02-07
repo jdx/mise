@@ -903,9 +903,9 @@ cmd unset help="Remove environment variable(s) from the config file." {
 cmd unuse help="Removes installed tool versions from mise.toml" {
     alias rm remove
     long_help "Removes installed tool versions from mise.toml\n\nWill also prune the installed version if no other configurations are using it."
-    after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise remove node@18.0.0\n"
+    after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise unuse node@18.0.0\n\n    # will uninstall specific version from global config\n    $ mise unuse -g node@18.0.0\n"
     flag --no-prune help="Do not also prune the installed version"
-    flag --global help="Remove tool from global config"
+    flag "-g --global" help="Remove tool from global config"
     arg <INSTALLED_TOOL@VERSION>... help="Tool(s) to remove" var=#true
 }
 cmd upgrade help="Upgrades outdated tools" {

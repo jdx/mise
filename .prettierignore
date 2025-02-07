@@ -5,7 +5,6 @@
 *.gif
 *.png
 *.lock
-*.lockb
 .cliffignore
 *.kdl
 CHANGELOG.md

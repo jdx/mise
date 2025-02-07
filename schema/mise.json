@@ -1066,7 +1066,7 @@
             },
             "dir": {
               "default": "{{ config_root }}",
-              "description": "directory to run script in, default is current working directory",
+              "description": "directory to run script in, default is the project's base directory",
               "type": "string"
             },
             "env": {
