@@ -1,6 +1,8 @@
 # Python
 
-The following are instructions for using the python mise core plugin. The core plugin will be used
+Like `pyenv`, `mise` can manage multiple versions of Python on the same system. Mise can also automatically create virtual environments for your projects and integrates with `uv`.
+
+> The following are instructions for using the python mise core plugin. The core plugin will be used
 so long as no plugin is manually
 installed named "python" using `mise plugins install python [GIT_URL]`.
 

@@ -1,9 +1,9 @@
 # Ruby
 
-The following are instructions for using the ruby mise core plugin. This is used when there isn't a
-git plugin installed named "ruby".
+Like `rvm`, `rbenv`, or `asdf`, `mise` can manage multiple versions of [Ruby](https://www.ruby-lang.org/) on the same system.
 
-If you want to use [asdf-ruby](https://github.com/asdf-vm/asdf-ruby)
+> The following are instructions for using the ruby mise core plugin. This is used when there isn't a
+git plugin installed named "ruby".  If you want to use [asdf-ruby](https://github.com/asdf-vm/asdf-ruby)
 then use `mise plugins install ruby GIT_URL`.
 
 The code for this is inside the mise repository at
@@ -24,16 +24,6 @@ from source. Ensure that you have the necessary
 You can check its [README](https://github.com/rbenv/ruby-build/blob/master/README.md) for additional settings and some
 troubleshooting.
 
-## Settings
-
-`ruby-build` already has a
-[handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration),
-in additional to that mise has a few extra settings:
-
-<script setup>
-import Settings from '/components/settings.vue';
-</script>
-<Settings child="ruby" :level="3" />
 
 ## Default gems
 
@@ -62,7 +52,7 @@ ruby -v > .ruby-version
 
 See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
 
-### Manually updating ruby-build
+## Manually updating ruby-build
 
 ruby-build should update daily, however if you find versions do not yet exist you can force an
 update:
@@ -71,3 +61,13 @@ update:
 mise cache clean
 mise ls-remote ruby
 ```
+## Settings
+
+`ruby-build` already has a
+[handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration),
+in additional to that mise has a few extra settings:
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="ruby" :level="3" />

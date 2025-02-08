@@ -67,10 +67,10 @@ Here is an example showing that VSCode will use `node` provided by `mise`:
 ::: tabs
 === VSCode
 
-[![vscode using shims](./shims-vscode.png)](./shims-vscode.png)
+![vscode using shims](./shims-vscode.png)
 
 === IntelliJ
-[![intellij using shims](./shims-intellij.png)](./shims-intellij.png)
+![intellij using shims](./shims-intellij.png)
 :::
 
 As mentioned above, using `shims` doesn't work with all mise features. For example, arbitrary [env vars](./environments/) in `[env]` will

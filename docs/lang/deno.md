@@ -1,9 +1,9 @@
 # Deno
 
-The following are instructions for using the deno mise core plugin. This is used when there isn't a
-git plugin installed named "deno".
+`mise` can be used to install and manage multiple versions of [deno](https://deno.land/) on the same system.
 
-If you want to use [asdf-deno](https://github.com/asdf-community/asdf-deno)
+> The following are instructions for using the deno mise core plugin. This is used when there isn't a
+git plugin installed named "deno". If you want to use [asdf-deno](https://github.com/asdf-community/asdf-deno)
 then run `mise plugins install deno https://github.com/asdf-community/asdf-deno`.
 
 The code for this is inside the mise repository at
@@ -19,3 +19,6 @@ mise use -g deno@latest  # install latest deno
 ```
 
 See available versions with `mise ls-remote deno`.
+
+> [!NOTE]
+> Avoid using `deno upgrade` to upgrade `deno` as `mise` will not be aware of the change.

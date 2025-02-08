@@ -1,6 +1,8 @@
 # Zig
 
-The following are instructions for using the zig mise core plugin.
+`mise` can be used to install and manage multiple versions of [zig](https://ziglang.org/) on the same system.
+
+> The following are instructions for using the zig mise core plugin.
 
 The code for this is inside the mise repository at
 [`./src/plugins/core/zig.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/zig.rs).
