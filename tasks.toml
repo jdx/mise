@@ -27,6 +27,11 @@ depends = ["docs:setup"]
 dir = "docs"
 run = "bun run docs:build"
 
+["docs:preview"]
+depends = ["docs:build"]
+dir = "docs"
+run = "bun run docs:preview"
+
 ["render:usage"]
 depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }
