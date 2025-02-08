@@ -1,10 +1,10 @@
 # Go
 
-The following are instructions for using the go mise core plugin. This is used when there isn't a
-git plugin installed named "go".
+`mise` can be used to install and manage multiple versions of [go](https://golang.org/) on the same system.
 
-If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang)
-then use `mise plugins install go GIT_URL`.
+> The following are instructions for using the go mise core plugin. This is used when there isn't a
+> git plugin installed named "go". If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang)
+> then use `mise plugins install go GIT_URL`.
 
 The code for this is inside the mise repository at
 [`./src/plugins/core/go.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/go.rs).
@@ -25,12 +25,12 @@ first version of each series was released without a `.0` suffix, making 1.20 an 
 mise use -g go@prefix:1.20
 ```
 
-## Settings
+## `.go-version` file support
 
-<script setup>
-import Settings from '/components/settings.vue';
-</script>
-<Settings child="go" :level="3" />
+mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
+However, it can also read go-specific version files named `.go-version`.
+
+See [idiomatic version files](/configuration.html#idiomatic-version-files)
 
 ## Default packages
 
@@ -43,9 +43,9 @@ github.com/Dreamacro/clash # allows comments
 github.com/jesseduffield/lazygit
 ```
 
-## `.go-version` file support
+## Settings
 
-mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
-However, it can also read go-specific version files named `.go-version`.
-
-See [idiomatic version files](/configuration.html#idiomatic-version-files)
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="go" :level="3" />
