@@ -1,7 +1,9 @@
 # Erlang
 
-The following are instructions for using the erlang core plugin.
-This is used when there isn't a git plugin installed named "erlang".
+`mise` can be used to install and manage multiple versions of [erlang](https://www.erlang.org/) on the same system.
+
+> The following are instructions for using the erlang core plugin.
+> This is used when there isn't a git plugin installed named "erlang".
 
 The code for this is inside the mise repository at
 [`./src/plugins/core/erlang.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/erlang.rs).

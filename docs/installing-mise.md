@@ -226,11 +226,6 @@ yum install -y mise
 
 ### Windows - Scoop
 
-> [!NOTE]
-> We're currently waiting for mise to be merged to the Scoop main bucket:
->
-> - <https://github.com/ScoopInstaller/Main/pull/6374>
-
 This is the recommended way to install mise on Windows. It will automatically add your shims to PATH.
 
 ```sh
