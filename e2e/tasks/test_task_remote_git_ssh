@@ -1,22 +1,9 @@
 #!/usr/bin/env bash
 
-#################################################################################
-# Prerequisites
-#################################################################################
-
-# Variables
-TEMP_SSH_KEY="temp_ssh_key"
-
-# 1. Create a temporary SSH key
-ssh-keygen -t ed25519 -f "$TEMP_SSH_KEY" -N "" -q
-
-# 2. Add the key to the SSH agent
-eval "$(ssh-agent -s)"
-ssh-add "$TEMP_SSH_KEY"
-
-# 3. Add GitHub's SSH key fingerprint to known_hosts
-mkdir -p ~/.ssh
-ssh-keyscan -t rsa github.com >>~/.ssh/known_hosts
+if [ -n "${CI-}" ]; then
+  echo "This test is not supported in CI, because it requires a SSH key to be added to the GitHub account"
+  exit 1
+fi
 
 cargo init --name hello_cargo
 
@@ -59,11 +46,3 @@ assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_ssh_ref" # R
 assert_succeed "mise run remote_lint_ssh_ref --no-cache" # Remote task should be redownloaded
 
 assert_succeed "mise run remote_lint_ssh_ref" # Cache should be used
-
-#################################################################################
-# Cleanup
-#################################################################################
-
-ssh-add -d "$TEMP_SSH_KEY"
-ssh-agent -k
-rm -f "$TEMP_SSH_KEY" "$TEMP_SSH_KEY.pub"
