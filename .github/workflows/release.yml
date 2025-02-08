@@ -40,19 +40,19 @@ jobs:
           - os: ubuntu
             name: linux-arm64
             target: aarch64-unknown-linux-gnu
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04-arm
           - os: ubuntu
             name: linux-arm64-musl
             target: aarch64-unknown-linux-musl
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04-arm
           - os: ubuntu
             name: linux-armv7
             target: armv7-unknown-linux-gnueabi
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04-arm
           - os: ubuntu
             name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04-arm
           - os: macos
             name: macos-x64
             target: x86_64-apple-darwin
@@ -79,9 +79,9 @@ jobs:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
-      - if: matrix.runs-on != 'ubuntu-latest'
+      - if: matrix.os == 'macos'
         run: rustup target add ${{matrix.target}}
-      - if: matrix.runs-on == 'ubuntu-latest'
+      - if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@cross
       - name: build-tarball
         uses: nick-fields/retry@v3
