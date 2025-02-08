@@ -516,7 +516,7 @@ fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
                 Err(e) => {
                     debug!("idiomatic_filenames failed for {}: {:?}", b, e);
                     false
-                },
+                }
             }) =>
         {
             Some(ConfigFileType::IdiomaticVersion)
