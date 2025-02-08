@@ -393,7 +393,7 @@ impl AquaPackage {
 
     fn expr_parser(&self, v: &str) -> Parser {
         let prefix = Regex::new(r"^[^0-9.]+").unwrap();
-        let ver = versions::Versioning::new(prefix.replace(v, "").to_string());
+        let ver = versions::Versioning::new(prefix.replace(v, ""));
         let mut expr = Parser::new();
         expr.add_function("semver", move |c| {
             if c.args.len() != 1 {
