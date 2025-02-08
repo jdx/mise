@@ -9,6 +9,7 @@ use expr::{Context, Parser, Program, Value};
 use eyre::{eyre, ContextCompat, Result};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use regex::Regex;
 use serde_derive::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
@@ -391,7 +392,8 @@ impl AquaPackage {
     }
 
     fn expr_parser(&self, v: &str) -> Parser {
-        let ver = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v));
+        let prefix = Regex::new(r"^[^0-9.]+").unwrap();
+        let ver = versions::Versioning::new(prefix.replace(v, "").to_string());
         let mut expr = Parser::new();
         expr.add_function("semver", move |c| {
             if c.args.len() != 1 {
