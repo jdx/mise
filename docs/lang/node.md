@@ -3,9 +3,9 @@
 Like `nvm`, (or `volta`, `fnm` or `asdf`...), `mise` can manage multiple versions of Node.js on the same system.
 
 > The following are instructions for using the node mise core plugin. This is used when there isn't a
-git plugin installed named "node".
+> git plugin installed named "node".
 > If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs)
-then run `mise plugins install node https://github.com/asdf-vm/asdf-nodejs`
+> then run `mise plugins install node https://github.com/asdf-vm/asdf-nodejs`
 
 The code for this is inside the mise repository at [`./src/plugins/core/node.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/node.rs).
 
@@ -20,12 +20,11 @@ mise use -g node@20
 
 See the [Node.JS Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
 
-
 ## `.nvmrc` and `.node-version` support
 
 By default, mise uses a `mise.toml` file for auto-switching between software versions.
 
-It also supports `.tool-versions`, `.nvmrc` or `.node-version` file to find out what version of Node.js should be used. This will be used if `node` isn't defined in `mise.toml`. 
+It also supports `.tool-versions`, `.nvmrc` or `.node-version` file to find out what version of Node.js should be used. This will be used if `node` isn't defined in `mise.toml`.
 
 This makes it a drop-in replacement for `nvm`. See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
 
@@ -46,7 +45,6 @@ You can specify a non-default location of this file by setting a `MISE_NODE_DEFA
 You cannot install/use a plugin named "nodejs". If you attempt this, mise will just rename it to
 "node". See the [FAQ](/faq.html#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
 for an explanation.
-
 
 ## Building from source
 

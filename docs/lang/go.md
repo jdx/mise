@@ -3,8 +3,8 @@
 `mise` can be used to install and manage multiple versions of [go](https://golang.org/) on the same system.
 
 > The following are instructions for using the go mise core plugin. This is used when there isn't a
-git plugin installed named "go". If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang)
-then use `mise plugins install go GIT_URL`.
+> git plugin installed named "go". If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang)
+> then use `mise plugins install go GIT_URL`.
 
 The code for this is inside the mise repository at
 [`./src/plugins/core/go.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/go.rs).
@@ -49,5 +49,3 @@ github.com/jesseduffield/lazygit
 import Settings from '/components/settings.vue';
 </script>
 <Settings child="go" :level="3" />
-
-
