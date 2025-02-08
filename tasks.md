@@ -29,6 +29,12 @@
 
 - **Usage**: `docs:build`
 
+## `docs:preview`
+
+- Depends: docs:build
+
+- **Usage**: `docs:preview`
+
 ## `docs:release`
 
 - Depends: docs:build
