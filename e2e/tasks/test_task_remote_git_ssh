@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-if [ -n "${CI-}" ]; then
+if [ -n "$CI" ]; then
   echo "This test is not supported in CI, because it requires a SSH key to be added to the GitHub account"
   exit 1
 fi
