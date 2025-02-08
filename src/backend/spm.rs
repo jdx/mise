@@ -3,7 +3,7 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
-use crate::git::Git;
+use crate::git::{CloneOptions, Git};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{dirs, file, github};
@@ -95,7 +95,10 @@ impl SPMBackend {
                 package_repo.url.as_str(),
                 repo.dir.display(),
             );
-            repo.clone(package_repo.url.as_str(), Some(&ctx.pr))?;
+            repo.clone(
+                package_repo.url.as_str(),
+                CloneOptions::default().pr(&ctx.pr),
+            )?;
         }
         debug!("Checking out revision: {revision}");
         repo.update_tag(revision.to_string())?;

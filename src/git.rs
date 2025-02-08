@@ -116,7 +116,7 @@ impl Git {
         Ok((prev_rev, post_rev))
     }
 
-    pub fn clone(&self, url: &str, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
+    pub fn clone(&self, url: &str, options: CloneOptions) -> Result<()> {
         debug!("cloning {} to {}", url, self.dir.display());
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
@@ -139,18 +139,30 @@ impl Git {
                 err
             ),
         }
-        if let Some(pr) = pr {
+        if let Some(pr) = &options.pr {
             // in order to prevent hiding potential password prompt, just disable the progress bar
             pr.abandon();
         }
-        CmdLineRunner::new("git")
+
+        let mut cmd = CmdLineRunner::new("git")
             .arg("clone")
             .arg("-q")
             .arg("--depth")
             .arg("1")
             .arg(url)
-            .arg(&self.dir)
-            .execute()?;
+            .arg(&self.dir);
+
+        if let Some(branch) = &options.branch {
+            cmd = cmd.args([
+                "-b",
+                branch,
+                "--single-branch",
+                "-c",
+                "advice.detachedHead=false",
+            ]);
+        }
+
+        cmd.execute()?;
         Ok(())
     }
 
@@ -263,5 +275,23 @@ fn get_git_version() -> Result<String> {
 impl Debug for Git {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Git").field("dir", &self.dir).finish()
+    }
+}
+
+#[derive(Default)]
+pub struct CloneOptions<'a> {
+    pr: Option<&'a Box<dyn SingleReport>>,
+    branch: Option<String>,
+}
+
+impl<'a> CloneOptions<'a> {
+    pub fn pr(mut self, pr: &'a Box<dyn SingleReport>) -> Self {
+        self.pr = Some(pr);
+        self
+    }
+
+    pub fn branch(mut self, branch: &str) -> Self {
+        self.branch = Some(branch.to_string());
+        self
     }
 }
