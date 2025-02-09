@@ -1,7 +1,7 @@
 use crate::config::{Config, Settings, SETTINGS};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
-use crate::git::Git;
+use crate::git::{CloneOptions, Git};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
 use crate::result::Result;
 use crate::timeout::run_with_timeout;
@@ -333,7 +333,7 @@ Plugins could support local directories in the future but for now a symlink is r
         }
         let git = Git::new(&self.plugin_path);
         pr.set_message(format!("clone {repo_url}"));
-        git.clone(&repo_url, Some(pr))?;
+        git.clone(&repo_url, CloneOptions::default().pr(pr))?;
         if let Some(ref_) = &repo_ref {
             pr.set_message(format!("check out {ref_}"));
             git.update(Some(ref_.to_string()))?;

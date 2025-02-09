@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+if [ -n "$EXCLUDE_FROM_CI" ]; then
+  echo "This test is not supported in CI, because it requires a SSH key to be added to the GitHub account"
+  exit 0
+fi
+
+cargo init --name hello_cargo
+
+#################################################################################
+# Test remote tasks with no ref
+#################################################################################
+
+cat <<EOF >mise.toml
+[tasks.remote_lint_ssh_latest]
+file  = "git::ssh://git@github.com:jdx/mise.git//xtasks/lint/clippy"
+EOF
+
+assert_contains "mise tasks" "remote_lint_ssh_latest"
+assert_succeed "mise run remote_lint_ssh_latest" # Remote task should be downloaded
+
+mise cache clear # Clear cache to force redownload
+
+assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_ssh_latest" # Remote task should be redownloaded
+
+assert_succeed "mise run remote_lint_ssh_latest --no-cache" # Remote task should be redownloaded
+
+assert_succeed "mise run remote_lint_ssh_latest" # Cache should be used
+
+#################################################################################
+# Test remote tasks with with ref
+#################################################################################
+
+cat <<EOF >mise.toml
+[tasks.remote_lint_ssh_ref]
+file  = "git::ssh://git@github.com:jdx/mise.git//xtasks/lint/clippy?ref=v2025.1.17"
+EOF
+
+assert_contains "mise tasks" "remote_lint_ssh_ref"
+assert_succeed "mise run remote_lint_ssh_ref" # Remote task should be downloaded
+
+mise cache clear # Clear cache to force redownload
+
+assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_ssh_ref" # Remote task should be redownloaded
+
+assert_succeed "mise run remote_lint_ssh_ref --no-cache" # Remote task should be redownloaded
+
+assert_succeed "mise run remote_lint_ssh_ref" # Cache should be used

@@ -509,9 +509,18 @@ fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         .and_then(|f| f.to_str())
         .unwrap_or("mise.toml")
     {
-        f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
-        f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
-        f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
+        f if backend::list()
+            .iter()
+            .any(|b| match b.idiomatic_filenames() {
+                Ok(filenames) => filenames.contains(&f.to_string()),
+                Err(e) => {
+                    debug!("idiomatic_filenames failed for {}: {:?}", b, e);
+                    false
+                }
+            }) =>
+        {
+            Some(ConfigFileType::IdiomaticVersion)
+        }
         f if env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
             .as_ref()
             .is_some_and(|o| o.contains(f)) =>
@@ -521,12 +530,9 @@ fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         f if env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
         }
-        f if backend::list()
-            .iter()
-            .any(|b| b.idiomatic_filenames().unwrap().contains(&f.to_string())) =>
-        {
-            Some(ConfigFileType::IdiomaticVersion)
-        }
+        f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
+        f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
+        f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
         _ => None,
     }
 }
@@ -567,6 +573,7 @@ mod tests {
 
     #[test]
     fn test_detect_config_file_type() {
+        env::set_var("MISE_EXPERIMENTAL", "true");
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.nvmrc")),
             Some(ConfigFileType::IdiomaticVersion)
@@ -580,8 +587,12 @@ mod tests {
             Some(ConfigFileType::ToolVersions)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.tool-versions.toml")),
+            detect_config_file_type(Path::new("/foo/bar/mise.toml")),
             Some(ConfigFileType::MiseToml)
+        );
+        assert_eq!(
+            detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")),
+            Some(ConfigFileType::IdiomaticVersion)
         );
     }
 
