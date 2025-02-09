@@ -43,7 +43,7 @@ description = 'Cut a new release'
 file = 'scripts/release.sh' # execute an external script
 ```
 
-You can use [environment variables](/environments) or [`vars`](/tasks/task-configuration.html#vars-options) to define common arguments:
+You can use [environment variables](/environments/) or [`vars`](/tasks/task-configuration.html#vars-options) to define common arguments:
 
 ```toml [mise.toml]
 [env]
