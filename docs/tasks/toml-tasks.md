@@ -51,7 +51,7 @@ VERBOSE_ARGS = '--verbose'
 
 # Vars can be shared between tasks like environment variables,
 # but they are not passed as environment variables to the scripts
-[vars]  
+[vars]
 e2e_args = '--headless'
 
 [tasks.test]
