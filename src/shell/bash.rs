@@ -16,7 +16,10 @@ impl Shell for Bash {
         let flags = opts.flags;
         let settings = Settings::get();
         let exe = exe.to_string_lossy();
-        let mut out = formatdoc! {r#"
+
+        let mut out = String::new();
+        out.push_str(&self.format_activate_prelude(&opts.prelude));
+        out.push_str(&formatdoc! {r#"
             export MISE_SHELL=bash
             export __MISE_ORIG_PATH="$PATH"
 
@@ -46,7 +49,7 @@ impl Shell for Bash {
               eval "$(mise hook-env{flags} -s bash)";
               return $previous_exit_status;
             }};
-            "#};
+            "#});
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
             if [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook;"* ]]; then
@@ -139,6 +142,7 @@ mod tests {
             exe: exe.to_path_buf(),
             flags: " --status".into(),
             no_hook_env: false,
+            prelude: vec![],
         };
         assert_snapshot!(bash.activate(opts));
     }

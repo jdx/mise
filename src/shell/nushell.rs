@@ -4,7 +4,8 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{ActivateOptions, ActivatePrelude, Shell};
+use itertools::Itertools;
 
 #[derive(Default)]
 pub struct Nushell {}
@@ -31,6 +32,16 @@ impl Nushell {
             s.to_owned()
         }
     }
+
+    fn format_activate_prelude_inline(&self, prelude: &[ActivatePrelude]) -> String {
+        prelude
+            .iter()
+            .map(|p| match p {
+                ActivatePrelude::SetEnv(k, v) => format!("$env.{k} = r#'{v}'#\n"),
+                ActivatePrelude::PrependEnv(k, v) => self.prepend_env(k, v),
+            })
+            .join("")
+    }
 }
 
 impl Shell for Nushell {
@@ -39,7 +50,9 @@ impl Shell for Nushell {
         let flags = opts.flags;
         let exe = exe.to_string_lossy().replace('\\', r#"\\"#);
 
-        formatdoc! {r#"
+        let mut out = String::new();
+        out.push_str(&self.format_activate_prelude_inline(&opts.prelude));
+        out.push_str(&formatdoc! {r#"
           export-env {{
             $env.MISE_SHELL = "nu"
             let mise_hook = {{
@@ -96,7 +109,8 @@ impl Shell for Nushell {
               | update-env
           }}
 
-        "#}
+        "#});
+        out
     }
 
     fn deactivate(&self) -> String {
@@ -149,6 +163,7 @@ mod tests {
             exe: exe.to_path_buf(),
             flags: " --status".into(),
             no_hook_env: false,
+            prelude: vec![],
         };
         assert_snapshot!(nushell.activate(opts));
     }
