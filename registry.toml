@@ -1202,6 +1202,8 @@ markdownlint-cli2.backends = [
     "npm:markdownlint-cli2",
     "asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2"
 ]
+marksman.backends = ["aqua:artempyanykh/marksman"]
+marksman.test = ["marksman --version", "{{version}}"]
 marp-cli.backends = ["aqua:marp-team/marp-cli", "asdf:xataz/asdf-marp-cli"]
 mask.backends = ["aqua:jacobdeichert/mask", "asdf:aaaaninja/asdf-mask"]
 mask.test = ["mask --version", "mask {{version}}"]
