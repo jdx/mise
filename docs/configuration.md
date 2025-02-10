@@ -262,19 +262,19 @@ other developers to use a specific tool like mise or asdf.
 They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
 in mise and nvm. Here are some of the supported idiomatic version files:
 
-| Plugin    | Idiomatic Files                                    |
-| --------- | -------------------------------------------------- |
-| crystal   | `.crystal-version`                                 |
-| elixir    | `.exenv-version`                                   |
-| go        | `.go-version`, `go.mod`                            |
-| java      | `.java-version`, `.sdkmanrc`                       |
-| node      | `.nvmrc`, `.node-version`                          |
-| python    | `.python-version`, `.python-versions`              |
-| ruby      | `.ruby-version`, `Gemfile`                         |
-| terraform | `.terraform-version`, `.packer-version`, `main.tf` |
-| yarn      | `.yarnrc`                                          |
+| Plugin    | Idiomatic Files                                                                  |
+| --------- | -------------------------------------------------------------------------------- |
+| crystal   | `.crystal-version`                                                               |
+| elixir    | `.exenv-version`                                                                 |
+| go        | `.go-version` (`go.mod` is not supported due to its minimum version behaviour)   |
+| java      | `.java-version`, `.sdkmanrc`                                                     |
+| node      | `.nvmrc`, `.node-version`                                                        |
+| python    | `.python-version`, `.python-versions`                                            |
+| ruby      | `.ruby-version`, `Gemfile`                                                       |
+| terraform | `.terraform-version`, `.packer-version`, `main.tf`                               |
+| yarn      | `.yarnrc`                                                                        |
 
-In mise these are enabled by default. You can disable them with [`mise settings idiomatic_version_file false](/configuration/settings.html#idiomatic_version_file) or for specific tools with [`mise settings idiomatic_version_file_disable_tools python`](/configuration/settings.html#idiomatic_version_file_disable_tools).
+In mise these are enabled by default. You can disable them with [`mise settings idiomatic_version_file false`](/configuration/settings.html#idiomatic_version_file) or for specific tools with [`mise settings idiomatic_version_file_disable_tools python`](/configuration/settings.html#idiomatic_version_file_disable_tools).
 
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
 `bin/parse-version-file`. However, these are [cached](/cache-behavior) so it's not a huge deal.
