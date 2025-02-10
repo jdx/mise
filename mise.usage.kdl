@@ -305,6 +305,17 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
             arg <OUTPUT>
         }
     }
+    cmd devcontainer help="[experimental] Generate a devcontainer to execute mise" {
+        after_long_help "Examples:\n\n    $ mise generate devcontainer\n"
+        flag "-n --name" help="The name of the devcontainer" {
+            arg <NAME>
+        }
+        flag "-i --image" help="The image to use for the devcontainer" {
+            arg <IMAGE>
+        }
+        flag "-m --mount-mise-data" help="Bind the mise-data-volume to the devcontainer"
+        flag "-w --write" help="write to .devcontainer/devcontainer.json"
+    }
     cmd git-pre-commit help="[experimental] Generate a git pre-commit hook" {
         alias pre-commit
         long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`."
