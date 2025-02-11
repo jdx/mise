@@ -600,6 +600,7 @@ eza.backends = [
     "asdf:mise-plugins/mise-eza",
     "cargo:eza"
 ]
+e1s.backends = ["asdf:tbobm/asdf-e1s"]
 fd.backends = [
     "aqua:sharkdp/fd",
     "ubi:sharkdp/fd",
