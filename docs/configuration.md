@@ -275,6 +275,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | yarn      | `.yarnrc`                                          |
 
 In mise these are enabled by default. You can disable them with:
+
 - `mise settings idiomatic_version_file false` for all tools ([docs](/configuration/settings.html#idiomatic_version_file))
 - `mise settings idiomatic_version_file_disable_tools python` for a specific tool such as Python ([docs](/configuration/settings.html#idiomatic_version_file_disable_tools))
 
