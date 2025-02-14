@@ -7,14 +7,14 @@
 Use mise to specify environment variables used for different projects. Create a `mise.toml` file
 in the root of your project directory:
 
-```toml
+```toml [mise.toml]
 [env]
 NODE_ENV = 'production'
 ```
 
 To clear an env var, set it to `false`:
 
-```toml
+```toml [mise.toml]
 [env]
 NODE_ENV = false # unset a previously set NODE_ENV
 ```
