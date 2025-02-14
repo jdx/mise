@@ -7,7 +7,13 @@ use std::path::PathBuf;
 use toml::Value;
 
 impl EnvResults {
-    pub fn module(r: &mut EnvResults, source: PathBuf, name: String, value: &Value, redact: bool) -> Result<()> {
+    pub fn module(
+        r: &mut EnvResults,
+        source: PathBuf,
+        name: String,
+        value: &Value,
+        redact: bool,
+    ) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
         let plugin = VfoxPlugin::new(name, path);
         if let Some(env) = plugin.mise_env(value)? {
