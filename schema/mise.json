@@ -109,10 +109,6 @@
                           }
                         }
                       ]
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
                     }
                   }
                 },
