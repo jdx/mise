@@ -224,6 +224,9 @@ impl EnvResults {
                     } else {
                         r.env_remove.remove(&k);
                         // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
+                        if redact {
+                            r.redactions.push(k.clone());
+                        }
                         env.insert(k, (v, Some(source.clone())));
                     }
                 }
@@ -255,6 +258,9 @@ impl EnvResults {
                             if resolve_opts.vars {
                                 r.vars.insert(k, (v, f.clone()));
                             } else {
+                                if redact {
+                                    r.redactions.push(k.clone());
+                                }
                                 r.env_remove.insert(k.clone());
                                 env.insert(k, (v, Some(f.clone())));
                             }
@@ -279,6 +285,9 @@ impl EnvResults {
                             if resolve_opts.vars {
                                 r.vars.insert(k, (v, f.clone()));
                             } else {
+                                if redact {
+                                    r.redactions.push(k.clone());
+                                }
                                 r.env_remove.insert(k.clone());
                                 env.insert(k, (v, Some(f.clone())));
                             }
@@ -310,15 +319,9 @@ impl EnvResults {
                     )?;
                 }
                 EnvDirective::Module(name, value, _opts) => {
-                    Self::module(&mut r, source, name, &value)?;
+                    Self::module(&mut r, source, name, &value, redact)?;
                 }
             };
-
-            if redact {
-                for k in env.keys() {
-                    r.redactions.push(k.clone());
-                }
-            }
         }
         let env_vars = env
             .iter()
