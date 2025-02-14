@@ -62,7 +62,7 @@ impl ZigPlugin {
             )
         } else if regex!(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").is_match(&tv.version) {
             format!(
-                "https://ziglang.org/builds/zig-{}-{}-{}.{archive_ext}",
+                "https://pkg.machengine.org/zig/zig-{}-{}-{}.{archive_ext}",
                 os(),
                 arch(),
                 tv.version
