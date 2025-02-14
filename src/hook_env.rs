@@ -111,6 +111,10 @@ fn have_files_been_modified(watch_files: BTreeSet<PathBuf>) -> bool {
                 modified = true;
                 watch_files::add_modified_file(fp.clone());
             }
+        } else if !fp.exists() {
+            trace!("file deleted: {:?}", fp);
+            modified = true;
+            watch_files::add_modified_file(fp.clone());
         }
     }
     if !modified {
