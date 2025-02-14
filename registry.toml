@@ -560,6 +560,7 @@ dynatrace-monaco.backends = [
     "asdf:nsaputro/asdf-monaco"
 ]
 dynatrace-monaco.test = ["monaco version", "monaco version {{version}}"]
+e1s.backends = ["asdf:tbobm/asdf-e1s"]
 earthly.backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
 ecspresso.backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
 editorconfig-checker.backends = [
