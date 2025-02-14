@@ -9,7 +9,7 @@ def log_debug(msg)
 end
 
 def reshim
-  if `which ruby`.strip != ""
+  if defined?(RbConfig::CONFIG)
     log_debug "reshim"
     `mise reshim`
   else
