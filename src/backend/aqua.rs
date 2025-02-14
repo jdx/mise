@@ -61,6 +61,7 @@ impl Backend for AquaBackend {
                             warn!("[{}] aqua version filter error: {e}", self.ba);
                         }
                     }
+                    let pkg = pkg.clone().with_version(v);
                     if let Some(prefix) = &pkg.version_prefix {
                         if let Some(_v) = v.strip_prefix(prefix) {
                             v = _v

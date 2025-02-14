@@ -232,7 +232,7 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
 }
 
 impl AquaPackage {
-    fn with_version(mut self, v: &str) -> AquaPackage {
+    pub fn with_version(mut self, v: &str) -> AquaPackage {
         self = apply_override(self.clone(), self.version_override(v));
         if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
             if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
@@ -497,6 +497,9 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         orig.files = avo.files.clone();
     }
     orig.replacements.extend(avo.replacements.clone());
+    if let Some(avo_version_prefix) = avo.version_prefix.clone() {
+        orig.version_prefix = Some(avo_version_prefix);
+    }
     if !avo.overrides.is_empty() {
         orig.overrides = avo.overrides.clone();
     }
