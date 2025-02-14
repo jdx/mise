@@ -256,11 +256,11 @@ impl EnvResults {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
                             if resolve_opts.vars {
+                                r.vars.insert(k, (v, f.clone()));
+                            } else {
                                 if redact {
                                     r.redactions.push(k.clone());
                                 }
-                                r.vars.insert(k, (v, f.clone()));
-                            } else {
                                 r.env_remove.insert(k.clone());
                                 env.insert(k, (v, Some(f.clone())));
                             }
@@ -283,11 +283,11 @@ impl EnvResults {
                         r.env_scripts.push(f.clone());
                         for (k, v) in new_env {
                             if resolve_opts.vars {
+                                r.vars.insert(k, (v, f.clone()));
+                            } else {
                                 if redact {
                                     r.redactions.push(k.clone());
                                 }
-                                r.vars.insert(k, (v, f.clone()));
-                            } else {
                                 r.env_remove.insert(k.clone());
                                 env.insert(k, (v, Some(f.clone())));
                             }
