@@ -274,7 +274,10 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | terraform | `.terraform-version`, `.packer-version`, `main.tf` |
 | yarn      | `.yarnrc`                                          |
 
-In mise these are enabled by default. You can disable them with [`mise settings idiomatic_version_file false](/configuration/settings.html#idiomatic_version_file) or for specific tools with [`mise settings idiomatic_version_file_disable_tools python`](/configuration/settings.html#idiomatic_version_file_disable_tools).
+In mise these are enabled by default. You can disable them with:
+
+- `mise settings idiomatic_version_file false` for all tools ([docs](/configuration/settings.html#idiomatic_version_file))
+- `mise settings idiomatic_version_file_disable_tools python` for a specific tool such as Python ([docs](/configuration/settings.html#idiomatic_version_file_disable_tools))
 
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
 `bin/parse-version-file`. However, these are [cached](/cache-behavior) so it's not a huge deal.
