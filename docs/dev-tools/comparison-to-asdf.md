@@ -8,7 +8,7 @@ It will not, however, reuse existing asdf directories
 (so you'll need to either reinstall them or move them), and 100% compatibility is not a design goal.
 That said,
 if you're coming from asdf-bash (0.15 and below), mise actually
-has [fewer breaking changes than asdf-go (0.16 and above)](https://asdf-vm.com/guide/upgrading-from-v0-15-to-v0-16.html)
+has [fewer breaking changes than asdf-go (0.16 and above)](https://asdf-vm.com/guide/upgrading-to-v0-16.html)
 despite 100% compatibility not being a design goal of mise.
 
 Casual users coming from asdf have generally found mise to just be a faster, easier to use asdf.
