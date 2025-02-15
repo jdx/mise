@@ -81,7 +81,7 @@ impl Devcontainer {
 
         let mut features = HashMap::new();
         features.insert(
-            "ghcr.io/jdx/devcontainer-features/mise:1".to_string(),
+            "ghcr.io/devcontainers-extra/features/mise:1".to_string(),
             HashMap::new(),
         );
 
