@@ -75,7 +75,7 @@ within_isolated_env() {
     MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
     MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
     MISE_YES=1 \
-    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" \
+    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
     ROOT="$ROOT" \
     RUSTUP_HOME="$RUSTUP_HOME" \
     RUST_BACKTRACE="${RUST_BACKTRACE:-1}" \
