@@ -474,9 +474,7 @@ mod tests {
             .parse_run_scripts(&task, &scripts, &Default::default())
             .unwrap();
         assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
-        let scripts =
-            replace_template_placeholders_with_args(&task, &spec, &scripts, &[])
-                .unwrap();
+        let scripts = replace_template_placeholders_with_args(&task, &spec, &scripts, &[]).unwrap();
         assert_eq!(scripts, vec!["echo false"]);
     }
 
