@@ -1163,11 +1163,11 @@ description = "List of executable extensions for Windows. For example, `exe` for
 env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 default = "file"
-description = "Shim file mode in windows. `file` `hardlink` `symlink`"
+description = "Shim file mode for Windows. Options: `file`, `hardlink`, `symlink`."
 docs = """
-`file` create file with content `mise exec`.
-`hardlink` use Windows NTFS Hardlink, required in the some filesystem.
-`symlink` use Windows NTFS SymbolicLink, need Windows Vista or leter. Required windows admin or Enable "Developer Mode" in Windows 10/11
+`file`: Creates a file with the content `mise exec`.
+`hardlink`: Uses Windows NTFS Hardlink, required on same filesystems.
+`symlink`: Uses Windows NTFS SymbolicLink. Requires Windows Vista or later with admin privileges or enabling "Developer Mode" in Windows 10/11.
 """
 
 [yes]
