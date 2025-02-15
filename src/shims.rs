@@ -286,12 +286,13 @@ fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
                             "hardlink" | "symlink" => {
                                 vec![p.with_extension("exe").to_string_lossy().to_string()]
                             }
-                            "file" | _ => {
+                            "file" => {
                                 vec![
                                     p.with_extension("").to_string_lossy().to_string(),
                                     p.with_extension("cmd").to_string_lossy().to_string(),
                                 ]
                             }
+                            _ => panic!("Unknown shim mode"),
                         }
                     })
                     .collect()
