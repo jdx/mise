@@ -1159,7 +1159,6 @@ default = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
 parse_env = "list_by_comma"
 description = "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on."
 
-
 [windows_shim_mode]
 env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
@@ -1170,6 +1169,7 @@ docs = """
 `hardlink` use Windows NTFS Hardlink, required in the some filesystem.
 `symlink` use Windows NTFS SymbolicLink, need Windows Vista or leter. Required windows admin or Enable "Developer Mode" in Windows 10/11
 """
+
 [yes]
 env = "MISE_YES"
 type = "Bool"
