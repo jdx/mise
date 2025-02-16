@@ -11,12 +11,12 @@ for a gentler introduction.
 
 mise is a tool that manages installations of programming language runtimes and other tools for local development. For example, it can be used to manage multiple versions of Node.js, Python, Ruby, Go, etc. on the same machine.
 
-Once [activated](/getting-started.html#_2-activate-mise), mise will automatically switch between different versions of tools based on the directory you're in.
+Once [activated](/getting-started.html#activate-mise), mise will automatically switch between different versions of tools based on the directory you're in.
 This means that if you have a project that requires Node.js 18 and another that requires Node.js 22, mise will automatically switch between them as you move between the two projects. See tools available for mise with in the [registry](/registry).
 
 To know which tool version to use, mise will typically look for a `mise.toml` file in the current directory and its parents. To get an idea of how tools are specified, here is an example of a [mise.toml](/configuration.html) file:
 
-```toml
+```toml [mise.toml]
 [tools]
 node = '22'
 python = '3'

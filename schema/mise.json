@@ -843,7 +843,7 @@
               "type": "boolean"
             },
             "show_tools": {
-              "description": "Show configured env vars when entering a directory with a mise.toml file.",
+              "description": "Show configured tools when entering a directory with a mise.toml file.",
               "type": "boolean"
             }
           }
