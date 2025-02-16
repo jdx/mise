@@ -156,7 +156,7 @@ mise can be configured in `~/.config/mise/config.toml`. It's like local `mise.to
 that
 it is used for all directories.
 
-```toml
+```toml [~/.config/mise/config.toml]
 [tools]
 # global tool versions go here
 # you can set these with `mise use -g`
