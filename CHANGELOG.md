@@ -1,5 +1,22 @@
 # Changelog
 
+## [2025.2.6](https://github.com/jdx/mise/compare/v2025.2.5..v2025.2.6) - 2025-02-16
+
+### 🚀 Features
+
+- add devcontainer generator by [@acesyde](https://github.com/acesyde) in [#4355](https://github.com/jdx/mise/pull/4355)
+- added hk by [@jdx](https://github.com/jdx) in [#4422](https://github.com/jdx/mise/pull/4422)
+
+### 🐛 Bug Fixes
+
+- short flag with value and var=#true bug by [@jdx](https://github.com/jdx) in [#4419](https://github.com/jdx/mise/pull/4419)
+- regression with env overriding by [@jdx](https://github.com/jdx) in [#4421](https://github.com/jdx/mise/pull/4421)
+
+### 📚 Documentation
+
+- **(shims)** clarify `activate` only removes shims from `PATH` by [@risu729](https://github.com/risu729) in [#4418](https://github.com/jdx/mise/pull/4418)
+- Update shims page by [@hverlin](https://github.com/hverlin) in [#4414](https://github.com/jdx/mise/pull/4414)
+
 ## [2025.2.5](https://github.com/jdx/mise/compare/v2025.2.4..v2025.2.5) - 2025-02-16
 
 ### 🐛 Bug Fixes
