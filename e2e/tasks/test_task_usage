@@ -59,3 +59,19 @@ run = [
 EOF
 
 assert "mise run mytask" "abc"
+
+mkdir -p mise-tasks
+cat <<EOF >mise-tasks/test-args.js
+#!/usr/bin/env node
+//MISE description="Compare block IDs between grower and packer tenants"
+//USAGE flag "-g --grower <growerTenant>" required=#true var=#true help="The grower tenant ID(s) to compare"
+//USAGE flag "-p --packer <packerTenant>" required=#true help="The packer tenant ID to match against"
+
+console.log(\`grower: \${process.env.usage_grower}\`);
+console.log(\`packer: \${process.env.usage_packer}\`);
+EOF
+chmod +x mise-tasks/test-args.js
+
+# assert_fail "mise run test-args --grower 1 -g 2" "Missing required flag: --packer <packer>"
+assert "mise run --trace test-args --grower 1 -g 2 --packer 3" "grower: 1 2
+packer: 3"
