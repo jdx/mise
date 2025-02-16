@@ -980,7 +980,7 @@ description = "Show configured env vars when entering a directory with a mise.to
 [status.show_tools]
 env = "MISE_STATUS_MESSAGE_SHOW_TOOLS"
 type = "Bool"
-description = "Show configured env vars when entering a directory with a mise.toml file."
+description = "Show configured tools when entering a directory with a mise.toml file."
 
 [swift.gpg_verify]
 env = "MISE_SWIFT_GPG_VERIFY"

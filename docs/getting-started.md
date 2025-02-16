@@ -4,7 +4,7 @@
 
 This will show you how to install mise and get started with it. This is a suitable way when using an interactive shell like `bash`, `zsh`, or `fish`.
 
-## 1. Install `mise` CLI
+## 1. Install `mise` CLI {#installing-mise-cli}
 
 See [installing mise](/installing-mise) for other ways to install mise (`macport`, `apt`, `yum`, `nix`, etc.).
 
@@ -24,7 +24,7 @@ You can verify the installation by running:
 ```
 
 - `~/.local/bin` does not need to be in `PATH`. mise will automatically add its own directory to `PATH`
-  when activated.
+  when [activated](#activate-mise).
 
 == Brew
 
@@ -83,20 +83,53 @@ sudo dnf install -y mise
 `mise` respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like
 to change these locations.
 
-## 2. Activate `mise`
+## 2. mise `exec` and `run` {#mise-exec-run}
 
-Now that `mise` is installed, you can optionally activate it or add its [shims](dev-tools/shims.md) to `PATH`.
+Once `mise` is installed, you can immediately start using it. `mise` can be used to install and manage [tools](/dev-tools/), run [tasks](/tasks/), and manage [environments variables](/environments/).
+
+The most essential feature `mise` provides is the ability to run [tools](/dev-tools/) with specific versions. A simple way to run a shell command with a given tool is to use [`mise x|exec`](/cli/exec.html). For example, here is how you can start a Python 3 interactive shell (REPL):
+
+> _In the examples above, use `~/.local/bin/mise` (or the absolute path to `mise`) if `mise` is not already on `PATH`_
+
+```sh
+mise exec python@3 -- python
+# this will download and install Python if it is not already installed
+# Python 3.13.2
+# >>> ...
+```
+
+or run node 22:
+
+```sh
+mise exec node@22 -- node -v
+# v22.x.x
+```
+
+[`mise x|exec`](/cli/exec.html) is a powerful way to load the current `mise` context (tools & environment variables) without modifying your shell session or running ad-hoc commands with mise tools set. Installing [`tools`](/dev-tools/) is as simple as running [`mise use|u`](/cli/use.html).
+
+```shell
+mise use --global node@22 # install node 22 and set it as the global default
+mise exec -- node my-script.js
+# run my-script.js with node 22...
+```
+
+Another useful command is [`mise r|run`](/cli/run.html) which allows you to run a [`mise task`](/tasks/) or a script with the `mise` context.
+
+:::tip
+You can set a shell alias in your shell's rc file like `alias x="mise x --"` to save some keystrokes.
+:::
+
+## 3. Activate `mise` <Badge text="optional" /> {#activate-mise}
+
+While using [`mise x|exec`](/cli/exec.html) is useful, for interactive shells, you might prefer to activate `mise` to automatically load the `mise` context (`tools` and `environment variables`) in your shell session. Another option is to use [shims](dev-tools/shims.md).
 
 - [`mise activate`](/cli/activate) method updates your environment variable and `PATH` every time your prompt is run to ensure you use the correct versions.
-- [Shims](dev-tools/shims.md) are symlinks to the `mise` binary that intercept commands and load the appropriate environment
-
-::: warning
-Shims do not support all the features of `mise activate`.<br>
-See [shims vs path](/dev-tools/shims.html#shims-vs-path) for more info.
-:::
+- [Shims](dev-tools/shims.md) are symlinks to the `mise` binary that intercept commands and load the appropriate environment. Note that [**shims do not support all the features of `mise activate`**](/dev-tools/shims.html#shims-vs-path).
 
 For interactive shells, `mise activate` is recommended. In non-interactive sessions, like CI/CD, IDEs, and scripts, using `shims` might work best. You can also not use any and call `mise exec/run` directly instead.
 See [this guide](dev-tools/shims.md) for more information.
+
+Here is how you can activate `mise` depending on your shell and the installation method:
 
 :::tabs key:installing-mise
 
@@ -166,36 +199,12 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 :::
 
 Make sure you restart your shell session after modifying your rc file in order for it to take effect.
+You can run [`mise dr|doctor`](/cli/doctor.html) to verify that mise is correctly installed and activated.
 
-## 3. Using `mise`
-
-:::info
-Of course, if using mise solely for [environment management](/environments/)
-or [running tasks](/tasks/)
-this step is not necessary. You can use it to make sure `mise` is correctly setup.
-:::
-
-As an example, here is how you can install `node` and set it as the global default:
+Now that `mise` or add its shims to `PATH`, then `node` is also available directly! (without using `mise exec`)
 
 ```sh
 mise use --global node@22
-```
-
-You can now run `node` using `mise exec`:
-
-```sh
-mise exec -- node -v
-# v22.x.x
-```
-
-:::tip
-Use `mise x -- node -v` or set a shell alias in your shell's rc file like `alias x="mise x --"` to
-save some keystrokes.
-:::
-
-If you did activate `mise` or add its shims to `PATH`, then `node` is also available directly!
-
-```sh
 node -v
 # v22.x.x
 ```
@@ -207,7 +216,15 @@ Note that when you ran `mise use --global node@22`, `mise` updated the global `m
 node = "22"
 ```
 
+## 4. Next steps {#next-steps}
+
 Follow the [walkthrough](/walkthrough) for more examples on how to use mise.
+
+### Set up the autocompletion {#autocompletion}
+
+See [autocompletion](/installing-mise.html#autocompletion) to learn how to set up autocompletion for your shell.
+
+### GitHub API rate limiting {#github-api-rate-limiting}
 
 ::: warning
 Many tools in mise require the use of the GitHub API. Unauthenticated requests to the GitHub API are
@@ -215,7 +232,3 @@ often rate limited. If you see 4xx errors while using mise, you can set `MISE_GI
 to a token [generated from here](https://github.com/settings/tokens/new?description=MISE_GITHUB_TOKEN) which
 will likely fix the issue. The token does not require any scopes.
 :::
-
-### Set up the autocompletion
-
-See [autocompletion](/installing-mise.html#autocompletion) to learn how to set up autocompletion for your shell.
