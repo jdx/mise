@@ -471,8 +471,6 @@ impl Run {
             for (script, args) in
                 task.render_run_scripts_with_args(self.cd.clone(), &task.args, &env)?
             {
-                let get_args = || task.run.iter().chain(task.args.iter()).cloned().collect();
-                self.parse_usage_spec_and_init_env(task, &mut env, get_args)?;
                 self.exec_script(&script, &args, task, &env, &prefix)?;
             }
         }
@@ -587,8 +585,14 @@ impl Run {
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
-        let get_args = || once(command.clone()).chain(args.clone()).collect_vec();
-        self.parse_usage_spec_and_init_env(task, &mut env, get_args)?;
+        let (spec, _) = task.parse_usage_spec(self.cd.clone(), &env)?;
+        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
+            let args = once(command.clone()).chain(args.clone()).collect_vec();
+            let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
+            for (k, v) in po.as_env() {
+                env.insert(k, v);
+            }
+        }
 
         if !self.quiet(Some(task)) {
             let cmd = format!("{} {}", display_path(file), args.join(" "))
@@ -600,24 +604,6 @@ impl Run {
         }
 
         self.exec(file, &args, task, &env, prefix)
-    }
-
-    fn parse_usage_spec_and_init_env(
-        &self,
-        task: &Task,
-        env: &mut EnvMap,
-        get_args: impl Fn() -> Vec<String>,
-    ) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(self.cd.clone(), env)?;
-        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
-            let args: Vec<String> = get_args();
-            let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
-            for (k, v) in po.as_env() {
-                env.insert(k, v);
-            }
-        }
-
-        Ok(())
     }
 
     fn exec(
