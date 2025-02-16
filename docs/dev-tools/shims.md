@@ -51,7 +51,7 @@ If you prefer to use shims, you can run the following to use mise without activa
 
 You can use `.bashrc`/`.zshrc` instead of `.bash_profile`/`.zprofile` if you prefer to only use
 mise in interactive sessions (`.bash_profile`/`.zprofile` will work in non-interactive places
-like scripts or IDEs). Note that `mise activate` will remove the shims directory so it's fine
+like scripts or IDEs). Note that `mise activate` will remove the shims directory from `PATH` so it's fine
 to call `mise activate --shims` in the profile file then later call `mise activate` in an interactive
 session.
 
