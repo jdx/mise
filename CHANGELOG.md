@@ -1,5 +1,16 @@
 # Changelog
 
+## [2025.2.5](https://github.com/jdx/mise/compare/v2025.2.4..v2025.2.5) - 2025-02-16
+
+### 🐛 Bug Fixes
+
+- properly replace non set flags with "false" by [@IxDay](https://github.com/IxDay) in [#4410](https://github.com/jdx/mise/pull/4410)
+- path env order with subdirs by [@jdx](https://github.com/jdx) in [#4412](https://github.com/jdx/mise/pull/4412)
+
+### ◀️ Revert
+
+- "feat: set usage arguments and flags as environment variables for toml tasks" by [@jdx](https://github.com/jdx) in [#4413](https://github.com/jdx/mise/pull/4413)
+
 ## [2025.2.4](https://github.com/jdx/mise/compare/v2025.2.3..v2025.2.4) - 2025-02-14
 
 ### 🚀 Features
