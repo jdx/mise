@@ -1,16 +1,16 @@
 # Shims
 
-There are several ways for the mise context (dev tools, environment variables) to be loaded into your shell:
+There are several ways for the `mise` context (dev tools, environment variables) to be loaded into your shell:
 
-- `mise activate` (also called ["mise PATH activation"](#path-activation)) where `mise` updates your `PATH` and other environment variables every time your prompt is displayed
-- [`mise activate --shims`](#mise-activate-shims) which uses shims to load dev tools
-- using [`mise x|exec`](/cli/exec) or [`mise r|run`](/cli/run) for ad-hoc commands or tasks (see ["neither shims nor PATH"](#neither-shims-nor-path))
+- `mise activate` (also called ["mise PATH activation"](#path-activation)) where `mise` updates your `PATH` and other environment variables every time your prompt is displayed.
+- [`mise activate --shims`](#mise-activate-shims) which uses shims to load dev tools.
+- Using [`mise x|exec`](/cli/exec) or [`mise r|run`](/cli/run) for ad-hoc commands or tasks (see ["neither shims nor PATH"](#neither-shims-nor-path)).
 
 ## Overview of the `mise` activation methods {#overview}
 
 ### PATH activation {#path-activation}
 
-Mise's "PATH" activation method updates environment variables every time the prompt is displayed. In particular, it updates the `PATH` environment variable which is used by your shell to search to find the programs that it can run.
+Mise's "PATH" activation method updates environment variables every time the prompt is displayed. In particular, it updates the `PATH` environment variable, which is used by your shell to search for the programs it can run.
 
 ::: info
 This is the method used when you add the `echo 'eval "$(mise activate bash)"' >> ~/.bashrc` line to your shell rc file (in this case, for bash).
@@ -19,7 +19,7 @@ This is the method used when you add the `echo 'eval "$(mise activate bash)"' >>
 For example, by default, your `PATH` variable might look like this:
 
 ```sh
-echo $PATH
+echo \$PATH
 /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 ```
 
@@ -31,7 +31,7 @@ PATH="$HOME/.local/share/mise/installs/python/3.13.0/bin:/usr/local/bin:/usr/bin
 
 In this example, the python `bin` directory was added at the beginning of the `PATH`, making it available in the current shell session.
 
-While the `PATH` design of `mise` works great in most cases, there are some situations where shims are preferable. This is the case when you are not using an interactive shell (for example, when using `mise` in an IDE or a script).
+While the `PATH` design of `mise` works great in most cases, there are some situations where `shims` are preferable. This is the case when you are not using an interactive shell (for example, when using `mise` in an IDE or a script).
 
 ### Shims {#mise-activate-shims}
 
