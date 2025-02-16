@@ -585,7 +585,6 @@ impl Config {
         let entries = self
             .config_files
             .iter()
-            .rev()
             .map(|(source, cf)| {
                 cf.env_entries()
                     .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
