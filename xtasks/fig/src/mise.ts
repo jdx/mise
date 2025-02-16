@@ -1061,6 +1061,38 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
+          name: "devcontainer",
+          description: "[experimental] Generate a devcontainer to execute mise",
+          options: [
+            {
+              name: ["-n", "--name"],
+              description: "The name of the devcontainer",
+              isRepeatable: false,
+              args: {
+                name: "name",
+              },
+            },
+            {
+              name: ["-i", "--image"],
+              description: "The image to use for the devcontainer",
+              isRepeatable: false,
+              args: {
+                name: "image",
+              },
+            },
+            {
+              name: ["-m", "--mount-mise-data"],
+              description: "Bind the mise-data-volume to the devcontainer",
+              isRepeatable: false,
+            },
+            {
+              name: ["-w", "--write"],
+              description: "Write to .devcontainer/devcontainer.json",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
           name: ["git-pre-commit", "pre-commit"],
           description: "[experimental] Generate a git pre-commit hook",
           options: [

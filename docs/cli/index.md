@@ -86,6 +86,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise generate <SUBCOMMAND>`](/cli/generate.md)
 - [`mise generate bootstrap [FLAGS]`](/cli/generate/bootstrap.md)
 - [`mise generate config [-t --tool-versions <TOOL_VERSIONS>] [-o --output <OUTPUT>]`](/cli/generate/config.md)
+- [`mise generate devcontainer [FLAGS]`](/cli/generate/devcontainer.md)
 - [`mise generate git-pre-commit [FLAGS]`](/cli/generate/git-pre-commit.md)
 - [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)

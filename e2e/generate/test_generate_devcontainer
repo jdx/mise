@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Default devcontainer
+
+assert_json_partial_object "mise generate devcontainer" "name,description,features,mounts,container_env" "
+  {
+    \"name\": \"mise\",
+    \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\",
+    \"features\": {
+      \"ghcr.io/devcontainers-extra/features/mise:1\": {}
+    },
+    \"mounts\": [],
+    \"container_env\": {}
+  }
+"
+
+# With custom name and image
+assert_json_partial_object "mise generate devcontainer --name test --image testimage:latest" "name,description" "
+  {
+    \"name\": \"test\",
+    \"image\": \"testimage:latest\"
+  }
+"
+
+# With mount
+assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,description,features,mounts,container_env" "
+  {
+    \"name\": \"mise\",
+    \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\",
+    \"features\": {
+      \"ghcr.io/devcontainers-extra/features/mise:1\": {}
+    },
+    \"mounts\": [
+      {
+        \"source\": \"mise-data-volume\",
+        \"target\": \"/mnt/mise-data\",
+        \"type\": \"volume\"
+      }
+    ],
+    \"container_env\": {
+      \"MISE_DATA_VOLUME\": \"/mnt/mise-data\"
+    }
+  }
+"
