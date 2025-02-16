@@ -47,3 +47,16 @@ EOF
 
 assert "mise task ls --usage" 'cmd test help=no-sh
 cmd test.sh help=sh'
+
+
+touch script.sh
+chmod +x script.sh
+cat <<EOF >mise.toml
+[tasks.mytask]
+run = [
+  'echo abc',
+  './script.sh {{flag(name="test", default="false")}}',
+]
+EOF
+
+assert "mise run mytask" "abc"
