@@ -7,6 +7,7 @@ use crate::path_env::PathEnv;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{eyre, Context};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use serde_json::Value;
 use std::cmp::PartialEq;
 use std::collections::{BTreeSet, HashMap};
@@ -335,17 +336,23 @@ impl EnvResults {
         }
         // trace!("resolve: paths: {:#?}", &paths);
         // trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
-        for (p, source) in paths {
-            // trace!("resolve: entry: {:?}, source: {}", &entry, display_path(source));
+        for (source, paths) in &paths.iter().chunk_by(|(_, source)| source) {
             let config_root = source
                 .parent()
                 .map(Path::to_path_buf)
                 .or_else(|| dirs::CWD.clone())
                 .unwrap_or_default();
-            env::split_paths(&p)
+            let paths = paths.map(|(p, _)| p).collect_vec();
+            let paths = paths
+                .iter()
+                .rev()
+                .flat_map(|path| env::split_paths(path))
                 .map(|s| normalize_path(&config_root, s))
-                .for_each(|p| r.env_paths.push(p.clone()));
+                .collect::<Vec<_>>();
+            r.env_paths.extend(paths);
         }
+
+        r.env_paths.reverse();
 
         Ok(r)
     }
