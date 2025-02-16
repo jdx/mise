@@ -85,7 +85,7 @@ to change these locations.
 
 ## 2. mise `exec` and `run` {#mise-exec-run}
 
-Once `mise` is installed, you can immediately start using it. `mise` can be used to install and manage [tools](/dev-tools/), run [tasks](/tasks/), and manage [environments variables](/environments/).
+Once `mise` is installed, you can immediately start using it. `mise` can be used to install and run [tools](/dev-tools/), launch [tasks](/tasks/), and manage [environments variables](/environments/).
 
 The most essential feature `mise` provides is the ability to run [tools](/dev-tools/) with specific versions. A simple way to run a shell command with a given tool is to use [`mise x|exec`](/cli/exec.html). For example, here is how you can start a Python 3 interactive shell (REPL):
 
