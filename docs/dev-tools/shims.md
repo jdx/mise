@@ -208,6 +208,36 @@ those PATH entries will be before the shim directory.
 In other words, which is better in terms of performance just depends on how you're calling mise. Really
 though most users will not notice a few ms lag on their terminal caused by `mise activate`.
 
+The only difference between these would be that using `hook-env` you will need to call
+it again if you change directories but with shims that won't be necessary. The shims directory will be
+removed by `mise activate` automatically so you won't need to worry about dealing with shims in your PATH.
+
+## Neither shims nor PATH {#neither-shims-nor-path}
+
+There are many ways to load the mise environment that don't require either, chiefly:
+[`mise x|exec`](/cli/exec.html), [`mise r|run`](/cli/run.html) or [`mise en`](/cli/en.html).
+
+These will both load all the tools and env vars before executing something. This might
+be ideal because you don't need to modify your shell rc file at all and the environment is always loaded
+explicitly. Some might find this is a "clean" way of working.
+
+The obvious downside is that anytime one wants to use `mise` they need to prefix it with `mise exec|run`. Though, you can easily alias them to `mx|mr`.
+
+- This is what one prefers if they like things to be precise over "easy".
+- Or perhaps if you're just wanting to use mise on a single project because that's what your team uses and prefer
+  not to use it to manage anything else on your system. Using a shell extension for that use-case
+  would be overkill.
+
+::: info This is the method Jeff uses
+
+> Part of the reason for this is I often need to make sure I'm on my development version of mise. If you
+> work on mise yourself I would recommend working in a similar way and disabling `mise activate` or shims
+> while you are working on it.
+>
+> See [How I use mise](https://mise.jdx.dev/how-i-use-mise.html) for more information.
+
+:::
+
 ## Hook on `cd` {#hook-on-cd}
 
 For some shells (`bash`, `zsh`, `fish`), `mise` hooks into the `cd` command, while in others, it only runs when the prompt is displayed. This relies on `chpwd` in `zsh`, `PROMPT_COMMAND` in `bash`, and `fish_prompt` in `fish`.
@@ -248,35 +278,5 @@ eval "$(mise activate zsh --shims)" # should be first
 eval "$(mise activate zsh)"
 node some_script.js
 ```
-
-:::
-
-The only difference between these would be that using `hook-env` you will need to call
-it again if you change directories but with shims that won't be necessary. The shims directory will be
-removed by `mise activate` automatically so you won't need to worry about dealing with shims in your PATH.
-
-## Neither shims nor PATH {#neither-shims-nor-path}
-
-There are many ways to load the mise environment that don't require either, chiefly:
-[`mise x|exec`](/cli/exec.html), [`mise r|run`](/cli/run.html) or [`mise en`](/cli/en.html).
-
-These will both load all the tools and env vars before executing something. This might
-be ideal because you don't need to modify your shell rc file at all and the environment is always loaded
-explicitly. Some might find this is a "clean" way of working.
-
-The obvious downside is that anytime one wants to use `mise` they need to prefix it with `mise exec|run`. Though, you can easily alias them to `mx|mr`.
-
-- This is what one prefers if they like things to be precise over "easy".
-- Or perhaps if you're just wanting to use mise on a single project because that's what your team uses and prefer
-  not to use it to manage anything else on your system. Using a shell extension for that use-case
-  would be overkill.
-
-::: info This is the method Jeff uses
-
-> Part of the reason for this is I often need to make sure I'm on my development version of mise. If you
-> work on mise yourself I would recommend working in a similar way and disabling `mise activate` or shims
-> while you are working on it.
->
-> See [How I use mise](https://mise.jdx.dev/how-i-use-mise.html) for more information.
 
 :::
