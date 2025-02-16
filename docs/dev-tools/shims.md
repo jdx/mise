@@ -6,6 +6,8 @@ There are several ways for the `mise` context (dev tools, environment variables)
 - [`mise activate --shims`](#mise-activate-shims) which uses shims to load dev tools.
 - Using [`mise x|exec`](/cli/exec) or [`mise r|run`](/cli/run) for ad-hoc commands or tasks (see ["neither shims nor PATH"](#neither-shims-nor-path)).
 
+This page will help you understand the differences between these methods and how to use them. In particular, it will help you decide if you should use shims or `mise activate` in your shell.
+
 ## Overview of the `mise` activation methods {#overview}
 
 ### PATH activation {#path-activation}
