@@ -1,6 +1,6 @@
 # Plugins
 
-Plugins in mise extend functionality. Historically they were the only way to add new tools as the only backend was asdf the way
+Plugins in mise extend functionality. Historically they were the only way to add new tools as the only backend was asdf. The way
 that backend works is every tool has its own plugin which needs to be manually installed. However now with core languages and
 backends like aqua/ubi, plugins are no longer necessary to run most tools in mise.
 
