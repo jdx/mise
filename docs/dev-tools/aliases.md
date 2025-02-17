@@ -5,7 +5,7 @@
 Tools can be aliased so that something like `node` which normally maps to `core:node` can be changed
 to something like `asdf:company/our-custom-node` instead.
 
-```toml
+```toml [~/.config/mise/config.toml]
 [alias]
 node = 'asdf:company/our-custom-node' # shorthand for https://github.com/company/our-custom-node
 erlang = 'asdf:https://github.com/company/our-custom-erlang'

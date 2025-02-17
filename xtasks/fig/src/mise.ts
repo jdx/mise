@@ -538,7 +538,7 @@ const completionSpec: Fig.Spec = {
     },
     {
       name: ["alias", "a"],
-      description: "Manage aliases",
+      description: "Manage version aliases.",
       subcommands: [
         {
           name: "get",

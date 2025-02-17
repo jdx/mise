@@ -21,7 +21,7 @@ This is the method used when you add the `echo 'eval "$(mise activate bash)"' >>
 For example, by default, your `PATH` variable might look like this:
 
 ```sh
-echo \$PATH
+echo $PATH
 /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 ```
 
