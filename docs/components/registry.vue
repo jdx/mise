@@ -50,7 +50,7 @@ export default {
   data() {
     return {
       filter:
-        new URLSearchParams(globalThis.location.search).get("filter") || "",
+        new URLSearchParams(globalThis?.location?.search).get("filter") || "",
       data: data,
     };
   },
