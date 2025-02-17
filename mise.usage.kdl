@@ -75,7 +75,7 @@ cmd activate help="Initializes mise in the current shell session" {
         choices bash elvish fish nu xonsh zsh pwsh
     }
 }
-cmd alias help="Manage aliases" {
+cmd alias help="Manage version aliases." {
     alias a
     alias aliases hide=#true
     flag "-p --plugin" help="filter aliases by plugin" {
@@ -318,7 +318,7 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
     }
     cmd git-pre-commit help="[experimental] Generate a git pre-commit hook" {
         alias pre-commit
-        long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`."
+        long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`.\n\nFor more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/"
         after_long_help "Examples:\n\n    $ mise generate git-pre-commit --write --task=pre-commit\n    $ git commit -m \"feat: add new feature\" # runs `mise run pre-commit`\n"
         flag --hook help="Which hook to generate (saves to .git/hooks/$hook)" {
             arg <HOOK>
