@@ -10,6 +10,8 @@ use crate::git::Git;
 /// when you commit changes to your repository.
 ///
 /// Staged files are passed to the task as `STAGED`.
+///
+/// For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
 pub struct GitPreCommit {
