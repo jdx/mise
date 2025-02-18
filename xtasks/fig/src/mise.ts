@@ -1767,7 +1767,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-r", "--raw"],
           description:
-            "Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var",
+            "Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var",
           isRepeatable: false,
         },
         {
@@ -2411,7 +2411,7 @@ const completionSpec: Fig.Spec = {
             {
               name: ["-r", "--raw"],
               description:
-                "Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var",
+                "Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var",
               isRepeatable: false,
             },
             {

@@ -73,6 +73,7 @@ Configure with `jobs` config or `MISE_JOBS` env var
 ### `-r --raw`
 
 Read/write directly to stdin/stdout/stderr instead of by line
+Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 
 ### `--no-timings`
