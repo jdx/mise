@@ -636,9 +636,10 @@ impl Run {
             .envs(env)
             .redact(redactions.deref().clone())
             .raw(raw);
-        if raw && !redactions.is_empty() {
-            warn_once!("--raw will prevent mise from being able to use redactions");
-        }
+        // TODO: warn only once, not every time we run a task
+        // if raw && !redactions.is_empty() {
+        //     warn_once!("--raw will prevent mise from being able to use redactions");
+        // }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
         match output {
