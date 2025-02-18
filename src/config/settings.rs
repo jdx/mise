@@ -172,6 +172,9 @@ impl Settings {
             }
         }
         settings.set_hidden_configs();
+        if cfg!(test) {
+            settings.experimental = true;
+        }
         let settings = Arc::new(settings);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
         time!("try_get done");
