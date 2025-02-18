@@ -121,14 +121,12 @@ sudo apt install -y mise
 
 :::
 
-### aur
+### pacman
 
 For Arch Linux:
 
 ```sh
-git clone https://aur.archlinux.org/mise.git
-cd mise
-makepkg -si
+sudo pacman -S mise
 ```
 
 ### Cargo
