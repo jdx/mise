@@ -144,6 +144,7 @@ pub struct Run {
     pub jobs: Option<usize>,
 
     /// Read/write directly to stdin/stdout/stderr instead of by line
+    /// Redactions are not applied with this option
     /// Configure with `raw` config or `MISE_RAW` env var
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
