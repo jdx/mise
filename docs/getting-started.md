@@ -85,11 +85,11 @@ to change these locations.
 
 ## 2. mise `exec` and `run` {#mise-exec-run}
 
-Once `mise` is installed, you can immediately start using it. `mise` can be used to install and run [tools](/dev-tools/), launch [tasks](/tasks/), and manage [environments variables](/environments/).
+Once `mise` is installed, you can immediately start using it. `mise` can be used to install and run [tools](/dev-tools/), launch [tasks](/tasks/), and manage [environment variables](/environments/).
 
 The most essential feature `mise` provides is the ability to run [tools](/dev-tools/) with specific versions. A simple way to run a shell command with a given tool is to use [`mise x|exec`](/cli/exec.html). For example, here is how you can start a Python 3 interactive shell (REPL):
 
-> _In the examples above, use `~/.local/bin/mise` (or the absolute path to `mise`) if `mise` is not already on `PATH`_
+> _In the examples below, use `~/.local/bin/mise` (or the absolute path to `mise`) if `mise` is not already on `PATH`_
 
 ```sh
 mise exec python@3 -- python
@@ -201,7 +201,7 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 Make sure you restart your shell session after modifying your rc file in order for it to take effect.
 You can run [`mise dr|doctor`](/cli/doctor.html) to verify that mise is correctly installed and activated.
 
-Now that `mise` or add its shims to `PATH`, then `node` is also available directly! (without using `mise exec`)
+Now that `mise` is activated or its shims have been added to `PATH`, `node` is also available directly! (without using `mise exec`):
 
 ```sh
 mise use --global node@22
