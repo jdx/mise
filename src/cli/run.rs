@@ -629,11 +629,15 @@ impl Run {
         let config = Config::get();
         let program = program.to_executable();
         let redactions = config.redactions();
+        let raw = self.raw(Some(task));
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
-            .raw(self.raw(Some(task)));
+            .raw(raw);
+        if raw && !redactions.is_empty() {
+            warn_once!("--raw will prevent mise from being able to use redactions");
+        }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
         match output {
@@ -697,7 +701,7 @@ impl Run {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
             TaskOutput::Quiet | TaskOutput::Interleave => {
-                if redactions.is_empty() {
+                if raw || redactions.is_empty() {
                     cmd = cmd
                         .stdin(Stdio::inherit())
                         .stdout(Stdio::inherit())
