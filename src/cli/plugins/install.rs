@@ -148,10 +148,10 @@ fn get_name_from_url(url: &str) -> Result<String> {
     let url = url.strip_suffix("/").unwrap_or(url);
     let name = if let Ok(Some(name)) = Url::parse(url).map(|u| {
         u.path_segments()
-            .and_then(|s| s.last().map(|s| s.to_string()))
+            .and_then(|mut s| s.next_back().map(|s| s.to_string()))
     }) {
         name
-    } else if let Some(name) = url.split('/').last().map(|s| s.to_string()) {
+    } else if let Some(name) = url.split('/').next_back().map(|s| s.to_string()) {
         name
     } else {
         return Err(eyre!("could not infer plugin name from url: {}", url));
