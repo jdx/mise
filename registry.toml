@@ -660,6 +660,8 @@ flyctl.backends = [
     "asdf:chessmango/asdf-flyctl"
 ]
 flyway.backends = ["asdf:mise-plugins/mise-flyway"]
+foundry.backends = ["ubi:foundry-rs/foundry[extract_all=true]"]
+foundry.test = ["forge -V", "{{version}}"]
 func-e.backends = ["tetratelabs/func-e", "asdf:mise-plugins/mise-func-e"]
 func-e.test = ["func-e --version", "func-e version {{version}}"]
 furyctl.backends = ["ubi:sighupio/furyctl", "asdf:sighupio/asdf-furyctl"]
