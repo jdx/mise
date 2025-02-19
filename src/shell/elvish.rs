@@ -14,7 +14,9 @@ impl Shell for Elvish {
         let flags = opts.flags;
         let exe = exe.to_string_lossy();
 
-        formatdoc! {r#"
+        let mut out = String::new();
+        out.push_str(&self.format_activate_prelude(&opts.prelude));
+        out.push_str(&formatdoc! {r#"
             var hook-enabled = $false
 
             fn hook-env {{
@@ -58,7 +60,8 @@ impl Shell for Elvish {
               }}
               {exe} $@a
             }}
-            "#, hook_enabled = !opts.no_hook_env}
+            "#, hook_enabled = !opts.no_hook_env});
+        out
     }
 
     fn deactivate(&self) -> String {
@@ -111,6 +114,7 @@ mod tests {
             exe: exe.to_path_buf(),
             flags: " --status".into(),
             no_hook_env: false,
+            prelude: vec![],
         };
         assert_snapshot!(elvish.activate(opts));
     }

@@ -18,6 +18,7 @@ impl Shell for Pwsh {
         let exe = exe.to_string_lossy();
         let mut out = String::new();
 
+        out.push_str(&self.format_activate_prelude(&opts.prelude));
         out.push_str(&formatdoc! {r#"
             $env:MISE_SHELL = 'pwsh'
             $env:__MISE_ORIG_PATH = $env:PATH
@@ -233,6 +234,7 @@ mod tests {
             exe: exe.to_path_buf(),
             flags: " --status".into(),
             no_hook_env: false,
+            prelude: vec![],
         };
         assert_snapshot!(pwsh.activate(opts));
     }

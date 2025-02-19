@@ -17,6 +17,7 @@ impl Shell for Fish {
         let exe = exe.to_string_lossy();
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
+        out.push_str(&self.format_activate_prelude(&opts.prelude));
 
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_fish.go#L14-L36
@@ -160,6 +161,7 @@ mod tests {
             exe: exe.to_path_buf(),
             flags: " --status".into(),
             no_hook_env: false,
+            prelude: vec![],
         };
         assert_snapshot!(fish.activate(opts));
     }
