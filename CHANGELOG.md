@@ -1,5 +1,42 @@
 # Changelog
 
+## [2025.2.7](https://github.com/jdx/mise/compare/v2025.2.6..v2025.2.7) - 2025-02-19
+
+### 🚀 Features
+
+- **(registry)** add lychee to registry by [@eread](https://github.com/eread) in [#4181](https://github.com/jdx/mise/pull/4181)
+- Install latest nominated zig from https://machengine.org/zig/index.json by [@tamadamas](https://github.com/tamadamas) in [#4451](https://github.com/jdx/mise/pull/4451)
+
+### 🐛 Bug Fixes
+
+- **(cli/run)** inherit stdio by --raw even when redactions are enabled by [@risu729](https://github.com/risu729) in [#4446](https://github.com/jdx/mise/pull/4446)
+- **(task)** Running programs on windows without cmd.exe by [@NavyD](https://github.com/NavyD) in [#4459](https://github.com/jdx/mise/pull/4459)
+- bugs with grep in tar_supports_zstd in mise.run script by [@glasser](https://github.com/glasser) in [#4453](https://github.com/jdx/mise/pull/4453)
+
+### 📚 Documentation
+
+- fix watch files hook example by [@rsyring](https://github.com/rsyring) in [#4427](https://github.com/jdx/mise/pull/4427)
+- Fix run-on sentence by [@henrebotha](https://github.com/henrebotha) in [#4429](https://github.com/jdx/mise/pull/4429)
+- mention hk by [@jdx](https://github.com/jdx) in [1a58e86](https://github.com/jdx/mise/commit/1a58e86ce2ce16d848755df8feccf514000053fd)
+- discord link by [@jdx](https://github.com/jdx) in [b586085](https://github.com/jdx/mise/commit/b58608521cccee812adaa642145f061ccbcbac43)
+- Add a section on how to use environment variables by [@hverlin](https://github.com/hverlin) in [#4435](https://github.com/jdx/mise/pull/4435)
+- Update installation for archLinux by [@Nicknamely](https://github.com/Nicknamely) in [#4449](https://github.com/jdx/mise/pull/4449)
+
+### 🧪 Testing
+
+- always set experimental = true in tests by [@jdx](https://github.com/jdx) in [#4443](https://github.com/jdx/mise/pull/4443)
+
+### Chore
+
+- fixed new clippy lints by [@jdx](https://github.com/jdx) in [#4463](https://github.com/jdx/mise/pull/4463)
+
+### New Contributors
+
+- @tamadamas made their first contribution in [#4451](https://github.com/jdx/mise/pull/4451)
+- @Nicknamely made their first contribution in [#4449](https://github.com/jdx/mise/pull/4449)
+- @eread made their first contribution in [#4181](https://github.com/jdx/mise/pull/4181)
+- @rsyring made their first contribution in [#4427](https://github.com/jdx/mise/pull/4427)
+
 ## [2025.2.6](https://github.com/jdx/mise/compare/v2025.2.5..v2025.2.6) - 2025-02-16
 
 ### 🚀 Features
