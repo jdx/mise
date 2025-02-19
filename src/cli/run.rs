@@ -144,6 +144,7 @@ pub struct Run {
     pub jobs: Option<usize>,
 
     /// Read/write directly to stdin/stdout/stderr instead of by line
+    /// Redactions are not applied with this option
     /// Configure with `raw` config or `MISE_RAW` env var
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
@@ -629,11 +630,19 @@ impl Run {
         let config = Config::get();
         let program = program.to_executable();
         let redactions = config.redactions();
+        let raw = self.raw(Some(task));
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
-            .raw(self.raw(Some(task)));
+            .raw(raw);
+        if raw && !redactions.is_empty() {
+            hint!(
+                "raw_redactions",
+                "--raw will prevent mise from being able to use redactions",
+                ""
+            );
+        }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
         match output {
@@ -697,7 +706,7 @@ impl Run {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
             TaskOutput::Quiet | TaskOutput::Interleave => {
-                if redactions.is_empty() {
+                if raw || redactions.is_empty() {
                     cmd = cmd
                         .stdin(Stdio::inherit())
                         .stdout(Stdio::inherit())
