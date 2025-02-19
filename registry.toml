@@ -837,6 +837,7 @@ gwvault.backends = [
     "asdf:GoodwayGroup/asdf-gwvault"
 ]
 hadolint.backends = [
+    "aqua:hadolint/hadolint",
     "ubi:hadolint/hadolint",
     "asdf:devlincashman/asdf-hadolint"
 ]
