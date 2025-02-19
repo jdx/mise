@@ -1377,6 +1377,7 @@ overmind.backends = [
     "ubi:DarthSim/overmind",
     "go:github.com/DarthSim/overmind/v2"
 ]
+oxipng.backends = ["aqua:shssoichiro/oxipng"]
 pachctl.backends = ["aqua:pachyderm/pachyderm", "asdf:abatilo/asdf-pachctl"]
 # pachctl.test = ["pachctl version", "{{version}}"] # test fails on ci but seems to work locally
 packer.backends = ["aqua:hashicorp/packer", "asdf:mise-plugins/mise-hashicorp"]
