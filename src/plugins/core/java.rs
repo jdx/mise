@@ -95,7 +95,7 @@ impl JavaPlugin {
         pr: &Box<dyn SingleReport>,
         m: &JavaMetadata,
     ) -> Result<PathBuf> {
-        let filename = m.url.split('/').last().unwrap();
+        let filename = m.url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));

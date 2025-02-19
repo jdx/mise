@@ -85,7 +85,7 @@ impl ZigPlugin {
             )
         };
 
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));

@@ -98,7 +98,7 @@ impl Backend for AquaBackend {
                 self.fetch_url(&pkg, &v).map_err(|e| err.wrap_err(e))?
             }
         };
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         self.download(ctx, &tv, &url, filename)?;
         self.verify(ctx, &mut tv, &pkg, &v, filename)?;
         self.install(ctx, &tv, &pkg, &v, filename)?;

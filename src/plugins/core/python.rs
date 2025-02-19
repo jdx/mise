@@ -186,7 +186,7 @@ impl PythonPlugin {
         let url = format!(
             "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/{filename}"
         );
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         let install = tv.install_path();
         let download = tv.download_path();
         let tarball_path = download.join(filename);
