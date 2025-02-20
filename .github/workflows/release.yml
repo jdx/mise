@@ -254,9 +254,6 @@ jobs:
         with:
           node-version: "20.x"
           registry-url: "https://registry.npmjs.org"
-      - uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.RTX_SSH_KEY }}
       - uses: actions/download-artifact@v4
         with: { path: artifacts }
       - run: ls -R artifacts
