@@ -257,7 +257,6 @@ jobs:
       - uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.RTX_SSH_KEY }}
-          known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
       - uses: actions/download-artifact@v4
         with: { path: artifacts }
       - run: ls -R artifacts
@@ -305,34 +304,6 @@ jobs:
         with:
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
           formula: mise
-  bump-aur:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [release]
-    if: startsWith(github.event.ref, 'refs/tags/v')
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.RTX_SSH_KEY }}
-          known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
-      - name: Bump aur
-        run: ./scripts/release-aur.sh
-  bump-aur-bin:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [release]
-    if: startsWith(github.event.ref, 'refs/tags/v')
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.RTX_SSH_KEY }}
-          known_hosts: ${{ secrets.RTX_KNOWN_HOSTS_AUR }}
-      - name: Bump aur-bin
-        run: ./scripts/release-aur-bin.sh
   bump-alpine:
     runs-on: ubuntu-latest
     container: ghcr.io/jdx/mise:alpine
