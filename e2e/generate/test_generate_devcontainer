@@ -10,7 +10,7 @@ assert_json_partial_object "mise generate devcontainer" "name,description,featur
       \"ghcr.io/devcontainers-extra/features/mise:1\": {}
     },
     \"mounts\": [],
-    \"container_env\": {}
+    \"containerEnv\": {}
   }
 "
 
@@ -37,8 +37,8 @@ assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,
         \"type\": \"volume\"
       }
     ],
-    \"container_env\": {
-      \"MISE_DATA_VOLUME\": \"/mnt/mise-data\"
+    \"containerEnv\": {
+      \"MISE_DATA_DIR\": \"/mnt/mise-data\"
     }
   }
 "

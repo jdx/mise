@@ -33,7 +33,9 @@ struct DevcontainerTemplate {
     name: String,
     image: String,
     features: HashMap<String, HashMap<String, String>>,
+    customizations: HashMap<String, HashMap<String, Vec<String>>>,
     mounts: Vec<DevcontainerMount>,
+    #[serde(rename = "containerEnv")]
     container_env: HashMap<String, String>,
 }
 
@@ -76,7 +78,7 @@ impl Devcontainer {
                 target: "/mnt/mise-data".to_string(),
                 type_field: "volume".to_string(),
             });
-            container_env.insert("MISE_DATA_VOLUME".to_string(), "/mnt/mise-data".to_string());
+            container_env.insert("MISE_DATA_DIR".to_string(), "/mnt/mise-data".to_string());
         }
 
         let mut features = HashMap::new();
@@ -85,10 +87,21 @@ impl Devcontainer {
             HashMap::new(),
         );
 
+        let mut customizations = HashMap::new();
+        let mut extensions = HashMap::new();
+
+        extensions.insert(
+            "extensions".to_string(),
+            vec!["hverlin.mise-vscode".to_string()],
+        );
+
+        customizations.insert("vscode".to_string(), extensions);
+
         let template = DevcontainerTemplate {
             name: name.to_string(),
             image: image.to_string(),
             features,
+            customizations,
             mounts,
             container_env,
         };
