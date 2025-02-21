@@ -2,15 +2,22 @@
 
 # Default devcontainer
 
-assert_json_partial_object "mise generate devcontainer" "name,description,features,mounts,container_env" "
+assert_json_partial_object "mise generate devcontainer" "name,description,features,mounts,containerEnv,customizations" "
   {
     \"name\": \"mise\",
     \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\",
     \"features\": {
       \"ghcr.io/devcontainers-extra/features/mise:1\": {}
     },
+    \"customizations\": {
+      \"vscode\": {
+        \"extensions\": [
+          \"hverlin.mise-vscode\"
+        ]
+      }
+    },
     \"mounts\": [],
-    \"container_env\": {}
+    \"containerEnv\": {}
   }
 "
 
@@ -23,7 +30,7 @@ assert_json_partial_object "mise generate devcontainer --name test --image testi
 "
 
 # With mount
-assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,description,features,mounts,container_env" "
+assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,description,features,mounts,containerEnv,postCreateCommand" "
   {
     \"name\": \"mise\",
     \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\",
@@ -37,8 +44,9 @@ assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,
         \"type\": \"volume\"
       }
     ],
-    \"container_env\": {
-      \"MISE_DATA_VOLUME\": \"/mnt/mise-data\"
-    }
+    \"containerEnv\": {
+      \"MISE_DATA_DIR\": \"/mnt/mise-data\"
+    },
+    \"postCreateCommand\": \"sudo chown -R vscode:vscode /mnt/mise-data\"
   }
 "

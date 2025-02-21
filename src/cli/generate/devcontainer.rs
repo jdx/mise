@@ -33,8 +33,13 @@ struct DevcontainerTemplate {
     name: String,
     image: String,
     features: HashMap<String, HashMap<String, String>>,
+    customizations: HashMap<String, HashMap<String, Vec<String>>>,
     mounts: Vec<DevcontainerMount>,
+    #[serde(rename = "containerEnv")]
     container_env: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "postCreateCommand")]
+    post_create_command: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -68,6 +73,7 @@ impl Devcontainer {
             .as_deref()
             .unwrap_or("mcr.microsoft.com/devcontainers/base:ubuntu");
 
+        let mut post_create_command: Option<String> = None;
         let mut mounts = vec![];
         let mut container_env = HashMap::new();
         if self.mount_mise_data {
@@ -76,7 +82,8 @@ impl Devcontainer {
                 target: "/mnt/mise-data".to_string(),
                 type_field: "volume".to_string(),
             });
-            container_env.insert("MISE_DATA_VOLUME".to_string(), "/mnt/mise-data".to_string());
+            container_env.insert("MISE_DATA_DIR".to_string(), "/mnt/mise-data".to_string());
+            post_create_command = Some("sudo chown -R vscode:vscode /mnt/mise-data".to_string());
         }
 
         let mut features = HashMap::new();
@@ -85,12 +92,24 @@ impl Devcontainer {
             HashMap::new(),
         );
 
+        let mut customizations = HashMap::new();
+        let mut extensions = HashMap::new();
+
+        extensions.insert(
+            "extensions".to_string(),
+            vec!["hverlin.mise-vscode".to_string()],
+        );
+
+        customizations.insert("vscode".to_string(), extensions);
+
         let template = DevcontainerTemplate {
             name: name.to_string(),
             image: image.to_string(),
             features,
+            customizations,
             mounts,
             container_env,
+            post_create_command,
         };
 
         let output = serde_json::to_string_pretty(&template)?;
