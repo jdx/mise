@@ -117,7 +117,13 @@ impl SelfUpdate {
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .map(|p| p.join("lib").join(".disable-self-update").exists())
+            .map(|p| {
+                p.join("lib").join(".disable-self-update").exists() // kept for compability, see #4476
+                    || p.join("lib")
+                        .join("mise")
+                        .join(".disable-self-update")
+                        .exists()
+            })
             .unwrap_or_default()
     }
 }
