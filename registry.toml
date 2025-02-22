@@ -977,7 +977,11 @@ k3kcli.backends = [
 k3s.backends = ["asdf:mise-plugins/mise-k3s"]
 k3sup.backends = ["aqua:alexellis/k3sup", "asdf:cgroschupp/asdf-k3sup"]
 k6.backends = ["ubi:grafana/k6", "asdf:gr1m0h/asdf-k6"]
-k9s.backends = ["ubi:derailed/k9s", "asdf:looztra/asdf-k9s"]
+k9s.backends = [
+    "aqua:derailed/k9s",
+    "ubi:derailed/k9s",
+    "asdf:looztra/asdf-k9s"
+]
 kafka.backends = ["asdf:mise-plugins/mise-kafka"]
 kafkactl.backends = [
     "aqua:deviceinsight/kafkactl",
