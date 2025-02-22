@@ -1159,6 +1159,17 @@ default = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
 parse_env = "list_by_comma"
 description = "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on."
 
+[windows_shim_mode]
+env = "MISE_WINDOWS_SHIM_MODE"
+type = "String"
+default = "file"
+description = "Shim file mode for Windows. Options: `file`, `hardlink`, `symlink`."
+docs = """
+`file`: Creates a file with the content `mise exec`.
+`hardlink`: Uses Windows NTFS Hardlink, required on same filesystems. Need run `mise reshim --force` after upgrade mise
+`symlink`: Uses Windows NTFS SymbolicLink. Requires Windows Vista or later with admin privileges or enabling "Developer Mode" in Windows 10/11.
+"""
+
 [yes]
 env = "MISE_YES"
 type = "Bool"
