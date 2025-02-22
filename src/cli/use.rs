@@ -195,7 +195,9 @@ impl Use {
 
     fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-        let path = if let Some(p) = &self.path {
+        let path = if self.global {
+            MISE_GLOBAL_CONFIG_FILE.clone()
+        } else if let Some(p) = &self.path {
             let from_dir = config_file_from_dir(p).absolutize()?.to_path_buf();
             if from_dir.starts_with(&cwd) {
                 from_dir
@@ -212,7 +214,7 @@ impl Use {
         } else if !env::MISE_ENV.is_empty() {
             let env = env::MISE_ENV.last().unwrap();
             config_file_from_dir(&cwd.join(format!("mise.{env}.toml")))
-        } else if self.global || env::in_home_dir() {
+        } else if env::in_home_dir() {
             MISE_GLOBAL_CONFIG_FILE.clone()
         } else {
             config_file_from_dir(&cwd)
