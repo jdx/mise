@@ -14,7 +14,7 @@ The following installs zig and makes it the global default:
 ```sh
 mise use -g zig@0.13     # install zig 0.13.x
 mise use -g zig@latest  # install latest zig release
-mise use -g zig@ref:master # instaLL latest nightly from master
+mise use -g zig@ref:master # install latest nightly from master
 mise use -g zig@ref:mach-latest # install latest nominated zig
 mise use -g zig@0.14.0-dev.2577+271452d22 # install dev version
 ```
