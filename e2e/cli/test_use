@@ -75,6 +75,13 @@ assert "cat ~/.config/mise/config.toml" '[tools]
 gh = "2"'
 rm -f ~/.config/mise/config.toml
 
+export MISE_ENV=test
+mise use -g dummy@1
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "1"'
+rm -f ~/.config/mise/config.toml
+unset MISE_ENV
+
 mise uninstall dummy --all
 mise use dummy@system
 assert "mise ls dummy" "dummy  system  ~/workdir/mise.toml  system"
