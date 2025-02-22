@@ -183,6 +183,11 @@ bats.os = ["linux", "macos"]
 bats.test = ["bats -v", "Bats"]
 bazel.backends = ["ubi:bazelbuild/bazel", "asdf:rajatvig/asdf-bazel"]
 bazel.test = ["bazel --version", "bazel {{version}}"]
+bazel-watcher.backends = ["aqua:bazelbuild/bazel-watcher"]
+bazel-watcher.test = [
+    "ibazel version 2>&1 | head -n 1",
+    "iBazel - Version v{{version}}"
+]
 bazelisk.backends = [
     "aqua:bazelbuild/bazelisk",
     "asdf:josephtate/asdf-bazelisk"
