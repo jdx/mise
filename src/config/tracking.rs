@@ -26,11 +26,14 @@ impl Tracker {
             return Ok(output);
         }
         for path in read_dir(&*TRACKED_CONFIGS)? {
-            let path = path?.path();
-            if !path.is_symlink() {
+            let mut path = path?.path();
+            if path.is_symlink() {
+                path = fs::read_link(path)?;
+            } else if cfg!(target_os = "windows") {
+                path = PathBuf::from(fs::read_to_string(&path)?.trim());
+            } else {
                 continue;
             }
-            let path = fs::read_link(path)?;
             if path.exists() {
                 output.push(path);
             }
