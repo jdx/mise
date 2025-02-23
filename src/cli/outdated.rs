@@ -22,6 +22,10 @@ pub struct Outdated {
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
+    /// Show outdated tools from all tracked config files
+    #[clap(long, short, verbatim_doc_comment)]
+    pub all: bool,
+
     /// Compares against the latest versions available, not what matches the current config
     ///
     /// For example, if you have `node = "20"` in your config by default `mise outdated` will only
