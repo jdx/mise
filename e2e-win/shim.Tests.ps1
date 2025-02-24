@@ -1,17 +1,17 @@
 Describe 'shim_mode' {
 
-    function changeShimMode {
-        param (
-            [string]$mode,
-        )
-
-        mise settings windows_shim_mode $mode
-        mise reshim --force
-
-    }
-
     BeforeAll {
-         $shimPath = Join-Path -Path $env:MISE_DATA_DIR -ChildPath "shims"
+        function changeShimMode {
+            param (
+                [string]$mode
+            )
+
+            mise settings windows_shim_mode $mode
+            mise reshim --force
+
+        }
+
+        $shimPath = Join-Path -Path $env:MISE_DATA_DIR -ChildPath "shims"
     }
 
     It 'run on symlink' {
@@ -29,7 +29,7 @@ Describe 'shim_mode' {
         mise x go@1.23.3 -- where go
         mise x go@1.23.3 -- go version | Should -BeLike "go version go1.23.3 windows/*"
 
-        (Get-Item -Path  (Join-Path -Path $shimPath -ChildPath go.cmd)) | Should -Be ""
+        (Get-Item -Path  (Join-Path -Path $shimPath -ChildPath go.cmd)).LinkType | Should -Be $null
     }
 
     It 'run on hardlink' {
