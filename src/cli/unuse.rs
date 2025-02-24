@@ -57,6 +57,7 @@ impl Unuse {
 
         if !self.no_prune {
             prune(self.installed_tool.iter().map(|ta| &ta.ba).collect(), false)?;
+            config::rebuild_shims_and_runtime_symlinks(&[])?;
         }
 
         Ok(())
