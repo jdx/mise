@@ -13,6 +13,10 @@ Describe 'shim_mode' {
         $shimPath = Join-Path -Path $env:MISE_DATA_DIR -ChildPath "shims"
     }
 
+    AfterAll {
+        mise settings unset windows_shim_mode
+    }
+
     It 'run on symlink' {
         changeShimMode "symlink"
 
