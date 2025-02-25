@@ -214,7 +214,10 @@ bitwarden-secrets-manager.backends = [
 # bitwarden-secrets-manager.test = ["bws -V", ""] # fails on CI for some reason
 black.backends = ["aqua:psf/black"]
 black.test = ["black --version", "black, {{version}}"]
-boilerplate.backends = ["asdf:gruntwork-io/asdf-boilerplate"]
+boilerplate.backends = [
+    "aqua:gruntwork-io/boilerplate",
+    "asdf:gruntwork-io/asdf-boilerplate"
+]
 bombardier.backends = [
     "aqua:codesenberg/bombardier",
     "asdf:NeoHsu/asdf-bombardier"
