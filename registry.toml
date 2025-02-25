@@ -100,6 +100,13 @@ argocd.backends = [
 ]
 asciidoctorj.backends = ["asdf:mise-plugins/mise-asciidoctorj"]
 assh.backends = ["asdf:mise-plugins/mise-assh"]
+ast-grep.backends = [
+    "aqua:ast-grep/ast-grep",
+    "cargo:ast-grep",
+    "npm:@ast-grep/cli",
+    "pipx:ast-grep-cli"
+]
+ast-grep.test = ["sg --version", "ast-grep {{version}}"]
 atlas.backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
 auto-doc.backends = ["asdf:mise-plugins/mise-auto-doc"]
