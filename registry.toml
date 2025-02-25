@@ -382,7 +382,7 @@ cockroach.backends = [
 ]
 cockroach.test = ["cockroach version", "v{{version}}"]
 cocoapods.backends = ["asdf:mise-plugins/mise-cocoapods"]
-cocogitto.aliases = ["cog"]
+cocogitto.test = ["cog --version", "cog {{version}}"]
 cocogitto.backends = ["aqua:cocogitto/cocogitto"]
 codefresh.backends = [
     "ubi:codefresh-io/cli[exe=codefresh]",
