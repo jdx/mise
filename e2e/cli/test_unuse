@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 
 assert "mise install dummy@1.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy" "1
+1.0
+1.0.0
+latest"
 assert "mise rm dummy"
 assert_empty "mise ls"
+assert_fail "ls $MISE_DATA_DIR/installs/dummy"
 
 assert "mise use dummy@1.0.0"
 assert_contains "mise ls dummy" "1.0.0"

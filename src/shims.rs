@@ -128,38 +128,59 @@ pub fn reshim(ts: &Toolset, force: bool) -> Result<()> {
 
 #[cfg(windows)]
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
-    let shim = shim.trim_end_matches(".cmd");
-    // write a shim file without extension for use in Git Bash/Cygwin
-    file::write(
-        symlink_path.with_extension(""),
-        formatdoc! {r#"
+    match SETTINGS.windows_shim_mode.as_ref() {
+        "file" => {
+            let shim = shim.trim_end_matches(".cmd");
+            // write a shim file without extension for use in Git Bash/Cygwin
+            file::write(
+                symlink_path.with_extension(""),
+                formatdoc! {r#"
         #!/bin/bash
 
         exec mise x -- {shim} "$@"
         "#},
-    )
-    .wrap_err_with(|| {
-        eyre!(
-            "Failed to create symlink from {} to {}",
-            display_path(mise_bin),
-            display_path(symlink_path)
-        )
-    })?;
-    file::write(
-        symlink_path.with_extension("cmd"),
-        formatdoc! {r#"
+            )
+            .wrap_err_with(|| {
+                eyre!(
+                    "Failed to create symlink from {} to {}",
+                    display_path(mise_bin),
+                    display_path(symlink_path)
+                )
+            })?;
+            file::write(
+                symlink_path.with_extension("cmd"),
+                formatdoc! {r#"
         @echo off
         setlocal
         mise x -- {shim} %*
         "#},
-    )
-    .wrap_err_with(|| {
-        eyre!(
-            "Failed to create symlink from {} to {}",
-            display_path(mise_bin),
-            display_path(symlink_path)
-        )
-    })
+            )
+            .wrap_err_with(|| {
+                eyre!(
+                    "Failed to create symlink from {} to {}",
+                    display_path(mise_bin),
+                    display_path(symlink_path)
+                )
+            })
+        }
+        "hardlink" => fs::hard_link(mise_bin, symlink_path).wrap_err_with(|| {
+            eyre!(
+                "Failed to create hardlink from {} to {}",
+                display_path(mise_bin),
+                display_path(symlink_path)
+            )
+        }),
+        "symlink" => {
+            std::os::windows::fs::symlink_file(mise_bin, symlink_path).wrap_err_with(|| {
+                eyre!(
+                    "Failed to create symlink from {} to {}",
+                    display_path(mise_bin),
+                    display_path(symlink_path)
+                )
+            })
+        }
+        _ => panic!("Unknown shim mode"),
+    }
 }
 
 #[cfg(unix)]
@@ -261,10 +282,18 @@ fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
                 bins.into_iter()
                     .flat_map(|b| {
                         let p = PathBuf::from(&b);
-                        vec![
-                            p.with_extension("").to_string_lossy().to_string(),
-                            p.with_extension("cmd").to_string_lossy().to_string(),
-                        ]
+                        match SETTINGS.windows_shim_mode.as_ref() {
+                            "hardlink" | "symlink" => {
+                                vec![p.with_extension("exe").to_string_lossy().to_string()]
+                            }
+                            "file" => {
+                                vec![
+                                    p.with_extension("").to_string_lossy().to_string(),
+                                    p.with_extension("cmd").to_string_lossy().to_string(),
+                                ]
+                            }
+                            _ => panic!("Unknown shim mode"),
+                        }
                     })
                     .collect()
             } else if cfg!(macos) {
