@@ -71,21 +71,28 @@ impl Deps {
 
     /// main method to emit tasks that no longer have dependencies being waited on
     fn emit_leaves(&mut self) {
-        let leaves = leaves(&self.graph).into_iter().collect_vec();
+        let leaves = leaves(&self.graph);
+        let leaves_is_empty = leaves.is_empty();
+
         for task in leaves {
             let key = (task.name.clone(), task.args.clone());
-            if self.sent.contains(&key) {
-                continue;
-            }
-            self.sent.insert(key);
-            if let Err(e) = self.tx.send(Some(task)) {
-                trace!("Error sending task: {e:?}");
+
+            if self.sent.insert(key) {
+                trace!("Scheduling task {0}", task.name);
+                if let Err(e) = self.tx.send(Some(task)) {
+                    trace!("Error sending task: {e:?}");
+                }
             }
         }
-        if self.graph.node_count() == 0 {
+
+        if self.is_empty() {
+            trace!("All tasks finished");
             if let Err(e) = self.tx.send(None) {
                 trace!("Error closing task stream: {e:?}");
             }
+        } else if leaves_is_empty {
+            trace!("No more leaves task but the graph isn't finished {0}", self.all().map(|t| t.name.clone()).join(", "));
+            trace!("{:#?}", self.graph);
         }
     }
 
