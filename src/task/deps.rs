@@ -10,6 +10,7 @@ use std::iter::once;
 pub struct Deps {
     pub graph: DiGraph<Task, ()>,
     sent: HashSet<(String, Vec<String>)>, // tasks+args that have already started so should not run again
+    removed: HashSet<(String, Vec<String>)>, // tasks+args that have already finished to track if we are in an infinitve loop
     tx: channel::Sender<Option<Task>>,
 }
 
@@ -66,7 +67,8 @@ impl Deps {
         }
         let (tx, _) = channel::unbounded();
         let sent = HashSet::new();
-        Ok(Self { graph, tx, sent })
+        let removed = HashSet::new();
+        Ok(Self { graph, tx, sent,removed })
     }
 
     /// main method to emit tasks that no longer have dependencies being waited on
@@ -91,8 +93,12 @@ impl Deps {
                 trace!("Error closing task stream: {e:?}");
             }
         } else if leaves_is_empty {
-            trace!("No more leaves task but the graph isn't finished {0}", self.all().map(|t| t.name.clone()).join(", "));
-            trace!("{:#?}", self.graph);
+            if self.sent.len() == self.removed.len() {
+                panic!("Infinitive loop detected, all tasks are finished but the graph isn't empty {0} {1:#?}",
+                       self.all().map(|t| t.name.clone()).join(", "),
+                       self.graph
+                )
+            }
         }
     }
 
@@ -114,6 +120,8 @@ impl Deps {
     pub fn remove(&mut self, task: &Task) {
         if let Some(idx) = self.node_idx(task) {
             self.graph.remove_node(idx);
+            let key = (task.name.clone(), task.args.clone());
+            self.removed.insert(key);
             self.emit_leaves();
         }
     }
