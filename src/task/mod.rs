@@ -291,12 +291,13 @@ impl Task {
             .flatten_ok()
             .filter_ok(|t| tasks_to_run.contains(t))
             .collect_vec();
-        let depends_post = tasks_to_run
+        let depends_post = self
+            .depends_post
             .iter()
-            .flat_map(|t| t.depends_post.iter().map(|td| match_tasks(&tasks, td)))
+            .map(|td| match_tasks(&tasks, td))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<_>>()?;
         let depends = depends
             .into_iter()
             .chain(wait_for)
