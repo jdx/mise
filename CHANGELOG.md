@@ -1,5 +1,37 @@
 # Changelog
 
+## [2025.2.9](https://github.com/jdx/mise/compare/v2025.2.8..v2025.2.9) - 2025-02-26
+
+### 🚀 Features
+
+- **(registry)** add cocogitto by [@reitzig](https://github.com/reitzig) in [#4513](https://github.com/jdx/mise/pull/4513)
+- **(registry)** Added foundry by [@suicide](https://github.com/suicide) in [#4455](https://github.com/jdx/mise/pull/4455)
+- **(registry)** added ast-grep by [@tony-sol](https://github.com/tony-sol) in [#4519](https://github.com/jdx/mise/pull/4519)
+
+### 🐛 Bug Fixes
+
+- non-utf8 external process handling by [@jdx](https://github.com/jdx) in [#4538](https://github.com/jdx/mise/pull/4538)
+
+### 📚 Documentation
+
+- **(cookbook)** add shell powerline-go config env recipe by [@scop](https://github.com/scop) in [#4532](https://github.com/jdx/mise/pull/4532)
+- update mise.el repo link by [@tecoholic](https://github.com/tecoholic) in [#4534](https://github.com/jdx/mise/pull/4534)
+
+### Chore
+
+- bump rust version for releases by [@jdx](https://github.com/jdx) in [f4e5970](https://github.com/jdx/mise/commit/f4e5970f00bf56d9be16a7e7e83289085c0e5cce)
+- bump rust version for releases by [@jdx](https://github.com/jdx) in [52cff1c](https://github.com/jdx/mise/commit/52cff1c00b452b93b3ca1e4fc01fd21de73569e5)
+- bump rust version for releases by [@jdx](https://github.com/jdx) in [9121c5e](https://github.com/jdx/mise/commit/9121c5e9270fae59ce753226ecbbe2939c4661e4)
+- bump msrv for edition compatibility by [@jdx](https://github.com/jdx) in [3a222dd](https://github.com/jdx/mise/commit/3a222ddf272eef655b50796f34634fcedc3f1288)
+- remove unused deny rule by [@jdx](https://github.com/jdx) in [053f5c1](https://github.com/jdx/mise/commit/053f5c1c0746e363c24b19577b958621ea91c40c)
+
+### New Contributors
+
+- @tony-sol made their first contribution in [#4519](https://github.com/jdx/mise/pull/4519)
+- @tecoholic made their first contribution in [#4534](https://github.com/jdx/mise/pull/4534)
+- @suicide made their first contribution in [#4455](https://github.com/jdx/mise/pull/4455)
+- @reitzig made their first contribution in [#4513](https://github.com/jdx/mise/pull/4513)
+
 ## [2025.2.8](https://github.com/jdx/mise/compare/v2025.2.7..v2025.2.8) - 2025-02-25
 
 ### 🚀 Features
