@@ -6,7 +6,7 @@ use rops::cryptography::cipher::AES256GCM;
 use rops::cryptography::hasher::SHA512;
 use rops::file::state::EncryptedFile;
 use rops::file::RopsFile;
-use std::env;
+use crate::env;
 use std::sync::{Mutex, OnceLock};
 
 pub fn decrypt<PT, F>(input: &str, mut parse_template: PT, format: &str) -> result::Result<String>

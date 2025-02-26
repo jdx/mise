@@ -116,12 +116,13 @@ impl ConfigSet {
             TomlValueTypes::Infer => bail!("Type not found"),
         };
 
+        let mut t = toml_edit::Table::new();
+        t.set_implicit(true);
+        let mut table = toml_edit::Item::Table(t);
         container
             .as_table_like_mut()
-            .unwrap_or({
-                let mut t = toml_edit::Table::new();
-                t.set_implicit(true);
-                toml_edit::Item::Table(t).as_table_like_mut().unwrap()
+            .unwrap_or_else(|| {
+                table.as_table_like_mut().unwrap()
             })
             .insert(last_key, value);
 

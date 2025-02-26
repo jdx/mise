@@ -5,7 +5,7 @@ use crate::shell::ShellType;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, ffi::OsStr, sync::Mutex};
 pub use std::env::*;
 use std::path::PathBuf;
 use std::string::ToString;
@@ -470,6 +470,22 @@ fn is_ninja_on_path() -> bool {
 
 pub fn is_activated() -> bool {
     var("__MISE_DIFF").is_ok()
+}
+
+pub fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) {
+    static MUTEX: Mutex<()> = Mutex::new(());
+    let _mutex = MUTEX.lock().unwrap();
+    unsafe {
+        std::env::set_var(key, value);
+    }
+}
+
+pub fn remove_var<K: AsRef<OsStr>>(key: K) {
+    static MUTEX: Mutex<()> = Mutex::new(());
+    let _mutex = MUTEX.lock().unwrap();
+    unsafe {
+        std::env::remove_var(key);
+    }
 }
 
 #[cfg(test)]

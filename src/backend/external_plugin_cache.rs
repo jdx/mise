@@ -8,7 +8,7 @@ use crate::tera::{get_tera, BASE_CONTEXT};
 use crate::toolset::{ToolRequest, ToolVersion};
 use eyre::{eyre, WrapErr};
 use std::collections::HashMap;
-use std::env;
+use crate::env;
 use std::sync::RwLock;
 
 #[derive(Debug, Default)]
