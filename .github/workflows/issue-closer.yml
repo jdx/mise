@@ -10,6 +10,6 @@ jobs:
     if: github.actor != 'jdx'
 
     steps:
-      - run: gh issue close "${{ github.event.issue.number }}" --reason "not planned" -c "issues may only be created by maintainers"
+      - run: gh issue close "${{ github.event.issue.number }}" -R jdx/mise --reason "not planned" -c "issues may only be created by maintainers"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -48,7 +48,7 @@ While using `mise activate` you can have mise watch files for changes and execut
 ```bash
 [[watch_files]]
 patterns = ["src/**/*.rs"]
-script = "cargo fmt"
+run = "cargo fmt"
 ```
 
 This hook will have the following environment variables set:

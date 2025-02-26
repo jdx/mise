@@ -1,6 +1,6 @@
 # Swift <Badge type="warning" text="experimental" />
 
-Swift is supported for macos and linux.
+`mise` can be used to manage multiple versions of [`swift`](https://swift.org/) on the same system. Swift is supported for macos and linux.
 
 ## Usage
 
@@ -10,6 +10,8 @@ Use the latest stable version of swift:
 mise use -g swift
 swift --version
 ```
+
+See [a mise guide for Swift developers](https://tuist.dev/blog/2025/02/04/mise) on how to use `mise` with `swift`.
 
 ## Settings
 

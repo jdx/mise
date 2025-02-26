@@ -5,7 +5,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::file::{display_path, TarOptions};
-use crate::git::Git;
+use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
@@ -66,7 +66,11 @@ impl PythonPlugin {
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
         let pr = ctx.map(|ctx| &ctx.pr);
-        git.clone(&SETTINGS.python.pyenv_repo, pr)?;
+        let mut clone_options = CloneOptions::default();
+        if let Some(pr) = pr {
+            clone_options = clone_options.pr(pr);
+        }
+        git.clone(&SETTINGS.python.pyenv_repo, clone_options)?;
         Ok(())
     }
     fn update_python_build(&self) -> eyre::Result<()> {
@@ -182,7 +186,7 @@ impl PythonPlugin {
         let url = format!(
             "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/{filename}"
         );
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         let install = tv.install_path();
         let download = tv.download_path();
         let tarball_path = download.join(filename);

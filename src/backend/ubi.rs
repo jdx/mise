@@ -104,8 +104,13 @@ impl Backend for UbiBackend {
 
             if extract_all {
                 builder = builder.extract_all();
-            } else if let Some(exe) = opts.get("exe") {
-                builder = builder.exe(exe);
+            } else {
+                if let Some(exe) = opts.get("exe") {
+                    builder = builder.exe(exe);
+                }
+                if let Some(rename_exe) = opts.get("rename_exe") {
+                    builder = builder.rename_exe_to(rename_exe)
+                }
             }
             if let Some(matching) = opts.get("matching") {
                 builder = builder.matching(matching);

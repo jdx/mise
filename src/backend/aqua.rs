@@ -61,6 +61,7 @@ impl Backend for AquaBackend {
                             warn!("[{}] aqua version filter error: {e}", self.ba);
                         }
                     }
+                    let pkg = pkg.clone().with_version(v);
                     if let Some(prefix) = &pkg.version_prefix {
                         if let Some(_v) = v.strip_prefix(prefix) {
                             v = _v
@@ -97,7 +98,7 @@ impl Backend for AquaBackend {
                 self.fetch_url(&pkg, &v).map_err(|e| err.wrap_err(e))?
             }
         };
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         self.download(ctx, &tv, &url, filename)?;
         self.verify(ctx, &mut tv, &pkg, &v, filename)?;
         self.install(ctx, &tv, &pkg, &v, filename)?;

@@ -31,7 +31,7 @@ run = "cargo build"
 
 You can then run the task with `mise run build` (or `mise build` if it doesn't conflict with an existing command).
 
-- See the [TOML tasks](./toml-tasks.html) for more information.
+- See [TOML tasks](./toml-tasks.html) for more information.
 - See [Running Tasks](./running-tasks.html) to learn how to run tasks.
 
 ## File Tasks

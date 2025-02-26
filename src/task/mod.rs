@@ -314,7 +314,12 @@ impl Task {
     ) -> Result<(usage::Spec, Vec<String>)> {
         let (mut spec, scripts) = if let Some(file) = &self.file {
             let spec = usage::Spec::parse_script(file)
-                .inspect_err(|e| debug!("failed to parse task file with usage: {e}"))
+                .inspect_err(|e| {
+                    warn!(
+                        "failed to parse task file {} with usage: {e:?}",
+                        file::display_path(file)
+                    )
+                })
                 .unwrap_or_default();
             (spec, vec![])
         } else {

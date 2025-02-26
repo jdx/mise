@@ -21,7 +21,6 @@ package-lock.json
 .ash_history
 .abuild
 /aports
-/aur
 
 megalinter-reports/
 .dev/

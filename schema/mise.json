@@ -109,10 +109,6 @@
                           }
                         }
                       ]
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
                     }
                   }
                 },
@@ -847,7 +843,7 @@
               "type": "boolean"
             },
             "show_tools": {
-              "description": "Show configured env vars when entering a directory with a mise.toml file.",
+              "description": "Show configured tools when entering a directory with a mise.toml file.",
               "type": "boolean"
             }
           }
@@ -973,6 +969,11 @@
             "type": "string"
           }
         },
+        "windows_shim_mode": {
+          "default": "file",
+          "description": "Shim file mode for Windows. Options: `file`, `hardlink`, `symlink`.",
+          "type": "string"
+        },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
@@ -1070,7 +1071,7 @@
             },
             "dir": {
               "default": "{{ config_root }}",
-              "description": "directory to run script in, default is current working directory",
+              "description": "directory to run script in, default is the project's base directory",
               "type": "string"
             },
             "env": {

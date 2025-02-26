@@ -23,7 +23,7 @@ pub struct Unuse {
     no_prune: bool,
 
     /// Remove tool from global config
-    #[clap(long)]
+    #[clap(short, long)]
     global: bool,
 }
 
@@ -57,6 +57,7 @@ impl Unuse {
 
         if !self.no_prune {
             prune(self.installed_tool.iter().map(|ta| &ta.ba).collect(), false)?;
+            config::rebuild_shims_and_runtime_symlinks(&[])?;
         }
 
         Ok(())
@@ -81,6 +82,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     # will uninstall specific version
-    $ <bold>mise remove node@18.0.0</bold>
+    $ <bold>mise unuse node@18.0.0</bold>
+
+    # will uninstall specific version from global config
+    $ <bold>mise unuse -g node@18.0.0</bold>
 "#
 );

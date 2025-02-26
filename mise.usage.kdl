@@ -75,7 +75,7 @@ cmd activate help="Initializes mise in the current shell session" {
         choices bash elvish fish nu xonsh zsh pwsh
     }
 }
-cmd alias help="Manage aliases" {
+cmd alias help="Manage version aliases." {
     alias a
     alias aliases hide=#true
     flag "-p --plugin" help="filter aliases by plugin" {
@@ -305,9 +305,20 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
             arg <OUTPUT>
         }
     }
+    cmd devcontainer help="[experimental] Generate a devcontainer to execute mise" {
+        after_long_help "Examples:\n\n    $ mise generate devcontainer\n"
+        flag "-n --name" help="The name of the devcontainer" {
+            arg <NAME>
+        }
+        flag "-i --image" help="The image to use for the devcontainer" {
+            arg <IMAGE>
+        }
+        flag "-m --mount-mise-data" help="Bind the mise-data-volume to the devcontainer"
+        flag "-w --write" help="write to .devcontainer/devcontainer.json"
+    }
     cmd git-pre-commit help="[experimental] Generate a git pre-commit hook" {
         alias pre-commit
-        long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`."
+        long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`.\n\nFor more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/"
         after_long_help "Examples:\n\n    $ mise generate git-pre-commit --write --task=pre-commit\n    $ git commit -m \"feat: add new feature\" # runs `mise run pre-commit`\n"
         flag --hook help="Which hook to generate (saves to .git/hooks/$hook)" {
             arg <HOOK>
@@ -591,7 +602,7 @@ cmd run help="Run task(s)" {
     flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
         arg <JOBS>
     }
-    flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
+    flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
     flag --timings help="Shows elapsed time after each task completes" hide=#true {
         long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
     }
@@ -832,7 +843,7 @@ cmd tasks help="Manage tasks" {
         flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
             arg <JOBS>
         }
-        flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
+        flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
         flag --timings help="Shows elapsed time after each task completes" hide=#true {
             long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
         }
@@ -903,9 +914,9 @@ cmd unset help="Remove environment variable(s) from the config file." {
 cmd unuse help="Removes installed tool versions from mise.toml" {
     alias rm remove
     long_help "Removes installed tool versions from mise.toml\n\nWill also prune the installed version if no other configurations are using it."
-    after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise remove node@18.0.0\n"
+    after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise unuse node@18.0.0\n\n    # will uninstall specific version from global config\n    $ mise unuse -g node@18.0.0\n"
     flag --no-prune help="Do not also prune the installed version"
-    flag --global help="Remove tool from global config"
+    flag "-g --global" help="Remove tool from global config"
     arg <INSTALLED_TOOL@VERSION>... help="Tool(s) to remove" var=#true
 }
 cmd upgrade help="Upgrades outdated tools" {

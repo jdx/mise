@@ -172,6 +172,7 @@ jobs:
           - kustomize
           - graalvm
           - sbcl
+          - qsv
     steps:
       - name: Install zsh/fish/direnv
         run: sudo apt-get update; sudo apt-get install zsh fish direnv

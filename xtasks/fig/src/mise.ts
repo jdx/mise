@@ -538,7 +538,7 @@ const completionSpec: Fig.Spec = {
     },
     {
       name: ["alias", "a"],
-      description: "Manage aliases",
+      description: "Manage version aliases.",
       subcommands: [
         {
           name: "get",
@@ -1057,6 +1057,38 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "output",
               },
+            },
+          ],
+        },
+        {
+          name: "devcontainer",
+          description: "[experimental] Generate a devcontainer to execute mise",
+          options: [
+            {
+              name: ["-n", "--name"],
+              description: "The name of the devcontainer",
+              isRepeatable: false,
+              args: {
+                name: "name",
+              },
+            },
+            {
+              name: ["-i", "--image"],
+              description: "The image to use for the devcontainer",
+              isRepeatable: false,
+              args: {
+                name: "image",
+              },
+            },
+            {
+              name: ["-m", "--mount-mise-data"],
+              description: "Bind the mise-data-volume to the devcontainer",
+              isRepeatable: false,
+            },
+            {
+              name: ["-w", "--write"],
+              description: "Write to .devcontainer/devcontainer.json",
+              isRepeatable: false,
             },
           ],
         },
@@ -1735,7 +1767,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-r", "--raw"],
           description:
-            "Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var",
+            "Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var",
           isRepeatable: false,
         },
         {
@@ -2379,7 +2411,7 @@ const completionSpec: Fig.Spec = {
             {
               name: ["-r", "--raw"],
               description:
-                "Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var",
+                "Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var",
               isRepeatable: false,
             },
             {
@@ -2673,7 +2705,7 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--global",
+          name: ["-g", "--global"],
           description: "Remove tool from global config",
           isRepeatable: false,
         },

@@ -360,7 +360,7 @@ pub fn replace_template_placeholders_with_args(
                 &escape(value),
             );
         }
-        script = re.replace_all(&script, "").to_string();
+        script = re.replace_all(&script, "false").to_string();
         out.push(script);
     }
     Ok(out)
@@ -468,6 +468,14 @@ mod tests {
             replace_template_placeholders_with_args(&task, &spec, &scripts, &["--foo".to_string()])
                 .unwrap();
         assert_eq!(scripts, vec!["echo true"]);
+
+        let scripts = vec!["echo {{ flag(name='foo') }}".to_string()];
+        let (scripts, spec) = parser
+            .parse_run_scripts(&task, &scripts, &Default::default())
+            .unwrap();
+        assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
+        let scripts = replace_template_placeholders_with_args(&task, &spec, &scripts, &[]).unwrap();
+        assert_eq!(scripts, vec!["echo false"]);
     }
 
     #[test]

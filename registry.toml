@@ -183,6 +183,11 @@ bats.os = ["linux", "macos"]
 bats.test = ["bats -v", "Bats"]
 bazel.backends = ["ubi:bazelbuild/bazel", "asdf:rajatvig/asdf-bazel"]
 bazel.test = ["bazel --version", "bazel {{version}}"]
+bazel-watcher.backends = ["aqua:bazelbuild/bazel-watcher"]
+bazel-watcher.test = [
+    "ibazel version 2>&1 | head -n 1",
+    "iBazel - Version v{{version}}"
+]
 bazelisk.backends = [
     "aqua:bazelbuild/bazelisk",
     "asdf:josephtate/asdf-bazelisk"
@@ -291,6 +296,8 @@ cfssl.backends = [
 chamber.backends = ["ubi:segmentio/chamber", "asdf:mintel/asdf-chamber"]
 changie.backends = ["ubi:miniscruff/changie", "asdf:pdemagny/asdf-changie"]
 cheat.backends = ["aqua:cheat/cheat", "asdf:jmoratilla/asdf-cheat-plugin"]
+checkmake.backends = ["aqua:mrtazz/checkmake"]
+checkmake.test = ["checkmake --version", "checkmake {{version}}"]
 checkov.backends = ["ubi:bridgecrewio/checkov", "asdf:bosmak/asdf-checkov"]
 # checkov.test = ["checkov -v", "{{version}}"] missing assets on latest release
 chezmoi.backends = ["ubi:twpayne/chezmoi", "asdf:joke/asdf-chezmoi"]
@@ -380,6 +387,8 @@ cockroach.backends = [
 ]
 cockroach.test = ["cockroach version", "v{{version}}"]
 cocoapods.backends = ["asdf:mise-plugins/mise-cocoapods"]
+cocogitto.test = ["cog --version", "cog {{version}}"]
+cocogitto.backends = ["aqua:cocogitto/cocogitto"]
 codefresh.backends = [
     "ubi:codefresh-io/cli[exe=codefresh]",
     "asdf:gurukulkarni/asdf-codefresh"
@@ -560,6 +569,7 @@ dynatrace-monaco.backends = [
     "asdf:nsaputro/asdf-monaco"
 ]
 dynatrace-monaco.test = ["monaco version", "monaco version {{version}}"]
+e1s.backends = ["asdf:tbobm/asdf-e1s"]
 earthly.backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
 ecspresso.backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
 editorconfig-checker.backends = [
@@ -834,6 +844,7 @@ gwvault.backends = [
     "asdf:GoodwayGroup/asdf-gwvault"
 ]
 hadolint.backends = [
+    "aqua:hadolint/hadolint",
     "ubi:hadolint/hadolint",
     "asdf:devlincashman/asdf-hadolint"
 ]
@@ -871,6 +882,8 @@ hishtory.backends = [
     "asdf:asdf-community/asdf-hishtory"
 ]
 hivemind.backends = ["ubi:DarthSim/hivemind", "go:github.com/DarthSim/hivemind"]
+hk.backends = ["aqua:jdx/hk", "ubi:jdx/hk"]
+hk.test = ["hk --version", "hk {{version}}"]
 hledger.backends = ["ubi:simonmichael/hledger", "asdf:airtonix/asdf-hledger"]
 hledger-flow.backends = [
     "ubi:apauley/hledger-flow",
@@ -925,6 +938,14 @@ istioctl.test = ["istioctl version", "{{version}}"]
 janet.backends = ["asdf:mise-plugins/mise-janet"]
 java.backends = ["core:java"]
 jbang.backends = ["asdf:mise-plugins/jbang-asdf"]
+jc.backends = ["aqua:kellyjonbrazil/jc", "ubi:kellyjonbrazil/jc", "pipx:jc"]
+jc.test = ["jc --version", "jc version:  {{version}}"]
+jd.backends = [
+    "aqua:josephburnett/jd",
+    "ubi:josephburnett/jd",
+    "go:github.com/josephburnett/jd"
+]
+jd.test = ["jd --version", "jd version {{version}}"]
 jfrog-cli.backends = ["asdf:mise-plugins/mise-jfrog-cli"]
 jib.backends = ["asdf:mise-plugins/mise-jib"]
 jib.test = ["jib --version", "{{version}}"]
@@ -964,7 +985,11 @@ k3kcli.backends = [
 k3s.backends = ["asdf:mise-plugins/mise-k3s"]
 k3sup.backends = ["aqua:alexellis/k3sup", "asdf:cgroschupp/asdf-k3sup"]
 k6.backends = ["ubi:grafana/k6", "asdf:gr1m0h/asdf-k6"]
-k9s.backends = ["ubi:derailed/k9s", "asdf:looztra/asdf-k9s"]
+k9s.backends = [
+    "aqua:derailed/k9s",
+    "ubi:derailed/k9s",
+    "asdf:looztra/asdf-k9s"
+]
 kafka.backends = ["asdf:mise-plugins/mise-kafka"]
 kafkactl.backends = [
     "aqua:deviceinsight/kafkactl",
@@ -1182,6 +1207,8 @@ lua-language-server.backends = [
     "asdf:bellini666/asdf-lua-language-server"
 ]
 luajit.backends = ["asdf:mise-plugins/mise-luaJIT"]
+lychee.backends = ["aqua:lycheeverse/lychee"]
+lychee.test = ["lychee --version", "lychee {{version}}"]
 maestro.backends = [
     "ubi:mobile-dev-inc/maestro",
     "asdf:dotanuki-labs/asdf-maestro"
@@ -1194,6 +1221,8 @@ markdownlint-cli2.backends = [
     "npm:markdownlint-cli2",
     "asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2"
 ]
+marksman.backends = ["aqua:artempyanykh/marksman"]
+marksman.test = ["marksman --version", ""]
 marp-cli.backends = ["aqua:marp-team/marp-cli", "asdf:xataz/asdf-marp-cli"]
 mask.backends = ["aqua:jacobdeichert/mask", "asdf:aaaaninja/asdf-mask"]
 mask.test = ["mask --version", "mask {{version}}"]
@@ -1435,6 +1464,8 @@ purescript.backends = [
 purty.backends = ["asdf:mise-plugins/mise-purty"]
 python.backends = ["core:python"]
 qdns.backends = ["ubi:natesales/q", "asdf:moritz-makandra/asdf-plugin-qdns"]
+qsv.backends = ["ubi:dathere/qsv", "asdf:vjda/asdf-qsv"]
+qsv.test = ["qsv --version", "qsv {{version}}"]
 quarkus.backends = ["asdf:mise-plugins/mise-quarkus"]
 r.backends = ["asdf:mise-plugins/mise-r"]
 rabbitmq.backends = ["asdf:mise-plugins/mise-rabbitmq"]
@@ -1591,7 +1622,11 @@ sonobuoy.backends = [
     "ubi:vmware-tanzu/sonobuoy",
     "asdf:Nick-Triller/asdf-sonobuoy"
 ]
-sops.backends = ["ubi:getsops/sops", "asdf:mise-plugins/mise-sops"]
+sops.backends = [
+    "aqua:getsops/sops",
+    "ubi:getsops/sops",
+    "asdf:mise-plugins/mise-sops"
+]
 sopstool.backends = ["aqua:ibotta/sopstool", "asdf:elementalvoid/asdf-sopstool"]
 soracom.backends = ["ubi:soracom/soracom-cli", "asdf:gr1m0h/asdf-soracom"]
 sourcery.backends = ["asdf:mise-plugins/mise-sourcery"]
@@ -1870,7 +1905,12 @@ yazi.test = [
 yj.backends = ["ubi:sclevine/yj", "asdf:ryodocx/asdf-yj"]
 yor.backends = ["aqua:bridgecrewio/yor", "asdf:ordinaryexperts/asdf-yor"]
 youtube-dl.backends = ["asdf:mise-plugins/mise-youtube-dl"]
-yq.backends = ["ubi:mikefarah/yq", "asdf:sudermanjr/asdf-yq"]
+yq.backends = [
+    "aqua:mikefarah/yq",
+    "ubi:mikefarah/yq",
+    "asdf:sudermanjr/asdf-yq"
+]
+yq.test = ["yq --version", "version v{{version}}"]
 yt-dlp.backends = ["ubi:yt-dlp/yt-dlp", "asdf:duhow/asdf-yt-dlp"]
 ytt.backends = ["aqua:carvel-dev/ytt", "asdf:vmware-tanzu/asdf-carvel"]
 zbctl.backends = ["asdf:mise-plugins/mise-zbctl"]

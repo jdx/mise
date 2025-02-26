@@ -2,6 +2,7 @@ use clap::Subcommand;
 
 mod bootstrap;
 mod config;
+mod devcontainer;
 mod git_pre_commit;
 mod github_action;
 mod task_docs;
@@ -19,6 +20,7 @@ pub struct Generate {
 enum Commands {
     Bootstrap(bootstrap::Bootstrap),
     Config(config::Config),
+    Devcontainer(devcontainer::Devcontainer),
     GitPreCommit(git_pre_commit::GitPreCommit),
     GithubAction(github_action::GithubAction),
     TaskDocs(task_docs::TaskDocs),
@@ -30,6 +32,7 @@ impl Commands {
         match self {
             Self::Bootstrap(cmd) => cmd.run(),
             Self::Config(cmd) => cmd.run(),
+            Self::Devcontainer(cmd) => cmd.run(),
             Self::GitPreCommit(cmd) => cmd.run(),
             Self::GithubAction(cmd) => cmd.run(),
             Self::TaskDocs(cmd) => cmd.run(),

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+echo 'env.AAA = "main"' >.mise.toml
+echo 'env.AAA = "override-1"' >mise.override1.toml
+echo 'env.AAA = "override-2"' >mise.override2.toml
+
+assert "mise env --json | jq -r .AAA" "main"
+MISE_ENV=override1 assert "mise env --json | jq -r .AAA" "override-1"
+MISE_ENV=override1,override2 assert "mise env --json | jq -r .AAA" "override-2"
