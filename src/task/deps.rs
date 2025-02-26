@@ -68,7 +68,12 @@ impl Deps {
         let (tx, _) = channel::unbounded();
         let sent = HashSet::new();
         let removed = HashSet::new();
-        Ok(Self { graph, tx, sent,removed })
+        Ok(Self {
+            graph,
+            tx,
+            sent,
+            removed,
+        })
     }
 
     /// main method to emit tasks that no longer have dependencies being waited on
@@ -92,13 +97,11 @@ impl Deps {
             if let Err(e) = self.tx.send(None) {
                 trace!("Error closing task stream: {e:?}");
             }
-        } else if leaves_is_empty {
-            if self.sent.len() == self.removed.len() {
-                panic!("Infinitive loop detected, all tasks are finished but the graph isn't empty {0} {1:#?}",
-                       self.all().map(|t| t.name.clone()).join(", "),
-                       self.graph
-                )
-            }
+        } else if leaves_is_empty && self.sent.len() == self.removed.len() {
+            panic!("Infinitive loop detected, all tasks are finished but the graph isn't empty {0} {1:#?}",
+                   self.all().map(|t| t.name.clone()).join(", "),
+                   self.graph
+            )
         }
     }
 
