@@ -93,6 +93,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - run: rustup update # TODO: remove when 1.85.0 is released to build images
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build
@@ -246,6 +247,7 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@v4
+      - run: rustup update # TODO: remove when 1.85.0 is released to build images
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: unit
