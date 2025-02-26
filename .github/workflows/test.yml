@@ -130,6 +130,7 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
           submodules: true
+      - run: rustup update # TODO: remove when 1.85.0 is released to build images
       - uses: rui314/setup-mold@v1
         if: ${{ matrix.os == 'ubuntu-latest' }}
       - uses: taiki-e/install-action@v2
