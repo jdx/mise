@@ -883,10 +883,7 @@ helm-docs.backends = [
 ]
 helmfile.backends = ["ubi:helmfile/helmfile", "asdf:feniix/asdf-helmfile"]
 helmsman.backends = ["ubi:Praqma/helmsman", "asdf:luisdavim/asdf-helmsman"]
-helmwave.backends = [
-    "aqua:helmwave/helmwave",
-    "ubi:helmwave/helmwave",
-]
+helmwave.backends = ["aqua:helmwave/helmwave", "ubi:helmwave/helmwave"]
 helmwave.test = ["helmwave version", "{{version}}"]
 heroku.aliases = ["heroku-cli"]
 heroku.backends = ["asdf:mise-plugins/mise-heroku-cli"]
