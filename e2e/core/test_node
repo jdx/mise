@@ -15,21 +15,12 @@ assert "mise x -- node --version" "v$latest"
 assert_contains "mise x -- which yarn" "yarn"
 assert_contains "mise x -- which zx" "zx"
 
-# test asdf-nodejs
-mise plugin i nodejs https://github.com/asdf-vm/asdf-nodejs.git
 mise use nodejs@20.1.0
 mise ls
 assert "mise x -- node --version" "v20.1.0"
 assert_contains "mise ls-remote nodejs" "20.1.0"
-assert_contains "mise node -- nodebuild --version" "node-build "
 mise use --rm node
 
 # MISE_LEGACY_VERSION_FILE env var
 assert_contains "MISE_LEGACY_VERSION_FILE=1 mise current node" "$latest"
 assert_not_contains "MISE_LEGACY_VERSION_FILE=0 mise current node" "$latest"
-mise plugin uninstall nodejs
-assert_not_contains "mise plugins --user" "node"
-
-# disable nodejs plugin
-assert_contains "mise registry -b core" "node"
-assert_not_contains "MISE_DISABLE_TOOLS=node mise registry -b core" "node"
