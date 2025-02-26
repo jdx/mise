@@ -160,6 +160,20 @@ hide = true
 run = "echo my internal task"
 ```
 
+### `confirm`
+
+- **Type**: `string`
+
+A message to show before running the task. This is useful for tasks that are destructive or take a long
+time to run. The user will be prompted to confirm before the task is run.
+
+```toml
+[tasks.release]
+confirm = "Are you sure you want to cut a release?"
+description = 'Cut a new release'
+file = 'scripts/release.sh'
+```
+
 ### `raw`
 
 - **Type**: `bool`

@@ -179,6 +179,7 @@ impl Task {
             .or(p.parse_str("alias").map(|s| vec![s]))
             .or(p.parse_str("aliases").map(|s| vec![s]))
             .unwrap_or_default();
+        task.confirm = p.parse_str("confirm");
         task.description = p.parse_str("description").unwrap_or_default();
         task.sources = p.parse_array("sources").unwrap_or_default();
         task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();

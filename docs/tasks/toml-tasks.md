@@ -39,6 +39,7 @@ description = 'Run CI tasks'
 depends = ['build', 'lint', 'test']
 
 [tasks.release]
+confirm = 'Are you sure you want to cut a new release?'
 description = 'Cut a new release'
 file = 'scripts/release.sh' # execute an external script
 ```
@@ -182,6 +183,17 @@ outputs = ['target/debug/mycli']
 ```
 
 You can use `sources` alone if with [`mise watch`](/cli/watch.html) to run the task when the sources change.
+
+### Confirmation
+
+A message to show before running the task. The user will be prompted to confirm before the task is run.
+
+```toml
+[tasks.release]
+confirm = 'Are you sure you want to cut a new release?'
+description = 'Cut a new release'
+file = 'scripts/release.sh'
+```
 
 ## Specifying a shell or an interpreter {#shell-shebang}
 
