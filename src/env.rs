@@ -1,16 +1,20 @@
-use crate::cli::args::{ToolArg, ENV_ARG, PROFILE_ARG};
+use crate::cli::args::{ENV_ARG, PROFILE_ARG, ToolArg};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
-use std::{collections::{HashMap, HashSet}, ffi::OsStr, sync::Mutex};
 pub use std::env::*;
 use std::path::PathBuf;
 use std::string::ToString;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
+use std::{
+    collections::{HashMap, HashSet},
+    ffi::OsStr,
+    sync::Mutex,
+};
 use std::{path, process};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);

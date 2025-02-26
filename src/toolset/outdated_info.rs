@@ -1,6 +1,6 @@
+use crate::Result;
 use crate::toolset;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
-use crate::Result;
 use serde_derive::Serialize;
 use std::fmt::{Display, Formatter};
 use tabled::Tabled;

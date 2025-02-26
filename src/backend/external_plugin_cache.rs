@@ -2,13 +2,13 @@ use crate::backend::asdf::AsdfBackend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Config;
 use crate::dirs;
+use crate::env;
 use crate::env_diff::EnvMap;
 use crate::hash::hash_to_str;
-use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolVersion};
-use eyre::{eyre, WrapErr};
+use eyre::{WrapErr, eyre};
 use std::collections::HashMap;
-use crate::env;
 use std::sync::RwLock;
 
 #[derive(Debug, Default)]

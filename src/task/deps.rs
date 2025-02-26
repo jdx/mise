@@ -1,8 +1,8 @@
 use crate::task::Task;
 use crossbeam_channel as channel;
 use itertools::Itertools;
-use petgraph::graph::DiGraph;
 use petgraph::Direction;
+use petgraph::graph::DiGraph;
 use std::collections::{HashMap, HashSet};
 use std::iter::once;
 

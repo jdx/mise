@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
-use crate::file::display_path;
 #[cfg(unix)]
 use crate::file::TarOptions;
+use crate::file::display_path;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;

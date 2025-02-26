@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use crate::backend;
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
-use crate::toolset::{tool_request, ToolRequest};
+use crate::toolset::{ToolRequest, tool_request};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// List runtime versions available for install.

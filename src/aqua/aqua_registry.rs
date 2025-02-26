@@ -6,7 +6,7 @@ use crate::duration::{DAILY, WEEKLY};
 use crate::git::{CloneOptions, Git};
 use crate::{dirs, file, hashmap, http};
 use expr::{Context, Parser, Program, Value};
-use eyre::{eyre, ContextCompat, Result};
+use eyre::{ContextCompat, Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;

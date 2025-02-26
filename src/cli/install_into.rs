@@ -4,7 +4,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use clap::ValueHint;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use std::path::PathBuf;
 
 /// Install a tool version to a specific path

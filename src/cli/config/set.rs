@@ -1,5 +1,5 @@
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::settings::{SettingsType, SETTINGS_META};
+use crate::config::settings::{SETTINGS_META, SettingsType};
 use crate::config::top_toml_config;
 use clap::ValueEnum;
 use eyre::bail;
@@ -121,9 +121,7 @@ impl ConfigSet {
         let mut table = toml_edit::Item::Table(t);
         container
             .as_table_like_mut()
-            .unwrap_or_else(|| {
-                table.as_table_like_mut().unwrap()
-            })
+            .unwrap_or_else(|| table.as_table_like_mut().unwrap())
             .insert(last_key, value);
 
         let raw = config.to_string();

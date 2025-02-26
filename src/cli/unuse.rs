@@ -2,7 +2,7 @@ use crate::cli::args::ToolArg;
 use crate::cli::prune::prune;
 use crate::config;
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, Config};
+use crate::config::{Config, config_file};
 use crate::file::display_path;
 use crate::toolset::ToolRequest;
 use eyre::Result;

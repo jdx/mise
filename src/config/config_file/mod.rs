@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, Once};
 
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use idiomatic_version::IdiomaticVersionFile;
 use path_absolutize::Absolutize;
 use serde_derive::Deserialize;
@@ -17,7 +17,7 @@ use xx::regex;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{is_global_config, settings, AliasMap, Settings, SETTINGS};
+use crate::config::{AliasMap, SETTINGS, Settings, is_global_config, settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
@@ -82,7 +82,7 @@ pub trait ConfigFile: Debug + Send + Sync {
     }
     fn remove_tool(&mut self, ba: &BackendArg) -> eyre::Result<()>;
     fn replace_versions(&mut self, ba: &BackendArg, versions: Vec<ToolRequest>)
-        -> eyre::Result<()>;
+    -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
     fn dump(&self) -> eyre::Result<String>;
     fn source(&self) -> ToolSource;
@@ -196,7 +196,9 @@ impl dyn ConfigFile {
         }
         // check for something like `mise local node python@latest` which is invalid
         if runtimes.iter().any(|r| r.tvr.is_none()) {
-            return Err(eyre!("invalid input, specify a version for each tool. Or just specify one tool to print the current version"));
+            return Err(eyre!(
+                "invalid input, specify a version for each tool. Or just specify one tool to print the current version"
+            ));
         }
         Ok(false)
     }
