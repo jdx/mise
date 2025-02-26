@@ -307,22 +307,28 @@ impl<'a> CmdLineRunner<'a> {
         let (tx, rx) = channel();
         if let Some(stdout) = cp.stdout.take() {
             thread::spawn({
+                let name = self.to_string();
                 let tx = tx.clone();
                 move || {
                     for line in BufReader::new(stdout).lines() {
-                        let line = line.unwrap();
-                        tx.send(ChildProcessOutput::Stdout(line)).unwrap();
+                        match line {
+                            Ok(line) => tx.send(ChildProcessOutput::Stdout(line)).unwrap(),
+                            Err(e) => warn!("Failed to read stdout for {name}: {e}"),
+                        }
                     }
                 }
             });
         }
         if let Some(stderr) = cp.stderr.take() {
             thread::spawn({
+                let name = self.to_string();
                 let tx = tx.clone();
                 move || {
                     for line in BufReader::new(stderr).lines() {
-                        let line = line.unwrap();
-                        tx.send(ChildProcessOutput::Stderr(line)).unwrap();
+                        match line {
+                            Ok(line) => tx.send(ChildProcessOutput::Stderr(line)).unwrap(),
+                            Err(e) => warn!("Failed to read stderr for {name}: {e}"),
+                        }
                     }
                 }
             });
