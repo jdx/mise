@@ -115,9 +115,9 @@ For a better Treesitter and LSP integration, check out the [neovim cookbook](./m
 (setq exec-path (append exec-path '("/home/user/.local/share/mise/shims")))
 ```
 
-### Use with package [mise.el](https://github.com/liuyinz/mise.el)
+### Use with package [mise.el](https://github.com/eki3z/mise.el)
 
-<https://github.com/liuyinz/mise.el>
+<https://github.com/eki3z/mise.el>
 
 > A GNU Emacs library which uses the mise tool to determine per-directory/project environment variables and then set those environment variables on a per-buffer basis.
 
