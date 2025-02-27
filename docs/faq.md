@@ -197,8 +197,6 @@ You can leverage usage in file tasks to get auto-completion working, see [file t
 
 ## VSCode for windows extension with error `spawn EINVAL`
 
-
 In VSCode, many extensions will throw an "error spawn EINVAL" due to a [Node.js security fix](https://nodejs.org/en/blog/vulnerability/april-2024-security-releases-2#command-injection-via-args-parameter-of-child_processspawn-without-shell-option-enabled-on-windows-cve-2024-27980---high).
-
 
 You can change [windows_shim_mode](https://mise.jdx.dev/configuration/settings.html#windows_shim_mode) to `hardlink` or `symlink`
