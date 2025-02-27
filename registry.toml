@@ -535,6 +535,8 @@ docuum.backends = [
     "cargo:docuum",
     "asdf:bradym/asdf-docuum"
 ]
+doggo.backends = ["aqua:mr-karan/doggo", "ubi:mr-karan/doggo"]
+doggo.test = ["doggo --version | awk '{print $1}'", "v{{version}}"]
 dome.backends = ["asdf:mise-plugins/mise-dome"]
 doppler.backends = [
     "ubi:DopplerHQ/cli[exe=doppler]",
