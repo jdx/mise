@@ -791,6 +791,9 @@ goconvey.backends = [
 gocryptfs.backends = ["aqua:rfjakob/gocryptfs", "ubi:rfjakob/gocryptfs"]
 gofumpt.backends = ["ubi:mvdan/gofumpt", "asdf:looztra/asdf-gofumpt"]
 gojq.backends = ["aqua:itchyny/gojq", "asdf:jimmidyson/asdf-gojq"]
+# "aqua:cloudflare/gokey" exists, but can't be used due to "unsupported aqua package type: go_install"
+gokey.backends = ["ubi:cloudflare/gokey"]
+gokey.test = ["gokey -p master -r realm -l 8", "hJ2gXSy["]
 golangci-lint.backends = [
     "aqua:golangci/golangci-lint",
     "ubi:golangci/golangci-lint",
