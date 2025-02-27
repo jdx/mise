@@ -1165,9 +1165,10 @@ type = "String"
 default = "file"
 description = "Shim file mode for Windows. Options: `file`, `hardlink`, `symlink`."
 docs = """
-`file`: Creates a file with the content `mise exec`.
-`hardlink`: Uses Windows NTFS Hardlink, required on same filesystems. Need run `mise reshim --force` after upgrade mise
-`symlink`: Uses Windows NTFS SymbolicLink. Requires Windows Vista or later with admin privileges or enabling "Developer Mode" in Windows 10/11.
+* values:
+  * `file`: Creates a file with the content `mise exec`.
+  * `hardlink`: Uses Windows NTFS Hardlink, required on same filesystems. Need run `mise reshim --force` after upgrade mise.
+  * `symlink`: Uses Windows NTFS SymbolicLink. Requires Windows Vista or later with admin privileges or enabling "Developer Mode" in Windows 10/11.
 """
 
 [yes]
