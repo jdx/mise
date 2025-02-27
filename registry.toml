@@ -100,6 +100,13 @@ argocd.backends = [
 ]
 asciidoctorj.backends = ["asdf:mise-plugins/mise-asciidoctorj"]
 assh.backends = ["asdf:mise-plugins/mise-assh"]
+ast-grep.backends = [
+    "aqua:ast-grep/ast-grep",
+    "cargo:ast-grep",
+    "npm:@ast-grep/cli",
+    "pipx:ast-grep-cli"
+]
+ast-grep.test = ["sg --version", "ast-grep {{version}}"]
 atlas.backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
 auto-doc.backends = ["asdf:mise-plugins/mise-auto-doc"]
@@ -670,6 +677,8 @@ flyctl.backends = [
     "asdf:chessmango/asdf-flyctl"
 ]
 flyway.backends = ["asdf:mise-plugins/mise-flyway"]
+foundry.backends = ["ubi:foundry-rs/foundry[extract_all=true]"]
+foundry.test = ["forge -V", "{{version}}"]
 func-e.backends = ["tetratelabs/func-e", "asdf:mise-plugins/mise-func-e"]
 func-e.test = ["func-e --version", "func-e version {{version}}"]
 furyctl.backends = ["ubi:sighupio/furyctl", "asdf:sighupio/asdf-furyctl"]
@@ -875,6 +884,8 @@ helm-docs.backends = [
 ]
 helmfile.backends = ["ubi:helmfile/helmfile", "asdf:feniix/asdf-helmfile"]
 helmsman.backends = ["ubi:Praqma/helmsman", "asdf:luisdavim/asdf-helmsman"]
+helmwave.backends = ["aqua:helmwave/helmwave", "ubi:helmwave/helmwave"]
+helmwave.test = ["helmwave version", "{{version}}"]
 heroku.aliases = ["heroku-cli"]
 heroku.backends = ["asdf:mise-plugins/mise-heroku-cli"]
 hey.backends = ["asdf:mise-plugins/mise-hey"]
