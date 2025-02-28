@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::env::PATH_KEY;
 use crate::file::touch_dir;
 use crate::path_env::PathEnv;
-use crate::shell::{get_shell, ActivateOptions, Shell, ShellType};
+use crate::shell::{get_shell, ActivateOptions, ActivatePrelude, Shell, ShellType};
 use crate::{dirs, env};
 use eyre::Result;
 use itertools::Itertools;
@@ -87,13 +87,22 @@ impl Activate {
 
     fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let exe_dir = mise_bin.parent().unwrap();
-        miseprint!("{}", self.prepend_path(shell, exe_dir))?;
-        miseprint!("{}", self.prepend_path(shell, &dirs::SHIMS))?;
+        let mut prelude = vec![];
+        if let Some(p) = self.prepend_path(exe_dir) {
+            prelude.push(p);
+        }
+        if let Some(p) = self.prepend_path(&dirs::SHIMS) {
+            prelude.push(p);
+        }
+        miseprint!("{}", shell.format_activate_prelude(&prelude))?;
         Ok(())
     }
 
     fn activate(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
-        remove_shims(shell)?;
+        let mut prelude = vec![];
+        if let Some(set_path) = remove_shims()? {
+            prelude.push(set_path);
+        }
         let exe_dir = mise_bin.parent().unwrap();
         let mut flags = vec![];
         if self.quiet {
@@ -102,28 +111,34 @@ impl Activate {
         if self.status {
             flags.push(" --status");
         }
-        miseprint!("{}", self.prepend_path(shell, exe_dir))?;
+        if let Some(prepend_path) = self.prepend_path(exe_dir) {
+            prelude.push(prepend_path);
+        }
         miseprint!(
             "{}",
             shell.activate(ActivateOptions {
                 exe: mise_bin.to_path_buf(),
                 flags: flags.join(""),
                 no_hook_env: self.no_hook_env,
+                prelude,
             })
         )?;
         Ok(())
     }
 
-    fn prepend_path(&self, shell: &dyn Shell, p: &Path) -> String {
+    fn prepend_path(&self, p: &Path) -> Option<ActivatePrelude> {
         if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
-            shell.prepend_env(&PATH_KEY, p.to_string_lossy().as_ref())
+            Some(ActivatePrelude::PrependEnv(
+                PATH_KEY.to_string(),
+                p.to_string_lossy().to_string(),
+            ))
         } else {
-            String::new()
+            None
         }
     }
 }
 
-fn remove_shims(shell: &dyn Shell) -> std::io::Result<()> {
+fn remove_shims() -> std::io::Result<Option<ActivatePrelude>> {
     let shims = dirs::SHIMS
         .canonicalize()
         .unwrap_or(dirs::SHIMS.to_path_buf());
@@ -134,10 +149,11 @@ fn remove_shims(shell: &dyn Shell) -> std::io::Result<()> {
     {
         let path_env = PathEnv::from_iter(env::PATH.clone());
         // PathEnv automatically removes the shims directory
-        let cmd = shell.set_env(&PATH_KEY, path_env.join().to_string_lossy().as_ref());
-        miseprintln!("{cmd}");
+        let path = path_env.join().to_string_lossy().to_string();
+        Ok(Some(ActivatePrelude::SetEnv(PATH_KEY.to_string(), path)))
+    } else {
+        Ok(None)
     }
-    Ok(())
 }
 
 fn is_dir_in_path(dir: &Path) -> bool {
