@@ -1,5 +1,25 @@
 # Changelog
 
+## [2025.2.10](https://github.com/jdx/mise/compare/v2025.2.9..v2025.2.10) - 2025-02-28
+
+### 🚀 Features
+
+- **(registry)** added helmwave by [@tony-sol](https://github.com/tony-sol) in [#4542](https://github.com/jdx/mise/pull/4542)
+- **(registry)** added doggo by [@tony-sol](https://github.com/tony-sol) in [#4545](https://github.com/jdx/mise/pull/4545)
+- **(registry)** Add Boilerplate by [@ZachGoldberg](https://github.com/ZachGoldberg) in [#4530](https://github.com/jdx/mise/pull/4530)
+- **(registry)** added htmlq by [@tony-sol](https://github.com/tony-sol) in [#4548](https://github.com/jdx/mise/pull/4548)
+- **(registry)** added gokey by [@tony-sol](https://github.com/tony-sol) in [#4546](https://github.com/jdx/mise/pull/4546)
+- **(registry)** added octosql by [@tony-sol](https://github.com/tony-sol) in [#4549](https://github.com/jdx/mise/pull/4549)
+- task confirmation by [@roele](https://github.com/roele) in [#4328](https://github.com/jdx/mise/pull/4328)
+
+### 📚 Documentation
+
+- **(shim)** add faq for vscode windows spawn EINVAL & format value to list by [@qianlongzt](https://github.com/qianlongzt) in [#4544](https://github.com/jdx/mise/pull/4544)
+
+### New Contributors
+
+- @ZachGoldberg made their first contribution in [#4530](https://github.com/jdx/mise/pull/4530)
+
 ## [2025.2.9](https://github.com/jdx/mise/compare/v2025.2.8..v2025.2.9) - 2025-02-26
 
 ### 🚀 Features
