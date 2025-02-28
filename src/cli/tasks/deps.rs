@@ -92,10 +92,18 @@ impl TasksDeps {
     ///
     fn print_deps_tree(&self, tasks: Vec<Task>) -> Result<()> {
         let deps = Deps::new(tasks.clone())?;
+        let all_tasks_to_run = tasks
+            .iter()
+            .flat_map(|t| {
+                let (_, postdeps) = t.resolve_depends(&tasks).unwrap();
+                postdeps
+            })
+            .chain(tasks.clone())
+            .collect_vec();
         // filter out nodes that are not selected
         let start_indexes = deps.graph.node_indices().filter(|&idx| {
             let task = &deps.graph[idx];
-            tasks.iter().any(|t| t.name == task.name)
+            all_tasks_to_run.iter().any(|t| t.name == task.name)
         });
         // iterate over selected graph nodes and print tree
         for idx in start_indexes {
