@@ -55,6 +55,8 @@ pub struct Task {
     pub cf: Option<Arc<dyn ConfigFile>>,
     #[serde(skip)]
     pub config_root: Option<PathBuf>,
+    #[serde(default)]
+    pub confirm: Option<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -177,6 +179,7 @@ impl Task {
             .or(p.parse_str("alias").map(|s| vec![s]))
             .or(p.parse_str("aliases").map(|s| vec![s]))
             .unwrap_or_default();
+        task.confirm = p.parse_str("confirm");
         task.description = p.parse_str("description").unwrap_or_default();
         task.sources = p.parse_array("sources").unwrap_or_default();
         task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
@@ -577,6 +580,7 @@ impl Default for Task {
             config_source: PathBuf::new(),
             cf: None,
             config_root: None,
+            confirm: None,
             depends: vec![],
             depends_post: vec![],
             wait_for: vec![],
