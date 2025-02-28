@@ -162,6 +162,7 @@ impl TaskFileProvider for RemoteTaskGit {
         let mut clone_options = CloneOptions::default();
 
         if let Some(branch) = &repo_structure.branch {
+            trace!("Use specific branch {}", branch);
             clone_options = clone_options.branch(branch);
         }
 
