@@ -57,6 +57,7 @@ impl Devcontainer {
 
         if self.write {
             let path = Git::get_root()?.join(".devcontainer/devcontainer.json");
+            file::create(&path)?;
             file::write(&path, &output)?;
             miseprintln!("Wrote to {}", display_path(&path));
         } else {
