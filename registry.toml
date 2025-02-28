@@ -7,8 +7,8 @@
 [tools]
 1password.aliases = ["1password-cli", "op"]
 1password.backends = [
-    "asdf:mise-plugins/mise-1password-cli",
-    "aqua:1password/cli"
+    "aqua:1password/cli",
+    "asdf:mise-plugins/mise-1password-cli"
 ]
 # 1password.test = ["op --version", "{{version}}"] fails on CI for some reason
 aapt2.backends = ["asdf:mise-plugins/mise-aapt2"]
