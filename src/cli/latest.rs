@@ -1,4 +1,4 @@
-use color_eyre::eyre::{bail, Result};
+use color_eyre::eyre::{Result, bail};
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;

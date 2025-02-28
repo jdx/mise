@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS, Settings};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
 use crate::git::{CloneOptions, Git};
@@ -12,7 +12,7 @@ use crate::{dirs, env, exit, lock_file, registry};
 use clap::Command;
 use console::style;
 use contracts::requires;
-use eyre::{bail, eyre, Context};
+use eyre::{Context, bail, eyre};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -243,7 +243,9 @@ impl Plugin for AsdfPlugin {
                         style(url.trim_end_matches(".git")).yellow()
                     );
                     if settings.paranoid {
-                        bail!("Paranoid mode is enabled, refusing to install community-developed plugin");
+                        bail!(
+                            "Paranoid mode is enabled, refusing to install community-developed plugin"
+                        );
                     }
                     if !prompt::confirm_with_all(format!(
                         "Would you like to install {}?",

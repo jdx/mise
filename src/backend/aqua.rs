@@ -1,6 +1,6 @@
-use crate::aqua::aqua_registry::{AquaChecksumType, AquaPackage, AquaPackageType, AQUA_REGISTRY};
-use crate::backend::backend_type::BackendType;
+use crate::aqua::aqua_registry::{AQUA_REGISTRY, AquaChecksumType, AquaPackage, AquaPackageType};
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
@@ -12,7 +12,7 @@ use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{file, github, minisign};
-use eyre::{bail, ContextCompat, Result};
+use eyre::{ContextCompat, Result, bail};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;

@@ -1,8 +1,8 @@
 #![allow(unknown_lints)]
 #![allow(clippy::literal_string_with_formatting_args)]
 
-use crate::cli::version::VERSION;
 use crate::cli::Cli;
+use crate::cli::version::VERSION;
 use color_eyre::{Section, SectionExt};
 use eyre::Report;
 use indoc::indoc;
@@ -117,7 +117,9 @@ fn handle_err(err: Report) -> eyre::Result<()> {
 fn show_github_rate_limit_err(err: &Report) {
     let msg = format!("{err:?}");
     if msg.contains("HTTP status client error (403 Forbidden) for url (https://api.github.com") {
-        warn!("GitHub API returned a 403 Forbidden error. This likely means you have exceeded the rate limit.");
+        warn!(
+            "GitHub API returned a 403 Forbidden error. This likely means you have exceeded the rate limit."
+        );
         if env::GITHUB_TOKEN.is_none() {
             warn!(indoc!(
                 r#"GITHUB_TOKEN is not set. This means mise is making unauthenticated requests to GitHub which have a lower rate limit.

@@ -413,7 +413,12 @@ mod tests {
         let (scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
             .unwrap();
-        assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG; echo MISE_TASK_ARG:bar:MISE_TASK_ARG; echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
+        assert_eq!(
+            scripts,
+            vec![
+                "echo MISE_TASK_ARG:foo:MISE_TASK_ARG; echo MISE_TASK_ARG:bar:MISE_TASK_ARG; echo MISE_TASK_ARG:foo:MISE_TASK_ARG"
+            ]
+        );
         let arg0 = spec.cmd.args.first().unwrap();
         let arg1 = spec.cmd.args.get(1).unwrap();
         assert_eq!(arg0.name, "foo");

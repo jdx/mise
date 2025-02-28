@@ -4,24 +4,24 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::backend::external_plugin_cache::ExternalPluginCache;
-use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, SETTINGS};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
+use crate::plugins::Script::{Download, ExecEnv, Install, ParseIdiomaticFile};
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::mise_plugin_toml::MisePluginToml;
-use crate::plugins::Script::{Download, ExecEnv, Install, ParseIdiomaticFile};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
 use crate::timeout::run_with_timeout;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file};
-use color_eyre::eyre::{eyre, Result, WrapErr};
+use color_eyre::eyre::{Result, WrapErr, eyre};
 use console::style;
 use heck::ToKebabCase;
 

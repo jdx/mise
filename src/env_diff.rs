@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use base64::prelude::*;
 use eyre::Result;
-use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
+use flate2::write::{ZlibDecoder, ZlibEncoder};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};

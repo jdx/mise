@@ -3,7 +3,7 @@ use std::fmt::Formatter;
 use std::str::FromStr;
 
 use either::Either;
-use serde::{de, Deserialize};
+use serde::{Deserialize, de};
 
 use crate::task::{EitherIntOrBool, EitherStringOrIntOrBool};
 

@@ -1,21 +1,21 @@
-use eyre::{eyre, WrapErr};
+use eyre::{WrapErr, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use serde::de::Visitor;
-use serde::{de, Deserializer};
+use serde::{Deserializer, de};
 use serde_derive::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tera::Context as TeraContext;
-use toml_edit::{table, value, Array, DocumentMut, InlineTable, Item, Key, Value};
+use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::toml::deserialize_arr;
-use crate::config::config_file::{config_trust_root, trust, trust_check, ConfigFile, TaskConfig};
+use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
 use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap};
@@ -24,7 +24,7 @@ use crate::hooks::{Hook, Hooks};
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::Task;
-use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
 use crate::{dirs, file};
@@ -980,11 +980,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                                 tools,
                                                 redact: redact
                                                     .map(|r| {
-                                                        if let Val::Bool(b) = r {
-                                                            b
-                                                        } else {
-                                                            false
-                                                        }
+                                                        if let Val::Bool(b) = r { b } else { false }
                                                     })
                                                     .unwrap_or_default(),
                                             })
@@ -1457,7 +1453,10 @@ impl<'de> de::Deserialize<'de> for Alias {
                             versions = map.next_value()?;
                         }
                         _ => {
-                            deprecated!("TOOL_VERSION_ALIASES", "tool version aliases should be `alias.<TOOL>.versions.<FROM> = <TO>`, not `alias.<TOOL>.<FROM> = <TO>`");
+                            deprecated!(
+                                "TOOL_VERSION_ALIASES",
+                                "tool version aliases should be `alias.<TOOL>.versions.<FROM> = <TO>`, not `alias.<TOOL>.<FROM> = <TO>`"
+                            );
                             versions.insert(key, map.next_value()?);
                         }
                     }

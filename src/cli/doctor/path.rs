@@ -1,5 +1,5 @@
-use crate::config::Config;
 use crate::Result;
+use crate::config::Config;
 use std::env;
 
 /// Print the current PATH entries mise is providing

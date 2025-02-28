@@ -3,7 +3,7 @@ use crate::file;
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
-use eyre::{bail, Report, Result};
+use eyre::{Report, Result, bail};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};

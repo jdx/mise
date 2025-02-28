@@ -1,5 +1,5 @@
 use comfy_table::{Attribute, Cell, Color};
-use eyre::{ensure, Result};
+use eyre::{Result, ensure};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use rayon::prelude::*;

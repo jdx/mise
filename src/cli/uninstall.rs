@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use console::style;
-use eyre::{bail, eyre, Result};
+use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 use rayon::prelude::*;
 

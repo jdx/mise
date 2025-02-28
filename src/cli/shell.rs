@@ -1,4 +1,4 @@
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{Result, eyre};
 use console::style;
 use heck::ToShoutySnakeCase;
 use indoc::formatdoc;

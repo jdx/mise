@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::{eyre, ContextCompat, Result};
+use color_eyre::eyre::{ContextCompat, Result, eyre};
 use console::style;
 use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::{config_file, Settings};
+use crate::config::{Settings, config_file};
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::{env, file};

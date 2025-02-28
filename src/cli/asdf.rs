@@ -2,8 +2,8 @@ use clap::ValueHint::CommandWithArguments;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::ls_remote::LsRemote;
 use crate::cli::Cli;
+use crate::cli::ls_remote::LsRemote;
 use crate::config::Config;
 use crate::toolset::ToolsetBuilder;
 

@@ -1,7 +1,7 @@
-use eyre::{bail, eyre, Result};
+use eyre::{Result, bail, eyre};
 use toml_edit::DocumentMut;
 
-use crate::config::settings::{SettingsFile, SettingsType, SETTINGS_META};
+use crate::config::settings::{SETTINGS_META, SettingsFile, SettingsType};
 use crate::{config, file};
 
 /// Add/update a setting

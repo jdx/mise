@@ -3,7 +3,7 @@ use crate::task::{Deps, Task};
 use crate::ui::style::{self};
 use crate::ui::tree::print_tree;
 use console::style;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use itertools::Itertools;
 use petgraph::dot::Dot;
 

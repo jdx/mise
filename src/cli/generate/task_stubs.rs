@@ -1,7 +1,7 @@
+use crate::Result;
 use crate::config::{Config, SETTINGS};
 use crate::file;
 use crate::task::Task;
-use crate::Result;
 use clap::ValueHint;
 use std::path::PathBuf;
 use xx::file::display_path;

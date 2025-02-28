@@ -1,16 +1,20 @@
-use crate::cli::args::{ToolArg, ENV_ARG, PROFILE_ARG};
+use crate::cli::args::{ENV_ARG, PROFILE_ARG, ToolArg};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
-use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::path::PathBuf;
 use std::string::ToString;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
+use std::{
+    collections::{HashMap, HashSet},
+    ffi::OsStr,
+    sync::Mutex,
+};
 use std::{path, process};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
@@ -470,6 +474,22 @@ fn is_ninja_on_path() -> bool {
 
 pub fn is_activated() -> bool {
     var("__MISE_DIFF").is_ok()
+}
+
+pub fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) {
+    static MUTEX: Mutex<()> = Mutex::new(());
+    let _mutex = MUTEX.lock().unwrap();
+    unsafe {
+        std::env::set_var(key, value);
+    }
+}
+
+pub fn remove_var<K: AsRef<OsStr>>(key: K) {
+    static MUTEX: Mutex<()> = Mutex::new(());
+    let _mutex = MUTEX.lock().unwrap();
+    unsafe {
+        std::env::remove_var(key);
+    }
 }
 
 #[cfg(test)]

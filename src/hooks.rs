@@ -1,9 +1,9 @@
 use crate::cmd::cmd;
-use crate::config::{config_file, Config, SETTINGS};
+use crate::config::{Config, SETTINGS, config_file};
 use crate::shell::Shell;
 use crate::toolset::Toolset;
 use crate::{dirs, hook_env};
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use std::iter::once;

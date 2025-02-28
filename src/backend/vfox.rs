@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use std::thread;
 
-use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, SETTINGS};

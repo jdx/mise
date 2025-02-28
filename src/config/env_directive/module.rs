@@ -1,7 +1,7 @@
+use crate::Result;
 use crate::config::env_directive::EnvResults;
 use crate::dirs;
 use crate::plugins::vfox_plugin::VfoxPlugin;
-use crate::Result;
 use heck::ToKebabCase;
 use std::path::PathBuf;
 use toml::Value;

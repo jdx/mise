@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use versions::{Chunk, Version};
 use xx::file;
 

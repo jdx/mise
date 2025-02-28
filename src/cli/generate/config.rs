@@ -1,5 +1,5 @@
-use crate::cli::config::generate;
 use crate::Result;
+use crate::cli::config::generate;
 
 /// [experimental] Generate a mise.toml file
 #[derive(Debug, clap::Args)]

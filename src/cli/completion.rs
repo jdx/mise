@@ -1,8 +1,8 @@
 use crate::cmd::cmd;
 use crate::config::Config;
 use crate::toolset::ToolsetBuilder;
-use clap::builder::PossibleValue;
 use clap::ValueEnum;
+use clap::builder::PossibleValue;
 use eyre::Result;
 use strum::EnumString;
 

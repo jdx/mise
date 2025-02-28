@@ -1,11 +1,11 @@
+use crate::Result;
 use crate::cli::args::BackendArg;
-use crate::cli::{run, Cli};
+use crate::cli::{Cli, run};
 use crate::cmd;
 use crate::config::Config;
 use crate::env;
 use crate::exit::exit;
 use crate::toolset::ToolsetBuilder;
-use crate::Result;
 use clap::{CommandFactory, ValueEnum, ValueHint};
 use console::style;
 use eyre::bail;

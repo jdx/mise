@@ -1,11 +1,11 @@
 use crate::config::{Config, SETTINGS};
 use crate::direnv::DirenvDiff;
-use crate::env::{join_paths, split_paths, PATH_ENV_SEP};
-use crate::env::{PATH_KEY, TERM_WIDTH, __MISE_DIFF};
+use crate::env::{__MISE_DIFF, PATH_KEY, TERM_WIDTH};
+use crate::env::{PATH_ENV_SEP, join_paths, split_paths};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::file::display_rel_path;
-use crate::hook_env::{WatchFilePattern, PREV_SESSION};
-use crate::shell::{get_shell, ShellType};
+use crate::hook_env::{PREV_SESSION, WatchFilePattern};
+use crate::shell::{ShellType, get_shell};
 use crate::toolset::Toolset;
 use crate::{env, hook_env, hooks, watch_files};
 use console::truncate_str;

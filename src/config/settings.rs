@@ -5,8 +5,8 @@ use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
-use eyre::{bail, Result};
-use indexmap::{indexmap, IndexMap};
+use eyre::{Result, bail};
+use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};

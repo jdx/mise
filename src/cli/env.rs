@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::shell::{get_shell, ShellType};
+use crate::shell::{ShellType, get_shell};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 
 /// Exports env vars to activate mise a single time

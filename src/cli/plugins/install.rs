@@ -1,16 +1,16 @@
-use color_eyre::eyre::{bail, eyre, Result};
+use color_eyre::eyre::{Result, bail, eyre};
 use contracts::ensures;
 use heck::ToKebabCase;
-use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use rayon::prelude::*;
 use url::Url;
 
 use crate::backend::unalias_backend;
 use crate::config::{Config, Settings};
 use crate::dirs;
+use crate::plugins::Plugin;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::Plugin;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;

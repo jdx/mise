@@ -185,11 +185,7 @@ impl Backend for SwiftPlugin {
 }
 
 fn swift_bin_name() -> &'static str {
-    if cfg!(windows) {
-        "swift.exe"
-    } else {
-        "swift"
-    }
+    if cfg!(windows) { "swift.exe" } else { "swift" }
 }
 
 fn platform_directory() -> String {
@@ -255,14 +251,14 @@ fn architecture() -> Option<&'static str> {
 
 fn url(tv: &ToolVersion) -> String {
     format!(
-    "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
-    version = tv.version,
-    platform = platform(),
-    platform_directory = platform_directory(),
-    extension = extension(),
-    architecture = match architecture() {
-        Some(arch) => format!("-{arch}"),
-        None => "".into(),
-    }
-)
+        "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
+        version = tv.version,
+        platform = platform(),
+        platform_directory = platform_directory(),
+        extension = extension(),
+        architecture = match architecture() {
+            Some(arch) => format!("-{arch}"),
+            None => "".into(),
+        }
+    )
 }

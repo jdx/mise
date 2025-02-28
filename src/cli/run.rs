@@ -30,7 +30,7 @@ use console::Term;
 use crossbeam_channel::{select, unbounded};
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
-use eyre::{bail, ensure, eyre, Result};
+use eyre::{Result, bail, ensure, eyre};
 use glob::glob;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -245,22 +245,24 @@ impl Run {
 
         if self.output(None) == TaskOutput::Timed {
             let timed_outputs = self.timed_outputs.clone();
-            thread::spawn(move || loop {
-                {
-                    let mut outputs = timed_outputs.lock().unwrap();
-                    for (prefix, out) in outputs.clone() {
-                        let (time, line) = out;
-                        if time.elapsed().unwrap().as_secs() >= 1 {
-                            if console::colors_enabled() {
-                                prefix_println!(prefix, "{line}\x1b[0m");
-                            } else {
-                                prefix_println!(prefix, "{line}");
+            thread::spawn(move || {
+                loop {
+                    {
+                        let mut outputs = timed_outputs.lock().unwrap();
+                        for (prefix, out) in outputs.clone() {
+                            let (time, line) = out;
+                            if time.elapsed().unwrap().as_secs() >= 1 {
+                                if console::colors_enabled() {
+                                    prefix_println!(prefix, "{line}\x1b[0m");
+                                } else {
+                                    prefix_println!(prefix, "{line}");
+                                }
+                                outputs.shift_remove(&prefix);
                             }
-                            outputs.shift_remove(&prefix);
                         }
                     }
+                    thread::sleep(Duration::from_millis(100));
                 }
-                thread::sleep(Duration::from_millis(100));
             });
         }
 

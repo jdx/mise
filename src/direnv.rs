@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use crate::env::PATH_KEY;
 use base64::prelude::*;
 use eyre::Result;
-use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
+use flate2::write::{ZlibDecoder, ZlibEncoder};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 

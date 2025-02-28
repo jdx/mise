@@ -6,7 +6,7 @@ use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use clap::Command;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use heck::ToKebabCase;
 use regex::Regex;
 pub use script_manager::{Script, ScriptManager};

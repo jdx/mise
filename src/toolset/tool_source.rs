@@ -2,7 +2,7 @@ use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
-use indexmap::{indexmap, IndexMap};
+use indexmap::{IndexMap, indexmap};
 
 use crate::file::display_path;
 

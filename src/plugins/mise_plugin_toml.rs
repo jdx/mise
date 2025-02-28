@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use color_eyre::eyre::eyre;
 use color_eyre::Result;
+use color_eyre::eyre::eyre;
 use eyre::WrapErr;
 use toml_edit::{DocumentMut, Item, Value};
 

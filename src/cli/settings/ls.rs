@@ -1,6 +1,6 @@
 use crate::config;
-use crate::config::settings::{SettingsPartial, SettingsType, SETTINGS_META};
-use crate::config::{Settings, ALL_TOML_CONFIG_FILES, SETTINGS};
+use crate::config::settings::{SETTINGS_META, SettingsPartial, SettingsType};
+use crate::config::{ALL_TOML_CONFIG_FILES, SETTINGS, Settings};
 use crate::file::display_path;
 use crate::ui::table;
 use eyre::Result;

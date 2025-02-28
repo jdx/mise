@@ -6,7 +6,7 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -262,9 +262,5 @@ fn arch() -> &'static str {
 }
 
 fn ext() -> &'static str {
-    if cfg!(windows) {
-        "zip"
-    } else {
-        "tar.gz"
-    }
+    if cfg!(windows) { "zip" } else { "tar.gz" }
 }

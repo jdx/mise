@@ -6,7 +6,7 @@ use crate::tera::get_tera;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
-use eyre::{bail, eyre, Result};
+use eyre::{Result, bail, eyre};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

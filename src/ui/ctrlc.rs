@@ -27,7 +27,9 @@ pub fn init() {
                 debug!("Ctrl-C pressed, exiting...");
                 exit(1);
             } else {
-                warn!("Ctrl-C pressed, please wait for tasks to finish or press Ctrl-C again to force exit");
+                warn!(
+                    "Ctrl-C pressed, please wait for tasks to finish or press Ctrl-C again to force exit"
+                );
             }
         }
     });

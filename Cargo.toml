@@ -1,7 +1,7 @@
 [package]
 name = "mise"
 version = "2025.2.9"
-edition = "2021"
+edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
 homepage = "https://mise.jdx.dev"

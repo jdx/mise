@@ -1,4 +1,4 @@
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use indoc::formatdoc;
 
 use crate::shell::get_shell;

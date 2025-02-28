@@ -7,7 +7,7 @@ use crate::file;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
 use digest::Digest;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use md5::Md5;
 use rayon::prelude::*;
 use sha1::Sha1;
@@ -100,8 +100,10 @@ pub fn ensure_checksum(
     };
     let checksum = checksum.to_lowercase();
     if actual != checksum {
-        bail!("Checksum mismatch for file {}:\nExpected: {algo}:{checksum}\nActual:   {algo}:{actual}",
-        display_path(path));
+        bail!(
+            "Checksum mismatch for file {}:\nExpected: {algo}:{checksum}\nActual:   {algo}:{actual}",
+            display_path(path)
+        );
     }
     Ok(())
 }

@@ -1,13 +1,13 @@
 use crate::backend::backend_type::BackendType;
-use crate::backend::{unalias_backend, ABackend};
+use crate::backend::{ABackend, unalias_backend};
 use crate::config::Config;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
-use crate::toolset::{install_state, parse_tool_options, ToolVersionOptions};
+use crate::toolset::{ToolVersionOptions, install_state, parse_tool_options};
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use heck::ToKebabCase;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
@@ -136,7 +136,10 @@ impl BackendArg {
                 return full;
             }
             if let Some(url) = Config::get().repo_urls.get(short) {
-                deprecated!("config_plugins", "[plugins] section of mise.toml is deprecated. Use [alias] instead. https://mise.jdx.dev/dev-tools/aliases.html");
+                deprecated!(
+                    "config_plugins",
+                    "[plugins] section of mise.toml is deprecated. Use [alias] instead. https://mise.jdx.dev/dev-tools/aliases.html"
+                );
                 return format!("asdf:{url}");
             }
             if let Some(lt) = lockfile::get_locked_version(None, short, "").unwrap_or_default() {

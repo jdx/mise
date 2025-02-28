@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
-use eyre::{bail, Report, Result};
+use eyre::{Report, Result, bail};
 use reqwest::header::HeaderMap;
 use reqwest::{ClientBuilder, IntoUrl, RequestBuilder, Response};
 use std::sync::LazyLock as Lazy;

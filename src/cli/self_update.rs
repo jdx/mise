@@ -1,9 +1,9 @@
-use color_eyre::eyre::bail;
 use color_eyre::Result;
+use color_eyre::eyre::bail;
 use console::style;
 use self_update::backends::github::{ReleaseList, Update};
 use self_update::update::Release;
-use self_update::{cargo_crate_version, Status};
+use self_update::{Status, cargo_crate_version};
 
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;

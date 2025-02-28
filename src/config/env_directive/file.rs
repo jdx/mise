@@ -1,7 +1,7 @@
 use crate::config::env_directive::EnvResults;
 use crate::file::display_path;
-use crate::{file, sops, Result};
-use eyre::{bail, eyre, WrapErr};
+use crate::{Result, file, sops};
+use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, YamlFileFormat};
 use std::path::{Path, PathBuf};

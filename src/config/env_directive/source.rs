@@ -1,7 +1,7 @@
+use crate::Result;
 use crate::config::env_directive::EnvResults;
 use crate::env;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffOptions, EnvMap};
-use crate::Result;
 use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 

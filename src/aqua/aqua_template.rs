@@ -1,4 +1,4 @@
-use eyre::{bail, ContextCompat, Result};
+use eyre::{ContextCompat, Result, bail};
 use heck::ToTitleCase;
 use itertools::Itertools;
 use std::collections::HashMap;

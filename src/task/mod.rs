@@ -1,14 +1,14 @@
-use crate::config::config_file::toml::{deserialize_arr, TomlParser};
 use crate::config::Config;
+use crate::config::config_file::toml::{TomlParser, deserialize_arr};
 use crate::task::task_script_parser::{
-    has_any_args_defined, replace_template_placeholders_with_args, TaskScriptParser,
+    TaskScriptParser, has_any_args_defined, replace_template_placeholders_with_args,
 };
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
-use console::{truncate_str, Color};
+use console::{Color, truncate_str};
 use either::Either;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;

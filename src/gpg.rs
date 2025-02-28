@@ -1,6 +1,6 @@
+use crate::Result;
 use crate::cmd::CmdLineRunner;
 use crate::install_context::InstallContext;
-use crate::Result;
 
 pub fn add_keys_node(ctx: &InstallContext) -> Result<()> {
     add_keys(ctx, include_str!("assets/gpg/node.asc"))

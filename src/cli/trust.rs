@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use crate::config::config_file::config_trust_root;
 use crate::config::{
-    config_file, config_files_in_dir, is_global_config, ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES,
-    SETTINGS,
+    ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES, SETTINGS, config_file, config_files_in_dir,
+    is_global_config,
 };
 use crate::file::{display_path, remove_file};
 use crate::{config, dirs, env, file};

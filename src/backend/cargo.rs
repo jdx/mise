@@ -5,8 +5,8 @@ use eyre::{bail, eyre};
 use serde_json::Deserializer;
 use url::Url;
 
-use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};

@@ -11,7 +11,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, gpg, hash, http, plugins};
-use eyre::{bail, ensure, Result};
+use eyre::{Result, bail, ensure};
 use serde_derive::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
