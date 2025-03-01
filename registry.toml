@@ -894,6 +894,8 @@ helmwave.backends = ["aqua:helmwave/helmwave", "ubi:helmwave/helmwave"]
 helmwave.test = ["helmwave version", "{{version}}"]
 heroku.aliases = ["heroku-cli"]
 heroku.backends = ["asdf:mise-plugins/mise-heroku-cli"]
+hexyl.backends = ["aqua:sharkdp/hexyl", "ubi:sharkdp/hexyl"]
+hexyl.test = ["hexyl --version", "hexyl {{version}}"]
 hey.backends = ["asdf:mise-plugins/mise-hey"]
 hishtory.backends = [
     "ubi:ddworken/hishtory",
