@@ -1141,6 +1141,8 @@ kubent.backends = [
     "asdf:virtualstaticvoid/asdf-kubent"
 ]
 kubent.test = ["kubent --version 2>&1", "version {{version}}"]
+kubeone.backends = ["aqua:kubermatic/kubeone", "aqua:kubermatic/kubeone"]
+kubeone.test = ["kubeone version | jq -r '.kubeone.gitVersion'", "{{version}}"]
 kubergrunt.backends = [
     "aqua:gruntwork-io/kubergrunt",
     "asdf:NeoHsu/asdf-kubergrunt"
