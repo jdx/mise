@@ -1,6 +1,6 @@
+use crate::config::Config;
 use crate::config::config_file::ConfigFile;
 use crate::config::tracking::Tracker;
-use crate::config::Config;
 use crate::file::display_path;
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell};

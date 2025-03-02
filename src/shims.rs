@@ -11,7 +11,7 @@ use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{backend, dirs, env, fake_asdf, file, logger};
-use color_eyre::eyre::{bail, eyre, Result};
+use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -347,7 +347,9 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
 
 fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<PathBuf> {
     if tvs.is_empty() {
-        bail!("{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool.");
+        bail!(
+            "{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool."
+        );
     }
     let missing_plugins = tvs.iter().map(|tv| tv.ba()).collect::<HashSet<_>>();
     let mut missing_tools = ts

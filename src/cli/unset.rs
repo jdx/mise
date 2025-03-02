@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use eyre::Result;
 
-use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::ConfigFile;
+use crate::config::config_file::mise_toml::MiseToml;
 use crate::{config, env};
 
 /// Remove environment variable(s) from the config file.

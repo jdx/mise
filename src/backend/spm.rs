@@ -1,5 +1,5 @@
-use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
@@ -8,8 +8,8 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{dirs, file, github};
 use eyre::WrapErr;
-use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
+use serde::de::{MapAccess, Visitor};
 use serde_derive::Deserialize;
 use std::fmt::{self, Debug};
 use std::path::PathBuf;
@@ -203,7 +203,10 @@ impl SwiftPackageRepo {
         } else if shorthand_regex.is_match(name) {
             name
         } else {
-            Err(eyre::eyre!("Invalid Swift package repository: {}. The repository should either be a GitHub repository slug, owner/name, or the complete URL, https://github.com/owner/name.", name))?
+            Err(eyre::eyre!(
+                "Invalid Swift package repository: {}. The repository should either be a GitHub repository slug, owner/name, or the complete URL, https://github.com/owner/name.",
+                name
+            ))?
         };
         let url_str = format!("https://github.com/{}.git", shorthand);
         let url = Url::parse(&url_str)?;

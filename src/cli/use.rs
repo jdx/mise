@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use console::{style, Term};
-use eyre::{bail, eyre, Result};
+use console::{Term, style};
+use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, is_global_config, Config, SETTINGS};
+use crate::config::{Config, SETTINGS, config_file, is_global_config};
 use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };

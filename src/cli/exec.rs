@@ -4,9 +4,9 @@ use std::ffi::OsString;
 use clap::ValueHint;
 use duct::IntoExecutablePath;
 #[cfg(not(any(test, windows)))]
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 #[cfg(any(test, windows))]
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 
 use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]

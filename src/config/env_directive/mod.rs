@@ -5,7 +5,7 @@ use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::path_env::PathEnv;
 use crate::tera::{get_tera, tera_exec};
-use eyre::{eyre, Context};
+use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_json::Value;

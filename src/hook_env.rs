@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::prelude::*;
 use eyre::Result;
-use flate2::write::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
+use flate2::write::{ZlibDecoder, ZlibEncoder};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};

@@ -2,13 +2,13 @@ use std::collections::HashSet;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::ToolsetBuilder;
+use crate::toolset::outdated_info::OutdatedInfo;
 use crate::ui::table;
 use eyre::Result;
 use indexmap::IndexMap;
-use tabled::settings::location::ByColumnName;
 use tabled::settings::Remove;
+use tabled::settings::location::ByColumnName;
 
 /// Shows outdated tool versions
 ///

@@ -1,5 +1,5 @@
-use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::env::GITHUB_TOKEN;
@@ -133,12 +133,13 @@ impl Backend for UbiBackend {
             })
         })?;
 
-        let mut possible_exes = vec![tv
-            .request
-            .options()
-            .get("exe")
-            .cloned()
-            .unwrap_or(tv.ba().short.to_string())];
+        let mut possible_exes = vec![
+            tv.request
+                .options()
+                .get("exe")
+                .cloned()
+                .unwrap_or(tv.ba().short.to_string()),
+        ];
         if cfg!(windows) {
             possible_exes.push(format!("{}.exe", possible_exes[0]));
         }

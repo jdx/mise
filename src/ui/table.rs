@@ -1,13 +1,13 @@
-use crate::env::TERM_WIDTH;
 use crate::Result;
+use crate::env::TERM_WIDTH;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Row};
 use console::style;
 use itertools::Itertools;
+use tabled::Table;
 use tabled::settings::object::{Columns, Rows};
 use tabled::settings::peaker::PriorityMax;
 use tabled::settings::width::{MinWidth, Wrap};
 use tabled::settings::{Format, Margin, Modify, Padding, Remove, Settings, Style, Width};
-use tabled::Table;
 use xx::regex;
 
 type SettingPriority = Settings<Settings, Wrap<usize, PriorityMax>>;

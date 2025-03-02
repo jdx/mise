@@ -1,5 +1,5 @@
 use console::style;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;

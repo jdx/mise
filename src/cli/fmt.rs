@@ -1,5 +1,5 @@
-use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::Result;
+use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::{config, dirs, file};
 use eyre::bail;
 use taplo::formatter::Options;

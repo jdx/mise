@@ -11,7 +11,7 @@ use crate::config::Config;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
-use crate::toolset::{tool_request, ToolRequest, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
 use eyre::Result;
 #[cfg(windows)]

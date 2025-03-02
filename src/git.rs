@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use duct::Expression;
-use eyre::{eyre, Result, WrapErr};
+use eyre::{Result, WrapErr, eyre};
 use gix::{self};
 use once_cell::sync::OnceCell;
 use xx::file;
