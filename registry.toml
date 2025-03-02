@@ -221,6 +221,8 @@ bitwarden-secrets-manager.backends = [
 # bitwarden-secrets-manager.test = ["bws -V", ""] # fails on CI for some reason
 black.backends = ["aqua:psf/black"]
 black.test = ["black --version", "black, {{version}}"]
+boilerplate.backends = ["aqua:gruntwork-io/boilerplate"]
+boilerplate.test = ["boilerplate --version", "boilerplate version v{{version}}"]
 bombardier.backends = [
     "aqua:codesenberg/bombardier",
     "asdf:NeoHsu/asdf-bombardier"
@@ -535,6 +537,8 @@ docuum.backends = [
     "cargo:docuum",
     "asdf:bradym/asdf-docuum"
 ]
+doggo.backends = ["aqua:mr-karan/doggo", "ubi:mr-karan/doggo"]
+doggo.test = ["doggo --version | awk '{print $1}'", "v{{version}}"]
 dome.backends = ["asdf:mise-plugins/mise-dome"]
 doppler.backends = [
     "ubi:DopplerHQ/cli[exe=doppler]",
@@ -787,6 +791,9 @@ goconvey.backends = [
 gocryptfs.backends = ["aqua:rfjakob/gocryptfs", "ubi:rfjakob/gocryptfs"]
 gofumpt.backends = ["ubi:mvdan/gofumpt", "asdf:looztra/asdf-gofumpt"]
 gojq.backends = ["aqua:itchyny/gojq", "asdf:jimmidyson/asdf-gojq"]
+# "aqua:cloudflare/gokey" exists, but can't be used due to "unsupported aqua package type: go_install"
+gokey.backends = ["ubi:cloudflare/gokey"]
+gokey.test = ["gokey -p master -r realm -l 8", "hJ2gXSy["]
 golangci-lint.backends = [
     "aqua:golangci/golangci-lint",
     "ubi:golangci/golangci-lint",
@@ -883,8 +890,12 @@ helm-docs.backends = [
 ]
 helmfile.backends = ["ubi:helmfile/helmfile", "asdf:feniix/asdf-helmfile"]
 helmsman.backends = ["ubi:Praqma/helmsman", "asdf:luisdavim/asdf-helmsman"]
+helmwave.backends = ["aqua:helmwave/helmwave", "ubi:helmwave/helmwave"]
+helmwave.test = ["helmwave version", "{{version}}"]
 heroku.aliases = ["heroku-cli"]
 heroku.backends = ["asdf:mise-plugins/mise-heroku-cli"]
+hexyl.backends = ["aqua:sharkdp/hexyl", "ubi:sharkdp/hexyl"]
+hexyl.test = ["hexyl --version", "hexyl {{version}}"]
 hey.backends = ["asdf:mise-plugins/mise-hey"]
 hishtory.backends = [
     "ubi:ddworken/hishtory",
@@ -903,6 +914,8 @@ hledger-flow.backends = [
 hls.backends = ["asdf:mise-plugins/mise-ghcup"]
 # hls.test = ["hls --version", "haskell-language-server version {{version}}"]
 hostctl.backends = ["aqua:guumaster/hostctl", "asdf:svenluijten/asdf-hostctl"]
+htmlq.backends = ["aqua:mgdm/htmlq", "ubi:mgdm/htmlq"]
+htmlq.test = ["htmlq --version", "htmlq {{version}}"]
 httpie-go.backends = ["aqua:nojima/httpie-go", "asdf:abatilo/asdf-httpie-go"]
 httpie-go.os = ["linux", "macos"]
 httpie-go.test = ["ht --version 2>&1", "httpie-go {{version}}"]
@@ -1128,6 +1141,8 @@ kubent.backends = [
     "asdf:virtualstaticvoid/asdf-kubent"
 ]
 kubent.test = ["kubent --version 2>&1", "version {{version}}"]
+kubeone.backends = ["aqua:kubermatic/kubeone", "aqua:kubermatic/kubeone"]
+kubeone.test = ["kubeone version | jq -r '.kubeone.gitVersion'", "{{version}}"]
 kubergrunt.backends = [
     "aqua:gruntwork-io/kubergrunt",
     "asdf:NeoHsu/asdf-kubergrunt"
@@ -1321,6 +1336,8 @@ oapi-codegen.backends = [
 oc.backends = ["asdf:mise-plugins/mise-oc"]
 ocaml.backends = ["asdf:mise-plugins/mise-ocaml"]
 oci.backends = ["asdf:mise-plugins/mise-oci"]
+octosql.backends = ["ubi:cube2222/octosql"]
+octosql.text = ["octosql --version", "octosql version {{version}}"]
 odin.backends = ["ubi:odin-lang/Odin[exe=odin]", "asdf:jtakakura/asdf-odin"]
 odo.backends = ["aqua:redhat-developer/odo", "asdf:rm3l/asdf-odo"]
 okta-aws.aliases = ["okta-aws-cli"]
