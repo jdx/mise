@@ -38,8 +38,12 @@ pub struct Ls {
     current: bool,
 
     /// Only show tool versions currently specified in the global mise.toml
-    #[clap(long, short)]
+    #[clap(long, short, conflicts_with = "local")]
     global: bool,
+
+    /// Only show tool versions currently specified in the local mise.toml
+    #[clap(long, short, conflicts_with = "global")]
+    local: bool,
 
     /// Only show tool versions that are installed
     /// (Hides tools defined in mise.toml but not installed)
@@ -88,7 +92,7 @@ impl Ls {
         } else {
             self.get_runtime_list(&config)?
         };
-        if self.current || self.global {
+        if self.current || self.global || self.local {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally
             runtimes.retain(|(_, _, _, source)| !source.is_unknown());
@@ -188,6 +192,15 @@ impl Ls {
                 .iter()
                 .filter(|(.., ts)| match ts {
                     ToolSource::MiseToml(p) => config::is_global_config(p),
+                    _ => false,
+                })
+                .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))
+                .collect()
+        } else if self.local {
+            trs = trs
+                .iter()
+                .filter(|(.., ts)| match ts {
+                    ToolSource::MiseToml(p) => !config::is_global_config(p),
                     _ => false,
                 })
                 .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))

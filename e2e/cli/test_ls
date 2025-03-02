@@ -11,6 +11,8 @@ assert_contains "mise ls --prefix=3 tiny" "3.1.0"
 assert_not_contains "mise ls --prefix=2 tiny" "3.1.0"
 assert_contains "mise ls --global" "dummy"
 assert_not_contains "mise ls --global" "tiny"
+assert_contains "mise ls --local" "tiny"
+assert_not_contains "mise ls --local" "dummy"
 
 mise ls tiny --json >json
 assert "cat json | jq -r '.[0].installed'" "true"
