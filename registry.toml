@@ -1567,6 +1567,8 @@ saml2aws.backends = [
     "aqua:Versent/saml2aws",
     "asdf:elementalvoid/asdf-saml2aws"
 ]
+sampler.backends = ["aqua:sqshq/sampler", "ubi:sqshq/sampler"]
+sampler.test = ["sampler --version 2>&1", "{{version}}"]
 sbcl.backends = ["asdf:mise-plugins/mise-sbcl"]
 sbt.backends = ["asdf:mise-plugins/mise-sbt"]
 scala.backends = [
