@@ -249,6 +249,16 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    pub fn opt_args<S: AsRef<OsStr>>(mut self, arg: &str, values: Option<Vec<S>>) -> Self {
+        if let Some(values) = values {
+            for value in values {
+                self.cmd.arg(arg);
+                self.cmd.arg(value);
+            }
+        }
+        self
+    }
+
     pub fn arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
         self.cmd.arg(arg.as_ref());
         self
