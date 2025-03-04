@@ -99,7 +99,7 @@ build-job:
   stage: build
   image: mise-debian-slim # Use the image you created
   variables:
-    MISE_DATA_DIR: .mise/mise-data
+    MISE_DATA_DIR: $CI_PROJECT_DIR/.mise/mise-data
   cache:
     - key:
         prefix: mise-
