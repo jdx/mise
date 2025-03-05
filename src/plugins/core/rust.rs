@@ -238,7 +238,7 @@ fn parse_idiomatic_file(path: &Path) -> Result<RustToolchain> {
                 .iter()
                 .map(|c| c.as_str().unwrap().to_string())
                 .collect::<Vec<_>>();
-            if components.len() > 0 {
+            if !components.is_empty() {
                 rt.components = Some(components);
             }
         }
@@ -249,7 +249,7 @@ fn parse_idiomatic_file(path: &Path) -> Result<RustToolchain> {
                 .iter()
                 .map(|c| c.as_str().unwrap().to_string())
                 .collect::<Vec<_>>();
-            if targets.len() > 0 {
+            if !targets.is_empty() {
                 rt.targets = Some(targets);
             }
         }
