@@ -461,6 +461,7 @@ cmd ls help="List installed and active tool versions" {
     }
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
+    flag "-l --local" help="Only show tool versions currently specified in the local mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
     flag "-o --offline" help="Don't fetch information such as outdated versions"
     flag --outdated help="Display whether a version is outdated"

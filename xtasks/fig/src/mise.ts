@@ -1356,6 +1356,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: ["-l", "--local"],
+          description:
+            "Only show tool versions currently specified in the local mise.toml",
+          isRepeatable: false,
+        },
+        {
           name: ["-i", "--installed"],
           description:
             "Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)",
