@@ -37,6 +37,17 @@ cargo build
 The following [tool-options](/dev-tools/#tool-options) are available for the `rust` backend—these
 go in `[tools]` in `mise.toml`.
 
+### `components`
+
+The `components` option allows you to specify which components to install. Multiple components can be
+specified by separating them with a comma. The set of available components may vary with different releases and
+toolchains. Please consult the Rust documentation for the most up-to-date list of components.
+
+```toml
+[tools]
+"rust" = { version = "1.83.0", components = "rust-src,llvm-tools" }
+```
+
 ### `profile`
 
 The `profile` option allows you to specify the type of release to install. The following values
@@ -49,6 +60,16 @@ are supported:
 ```toml
 [tools]
 "rust" = { version = "1.83.0", profile = "minimal" }
+```
+
+### `targets`
+
+The `targets` option allows you to specify a list of platforms to install for cross-compilation. Multiple targets can
+be specified by separating them with a comma.
+
+```toml
+[tools]
+"rust" = { version = "1.83.0", targets = "wasm32-unknown-unknown,thumbv2-none-eabi" }
 ```
 
 ## Settings
