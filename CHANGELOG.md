@@ -1,5 +1,30 @@
 # Changelog
 
+## [2025.3.1](https://github.com/jdx/mise/compare/v2025.3.0..v2025.3.1) - 2025-03-06
+
+### 🚀 Features
+
+- **(registry)** added sampler by [@tony-sol](https://github.com/tony-sol) in [#4577](https://github.com/jdx/mise/pull/4577)
+- add support for components property in rust-toolchain.toml by [@roele](https://github.com/roele) in [#4579](https://github.com/jdx/mise/pull/4579)
+- add --local flag for ls by [@tony-sol](https://github.com/tony-sol) in [#4565](https://github.com/jdx/mise/pull/4565)
+
+### 🐛 Bug Fixes
+
+- favor aqua backend over asdf by [@dud225](https://github.com/dud225) in [#4558](https://github.com/jdx/mise/pull/4558)
+
+### 📚 Documentation
+
+- continuous-integration.md: fix gitlab caching example by [@nafg](https://github.com/nafg) in [#4576](https://github.com/jdx/mise/pull/4576)
+
+### Chore
+
+- edition 2024 by [@jdx](https://github.com/jdx) in [#4541](https://github.com/jdx/mise/pull/4541)
+
+### New Contributors
+
+- @nafg made their first contribution in [#4576](https://github.com/jdx/mise/pull/4576)
+- @dud225 made their first contribution in [#4558](https://github.com/jdx/mise/pull/4558)
+
 ## [2025.3.0](https://github.com/jdx/mise/compare/v2025.2.9..v2025.3.0) - 2025-03-01
 
 ### 🚀 Features
