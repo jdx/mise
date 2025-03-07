@@ -5,6 +5,7 @@
 ### 🚀 Features
 
 - **(registry)** added sampler by [@tony-sol](https://github.com/tony-sol) in [#4577](https://github.com/jdx/mise/pull/4577)
+- **(registry)** added lazyjournal by [@tony-sol](https://github.com/tony-sol) in [#4584](https://github.com/jdx/mise/pull/4584)
 - add support for components property in rust-toolchain.toml by [@roele](https://github.com/roele) in [#4579](https://github.com/jdx/mise/pull/4579)
 - add --local flag for ls by [@tony-sol](https://github.com/tony-sol) in [#4565](https://github.com/jdx/mise/pull/4565)
 
