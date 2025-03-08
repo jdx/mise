@@ -995,7 +995,8 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["-s", "--stdin"],
-          description: "Read config from stdin and write its formatted version into stdout",
+          description:
+            "Read config from stdin and write its formatted version into stdout",
           isRepeatable: false,
         },
       ],
