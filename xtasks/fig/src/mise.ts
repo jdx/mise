@@ -993,6 +993,11 @@ const completionSpec: Fig.Spec = {
           description: "Format all files from the current directory",
           isRepeatable: false,
         },
+        {
+          name: ["-s", "--stdin"],
+          description: "Read config from stdin and write its formatted version into stdout",
+          isRepeatable: false,
+        },
       ],
     },
     {

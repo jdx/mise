@@ -13,6 +13,10 @@ Sorts keys and cleans up whitespace in mise.toml
 
 Format all files from the current directory
 
+### `-s --stdin`
+
+Read config from `stdin` and write its formatted version into `stdout`
+
 Examples:
 
 ```
