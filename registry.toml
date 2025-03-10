@@ -476,6 +476,8 @@ crystal.backends = [
 ctlptl.backends = ["aqua:tilt-dev/ctlptl", "asdf:ezcater/asdf-ctlptl"]
 ctop.backends = ["ubi:bcicen/ctop", "asdf:NeoHsu/asdf-ctop"]
 cue.backends = ["aqua:cue-lang/cue", "asdf:asdf-community/asdf-cue"]
+curlie.test = ["curlie version", "curlie {{version}}"]
+curlie.backend = ["aqua:rs/curlie"]
 cyclonedx.backends = [
     "aqua:CycloneDX/cyclonedx-cli",
     "asdf:xeedio/asdf-cyclonedx"
