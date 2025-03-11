@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
 use crate::exit::exit;
 use crate::task::task_script_parser::{
-    TaskScriptParser, has_any_args_defined, replace_template_placeholders_with_args,
+    TaskScriptParser, has_any_args_defined,
 };
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;

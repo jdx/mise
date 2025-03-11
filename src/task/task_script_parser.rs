@@ -362,7 +362,11 @@ impl TaskScriptParser {
                     let mut arg_order = arg_order.lock().unwrap();
                     if arg_order.contains_key(&name) {
                         trace!("already seen {name}");
-                        return Ok(tera::Value::String(template_key(name, &usage_args, &usage_flags)));
+                        return Ok(tera::Value::String(template_key(
+                            name,
+                            &usage_args,
+                            &usage_flags,
+                        )));
                     }
                     arg_order.insert(name.clone(), i);
                     let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
@@ -405,7 +409,11 @@ impl TaskScriptParser {
                     };
                     arg.usage = arg.usage();
                     input_args.lock().unwrap().push(arg);
-                    Ok(tera::Value::String(template_key(name, &usage_args, &usage_flags)))
+                    Ok(tera::Value::String(template_key(
+                        name,
+                        &usage_args,
+                        &usage_flags,
+                    )))
                 }
             }
         });
@@ -498,7 +506,11 @@ impl TaskScriptParser {
                     };
                     flag.usage = flag.usage();
                     input_flags.lock().unwrap().push(flag);
-                    Ok(tera::Value::String(template_key(name, &usage_args, &usage_flags)))
+                    Ok(tera::Value::String(template_key(
+                        name,
+                        &usage_args,
+                        &usage_flags,
+                    )))
                 }
             }
         });
@@ -576,7 +588,11 @@ impl TaskScriptParser {
                     };
                     flag.usage = flag.usage();
                     input_flags.lock().unwrap().push(flag);
-                    Ok(tera::Value::String(template_key(name, &usage_args, &usage_flags)))
+                    Ok(tera::Value::String(template_key(
+                        name,
+                        &usage_args,
+                        &usage_flags,
+                    )))
                 }
             }
         });
