@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
+use crate::exit::exit;
 use crate::task::task_script_parser::{
     TaskScriptParser, has_any_args_defined, replace_template_placeholders_with_args,
 };
@@ -352,14 +353,24 @@ impl Task {
         args: &[String],
         env: &EnvMap,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(cwd, env)?;
+        let (spec, scripts) = self.parse_usage_spec(cwd.clone(), env)?;
         if has_any_args_defined(&spec) {
-            Ok(
-                replace_template_placeholders_with_args(self, &spec, &scripts, args)?
-                    .into_iter()
-                    .map(|s| (s, vec![]))
-                    .collect(),
-            )
+            let args = vec!["".to_string()]
+                .into_iter()
+                .chain(args.iter().cloned())
+                .collect::<Vec<_>>();
+            let m = match usage::parse(&spec, &args) {
+                Ok(m) => m,
+                Err(e) => {
+                    // just print exactly what usage returns so the error output isn't double-wrapped
+                    // this could be displaying help or a parse error
+                    eprintln!("{}", format!("{e}").trim_end());
+                    exit(1);
+                }
+            };
+            let (scripts, _) =
+                TaskScriptParser::new(cwd).parse_run_scripts_with_args(self, self.run(), env, m)?;
+            Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
             Ok(scripts
                 .iter()
