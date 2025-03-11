@@ -1192,7 +1192,7 @@ lazygit.backends = [
     "asdf:nklmilojevic/asdf-lazygit"
 ]
 lazyjournal.backends = ["aqua:Lifailon/lazyjournal", "ubi:Lifailon/lazyjournal"]
-lazyjournal.test = ["lazyjournal --version", "Version: {{version}}"]
+lazyjournal.test = ["lazyjournal --version", "{{version}}"]
 lean.backends = ["asdf:mise-plugins/mise-lean"]
 lefthook.backends = [
     "aqua:evilmartians/lefthook",
