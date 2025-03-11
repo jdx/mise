@@ -14,6 +14,8 @@ pub struct Venv {
     pub env: HashMap<String, String>,
 }
 
+// use a mutex to prevent deadlocks that may occur due to recursive initialization
+// when resolving the venv path or env vars
 pub static UV_VENV: Lazy<Mutex<Option<Venv>>> = Lazy::new(|| {
     if !SETTINGS.python.uv_venv_auto {
         return Mutex::new(None);
