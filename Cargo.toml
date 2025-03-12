@@ -79,7 +79,6 @@ fslock = "0.2.1"
 glob = "0.3"
 globset = "0.4"
 heck = "0.5"
-humantime = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
@@ -151,6 +150,7 @@ xz2 = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 zstd = "0.13"
 gix = { version = "<1", features = ["worktree-mutation"] }
+jiff = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
