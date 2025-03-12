@@ -11,7 +11,7 @@ type EnvMap = IndexMap<String, String>;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Env<V> {
-    #[serde(default)]
+    #[serde(default = "IndexMap::new")]
     sops: IndexMap<String, V>,
     #[serde(flatten)]
     env: IndexMap<String, V>,
@@ -40,7 +40,7 @@ impl EnvResults {
             *env = match ext.as_str() {
                 "json" => Self::json(&p, parse_template)?,
                 "yaml" => Self::yaml(&p, parse_template)?,
-                "toml" => unimplemented!("toml"),
+                "toml" => Self::toml(&p)?,
                 _ => Self::dotenv(&p)?,
             };
         }
@@ -98,6 +98,31 @@ impl EnvResults {
                             serde_yaml::Value::Number(n) => n.to_string(),
                             serde_yaml::Value::Bool(b) => b.to_string(),
                             _ => bail!("unsupported yaml value: {v:?}"),
+                        },
+                    ))
+                })
+                .collect()
+        } else {
+            Ok(EnvMap::new())
+        }
+    }
+
+    fn toml(p: &Path) -> Result<EnvMap> {
+        let errfn = || eyre!("failed to parse toml file: {}", display_path(p));
+        // sops does not support toml yet, so no need to parse sops
+        if let Ok(raw) = file::read_to_string(p) {
+            toml::from_str::<Env<toml::Value>>(&raw)
+                .wrap_err_with(errfn)?
+                .env
+                .into_iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k,
+                        match v {
+                            toml::Value::String(s) => s,
+                            toml::Value::Integer(n) => n.to_string(),
+                            toml::Value::Boolean(b) => b.to_string(),
+                            _ => bail!("unsupported toml value: {v:?}"),
                         },
                     ))
                 })
