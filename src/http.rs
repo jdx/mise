@@ -20,7 +20,7 @@ pub static HTTP_VERSION_CHECK: Lazy<Client> =
     Lazy::new(|| Client::new(Duration::from_secs(3)).unwrap());
 
 pub static HTTP: Lazy<Client> =
-    Lazy::new(|| Client::new(SETTINGS.fetch_remote_versions_timeout()).unwrap());
+    Lazy::new(|| Client::new(SETTINGS.http_timeout()).unwrap());
 
 pub static HTTP_FETCH: Lazy<Client> =
     Lazy::new(|| Client::new(SETTINGS.fetch_remote_versions_timeout()).unwrap());
