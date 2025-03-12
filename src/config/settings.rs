@@ -1,5 +1,6 @@
 use crate::cli::Cli;
 use crate::config::ALL_TOML_CONFIG_FILES;
+use crate::duration;
 use crate::file::FindUp;
 use crate::{dirs, env, file};
 #[allow(unused_imports)]
@@ -364,14 +365,12 @@ impl Settings {
     }
 
     pub fn cache_prune_age_duration(&self) -> Option<Duration> {
-        if self.cache_prune_age == "0" {
-            return None;
-        }
-        Some(humantime::parse_duration(&self.cache_prune_age).unwrap())
+        let age = duration::parse_duration(&self.cache_prune_age).unwrap();
+        if age.as_secs() == 0 { None } else { Some(age) }
     }
 
     pub fn fetch_remote_versions_timeout(&self) -> Duration {
-        humantime::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
+        duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
     }
 
     /// duration that remote version cache is kept for
@@ -383,8 +382,12 @@ impl Settings {
         if *env::PREFER_STALE {
             None
         } else {
-            Some(humantime::parse_duration(&self.fetch_remote_versions_cache).unwrap())
+            Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())
         }
+    }
+
+    pub fn http_timeout(&self) -> Duration {
+        duration::parse_duration(&self.http_timeout).unwrap()
     }
 
     pub fn log_level(&self) -> log::LevelFilter {

@@ -867,6 +867,11 @@ hadolint.backends = [
     "asdf:devlincashman/asdf-hadolint"
 ]
 hamler.backends = ["asdf:mise-plugins/mise-hamler"]
+harper-cli.backends = ["aqua:Automattic/harper/harper-cli"]
+# harper-cli intentionally prints different version. See https://github.com/Automattic/harper/issues/557#issuecomment-2635037944
+# harper-cli.test = ["harper-cli --version", "harper-cli {{version}}"]
+harper-ls.backends = ["aqua:Automattic/harper/harper-ls"]
+harper-ls.test = ["harper-ls --version", "harper-ls {{version}}"]
 has.backends = ["aqua:kdabir/has", "asdf:sylvainmetayer/asdf-has"]
 has.os = ["linux", "macos"]
 has.test = ["has --version", "v{{version}}"]
@@ -1194,7 +1199,7 @@ lazygit.backends = [
     "asdf:nklmilojevic/asdf-lazygit"
 ]
 lazyjournal.backends = ["aqua:Lifailon/lazyjournal", "ubi:Lifailon/lazyjournal"]
-lazyjournal.test = ["lazyjournal --version", "Version: {{version}}"]
+lazyjournal.test = ["lazyjournal --version", "{{version}}"]
 lean.backends = ["asdf:mise-plugins/mise-lean"]
 lefthook.backends = [
     "aqua:evilmartians/lefthook",

@@ -345,11 +345,14 @@ impl Run {
                 });
             };
             let rx = tasks.lock().unwrap().subscribe();
-            while !self.is_stopping() && !tasks.lock().unwrap().is_empty() {
+            while !self.is_stopping() {
                 select! {
                     recv(rx) -> task => { // receive a task from Deps
                         if let Some(task) = task.unwrap() {
                             run(&task);
+                        }else {
+                            // we get the None value which means the channel closes
+                            break;
                         }
                     }
                     recv(rx_err) -> task => { // a task errored
