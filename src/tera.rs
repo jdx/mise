@@ -314,11 +314,12 @@ pub fn tera_exec(
             _ => return Err("exec cache_key must be a string".into()),
         };
         let cache_duration = match args.get("cache_duration") {
-            Some(Value::String(duration)) => match duration::parse_duration(&duration.to_string())
-            {
-                Ok(duration) => Some(duration),
-                Err(e) => return Err(format!("exec cache_duration: {}", e).into()),
-            },
+            Some(Value::String(duration)) => {
+                match duration::parse_duration(&duration.to_string()) {
+                    Ok(duration) => Some(duration),
+                    Err(e) => return Err(format!("exec cache_duration: {}", e).into()),
+                }
+            }
             None => None,
             _ => return Err("exec cache_duration must be an integer".into()),
         };
