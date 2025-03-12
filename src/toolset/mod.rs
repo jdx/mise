@@ -519,7 +519,7 @@ impl Toolset {
             env.insert(PATH_KEY.to_string(), add_paths);
         }
         env.extend(config.env()?.clone());
-        if let Some(venv) = &*UV_VENV {
+        if let Ok(Some(venv)) = UV_VENV.try_lock().as_deref() {
             for (k, v) in &venv.env {
                 env.insert(k.clone(), v.clone());
             }
@@ -573,7 +573,7 @@ impl Toolset {
         for p in config.path_dirs()?.clone() {
             paths.insert(p);
         }
-        if let Some(venv) = &*UV_VENV {
+        if let Ok(Some(venv)) = UV_VENV.try_lock().as_deref() {
             paths.insert(venv.venv_path.clone());
         }
         if let Some(path) = self.env(config)?.get(&*PATH_KEY) {
