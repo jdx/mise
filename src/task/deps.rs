@@ -98,9 +98,10 @@ impl Deps {
                 trace!("Error closing task stream: {e:?}");
             }
         } else if leaves_is_empty && self.sent.len() == self.removed.len() {
-            panic!("Infinitive loop detected, all tasks are finished but the graph isn't empty {0} {1:#?}",
-                   self.all().map(|t| t.name.clone()).join(", "),
-                   self.graph
+            panic!(
+                "Infinitive loop detected, all tasks are finished but the graph isn't empty {0} {1:#?}",
+                self.all().map(|t| t.name.clone()).join(", "),
+                self.graph
             )
         }
     }
