@@ -80,8 +80,7 @@ jobs:
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
       - if: matrix.runs-on != 'ubuntu-latest'
-        # TODO: remove rustup update once 1.85.0 is released to images
-        run: rustup update && rustup target add ${{matrix.target}}
+        run: rustup target add ${{matrix.target}}
       - if: matrix.runs-on == 'ubuntu-latest'
         uses: taiki-e/install-action@cross
       - name: build-tarball
@@ -116,8 +115,7 @@ jobs:
             target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
-      # TODO: remove rustup update once 1.85.0 is released to images
-      - run: rustup update && rustup target add ${{matrix.target}}
+      - run: rustup target add ${{matrix.target}}
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{matrix.arch}}
