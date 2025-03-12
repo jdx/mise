@@ -72,7 +72,6 @@ feature-depth = 1
 ignore = [
   { id = "RUSTSEC-2024-0370", reason = "subdependency cannot be updated" },
   { id = "RUSTSEC-2024-0436", reason = "subdependency cannot be updated" },
-  { id = "RUSTSEC-2025-0014", reason = "humantime is unmaintained" },
   #"RUSTSEC-0000-0000",
   #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
   #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish

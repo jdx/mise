@@ -13,7 +13,7 @@ use versions::{Requirement, Versioning};
 use crate::cache::CacheManagerBuilder;
 use crate::cmd::cmd;
 use crate::env_diff::EnvMap;
-use crate::{dirs, env, hash};
+use crate::{dirs, duration, env, hash};
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
@@ -314,7 +314,7 @@ pub fn tera_exec(
             _ => return Err("exec cache_key must be a string".into()),
         };
         let cache_duration = match args.get("cache_duration") {
-            Some(Value::String(duration)) => match humantime::parse_duration(&duration.to_string())
+            Some(Value::String(duration)) => match duration::parse_duration(&duration.to_string())
             {
                 Ok(duration) => Some(duration),
                 Err(e) => return Err(format!("exec cache_duration: {}", e).into()),

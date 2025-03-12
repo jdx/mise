@@ -19,16 +19,11 @@ use crate::{env, file};
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
     Lazy::new(|| Client::new(Duration::from_secs(3)).unwrap());
 
-pub static HTTP: Lazy<Client> = Lazy::new(|| {
-    let duration = humantime::parse_duration(&SETTINGS.http_timeout)
-        .unwrap_or_else(|_| Duration::from_secs(SETTINGS.http_timeout.parse().unwrap()));
-    Client::new(duration).unwrap()
-});
+pub static HTTP: Lazy<Client> =
+    Lazy::new(|| Client::new(SETTINGS.fetch_remote_versions_timeout()).unwrap());
 
-pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
-    Client::new(humantime::parse_duration(&SETTINGS.fetch_remote_versions_timeout).unwrap())
-        .unwrap()
-});
+pub static HTTP_FETCH: Lazy<Client> =
+    Lazy::new(|| Client::new(SETTINGS.fetch_remote_versions_timeout()).unwrap());
 
 #[derive(Debug)]
 pub struct Client {

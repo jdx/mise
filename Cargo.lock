@@ -1747,7 +1747,7 @@ dependencies = [
  "gix-date",
  "gix-object",
  "gix-worktree-stream",
- "jiff",
+ "jiff 0.1.29",
  "thiserror 2.0.12",
 ]
 
@@ -1871,7 +1871,7 @@ checksum = "c57c477b645ee248b173bb1176b52dd528872f12c50375801a58aaf5ae91113f"
 dependencies = [
  "bstr",
  "itoa",
- "jiff",
+ "jiff 0.1.29",
  "thiserror 2.0.12",
 ]
 
@@ -2747,12 +2747,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "humantime"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
-
-[[package]]
 name = "hyper"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3280,6 +3274,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "jiff"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d699bc6dfc879fb1bf9bdff0d4c56f0884fc6f0d0eb0fba397a6d00cd9a6b85e"
+dependencies = [
+ "jiff-static",
+ "jiff-tzdb-platform",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "jiff-static"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d16e75759ee0aa64c57a56acbf43916987b20c77373cb7e808979e02b93c9f9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.99",
+]
+
+[[package]]
 name = "jiff-tzdb"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3672,13 +3692,13 @@ dependencies = [
  "globset",
  "heck 0.5.0",
  "homedir",
- "humantime",
  "indenter",
  "indexmap 2.7.1",
  "indicatif",
  "indoc",
  "insta",
  "itertools 0.14.0",
+ "jiff 0.2.4",
  "junction",
  "log",
  "md-5",
