@@ -259,7 +259,7 @@ pub fn touch_dir(dir: &Path) -> Result<()> {
 pub fn modified_duration(path: &Path) -> Result<Duration> {
     let metadata = path.metadata()?;
     let modified = metadata.modified()?;
-    let duration = modified.elapsed()?;
+    let duration = modified.elapsed().unwrap_or_default();
     Ok(duration)
 }
 
