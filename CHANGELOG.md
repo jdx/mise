@@ -1,5 +1,52 @@
 # Changelog
 
+## [2025.3.3](https://github.com/jdx/mise/compare/v2025.3.2..v2025.3.3) - 2025-03-14
+
+### 🚀 Features
+
+- **(env)** support env files in toml by [@risu729](https://github.com/risu729) in [#4618](https://github.com/jdx/mise/pull/4618)
+- **(registry)** add harper-ls and harper-cli by [@kit494way](https://github.com/kit494way) in [#4615](https://github.com/jdx/mise/pull/4615)
+- **(registry)** add curlie by [@reitzig](https://github.com/reitzig) in [#4599](https://github.com/jdx/mise/pull/4599)
+- cleanup the mutex use. by [@boris-smidt-klarrio](https://github.com/boris-smidt-klarrio) in [#4540](https://github.com/jdx/mise/pull/4540)
+- Add flag to fmt command to read from stdin by [@erickgnavar](https://github.com/erickgnavar) in [#4594](https://github.com/jdx/mise/pull/4594)
+
+### 🐛 Bug Fixes
+
+- **(uv)** avoid deadlocks while initializing UV_VENV by [@risu729](https://github.com/risu729) in [#4609](https://github.com/jdx/mise/pull/4609)
+- handle error when getting modified duration in file::modified_duration by [@roele](https://github.com/roele) in [#4624](https://github.com/jdx/mise/pull/4624)
+- SwiftPM backend not working with the Swift 6 toolchain by [@pepicrft](https://github.com/pepicrft) in [#4632](https://github.com/jdx/mise/pull/4632)
+- quiet in file task not working by [@roele](https://github.com/roele) in [#4588](https://github.com/jdx/mise/pull/4588)
+- Unable to find uv when first creating py venv by [@NavyD](https://github.com/NavyD) in [#4591](https://github.com/jdx/mise/pull/4591)
+
+### 🚜 Refactor
+
+- migrate humantime to jiff by [@risu729](https://github.com/risu729) in [#4616](https://github.com/jdx/mise/pull/4616)
+- use method to get the default inline shell instead of accessing the fields by [@risu729](https://github.com/risu729) in [#4621](https://github.com/jdx/mise/pull/4621)
+
+### 📚 Documentation
+
+- **(settings)** clarify the usage of disable_default_registry by [@gbloquel](https://github.com/gbloquel) in [#4589](https://github.com/jdx/mise/pull/4589)
+
+### ⚡ Performance
+
+- speed up self-update by calling /releases/latest api instead of /releases by [@vemoo](https://github.com/vemoo) in [#4619](https://github.com/jdx/mise/pull/4619)
+
+### 🧪 Testing
+
+- **(registry)** fix test of lazyjournal by [@risu729](https://github.com/risu729) in [#4610](https://github.com/jdx/mise/pull/4610)
+
+### Chore
+
+- deny fixes by [@jdx](https://github.com/jdx) in [17d7c6e](https://github.com/jdx/mise/commit/17d7c6ee5e035272a8dc1b93c8fc7ac9cffb7f80)
+- ignore humantime unmaintained advisory by [@risu729](https://github.com/risu729) in [#4612](https://github.com/jdx/mise/pull/4612)
+- remove rustup update in github actions by [@risu729](https://github.com/risu729) in [#4617](https://github.com/jdx/mise/pull/4617)
+
+### New Contributors
+
+- @erickgnavar made their first contribution in [#4594](https://github.com/jdx/mise/pull/4594)
+- @vemoo made their first contribution in [#4619](https://github.com/jdx/mise/pull/4619)
+- @gbloquel made their first contribution in [#4589](https://github.com/jdx/mise/pull/4589)
+
 ## [2025.3.1](https://github.com/jdx/mise/compare/v2025.3.0..v2025.3.1) - 2025-03-06
 
 ### 🚀 Features
