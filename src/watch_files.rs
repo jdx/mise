@@ -56,10 +56,7 @@ fn execute(ts: &Toolset, root: &Path, run: &str, files: Vec<&PathBuf>) -> Result
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))
         .join(":");
-    #[cfg(unix)]
-    let shell = shell_words::split(&SETTINGS.unix_default_inline_shell_args)?;
-    #[cfg(windows)]
-    let shell = shell_words::split(&SETTINGS.windows_default_inline_shell_args)?;
+    let shell = SETTINGS.default_inline_shell()?;
 
     let args = shell
         .iter()
