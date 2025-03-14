@@ -69,8 +69,8 @@ impl EnvResults {
                     p = display_path(&venv)
                 );
             } else {
-                let has_uv_bin = ts.which("uv").is_some() || which_non_pristine("uv").is_some();
-                let use_uv = !SETTINGS.python.venv_stdlib && has_uv_bin;
+                let uv_bin = ts.which_bin("uv").or_else(|| which_non_pristine("uv"));
+                let use_uv = !SETTINGS.python.venv_stdlib && uv_bin.is_some();
                 let cmd = if use_uv {
                     info!("creating venv with uv at: {}", display_path(&venv));
                     let extra = SETTINGS
@@ -79,7 +79,8 @@ impl EnvResults {
                         .clone()
                         .or(uv_create_args)
                         .unwrap_or_default();
-                    let mut cmd = CmdLineRunner::new("uv").args(["venv", &venv.to_string_lossy()]);
+                    let mut cmd =
+                        CmdLineRunner::new(uv_bin.unwrap()).args(["venv", &venv.to_string_lossy()]);
 
                     cmd = match (python_path, python) {
                         // The selected mise managed python tool path from env._.python.venv.python or first in list
