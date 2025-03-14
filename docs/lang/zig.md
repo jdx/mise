@@ -28,6 +28,8 @@ You can install it with `mise`:
 
 ```sh
 mise use -g zls@0.13
+mise use -g zig@ref:zig # install zls with current $(zig version)
 ```
 
 Note that a tagged release of `Zig` should be used with the same tagged release of `ZLS`.
+`ref:zig` uses [official runtime](https://zigtools.org/zls/install)
