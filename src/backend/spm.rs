@@ -353,9 +353,9 @@ impl PackageDescriptionProductType {
                         "type" => {
                             let value: String = map.next_value()?;
                             if value == "executable" {
-                                return Ok(PackageDescriptionProductType::Executable);
+                                Ok(PackageDescriptionProductType::Executable)
                             } else {
-                                return Ok(PackageDescriptionProductType::Other);
+                                Ok(PackageDescriptionProductType::Other)
                             }
                         }
                         "executable" => {
