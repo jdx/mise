@@ -1655,6 +1655,7 @@ solidity.backends = [
     "ubi:ethereum/solidity[exe=solc]",
     "asdf:diegodorado/asdf-solidity"
 ]
+sonarscanner.backends = ["asdf:virtualstaticvoid/asdf-sonarscanner"]
 sonobuoy.backends = [
     "ubi:vmware-tanzu/sonobuoy",
     "asdf:Nick-Triller/asdf-sonobuoy"
