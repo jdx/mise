@@ -171,7 +171,7 @@ impl Task {
         let p = TomlParser::new(&info);
         // trace!("task info: {:#?}", info);
 
-        task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
+        task.description = p.parse_str("description").unwrap_or_default();
         task.aliases = p
             .parse_array("alias")
             .or(p.parse_array("aliases"))
@@ -179,16 +179,19 @@ impl Task {
             .or(p.parse_str("aliases").map(|s| vec![s]))
             .unwrap_or_default();
         task.confirm = p.parse_str("confirm");
-        task.description = p.parse_str("description").unwrap_or_default();
-        task.sources = p.parse_array("sources").unwrap_or_default();
-        task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
         task.depends = p.parse_array("depends").unwrap_or_default();
         task.depends_post = p.parse_array("depends_post").unwrap_or_default();
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
-        task.dir = p.parse_str("dir");
         task.env = p.parse_env("env")?.unwrap_or_default();
+        task.dir = p.parse_str("dir");
+        task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
+        task.raw = p.parse_bool("raw").unwrap_or_default();
+        task.sources = p.parse_array("sources").unwrap_or_default();
+        task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
+        task.quiet = p.parse_bool("quiet").unwrap_or_default();
+        task.silent = p.parse_bool("silent").unwrap_or_default();
         task.tools = p
             .parse_table("tools")
             .map(|t| t.into_iter().map(|(k, v)| (k, v.to_string())).collect())

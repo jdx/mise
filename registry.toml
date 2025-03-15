@@ -476,6 +476,8 @@ crystal.backends = [
 ctlptl.backends = ["aqua:tilt-dev/ctlptl", "asdf:ezcater/asdf-ctlptl"]
 ctop.backends = ["ubi:bcicen/ctop", "asdf:NeoHsu/asdf-ctop"]
 cue.backends = ["aqua:cue-lang/cue", "asdf:asdf-community/asdf-cue"]
+curlie.test = ["curlie version", "curlie {{version}}"]
+curlie.backends = ["aqua:rs/curlie"]
 cyclonedx.backends = [
     "aqua:CycloneDX/cyclonedx-cli",
     "asdf:xeedio/asdf-cyclonedx"
@@ -865,6 +867,11 @@ hadolint.backends = [
     "asdf:devlincashman/asdf-hadolint"
 ]
 hamler.backends = ["asdf:mise-plugins/mise-hamler"]
+harper-cli.backends = ["aqua:Automattic/harper/harper-cli"]
+# harper-cli intentionally prints different version. See https://github.com/Automattic/harper/issues/557#issuecomment-2635037944
+# harper-cli.test = ["harper-cli --version", "harper-cli {{version}}"]
+harper-ls.backends = ["aqua:Automattic/harper/harper-ls"]
+harper-ls.test = ["harper-ls --version", "harper-ls {{version}}"]
 has.backends = ["aqua:kdabir/has", "asdf:sylvainmetayer/asdf-has"]
 has.os = ["linux", "macos"]
 has.test = ["has --version", "v{{version}}"]

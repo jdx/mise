@@ -291,6 +291,17 @@ impl PackageDescriptionProductType {
         matches!(self, Self::Executable)
     }
 
+    /// Swift determines the toolchain to use with a given package using a comment in the Package.swift file at the top.
+    /// For example:
+    ///   // swift-tools-version: 6.0
+    ///
+    /// The version of the toolchain can be older than the Swift version used to build the package. This versioning gives
+    /// Apple the flexibility to introduce and flag breaking changes in the toolchain.
+    ///
+    /// How to determine the product type is something that might change across different versions of Swift.
+    ///
+    /// ## Swift 5.x
+    ///
     /// Product type is a key in the map with an undocumented value that we are not interested in and can be easily skipped.
     ///
     /// Example:
@@ -307,6 +318,17 @@ impl PackageDescriptionProductType {
     ///     ]
     /// }
     /// ```
+    ///
+    /// ## Swift 6.x
+    ///
+    /// The product type is directly the value under the key "type"
+    ///
+    /// Example:
+    ///
+    /// ```json
+    /// "type": "executable"
+    /// ```
+    ///
     fn deserialize_product_type_field<'de, D>(
         deserializer: D,
     ) -> Result<PackageDescriptionProductType, D::Error>
@@ -328,6 +350,14 @@ impl PackageDescriptionProductType {
             {
                 if let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
+                        "type" => {
+                            let value: String = map.next_value()?;
+                            if value == "executable" {
+                                Ok(PackageDescriptionProductType::Executable)
+                            } else {
+                                Ok(PackageDescriptionProductType::Other)
+                            }
+                        }
                         "executable" => {
                             // Skip the value by reading it into a dummy serde_json::Value
                             let _value: serde_json::Value = map.next_value()?;

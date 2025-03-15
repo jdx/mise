@@ -1,8 +1,7 @@
 use color_eyre::Result;
 use color_eyre::eyre::bail;
 use console::style;
-use self_update::backends::github::{ReleaseList, Update};
-use self_update::update::Release;
+use self_update::backends::github::Update;
 use self_update::{Status, cargo_crate_version};
 
 use crate::cli::version::{ARCH, OS};
@@ -55,36 +54,32 @@ impl SelfUpdate {
         Ok(())
     }
 
-    fn fetch_releases(&self) -> Result<Vec<Release>> {
-        let mut releases = ReleaseList::configure();
-        if let Some(token) = &*env::GITHUB_TOKEN {
-            releases.auth_token(token);
-        }
-        let releases = releases
-            .repo_owner("jdx")
-            .repo_name("mise")
-            .build()?
-            .fetch()?;
-        Ok(releases)
-    }
-
-    fn latest_version(&self) -> Result<String> {
-        let releases = self.fetch_releases()?;
-        Ok(releases[0].version.clone())
-    }
-
     fn do_update(&self) -> Result<Status> {
-        let settings = Settings::try_get();
-        let v = self
-            .version
-            .clone()
-            .map_or_else(|| self.latest_version(), Ok)
-            .map(|v| format!("v{}", v))?;
-        let target = format!("{}-{}", *OS, *ARCH);
         let mut update = Update::configure();
         if let Some(token) = &*env::GITHUB_TOKEN {
             update.auth_token(token);
         }
+        #[cfg(windows)]
+        let bin_path_in_archive = "mise/bin/mise.exe";
+        #[cfg(not(windows))]
+        let bin_path_in_archive = "mise/bin/mise";
+        update
+            .repo_owner("jdx")
+            .repo_name("mise")
+            .bin_name("mise")
+            .current_version(cargo_crate_version!())
+            .bin_path_in_archive(bin_path_in_archive);
+
+        let settings = Settings::try_get();
+        let v = self
+            .version
+            .clone()
+            .map_or_else(
+                || -> Result<String> { Ok(update.build()?.get_latest_release()?.version) },
+                Ok,
+            )
+            .map(|v| format!("v{}", v))?;
+        let target = format!("{}-{}", *OS, *ARCH);
         if self.force || self.version.is_some() {
             update.target_version_tag(&v);
         }
@@ -92,19 +87,9 @@ impl SelfUpdate {
         let target = format!("mise-{v}-{target}.zip");
         #[cfg(not(windows))]
         let target = format!("mise-{v}-{target}.tar.gz");
-        #[cfg(windows)]
-        let bin_path_in_archive = "mise/bin/mise.exe";
-        #[cfg(not(windows))]
-        let bin_path_in_archive = "mise/bin/mise";
         let status = update
-            .repo_owner("jdx")
-            .repo_name("mise")
-            .bin_name("mise")
             .verifying_keys([*include_bytes!("../../zipsign.pub")])
             .show_download_progress(true)
-            .current_version(cargo_crate_version!())
-            .target(&target)
-            .bin_path_in_archive(bin_path_in_archive)
             .target(&target)
             .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
             .build()?
