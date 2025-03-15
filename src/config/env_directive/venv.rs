@@ -6,6 +6,7 @@ use crate::config::env_directive::EnvResults;
 use crate::config::{Config, SETTINGS};
 use crate::env_diff::EnvMap;
 use crate::file::{display_path, which_non_pristine};
+use crate::lock_file::LockFile;
 use crate::toolset::ToolsetBuilder;
 use crate::{backend, plugins};
 use indexmap::IndexMap;
@@ -32,6 +33,7 @@ impl EnvResults {
         trust_check(source)?;
         let venv = r.parse_template(ctx, tera, source, &path)?;
         let venv = normalize_path(config_root, venv.into());
+        let venv_lock = LockFile::new(&venv).lock()?;
         if !venv.exists() && create {
             // TODO: the toolset stuff doesn't feel like it's in the right place here
             // TODO: in fact this should probably be moved to execute at the same time as src/uv.rs runs in ts.env() instead of config.env()
@@ -117,6 +119,7 @@ impl EnvResults {
                 cmd.execute()?;
             }
         }
+        drop(venv_lock);
         if venv.exists() {
             r.env_paths
                 .insert(0, venv.join(if cfg!(windows) { "Scripts" } else { "bin" }));
