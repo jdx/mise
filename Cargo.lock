@@ -258,9 +258,9 @@ dependencies = [
 
 [[package]]
 name = "async-compression"
-version = "0.4.20"
+version = "0.4.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "310c9bcae737a48ef5cdee3174184e6d548b292739ede61a1f955ef76a738861"
+checksum = "c0cf008e5e1a9e9e22a7d3c9a4992e21a350290069e36d8fb72304ed17e8f2d2"
 dependencies = [
  "flate2",
  "futures-core",
@@ -273,9 +273,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.87"
+version = "0.1.88"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d556ec1359574147ec0c4fc5eb525f3f23263a592b1a9c07e0a75b427de55c97"
+checksum = "e539d3fca749fcee5236ab05e93a52867dd549cc157c8cb7f99595f3cedffdb5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1032,9 +1032,9 @@ checksum = "da692b8d1080ea3045efaab14434d40468c3d8657e42abddfffca87b428f4c1b"
 
 [[package]]
 name = "demand"
-version = "1.6.4"
+version = "1.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5eac30167a2a17ad84c28a228aaeca8bc86f1cc137ef660bb4d1bc5ea943eced"
+checksum = "7abeb34924c8d59be6428a07f63a0bf5f9d5c15ccb6fd9ef4f4e8cd7f422abfe"
 dependencies = [
  "console",
  "fuzzy-matcher",
@@ -3657,7 +3657,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.3.3"
+version = "2025.3.4"
 dependencies = [
  "base64 0.22.1",
  "built",
