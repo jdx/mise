@@ -1933,6 +1933,7 @@ yamlfmt.backends = ["aqua:google/yamlfmt", "asdf:mise-plugins/asdf-yamlfmt"]
 yamllint.backends = ["pipx:yamllint", "asdf:ericcornelissen/asdf-yamllint"]
 yamlscript.backends = ["asdf:mise-plugins/mise-yamlscript"]
 yarn.backends = ["asdf:mise-plugins/mise-yarn"]
+yasm.backends = ["asdf:kkHAIKE/asdf-yasm"]
 yay.backends = ["asdf:mise-plugins/mise-yay"]
 yazi.backends = ["aqua:sxyazi/yazi"]
 yazi.test = [
