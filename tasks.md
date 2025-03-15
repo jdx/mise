@@ -29,6 +29,12 @@
 
 - **Usage**: `docs:build`
 
+## `docs:demos`
+
+- **Usage**: `docs:demos`
+
+Create recordings with vhs
+
 ## `docs:preview`
 
 - Depends: docs:build
