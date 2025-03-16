@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::iter::once;
 use std::path::{Path, PathBuf};
 
 use heck::{
@@ -12,6 +13,7 @@ use versions::{Requirement, Versioning};
 
 use crate::cache::CacheManagerBuilder;
 use crate::cmd::cmd;
+use crate::config::SETTINGS;
 use crate::env_diff::EnvMap;
 use crate::{dirs, duration, env, hash};
 
@@ -325,7 +327,16 @@ pub fn tera_exec(
         };
         match args.get("command") {
             Some(Value::String(command)) => {
-                let mut cmd = cmd("bash", ["-c", command]).full_env(&env);
+                let shell = SETTINGS
+                    .default_inline_shell()
+                    .map_err(|e| tera::Error::msg(e.to_string()))?;
+                let args = shell
+                    .iter()
+                    .skip(1)
+                    .map(|s| s)
+                    .chain(once(command))
+                    .collect::<Vec<&String>>();
+                let mut cmd: duct::Expression = cmd(&shell[0], args).full_env(&env);
                 if let Some(dir) = &dir {
                     cmd = cmd.dir(dir);
                 }
