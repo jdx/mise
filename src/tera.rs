@@ -333,7 +333,6 @@ pub fn tera_exec(
                 let args = shell
                     .iter()
                     .skip(1)
-                    .map(|s| s)
                     .chain(once(command))
                     .collect::<Vec<&String>>();
                 let mut cmd: duct::Expression = cmd(&shell[0], args).full_env(&env);
