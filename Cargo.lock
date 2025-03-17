@@ -697,7 +697,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1352,7 +1352,7 @@ dependencies = [
  "pest",
  "pest_derive",
  "regex",
- "strum",
+ "strum 0.26.3",
  "thiserror 2.0.12",
 ]
 
@@ -3755,7 +3755,7 @@ dependencies = [
  "shell-words",
  "signal-hook",
  "siphasher",
- "strum",
+ "strum 0.26.3",
  "sys-info",
  "tabled",
  "taplo",
@@ -4821,7 +4821,7 @@ dependencies = [
  "serde_with",
  "serde_yaml",
  "sha2",
- "strum",
+ "strum 0.26.3",
  "thiserror 1.0.69",
  "walkdir",
  "zeroize",
@@ -5508,7 +5508,16 @@ version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.26.4",
+]
+
+[[package]]
+name = "strum"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f64def088c51c9510a8579e3c5d67c65349dcf755e5479ad3d010aa6454e2c32"
+dependencies = [
+ "strum_macros 0.27.1",
 ]
 
 [[package]]
@@ -5516,6 +5525,19 @@ name = "strum_macros"
 version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.100",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c77a8c5abcaf0f9ce05d62342b7d298c346515365c36b673df4ebe3ced01fde8"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -6079,9 +6101,9 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "ubi"
-version = "0.4.2"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a08a0a4c8f895fee1e4533aa2817b029b8b3909e93c5a536db6156738326ea6d"
+checksum = "6935e5064a326520a375603b9cddc9058796e39a041bf50e9e1eaa23da785adc"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6098,7 +6120,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "strum",
+ "strum 0.27.1",
  "tempfile",
  "thiserror 2.0.12",
  "url",
@@ -6287,7 +6309,7 @@ dependencies = [
  "regex",
  "serde",
  "shell-words",
- "strum",
+ "strum 0.26.3",
  "tera",
  "thiserror 2.0.12",
  "versions",
@@ -6558,7 +6580,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

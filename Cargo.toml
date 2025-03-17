@@ -137,7 +137,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["io-std", "rt", "time"] }
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
-ubi = { version = "0.4", default-features = false }
+ubi = { version = "0.6.1", default-features = false }
 url = "2"
 usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }

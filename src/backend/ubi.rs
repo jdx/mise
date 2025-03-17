@@ -96,7 +96,7 @@ impl Backend for UbiBackend {
             let mut builder = UbiBuilder::new().project(&name).install_dir(&bin_dir);
 
             if let Some(token) = &*GITHUB_TOKEN {
-                builder = builder.github_token(token);
+                builder = builder.token(token);
             }
 
             if v != "latest" {
