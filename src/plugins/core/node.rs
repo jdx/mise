@@ -200,7 +200,13 @@ impl NodePlugin {
         }
         let sig_file = shasums_file.with_extension("asc");
         let sig_url = format!("{}.sig", self.shasums_url(v)?);
-        HTTP.download_file(sig_url, &sig_file, Some(&ctx.pr))?;
+        if let Err(e) = HTTP.download_file(sig_url, &sig_file, Some(&ctx.pr)) {
+            if matches!(http::error_code(&e), Some(404)) {
+                warn!("gpg signature not found, skipping verification");
+                return Ok(());
+            }
+            return Err(e);
+        }
         gpg::add_keys_node(ctx)?;
         CmdLineRunner::new("gpg")
             .arg("--quiet")
