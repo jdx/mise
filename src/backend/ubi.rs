@@ -14,8 +14,9 @@ use regex::Regex;
 use std::env;
 use std::fmt::Debug;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::OnceLock;
-use ubi::UbiBuilder;
+use ubi::{ForgeType, UbiBuilder};
 use xx::regex;
 
 #[derive(Debug)]
@@ -114,6 +115,9 @@ impl Backend for UbiBackend {
             }
             if let Some(matching) = opts.get("matching") {
                 builder = builder.matching(matching);
+            }
+            if let Some(forge) = opts.get("forge") {
+                builder = builder.forge(ForgeType::from_str(forge)?);
             }
 
             let mut ubi = builder.build().map_err(|e| eyre::eyre!(e))?;
