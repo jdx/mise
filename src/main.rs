@@ -84,6 +84,9 @@ pub(crate) use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> eyre::Result<()> {
+    if cfg!(test) {
+        test::init();
+    }
     color_eyre::install()?;
     measure!("main", {
         let args = env::args().collect_vec();
