@@ -6,12 +6,10 @@ use crate::task::Task;
 use crate::tera::get_tera;
 use eyre::{Context, Result};
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use usage::parse::ParseValue;
-use xx::regex;
 
 pub struct TaskScriptParser {
     dir: Option<PathBuf>,
@@ -35,7 +33,8 @@ impl TaskScriptParser {
         let mut tera = self.get_tera();
         let arg_order = Arc::new(Mutex::new(HashMap::new()));
         let input_args = Arc::new(Mutex::new(vec![]));
-        let template_key = |name| format!("MISE_TASK_ARG:{name}:MISE_TASK_ARG");
+        // render args, options, and flags as null
+        // these functions are only used to collect the spec
         tera.register_function("arg", {
             {
                 let input_args = input_args.clone();
@@ -60,7 +59,7 @@ impl TaskScriptParser {
                     let mut arg_order = arg_order.lock().unwrap();
                     if arg_order.contains_key(&name) {
                         trace!("already seen {name}");
-                        return Ok(tera::Value::String(template_key(name)));
+                        return Ok(tera::Value::Null);
                     }
                     arg_order.insert(name.clone(), i);
                     let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
@@ -103,7 +102,7 @@ impl TaskScriptParser {
                     };
                     arg.usage = arg.usage();
                     input_args.lock().unwrap().push(arg);
-                    Ok(tera::Value::String(template_key(name)))
+                    Ok(tera::Value::Null)
                 }
             }
         });
@@ -194,7 +193,7 @@ impl TaskScriptParser {
                     };
                     flag.usage = flag.usage();
                     input_flags.lock().unwrap().push(flag);
-                    Ok(tera::Value::String(template_key(name)))
+                    Ok(tera::Value::Null)
                 }
             }
         });
@@ -270,7 +269,7 @@ impl TaskScriptParser {
                     };
                     flag.usage = flag.usage();
                     input_flags.lock().unwrap().push(flag);
-                    Ok(tera::Value::String(template_key(name)))
+                    Ok(tera::Value::Null)
                 }
             }
         });
@@ -306,64 +305,107 @@ impl TaskScriptParser {
 
         Ok((scripts, spec))
     }
-}
 
-pub fn replace_template_placeholders_with_args(
-    task: &Task,
-    spec: &usage::Spec,
-    scripts: &[String],
-    args: &[String],
-) -> Result<Vec<String>> {
-    let args = vec!["".to_string()]
-        .into_iter()
-        .chain(args.iter().cloned())
-        .collect::<Vec<_>>();
-    let m = match usage::parse(spec, &args) {
-        Ok(m) => m,
-        Err(e) => {
-            // just print exactly what usage returns so the error output isn't double-wrapped
-            // this could be displaying help or a parse error
-            eprintln!("{}", format!("{e}").trim_end());
-            exit(1);
-        }
-    };
-    let mut out = vec![];
-    let re = regex!(r"MISE_TASK_ARG:(\w+):MISE_TASK_ARG");
-    for script in scripts {
-        let shell_type: Option<ShellType> = shell_from_shebang(script)
-            .or(task.shell())
-            .unwrap_or(SETTINGS.default_inline_shell()?)[0]
-            .parse()
-            .ok();
-        let escape = |v: &ParseValue| match v {
-            ParseValue::MultiString(_) => {
-                // these are already escaped
-                v.to_string()
+    pub fn parse_run_scripts_with_args(
+        &self,
+        task: &Task,
+        scripts: &[String],
+        env: &EnvMap,
+        args: &[String],
+        spec: &usage::Spec,
+    ) -> Result<Vec<String>> {
+        let args = vec!["".to_string()]
+            .into_iter()
+            .chain(args.iter().cloned())
+            .collect::<Vec<_>>();
+        let m = match usage::parse(spec, &args) {
+            Ok(m) => m,
+            Err(e) => {
+                // just print exactly what usage returns so the error output isn't double-wrapped
+                // this could be displaying help or a parse error
+                eprintln!("{}", format!("{e}").trim_end());
+                exit(1);
             }
-            _ => match shell_type {
-                Some(ShellType::Zsh | ShellType::Bash | ShellType::Fish) => {
-                    shell_words::quote(&v.to_string()).to_string()
-                }
-                _ => v.to_string(),
-            },
         };
-        let mut script = script.clone();
-        for (arg, value) in &m.args {
-            script = script.replace(
-                &format!("MISE_TASK_ARG:{}:MISE_TASK_ARG", arg.name),
-                &escape(value),
+
+        let mut out: Vec<String> = vec![];
+        for script in scripts {
+            let shell_type = shell_from_shebang(script)
+                .or(task.shell())
+                .unwrap_or(SETTINGS.default_inline_shell()?)[0]
+                .parse()
+                .ok();
+            let escape = {
+                move |v: &usage::parse::ParseValue| match v {
+                    usage::parse::ParseValue::MultiString(_) => {
+                        // these are already escaped
+                        v.to_string()
+                    }
+                    _ => match shell_type {
+                        Some(ShellType::Zsh | ShellType::Bash | ShellType::Fish) => {
+                            shell_words::quote(&v.to_string()).to_string()
+                        }
+                        _ => v.to_string(),
+                    },
+                }
+            };
+            let mut tera = self.get_tera();
+            tera.register_function("arg", {
+                {
+                    let usage_args = m.args.clone();
+                    move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
+                        let seen_args = Arc::new(Mutex::new(HashSet::new()));
+                        {
+                            let mut seen_args = seen_args.lock().unwrap();
+                            let i = args
+                                .get("i")
+                                .map(|i| i.as_i64().unwrap() as usize)
+                                .unwrap_or_else(|| seen_args.len());
+                            let name = args
+                                .get("name")
+                                .map(|n| n.as_str().unwrap().to_string())
+                                .unwrap_or(i.to_string());
+                            seen_args.insert(name.clone());
+                            Ok(tera::Value::String(
+                                usage_args
+                                    .iter()
+                                    .find(|(arg, _)| arg.name == name)
+                                    .map(|(_, value)| escape(value))
+                                    .unwrap_or("".to_string()),
+                            ))
+                        }
+                    }
+                }
+            });
+            let flag_func = {
+                {
+                    let usage_flags = m.flags.clone();
+                    move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
+                        let name = args
+                            .get("name")
+                            .map(|n| n.as_str().unwrap().to_string())
+                            .unwrap();
+                        Ok(tera::Value::String(
+                            usage_flags
+                                .iter()
+                                .find(|(flag, _)| flag.name == name)
+                                .map(|(_, value)| escape(value))
+                                .unwrap_or("false".to_string()),
+                        ))
+                    }
+                }
+            };
+            tera.register_function("option", flag_func.clone());
+            tera.register_function("flag", flag_func);
+            let mut tera_ctx = task.tera_ctx()?;
+            tera_ctx.insert("env", &env);
+            out.push(
+                tera.render_str(script, &tera_ctx)
+                    .wrap_err_with(|| script.clone())?,
             );
         }
-        for (flag, value) in &m.flags {
-            script = script.replace(
-                &format!("MISE_TASK_ARG:{}:MISE_TASK_ARG", flag.name),
-                &escape(value),
-            );
-        }
-        script = re.replace_all(&script, "false").to_string();
-        out.push(script);
+        Ok(out)
     }
-    Ok(out)
 }
 
 pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
@@ -389,17 +431,23 @@ mod tests {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(i=0, name='foo') }}".to_string()];
-        let (scripts, spec) = parser
+        let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
             .unwrap();
-        assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
+        assert_eq!(parsed_scripts, vec!["echo "]);
         let arg0 = spec.cmd.args.first().unwrap();
         assert_eq!(arg0.name, "foo");
 
-        let scripts =
-            replace_template_placeholders_with_args(&task, &spec, &scripts, &["abc".to_string()])
-                .unwrap();
-        assert_eq!(scripts, vec!["echo abc"]);
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &task,
+                &scripts,
+                &Default::default(),
+                &["abc".to_string()],
+                &spec,
+            )
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo abc"]);
     }
 
     #[test]
@@ -410,29 +458,26 @@ mod tests {
             "echo {{ arg(name='foo') }}; echo {{ arg(name='bar') }}; echo {{ arg(name='foo') }}"
                 .to_string(),
         ];
-        let (scripts, spec) = parser
+        let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
             .unwrap();
-        assert_eq!(
-            scripts,
-            vec![
-                "echo MISE_TASK_ARG:foo:MISE_TASK_ARG; echo MISE_TASK_ARG:bar:MISE_TASK_ARG; echo MISE_TASK_ARG:foo:MISE_TASK_ARG"
-            ]
-        );
+        assert_eq!(parsed_scripts, vec!["echo ; echo ; echo "]);
         let arg0 = spec.cmd.args.first().unwrap();
         let arg1 = spec.cmd.args.get(1).unwrap();
         assert_eq!(arg0.name, "foo");
         assert_eq!(arg1.name, "bar");
         assert_eq!(spec.cmd.args.len(), 2);
 
-        let scripts = replace_template_placeholders_with_args(
-            &task,
-            &spec,
-            &scripts,
-            &["abc".to_string(), "def".to_string()],
-        )
-        .unwrap();
-        assert_eq!(scripts, vec!["echo abc; echo def; echo abc"]);
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &task,
+                &scripts,
+                &Default::default(),
+                &["abc".to_string(), "def".to_string()],
+                &spec,
+            )
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo abc; echo def; echo abc"]);
     }
 
     #[test]
@@ -440,21 +485,23 @@ mod tests {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(var=true) }}".to_string()];
-        let (scripts, spec) = parser
+        let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
             .unwrap();
-        assert_eq!(scripts, vec!["echo MISE_TASK_ARG:0:MISE_TASK_ARG"]);
+        assert_eq!(parsed_scripts, vec!["echo "]);
         let arg0 = spec.cmd.args.first().unwrap();
         assert_eq!(arg0.name, "0");
 
-        let scripts = replace_template_placeholders_with_args(
-            &task,
-            &spec,
-            &scripts,
-            &["abc".to_string(), "def".to_string()],
-        )
-        .unwrap();
-        assert_eq!(scripts, vec!["echo abc def"]);
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &task,
+                &scripts,
+                &Default::default(),
+                &["abc".to_string(), "def".to_string()],
+                &spec,
+            )
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo abc def"]);
     }
 
     #[test]
@@ -462,25 +509,33 @@ mod tests {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ flag(name='foo') }}".to_string()];
-        let (scripts, spec) = parser
+        let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
             .unwrap();
-        assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
+        assert_eq!(parsed_scripts, vec!["echo "]);
         let flag = spec.cmd.flags.iter().find(|f| &f.name == "foo").unwrap();
         assert_eq!(&flag.name, "foo");
 
-        let scripts =
-            replace_template_placeholders_with_args(&task, &spec, &scripts, &["--foo".to_string()])
-                .unwrap();
-        assert_eq!(scripts, vec!["echo true"]);
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &task,
+                &scripts,
+                &Default::default(),
+                &["--foo".to_string()],
+                &spec,
+            )
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo true"]);
 
         let scripts = vec!["echo {{ flag(name='foo') }}".to_string()];
-        let (scripts, spec) = parser
+        let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
             .unwrap();
-        assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
-        let scripts = replace_template_placeholders_with_args(&task, &spec, &scripts, &[]).unwrap();
-        assert_eq!(scripts, vec!["echo false"]);
+        assert_eq!(parsed_scripts, vec!["echo "]);
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(&task, &scripts, &Default::default(), &[], &spec)
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo false"]);
     }
 
     #[test]
@@ -488,20 +543,40 @@ mod tests {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ option(name='foo') }}".to_string()];
-        let (scripts, spec) = parser
+        let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
             .unwrap();
-        assert_eq!(scripts, vec!["echo MISE_TASK_ARG:foo:MISE_TASK_ARG"]);
+        assert_eq!(parsed_scripts, vec!["echo "]);
         let option = spec.cmd.flags.iter().find(|f| &f.name == "foo").unwrap();
         assert_eq!(&option.name, "foo");
 
-        let scripts = replace_template_placeholders_with_args(
-            &task,
-            &spec,
-            &scripts,
-            &["--foo".to_string(), "abc".to_string()],
-        )
-        .unwrap();
-        assert_eq!(scripts, vec!["echo abc"]);
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &task,
+                &scripts,
+                &Default::default(),
+                &["--foo".to_string(), "abc".to_string()],
+                &spec,
+            )
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo abc"]);
+    }
+
+    #[test]
+    fn test_task_nested_template() {
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+        let scripts =
+            vec!["echo {% if flag(name=env.FLAG_NAME) == 'true' %}TRUE{% endif %}".to_string()];
+        let env = EnvMap::from_iter(vec![("FLAG_NAME".to_string(), "foo".to_string())]);
+        let (parsed_scripts, spec) = parser.parse_run_scripts(&task, &scripts, &env).unwrap();
+        assert_eq!(parsed_scripts, vec!["echo "]);
+        let flag = spec.cmd.flags.first().unwrap();
+        assert_eq!(&flag.name, "foo");
+
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(&task, &scripts, &env, &["--foo".to_string()], &spec)
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo TRUE"]);
     }
 }

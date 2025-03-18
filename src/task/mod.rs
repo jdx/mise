@@ -1,8 +1,6 @@
 use crate::config::Config;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::task::task_script_parser::{
-    TaskScriptParser, has_any_args_defined, replace_template_placeholders_with_args,
-};
+use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
@@ -355,14 +353,16 @@ impl Task {
         args: &[String],
         env: &EnvMap,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(cwd, env)?;
+        let (spec, scripts) = self.parse_usage_spec(cwd.clone(), env)?;
         if has_any_args_defined(&spec) {
-            Ok(
-                replace_template_placeholders_with_args(self, &spec, &scripts, args)?
-                    .into_iter()
-                    .map(|s| (s, vec![]))
-                    .collect(),
-            )
+            let scripts = TaskScriptParser::new(cwd).parse_run_scripts_with_args(
+                self,
+                self.run(),
+                env,
+                args,
+                &spec,
+            )?;
+            Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
             Ok(scripts
                 .iter()
