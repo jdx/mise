@@ -1,5 +1,16 @@
 # Changelog
 
+## [2025.3.5](https://github.com/jdx/mise/compare/v2025.3.4..v2025.3.5) - 2025-03-18
+
+### 🚀 Features
+
+- **(registry)** use ubi for glab by [@scop](https://github.com/scop) in [#4643](https://github.com/jdx/mise/pull/4643)
+- ubi forge option support by [@scop](https://github.com/scop) in [#4642](https://github.com/jdx/mise/pull/4642)
+
+### 🐛 Bug Fixes
+
+- **(tera)** use default inline shell to parse exec template by [@risu729](https://github.com/risu729) in [#4645](https://github.com/jdx/mise/pull/4645)
+
 ## [2025.3.4](https://github.com/jdx/mise/compare/v2025.3.3..v2025.3.4) - 2025-03-18
 
 ### 🐛 Bug Fixes
