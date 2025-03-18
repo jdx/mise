@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.3.4](https://github.com/jdx/mise/compare/v2025.3.3..v2025.3.4) - 2025-03-18
+
+### 🐛 Bug Fixes
+
+- Failed to create venv at the same time by multiple uv processes by [@NavyD](https://github.com/NavyD) in [#4640](https://github.com/jdx/mise/pull/4640)
+
 ## [2025.3.3](https://github.com/jdx/mise/compare/v2025.3.2..v2025.3.3) - 2025-03-14
 
 ### 🚀 Features
@@ -1576,7 +1582,7 @@
 
 ### New Contributors
 
-- @gurgelio made their first contribution in [#3341](https://github.com/jdx/mise/pull/3341)
+- @leogurja made their first contribution in [#3341](https://github.com/jdx/mise/pull/3341)
 - @tmeijn made their first contribution in [#3335](https://github.com/jdx/mise/pull/3335)
 - @boris-smidt-klarrio made their first contribution in [#3336](https://github.com/jdx/mise/pull/3336)
 - @AliSajid made their first contribution in [#3305](https://github.com/jdx/mise/pull/3305)
