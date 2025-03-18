@@ -336,7 +336,7 @@ impl TaskScriptParser {
                 .parse()
                 .ok();
             let escape = {
-                let shell_type = shell_type.clone();
+                let shell_type = shell_type;
                 move |v: &usage::parse::ParseValue| match v {
                     usage::parse::ParseValue::MultiString(_) => {
                         // these are already escaped
@@ -370,7 +370,7 @@ impl TaskScriptParser {
                             Ok(tera::Value::String(
                                 usage_args
                                     .iter()
-                                    .find(|(arg, _)| &arg.name == &name)
+                                    .find(|(arg, _)| arg.name == name)
                                     .map(|(_, value)| escape(value))
                                     .unwrap_or("".to_string()),
                             ))
@@ -401,7 +401,7 @@ impl TaskScriptParser {
             let mut tera_ctx = task.tera_ctx()?;
             tera_ctx.insert("env", &env);
             out.push(
-                tera.render_str(&script, &tera_ctx)
+                tera.render_str(script, &tera_ctx)
                     .wrap_err_with(|| script.clone())?,
             );
         }
