@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-exit 0
 
 assert "mise generate bootstrap -w"
 assert "./bin/mise version"
