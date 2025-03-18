@@ -336,7 +336,6 @@ impl TaskScriptParser {
                 .parse()
                 .ok();
             let escape = {
-                let shell_type = shell_type;
                 move |v: &usage::parse::ParseValue| match v {
                     usage::parse::ParseValue::MultiString(_) => {
                         // these are already escaped
