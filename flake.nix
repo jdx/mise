@@ -25,6 +25,8 @@
 
             inputsFrom = [ mise ];
 
+            env.RUST_SRC = pkgs.rustPlatform.rustLibSrc;
+
             nativeBuildInputs = with pkgs; [
               just
               clippy
