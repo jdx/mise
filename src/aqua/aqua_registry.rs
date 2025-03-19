@@ -5,7 +5,7 @@ use crate::config::SETTINGS;
 use crate::duration::{DAILY, WEEKLY};
 use crate::git::{CloneOptions, Git};
 use crate::{dirs, file, hashmap, http};
-use expr::{Context, Parser, Program, Value};
+use expr::{Context, Program, Value};
 use eyre::{ContextCompat, Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -211,8 +211,7 @@ impl AquaRegistry {
             .next()
             .wrap_err(format!("no package found for {id} in {path:?}"))?;
         if let Some(version_filter) = &pkg.version_filter {
-            // TODO: should this use AquaPackage::expr_parser somehow?
-            pkg.version_filter_expr = Some(Parser::new().compile(version_filter)?);
+            pkg.version_filter_expr = Some(expr::compile(version_filter)?);
         }
         Ok(pkg)
     }
@@ -392,11 +391,11 @@ impl AquaPackage {
         expr.run(program, &self.expr_ctx(v)).map_err(|e| eyre!(e))
     }
 
-    fn expr_parser(&self, v: &str) -> Parser {
+    fn expr_parser(&self, v: &str) -> expr::Environment {
         let prefix = Regex::new(r"^[^0-9.]+").unwrap();
         let ver = versions::Versioning::new(prefix.replace(v, ""));
-        let mut expr = Parser::new();
-        expr.add_function("semver", move |c| {
+        let mut env = expr::Environment::new();
+        env.add_function("semver", move |c| {
             if c.args.len() != 1 {
                 return Err("semver() takes exactly one argument".to_string().into());
             }
@@ -411,7 +410,7 @@ impl AquaPackage {
                 Err("invalid semver".to_string().into())
             }
         });
-        expr
+        env
     }
 
     fn expr_ctx(&self, v: &str) -> Context {

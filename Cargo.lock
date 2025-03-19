@@ -1342,9 +1342,9 @@ dependencies = [
 
 [[package]]
 name = "expr-lang"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbf7d3d8b433d4dc8fe3e5383ad01f1cb2ffba8e999191af8bf7af1e9fa3e2ca"
+checksum = "8ecf48d3d55edfb3a2960f8cd3d13412af146b912446a9e04812af69761e3b56"
 dependencies = [
  "indexmap 2.8.0",
  "log",
@@ -1352,7 +1352,7 @@ dependencies = [
  "pest",
  "pest_derive",
  "regex",
- "strum 0.26.3",
+ "strum 0.27.1",
  "thiserror 2.0.12",
 ]
 
