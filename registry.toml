@@ -65,6 +65,7 @@ amazon-ecr-credential-helper.backends = [
     "aqua:awslabs/amazon-ecr-credential-helper",
     "asdf:dex4er/asdf-amazon-ecr-credential-helper"
 ]
+android-sdk.backends = ["asdf:mise-plugins/mise-android-sdk"]
 ansible.backends = ["pipx:ansible[uvx=false,pipx_args=--include-deps]"]
 ansible.test = ['ansible --version', 'ansible']
 ansible-core.aliases = ["ansible-base"]
