@@ -1936,7 +1936,10 @@ xh.test = ["xh -V", "xh {{version}}"]
 yadm.backends = ["asdf:mise-plugins/mise-yadm"]
 yamlfmt.backends = ["aqua:google/yamlfmt", "asdf:mise-plugins/asdf-yamlfmt"]
 yamllint.backends = ["pipx:yamllint", "asdf:ericcornelissen/asdf-yamllint"]
-yamlscript.backends = ["ubi:yaml/yamlscript[exe=ys,matching=ys-]", "asdf:mise-plugins/mise-yamlscript"]
+yamlscript.backends = [
+    "ubi:yaml/yamlscript[exe=ys,matching=ys-]",
+    "asdf:mise-plugins/mise-yamlscript"
+]
 yamlscript.test = ["ys --version", "{{version}}"]
 yarn.backends = ["asdf:mise-plugins/mise-yarn"]
 yay.backends = ["asdf:mise-plugins/mise-yay"]
