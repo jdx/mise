@@ -12,7 +12,6 @@
 ]
 # 1password.test = ["op --version", "{{version}}"] fails on CI for some reason
 aapt2.backends = ["asdf:mise-plugins/mise-aapt2"]
-android-sdk.backends = ["asdf:mise-plugins/mise-android-sdk"]
 aapt2.test = ["aapt2 version 2>&1", "Android Asset Packaging Tool (aapt)"]
 act.backends = ["aqua:nektos/act", "ubi:nektos/act", "asdf:gr1m0h/asdf-act"]
 act.test = ["act --version", "act version {{version}}"]
@@ -66,6 +65,7 @@ amazon-ecr-credential-helper.backends = [
     "aqua:awslabs/amazon-ecr-credential-helper",
     "asdf:dex4er/asdf-amazon-ecr-credential-helper"
 ]
+android-sdk.backends = ["asdf:mise-plugins/mise-android-sdk"]
 ansible.backends = ["pipx:ansible[uvx=false,pipx_args=--include-deps]"]
 ansible.test = ['ansible --version', 'ansible']
 ansible-core.aliases = ["ansible-base"]
