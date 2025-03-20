@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::env::PATH_KEY;
 use crate::file::touch_dir;
 use crate::path_env::PathEnv;
-use crate::shell::{get_shell, ActivateOptions, ActivatePrelude, Shell, ShellType};
+use crate::shell::{ActivateOptions, ActivatePrelude, Shell, ShellType, get_shell};
 use crate::{dirs, env};
 use eyre::Result;
 use itertools::Itertools;
