@@ -27,7 +27,7 @@ mise use -g java@zulu-21
 mise use -g java@corretto-21
 ```
 
-See available versions with `mise ls-remote java`. com>.
+See available versions with `mise ls-remote java`.
 
 ::: warning
 Note that shorthand versions (like `21` in the example) use [`OpenJDK`](https://openjdk.org/) as the vendor.
