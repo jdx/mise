@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.one]
+run = "echo one"
+depends = ["two"]
+
+[tasks.two]
+depends = ["three"]
+run = "echo two"
+
+[tasks.three]
+depends = ["one"]
+run = "echo three"
+EOF
+# this should fail not sure how it works.
+assert_fail "mise run one"

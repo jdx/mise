@@ -2,7 +2,7 @@
 
 Tasks can be defined in `mise.toml` files in different ways:
 
-```toml
+```toml [mise.toml]
 [tasks.cleancache]
 run = "rm -rf .cache"
 hide = true # hide this task from the list
@@ -39,8 +39,24 @@ description = 'Run CI tasks'
 depends = ['build', 'lint', 'test']
 
 [tasks.release]
+confirm = 'Are you sure you want to cut a new release?'
 description = 'Cut a new release'
 file = 'scripts/release.sh' # execute an external script
+```
+
+You can use [environment variables](/environments/) or [`vars`](/tasks/task-configuration.html#vars-options) to define common arguments:
+
+```toml [mise.toml]
+[env]
+VERBOSE_ARGS = '--verbose'
+
+# Vars can be shared between tasks like environment variables,
+# but they are not passed as environment variables to the scripts
+[vars]
+e2e_args = '--headless'
+
+[tasks.test]
+run = './scripts/test-e2e.sh {{vars.e2e_args}} $VERBOSE_ARGS'
 ```
 
 ## Adding tasks
@@ -167,6 +183,17 @@ outputs = ['target/debug/mycli']
 ```
 
 You can use `sources` alone if with [`mise watch`](/cli/watch.html) to run the task when the sources change.
+
+### Confirmation
+
+A message to show before running the task. The user will be prompted to confirm before the task is run.
+
+```toml
+[tasks.release]
+confirm = 'Are you sure you want to cut a new release?'
+description = 'Cut a new release'
+file = 'scripts/release.sh'
+```
 
 ## Specifying a shell or an interpreter {#shell-shebang}
 

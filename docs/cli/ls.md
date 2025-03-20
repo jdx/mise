@@ -28,6 +28,10 @@ Only show tool versions currently specified in a mise.toml
 
 Only show tool versions currently specified in the global mise.toml
 
+### `-l --local`
+
+Only show tool versions currently specified in the local mise.toml
+
 ### `-i --installed`
 
 Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)

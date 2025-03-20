@@ -1,9 +1,9 @@
 use crate::cmd::cmd;
-use crate::config::{config_file, Config, SETTINGS};
+use crate::config::{Config, SETTINGS, config_file};
 use crate::shell::Shell;
 use crate::toolset::Toolset;
 use crate::{dirs, hook_env};
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use std::iter::once;
@@ -150,10 +150,7 @@ impl Hook {
 
 fn execute(ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
     SETTINGS.ensure_experimental("hooks")?;
-    #[cfg(unix)]
-    let shell = shell_words::split(&SETTINGS.unix_default_inline_shell_args)?;
-    #[cfg(windows)]
-    let shell = shell_words::split(&SETTINGS.windows_default_inline_shell_args)?;
+    let shell = SETTINGS.default_inline_shell()?;
 
     let args = shell
         .iter()

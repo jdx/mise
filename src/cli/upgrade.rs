@@ -1,6 +1,6 @@
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
-use crate::config::{config_file, Config};
+use crate::config::{Config, config_file};
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
@@ -9,7 +9,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{config, ui};
 use console::Term;
 use demand::DemandOption;
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 
 /// Upgrades outdated tools
 ///

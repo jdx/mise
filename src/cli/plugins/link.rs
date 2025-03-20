@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::ValueHint;
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{Result, eyre};
 use console::style;
 use path_absolutize::Absolutize;
 

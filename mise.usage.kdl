@@ -75,7 +75,7 @@ cmd activate help="Initializes mise in the current shell session" {
         choices bash elvish fish nu xonsh zsh pwsh
     }
 }
-cmd alias help="Manage aliases" {
+cmd alias help="Manage version aliases." {
     alias a
     alias aliases hide=#true
     flag "-p --plugin" help="filter aliases by plugin" {
@@ -275,6 +275,7 @@ cmd fmt help="Formats mise.toml" {
     long_help "Formats mise.toml\n\nSorts keys and cleans up whitespace in mise.toml"
     after_long_help "Examples:\n\n    $ mise fmt\n"
     flag "-a --all" help="Format all files from the current directory"
+    flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout"
 }
 cmd generate subcommand_required=#true help="[experimental] Generate files for various tools/services" {
     alias gen
@@ -305,9 +306,20 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
             arg <OUTPUT>
         }
     }
+    cmd devcontainer help="[experimental] Generate a devcontainer to execute mise" {
+        after_long_help "Examples:\n\n    $ mise generate devcontainer\n"
+        flag "-n --name" help="The name of the devcontainer" {
+            arg <NAME>
+        }
+        flag "-i --image" help="The image to use for the devcontainer" {
+            arg <IMAGE>
+        }
+        flag "-m --mount-mise-data" help="Bind the mise-data-volume to the devcontainer"
+        flag "-w --write" help="write to .devcontainer/devcontainer.json"
+    }
     cmd git-pre-commit help="[experimental] Generate a git pre-commit hook" {
         alias pre-commit
-        long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`."
+        long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`.\n\nFor more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/"
         after_long_help "Examples:\n\n    $ mise generate git-pre-commit --write --task=pre-commit\n    $ git commit -m \"feat: add new feature\" # runs `mise run pre-commit`\n"
         flag --hook help="Which hook to generate (saves to .git/hooks/$hook)" {
             arg <HOOK>
@@ -450,6 +462,7 @@ cmd ls help="List installed and active tool versions" {
     }
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
+    flag "-l --local" help="Only show tool versions currently specified in the local mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
     flag "-o --offline" help="Don't fetch information such as outdated versions"
     flag --outdated help="Display whether a version is outdated"
@@ -591,7 +604,7 @@ cmd run help="Run task(s)" {
     flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
         arg <JOBS>
     }
-    flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
+    flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
     flag --timings help="Shows elapsed time after each task completes" hide=#true {
         long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
     }
@@ -832,7 +845,7 @@ cmd tasks help="Manage tasks" {
         flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
             arg <JOBS>
         }
-        flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
+        flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
         flag --timings help="Shows elapsed time after each task completes" hide=#true {
             long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
         }

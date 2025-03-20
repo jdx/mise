@@ -166,10 +166,12 @@ fn codegen_registry() {
 fn codegen_settings() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("settings.rs");
-    let mut lines = vec![r#"#[derive(Config, Default, Debug, Clone, Serialize)]
+    let mut lines = vec![
+        r#"#[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(partial_attr(derive(Clone, Serialize, Default)))]
 pub struct Settings {"#
-        .to_string()];
+            .to_string(),
+    ];
 
     let settings: toml::Table = fs::read_to_string("settings.toml")
         .unwrap()

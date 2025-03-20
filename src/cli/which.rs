@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::dirs::SHIMS;
 use crate::file;
 use crate::toolset::{Toolset, ToolsetBuilder};
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use itertools::Itertools;
 
 /// Shows the path that a tool's bin points to.
@@ -55,7 +55,9 @@ impl Which {
             }
             None => {
                 if self.has_shim(&bin_name) {
-                    bail!("{bin_name} is a mise bin however it is not currently active. Use `mise use` to activate it in this directory.")
+                    bail!(
+                        "{bin_name} is a mise bin however it is not currently active. Use `mise use` to activate it in this directory."
+                    )
                 } else {
                     bail!("{bin_name} is not a mise bin. Perhaps you need to install it first.",)
                 }

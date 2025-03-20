@@ -1,7 +1,7 @@
 [package]
 name = "mise"
-version = "2025.2.2"
-edition = "2021"
+version = "2025.3.6"
+edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
 homepage = "https://mise.jdx.dev"
@@ -27,7 +27,7 @@ include = [
   "/aqua-registry/pkgs/**/registry.yaml",
 ]
 build = "build.rs"
-rust-version = "1.82"
+rust-version = "1.85"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -71,7 +71,7 @@ duct = "0.13"
 either = { version = "1", features = ["serde"] }
 homedir = "0.3"
 # expr-lang = { path = "../expr-lang" }
-expr-lang = "0.2"
+expr-lang = "0.3"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
@@ -79,7 +79,6 @@ fslock = "0.2.1"
 glob = "0.3"
 globset = "0.4"
 heck = "0.5"
-humantime = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
@@ -138,7 +137,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["io-std", "rt", "time"] }
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
-ubi = { version = "0.4", default-features = false }
+ubi = { version = "0.6.1", default-features = false }
 url = "2"
 usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
@@ -151,6 +150,7 @@ xz2 = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 zstd = "0.13"
 gix = { version = "<1", features = ["worktree-mutation"] }
+jiff = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
@@ -176,7 +176,7 @@ toml = "0.8"
 indexmap = "2"
 
 [dev-dependencies]
-ctor = "0.2"
+ctor = "0.4"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1.6.1"
 pretty_assertions = "1"

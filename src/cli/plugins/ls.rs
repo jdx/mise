@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use tabled::{Table, Tabled};
 
 use crate::config::Config;
-use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::PluginType;
+use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::full_to_url;
 use crate::toolset::install_state;
 use crate::ui::table;

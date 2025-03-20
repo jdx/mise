@@ -16,7 +16,7 @@ use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{Result, eyre};
 use indoc::formatdoc;
 use itertools::Itertools;
 use regex::Regex;
@@ -95,7 +95,7 @@ impl JavaPlugin {
         pr: &Box<dyn SingleReport>,
         m: &JavaMetadata,
     ) -> Result<PathBuf> {
-        let filename = m.url.split('/').last().unwrap();
+        let filename = m.url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));

@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use color_eyre::eyre::{Context, Result};
 use eyre::bail;
-use filetime::{set_file_times, FileTime};
+use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -259,7 +259,7 @@ pub fn touch_dir(dir: &Path) -> Result<()> {
 pub fn modified_duration(path: &Path) -> Result<Duration> {
     let metadata = path.metadata()?;
     let modified = metadata.modified()?;
-    let duration = modified.elapsed()?;
+    let duration = modified.elapsed().unwrap_or_default();
     Ok(duration)
 }
 
@@ -553,11 +553,7 @@ fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
     let name = name.as_ref();
     paths.par_iter().find_map_first(|path| {
         let bin = path.join(name);
-        if is_executable(&bin) {
-            Some(bin)
-        } else {
-            None
-        }
+        if is_executable(&bin) { Some(bin) } else { None }
     })
 }
 

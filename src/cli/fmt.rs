@@ -1,7 +1,8 @@
-use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::Result;
+use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::{config, dirs, file};
 use eyre::bail;
+use std::io::{self, Read, Write};
 use taplo::formatter::Options;
 
 /// Formats mise.toml
@@ -13,10 +14,27 @@ pub struct Fmt {
     /// Format all files from the current directory
     #[clap(short, long)]
     pub all: bool,
+
+    /// Read config from stdin and write its formatted version into
+    /// stdout
+    #[clap(short, long)]
+    pub stdin: bool,
 }
 
 impl Fmt {
     pub fn run(self) -> eyre::Result<()> {
+        if self.stdin {
+            let mut toml = String::new();
+            io::stdin().read_to_string(&mut toml)?;
+
+            let toml = sort(toml)?;
+            let toml = format(toml)?;
+            let mut stdout = io::stdout();
+            write!(stdout, "{}", toml)?;
+
+            return Ok(());
+        }
+
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let configs = if self.all {
             ALL_TOML_CONFIG_FILES.clone()
@@ -35,30 +53,7 @@ impl Fmt {
             }
             let toml = file::read_to_string(&p)?;
             let toml = sort(toml)?;
-            let toml = taplo::formatter::format(
-                &toml,
-                Options {
-                    align_entries: false,
-                    align_comments: true,
-                    align_single_comments: true,
-                    array_trailing_comma: true,
-                    array_auto_expand: true,
-                    inline_table_expand: true,
-                    array_auto_collapse: true,
-                    compact_arrays: true,
-                    compact_inline_tables: false,
-                    compact_entries: false,
-                    column_width: 80,
-                    indent_tables: false,
-                    indent_entries: false,
-                    indent_string: "  ".to_string(),
-                    trailing_newline: true,
-                    reorder_keys: false,
-                    reorder_arrays: false,
-                    allowed_blank_lines: 2,
-                    crlf: false,
-                },
-            );
+            let toml = format(toml)?;
             file::write(&p, &toml)?;
         }
 
@@ -88,6 +83,35 @@ fn sort(toml: String) -> Result<String> {
     };
     doc.sort_values_by(|a, _, b, _| order(a.to_string()).cmp(&order(b.to_string())));
     Ok(doc.to_string())
+}
+
+fn format(toml: String) -> Result<String> {
+    let tmp = taplo::formatter::format(
+        &toml,
+        Options {
+            align_entries: false,
+            align_comments: true,
+            align_single_comments: true,
+            array_trailing_comma: true,
+            array_auto_expand: true,
+            inline_table_expand: true,
+            array_auto_collapse: true,
+            compact_arrays: true,
+            compact_inline_tables: false,
+            compact_entries: false,
+            column_width: 80,
+            indent_tables: false,
+            indent_entries: false,
+            indent_string: "  ".to_string(),
+            trailing_newline: true,
+            reorder_keys: false,
+            reorder_arrays: false,
+            allowed_blank_lines: 2,
+            crlf: false,
+        },
+    );
+
+    Ok(tmp)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

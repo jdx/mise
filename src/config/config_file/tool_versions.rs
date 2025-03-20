@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
-use console::{measure_text_width, pad_str, Alignment};
+use console::{Alignment, measure_text_width, pad_str};
 use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -11,7 +11,7 @@ use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::file;
 use crate::file::display_path;
-use crate::tera::{get_tera, BASE_CONTEXT};
+use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 // python 3.11.0 3.10.0

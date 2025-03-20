@@ -1,6 +1,6 @@
 use crate::config::{Config, Settings};
 use eyre::Result;
-use std::fs::{create_dir_all, File, OpenOptions};
+use std::fs::{File, OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;

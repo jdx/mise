@@ -1,4 +1,4 @@
-use console::{measure_text_width, pad_str, Alignment};
+use console::{Alignment, measure_text_width, pad_str};
 use eyre::Result;
 use itertools::Itertools;
 

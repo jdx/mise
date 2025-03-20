@@ -1,16 +1,16 @@
-use color_eyre::eyre::{bail, eyre, Result};
+use color_eyre::eyre::{Result, bail, eyre};
 use contracts::ensures;
 use heck::ToKebabCase;
-use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use rayon::prelude::*;
 use url::Url;
 
 use crate::backend::unalias_backend;
 use crate::config::{Config, Settings};
 use crate::dirs;
+use crate::plugins::Plugin;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::Plugin;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -148,10 +148,10 @@ fn get_name_from_url(url: &str) -> Result<String> {
     let url = url.strip_suffix("/").unwrap_or(url);
     let name = if let Ok(Some(name)) = Url::parse(url).map(|u| {
         u.path_segments()
-            .and_then(|s| s.last().map(|s| s.to_string()))
+            .and_then(|mut s| s.next_back().map(|s| s.to_string()))
     }) {
         name
-    } else if let Some(name) = url.split('/').last().map(|s| s.to_string()) {
+    } else if let Some(name) = url.split('/').next_back().map(|s| s.to_string()) {
         name
     } else {
         return Err(eyre!("could not infer plugin name from url: {}", url));

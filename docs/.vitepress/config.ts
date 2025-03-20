@@ -170,7 +170,10 @@ export default defineConfig({
       },
     ],
 
-    socialLinks: [{ icon: "github", link: "https://github.com/jdx/mise" }],
+    socialLinks: [
+      { icon: "github", link: "https://github.com/jdx/mise" },
+      { icon: "discord", link: "https://discord.gg/UBa7pJUN7Z" },
+    ],
 
     editLink: {
       pattern: "https://github.com/jdx/mise/edit/main/docs/:path",

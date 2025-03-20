@@ -1,4 +1,4 @@
-use eyre::{bail, eyre, Context, Result};
+use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
@@ -18,14 +18,14 @@ use crate::backend::ABackend;
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::{config_trust_root, ConfigFile};
+use crate::config::config_file::{ConfigFile, config_trust_root};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults};
 use crate::config::tracking::Tracker;
 use crate::file::display_path;
-use crate::shorthands::{get_shorthands, Shorthands};
+use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::Task;
 use crate::toolset::{
-    install_state, ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, ToolsetBuilder,
+    ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, ToolsetBuilder, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};

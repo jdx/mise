@@ -6,7 +6,7 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -194,19 +194,7 @@ impl Backend for GoPlugin {
         })
     }
     fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
-        Ok(vec![".go-version".into(), "go.mod".into()])
-    }
-
-    fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
-        let v = match path.file_name() {
-            Some(name) if name == "go.mod" => parse_gomod_file(&file::read_to_string(path)?),
-            _ => {
-                // .go-version
-                let body = file::read_to_string(path)?;
-                body.trim().trim_start_matches('v').to_string()
-            }
-        };
-        Ok(v)
+        Ok(vec![".go-version".into()])
     }
 
     fn install_version_(
@@ -252,19 +240,6 @@ impl Backend for GoPlugin {
     }
 }
 
-fn parse_gomod_file(body: &str) -> String {
-    let v = body
-        .lines()
-        .find(|line| line.trim().starts_with("go "))
-        .unwrap_or_default();
-    let v = regex!(r#"^[^0-9]*"#).replace_all(v, "").trim().to_string();
-    // make sure it's like 1.23.0
-    if !regex!(r"^([0-9.])*$").is_match(&v) {
-        return "".to_string();
-    }
-    v
-}
-
 fn platform() -> &'static str {
     if cfg!(target_os = "macos") {
         "darwin"
@@ -287,31 +262,5 @@ fn arch() -> &'static str {
 }
 
 fn ext() -> &'static str {
-    if cfg!(windows) {
-        "zip"
-    } else {
-        "tar.gz"
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use indoc::indoc;
-
-    #[test]
-    fn test_parse_gomod_file() {
-        assert_eq!(
-            parse_gomod_file(indoc! {r#"module example.com/mymodule
-              go 1.14
-              require (
-                  example.com/othermodule v1.2.3
-                  example.com/thismodule v1.2.3
-                  example.com/thatmodule v1.2.3
-              )
-              replace example.com/thatmodule => ../thatmodule
-              exclude example.com/thismodule v1.3.0"#}),
-            "1.14"
-        );
-    }
+    if cfg!(windows) { "zip" } else { "tar.gz" }
 }

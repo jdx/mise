@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+assert "mise outdated --json" "{}"
+assert "mise outdated" ""
+
 echo 'dummy 1' >.tool-versions
 mise install dummy@1.0.0
 

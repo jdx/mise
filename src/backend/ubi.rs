@@ -1,5 +1,5 @@
-use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use crate::env::GITHUB_TOKEN;
@@ -14,8 +14,9 @@ use regex::Regex;
 use std::env;
 use std::fmt::Debug;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::OnceLock;
-use ubi::UbiBuilder;
+use ubi::{ForgeType, UbiBuilder};
 use xx::regex;
 
 #[derive(Debug)]
@@ -95,7 +96,7 @@ impl Backend for UbiBackend {
             let mut builder = UbiBuilder::new().project(&name).install_dir(&bin_dir);
 
             if let Some(token) = &*GITHUB_TOKEN {
-                builder = builder.github_token(token);
+                builder = builder.token(token);
             }
 
             if v != "latest" {
@@ -104,11 +105,19 @@ impl Backend for UbiBackend {
 
             if extract_all {
                 builder = builder.extract_all();
-            } else if let Some(exe) = opts.get("exe") {
-                builder = builder.exe(exe);
+            } else {
+                if let Some(exe) = opts.get("exe") {
+                    builder = builder.exe(exe);
+                }
+                if let Some(rename_exe) = opts.get("rename_exe") {
+                    builder = builder.rename_exe_to(rename_exe)
+                }
             }
             if let Some(matching) = opts.get("matching") {
                 builder = builder.matching(matching);
+            }
+            if let Some(forge) = opts.get("forge") {
+                builder = builder.forge(ForgeType::from_str(forge)?);
             }
 
             let mut ubi = builder.build().map_err(|e| eyre::eyre!(e))?;
@@ -128,12 +137,13 @@ impl Backend for UbiBackend {
             })
         })?;
 
-        let mut possible_exes = vec![tv
-            .request
-            .options()
-            .get("exe")
-            .cloned()
-            .unwrap_or(tv.ba().short.to_string())];
+        let mut possible_exes = vec![
+            tv.request
+                .options()
+                .get("exe")
+                .cloned()
+                .unwrap_or(tv.ba().short.to_string()),
+        ];
         if cfg!(windows) {
             possible_exes.push(format!("{}.exe", possible_exes[0]));
         }

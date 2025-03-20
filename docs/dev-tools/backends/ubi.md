@@ -46,6 +46,17 @@ use the `exe` option to specify the executable name:
 "ubi:cli/cli" = { version = "latest", exe = "gh" } # github's cli
 ```
 
+### `rename_exe`
+
+The `rename_exe` option allows you to specify the name of the executable once it has been extracted.
+
+use the `rename_exe` option to specify the target executable name:
+
+```toml
+[tools]
+"ubi:cli/cli" = { version = "latest", exe = "gh", rename_exe = "github" } # github's cli
+```
+
 ### `matching`
 
 Set a string to match against the release filename when there are multiple files for your
@@ -60,7 +71,7 @@ then this will be ignored.
 
 ### `extract_all`
 
-Set to `true` to extract all files in the tarball instead of just the "bin". Not compatible with `exe`.
+Set to `true` to extract all files in the tarball instead of just the "bin". Not compatible with `exe` nor `rename_exe`.
 
 ```toml
 [tools]

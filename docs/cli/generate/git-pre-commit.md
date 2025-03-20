@@ -11,6 +11,8 @@ when you commit changes to your repository.
 
 Staged files are passed to the task as `STAGED`.
 
+For more advanced pre-commit functionality, see mise's sister project: <https://hk.jdx.dev/>
+
 ## Flags
 
 ### `--hook <HOOK>`

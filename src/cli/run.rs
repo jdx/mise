@@ -30,7 +30,7 @@ use console::Term;
 use crossbeam_channel::{select, unbounded};
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
-use eyre::{bail, ensure, eyre, Result};
+use eyre::{Result, bail, ensure, eyre};
 use glob::glob;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -144,6 +144,7 @@ pub struct Run {
     pub jobs: Option<usize>,
 
     /// Read/write directly to stdin/stdout/stderr instead of by line
+    /// Redactions are not applied with this option
     /// Configure with `raw` config or `MISE_RAW` env var
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
@@ -244,22 +245,24 @@ impl Run {
 
         if self.output(None) == TaskOutput::Timed {
             let timed_outputs = self.timed_outputs.clone();
-            thread::spawn(move || loop {
-                {
-                    let mut outputs = timed_outputs.lock().unwrap();
-                    for (prefix, out) in outputs.clone() {
-                        let (time, line) = out;
-                        if time.elapsed().unwrap().as_secs() >= 1 {
-                            if console::colors_enabled() {
-                                prefix_println!(prefix, "{line}\x1b[0m");
-                            } else {
-                                prefix_println!(prefix, "{line}");
+            thread::spawn(move || {
+                loop {
+                    {
+                        let mut outputs = timed_outputs.lock().unwrap();
+                        for (prefix, out) in outputs.clone() {
+                            let (time, line) = out;
+                            if time.elapsed().unwrap().as_secs() >= 1 {
+                                if console::colors_enabled() {
+                                    prefix_println!(prefix, "{line}\x1b[0m");
+                                } else {
+                                    prefix_println!(prefix, "{line}");
+                                }
+                                outputs.shift_remove(&prefix);
                             }
-                            outputs.shift_remove(&prefix);
                         }
                     }
+                    thread::sleep(Duration::from_millis(100));
                 }
-                thread::sleep(Duration::from_millis(100));
             });
         }
 
@@ -342,11 +345,14 @@ impl Run {
                 });
             };
             let rx = tasks.lock().unwrap().subscribe();
-            while !self.is_stopping() && !tasks.lock().unwrap().is_empty() {
+            while !self.is_stopping() {
                 select! {
                     recv(rx) -> task => { // receive a task from Deps
                         if let Some(task) = task.unwrap() {
                             run(&task);
+                        }else {
+                            // we get the None value which means the channel closes
+                            break;
                         }
                     }
                     recv(rx_err) -> task => { // a task errored
@@ -429,6 +435,11 @@ impl Run {
             }
             return Ok(());
         }
+        if let Some(message) = &task.confirm {
+            if !ui::confirm(message).unwrap_or(true) {
+                return Err(eyre!("task cancelled"));
+            }
+        }
 
         let config = Config::get();
         let mut tools = self.tool.clone();
@@ -471,8 +482,6 @@ impl Run {
             for (script, args) in
                 task.render_run_scripts_with_args(self.cd.clone(), &task.args, &env)?
             {
-                let get_args = || task.run.iter().chain(task.args.iter()).cloned().collect();
-                self.parse_usage_spec_and_init_env(task, &mut env, get_args)?;
                 self.exec_script(&script, &args, task, &env, &prefix)?;
             }
         }
@@ -587,8 +596,14 @@ impl Run {
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
-        let get_args = || once(command.clone()).chain(args.clone()).collect_vec();
-        self.parse_usage_spec_and_init_env(task, &mut env, get_args)?;
+        let (spec, _) = task.parse_usage_spec(self.cd.clone(), &env)?;
+        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
+            let args = once(command.clone()).chain(args.clone()).collect_vec();
+            let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
+            for (k, v) in po.as_env() {
+                env.insert(k, v);
+            }
+        }
 
         if !self.quiet(Some(task)) {
             let cmd = format!("{} {}", display_path(file), args.join(" "))
@@ -600,24 +615,6 @@ impl Run {
         }
 
         self.exec(file, &args, task, &env, prefix)
-    }
-
-    fn parse_usage_spec_and_init_env(
-        &self,
-        task: &Task,
-        env: &mut EnvMap,
-        get_args: impl Fn() -> Vec<String>,
-    ) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(self.cd.clone(), env)?;
-        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
-            let args: Vec<String> = get_args();
-            let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
-            for (k, v) in po.as_env() {
-                env.insert(k, v);
-            }
-        }
-
-        Ok(())
     }
 
     fn exec(
@@ -643,11 +640,19 @@ impl Run {
         let config = Config::get();
         let program = program.to_executable();
         let redactions = config.redactions();
+        let raw = self.raw(Some(task));
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
-            .raw(self.raw(Some(task)));
+            .raw(raw);
+        if raw && !redactions.is_empty() {
+            hint!(
+                "raw_redactions",
+                "--raw will prevent mise from being able to use redactions",
+                ""
+            );
+        }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
         match output {
@@ -711,7 +716,7 @@ impl Run {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
             TaskOutput::Quiet | TaskOutput::Interleave => {
-                if redactions.is_empty() {
+                if raw || redactions.is_empty() {
                     cmd = cmd
                         .stdin(Stdio::inherit())
                         .stdout(Stdio::inherit())

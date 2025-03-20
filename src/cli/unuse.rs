@@ -2,7 +2,7 @@ use crate::cli::args::ToolArg;
 use crate::cli::prune::prune;
 use crate::config;
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, Config};
+use crate::config::{Config, config_file};
 use crate::file::display_path;
 use crate::toolset::ToolRequest;
 use eyre::Result;
@@ -57,6 +57,7 @@ impl Unuse {
 
         if !self.no_prune {
             prune(self.installed_tool.iter().map(|ta| &ta.ba).collect(), false)?;
+            config::rebuild_shims_and_runtime_symlinks(&[])?;
         }
 
         Ok(())

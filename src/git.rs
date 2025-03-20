@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use duct::Expression;
-use eyre::{eyre, Result, WrapErr};
+use eyre::{Result, WrapErr, eyre};
 use gix::{self};
 use once_cell::sync::OnceCell;
 use xx::file;
@@ -122,7 +122,12 @@ impl Git {
             file::mkdirp(parent)?;
         }
         if SETTINGS.libgit2 || SETTINGS.gix {
+            debug!("Use libgit2 or gix");
             let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
+
+            if let Some(branch) = &options.branch {
+                prepare_clone = prepare_clone.with_ref_name(Some(branch))?;
+            }
 
             let (mut prepare_checkout, _) = prepare_clone
                 .fetch_then_checkout(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;

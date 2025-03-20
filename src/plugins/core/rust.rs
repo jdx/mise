@@ -8,6 +8,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::toolset::ToolSource::IdiomaticVersionFile;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
@@ -59,10 +60,6 @@ impl RustPlugin {
     fn target_triple(&self, tv: &ToolVersion) -> String {
         format!("{}-{}", tv.version, TARGET)
     }
-
-    fn tv_profile(&self, tv: &ToolVersion) -> Option<String> {
-        tv.request.options().get("profile").cloned()
-    }
 }
 
 impl Backend for RustPlugin {
@@ -89,28 +86,24 @@ impl Backend for RustPlugin {
     }
 
     fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
-        let toml = file::read_to_string(path)?;
-        let toml = toml.parse::<toml::Value>()?;
-        if let Some(toolchain) = toml.get("toolchain") {
-            if let Some(channel) = toolchain.get("channel") {
-                return Ok(channel.as_str().unwrap().to_string());
-            }
-        }
-        Ok("".into())
+        let rt = parse_idiomatic_file(path)?;
+        Ok(rt.channel)
     }
 
     fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         self.setup_rustup(ctx, &tv)?;
 
-        let profile = self.tv_profile(&tv);
+        let (profile, components, targets) = get_args(&tv);
 
         CmdLineRunner::new(RUSTUP_BIN)
             .with_pr(&ctx.pr)
             .arg("toolchain")
             .arg("install")
+            .arg(&tv.version)
             .opt_arg(profile.as_ref().map(|_| "--profile"))
             .opt_arg(profile)
-            .arg(&tv.version)
+            .opt_args("--component", components)
+            .opt_args("--target", targets)
             .prepend_path(self.list_bin_paths(&tv)?)?
             .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, &tv)?)
             .execute()?;
@@ -185,6 +178,83 @@ impl Backend for RustPlugin {
             Ok(None)
         }
     }
+}
+
+#[derive(Debug, Default)]
+struct RustToolchain {
+    channel: String,
+    profile: Option<String>,
+    components: Option<Vec<String>>,
+    targets: Option<Vec<String>>,
+}
+
+fn get_args(tv: &ToolVersion) -> (Option<String>, Option<Vec<String>>, Option<Vec<String>>) {
+    let rt = if tv.request.source().is_idiomatic_version_file() {
+        match tv.request.source() {
+            IdiomaticVersionFile(path) => parse_idiomatic_file(path).ok(),
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    let get_tooloption = |name: &str| {
+        tv.request
+            .options()
+            .get(name)
+            .map(|c| c.split(',').map(|s| s.to_string()).collect())
+    };
+    let profile = rt
+        .as_ref()
+        .and_then(|rt| rt.profile.clone())
+        .or_else(|| tv.request.options().get("profile").cloned());
+    let components = rt
+        .as_ref()
+        .and_then(|rt| rt.components.clone())
+        .or_else(|| get_tooloption("components"));
+    let targets = rt
+        .as_ref()
+        .and_then(|rt| rt.targets.clone())
+        .or_else(|| get_tooloption("targets"));
+
+    (profile, components, targets)
+}
+
+fn parse_idiomatic_file(path: &Path) -> Result<RustToolchain> {
+    let toml = file::read_to_string(path)?;
+    let toml = toml.parse::<toml::Value>()?;
+    let mut rt = RustToolchain::default();
+    if let Some(toolchain) = toml.get("toolchain") {
+        if let Some(channel) = toolchain.get("channel") {
+            rt.channel = channel.as_str().unwrap().to_string();
+        }
+        if let Some(profile) = toolchain.get("profile") {
+            rt.profile = Some(profile.as_str().unwrap().to_string());
+        }
+        if let Some(components) = toolchain.get("components") {
+            let components = components
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c.as_str().unwrap().to_string())
+                .collect::<Vec<_>>();
+            if !components.is_empty() {
+                rt.components = Some(components);
+            }
+        }
+        if let Some(targets) = toolchain.get("targets") {
+            let targets = targets
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c.as_str().unwrap().to_string())
+                .collect::<Vec<_>>();
+            if !targets.is_empty() {
+                rt.targets = Some(targets);
+            }
+        }
+    }
+    Ok(rt)
 }
 
 #[cfg(unix)]

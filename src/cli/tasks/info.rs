@@ -1,4 +1,4 @@
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use itertools::Itertools;
 use serde_json::json;
 

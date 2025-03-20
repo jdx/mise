@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS, Settings};
 use crate::duration::DAILY;
 use crate::env::PATH_KEY;
 use crate::git::{CloneOptions, Git};

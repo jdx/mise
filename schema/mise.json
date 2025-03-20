@@ -109,10 +109,6 @@
                           }
                         }
                       ]
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
                     }
                   }
                 },
@@ -357,7 +353,7 @@
           }
         },
         "disable_default_registry": {
-          "description": "Disable the default mapping of short tool names like `go` -> `vfox:version-fox/vfox-golang`",
+          "description": "Disable the default mapping of short tool names like `go` -> `vfox:version-fox/vfox-golang`. This parameter disables only for the backends `vfox` and `asdf`.",
           "type": "boolean"
         },
         "disable_default_shorthands": {
@@ -847,7 +843,7 @@
               "type": "boolean"
             },
             "show_tools": {
-              "description": "Show configured env vars when entering a directory with a mise.toml file.",
+              "description": "Show configured tools when entering a directory with a mise.toml file.",
               "type": "boolean"
             }
           }
@@ -973,6 +969,11 @@
             "type": "string"
           }
         },
+        "windows_shim_mode": {
+          "default": "file",
+          "description": "Shim file mode for Windows. Options: `file`, `hardlink`, `symlink`.",
+          "type": "string"
+        },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
@@ -1011,6 +1012,10 @@
                   "type": "array"
                 }
               ]
+            },
+            "confirm": {
+              "description": "confirmation message before running this task",
+              "type": "string"
             },
             "depends": {
               "oneOf": [

@@ -4,7 +4,7 @@
 - **Aliases**: `a`
 - **Source code**: [`src/cli/alias/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/mod.rs)
 
-Manage aliases
+Manage version aliases.
 
 ## Flags
 
