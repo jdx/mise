@@ -431,6 +431,8 @@ cookiecutter.backends = [
     "pipx:cookiecutter",
     "asdf:shawon-crosen/asdf-cookiecutter"
 ]
+copier.backends = ["pipx:copier", "asdf:looztra/asdf-copier"]
+copier.test = ["copier --version", "copier {{version}}"]
 copper.backends = ["ubi:cloud66-oss/copper", "asdf:vladlosev/asdf-copper"]
 copper.os = ["linux", "macos"]
 copper.test = ["copper version", ""]
