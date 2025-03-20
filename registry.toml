@@ -1404,7 +1404,7 @@ periphery.backends = [
     "asdf:mise-plugins/mise-periphery"
 ]
 perl.backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
-php.backends = ["asdf:mise-plugins/mise-php", "vfox:mise-plugins/vfox-php"]
+php.backends = ["asdf:mise-plugins/asdf-php", "vfox:mise-plugins/vfox-php"]
 pint.backends = ["aqua:cloudflare/pint", "asdf:sam-burrell/asdf-pint"]
 pipectl.backends = ["aqua:pipe-cd/pipecd/pipectl", "asdf:pipe-cd/asdf-pipectl"]
 pipectl.test = ["pipecd version", "Version: v{{version}}"]
