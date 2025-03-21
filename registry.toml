@@ -484,6 +484,7 @@ cyclonedx.backends = [
 ]
 cyclonedx.test = ["cyclonedx --version", "{{version}}"]
 d2.backends = ["aqua:terrastruct/d2"]
+d2.test = ["d2 -v", "d2 version: {{version}}"]
 dagger.backends = ["aqua:dagger/dagger", "asdf:virtualstaticvoid/asdf-dagger"]
 danger-js.backends = ["asdf:mise-plugins/mise-danger-js"]
 danger-swift.backends = ["spm:danger/swift"]
