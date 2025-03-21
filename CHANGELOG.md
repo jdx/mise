@@ -1,5 +1,42 @@
 # Changelog
 
+## [2025.3.7](https://github.com/jdx/mise/compare/v2025.3.6..v2025.3.7) - 2025-03-21
+
+### 🐛 Bug Fixes
+
+- **(node)** skip gpg verification of sig file not found by [@jdx](https://github.com/jdx) in [#4663](https://github.com/jdx/mise/pull/4663)
+- **(task)** allow args to be used with tera tests by [@risu729](https://github.com/risu729) in [#4605](https://github.com/jdx/mise/pull/4605)
+- Fix syntax error on `activate nu` when PATH contains shims by [@atty303](https://github.com/atty303) in [#4349](https://github.com/jdx/mise/pull/4349)
+
+### 🚜 Refactor
+
+- **(registry)** use ubi for yamlscript by [@scop](https://github.com/scop) in [#4670](https://github.com/jdx/mise/pull/4670)
+
+### 📚 Documentation
+
+- Fix typo in java.md by [@hverlin](https://github.com/hverlin) in [#4672](https://github.com/jdx/mise/pull/4672)
+
+### ◀️ Revert
+
+- "chore: temporarily disable bootstrap test" by [@jdx](https://github.com/jdx) in [#4658](https://github.com/jdx/mise/pull/4658)
+
+### 📦️ Dependency Updates
+
+- update rust crate ctor to 0.4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#4553](https://github.com/jdx/mise/pull/4553)
+
+### Chore
+
+- **(registry)** declare copier by [@looztra](https://github.com/looztra) in [#4669](https://github.com/jdx/mise/pull/4669)
+- Update to the latest version of ubi by [@autarch](https://github.com/autarch) in [#4648](https://github.com/jdx/mise/pull/4648)
+- bump expr by [@jdx](https://github.com/jdx) in [#4666](https://github.com/jdx/mise/pull/4666)
+- added android-sdk by [@jdx](https://github.com/jdx) in [#4668](https://github.com/jdx/mise/pull/4668)
+- rename mise-php to asdf-php by [@jdx](https://github.com/jdx) in [#4674](https://github.com/jdx/mise/pull/4674)
+
+### New Contributors
+
+- @atty303 made their first contribution in [#4349](https://github.com/jdx/mise/pull/4349)
+- @looztra made their first contribution in [#4669](https://github.com/jdx/mise/pull/4669)
+
 ## [2025.3.6](https://github.com/jdx/mise/compare/v2025.3.5..v2025.3.6) - 2025-03-18
 
 ### Chore
