@@ -45,7 +45,7 @@ impl BunPlugin {
             os(),
             arch()
         );
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
@@ -126,20 +126,12 @@ fn arch() -> &'static str {
             "x64-baseline"
         }
     } else if cfg!(target_arch = "aarch64") {
-        if cfg!(windows) {
-            "x64"
-        } else {
-            "aarch64"
-        }
+        if cfg!(windows) { "x64" } else { "aarch64" }
     } else {
         &ARCH
     }
 }
 
 fn bun_bin_name() -> &'static str {
-    if cfg!(windows) {
-        "bun.exe"
-    } else {
-        "bun"
-    }
+    if cfg!(windows) { "bun.exe" } else { "bun" }
 }

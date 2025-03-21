@@ -1,14 +1,12 @@
-use crate::config::config_file::toml::{deserialize_arr, TomlParser};
 use crate::config::Config;
-use crate::task::task_script_parser::{
-    has_any_args_defined, replace_template_placeholders_with_args, TaskScriptParser,
-};
+use crate::config::config_file::toml::{TomlParser, deserialize_arr};
+use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
-use console::{truncate_str, Color};
+use console::{Color, truncate_str};
 use either::Either;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -26,8 +24,8 @@ use std::{ffi, fmt, path};
 use xx::regex;
 
 mod deps;
-pub mod file_providers;
 mod task_dep;
+pub mod task_file_providers;
 mod task_script_parser;
 pub mod task_sources;
 
@@ -55,6 +53,8 @@ pub struct Task {
     pub cf: Option<Arc<dyn ConfigFile>>,
     #[serde(skip)]
     pub config_root: Option<PathBuf>,
+    #[serde(default)]
+    pub confirm: Option<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -170,23 +170,27 @@ impl Task {
         let p = TomlParser::new(&info);
         // trace!("task info: {:#?}", info);
 
-        task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
+        task.description = p.parse_str("description").unwrap_or_default();
         task.aliases = p
             .parse_array("alias")
             .or(p.parse_array("aliases"))
             .or(p.parse_str("alias").map(|s| vec![s]))
             .or(p.parse_str("aliases").map(|s| vec![s]))
             .unwrap_or_default();
-        task.description = p.parse_str("description").unwrap_or_default();
-        task.sources = p.parse_array("sources").unwrap_or_default();
-        task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
+        task.confirm = p.parse_str("confirm");
         task.depends = p.parse_array("depends").unwrap_or_default();
         task.depends_post = p.parse_array("depends_post").unwrap_or_default();
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
-        task.dir = p.parse_str("dir");
         task.env = p.parse_env("env")?.unwrap_or_default();
+        task.dir = p.parse_str("dir");
+        task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
+        task.raw = p.parse_bool("raw").unwrap_or_default();
+        task.sources = p.parse_array("sources").unwrap_or_default();
+        task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
+        task.quiet = p.parse_bool("quiet").unwrap_or_default();
+        task.silent = p.parse_bool("silent").unwrap_or_default();
         task.tools = p
             .parse_table("tools")
             .map(|t| t.into_iter().map(|(k, v)| (k, v.to_string())).collect())
@@ -312,7 +316,12 @@ impl Task {
     ) -> Result<(usage::Spec, Vec<String>)> {
         let (mut spec, scripts) = if let Some(file) = &self.file {
             let spec = usage::Spec::parse_script(file)
-                .inspect_err(|e| debug!("failed to parse task file with usage: {e}"))
+                .inspect_err(|e| {
+                    warn!(
+                        "failed to parse task file {} with usage: {e:?}",
+                        file::display_path(file)
+                    )
+                })
                 .unwrap_or_default();
             (spec, vec![])
         } else {
@@ -344,14 +353,16 @@ impl Task {
         args: &[String],
         env: &EnvMap,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(cwd, env)?;
+        let (spec, scripts) = self.parse_usage_spec(cwd.clone(), env)?;
         if has_any_args_defined(&spec) {
-            Ok(
-                replace_template_placeholders_with_args(self, &spec, &scripts, args)?
-                    .into_iter()
-                    .map(|s| (s, vec![]))
-                    .collect(),
-            )
+            let scripts = TaskScriptParser::new(cwd).parse_run_scripts_with_args(
+                self,
+                self.run(),
+                env,
+                args,
+                &spec,
+            )?;
+            Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
             Ok(scripts
                 .iter()
@@ -572,6 +583,7 @@ impl Default for Task {
             config_source: PathBuf::new(),
             cf: None,
             config_root: None,
+            confirm: None,
             depends: vec![],
             depends_post: vec![],
             wait_for: vec![],

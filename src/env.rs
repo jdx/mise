@@ -1,19 +1,24 @@
-use crate::cli::args::{ENV_ARG, PROFILE_ARG};
+use crate::cli::args::{ENV_ARG, PROFILE_ARG, ToolArg};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
-use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::path::PathBuf;
 use std::string::ToString;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
+use std::{
+    collections::{HashMap, HashSet},
+    ffi::OsStr,
+    sync::Mutex,
+};
 use std::{path, process};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
+pub static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
 #[cfg(unix)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 #[cfg(windows)]
@@ -149,9 +154,6 @@ pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string(
 pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
 pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
 pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
-
-pub static HTTP_PROXY: Lazy<Option<String>> =
-    Lazy::new(|| var("https_proxy").or_else(|_| var("http_proxy")).ok());
 
 pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 
@@ -472,6 +474,22 @@ fn is_ninja_on_path() -> bool {
 
 pub fn is_activated() -> bool {
     var("__MISE_DIFF").is_ok()
+}
+
+pub fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) {
+    static MUTEX: Mutex<()> = Mutex::new(());
+    let _mutex = MUTEX.lock().unwrap();
+    unsafe {
+        std::env::set_var(key, value);
+    }
+}
+
+pub fn remove_var<K: AsRef<OsStr>>(key: K) {
+    static MUTEX: Mutex<()> = Mutex::new(());
+    let _mutex = MUTEX.lock().unwrap();
+    unsafe {
+        std::env::remove_var(key);
+    }
 }
 
 #[cfg(test)]

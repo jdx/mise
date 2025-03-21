@@ -27,6 +27,11 @@ depends = ["docs:setup"]
 dir = "docs"
 run = "bun run docs:build"
 
+["docs:preview"]
+depends = ["docs:build"]
+dir = "docs"
+run = "bun run docs:preview"
+
 ["render:usage"]
 depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }
@@ -49,10 +54,6 @@ mise completion bash > completions/mise.bash
 mise completion zsh > completions/_mise
 mise completion fish > completions/mise.fish
 '''
-
-["render:registry"]
-depends = ["build"]
-run = "./scripts/render-registry.js"
 
 ["render:settings"]
 run = "tsx xtasks/render/settings.ts"

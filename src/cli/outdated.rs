@@ -2,13 +2,13 @@ use std::collections::HashSet;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::ToolsetBuilder;
+use crate::toolset::outdated_info::OutdatedInfo;
 use crate::ui::table;
 use eyre::Result;
 use indexmap::IndexMap;
-use tabled::settings::location::ByColumnName;
 use tabled::settings::Remove;
+use tabled::settings::location::ByColumnName;
 
 /// Shows outdated tool versions
 ///
@@ -53,6 +53,19 @@ impl Outdated {
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
         let outdated = ts.list_outdated_versions(self.bump);
+        self.display(outdated)?;
+        Ok(())
+    }
+
+    fn display(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
+        match self.json {
+            true => self.display_json(outdated)?,
+            false => self.display_table(outdated)?,
+        }
+        Ok(())
+    }
+
+    fn display_table(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
         if outdated.is_empty() {
             info!("All tools are up to date");
             if !self.bump {
@@ -62,15 +75,8 @@ impl Outdated {
                     ""
                 );
             }
-        } else if self.json {
-            self.display_json(outdated)?;
-        } else {
-            self.display(outdated)?;
+            return Ok(());
         }
-        Ok(())
-    }
-
-    fn display(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
         let mut table = tabled::Table::new(outdated);
         if !self.bump {
             table.with(Remove::column(ByColumnName::new("bump")));

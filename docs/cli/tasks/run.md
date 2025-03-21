@@ -87,6 +87,7 @@ Configure with `jobs` config or `MISE_JOBS` env var
 ### `-r --raw`
 
 Read/write directly to stdin/stdout/stderr instead of by line
+Redactions are not applied with this option
 Configure with `raw` config or `MISE_RAW` env var
 
 ### `--no-timings`
@@ -114,6 +115,8 @@ Change how tasks information is output when running tasks
 - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 - `quiet` - Don't show extra output
 - `silent` - Don't show any output including stdout and stderr from the task except for errors
+
+### `--no-cache`
 
 Examples:
 

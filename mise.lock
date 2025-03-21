@@ -4,33 +4,37 @@ backend = "aqua:rhysd/actionlint"
 
 [tools.actionlint.checksums]
 "actionlint_1.7.7_darwin_arm64.tar.gz" = "sha256:2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc033873db"
+"actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+"actionlint_1.7.7_linux_arm64.tar.gz" = "sha256:401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
 
 [tools.bun]
-version = "1.1.44"
+version = "1.2.2"
 backend = "core:bun"
 
 [tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:f192297d4570165efaf0ed0ff9939f70c554a639cc56cb7d56963948ea18502e"
-"bun-linux-x64-baseline.zip" = "sha256:902f414cf6f83996fca2babb9386d30555529505c0d26d29a99030bb900905d3"
+"bun-darwin-aarch64.zip" = "sha256:c4d58e06c5c33885b526f4d91a38ca9ebdb9fc3fb4cd547f7d3302055c98e41c"
+"bun-linux-aarch64.zip" = "sha256:d1dbaa3e9af24549fad92bdbe4fb21fa53302cd048a8f004e85a240984c93d4d"
+"bun-linux-x64-baseline.zip" = "sha256:cad7756a6ee16f3432a328f8023fc5cd431106822eacfa6d6d3afbad6fdc24db"
 
 [tools.cargo-binstall]
-version = "1.10.17"
+version = "1.10.22"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
-"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:81abb7de75ef130844bb58965bdb93969afadd0821cf5e1e1bd0517e48963199"
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:d073d4e8901e176b0f625845f9a0bbd926a063017991d7cc0c863e6b884d2d59"
+"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:97ce4a2f18181f052dda266b042d8bb220e48ffe40ca75e796ae4c5e418b9e01"
+"cargo-binstall-aarch64-unknown-linux-musl.tgz" = "sha256:b8c32b1b007482f42f6c4b5f8cfeb168f9674ec6448bfa29ae0c4ba01b7a370b"
+"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:74d7c647c7e60bb8464fa551702fdd38a7241f5cedb2c4edc3b11639cd1dae47"
 
 [tools."cargo:cargo-edit"]
-version = "0.13.0"
+version = "0.13.1"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
-version = "1.42.0"
+version = "1.42.1"
 backend = "cargo:cargo-insta"
 
 [tools."cargo:git-cliff"]
-version = "2.7.0"
+version = "2.8.0"
 backend = "cargo:git-cliff"
 
 [tools."cargo:toml-cli"]
@@ -38,7 +42,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "2.0.0"
+version = "2.0.4"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
@@ -62,7 +66,7 @@ jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea
 "jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
 
 [tools."npm:markdownlint-cli"]
-version = "0.43.0"
+version = "0.44.0"
 backend = "npm:markdownlint-cli"
 
 [tools."npm:prettier"]
@@ -74,11 +78,11 @@ version = "0.24.2"
 backend = "pipx:toml-sort"
 
 [tools.pre-commit]
-version = "4.0.1"
+version = "4.1.0"
 backend = "aqua:pre-commit/pre-commit"
 
 [tools.pre-commit.checksums]
-"pre-commit-4.0.1.pyz" = "sha256:f3e65c943795be7879e7ea2beda248321b6c8ae851dabc785522a432fb8ce003"
+"pre-commit-4.1.0.pyz" = "sha256:df3ac88cb2d7825af90e887e1eafbdb85481b800541d86e4d437b37f8abf8a39"
 
 [tools.ripgrep]
 version = "14.1.1"
@@ -114,6 +118,7 @@ version = "2.6.0"
 backend = "ubi:slsa-framework/slsa-verifier"
 
 [tools.slsa-verifier.checksums]
+slsa-verifier-linux-aarch64 = "sha256:92b28eb2db998f9a6a048336928b29a38cb100076cd587e443ca0a2543d7c93d"
 slsa-verifier-linux-x86_64 = "sha256:1c9c0d6a272063f3def6d233fa3372adbaff1f5a3480611a07c744e73246b62d"
 slsa-verifier-macos-aarch64 = "sha256:8740e66832fd48bbaa479acd5310986b876ff545460add0cb4a087aec056189c"
 "slsa-verifier.exe-windows-x86_64" = "sha256:37ca29ad748e8ea7be76d3ae766e8fa505362240431f6ea7f0648c727e2f2507"

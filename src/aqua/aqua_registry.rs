@@ -3,12 +3,13 @@ use crate::backend::aqua;
 use crate::backend::aqua::{arch, os};
 use crate::config::SETTINGS;
 use crate::duration::{DAILY, WEEKLY};
-use crate::git::Git;
+use crate::git::{CloneOptions, Git};
 use crate::{dirs, file, hashmap, http};
-use expr::{Context, Parser, Program, Value};
-use eyre::{eyre, ContextCompat, Result};
+use expr::{Context, Program, Value};
+use eyre::{ContextCompat, Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use regex::Regex;
 use serde_derive::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
@@ -122,6 +123,7 @@ pub struct AquaCosign {
     pub signature: Option<AquaCosignSignature>,
     pub key: Option<AquaCosignSignature>,
     pub certificate: Option<AquaCosignSignature>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     opts: Vec<String>,
 }
 
@@ -175,7 +177,7 @@ impl AquaRegistry {
             fetch_latest_repo(&repo)?;
         } else if let Some(aqua_registry_url) = &SETTINGS.aqua.registry_url {
             info!("cloning aqua registry to {path:?}");
-            repo.clone(aqua_registry_url, None)?;
+            repo.clone(aqua_registry_url, CloneOptions::default())?;
             repo_exists = true;
         }
         Ok(Self { path, repo_exists })
@@ -209,8 +211,7 @@ impl AquaRegistry {
             .next()
             .wrap_err(format!("no package found for {id} in {path:?}"))?;
         if let Some(version_filter) = &pkg.version_filter {
-            // TODO: should this use AquaPackage::expr_parser somehow?
-            pkg.version_filter_expr = Some(Parser::new().compile(version_filter)?);
+            pkg.version_filter_expr = Some(expr::compile(version_filter)?);
         }
         Ok(pkg)
     }
@@ -230,7 +231,7 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
 }
 
 impl AquaPackage {
-    fn with_version(mut self, v: &str) -> AquaPackage {
+    pub fn with_version(mut self, v: &str) -> AquaPackage {
         self = apply_override(self.clone(), self.version_override(v));
         if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
             if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
@@ -390,10 +391,11 @@ impl AquaPackage {
         expr.run(program, &self.expr_ctx(v)).map_err(|e| eyre!(e))
     }
 
-    fn expr_parser(&self, v: &str) -> Parser {
-        let ver = versions::Versioning::new(v.strip_prefix('v').unwrap_or(v));
-        let mut expr = Parser::new();
-        expr.add_function("semver", move |c| {
+    fn expr_parser(&self, v: &str) -> expr::Environment {
+        let prefix = Regex::new(r"^[^0-9.]+").unwrap();
+        let ver = versions::Versioning::new(prefix.replace(v, ""));
+        let mut env = expr::Environment::new();
+        env.add_function("semver", move |c| {
             if c.args.len() != 1 {
                 return Err("semver() takes exactly one argument".to_string().into());
             }
@@ -408,7 +410,7 @@ impl AquaPackage {
                 Err("invalid semver".to_string().into())
             }
         });
-        expr
+        env
     }
 
     fn expr_ctx(&self, v: &str) -> Context {
@@ -494,6 +496,9 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         orig.files = avo.files.clone();
     }
     orig.replacements.extend(avo.replacements.clone());
+    if let Some(avo_version_prefix) = avo.version_prefix.clone() {
+        orig.version_prefix = Some(avo_version_prefix);
+    }
     if !avo.overrides.is_empty() {
         orig.overrides = avo.overrides.clone();
     }

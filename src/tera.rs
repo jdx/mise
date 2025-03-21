@@ -1,20 +1,21 @@
 use std::collections::HashMap;
+use std::iter::once;
 use std::path::{Path, PathBuf};
 
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
-use rand::seq::SliceRandom;
-use rand::thread_rng;
+use rand::prelude::*;
 use std::sync::LazyLock as Lazy;
 use tera::{Context, Tera, Value};
 use versions::{Requirement, Versioning};
 
 use crate::cache::CacheManagerBuilder;
 use crate::cmd::cmd;
+use crate::config::SETTINGS;
 use crate::env_diff::EnvMap;
-use crate::{dirs, env, hash};
+use crate::{dirs, duration, env, hash};
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
@@ -74,7 +75,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                     match args.get("alphabet") {
                         Some(Value::String(alphabet)) => {
                             let alphabet = alphabet.chars().collect::<Vec<char>>();
-                            let mut rng = thread_rng();
+                            let mut rng = rand::rng();
                             let result =
                                 (0..n).map(|_| alphabet.choose(&mut rng).unwrap()).collect();
                             Ok(Value::String(result))
@@ -315,17 +316,26 @@ pub fn tera_exec(
             _ => return Err("exec cache_key must be a string".into()),
         };
         let cache_duration = match args.get("cache_duration") {
-            Some(Value::String(duration)) => match humantime::parse_duration(&duration.to_string())
-            {
-                Ok(duration) => Some(duration),
-                Err(e) => return Err(format!("exec cache_duration: {}", e).into()),
-            },
+            Some(Value::String(duration)) => {
+                match duration::parse_duration(&duration.to_string()) {
+                    Ok(duration) => Some(duration),
+                    Err(e) => return Err(format!("exec cache_duration: {}", e).into()),
+                }
+            }
             None => None,
             _ => return Err("exec cache_duration must be an integer".into()),
         };
         match args.get("command") {
             Some(Value::String(command)) => {
-                let mut cmd = cmd("bash", ["-c", command]).full_env(&env);
+                let shell = SETTINGS
+                    .default_inline_shell()
+                    .map_err(|e| tera::Error::msg(e.to_string()))?;
+                let args = shell
+                    .iter()
+                    .skip(1)
+                    .chain(once(command))
+                    .collect::<Vec<&String>>();
+                let mut cmd: duct::Expression = cmd(&shell[0], args).full_env(&env);
                 if let Some(dir) = &dir {
                     cmd = cmd.dir(dir);
                 }

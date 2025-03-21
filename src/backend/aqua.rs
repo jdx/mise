@@ -1,6 +1,6 @@
-use crate::aqua::aqua_registry::{AquaChecksumType, AquaPackage, AquaPackageType, AQUA_REGISTRY};
-use crate::backend::backend_type::BackendType;
+use crate::aqua::aqua_registry::{AQUA_REGISTRY, AquaChecksumType, AquaPackage, AquaPackageType};
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
@@ -12,7 +12,7 @@ use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{file, github, minisign};
-use eyre::{bail, ContextCompat, Result};
+use eyre::{ContextCompat, Result, bail};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
@@ -61,6 +61,7 @@ impl Backend for AquaBackend {
                             warn!("[{}] aqua version filter error: {e}", self.ba);
                         }
                     }
+                    let pkg = pkg.clone().with_version(v);
                     if let Some(prefix) = &pkg.version_prefix {
                         if let Some(_v) = v.strip_prefix(prefix) {
                             v = _v
@@ -97,7 +98,7 @@ impl Backend for AquaBackend {
                 self.fetch_url(&pkg, &v).map_err(|e| err.wrap_err(e))?
             }
         };
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         self.download(ctx, &tv, &url, filename)?;
         self.verify(ctx, &mut tv, &pkg, &v, filename)?;
         self.install(ctx, &tv, &pkg, &v, filename)?;

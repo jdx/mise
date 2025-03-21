@@ -1,15 +1,15 @@
-use crate::backend::backend_type::BackendType;
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
-use crate::git::Git;
+use crate::git::{CloneOptions, Git};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{dirs, file, github};
 use eyre::WrapErr;
-use serde::de::{MapAccess, Visitor};
 use serde::Deserializer;
+use serde::de::{MapAccess, Visitor};
 use serde_derive::Deserialize;
 use std::fmt::{self, Debug};
 use std::path::PathBuf;
@@ -95,7 +95,10 @@ impl SPMBackend {
                 package_repo.url.as_str(),
                 repo.dir.display(),
             );
-            repo.clone(package_repo.url.as_str(), Some(&ctx.pr))?;
+            repo.clone(
+                package_repo.url.as_str(),
+                CloneOptions::default().pr(&ctx.pr),
+            )?;
         }
         debug!("Checking out revision: {revision}");
         repo.update_tag(revision.to_string())?;
@@ -200,7 +203,10 @@ impl SwiftPackageRepo {
         } else if shorthand_regex.is_match(name) {
             name
         } else {
-            Err(eyre::eyre!("Invalid Swift package repository: {}. The repository should either be a GitHub repository slug, owner/name, or the complete URL, https://github.com/owner/name.", name))?
+            Err(eyre::eyre!(
+                "Invalid Swift package repository: {}. The repository should either be a GitHub repository slug, owner/name, or the complete URL, https://github.com/owner/name.",
+                name
+            ))?
         };
         let url_str = format!("https://github.com/{}.git", shorthand);
         let url = Url::parse(&url_str)?;
@@ -285,6 +291,17 @@ impl PackageDescriptionProductType {
         matches!(self, Self::Executable)
     }
 
+    /// Swift determines the toolchain to use with a given package using a comment in the Package.swift file at the top.
+    /// For example:
+    ///   // swift-tools-version: 6.0
+    ///
+    /// The version of the toolchain can be older than the Swift version used to build the package. This versioning gives
+    /// Apple the flexibility to introduce and flag breaking changes in the toolchain.
+    ///
+    /// How to determine the product type is something that might change across different versions of Swift.
+    ///
+    /// ## Swift 5.x
+    ///
     /// Product type is a key in the map with an undocumented value that we are not interested in and can be easily skipped.
     ///
     /// Example:
@@ -301,6 +318,17 @@ impl PackageDescriptionProductType {
     ///     ]
     /// }
     /// ```
+    ///
+    /// ## Swift 6.x
+    ///
+    /// The product type is directly the value under the key "type"
+    ///
+    /// Example:
+    ///
+    /// ```json
+    /// "type": "executable"
+    /// ```
+    ///
     fn deserialize_product_type_field<'de, D>(
         deserializer: D,
     ) -> Result<PackageDescriptionProductType, D::Error>
@@ -322,6 +350,14 @@ impl PackageDescriptionProductType {
             {
                 if let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
+                        "type" => {
+                            let value: String = map.next_value()?;
+                            if value == "executable" {
+                                Ok(PackageDescriptionProductType::Executable)
+                            } else {
+                                Ok(PackageDescriptionProductType::Other)
+                            }
+                        }
                         "executable" => {
                             // Skip the value by reading it into a dummy serde_json::Value
                             let _value: serde_json::Value = map.next_value()?;

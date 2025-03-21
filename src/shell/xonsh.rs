@@ -44,12 +44,15 @@ impl Shell for Xonsh {
         let flags = opts.flags;
         let exe = exe.display();
 
+        let mut out = String::new();
+        out.push_str(&self.format_activate_prelude(&opts.prelude));
+
         // todo: xonsh doesn't update the environment that mise relies on with $PATH.add even with $UPDATE_OS_ENVIRON (github.com/xonsh/xonsh/issues/3207)
         // with envx.swap(UPDATE_OS_ENVIRON=True): # ← use when ↑ fixed before PATH.add; remove environ
         // meanwhile, save variables twice: in shell env + in os env
         // use xonsh API instead of $.xsh to allow use inside of .py configs, which start faster due to being compiled to .pyc
         // todo: subprocess instead of $() is a bit faster, but lose auto-color detection (use $FORCE_COLOR)
-        formatdoc! {r#"
+        out.push_str(&formatdoc! {r#"
             from os               import environ
             import subprocess
             from xonsh.built_ins  import XSH
@@ -69,7 +72,9 @@ impl Shell for Xonsh {
                 subprocess.run(['command', 'mise', *args])
 
             XSH.aliases['mise'] = _mise
-        "#}
+        "#});
+
+        out
     }
 
     fn deactivate(&self) -> String {
@@ -166,6 +171,7 @@ mod tests {
             exe: exe.to_path_buf(),
             flags: " --status".into(),
             no_hook_env: false,
+            prelude: vec![],
         };
         insta::assert_snapshot!(xonsh.activate(opts));
     }

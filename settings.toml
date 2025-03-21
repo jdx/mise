@@ -229,7 +229,7 @@ description = "Backends to disable such as `asdf` or `pipx`"
 [disable_default_registry]
 env = "MISE_DISABLE_DEFAULT_REGISTRY"
 type = "Bool"
-description = "Disable the default mapping of short tool names like `go` -> `vfox:version-fox/vfox-golang`"
+description = "Disable the default mapping of short tool names like `go` -> `vfox:version-fox/vfox-golang`. This parameter disables only for the backends `vfox` and `asdf`."
 
 [disable_default_shorthands]
 env = "MISE_DISABLE_DEFAULT_SHORTHANDS"
@@ -365,6 +365,17 @@ default = "5s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
 aliases = ["fetch_remote_version_timeout"]
 
+[gix]
+env = "MISE_GIX"
+type = "Bool"
+hide = true
+default = true
+description = "Use gix for git operations, set to false to shell out to git."
+docs = """
+Use gix for git operations. This is generally faster but may not be as compatible if the
+system's gix is not the same version as the one used by mise.
+"""
+
 [global_config_file]
 env = "MISE_GLOBAL_CONFIG_FILE"
 type = "Path"
@@ -487,6 +498,7 @@ hide = true
 [libgit2]
 env = "MISE_LIBGIT2"
 type = "Bool"
+hide = true
 default = true
 description = "Use libgit2 for git operations, set to false to shell out to git."
 docs = """
@@ -583,6 +595,13 @@ You can install it with mise:
 mise use -g bun
 ```
 """
+
+[os]
+env = "MISE_OS"
+type = "String"
+optional = true
+description = "OS to use for precompiled binaries."
+default_docs = '"linux" | "macos" | "windows"'
 
 [override_config_filenames]
 env = "MISE_OVERRIDE_CONFIG_FILENAMES"
@@ -961,7 +980,7 @@ description = "Show configured env vars when entering a directory with a mise.to
 [status.show_tools]
 env = "MISE_STATUS_MESSAGE_SHOW_TOOLS"
 type = "Bool"
-description = "Show configured env vars when entering a directory with a mise.toml file."
+description = "Show configured tools when entering a directory with a mise.toml file."
 
 [swift.gpg_verify]
 env = "MISE_SWIFT_GPG_VERIFY"
@@ -1029,6 +1048,12 @@ enum = [
 docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 """
+
+[task_remote_no_cache]
+env = "MISE_TASK_REMOTE_NO_CACHE"
+type = "Bool"
+optional = true
+description = "Mise will always fetch the latest tasks from the remote, by default the cache is used."
 
 [task_run_auto_install]
 env = "MISE_TASK_RUN_AUTO_INSTALL"
@@ -1133,6 +1158,18 @@ rust_type = "Vec<String>"
 default = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
 parse_env = "list_by_comma"
 description = "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on."
+
+[windows_shim_mode]
+env = "MISE_WINDOWS_SHIM_MODE"
+type = "String"
+default = "file"
+description = "Shim file mode for Windows. Options: `file`, `hardlink`, `symlink`."
+docs = """
+* values:
+  * `file`: Creates a file with the content `mise exec`.
+  * `hardlink`: Uses Windows NTFS Hardlink, required on same filesystems. Need run `mise reshim --force` after upgrade mise.
+  * `symlink`: Uses Windows NTFS SymbolicLink. Requires Windows Vista or later with admin privileges or enabling "Developer Mode" in Windows 10/11.
+"""
 
 [yes]
 env = "MISE_YES"

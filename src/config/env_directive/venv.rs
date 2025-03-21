@@ -1,3 +1,4 @@
+use crate::Result;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
@@ -5,8 +6,8 @@ use crate::config::env_directive::EnvResults;
 use crate::config::{Config, SETTINGS};
 use crate::env_diff::EnvMap;
 use crate::file::{display_path, which_non_pristine};
+use crate::lock_file::LockFile;
 use crate::toolset::ToolsetBuilder;
-use crate::Result;
 use crate::{backend, plugins};
 use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
@@ -32,6 +33,7 @@ impl EnvResults {
         trust_check(source)?;
         let venv = r.parse_template(ctx, tera, source, &path)?;
         let venv = normalize_path(config_root, venv.into());
+        let venv_lock = LockFile::new(&venv).lock()?;
         if !venv.exists() && create {
             // TODO: the toolset stuff doesn't feel like it's in the right place here
             // TODO: in fact this should probably be moved to execute at the same time as src/uv.rs runs in ts.env() instead of config.env()
@@ -69,8 +71,8 @@ impl EnvResults {
                     p = display_path(&venv)
                 );
             } else {
-                let has_uv_bin = ts.which("uv").is_some() || which_non_pristine("uv").is_some();
-                let use_uv = !SETTINGS.python.venv_stdlib && has_uv_bin;
+                let uv_bin = ts.which_bin("uv").or_else(|| which_non_pristine("uv"));
+                let use_uv = !SETTINGS.python.venv_stdlib && uv_bin.is_some();
                 let cmd = if use_uv {
                     info!("creating venv with uv at: {}", display_path(&venv));
                     let extra = SETTINGS
@@ -79,7 +81,8 @@ impl EnvResults {
                         .clone()
                         .or(uv_create_args)
                         .unwrap_or_default();
-                    let mut cmd = CmdLineRunner::new("uv").args(["venv", &venv.to_string_lossy()]);
+                    let mut cmd =
+                        CmdLineRunner::new(uv_bin.unwrap()).args(["venv", &venv.to_string_lossy()]);
 
                     cmd = match (python_path, python) {
                         // The selected mise managed python tool path from env._.python.venv.python or first in list
@@ -116,6 +119,7 @@ impl EnvResults {
                 cmd.execute()?;
             }
         }
+        drop(venv_lock);
         if venv.exists() {
             r.env_paths
                 .insert(0, venv.join(if cfg!(windows) { "Scripts" } else { "bin" }));

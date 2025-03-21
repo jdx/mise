@@ -15,7 +15,7 @@ Both of these are required to use a tool. If you simply install a tool via `mise
 It must also be added to `mise.toml`—which is why I promote using `mise use` since it does both.
 :::
 
-You use it like so (note that `mise` must be [activated](/getting-started.html#_2-activate-mise) for this to work):
+You use it like so (note that `mise` must be [activated](/getting-started.html#activate-mise) for this example to work):
 
 ```bash
 mkdir example-project && cd example-project

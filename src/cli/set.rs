@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 
 use super::args::EnvVarArg;
 use crate::config;
-use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::config_file::ConfigFile;
-use crate::config::env_directive::EnvDirective;
 use crate::config::Config;
+use crate::config::config_file::ConfigFile;
+use crate::config::config_file::mise_toml::MiseToml;
+use crate::config::env_directive::EnvDirective;
 use crate::env::{self};
 use crate::file::display_path;
 use crate::ui::table;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use tabled::Tabled;
 
 /// Set environment variables in mise.toml

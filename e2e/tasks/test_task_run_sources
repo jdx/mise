@@ -47,3 +47,21 @@ assert_empty "mise -q hi"
 touch input
 assert "mise -q hi" "hi"
 assert_empty "mise -q hi"
+
+mkdir src out
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["{{cwd}}/src/**/*"]
+outputs = ["{{cwd}}/out/**/*"]
+run = "touch out/done.txt && echo done"
+EOF
+assert "touch src/foo.txt"
+assert "mise build" "done"
+assert_empty "mise build"
+assert "touch src/foo.txt"
+assert "touch src/bar.txt"
+assert "mise build" "done"
+assert_empty "mise build"
+assert "rm src/foo.txt"
+assert "mise build" "done"
+assert_empty "mise build"

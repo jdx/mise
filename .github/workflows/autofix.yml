@@ -3,6 +3,7 @@ name: autofix.ci
 on:
   workflow_call:
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -24,6 +25,7 @@ env:
 
 jobs:
   autofix:
+    if: github.actor != 'renovate[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

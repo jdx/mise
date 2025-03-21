@@ -62,11 +62,11 @@ mod tests {
             results.env_paths.into_iter().map(|p| replace_path(&p.display().to_string())).collect::<Vec<_>>(),
             @r#"
         [
+            "~/foo/1",
+            "~/cwd/rel2/2",
+            "~/cwd/rel/1",
             "/path/1",
             "/path/2",
-            "~/foo/1",
-            "~/cwd/rel/1",
-            "~/cwd/rel2/2",
         ]
         "#
         );

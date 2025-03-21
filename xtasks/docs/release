@@ -1,4 +1,4 @@
-#!/usr/bin/env -S mise x aws-cli@2.22.35 -- bash
+#!/usr/bin/env bash
 set -xeuo pipefail
 #MISE depends=["docs:build"]
 #MISE dir="docs"

@@ -175,6 +175,38 @@ assert_empty() {
   fi
 }
 
+assert_directory_exists() {
+  if [[ -d "$1" ]]; then
+    ok "[$1] directory exists"
+  else
+    fail "[$1] directory does not exist"
+  fi
+}
+
+assert_directory_not_exists() {
+  if [[ ! -d "$1" ]]; then
+    ok "[$1] directory does not exist"
+  else
+    fail "[$1] directory exists"
+  fi
+}
+
+assert_directory_empty() {
+  if [[ -z "$(ls -A "$1")" ]]; then
+    ok "[$1] directory is empty"
+  else
+    fail "[$1] directory is not empty"
+  fi
+}
+
+assert_directory_not_empty() {
+  if [[ -n "$(ls -A "$1")" ]]; then
+    ok "[$1] directory is not empty"
+  else
+    fail "[$1] directory is empty"
+  fi
+}
+
 require_cmd() {
   if ! type -p "$1" >/dev/null; then
     title="E2E test $TEST_NAME aborted" err "'$1' is required but was not found in PATH"

@@ -2,7 +2,7 @@
 
 Tasks can be defined in `mise.toml` files in different ways:
 
-```toml
+```toml [mise.toml]
 [tasks.cleancache]
 run = "rm -rf .cache"
 hide = true # hide this task from the list
@@ -39,8 +39,24 @@ description = 'Run CI tasks'
 depends = ['build', 'lint', 'test']
 
 [tasks.release]
+confirm = 'Are you sure you want to cut a new release?'
 description = 'Cut a new release'
 file = 'scripts/release.sh' # execute an external script
+```
+
+You can use [environment variables](/environments/) or [`vars`](/tasks/task-configuration.html#vars-options) to define common arguments:
+
+```toml [mise.toml]
+[env]
+VERBOSE_ARGS = '--verbose'
+
+# Vars can be shared between tasks like environment variables,
+# but they are not passed as environment variables to the scripts
+[vars]
+e2e_args = '--headless'
+
+[tasks.test]
+run = './scripts/test-e2e.sh {{vars.e2e_args}} $VERBOSE_ARGS'
 ```
 
 ## Adding tasks
@@ -167,6 +183,17 @@ outputs = ['target/debug/mycli']
 ```
 
 You can use `sources` alone if with [`mise watch`](/cli/watch.html) to run the task when the sources change.
+
+### Confirmation
+
+A message to show before running the task. The user will be prompted to confirm before the task is run.
+
+```toml
+[tasks.release]
+confirm = 'Are you sure you want to cut a new release?'
+description = 'Cut a new release'
+file = 'scripts/release.sh'
+```
 
 ## Specifying a shell or an interpreter {#shell-shebang}
 
@@ -334,15 +361,54 @@ file = 'scripts/release.sh' # execute an external script
 
 ### Remote tasks
 
-Task files can be fetched via http:
+Task files can be fetched remotely with multiple protocols:
+
+#### HTTP
 
 ```toml
 [tasks.build]
 file = "https://example.com/build.sh"
 ```
 
-Currently, they're fetched everytime they're executed, but we may add some cache support later.
-This could be extended with other protocols like mentioned in [this ticket](https://github.com/jdx/mise/issues/2488) if there were interest.
+Please note that the file will be downloaded and executed. Make sure you trust the source.
+
+#### Git <Badge type="warning" text="experimental" />
+
+::: code-group
+
+```toml [ssh]
+[tasks.build]
+file = "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0"
+```
+
+```toml [https]
+[tasks.build]
+file = "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0"
+```
+
+:::
+
+Url format must follow these patterns `git::<protocol>://<url>//<path>?<ref>`
+
+Required fields:
+
+- `protocol`: The git repository URL.
+- `url`: The git repository URL.
+- `path`: The path to the file in the repository.
+
+Optional fields:
+
+- `ref`: The git reference (branch, tag, commit).
+
+#### Cache
+
+Each task file is cached in the `MISE_CACHE_DIR` directory. If the file is updated, it will not be re-downloaded unless the cache is cleared.
+
+:::tip
+You can reset the cache by running `mise cache clear`.
+:::
+
+You can use the `MISE_TASK_REMOTE_NO_CACHE` environment variable to disable caching of remote tasks.
 
 ## Arguments
 

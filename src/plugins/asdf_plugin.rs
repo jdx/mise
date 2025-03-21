@@ -1,7 +1,7 @@
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS, Settings};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
-use crate::git::Git;
+use crate::git::{CloneOptions, Git};
 use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
 use crate::result::Result;
 use crate::timeout::run_with_timeout;
@@ -12,7 +12,7 @@ use crate::{dirs, env, exit, lock_file, registry};
 use clap::Command;
 use console::style;
 use contracts::requires;
-use eyre::{bail, eyre, Context};
+use eyre::{Context, bail, eyre};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -243,7 +243,9 @@ impl Plugin for AsdfPlugin {
                         style(url.trim_end_matches(".git")).yellow()
                     );
                     if settings.paranoid {
-                        bail!("Paranoid mode is enabled, refusing to install community-developed plugin");
+                        bail!(
+                            "Paranoid mode is enabled, refusing to install community-developed plugin"
+                        );
                     }
                     if !prompt::confirm_with_all(format!(
                         "Would you like to install {}?",
@@ -333,7 +335,7 @@ Plugins could support local directories in the future but for now a symlink is r
         }
         let git = Git::new(&self.plugin_path);
         pr.set_message(format!("clone {repo_url}"));
-        git.clone(&repo_url, Some(pr))?;
+        git.clone(&repo_url, CloneOptions::default().pr(pr))?;
         if let Some(ref_) = &repo_ref {
             pr.set_message(format!("check out {ref_}"));
             git.update(Some(ref_.to_string()))?;

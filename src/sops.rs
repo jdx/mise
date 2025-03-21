@@ -1,12 +1,12 @@
 use crate::config::{Config, SETTINGS};
+use crate::env;
 use crate::file::replace_path;
 use crate::{dirs, file, result};
 use eyre::WrapErr;
 use rops::cryptography::cipher::AES256GCM;
 use rops::cryptography::hasher::SHA512;
-use rops::file::state::EncryptedFile;
 use rops::file::RopsFile;
-use std::env;
+use rops::file::state::EncryptedFile;
 use std::sync::{Mutex, OnceLock};
 
 pub fn decrypt<PT, F>(input: &str, mut parse_template: PT, format: &str) -> result::Result<String>

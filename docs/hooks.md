@@ -48,7 +48,7 @@ While using `mise activate` you can have mise watch files for changes and execut
 ```bash
 [[watch_files]]
 patterns = ["src/**/*.rs"]
-script = "cargo fmt"
+run = "cargo fmt"
 ```
 
 This hook will have the following environment variables set:
@@ -60,7 +60,7 @@ This hook will have the following environment variables set:
 Hooks are executed with the following environment variables set:
 
 - `MISE_ORIGINAL_CWD`: The directory that the user is in.
-- `MISE_PROJECT_DIR`: The root directory of the project.
+- `MISE_PROJECT_ROOT`: The root directory of the project.
 - `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
 
 ## Shell hooks

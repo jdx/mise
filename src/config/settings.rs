@@ -1,12 +1,13 @@
 use crate::cli::Cli;
 use crate::config::ALL_TOML_CONFIG_FILES;
+use crate::duration;
 use crate::file::FindUp;
 use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
-use eyre::{bail, Result};
-use indexmap::{indexmap, IndexMap};
+use eyre::{Result, bail};
+use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
 use serde::ser::Error;
 use serde_derive::{Deserialize, Serialize};
@@ -120,11 +121,6 @@ impl Settings {
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = false;
         }
-        if !settings.idiomatic_version_file_disable_tools.is_empty() {
-            settings
-                .disable_tools
-                .extend(settings.idiomatic_version_file_disable_tools.clone());
-        }
         if settings.raw {
             settings.jobs = 1;
         }
@@ -177,6 +173,9 @@ impl Settings {
             }
         }
         settings.set_hidden_configs();
+        if cfg!(test) {
+            settings.experimental = true;
+        }
         let settings = Arc::new(settings);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
         time!("try_get done");
@@ -366,14 +365,12 @@ impl Settings {
     }
 
     pub fn cache_prune_age_duration(&self) -> Option<Duration> {
-        if self.cache_prune_age == "0" {
-            return None;
-        }
-        Some(humantime::parse_duration(&self.cache_prune_age).unwrap())
+        let age = duration::parse_duration(&self.cache_prune_age).unwrap();
+        if age.as_secs() == 0 { None } else { Some(age) }
     }
 
     pub fn fetch_remote_versions_timeout(&self) -> Duration {
-        humantime::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
+        duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
     }
 
     /// duration that remote version cache is kept for
@@ -385,8 +382,12 @@ impl Settings {
         if *env::PREFER_STALE {
             None
         } else {
-            Some(humantime::parse_duration(&self.fetch_remote_versions_cache).unwrap())
+            Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())
         }
+    }
+
+    pub fn http_timeout(&self) -> Duration {
+        duration::parse_duration(&self.http_timeout).unwrap()
     }
 
     pub fn log_level(&self) -> log::LevelFilter {

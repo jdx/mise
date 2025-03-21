@@ -11,7 +11,7 @@ use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::{backend, dirs, env, fake_asdf, file, logger};
-use color_eyre::eyre::{bail, eyre, Result};
+use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -128,22 +128,59 @@ pub fn reshim(ts: &Toolset, force: bool) -> Result<()> {
 
 #[cfg(windows)]
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
-    let shim = shim.trim_end_matches(".cmd");
-    file::write(
-        symlink_path.with_extension("cmd"),
-        formatdoc! {r#"
+    match SETTINGS.windows_shim_mode.as_ref() {
+        "file" => {
+            let shim = shim.trim_end_matches(".cmd");
+            // write a shim file without extension for use in Git Bash/Cygwin
+            file::write(
+                symlink_path.with_extension(""),
+                formatdoc! {r#"
+        #!/bin/bash
+
+        exec mise x -- {shim} "$@"
+        "#},
+            )
+            .wrap_err_with(|| {
+                eyre!(
+                    "Failed to create symlink from {} to {}",
+                    display_path(mise_bin),
+                    display_path(symlink_path)
+                )
+            })?;
+            file::write(
+                symlink_path.with_extension("cmd"),
+                formatdoc! {r#"
         @echo off
         setlocal
         mise x -- {shim} %*
         "#},
-    )
-    .wrap_err_with(|| {
-        eyre!(
-            "Failed to create symlink from {} to {}",
-            display_path(mise_bin),
-            display_path(symlink_path)
-        )
-    })
+            )
+            .wrap_err_with(|| {
+                eyre!(
+                    "Failed to create symlink from {} to {}",
+                    display_path(mise_bin),
+                    display_path(symlink_path)
+                )
+            })
+        }
+        "hardlink" => fs::hard_link(mise_bin, symlink_path).wrap_err_with(|| {
+            eyre!(
+                "Failed to create hardlink from {} to {}",
+                display_path(mise_bin),
+                display_path(symlink_path)
+            )
+        }),
+        "symlink" => {
+            std::os::windows::fs::symlink_file(mise_bin, symlink_path).wrap_err_with(|| {
+                eyre!(
+                    "Failed to create symlink from {} to {}",
+                    display_path(mise_bin),
+                    display_path(symlink_path)
+                )
+            })
+        }
+        _ => panic!("Unknown shim mode"),
+    }
 }
 
 #[cfg(unix)]
@@ -180,7 +217,7 @@ pub fn get_shim_diffs(
 fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
     let mise_bin = mise_bin.as_ref();
 
-    Ok(list_executables_in_dir(&dirs::SHIMS)?
+    Ok(list_shims()?
         .into_par_iter()
         .filter(|bin| {
             let path = dirs::SHIMS.join(bin);
@@ -211,6 +248,27 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
         .collect())
 }
 
+fn list_shims() -> Result<HashSet<String>> {
+    Ok(dirs::SHIMS
+        .read_dir()?
+        .par_bridge()
+        .map(|bin| {
+            let bin = bin?;
+            // files and symlinks which are executable or extensionless files (Git Bash/Cygwin)
+            if (file::is_executable(&bin.path()) || bin.path().extension().is_none())
+                && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
+            {
+                Ok(Some(bin.file_name().into_string().unwrap()))
+            } else {
+                Ok(None)
+            }
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect())
+}
+
 fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
     Ok(toolset
         .list_installed_versions()?
@@ -222,11 +280,25 @@ fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
             });
             if cfg!(windows) {
                 bins.into_iter()
-                    .map(|b| {
+                    .flat_map(|b| {
                         let p = PathBuf::from(&b);
-                        p.with_extension("cmd").to_string_lossy().to_string()
+                        match SETTINGS.windows_shim_mode.as_ref() {
+                            "hardlink" | "symlink" => {
+                                vec![p.with_extension("exe").to_string_lossy().to_string()]
+                            }
+                            "file" => {
+                                vec![
+                                    p.with_extension("").to_string_lossy().to_string(),
+                                    p.with_extension("cmd").to_string_lossy().to_string(),
+                                ]
+                            }
+                            _ => panic!("Unknown shim mode"),
+                        }
                     })
                     .collect()
+            } else if cfg!(macos) {
+                // some bins might be uppercased but on mac APFS is case insensitive
+                bins.into_iter().map(|b| b.to_lowercase()).collect()
             } else {
                 bins
             }
@@ -275,7 +347,9 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
 
 fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<PathBuf> {
     if tvs.is_empty() {
-        bail!("{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool.");
+        bail!(
+            "{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool."
+        );
     }
     let missing_plugins = tvs.iter().map(|tv| tv.ba()).collect::<HashSet<_>>();
     let mut missing_tools = ts

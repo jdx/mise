@@ -56,8 +56,8 @@ arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise t
 arg "[TASK_ARGS]..." help="Task arguments" required=#false var=#true hide=#true
 arg "[-- TASK_ARGS_LAST]..." required=#false var=#true hide=#true
 cmd activate help="Initializes mise in the current shell session" {
-    long_help "Initializes mise in the current shell session\n\nThis should go into your shell's rc file or login shell.\nOtherwise, it will only take effect in the current session.\n(e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish)\n\nTypically, this can be added with something like the following:\n\n    echo 'eval \"$(mise activate zsh)\"' >> ~/.zshrc\n\nHowever, this requires that \"mise\" is in your PATH. If it is not, you need to\nspecify the full path like this:\n\n    echo 'eval \"$(/path/to/mise activate zsh)\"' >> ~/.zshrc\n\nCustomize status output with `status` settings."
-    after_long_help "Examples:\n\n    $ eval \"$(mise activate bash)\"\n    $ eval \"$(mise activate zsh)\"\n    $ mise activate fish | source\n    $ execx($(mise activate xonsh))\n"
+    long_help "Initializes mise in the current shell session\n\nThis should go into your shell's rc file or login shell.\nOtherwise, it will only take effect in the current session.\n(e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish, or $PROFILE for powershell)\n\nTypically, this can be added with something like the following:\n\n    echo 'eval \"$(mise activate zsh)\"' >> ~/.zshrc\n\nHowever, this requires that \"mise\" is in your PATH. If it is not, you need to\nspecify the full path like this:\n\n    echo 'eval \"$(/path/to/mise activate zsh)\"' >> ~/.zshrc\n\nCustomize status output with `status` settings."
+    after_long_help "Examples:\n\n    $ eval \"$(mise activate bash)\"\n    $ eval \"$(mise activate zsh)\"\n    $ mise activate fish | source\n    $ execx($(mise activate xonsh))\n    $ (&mise activate pwsh) | Out-String | Invoke-Expression\n"
     flag "-s --shell" help="Shell type to generate the script for" hide=#true {
         arg <SHELL> {
             choices bash elvish fish nu xonsh zsh pwsh
@@ -75,7 +75,7 @@ cmd activate help="Initializes mise in the current shell session" {
         choices bash elvish fish nu xonsh zsh pwsh
     }
 }
-cmd alias help="Manage aliases" {
+cmd alias help="Manage version aliases." {
     alias a
     alias aliases hide=#true
     flag "-p --plugin" help="filter aliases by plugin" {
@@ -275,6 +275,7 @@ cmd fmt help="Formats mise.toml" {
     long_help "Formats mise.toml\n\nSorts keys and cleans up whitespace in mise.toml"
     after_long_help "Examples:\n\n    $ mise fmt\n"
     flag "-a --all" help="Format all files from the current directory"
+    flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout"
 }
 cmd generate subcommand_required=#true help="[experimental] Generate files for various tools/services" {
     alias gen
@@ -305,9 +306,20 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
             arg <OUTPUT>
         }
     }
+    cmd devcontainer help="[experimental] Generate a devcontainer to execute mise" {
+        after_long_help "Examples:\n\n    $ mise generate devcontainer\n"
+        flag "-n --name" help="The name of the devcontainer" {
+            arg <NAME>
+        }
+        flag "-i --image" help="The image to use for the devcontainer" {
+            arg <IMAGE>
+        }
+        flag "-m --mount-mise-data" help="Bind the mise-data-volume to the devcontainer"
+        flag "-w --write" help="write to .devcontainer/devcontainer.json"
+    }
     cmd git-pre-commit help="[experimental] Generate a git pre-commit hook" {
         alias pre-commit
-        long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`."
+        long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`.\n\nFor more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/"
         after_long_help "Examples:\n\n    $ mise generate git-pre-commit --write --task=pre-commit\n    $ git commit -m \"feat: add new feature\" # runs `mise run pre-commit`\n"
         flag --hook help="Which hook to generate (saves to .git/hooks/$hook)" {
             arg <HOOK>
@@ -450,6 +462,7 @@ cmd ls help="List installed and active tool versions" {
     }
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
+    flag "-l --local" help="Only show tool versions currently specified in the local mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
     flag "-o --offline" help="Don't fetch information such as outdated versions"
     flag --outdated help="Display whether a version is outdated"
@@ -591,7 +604,7 @@ cmd run help="Run task(s)" {
     flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
         arg <JOBS>
     }
-    flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
+    flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
     flag --timings help="Shows elapsed time after each task completes" hide=#true {
         long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
     }
@@ -604,6 +617,7 @@ cmd run help="Run task(s)" {
         long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
         arg <OUTPUT>
     }
+    flag --no-cache
     mount run="mise tasks --usage"
 }
 cmd self-update help="Updates mise itself." {
@@ -831,7 +845,7 @@ cmd tasks help="Manage tasks" {
         flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
             arg <JOBS>
         }
-        flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var"
+        flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
         flag --timings help="Shows elapsed time after each task completes" hide=#true {
             long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
         }
@@ -844,21 +858,23 @@ cmd tasks help="Manage tasks" {
             long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
             arg <OUTPUT>
         }
+        flag --no-cache
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" required=#false default=default
         arg "[ARGS]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true
         arg "[-- ARGS_LAST]..." help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true hide=#true
         mount run="mise tasks --usage"
     }
 }
-cmd test-tool hide=#true help="Test a tool installs and executes" {
+cmd test-tool help="Test a tool installs and executes" {
     after_long_help "Examples:\n\n    $ mise test-tool ripgrep\n"
-    flag "-a --all"
+    flag "-a --all" help="Test every tool specified in registry.toml"
+    flag --all-config help="Test all tools specified in config files"
     flag --include-non-defined help="Also test tools not defined in registry.toml, guessing how to test it"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
-    arg "[TOOL]" required=#false
+    arg "[TOOL]" help="Tool name to test" required=#false
 }
 cmd tool help="Gets information about a tool" {
     after_long_help "Examples:\n\n    $ mise tool node\n    Backend:            core\n    Installed Versions: 20.0.0 22.0.0\n    Active Version:     20.0.0\n    Requested Version:  20\n    Config Source:      ~/.config/mise/mise.toml\n    Tool Options:       [none]\n"
@@ -900,9 +916,9 @@ cmd unset help="Remove environment variable(s) from the config file." {
 cmd unuse help="Removes installed tool versions from mise.toml" {
     alias rm remove
     long_help "Removes installed tool versions from mise.toml\n\nWill also prune the installed version if no other configurations are using it."
-    after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise remove node@18.0.0\n"
+    after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise unuse node@18.0.0\n\n    # will uninstall specific version from global config\n    $ mise unuse -g node@18.0.0\n"
     flag --no-prune help="Do not also prune the installed version"
-    flag --global help="Remove tool from global config"
+    flag "-g --global" help="Remove tool from global config"
     arg <INSTALLED_TOOL@VERSION>... help="Tool(s) to remove" var=#true
 }
 cmd upgrade help="Upgrades outdated tools" {

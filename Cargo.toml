@@ -1,7 +1,7 @@
 [package]
 name = "mise"
-version = "2025.1.14"
-edition = "2021"
+version = "2025.3.7"
+edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
 homepage = "https://mise.jdx.dev"
@@ -27,7 +27,7 @@ include = [
   "/aqua-registry/pkgs/**/registry.yaml",
 ]
 build = "build.rs"
-rust-version = "1.82"
+rust-version = "1.85"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -71,16 +71,14 @@ duct = "0.13"
 either = { version = "1", features = ["serde"] }
 homedir = "0.3"
 # expr-lang = { path = "../expr-lang" }
-expr-lang = "0.2"
+expr-lang = "0.3"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
 fslock = "0.2.1"
-git2 = "<1"
 glob = "0.3"
 globset = "0.4"
 heck = "0.5"
-humantime = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17", features = ["default", "improved_unicode"] }
@@ -97,13 +95,16 @@ openssl = { version = "0.10", optional = true }
 os-release = "0.1"
 path-absolutize = "3"
 petgraph = "0.7"
-rand = "0.8"
+rand = "0.9"
 rayon = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "gzip",
   "zstd",
+  "charset",
+  "http2",
+  "macos-system-configuration",
 ] }
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [
@@ -136,7 +137,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["io-std", "rt", "time"] }
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
-ubi = { version = "0.4", default-features = false }
+ubi = { version = "0.6.1", default-features = false }
 url = "2"
 usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
@@ -148,45 +149,59 @@ xx = { version = "2", features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 zstd = "0.13"
+gix = { version = "<1", features = ["worktree-mutation"] }
+jiff = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.29", features = ["signal", "user"] }
-self_update = { version = "0.42", default-features = false, features = [
+self_update = { version = "0.42", optional = true, default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
 ] }
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.42", default-features = false, features = [
+self_update = { version = "0.42", optional = true, default-features = false, features = [
   "archive-zip",
   "signatures",
 ] }
 sevenz-rust = "0.6"
 
 [build-dependencies]
-built = { version = "0.7", features = ["chrono", "git2"] }
+built = { version = "0.7", features = ["chrono"] }
 cfg_aliases = "0.2"
 heck = "0.5"
 toml = "0.8"
 indexmap = "2"
 
 [dev-dependencies]
-ctor = "0.2"
+ctor = "0.4"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1.6.1"
 pretty_assertions = "1"
 test-log = "0.2"
 
 [features]
-default = ["native-tls", "vfox/vendored-lua"]
-native-tls = ["reqwest/native-tls", "ubi/native-tls"]
-rustls = ["reqwest/rustls-tls", "self_update/rustls", "ubi/rustls-tls"]
+default = ["native-tls", "vfox/vendored-lua", "self_update"]
+native-tls = [
+  "reqwest/native-tls",
+  "ubi/native-tls",
+  "gix/blocking-http-transport-reqwest-native-tls",
+  "vfox/native-tls",
+]
+rustls = [
+  "reqwest/rustls-tls",
+  "self_update/rustls",
+  "ubi/rustls-tls",
+  "gix/blocking-http-transport-reqwest-rust-tls",
+  "vfox/rustls",
+]
 rustls-native-roots = [
   "reqwest/rustls-tls-native-roots",
   "self_update/rustls",
   "ubi/rustls-tls-native-roots",
+  "vfox/rustls-native-roots",
 ]
 
 [package.metadata.binstall]

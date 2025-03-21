@@ -4,8 +4,8 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
-use crate::file::{display_path, TarOptions};
-use crate::git::Git;
+use crate::file::{TarOptions, display_path};
+use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
@@ -66,7 +66,11 @@ impl PythonPlugin {
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
         let git = Git::new(self.python_build_path());
         let pr = ctx.map(|ctx| &ctx.pr);
-        git.clone(&SETTINGS.python.pyenv_repo, pr)?;
+        let mut clone_options = CloneOptions::default();
+        if let Some(pr) = pr {
+            clone_options = clone_options.pr(pr);
+        }
+        git.clone(&SETTINGS.python.pyenv_repo, clone_options)?;
         Ok(())
     }
     fn update_python_build(&self) -> eyre::Result<()> {
@@ -160,7 +164,10 @@ impl PythonPlugin {
                 if available.is_empty() {
                     debug!("no precompiled python found for {}", tv.version);
                 } else {
-                    warn!("no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile false`", tv.version);
+                    warn!(
+                        "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile false`",
+                        tv.version
+                    );
                 }
                 trace!(
                     "available precompiled versions: {}",
@@ -182,7 +189,7 @@ impl PythonPlugin {
         let url = format!(
             "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/{filename}"
         );
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         let install = tv.install_path();
         let download = tv.download_path();
         let tarball_path = download.join(filename);
@@ -530,7 +537,9 @@ fn python_precompiled_platform() -> String {
 
 fn ensure_not_windows() -> eyre::Result<()> {
     if cfg!(windows) {
-        bail!("python can not currently be compiled on windows with core:python, use vfox:python instead");
+        bail!(
+            "python can not currently be compiled on windows with core:python, use vfox:python instead"
+        );
     }
     Ok(())
 }

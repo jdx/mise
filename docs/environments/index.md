@@ -4,17 +4,18 @@
 > manages _environment variables_ for
 > different project directories.
 
-Use mise to specify environment variables used for different projects. Create a `mise.toml` file
-in the root of your project directory:
+Use mise to specify environment variables used for different projects.
 
-```toml
+To get started, create a `mise.toml` file in the root of your project directory:
+
+```toml [mise.toml]
 [env]
 NODE_ENV = 'production'
 ```
 
 To clear an env var, set it to `false`:
 
-```toml
+```toml [mise.toml]
 [env]
 NODE_ENV = false # unset a previously set NODE_ENV
 ```
@@ -22,13 +23,76 @@ NODE_ENV = false # unset a previously set NODE_ENV
 You can also use the CLI to get/set env vars:
 
 ```sh
-$ mise set NODE_ENV=development
-$ mise set NODE_ENV
-development
-$ mise set
-key       value        source
-NODE_ENV  development  mise.toml
-$ mise unset NODE_ENV
+mise set NODE_ENV=development
+# mise set NODE_ENV
+# development
+
+mise set
+# key       value        source
+# NODE_ENV  development  mise.toml
+
+cat mise.toml
+# [env]
+# NODE_ENV = 'development'
+
+mise unset NODE_ENV
+```
+
+Additionally, the [mise env [--json] [--dotenv]](/cli/env.html) command can be used to export the environment variables in various formats (including `PATH` and environment variables set by tools or plugins).
+
+## Using environment variables
+
+Environment variables are available when using [`mise x|exec`](/cli/exec.html), or with [`mise r|run`](/cli/run.html) (i.e. with [tasks](/tasks/)):
+
+```shell
+mise set MY_VAR=123
+mise exec -- echo $MY_VAR
+# 123
+```
+
+You can of course combine them with [tools](/dev-tools/):
+
+```sh
+mise use node@22
+mise set MY_VAR=123
+cat mise.toml
+# [tools]
+# node = '22'
+# [env]
+# MY_VAR = '123'
+mise exec -- node --eval 'console.log(process.env.MY_VAR)'
+# 123
+```
+
+If [mise is activated](/getting-started.html#activate-mise), it will automatically set environment variables in the current shell session when you `cd` into a directory.
+
+```shell
+cd /path/to/project
+mise set NODE_ENV=production
+cat mise.toml
+# [env]
+# NODE_ENV = 'production'
+
+echo $NODE_ENV
+# production
+```
+
+If you are using [`shims`](/dev-tools/shims.html), the environment variables will be available when using the shim:
+
+```shell
+mise set NODE_ENV=production
+mise use node@22
+# using the absolute path for the example
+~/.local/share/mise/shims/node --eval 'console.log(process.env.NODE_ENV)'
+```
+
+Finally, you can also use [`mise en`](/cli/en.html) to start a new shell session with the environment variables set.
+
+```shell
+mise set FOO=bar
+mise en
+> echo $FOO
+# bar
 ```
 
 ## Lazy eval

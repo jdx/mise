@@ -538,7 +538,7 @@ const completionSpec: Fig.Spec = {
     },
     {
       name: ["alias", "a"],
-      description: "Manage aliases",
+      description: "Manage version aliases.",
       subcommands: [
         {
           name: "get",
@@ -993,6 +993,12 @@ const completionSpec: Fig.Spec = {
           description: "Format all files from the current directory",
           isRepeatable: false,
         },
+        {
+          name: ["-s", "--stdin"],
+          description:
+            "Read config from stdin and write its formatted version into stdout",
+          isRepeatable: false,
+        },
       ],
     },
     {
@@ -1057,6 +1063,38 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "output",
               },
+            },
+          ],
+        },
+        {
+          name: "devcontainer",
+          description: "[experimental] Generate a devcontainer to execute mise",
+          options: [
+            {
+              name: ["-n", "--name"],
+              description: "The name of the devcontainer",
+              isRepeatable: false,
+              args: {
+                name: "name",
+              },
+            },
+            {
+              name: ["-i", "--image"],
+              description: "The image to use for the devcontainer",
+              isRepeatable: false,
+              args: {
+                name: "image",
+              },
+            },
+            {
+              name: ["-m", "--mount-mise-data"],
+              description: "Bind the mise-data-volume to the devcontainer",
+              isRepeatable: false,
+            },
+            {
+              name: ["-w", "--write"],
+              description: "Write to .devcontainer/devcontainer.json",
+              isRepeatable: false,
             },
           ],
         },
@@ -1321,6 +1359,12 @@ const completionSpec: Fig.Spec = {
           name: ["-g", "--global"],
           description:
             "Only show tool versions currently specified in the global mise.toml",
+          isRepeatable: false,
+        },
+        {
+          name: ["-l", "--local"],
+          description:
+            "Only show tool versions currently specified in the local mise.toml",
           isRepeatable: false,
         },
         {
@@ -1735,7 +1779,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-r", "--raw"],
           description:
-            "Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var",
+            "Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var",
           isRepeatable: false,
         },
         {
@@ -1761,6 +1805,10 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "output",
           },
+        },
+        {
+          name: "--no-cache",
+          isRepeatable: false,
         },
       ],
       generateSpec: usageGenerateSpec(["mise tasks --usage"]),
@@ -2375,7 +2423,7 @@ const completionSpec: Fig.Spec = {
             {
               name: ["-r", "--raw"],
               description:
-                "Read/write directly to stdin/stdout/stderr instead of by line\nConfigure with `raw` config or `MISE_RAW` env var",
+                "Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var",
               isRepeatable: false,
             },
             {
@@ -2401,6 +2449,10 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "output",
               },
+            },
+            {
+              name: "--no-cache",
+              isRepeatable: false,
             },
           ],
           args: [
@@ -2469,6 +2521,49 @@ const completionSpec: Fig.Spec = {
         description: "Task name to get info of",
         isOptional: true,
         generators: simpleTaskGenerator,
+        debounce: true,
+      },
+    },
+    {
+      name: "test-tool",
+      description: "Test a tool installs and executes",
+      options: [
+        {
+          name: ["-a", "--all"],
+          description: "Test every tool specified in registry.toml",
+          isRepeatable: false,
+        },
+        {
+          name: "--all-config",
+          description: "Test all tools specified in config files",
+          isRepeatable: false,
+        },
+        {
+          name: "--include-non-defined",
+          description:
+            "Also test tools not defined in registry.toml, guessing how to test it",
+          isRepeatable: false,
+        },
+        {
+          name: ["-j", "--jobs"],
+          description: "Number of jobs to run in parallel\n[default: 4]",
+          isRepeatable: false,
+          args: {
+            name: "jobs",
+          },
+        },
+        {
+          name: "--raw",
+          description:
+            "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
+          isRepeatable: false,
+        },
+      ],
+      args: {
+        name: "tool",
+        description: "Tool name to test",
+        isOptional: true,
+        generators: completionGeneratorTemplate(`mise registry --complete`),
         debounce: true,
       },
     },
@@ -2622,7 +2717,7 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: "--global",
+          name: ["-g", "--global"],
           description: "Remove tool from global config",
           isRepeatable: false,
         },

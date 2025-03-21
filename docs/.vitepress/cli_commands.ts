@@ -122,6 +122,9 @@ export const commands: { [key: string]: Command } = {
       config: {
         hide: false,
       },
+      devcontainer: {
+        hide: false,
+      },
       "git-pre-commit": {
         hide: false,
       },
@@ -280,7 +283,7 @@ export const commands: { [key: string]: Command } = {
     },
   },
   "test-tool": {
-    hide: true,
+    hide: false,
   },
   tool: {
     hide: false,

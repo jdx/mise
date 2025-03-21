@@ -1,5 +1,5 @@
 use crate::file::{display_path, remove_all};
-use crate::git::Git;
+use crate::git::{CloneOptions, Git};
 use crate::plugins::{Plugin, PluginType};
 use crate::result::Result;
 use crate::tokio::RUNTIME;
@@ -8,10 +8,10 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, registry};
 use console::style;
 use contracts::requires;
-use eyre::{eyre, Context};
-use indexmap::{indexmap, IndexMap};
+use eyre::{Context, eyre};
+use indexmap::{IndexMap, indexmap};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, mpsc};
 use url::Url;
 use vfox::Vfox;
 use xx::regex;
@@ -133,7 +133,8 @@ impl Plugin for VfoxPlugin {
             let url = self.get_repo_url()?;
             trace!("Cloning vfox plugin: {url}");
             let pr = mpr.add(&format!("clone vfox plugin {}", url));
-            self.repo().clone(url.as_str(), Some(&pr))?;
+            self.repo()
+                .clone(url.as_str(), CloneOptions::default().pr(&pr))?;
         }
         Ok(())
     }
@@ -208,7 +209,7 @@ Plugins could support local directories in the future but for now a symlink is r
         }
         let git = Git::new(&self.plugin_path);
         pr.set_message(format!("clone {repo_url}"));
-        git.clone(&repo_url, Some(pr))?;
+        git.clone(&repo_url, CloneOptions::default().pr(pr))?;
         if let Some(ref_) = &repo_ref {
             pr.set_message(format!("git update {ref_}"));
             git.update(Some(ref_.to_string()))?;

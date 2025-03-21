@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use console::{style, Term};
-use eyre::{bail, eyre, Result};
+use console::{Term, style};
+use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{config_file, is_global_config, Config, SETTINGS};
+use crate::config::{Config, SETTINGS, config_file, is_global_config};
 use crate::env::{
     MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
 };
@@ -101,6 +101,7 @@ impl Use {
         if self.tool.is_empty() && self.remove.is_empty() {
             self.tool = vec![self.tool_selector()?];
         }
+        env::TOOL_ARGS.write().unwrap().clone_from(&self.tool);
         let config = Config::try_get()?;
         let mut ts = ToolsetBuilder::new()
             .with_global_only(self.global)
@@ -194,18 +195,8 @@ impl Use {
 
     fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-        let path = if !env::MISE_ENV.is_empty() {
-            let env = env::MISE_ENV.last().unwrap();
-            config_file_from_dir(&cwd.join(format!("mise.{env}.toml")))
-        } else if self.global || env::in_home_dir() {
+        let path = if self.global {
             MISE_GLOBAL_CONFIG_FILE.clone()
-        } else if let Some(env) = &self.env {
-            let p = cwd.join(format!(".mise.{env}.toml"));
-            if p.exists() {
-                p
-            } else {
-                cwd.join(format!("mise.{env}.toml"))
-            }
         } else if let Some(p) = &self.path {
             let from_dir = config_file_from_dir(p).absolutize()?.to_path_buf();
             if from_dir.starts_with(&cwd) {
@@ -213,6 +204,18 @@ impl Use {
             } else {
                 p.clone()
             }
+        } else if let Some(env) = &self.env {
+            let p = cwd.join(format!(".mise.{env}.toml"));
+            if p.exists() {
+                p
+            } else {
+                cwd.join(format!("mise.{env}.toml"))
+            }
+        } else if !env::MISE_ENV.is_empty() {
+            let env = env::MISE_ENV.last().unwrap();
+            config_file_from_dir(&cwd.join(format!("mise.{env}.toml")))
+        } else if env::in_home_dir() {
+            MISE_GLOBAL_CONFIG_FILE.clone()
         } else {
             config_file_from_dir(&cwd)
         };

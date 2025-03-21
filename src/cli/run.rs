@@ -1,4 +1,7 @@
+use crate::hash;
 use std::collections::BTreeMap;
+use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
@@ -15,7 +18,7 @@ use crate::config::{Config, SETTINGS};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::file::display_path;
-use crate::task::file_providers::TaskFileProviders;
+use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Deps, GetMatchingExt, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -27,7 +30,7 @@ use console::Term;
 use crossbeam_channel::{select, unbounded};
 use demand::{DemandOption, Select};
 use duct::IntoExecutablePath;
-use eyre::{bail, ensure, eyre, Result};
+use eyre::{Result, bail, ensure, eyre};
 use glob::glob;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -141,6 +144,7 @@ pub struct Run {
     pub jobs: Option<usize>,
 
     /// Read/write directly to stdin/stdout/stderr instead of by line
+    /// Redactions are not applied with this option
     /// Configure with `raw` config or `MISE_RAW` env var
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
@@ -194,6 +198,10 @@ pub struct Run {
 
     #[clap(skip)]
     pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
+
+    // Do not use cache on remote tasks
+    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    pub no_cache: bool,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -237,22 +245,24 @@ impl Run {
 
         if self.output(None) == TaskOutput::Timed {
             let timed_outputs = self.timed_outputs.clone();
-            thread::spawn(move || loop {
-                {
-                    let mut outputs = timed_outputs.lock().unwrap();
-                    for (prefix, out) in outputs.clone() {
-                        let (time, line) = out;
-                        if time.elapsed().unwrap().as_secs() >= 1 {
-                            if console::colors_enabled() {
-                                prefix_println!(prefix, "{line}\x1b[0m");
-                            } else {
-                                prefix_println!(prefix, "{line}");
+            thread::spawn(move || {
+                loop {
+                    {
+                        let mut outputs = timed_outputs.lock().unwrap();
+                        for (prefix, out) in outputs.clone() {
+                            let (time, line) = out;
+                            if time.elapsed().unwrap().as_secs() >= 1 {
+                                if console::colors_enabled() {
+                                    prefix_println!(prefix, "{line}\x1b[0m");
+                                } else {
+                                    prefix_println!(prefix, "{line}");
+                                }
+                                outputs.shift_remove(&prefix);
                             }
-                            outputs.shift_remove(&prefix);
                         }
                     }
+                    thread::sleep(Duration::from_millis(100));
                 }
-                thread::sleep(Duration::from_millis(100));
             });
         }
 
@@ -335,11 +345,14 @@ impl Run {
                 });
             };
             let rx = tasks.lock().unwrap().subscribe();
-            while !self.is_stopping() && !tasks.lock().unwrap().is_empty() {
+            while !self.is_stopping() {
                 select! {
                     recv(rx) -> task => { // receive a task from Deps
                         if let Some(task) = task.unwrap() {
                             run(&task);
+                        }else {
+                            // we get the None value which means the channel closes
+                            break;
                         }
                     }
                     recv(rx_err) -> task => { // a task errored
@@ -421,6 +434,11 @@ impl Run {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
             return Ok(());
+        }
+        if let Some(message) = &task.confirm {
+            if !ui::confirm(message).unwrap_or(true) {
+                return Err(eyre!("task cancelled"));
+            }
         }
 
         let config = Config::get();
@@ -622,11 +640,19 @@ impl Run {
         let config = Config::get();
         let program = program.to_executable();
         let redactions = config.redactions();
+        let raw = self.raw(Some(task));
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
-            .raw(self.raw(Some(task)));
+            .raw(raw);
+        if raw && !redactions.is_empty() {
+            hint!(
+                "raw_redactions",
+                "--raw will prevent mise from being able to use redactions",
+                ""
+            );
+        }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
         match output {
@@ -690,7 +716,7 @@ impl Run {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
             TaskOutput::Quiet | TaskOutput::Interleave => {
-                if redactions.is_empty() {
+                if raw || redactions.is_empty() {
                     cmd = cmd
                         .stdin(Stdio::inherit())
                         .stdout(Stdio::inherit())
@@ -786,11 +812,32 @@ impl Run {
         if task.sources.is_empty() && outputs.is_empty() {
             return Ok(false);
         }
+        // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
+        // perhaps using some manifest in a state directory or something, maybe leveraging atime?
         let run = || -> Result<bool> {
+            let root = self.cwd(task)?;
             let mut sources = task.sources.clone();
             sources.push(task.config_source.to_string_lossy().to_string());
-            let sources = self.get_last_modified(&self.cwd(task)?, &sources)?;
-            let outputs = self.get_last_modified(&self.cwd(task)?, &outputs)?;
+            let source_metadatas = self.get_file_metadatas(&root, &sources)?;
+            let source_metadata_hash = self.file_metadatas_to_hash(&source_metadatas);
+            let source_metadata_hash_path = self.sources_hash_path(task);
+            if let Some(dir) = source_metadata_hash_path.parent() {
+                file::create_dir_all(dir)?;
+            }
+            if self
+                .source_metadata_existing_hash(task)
+                .is_some_and(|h| h != source_metadata_hash)
+            {
+                debug!(
+                    "source metadata hash mismatch in {}",
+                    source_metadata_hash_path.display()
+                );
+                file::write(&source_metadata_hash_path, &source_metadata_hash)?;
+                return Ok(false);
+            }
+            let sources = self.get_last_modified_from_metadatas(&source_metadatas);
+            let outputs = self.get_last_modified(&root, &outputs)?;
+            file::write(&source_metadata_hash_path, &source_metadata_hash)?;
             trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {
                 (Some(sources), Some(outputs)) => Ok(sources < outputs),
@@ -803,6 +850,23 @@ impl Run {
         }))
     }
 
+    fn sources_hash_path(&self, task: &Task) -> PathBuf {
+        let mut hasher = DefaultHasher::new();
+        task.hash(&mut hasher);
+        task.config_source.hash(&mut hasher);
+        let hash = format!("{:x}", hasher.finish());
+        dirs::STATE.join("task-sources").join(&hash)
+    }
+
+    fn source_metadata_existing_hash(&self, task: &Task) -> Option<String> {
+        let path = self.sources_hash_path(task);
+        if path.exists() {
+            Some(file::read_to_string(&path).unwrap_or_default())
+        } else {
+            None
+        }
+    }
+
     fn add_failed_task(&self, task: Task, status: Option<i32>) {
         self.failed_tasks
             .lock()
@@ -812,6 +876,54 @@ impl Run {
 
     fn is_stopping(&self) -> bool {
         !self.failed_tasks.lock().unwrap().is_empty()
+    }
+
+    fn get_file_metadatas(
+        &self,
+        root: &Path,
+        patterns_or_paths: &[String],
+    ) -> Result<Vec<(PathBuf, fs::Metadata)>> {
+        if patterns_or_paths.is_empty() {
+            return Ok(vec![]);
+        }
+        let (patterns, paths): (Vec<&String>, Vec<&String>) =
+            patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
+
+        let mut metadatas = BTreeMap::new();
+        for pattern in patterns {
+            let files = glob(root.join(pattern).to_str().unwrap())?;
+            for file in files.flatten() {
+                if let Ok(metadata) = file.metadata() {
+                    metadatas.insert(file, metadata);
+                }
+            }
+        }
+
+        for path in paths {
+            let file = root.join(path);
+            if let Ok(metadata) = file.metadata() {
+                metadatas.insert(file, metadata);
+            }
+        }
+
+        let metadatas = metadatas
+            .into_iter()
+            .filter(|(_, m)| m.is_file())
+            .collect_vec();
+
+        Ok(metadatas)
+    }
+
+    fn file_metadatas_to_hash(&self, metadatas: &[(PathBuf, fs::Metadata)]) -> String {
+        let paths: Vec<_> = metadatas.iter().map(|(p, _)| p).collect();
+        hash::hash_to_str(&paths)
+    }
+
+    fn get_last_modified_from_metadatas(
+        &self,
+        metadatas: &[(PathBuf, fs::Metadata)],
+    ) -> Option<SystemTime> {
+        metadatas.iter().flat_map(|(_, m)| m.modified()).max()
     }
 
     fn get_last_modified(
@@ -873,7 +985,10 @@ impl Run {
     }
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let task_file_providers = TaskFileProviders::new(self.tmpdir.clone());
+        let no_cache = self.no_cache || SETTINGS.task_remote_no_cache.unwrap_or(false);
+        let task_file_providers = TaskFileProvidersBuilder::new()
+            .with_cache(!no_cache)
+            .build();
 
         for t in tasks {
             if let Some(file) = &t.file {

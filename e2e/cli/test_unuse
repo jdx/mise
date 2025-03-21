@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 
 assert "mise install dummy@1.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy" "1
+1.0
+1.0.0
+latest"
 assert "mise rm dummy"
 assert_empty "mise ls"
+assert_fail "ls $MISE_DATA_DIR/installs/dummy"
 
 assert "mise use dummy@1.0.0"
 assert_contains "mise ls dummy" "1.0.0"
-assert "mise unuse dummy"
+assert "mise unuse dummy@1.0.0"
 assert_empty "mise ls dummy"
 
 assert "mise use dummy@1.0.0"
@@ -14,13 +19,20 @@ mkdir subdir
 cd subdir || exit 1
 assert "mise use -p mise.toml dummy@1.0.0"
 assert "mise ls dummy" "dummy  1.0.0  ~/workdir/subdir/mise.toml  1.0.0"
-assert "mise unuse dummy"
+assert "mise unuse dummy@1.0.0"
 # version is not pruned because it's in ~/workdir/mise.toml
 assert "mise ls dummy" "dummy  1.0.0  ~/workdir/mise.toml  1.0.0"
-assert "mise unuse dummy"
+assert "mise unuse dummy@1.0.0"
 assert_empty "mise ls dummy"
+cd - || exit 1
 
 assert "mise use -g dummy@1.0.0"
 assert "mise ls dummy" "dummy  1.0.0  ~/.config/mise/config.toml  1.0.0"
-assert "mise unuse dummy"
+assert "mise unuse dummy@1.0.0"
 assert_empty "mise ls dummy"
+
+assert "mise use dummy@2.0.0"
+assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  2.0.0"
+# tool is not removed because version does not match
+assert "mise unuse dummy@1.0.0"
+assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  2.0.0"

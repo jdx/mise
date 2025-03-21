@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, SETTINGS};
+use crate::config::{Config, SETTINGS, Settings};
 use crate::duration::DAILY;
 use crate::env::PATH_KEY;
-use crate::git::Git;
+use crate::git::{CloneOptions, Git};
 use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -81,7 +81,11 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let git = Git::new(tmp.clone());
-        git.clone(&SETTINGS.ruby.ruby_build_repo, pr)?;
+        let mut clone_options = CloneOptions::default();
+        if let Some(pr) = pr {
+            clone_options = clone_options.pr(pr);
+        }
+        git.clone(&SETTINGS.ruby.ruby_build_repo, clone_options)?;
 
         cmd!("sh", "install.sh")
             .env("PREFIX", self.ruby_build_path())
@@ -123,7 +127,11 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         file::create_dir_all(tmp.parent().unwrap())?;
         let git = Git::new(tmp.clone());
-        git.clone(&settings.ruby.ruby_install_repo, pr)?;
+        let mut clone_options = CloneOptions::default();
+        if let Some(pr) = pr {
+            clone_options = clone_options.pr(pr);
+        }
+        git.clone(&settings.ruby.ruby_install_repo, clone_options)?;
 
         cmd!("make", "install")
             .env("PREFIX", self.ruby_install_path())

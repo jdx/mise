@@ -9,7 +9,11 @@ mod set;
 mod unset;
 
 #[derive(Debug, clap::Args)]
-#[clap(about = "Manage aliases", visible_alias = "a", alias = "aliases")]
+#[clap(
+    about = "Manage version aliases.",
+    visible_alias = "a",
+    alias = "aliases"
+)]
 pub struct Alias {
     #[clap(subcommand)]
     command: Option<Commands>,

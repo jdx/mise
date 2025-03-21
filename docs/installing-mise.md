@@ -121,14 +121,12 @@ sudo apt install -y mise
 
 :::
 
-### aur
+### pacman
 
 For Arch Linux:
 
 ```sh
-git clone https://aur.archlinux.org/mise.git
-cd mise
-makepkg -si
+sudo pacman -S mise
 ```
 
 ### Cargo
@@ -154,11 +152,19 @@ cargo install mise --git https://github.com/jdx/mise --branch main
 
 ### dnf
 
-For Fedora, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
+For Fedora 40, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
 
 ```sh
 dnf install -y dnf-plugins-core
 dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
+dnf install -y mise
+```
+
+Fedora 41+ (dnf5)
+
+```
+dnf install -y dnf-plugins-core
+dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
 dnf install -y mise
 ```
 
@@ -226,11 +232,6 @@ yum install -y mise
 
 ### Windows - Scoop
 
-> [!NOTE]
-> We're currently waiting for mise to be merged to the Scoop main bucket:
->
-> - <https://github.com/ScoopInstaller/Main/pull/6374>
-
 This is the recommended way to install mise on Windows. It will automatically add your shims to PATH.
 
 ```sh
@@ -295,7 +296,7 @@ You will need to first create the parent directory if it does not exist.
 :::
 
 ```powershell
-echo '~/.local/bin/mise activate mise activate pwsh | Out-String | Invoke-Expression' >> $HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+echo 'mise activate pwsh | Out-String | Invoke-Expression' >> $HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
 ```
 
 ### Nushell

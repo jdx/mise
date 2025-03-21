@@ -156,7 +156,7 @@ mise can be configured in `~/.config/mise/config.toml`. It's like local `mise.to
 that
 it is used for all directories.
 
-```toml
+```toml [~/.config/mise/config.toml]
 [tools]
 # global tool versions go here
 # you can set these with `mise use -g`
@@ -257,7 +257,7 @@ Both `mise.toml` and `.tool-versions` support "scopes" which modify the behavior
 mise supports "idiomatic version files" just like asdf. They're language-specific files
 like `.node-version`
 and `.python-version`. These are ideal for setting the runtime version of a project without forcing
-other developers to use a specific tool like mise/asdf.
+other developers to use a specific tool like mise or asdf.
 
 They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
 in mise and nvm. Here are some of the supported idiomatic version files:
@@ -274,8 +274,11 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | terraform | `.terraform-version`, `.packer-version`, `main.tf` |
 | yarn      | `.yarnrc`                                          |
 
-In mise these are enabled by default. You can disable them
-with `mise settings idiomatic_version_file=false`.
+In mise these are enabled by default. You can disable them with:
+
+- `mise settings idiomatic_version_file false` for all tools ([docs](/configuration/settings.html#idiomatic_version_file))
+- `mise settings idiomatic_version_file_disable_tools python` for a specific tool such as Python ([docs](/configuration/settings.html#idiomatic_version_file_disable_tools))
+
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
 `bin/parse-version-file`. However, these are [cached](/cache-behavior) so it's not a huge deal.
 You may not even notice.

@@ -47,7 +47,7 @@ impl SwiftPlugin {
                 None => "".into(),
             }
         );
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
         if !tarball_path.exists() {
             pr.set_message(format!("download {filename}"));
@@ -185,11 +185,7 @@ impl Backend for SwiftPlugin {
 }
 
 fn swift_bin_name() -> &'static str {
-    if cfg!(windows) {
-        "swift.exe"
-    } else {
-        "swift"
-    }
+    if cfg!(windows) { "swift.exe" } else { "swift" }
 }
 
 fn platform_directory() -> String {
@@ -197,6 +193,14 @@ fn platform_directory() -> String {
         "xcode".into()
     } else if cfg!(windows) {
         "windows10".into()
+    } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+        let arch = SETTINGS.arch();
+        if os_release.id == "ubuntu" && arch == "aarch64" {
+            let retval = format!("{}{}-{}", os_release.id, os_release.version_id, arch);
+            retval.replace(".", "")
+        } else {
+            platform().replace(".", "")
+        }
     } else {
         platform().replace(".", "")
     }
@@ -247,14 +251,14 @@ fn architecture() -> Option<&'static str> {
 
 fn url(tv: &ToolVersion) -> String {
     format!(
-    "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
-    version = tv.version,
-    platform = platform(),
-    platform_directory = platform_directory(),
-    extension = extension(),
-    architecture = match architecture() {
-        Some(arch) => format!("-{arch}"),
-        None => "".into(),
-    }
-)
+        "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
+        version = tv.version,
+        platform = platform(),
+        platform_directory = platform_directory(),
+        extension = extension(),
+        architecture = match architecture() {
+            Some(arch) => format!("-{arch}"),
+            None => "".into(),
+        }
+    )
 }

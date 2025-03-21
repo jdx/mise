@@ -9,8 +9,8 @@ use duct::Expression;
 use indexmap::indexmap;
 use std::sync::LazyLock as Lazy;
 
-use crate::cmd::{cmd, CmdLineRunner};
-use crate::config::{Settings, SETTINGS};
+use crate::cmd::{CmdLineRunner, cmd};
+use crate::config::{SETTINGS, Settings};
 use crate::env::PATH_KEY;
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;

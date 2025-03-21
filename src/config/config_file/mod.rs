@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, Once};
 
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use idiomatic_version::IdiomaticVersionFile;
 use path_absolutize::Absolutize;
 use serde_derive::Deserialize;
@@ -17,7 +17,7 @@ use xx::regex;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{is_global_config, settings, AliasMap, Settings, SETTINGS};
+use crate::config::{AliasMap, SETTINGS, Settings, is_global_config, settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
@@ -82,7 +82,7 @@ pub trait ConfigFile: Debug + Send + Sync {
     }
     fn remove_tool(&mut self, ba: &BackendArg) -> eyre::Result<()>;
     fn replace_versions(&mut self, ba: &BackendArg, versions: Vec<ToolRequest>)
-        -> eyre::Result<()>;
+    -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
     fn dump(&self) -> eyre::Result<String>;
     fn source(&self) -> ToolSource;
@@ -196,7 +196,9 @@ impl dyn ConfigFile {
         }
         // check for something like `mise local node python@latest` which is invalid
         if runtimes.iter().any(|r| r.tvr.is_none()) {
-            return Err(eyre!("invalid input, specify a version for each tool. Or just specify one tool to print the current version"));
+            return Err(eyre!(
+                "invalid input, specify a version for each tool. Or just specify one tool to print the current version"
+            ));
         }
         Ok(false)
     }
@@ -509,9 +511,18 @@ fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         .and_then(|f| f.to_str())
         .unwrap_or("mise.toml")
     {
-        f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
-        f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
-        f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
+        f if backend::list()
+            .iter()
+            .any(|b| match b.idiomatic_filenames() {
+                Ok(filenames) => filenames.contains(&f.to_string()),
+                Err(e) => {
+                    debug!("idiomatic_filenames failed for {}: {:?}", b, e);
+                    false
+                }
+            }) =>
+        {
+            Some(ConfigFileType::IdiomaticVersion)
+        }
         f if env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
             .as_ref()
             .is_some_and(|o| o.contains(f)) =>
@@ -521,12 +532,9 @@ fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         f if env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
         }
-        f if backend::list()
-            .iter()
-            .any(|b| b.idiomatic_filenames().unwrap().contains(&f.to_string())) =>
-        {
-            Some(ConfigFileType::IdiomaticVersion)
-        }
+        f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
+        f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
+        f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
         _ => None,
     }
 }
@@ -567,6 +575,7 @@ mod tests {
 
     #[test]
     fn test_detect_config_file_type() {
+        env::set_var("MISE_EXPERIMENTAL", "true");
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.nvmrc")),
             Some(ConfigFileType::IdiomaticVersion)
@@ -580,8 +589,12 @@ mod tests {
             Some(ConfigFileType::ToolVersions)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.tool-versions.toml")),
+            detect_config_file_type(Path::new("/foo/bar/mise.toml")),
             Some(ConfigFileType::MiseToml)
+        );
+        assert_eq!(
+            detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")),
+            Some(ConfigFileType::IdiomaticVersion)
         );
     }
 

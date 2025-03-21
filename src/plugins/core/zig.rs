@@ -53,16 +53,24 @@ impl ZigPlugin {
         } else {
             "tar.xz"
         };
+
         let url = if tv.version == "ref:master" {
             format!(
                 "https://ziglang.org/builds/zig-{}-{}-{}.{archive_ext}",
                 os(),
                 arch(),
-                self.get_master_version()?
+                self.get_version_from_json("master")?
+            )
+        } else if tv.version == "ref:mach-latest" {
+            format!(
+                "https://pkg.machengine.org/zig/zig-{}-{}-{}.{archive_ext}",
+                os(),
+                arch(),
+                self.get_version_from_json("mach-latest")?
             )
         } else if regex!(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").is_match(&tv.version) {
             format!(
-                "https://ziglang.org/builds/zig-{}-{}-{}.{archive_ext}",
+                "https://pkg.machengine.org/zig/zig-{}-{}-{}.{archive_ext}",
                 os(),
                 arch(),
                 tv.version
@@ -77,7 +85,7 @@ impl ZigPlugin {
             )
         };
 
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
@@ -117,14 +125,22 @@ impl ZigPlugin {
         self.test_zig(ctx, tv)
     }
 
-    fn get_master_version(&self) -> Result<String> {
-        let version_json: serde_json::Value =
-            HTTP_FETCH.json("https://ziglang.org/download/index.json")?;
-        let master_version = version_json
-            .pointer("/master/version")
+    fn get_version_from_json(&self, key: &str) -> Result<String> {
+        let json_url: &str = if key == "master" {
+            "https://ziglang.org/download/index.json"
+        } else if key == "mach-latest" {
+            "https://machengine.org/zig/index.json"
+        } else {
+            // Left blank for future sources just in case
+            ""
+        };
+
+        let version_json: serde_json::Value = HTTP_FETCH.json(json_url)?;
+        let zig_version = version_json
+            .pointer(&format!("/{key}/version"))
             .and_then(|v| v.as_str())
-            .ok_or_else(|| eyre::eyre!("Failed to get master version"))?;
-        Ok(master_version.to_string())
+            .ok_or_else(|| eyre::eyre!("Failed to get zig version from {:?}", json_url))?;
+        Ok(zig_version.to_string())
     }
 }
 
