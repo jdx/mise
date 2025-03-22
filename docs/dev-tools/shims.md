@@ -136,7 +136,7 @@ the env vars. (though there are exceptions, see [hook on `cd`](#hook-on-cd))
 ### Env vars and shims
 
 A downside of shims is that the environment variables are only loaded when a shim is called. This means if you
-set an [environment variable](/environments/) in `mise.toml`, it will only be used run when a shim is called.
+set an [environment variable](/environments/) in `mise.toml`, it will only be used when a shim is called.
 
 The following example only works under `mise activate`:
 
@@ -242,7 +242,7 @@ The obvious downside is that anytime one wants to use `mise` they need to prefix
 
 For some shells (`bash`, `zsh`, `fish`), `mise` hooks into the `cd` command, while in others, it only runs when the prompt is displayed. This relies on `chpwd` in `zsh`, `PROMPT_COMMAND` in `bash`, and `fish_prompt` in `fish`.
 
-The upside is that it doesn't run as frequently but since mise is written in rust the cost for executing
+The upside is that it doesn't run as frequently but since mise is written in Rust the cost for executing
 mise is negligible (a few ms).
 
 ::: details Running several commands in a single line
