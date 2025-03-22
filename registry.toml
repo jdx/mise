@@ -730,6 +730,8 @@ ginkgo.backends = [
     "asdf:mise-plugins/mise-ginkgo"
 ]
 ginkgo.test = ['ginkgo version', 'Ginkgo Version {{version}}']
+git.backends = ["asdf:nishidayuya/asdf-git"]
+git.test = ["git version", "git version {{version}}"]
 git-chglog.backends = [
     "aqua:git-chglog/git-chglog",
     "asdf:GoodwayGroup/asdf-git-chglog"
