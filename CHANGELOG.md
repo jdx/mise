@@ -1,5 +1,25 @@
 # Changelog
 
+## [2025.3.8](https://github.com/jdx/mise/compare/v2025.3.7..v2025.3.8) - 2025-03-22
+
+### 🚀 Features
+
+- **(registry)** add aichat by [@kit494way](https://github.com/kit494way) in [#4691](https://github.com/jdx/mise/pull/4691)
+
+### 🐛 Bug Fixes
+
+- Update flake to fix nix build by [@akanter](https://github.com/akanter) in [#4686](https://github.com/jdx/mise/pull/4686)
+
+### 📚 Documentation
+
+- fix bash completion setup instructions by [@bestagi](https://github.com/bestagi) in [#3920](https://github.com/jdx/mise/pull/3920)
+- small tidy of shims docs by [@AlecRust](https://github.com/AlecRust) in [#4693](https://github.com/jdx/mise/pull/4693)
+
+### New Contributors
+
+- @akanter made their first contribution in [#4686](https://github.com/jdx/mise/pull/4686)
+- @bestagi made their first contribution in [#3920](https://github.com/jdx/mise/pull/3920)
+
 ## [2025.3.7](https://github.com/jdx/mise/compare/v2025.3.6..v2025.3.7) - 2025-03-21
 
 ### 🐛 Bug Fixes
