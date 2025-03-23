@@ -207,6 +207,7 @@ jobs:
             direnv \
             fd-find \
             fish \
+            gettext \
             pipx \
             python3-venv \
             zsh
