@@ -527,3 +527,40 @@ quiet = true # this is mandatory to make completion work (makes the mise command
 description = "List users"
 run = 'echo "alice\nbob\ncharlie"'
 ```
+
+Arguments and flags defined in the usage spec are also set in the environment before running each script defined in the `run` field. The name of each variable is prepended with `usage_` keyword.
+
+```toml
+[tasks.usage-env-example]
+usage = '''
+arg "myarg" "myarg description" default="foo"
+'''
+run = 'echo myarg=$usage_myarg'
+
+# execute: mise run usage-env-example
+# outputs: myarg=foo
+
+# execute: mise run usage-env-example bar
+# outputs: myarg=bar
+```
+
+```toml
+[tasks.usage-env-example]
+usage = '''
+flag "-m --myflag <myflag>" default="false"
+'''
+run = [
+'echo "Command 1: $usage_myflag"',
+'echo "Command 2: {{flag(name="myflag", default="false")}} $usage_myflag"',
+]
+
+# execute: mise run usage-env-example
+# outputs:
+# Command 1: false
+# Command 2: false false
+
+# execute: mise run usage-env-example --myflag true
+# outputs:
+# Command 1: true
+# Command 2: true true
+```
