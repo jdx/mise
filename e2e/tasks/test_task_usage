@@ -75,3 +75,78 @@ chmod +x mise-tasks/test-args.js
 # assert_fail "mise run test-args --grower 1 -g 2" "Missing required flag: --packer <packer>"
 assert "mise run --trace test-args --grower 1 -g 2 --packer 3" "grower: 1 2
 packer: 3"
+
+cat <<'EOF' >mise.toml
+[tasks.usage-env]
+usage = '''
+arg "myarg" "myarg description" default="foo"
+'''
+run = 'echo myarg=$usage_myarg'
+EOF
+
+assert "mise run usage-env" "myarg=foo"
+assert "mise run usage-env bar" "myarg=bar"
+
+cat <<'EOF' >mise.toml
+[tasks.usage-env]
+usage = '''
+flag "-m --myflag <myflag>" default="foo"
+'''
+run = 'echo myflag=$usage_myflag'
+EOF
+
+assert "mise run usage-env" "myflag=foo"
+assert "mise run usage-env -m bar" "myflag=bar"
+assert "mise run usage-env --myflag bar" "myflag=bar"
+
+cat <<'EOF' >mise.toml
+[tasks.usage-env]
+usage = '''
+arg "myarg" "myarg description" default="foo"
+'''
+run = [
+'echo "Command 1: $usage_myarg"',
+'echo "Command 2: {{arg(name="myarg", default="bar")}} $usage_myarg"',
+]
+EOF
+
+assert "mise run usage-env" "\
+Command 1: foo
+Command 2: foo foo"
+assert "mise run usage-env baz" "\
+Command 1: baz
+Command 2: baz baz"
+
+cat <<'EOF' >mise.toml
+[tasks.usage-env]
+usage = '''
+flag "-m --myflag <myflag>" default="false"
+'''
+run = [
+'echo "Command 1: $usage_myflag"',
+'echo "Command 2: {{flag(name="myflag", default="false")}} $usage_myflag"',
+]
+EOF
+
+assert "mise run usage-env" "\
+Command 1: false
+Command 2: false false"
+assert "mise run usage-env -m true" "\
+Command 1: true
+Command 2: true true"
+assert "mise run usage-env --myflag true" "\
+Command 1: true
+Command 2: true true"
+
+cat <<'EOF' >mise.toml
+[tasks.usage-env]
+usage = '''
+arg "myarg" "myarg description"
+'''
+run = [
+'echo "Command 1: $usage_myarg"',
+'echo "Command 2: {{arg(name="myarg", default="bar")}} $usage_myarg"',
+]
+EOF
+
+assert_fail "mise run usage-env"
