@@ -1489,6 +1489,11 @@ protoc-gen-js.backends = [
     "ubi:protocolbuffers/protobuf-javascript[exe=protoc-gen-js]",
     "asdf:pbr0ck3r/asdf-protoc-gen-js"
 ]
+protoc-gen-validate.backends = [
+    "aqua:bufbuild/protoc-gen-validate",
+    "go:github.com/envoyproxy/protoc-gen-validate"
+]
+protoc-gen-validate.test = ["which protoc-gen-validate", "protoc-gen-validate"]
 protolint.backends = [
     "aqua:yoheimuta/protolint",
     "asdf:spencergilbert/asdf-protolint"
