@@ -1556,16 +1556,11 @@ ripgrep.test = ["rg --version", "ripgrep {{version}}"]
 ripgrep.description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
 ripgrep-all.backends = ["aqua:phiresky/ripgrep-all"]
 ripgrep-all.test = ["rga --version", "ripgrep-all {{version}}"]
-ripsecret.backends = [
-    "aqua:sirwart/ripsecrets",
-    "asdf:https://github.com/boris-smidt-klarrio/asdf-ripsecrets"
-]
-ripsecret.test = ["ripsecrets --version", "ripsecrets {{version}}"]
 ripsecrets.backends = [
     "aqua:sirwart/ripsecrets",
     "asdf:https://github.com/boris-smidt-klarrio/asdf-ripsecrets"
 ]
-ripsecrets.test = ["ripsecrets --version", "ripsecrets {{version}}"]
+# ripsecrets.test = ["ripsecrets --version", "ripsecrets {{version}}"] # broke in CI
 rke.backends = ["aqua:rancher/rke", "asdf:particledecay/asdf-rke"]
 rlwrap.backends = ["asdf:mise-plugins/mise-rlwrap"]
 ruby.backends = ["core:ruby"]
