@@ -1386,8 +1386,14 @@ operator-sdk.backends = [
     "aqua:operator-framework/operator-sdk",
     "asdf:Medium/asdf-operator-sdk"
 ]
-opsgenie-lamp.backends = ["ubi:opsgenie/opsgenie-lamp", "asdf:mise-plugins/mise-opsgenie-lamp"]
-opsgenie-lamp.test = ["opsgenie-lamp --version", "lamp version "] # 3.1.4 reports 3.2.0
+opsgenie-lamp.backends = [
+    "ubi:opsgenie/opsgenie-lamp",
+    "asdf:mise-plugins/mise-opsgenie-lamp"
+]
+opsgenie-lamp.test = [
+    "opsgenie-lamp --version",
+    "lamp version "
+] # 3.1.4 reports 3.2.0
 oras.backends = ["aqua:oras-project/oras", "asdf:bodgit/asdf-oras"]
 osqueryi.backends = ["asdf:mise-plugins/mise-osqueryi"]
 overmind.backends = [
