@@ -102,7 +102,8 @@ argocd.backends = [
     "asdf:beardix/asdf-argocd"
 ]
 asciidoctorj.backends = ["asdf:mise-plugins/mise-asciidoctorj"]
-assh.backends = ["asdf:mise-plugins/mise-assh"]
+assh.backends = ["ubi:moul/assh", "asdf:mise-plugins/mise-assh"]
+assh.test = ["assh --version", "assh version "] # 2.16.0 reports version n/a
 ast-grep.backends = [
     "aqua:ast-grep/ast-grep",
     "cargo:ast-grep",
