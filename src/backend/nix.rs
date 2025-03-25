@@ -11,7 +11,6 @@ use crate::http::HTTP_FETCH;
 
 use crate::toolset::ToolVersion;
 
-
 #[derive(Debug)]
 pub struct NixBackend {
     ba: BackendArg,
@@ -46,20 +45,18 @@ impl Backend for NixBackend {
     ) -> eyre::Result<ToolVersion> {
         SETTINGS.ensure_experimental("nix backend")?;
 
-        let nix_installable = 
-            self.nixhub_installable(self.tool_name(), tv.version.clone())?;
+        let nix_installable = self.nixhub_installable(self.tool_name(), tv.version.clone())?;
 
         let profile_path = tv.install_path().join("profile");
 
-        let mut cmd = CmdLineRunner::new("nix")
-          .args(&[
-            "--experimental-features", 
+        let mut cmd = CmdLineRunner::new("nix").args([
+            "--experimental-features",
             "flakes nix-command",
             "profile",
             "install",
             nix_installable.as_str(),
-            "--profile"
-          ]);
+            "--profile",
+        ]);
 
         cmd = cmd.arg(profile_path);
 
@@ -79,7 +76,6 @@ impl Backend for NixBackend {
     }
 }
 
-
 impl NixBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba }
@@ -87,42 +83,52 @@ impl NixBackend {
 
     fn nixhub_resource(&self, name: String) -> eyre::Result<NixHubResource> {
         let nixhub_url = "https://search.devbox.sh/v2/pkg";
-        let resource: NixHubResource = HTTP_FETCH.json(format!(
-            "{}?name={}",
-            nixhub_url,
-            name,
-        ))?;
-        return Ok(resource)
+        let resource: NixHubResource = HTTP_FETCH.json(format!("{}?name={}", nixhub_url, name,))?;
+        Ok(resource)
     }
 
     fn nixhub_versions(&self, name: String) -> eyre::Result<Vec<String>> {
         let resource = self.nixhub_resource(name)?;
-        let versions = resource.releases.iter().filter_map(|r|
-            r.platforms.iter().find_map(|p| 
-                if p.arch == ARCH && p.os == OS {
-                    Some(r.version.clone())
-                } else {
-                    None
-                }
-            )
-        ).collect();
+        let versions = resource
+            .releases
+            .iter()
+            .filter_map(|r| {
+                r.platforms.iter().find_map(|p| {
+                    if p.arch == ARCH && p.os == OS {
+                        Some(r.version.clone())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
         Ok(versions)
     }
 
     fn nixhub_platform(&self, name: String, version: String) -> eyre::Result<NixHubPlatform> {
         let resource = self.nixhub_resource(name)?;
-        resource.releases.iter().find_map(|x| 
-            if x.version == version {
-                x.platforms.iter().find(|y| y.arch == ARCH && y.os == OS).cloned()
-            } else {
-                None
-            }
-        ).ok_or_else(|| eyre::eyre!("No compatible release found"))
+        resource
+            .releases
+            .iter()
+            .find_map(|x| {
+                if x.version == version {
+                    x.platforms
+                        .iter()
+                        .find(|y| y.arch == ARCH && y.os == OS)
+                        .cloned()
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| eyre::eyre!("No compatible release found"))
     }
 
     fn nixhub_installable(&self, name: String, version: String) -> eyre::Result<String> {
         let platform = self.nixhub_platform(name.clone(), version.clone())?;
-        let installable = format!("nixpkgs/{}#{}", platform.commit_hash, platform.attribute_path);
+        let installable = format!(
+            "nixpkgs/{}#{}",
+            platform.commit_hash, platform.attribute_path
+        );
         Ok(installable)
     }
 }
@@ -132,7 +138,7 @@ struct NixHubPlatform {
     arch: String,
     os: String,
     attribute_path: String,
-    commit_hash: String
+    commit_hash: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -145,7 +151,6 @@ struct NixHubRelease {
 struct NixHubResource {
     releases: Vec<NixHubRelease>,
 }
-
 
 #[cfg(target_arch = "x86_64")]
 const ARCH: &str = "x86-64";

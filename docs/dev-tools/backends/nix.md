@@ -4,8 +4,7 @@ This backend allows mise to install any package (from the >120_000 available) fr
 
 The code for this is inside the mise repository at [`./src/backend/nix.rs`](https://github.com/jdx/mise/blob/main/src/backend/nix.rs).
 
-
-The only requirement is a system where `nix` is installed. Nix can be installed on any Linux, MacOS, and Windows (WSL2). 
+The only requirement is a system where `nix` is installed. Nix can be installed on any Linux, MacOS, and Windows (WSL2).
 
 If you are using [NixOS](https://nixos.org/download/) you are all set.
 However if you wish to install Nix on any other operating system, we recommend using the [Determinate Nix Installer](https://determinate.systems/nix-installer/).
@@ -16,7 +15,7 @@ The following example will install the `go` package.
 (read bellow how nix uses attribute-paths to identify installables)
 
 ```
-$ mise use -g nix:go@1.24.1
+mise use -g nix:go@1.24.1
 ```
 
 or in toml format:
@@ -26,7 +25,7 @@ or in toml format:
 "nix:go" = "1.24.1"
 ```
 
-## A note on nixpkgs and package versions.
+## A note on nixpkgs and package versions
 
 The nixpkgs repository is a huge collection of programs (> 120_000 packages) that are constantly evolving and getting updated by the nix contributors to match their latest version. Because of this mono-repo nature, in order to find what versions have ever been available for a package, you would need to track which repository revision introduced each package version change.
 
@@ -41,7 +40,7 @@ The mise nix-backend uses NixHub JSON API to search for packages versions.
 In the future it could also support Lazamar index via an option, but for now
 using the NixHub API seems sufficient.
 
-## Installable Attribute-Paths.
+## Installable Attribute-Paths
 
 In order to install a package from nixpkgs, you need to know its attribute-path.
 
