@@ -114,7 +114,7 @@ atlas.backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
 auto-doc.backends = [
     "ubi:tj-actions/auto-doc",
-    "asdf:mise-plugins/mise-auto-doc",
+    "asdf:mise-plugins/mise-auto-doc"
 ]
 auto-doc.test = ["auto-doc --help", "auto-doc [flags]"]
 aws-amplify.aliases = ["amplify"]
