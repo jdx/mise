@@ -30,6 +30,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     dotnet
     gem
     go
+    nix
     npm
     pipx
     spm

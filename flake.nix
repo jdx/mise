@@ -25,7 +25,7 @@
 
             inputsFrom = [ mise ];
 
-            env.RUST_SRC = pkgs.rustPlatform.rustLibSrc;
+            env.RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
 
             nativeBuildInputs = with pkgs; [
               just

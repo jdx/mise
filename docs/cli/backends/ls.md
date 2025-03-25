@@ -17,6 +17,7 @@ core
 dotnet
 gem
 go
+nix
 npm
 pipx
 spm

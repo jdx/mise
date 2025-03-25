@@ -12,6 +12,7 @@ Below is a list of the available backends in mise:
 - [dotnet](/dev-tools/backends/dotnet) <Badge type="warning" text="experimental" />
 - [gem](/dev-tools/backends/gem) <Badge type="warning" text="experimental" />
 - [go](/dev-tools/backends/go) <Badge type="warning" text="experimental" />
+- [nix](/dev-tools/backends/nix) <Badge type="warning" text="experimental" />
 - [npm](/dev-tools/backends/npm)
 - [pipx](/dev-tools/backends/pipx)
 - [spm](/dev-tools/backends/spm) <Badge type="warning" text="experimental" />
