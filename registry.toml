@@ -1298,7 +1298,8 @@ mdbook-linkcheck.backends = [
     "asdf:mise-plugins/mise-mdbook-linkcheck"
 ]
 mdbook-linkcheck.test = [
-    "mdbook-linkcheck --version", "mdbook-linkcheck {{version}}"
+    "mdbook-linkcheck --version",
+    "mdbook-linkcheck {{version}}"
 ]
 melange.backends = ["aqua:chainguard-dev/melange", "asdf:omissis/asdf-melange"]
 melange.os = ["linux", "macos"]
