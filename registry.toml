@@ -908,7 +908,11 @@ helm-cr.backends = [
     "asdf:Antiarchitect/asdf-helm-cr"
 ]
 helm-ct.backends = ["aqua:helm/chart-testing", "asdf:tablexi/asdf-helm-ct"]
-helm-diff.backends = ["asdf:mise-plugins/mise-helm-diff"]
+helm-diff.backends = [
+    "ubi:databus23/helm-diff[exe=diff,rename_exe=helm-diff]",
+    "asdf:mise-plugins/mise-helm-diff"
+]
+helm-diff.test = ["helm-diff version", "{{version}}"]
 helm-docs.backends = [
     "aqua:norwoodj/helm-docs",
     "asdf:sudermanjr/asdf-helm-docs"
