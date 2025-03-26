@@ -850,7 +850,11 @@ gradle.depends = ["java"]
 gradle.test = ["gradle -V", "Gradle"]
 gradle-profiler.backends = ["asdf:mise-plugins/mise-gradle-profiler"]
 grails.backends = ["asdf:mise-plugins/mise-grails"]
-grain.backends = ["asdf:mise-plugins/mise-grain"]
+grain.backends = [
+    "ubi:grain-lang/grain[tag_regex=^grain-]",
+    "asdf:mise-plugins/mise-grain"
+]
+grain.test = ["grain --version", ""] # versions are in a strange format
 granted.backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
 grex.backends = ["aqua:pemistahl/grex", "asdf:ouest/asdf-grex"]
 grex.test = ["grex --version", "grex {{version}}"]
