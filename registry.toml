@@ -1923,7 +1923,8 @@ vcluster.backends = [
     "aqua:loft-sh/vcluster",
     "asdf:https://gitlab.com/wt0f/asdf-vcluster"
 ]
-velad.backends = ["asdf:mise-plugins/mise-velad"]
+velad.backends = ["ubi:kubevela/velad", "asdf:mise-plugins/mise-velad"]
+velad.test = ["velad version", "VelaD Version: {{version}}"]
 velero.backends = ["aqua:vmware-tanzu/velero", "asdf:looztra/asdf-velero"]
 vendir.backends = ["aqua:carvel-dev/vendir", "asdf:vmware-tanzu/asdf-carvel"]
 venom.backends = ["aqua:ovh/venom", "asdf:aabouzaid/asdf-venom"]
