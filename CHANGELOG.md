@@ -1,5 +1,7 @@
 # Changelog
 
+## [2025.3.10](https://github.com/jdx/mise/compare/v2025.3.9..v2025.3.10) - 2025-03-26
+
 ## [2025.3.9](https://github.com/jdx/mise/compare/v2025.3.8..v2025.3.9) - 2025-03-26
 
 ### 🚀 Features
