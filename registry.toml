@@ -898,7 +898,8 @@ hasura-cli.backends = [
     "aqua:hasura/graphql-engine",
     "asdf:gurukulkarni/asdf-hasura"
 ]
-haxe.backends = ["asdf:mise-plugins/mise-haxe"]
+haxe.backends = ["ubi:HaxeFoundation/haxe", "asdf:mise-plugins/mise-haxe"]
+haxe.test = ["haxe --version", "{{version}}"]
 hcl2json.backends = ["aqua:tmccombs/hcl2json", "asdf:dex4er/asdf-hcl2json"]
 hcloud.backends = ["aqua:hetznercloud/cli", "asdf:chessmango/asdf-hcloud"]
 helix.backends = ["ubi:helix-editor/helix[extract_all=true]"]
