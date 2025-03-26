@@ -1398,7 +1398,8 @@ opensearch-cli.backends = [
     "asdf:mise-plugins/mise-opensearch-cli"
 ]
 opensearch-cli.test = [
-    "opensearch-cli --version", "opensearch-cli version {{version}}"
+    "opensearch-cli --version",
+    "opensearch-cli version {{version}}"
 ]
 openshift-install.backends = ["asdf:mise-plugins/mise-openshift-install"]
 opentofu.backends = [
