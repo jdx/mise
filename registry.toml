@@ -1293,7 +1293,13 @@ maven.backends = [
 mc.backends = ["asdf:mise-plugins/mise-mc"]
 mdbook.backends = ["aqua:rust-lang/mdBook", "asdf:cipherstash/asdf-mdbook"]
 mdbook.test = ["mdbook --version", "mdbook v{{version}}"]
-mdbook-linkcheck.backends = ["asdf:mise-plugins/mise-mdbook-linkcheck"]
+mdbook-linkcheck.backends = [
+    "ubi:Michael-F-Bryan/mdbook-linkcheck",
+    "asdf:mise-plugins/mise-mdbook-linkcheck"
+]
+mdbook-linkcheck.test = [
+    "mdbook-linkcheck --version", "mdbook-linkcheck {{version}}"
+]
 melange.backends = ["aqua:chainguard-dev/melange", "asdf:omissis/asdf-melange"]
 melange.os = ["linux", "macos"]
 # melange.test = ["melange version", "v{{version}}"] sometimes releases without assets
