@@ -1,5 +1,22 @@
 # Changelog
 
+## [2025.3.9](https://github.com/jdx/mise/compare/v2025.3.8..v2025.3.9) - 2025-03-26
+
+### 🚀 Features
+
+- Set usage arguments and flag as environment variables before running the command by [@gturi](https://github.com/gturi) in [#4700](https://github.com/jdx/mise/pull/4700)
+
+### 🚜 Refactor
+
+- **(registry)** use ubi for assh by [@scop](https://github.com/scop) in [#4713](https://github.com/jdx/mise/pull/4713)
+- **(registry)** use ubi for opsgenie-lamp by [@scop](https://github.com/scop) in [#4712](https://github.com/jdx/mise/pull/4712)
+- **(registry)** use ubi for auto-doc by [@scop](https://github.com/scop) in [#4714](https://github.com/jdx/mise/pull/4714)
+- **(registry)** use ubi for getenvoy by [@scop](https://github.com/scop) in [#4715](https://github.com/jdx/mise/pull/4715)
+- **(registry)** use ubi for mockolo by [@scop](https://github.com/scop) in [#4705](https://github.com/jdx/mise/pull/4705)
+- **(registry)** use ubi for haxe by [@scop](https://github.com/scop) in [#4716](https://github.com/jdx/mise/pull/4716)
+- **(registry)** use ubi for helm-diff by [@scop](https://github.com/scop) in [#4717](https://github.com/jdx/mise/pull/4717)
+- **(registry)** use ubi for grain by [@scop](https://github.com/scop) in [#4718](https://github.com/jdx/mise/pull/4718)
+
 ## [2025.3.8](https://github.com/jdx/mise/compare/v2025.3.7..v2025.3.8) - 2025-03-24
 
 ### 🚀 Features
