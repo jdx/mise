@@ -1393,7 +1393,14 @@ openbao.backends = ["ubi:openbao/openbao[exe=bao]"]
 openfaas-cli.backends = ["aqua:openfaas/faas-cli", "asdf:zekker6/asdf-faas-cli"]
 openresty.backends = ["asdf:mise-plugins/mise-openresty"]
 opensearch.backends = ["asdf:mise-plugins/mise-opensearch"]
-opensearch-cli.backends = ["asdf:mise-plugins/mise-opensearch-cli"]
+opensearch-cli.backends = [
+    "ubi:opensearch-project/opensearch-cli",
+    "asdf:mise-plugins/mise-opensearch-cli"
+]
+opensearch-cli.test = [
+    "opensearch-cli --version",
+    "opensearch-cli version {{version}}"
+]
 openshift-install.backends = ["asdf:mise-plugins/mise-openshift-install"]
 opentofu.backends = [
     "aqua:opentofu/opentofu",
