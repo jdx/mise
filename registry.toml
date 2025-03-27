@@ -1753,7 +1753,11 @@ swift.os = ["linux", "macos"]
 swift-package-list.backends = ["asdf:mise-plugins/mise-swift-package-list"]
 swiftformat.backends = ["asdf:mise-plugins/mise-swiftformat"]
 swiftgen.backends = ["asdf:mise-plugins/mise-swiftgen"]
-swiftlint.backends = ["asdf:mise-plugins/mise-swiftlint"]
+swiftlint.backends = [
+    "aqua:realm/SwiftLint",
+    "asdf:mise-plugins/mise-swiftlint"
+]
+swiftlint.test = ["swiftlint --version", "{{version}}"]
 swiprolog.backends = ["asdf:mise-plugins/mise-swiprolog"]
 syft.backends = ["aqua:anchore/syft", "asdf:davidgp1701/asdf-syft"]
 talhelper.backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
