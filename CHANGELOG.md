@@ -1,5 +1,18 @@
 # Changelog
 
+## [2025.3.11](https://github.com/jdx/mise/compare/v2025.3.10..v2025.3.11) - 2025-03-28
+
+### 🚀 Features
+
+- **(registry)** add protoc-gen-validate by [@akanter](https://github.com/akanter) in [#4703](https://github.com/jdx/mise/pull/4703)
+
+### 🚜 Refactor
+
+- **(registry)** use aqua for swiftlint by [@scop](https://github.com/scop) in [#4726](https://github.com/jdx/mise/pull/4726)
+- **(registry)** use ubi for opensearch-cli by [@scop](https://github.com/scop) in [#4725](https://github.com/jdx/mise/pull/4725)
+- **(registry)** use ubi for mdbook-linkcheck by [@scop](https://github.com/scop) in [#4724](https://github.com/jdx/mise/pull/4724)
+- **(registry)** use ubi for velad by [@scop](https://github.com/scop) in [#4727](https://github.com/jdx/mise/pull/4727)
+
 ## [2025.3.10](https://github.com/jdx/mise/compare/v2025.3.9..v2025.3.10) - 2025-03-26
 
 ## [2025.3.9](https://github.com/jdx/mise/compare/v2025.3.8..v2025.3.9) - 2025-03-26
