@@ -17,9 +17,9 @@ run = "echo three"
 EOF
 
 assert "mise task deps" "one
- two
+three
  └── one
- three
+two
  └── one"
 assert "mise run one"
 
