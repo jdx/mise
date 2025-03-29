@@ -1903,7 +1903,8 @@ uaa.backends = [
     "asdf:mise-plugins/tanzu-plug-in-for-asdf"
 ]
 uaa.test = ["uaa version", "{{version}}"]
-ubi.backends = ["ubi:houseabsolute/ubi"]
+ubi.backends = ["aqua:houseabsolute/ubi", "ubi:houseabsolute/ubi"]
+ubi.test = ["ubi --version", "ubi {{version}}"]
 unison.backends = ["ubi:unisonweb/unison", "asdf:susurri/asdf-unison"]
 upctl.backends = ["aqua:UpCloudLtd/upcloud-cli"]
 upctl.test = ["upctl version", "{{version}}"]
