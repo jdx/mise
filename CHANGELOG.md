@@ -1,5 +1,21 @@
 # Changelog
 
+## [2025.3.12](https://github.com/jdx/mise/compare/v2025.3.11..v2025.3.12) - 2025-03-29
+
+### 🚜 Refactor
+
+- **(registry)** use aqua for ubi by [@scop](https://github.com/scop) in [#4745](https://github.com/jdx/mise/pull/4745)
+- **(registry)** use aqua for ksops by [@scop](https://github.com/scop) in [#4746](https://github.com/jdx/mise/pull/4746)
+
+### 📚 Documentation
+
+- mark code block for dnf5 install as shell code by [@sina-hide](https://github.com/sina-hide) in [#4747](https://github.com/jdx/mise/pull/4747)
+- update demo by [@hverlin](https://github.com/hverlin) in [#4350](https://github.com/jdx/mise/pull/4350)
+
+### New Contributors
+
+- @sina-hide made their first contribution in [#4747](https://github.com/jdx/mise/pull/4747)
+
 ## [2025.3.11](https://github.com/jdx/mise/compare/v2025.3.10..v2025.3.11) - 2025-03-28
 
 ### 🚀 Features
