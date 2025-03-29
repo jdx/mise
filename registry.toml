@@ -1089,6 +1089,7 @@ krab.backends = ["ubi:ohkrab/krab", "asdf:ohkrab/asdf-krab"]
 krew.backends = ["aqua:kubernetes-sigs/krew", "asdf:bjw-s/asdf-krew"]
 kscript.backends = ["ubi:kscripting/kscript", "asdf:edgelevel/asdf-kscript"]
 ksops.backends = [
+    "aqua:viaduct-ai/kustomize-sops",
     "ubi:viaduct-ai/kustomize-sops[exe=ksops]",
     "asdf:janpieper/asdf-ksops"
 ]
