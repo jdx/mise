@@ -162,7 +162,7 @@ dnf install -y mise
 
 Fedora 41+ (dnf5)
 
-```
+```sh
 dnf install -y dnf-plugins-core
 dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
 dnf install -y mise
