@@ -29,7 +29,7 @@ It also shows that you can use `mise` to install and many other tools such as `j
 
 [![demo](./docs/tapes/demo.gif)](https://mise.jdx.dev/demo.html)
 
-See [transcript](https://mise.jdx.dev/demo.html).
+See [demo transcript](https://mise.jdx.dev/demo.html).
 
 ## Quickstart
 
