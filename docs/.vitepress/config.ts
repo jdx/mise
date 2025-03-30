@@ -28,9 +28,9 @@ export default defineConfig({
       {
         text: "Guides",
         items: [
+          { text: "Demo", link: "/demo" },
           { text: "Getting Started", link: "/getting-started" },
           { text: "Walkthrough", link: "/walkthrough" },
-          { text: "Demo", link: "/demo" },
           { text: "Installing mise", link: "/installing-mise" },
           { text: "IDE Integration", link: "/ide-integration" },
           { text: "Continuous Integration", link: "/continuous-integration" },
