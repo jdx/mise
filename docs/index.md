@@ -13,14 +13,11 @@ hero:
       text: Getting Started
       link: /getting-started
     - theme: alt
+      text: Demo
+      link: /demo
+    - theme: alt
       text: About
       link: /about
-    - theme: alt
-      text: GitHub
-      link: https://github.com/jdx/mise
-    - theme: alt
-      text: Discord
-      link: https://discord.gg/UBa7pJUN7Z
 
 features:
   - title: Dev Tools
