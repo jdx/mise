@@ -131,7 +131,7 @@ impl Install {
         let trs = config.get_tool_request_set()?;
         let versions = trs.missing_tools().into_iter().cloned().collect_vec();
         let versions = if versions.is_empty() {
-            info!("all runtimes are installed");
+            info!("all tools are installed");
             hooks::run_one_hook(config.get_toolset()?, Hooks::Postinstall, None);
             vec![]
         } else {
