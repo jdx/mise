@@ -5,7 +5,7 @@ This document offers a quick overview on some initial things you may want to try
 
 ## Installing Dev Tools
 
-The main command for working with tools in mise is [`mise use|u`](/cli/use). This does 2 main things:
+The main command for working with tools in mise is [`mise u|use`](/cli/use). This does 2 main things:
 
 - Installs tools (if not already installed)
 - Adds the tool to the `mise.toml` configuration file—in mise I say the tool is "active" if it's in `mise.toml`
