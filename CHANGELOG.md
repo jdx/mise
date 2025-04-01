@@ -1,5 +1,34 @@
 # Changelog
 
+## [2025.4.0](https://github.com/jdx/mise/compare/v2025.3.11..v2025.4.0) - 2025-04-01
+
+### 🐛 Bug Fixes
+
+- s/runtimes/tools by [@jdx](https://github.com/jdx) in [#4754](https://github.com/jdx/mise/pull/4754)
+- add clarification on RUSTUP_HOME and CARGO_HOME by [@lachieh](https://github.com/lachieh) in [#4759](https://github.com/jdx/mise/pull/4759)
+- enhance confirmation logic to respect SETTINGS.yes by [@roele](https://github.com/roele) in [#4764](https://github.com/jdx/mise/pull/4764)
+
+### 🚜 Refactor
+
+- **(registry)** use aqua for ubi by [@scop](https://github.com/scop) in [#4745](https://github.com/jdx/mise/pull/4745)
+- **(registry)** use aqua for ksops by [@scop](https://github.com/scop) in [#4746](https://github.com/jdx/mise/pull/4746)
+
+### 📚 Documentation
+
+- mark code block for dnf5 install as shell code by [@sina-hide](https://github.com/sina-hide) in [#4747](https://github.com/jdx/mise/pull/4747)
+- update demo by [@hverlin](https://github.com/hverlin) in [#4350](https://github.com/jdx/mise/pull/4350)
+- move demo to top-level by [@jdx](https://github.com/jdx) in [2b6f45a](https://github.com/jdx/mise/commit/2b6f45ac73d6f59542f9c7b401042ad5c75e37e2)
+- Update config.ts by [@jdx](https://github.com/jdx) in [05ad4bc](https://github.com/jdx/mise/commit/05ad4bc9b2243737c0551fd36de1e37dc57ea578)
+- Update walkthrough.md by [@jdx](https://github.com/jdx) in [89904b4](https://github.com/jdx/mise/commit/89904b46d8649a66bf960b1e5c7c0364dad8f94f)
+- Update index.md by [@jdx](https://github.com/jdx) in [#4750](https://github.com/jdx/mise/pull/4750)
+- Update walkthrough.md by [@jdx](https://github.com/jdx) in [#4751](https://github.com/jdx/mise/pull/4751)
+- Update README.md by [@jdx](https://github.com/jdx) in [4f38142](https://github.com/jdx/mise/commit/4f38142bd3d822c3eafd78a74aa7a8d31791d2e3)
+
+### New Contributors
+
+- @lachieh made their first contribution in [#4759](https://github.com/jdx/mise/pull/4759)
+- @sina-hide made their first contribution in [#4747](https://github.com/jdx/mise/pull/4747)
+
 ## [2025.3.11](https://github.com/jdx/mise/compare/v2025.3.10..v2025.3.11) - 2025-03-28
 
 ### 🚀 Features
