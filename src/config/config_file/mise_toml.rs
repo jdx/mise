@@ -439,7 +439,11 @@ impl ConfigFile for MiseToml {
                     for v in options.opts.values_mut() {
                         *v = self.parse_template(v)?;
                     }
-                    ToolRequest::new_opts(ba.clone(), &version, options, source.clone())?
+                    let mut ba = ba.clone();
+                    let mut ba_opts = ba.opts().clone();
+                    ba_opts.merge(&options.opts);
+                    ba.set_opts(Some(ba_opts.clone()));
+                    ToolRequest::new_opts(ba, &version, options, source.clone())?
                 } else {
                     ToolRequest::new(ba.clone(), &version, source.clone())?
                 };

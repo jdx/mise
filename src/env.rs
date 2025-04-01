@@ -223,6 +223,43 @@ pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
 
     token
 });
+pub static MISE_GITHUB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
+    Lazy::new(|| match var("MISE_GITHUB_ENTERPRISE_TOKEN") {
+        Ok(v) if v.trim() != "" => {
+            set_var("MISE_GITHUB_ENTERPRISE_TOKEN", &v);
+            Some(v)
+        }
+        _ => {
+            remove_var("MISE_GITHUB_ENTERPRISE_TOKEN");
+            None
+        }
+    });
+pub static GITLAB_TOKEN: Lazy<Option<String>> =
+    Lazy::new(
+        || match var("MISE_GITLAB_TOKEN").or_else(|_| var("GITLAB_TOKEN")) {
+            Ok(v) if v.trim() != "" => {
+                set_var("MISE_GITLAB_TOKEN", &v);
+                set_var("GITLAB_TOKEN", &v);
+                Some(v)
+            }
+            _ => {
+                remove_var("MISE_GITLAB_TOKEN");
+                remove_var("GITLAB_TOKEN");
+                None
+            }
+        },
+    );
+pub static MISE_GITLAB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
+    Lazy::new(|| match var("MISE_GITLAB_ENTERPRISE_TOKEN") {
+        Ok(v) if v.trim() != "" => {
+            set_var("MISE_GITLAB_ENTERPRISE_TOKEN", &v);
+            Some(v)
+        }
+        _ => {
+            remove_var("MISE_GITLAB_ENTERPRISE_TOKEN");
+            None
+        }
+    });
 
 pub static TEST_TRANCHE: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE") as usize);
 pub static TEST_TRANCHE_COUNT: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE_COUNT") as usize);

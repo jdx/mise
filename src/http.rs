@@ -3,8 +3,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use eyre::{Report, Result, bail};
-use reqwest::header::HeaderMap;
-use reqwest::{ClientBuilder, IntoUrl, RequestBuilder, Response};
+use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::{ClientBuilder, IntoUrl, Response};
 use std::sync::LazyLock as Lazy;
 use url::Url;
 
@@ -57,10 +57,20 @@ impl Client {
     }
 
     pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
+        let url = url.into_url().unwrap();
+        let headers = github_headers(&url);
+        self.get_async_with_headers(url, &headers).await
+    }
+
+    async fn get_async_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<Response> {
         let get = |url: Url| async move {
             debug!("GET {}", &url);
             let mut req = self.reqwest.get(url.clone());
-            req = with_github_auth(&url, req);
+            req = req.headers(headers.clone());
             let resp = req.send().await?;
             debug!("GET {url} {}", resp.status());
             display_github_rate_limit(&resp);
@@ -88,10 +98,20 @@ impl Client {
     }
 
     pub async fn head_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
+        let url = url.into_url().unwrap();
+        let headers = github_headers(&url);
+        self.head_async_with_headers(url, &headers).await
+    }
+
+    pub async fn head_async_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<Response> {
         let head = |url: Url| async move {
             debug!("HEAD {}", &url);
             let mut req = self.reqwest.head(url.clone());
-            req = with_github_auth(&url, req);
+            req = req.headers(headers.clone());
             let resp = req.send().await?;
             debug!("HEAD {url} {}", resp.status());
             display_github_rate_limit(&resp);
@@ -143,11 +163,36 @@ impl Client {
         Ok((json, headers))
     }
 
+    pub fn json_headers_with_headers<T, U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<(T, HeaderMap)>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let url = url.into_url().unwrap();
+        let (json, headers) = RUNTIME.block_on(async {
+            let resp = self.get_async_with_headers(url, headers).await?;
+            let headers = resp.headers().clone();
+            Ok::<(T, HeaderMap), eyre::Error>((resp.json().await?, headers))
+        })?;
+        Ok((json, headers))
+    }
+
     pub fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
         self.json_headers(url).map(|(json, _)| json)
+    }
+
+    pub fn json_with_headers<T, U: IntoUrl>(&self, url: U, headers: &HeaderMap) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        self.json_headers_with_headers(url, headers)
+            .map(|(json, _)| json)
     }
 
     pub fn download_file<U: IntoUrl>(
@@ -195,14 +240,21 @@ pub fn error_code(e: &Report) -> Option<u16> {
     }
 }
 
-fn with_github_auth(url: &Url, mut req: RequestBuilder) -> RequestBuilder {
+fn github_headers(url: &Url) -> HeaderMap {
+    let mut headers = HeaderMap::new();
     if url.host_str() == Some("api.github.com") {
         if let Some(token) = &*env::GITHUB_TOKEN {
-            req = req.header("authorization", format!("token {}", token));
-            req = req.header("x-github-api-version", "2022-11-28");
+            headers.insert(
+                "authorization",
+                HeaderValue::from_str(format!("token {token}").as_str()).unwrap(),
+            );
+            headers.insert(
+                "x-github-api-version",
+                HeaderValue::from_static("2022-11-28"),
+            );
         }
     }
-    req
+    headers
 }
 
 fn display_github_rate_limit(resp: &Response) {
