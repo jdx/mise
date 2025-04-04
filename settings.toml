@@ -266,6 +266,14 @@ default = []
 parse_env = "list_by_comma"
 description = "Turns off helpful hints when using different mise features"
 
+[enable_tools]
+env = "MISE_ENABLE_TOOLS"
+type = "ListString"
+rust_type = "BTreeSet<String>"
+default = []
+parse_env = "list_by_comma"
+description = "Tools defined in mise.toml that should be used - all other tools are ignored"
+
 [disable_tools]
 env = "MISE_DISABLE_TOOLS"
 type = "ListString"

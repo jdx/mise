@@ -32,6 +32,7 @@ pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
+use crate::registry::tool_disabled;
 
 mod builder;
 pub(crate) mod install_state;
@@ -703,7 +704,7 @@ impl Toolset {
     }
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
-        !ba.is_os_supported() || SETTINGS.disable_tools().contains(&ba.short)
+        !ba.is_os_supported() || tool_disabled(&SETTINGS.enable_tools(), &SETTINGS.disable_tools(), &ba.short.to_string())
     }
 
     fn load_post_env(
