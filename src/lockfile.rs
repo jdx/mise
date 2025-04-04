@@ -140,7 +140,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         // * tools inside a parent config but are overridden by a child config (we just keep what was in the lockfile before, if anything)
         existing_lockfile.tools.retain(|k, _| {
             all_tool_names.contains(k)
-                || SETTINGS.disable_tools().contains(k)
+                || tool_disabled(&SETTINGS.enable_tools(), &SETTINGS.disable_tools(), k)
                 || REGISTRY
                     .get(&k.as_str())
                     .is_some_and(|rt| !rt.is_supported_os())
