@@ -1,7 +1,7 @@
 use crate::config::{Config, SETTINGS};
 use crate::file;
 use crate::file::display_path;
-use crate::registry::REGISTRY;
+use crate::registry::{tool_disabled, REGISTRY};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{Report, Result, bail};
 use itertools::Itertools;
