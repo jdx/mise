@@ -512,6 +512,10 @@ type = "Bool"
 default = true
 description = "Create and read lockfiles for tool versions."
 docs = """
+
+> [!NOTE]
+> This feature is [experimental](#experimental) and may change in the future.
+
 Read/update lockfiles for tool versions. This is useful when you'd like to have loose versions in mise.toml like this:
 
 ```toml
