@@ -112,5 +112,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 fn filter_disabled(short: &str) -> bool {
-    tool_disabled(&SETTINGS.enable_tools, &SETTINGS.disable_tools, &short.to_string())
+    tool_disabled(
+        &SETTINGS.enable_tools,
+        &SETTINGS.disable_tools,
+        &short.to_string(),
+    )
 }

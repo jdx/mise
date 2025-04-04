@@ -15,6 +15,7 @@ use crate::errors::Error;
 use crate::hooks::Hooks;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
+use crate::registry::tool_disabled;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::uv::get_uv_venv;
 use crate::{backend, config, env, hooks};
@@ -32,7 +33,6 @@ pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
-use crate::registry::tool_disabled;
 
 mod builder;
 pub(crate) mod install_state;
@@ -704,7 +704,12 @@ impl Toolset {
     }
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
-        !ba.is_os_supported() || tool_disabled(&SETTINGS.enable_tools(), &SETTINGS.disable_tools(), &ba.short.to_string())
+        !ba.is_os_supported()
+            || tool_disabled(
+                &SETTINGS.enable_tools(),
+                &SETTINGS.disable_tools(),
+                &ba.short.to_string(),
+            )
     }
 
     fn load_post_env(

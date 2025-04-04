@@ -5,7 +5,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::env;
-use crate::registry::{tool_disabled, REGISTRY};
+use crate::registry::{REGISTRY, tool_disabled};
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
 use indexmap::IndexMap;
 use itertools::Itertools;
