@@ -23,6 +23,7 @@ pkl = "latest"
 pre-commit = "latest"
 #"python" = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 "ripgrep" = "latest"
+rust = "latest"
 "shellcheck" = "latest"
 "shfmt" = "latest"
 slsa-verifier = "latest"
