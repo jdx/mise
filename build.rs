@@ -4,9 +4,6 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 fn main() {
-    // Tell Cargo that if the given file changes, to rerun this build script.
-    println!("cargo::rerun-if-changed=settings.toml");
-
     cfg_aliases::cfg_aliases! {
         asdf: { any(feature = "asdf", not(target_os = "windows")) },
         macos: { target_os = "macos" },
