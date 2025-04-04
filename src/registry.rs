@@ -138,7 +138,11 @@ impl Display for RegistryTool {
     }
 }
 
-pub fn tool_disabled<T: Ord>(enable_tools: &BTreeSet<T>, disable_tools: &BTreeSet<T>, name: &T) -> bool {
+pub fn tool_disabled<T: Ord>(
+    enable_tools: &BTreeSet<T>,
+    disable_tools: &BTreeSet<T>,
+    name: &T,
+) -> bool {
     if enable_tools.is_empty() {
         disable_tools.contains(name)
     } else {
@@ -154,8 +158,15 @@ mod tests {
         let name = "cargo";
 
         assert!(!tool_disabled(&BTreeSet::new(), &BTreeSet::new(), &name));
-        assert!(!tool_disabled(&BTreeSet::from(["cargo"]), &BTreeSet::new(), &name));
-        assert!(tool_disabled(&BTreeSet::new(), &BTreeSet::from(["cargo"]), &name));
+        assert!(!tool_disabled(
+            &BTreeSet::from(["cargo"]),
+            &BTreeSet::new(),
+            &name
+        ));
+        assert!(tool_disabled(
+            &BTreeSet::new(),
+            &BTreeSet::from(["cargo"]),
+            &name
+        ));
     }
 }
-
