@@ -374,14 +374,6 @@
             "type": "string"
           }
         },
-        "enable_tools": {
-          "default": [],
-          "description": "Tools defined in mise.toml that should be used - all other tools are ignored",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "disable_tools": {
           "default": [],
           "description": "Tools defined in mise.toml that should be ignored",
@@ -406,6 +398,14 @@
               "description": "URL to fetch dotnet tools from.",
               "type": "string"
             }
+          }
+        },
+        "enable_tools": {
+          "default": [],
+          "description": "Tools defined in mise.toml that should be used - all other tools are ignored",
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         },
         "env": {
