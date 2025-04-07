@@ -1611,6 +1611,7 @@ ripsecrets.backends = [
 # ripsecrets.test = ["ripsecrets --version", "ripsecrets {{version}}"] # broke in CI
 rke.backends = ["aqua:rancher/rke", "asdf:particledecay/asdf-rke"]
 rlwrap.backends = ["asdf:mise-plugins/mise-rlwrap"]
+ros.backends = ["asdf:troydm/asdf-roswell"]
 ruby.backends = ["core:ruby"]
 ruff.backends = [
     "aqua:astral-sh/ruff",
