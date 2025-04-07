@@ -1255,6 +1255,8 @@ litestream.backends = [
 ]
 llvm-objcopy.backends = ["asdf:mise-plugins/mise-llvm"]
 llvm-objdump.backends = ["asdf:mise-plugins/mise-llvm"]
+localstack.backends = ["ubi:localstack/localstack-cli[exe=localstack]"]
+localstack.test = ["localstack --version", "LocalStack CLI {{version}}"]
 logtalk.backends = ["asdf:mise-plugins/mise-logtalk"]
 loki-logcli.backends = [
     "aqua:grafana/loki/logcli",
