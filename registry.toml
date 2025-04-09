@@ -1802,6 +1802,8 @@ telepresence.backends = [
     "aqua:telepresenceio/telepresence",
     "asdf:pirackr/asdf-telepresence"
 ]
+television.backends = ["aqua:alexpasmantier/television"]
+television.test = ["tv --version", "television {{version}}"]
 teller.backends = ["aqua:tellerops/teller", "asdf:pdemagny/asdf-teller"]
 temporal.backends = [
     "aqua:temporalio/temporal",
