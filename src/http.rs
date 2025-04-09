@@ -220,7 +220,10 @@ fn display_github_rate_limit(resp: &Response) {
             if let Some(reset) = chrono::DateTime::from_timestamp(reset.parse().unwrap(), 0) {
                 warn!(
                     "GitHub rate limit exceeded. Resets at {}",
-                    reset.naive_local().to_string()
+                    reset
+                        .with_timezone(&chrono::Local)
+                        .naive_local()
+                        .to_string()
                 );
             }
         }
