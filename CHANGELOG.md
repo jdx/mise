@@ -1,6 +1,33 @@
 # Changelog
 
-## [2025.4.0](https://github.com/jdx/mise/compare/v2025.3.11..v2025.4.0) - 2025-04-01
+## [2025.4.1](https://github.com/jdx/mise/compare/v2025.4.0..v2025.4.1) - 2025-04-09
+
+### 🚀 Features
+
+- **(registry)** added localstack by [@mnm364](https://github.com/mnm364) in [#4785](https://github.com/jdx/mise/pull/4785)
+- **(registry)** added skeema by [@mnm364](https://github.com/mnm364) in [#4786](https://github.com/jdx/mise/pull/4786)
+- **(registry)** add television by [@mangkoran](https://github.com/mangkoran) in [#4778](https://github.com/jdx/mise/pull/4778)
+
+### 🐛 Bug Fixes
+
+- show gh rate limit reset time in local time by [@someoneinjd](https://github.com/someoneinjd) in [#4799](https://github.com/jdx/mise/pull/4799)
+
+### 📚 Documentation
+
+- all experimental note for lockfile by [@zeitlinger](https://github.com/zeitlinger) in [#4781](https://github.com/jdx/mise/pull/4781)
+
+### Chore
+
+- update deps to fix deny check by [@jdx](https://github.com/jdx) in [432023b](https://github.com/jdx/mise/commit/432023b2cd04d2ea7f590d7b338054944512abd0)
+- pin zip to avoid issue with ubi by [@jdx](https://github.com/jdx) in [315deb4](https://github.com/jdx/mise/commit/315deb4e24177408c598d22951adb95f3e841683)
+
+### New Contributors
+
+- @someoneinjd made their first contribution in [#4799](https://github.com/jdx/mise/pull/4799)
+- @mnm364 made their first contribution in [#4786](https://github.com/jdx/mise/pull/4786)
+- @zeitlinger made their first contribution in [#4781](https://github.com/jdx/mise/pull/4781)
+
+## [2025.4.0](https://github.com/jdx/mise/compare/v2025.3.11..v2025.4.0) - 2025-04-02
 
 ### 🐛 Bug Fixes
 
