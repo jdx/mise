@@ -20,6 +20,7 @@ impl Shell for Pwsh {
 
         out.push_str(&self.format_activate_prelude(&opts.prelude));
         out.push_str(&formatdoc! {r#"
+            $global:__misePath = '{exe}'
             $env:MISE_SHELL = 'pwsh'
             $env:__MISE_ORIG_PATH = $env:PATH
 
@@ -30,7 +31,7 @@ impl Shell for Pwsh {
                 $command, [array]$arguments = Invoke-Expression ('Write-Output -- ' + $myLine)
                 
                 if ($null -eq $arguments) {{ 
-                    & {exe}
+                    & $global:__misePath
                     return
                 }} 
 
@@ -38,20 +39,20 @@ impl Shell for Pwsh {
                 $arguments = $arguments[1..$arguments.Length]
 
                 if ($arguments -contains '--help') {{
-                    return & {exe} $command $arguments 
+                    return & $global:__misePath $command $arguments 
                 }}
 
                 switch ($command) {{
                     {{ $_ -in 'deactivate', 'shell', 'sh' }} {{
                         if ($arguments -contains '-h' -or $arguments -contains '--help') {{
-                            & {exe} $command $arguments
+                            & $global:__misePath $command $arguments
                         }}
                         else {{
-                            & {exe} $command $arguments | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                            & $global:__misePath $command $arguments | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
                         }}
                     }}
                     default {{
-                        & {exe} $command $arguments
+                        & $global:__misePath $command $arguments
                         $status = $LASTEXITCODE
                         if ($(Test-Path -Path Function:\_mise_hook)){{
                             _mise_hook
@@ -68,7 +69,7 @@ impl Shell for Pwsh {
 
             function Global:_mise_hook {{
                 if ($env:MISE_SHELL -eq "pwsh"){{
-                    & {exe} hook-env{flags} $args -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                    & $global:__misePath hook-env{flags} $args -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
                 }}
             }}
 
@@ -120,7 +121,7 @@ impl Shell for Pwsh {
                         param([object] $Name, [System.Management.Automation.CommandLookupEventArgs] $eventArgs)
                         end {{
                             if ([Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems()[-1].CommandLine -match ([regex]::Escape($Name))) {{
-                                if (& {exe} hook-not-found -s pwsh -- $Name){{
+                                if (& $global:__misePath hook-not-found -s pwsh -- $Name){{
                                     _mise_hook
                                     if (Get-Command $Name -ErrorAction SilentlyContinue){{
                                         $EventArgs.Command = Get-Command $Name
