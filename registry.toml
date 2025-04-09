@@ -1693,6 +1693,11 @@ skaffold.backends = [
     "asdf:nklmilojevic/asdf-skaffold"
 ]
 skate.backends = ["aqua:charmbracelet/skate", "asdf:chessmango/asdf-skate"]
+skeema.backends = ["aqua:skeema/skeema", "ubi:skeema/skeema"]
+skeema.tests = [
+    "skeema version | awk -F, '{print $1}'",
+    "skeema version {{version}}-community"
+]
 sloth.backends = ["aqua:slok/sloth", "asdf:slok/asdf-sloth"]
 slsa-verifier.backends = ["ubi:slsa-framework/slsa-verifier"]
 slsa-verifier.test = ["slsa-verifier version", "{{version}}"]
