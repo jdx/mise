@@ -110,7 +110,6 @@ pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_CONFIG_FILENAME")
         .ok()
         .or(MISE_OVERRIDE_CONFIG_FILENAMES.first().cloned())
-        .or(MISE_ENV.last().map(|env| format!("mise.{env}.toml")))
         .unwrap_or_else(|| "mise.toml".into())
 });
 pub static MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: Lazy<Option<IndexSet<String>>> =
