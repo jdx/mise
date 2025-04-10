@@ -132,7 +132,7 @@ aws-iam-authenticator.backends = [
     "aqua:kubernetes-sigs/aws-iam-authenticator",
     "asdf:zekker6/asdf-aws-iam-authenticator"
 ]
-aws-nuke.backends = ["aqua:rebuy-de/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
+aws-nuke.backends = ["aqua:ekristen/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
 aws-sam.aliases = ["aws-sam-cli"]
 aws-sam.backends = ["pipx:aws-sam-cli", "asdf:mise-plugins/mise-pyapp"]
 # aws-sam.test = ["sam --version", "SAM CLI, version {{version}}"] # takes forever on windows in CI
