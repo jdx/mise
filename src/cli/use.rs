@@ -211,9 +211,6 @@ impl Use {
             } else {
                 cwd.join(format!("mise.{env}.toml"))
             }
-        } else if !env::MISE_ENV.is_empty() {
-            let env = env::MISE_ENV.last().unwrap();
-            config_file_from_dir(&cwd.join(format!("mise.{env}.toml")))
         } else if env::in_home_dir() {
             MISE_GLOBAL_CONFIG_FILE.clone()
         } else {

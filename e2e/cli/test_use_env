@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+mise use -e local dummy@1
+assert "cat mise.local.toml" '[tools]
+dummy = "1"'
+assert "rm mise.local.toml"
+
+MISE_ENV=local mise use dummy@1 # doesn't imply `-e local` for writing
+assert "cat mise.toml" '[tools]
+dummy = "1"'
