@@ -39,8 +39,10 @@ pwsh e2e-win\run.ps1 task # run tests matching `*task*`
 
 ## Dependencies
 
-- [rust](https://www.rust-lang.org/) stable 1.70.0+ (I test with the beta channel locally, but CI uses stable, you can use whatever)
+- [rust](https://www.rust-lang.org/) latest stable
 - [just](https://github.com/casey/just) this should be removed in favor of mise tasks but it's still used for some things.
+- `pipx` or `uv`
+- bash newer than the 20-year-old version macOS provides
 
 ## Tasks
 
