@@ -3750,7 +3750,7 @@ dependencies = [
  "shell-words",
  "signal-hook",
  "siphasher",
- "strum 0.26.3",
+ "strum 0.27.1",
  "sys-info",
  "tabled",
  "taplo",
