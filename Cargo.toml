@@ -94,7 +94,7 @@ once_cell = "1"
 openssl = { version = "0.10", optional = true }
 os-release = "0.1"
 path-absolutize = "3"
-petgraph = "0.7"
+petgraph = "0.8"
 rand = "0.9"
 rayon = "1"
 regex = "1"
