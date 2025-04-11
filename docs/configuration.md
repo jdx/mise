@@ -34,7 +34,6 @@ Here is what a `mise.toml` looks like:
 
 ```toml
 [env]
-# supports arbitrary env vars so mise can be used like direnv/dotenv
 NODE_ENV = 'production'
 
 [tools]
