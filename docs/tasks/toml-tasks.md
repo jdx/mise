@@ -488,7 +488,7 @@ Examples:
 
 ```toml
 [tasks.echo]
-run = 'echo {{flag(name=("myflag")}}'
+run = 'echo {{flag(name="myflag")}}'
 # execute: mise run echo --myflag
 # runs: echo true
 ```
