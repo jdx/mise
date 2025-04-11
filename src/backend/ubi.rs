@@ -2,7 +2,9 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
-use crate::env::GITHUB_TOKEN;
+use crate::env::{
+    GITHUB_TOKEN, GITLAB_TOKEN, MISE_GITHUB_ENTERPRISE_TOKEN, MISE_GITLAB_ENTERPRISE_TOKEN,
+};
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::tokio::RUNTIME;
@@ -95,10 +97,6 @@ impl Backend for UbiBackend {
 
             let mut builder = UbiBuilder::new().project(&name).install_dir(&bin_dir);
 
-            if let Some(token) = &*GITHUB_TOKEN {
-                builder = builder.token(token);
-            }
-
             if v != "latest" {
                 builder = builder.tag(v);
             }
@@ -116,8 +114,19 @@ impl Backend for UbiBackend {
             if let Some(matching) = opts.get("matching") {
                 builder = builder.matching(matching);
             }
-            if let Some(forge) = opts.get("forge") {
-                builder = builder.forge(ForgeType::from_str(forge)?);
+
+            let forge = match opts.get("forge") {
+                Some(forge) => ForgeType::from_str(forge)?,
+                None => ForgeType::default(),
+            };
+            builder = builder.forge(forge.clone());
+            builder = set_token(builder, &forge);
+
+            if let Some(api_base_url) = opts.get("api_base_url") {
+                if !api_base_url.contains("github.com") && !api_base_url.contains("gitlab.com") {
+                    builder = builder.api_base_url(api_base_url);
+                    builder = set_enterprise_token(builder, &forge);
+                }
             }
 
             let mut ubi = builder.build().map_err(|e| eyre::eyre!(e))?;
@@ -246,4 +255,38 @@ impl UbiBackend {
 
 fn name_is_url(n: &str) -> bool {
     n.starts_with("http")
+}
+
+fn set_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'a> {
+    match forge {
+        ForgeType::GitHub => {
+            if let Some(token) = &*GITHUB_TOKEN {
+                builder = builder.token(token)
+            }
+            builder
+        }
+        ForgeType::GitLab => {
+            if let Some(token) = &*GITLAB_TOKEN {
+                builder = builder.token(token)
+            }
+            builder
+        }
+    }
+}
+
+fn set_enterprise_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'a> {
+    match forge {
+        ForgeType::GitHub => {
+            if let Some(token) = &*MISE_GITHUB_ENTERPRISE_TOKEN {
+                builder = builder.token(token);
+            }
+            builder
+        }
+        ForgeType::GitLab => {
+            if let Some(token) = &*MISE_GITLAB_ENTERPRISE_TOKEN {
+                builder = builder.token(token);
+            }
+            builder
+        }
+    }
 }

@@ -223,6 +223,42 @@ pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
 
     token
 });
+pub static MISE_GITHUB_ENTERPRISE_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
+    let token = var("MISE_GITHUB_ENTERPRISE_TOKEN")
+        .ok()
+        .and_then(|v| if v.is_empty() { None } else { Some(v) });
+    if let Some(token) = token.as_ref() {
+        set_var("MISE_GITHUB_ENTERPRISE_TOKEN", token);
+    } else {
+        remove_var("MISE_GITHUB_ENTERPRISE_TOKEN");
+    }
+    token
+});
+pub static GITLAB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
+    let token = var("MISE_GITLAB_TOKEN")
+        .or_else(|_| var("GITLAB_TOKEN"))
+        .ok()
+        .and_then(|v| if v.is_empty() { None } else { Some(v) });
+    if let Some(token) = token.as_ref() {
+        set_var("MISE_GITLAB_TOKEN", token);
+        set_var("GITLAB_TOKEN", token);
+    } else {
+        remove_var("MISE_GITLAB_TOKEN");
+        remove_var("GITLAB_TOKEN");
+    }
+    token
+});
+pub static MISE_GITLAB_ENTERPRISE_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
+    let token = var("MISE_GITLAB_ENTERPRISE_TOKEN")
+        .ok()
+        .and_then(|v| if v.is_empty() { None } else { Some(v) });
+    if let Some(token) = token.as_ref() {
+        set_var("MISE_GITLAB_ENTERPRISE_TOKEN", token);
+    } else {
+        remove_var("MISE_GITLAB_ENTERPRISE_TOKEN");
+    }
+    token
+});
 
 pub static TEST_TRANCHE: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE") as usize);
 pub static TEST_TRANCHE_COUNT: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE_COUNT") as usize);
