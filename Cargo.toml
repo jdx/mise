@@ -125,7 +125,7 @@ shell-escape = "0.1"
 shell-words = "1"
 signal-hook = "0.3"
 siphasher = "1"
-strum = { version = "0.26", features = ["derive"] }
+strum = { version = "0.27", features = ["derive"] }
 sys-info = "0.9"
 tabled = { version = "0.17", features = ["ansi"] }
 taplo = "0.13"
