@@ -135,6 +135,7 @@ pub struct AquaSlsaProvenance {
     pub repo_name: Option<String>,
     pub url: Option<String>,
     pub asset: Option<String>,
+    pub source_uri: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -705,6 +706,9 @@ impl AquaSlsaProvenance {
         }
         if let Some(asset) = other.asset {
             self.asset = Some(asset);
+        }
+        if let Some(source_uri) = other.source_uri {
+            self.source_uri = Some(source_uri);
         }
     }
 }
