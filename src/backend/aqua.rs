@@ -416,6 +416,10 @@ impl AquaBackend {
                     .arg(source_uri)
                     .arg("--provenance-path")
                     .arg(provenance_path);
+                let source_tag = slsa.source_tag.clone().unwrap_or_else(|| v.to_string());
+                if source_tag != "-" {
+                    cmd = cmd.arg("--source-tag").arg(source_tag);
+                }
                 cmd = cmd.with_pr(&ctx.pr);
                 cmd.execute()?;
             } else {
