@@ -533,7 +533,7 @@ dmd.backends = ["asdf:mise-plugins/mise-dmd"]
 docker-cli.backends = ["aqua:docker/cli"]
 docker-cli.test = [
     "docker --version | awk '{print $3}' | tr -d ','",
-    "Docker version {{version}}"
+    "{{version}}"
 ]
 docker-compose.backends = ["aqua:docker/compose"]
 docker-compose.test = [
