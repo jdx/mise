@@ -531,7 +531,10 @@ djinni.backends = [
 # djinni.test = ["djinni-generator --version", "djinni generator version {{version}}"] # test fails on windows
 dmd.backends = ["asdf:mise-plugins/mise-dmd"]
 docker-cli.backends = ["aqua:docker/cli"]
-docker-cli.test = ["docker --version | awk '{print $3}' | tr -d ','"]
+docker-cli.test = [
+    "docker --version | awk '{print $3}' | tr -d ','",
+    "Docker version {{version}}"
+]
 docker-compose.backends = ["aqua:docker/compose"]
 docker-compose.test = [
     "docker-cli-plugin-docker-compose --version",
