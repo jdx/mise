@@ -403,13 +403,17 @@ impl AquaBackend {
                         return Ok(());
                     }
                 };
+                let source_uri = slsa
+                    .source_uri
+                    .clone()
+                    .unwrap_or_else(|| format!("github.com/{repo}"));
                 let mut cmd = CmdLineRunner::new(slsa_bin)
                     .arg("verify-artifact")
                     .arg(tv.download_path().join(filename))
                     .arg("--provenance-repository")
                     .arg(&repo)
                     .arg("--source-uri")
-                    .arg(format!("github.com/{repo}"))
+                    .arg(source_uri)
                     .arg("--provenance-path")
                     .arg(provenance_path);
                 cmd = cmd.with_pr(&ctx.pr);
