@@ -1,5 +1,3 @@
-use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::{dirs, duration, env};
 use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
@@ -11,39 +9,52 @@ use std::sync::LazyLock as Lazy;
 use std::sync::{RwLock, RwLockReadGuard};
 use xx::regex;
 
+use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::{dirs, duration, env};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubRelease {
+pub struct GitlabRelease {
     pub tag_name: String,
-    // pub name: Option<String>,
-    // pub body: Option<String>,
-    pub draft: bool,
-    pub prerelease: bool,
-    // pub created_at: String,
-    // pub published_at: Option<String>,
-    pub assets: Vec<GithubAsset>,
+    pub description: Option<String>,
+    pub assets: GitlabAssets,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubTag {
+pub struct GitlabTag {
     pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubAsset {
+pub struct GitlabAssets {
+    // pub count: i64,
+    pub sources: Vec<GitlabAssetSource>,
+    pub links: Vec<GitlabAssetLink>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitlabAssetSource {
+    pub format: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitlabAssetLink {
+    pub id: i64,
     pub name: String,
-    // pub size: u64,
-    pub browser_download_url: String,
+    pub url: String,
+    pub direct_asset_url: String,
+    pub link_type: String,
 }
 
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
 
-static RELEASES_CACHE: Lazy<RwLock<CacheGroup<Vec<GithubRelease>>>> = Lazy::new(Default::default);
+static RELEASES_CACHE: Lazy<RwLock<CacheGroup<Vec<GitlabRelease>>>> = Lazy::new(Default::default);
 
-static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GithubRelease>>> = Lazy::new(Default::default);
+static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GitlabRelease>>> = Lazy::new(Default::default);
 
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
 
-pub static API_URL: &str = "https://api.github.com/repos";
+pub static API_URL: &str = "https://gitlab.com/api/v4";
 
 fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
     TAGS_CACHE
@@ -58,7 +69,7 @@ fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
     TAGS_CACHE.read().unwrap()
 }
 
-fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<GithubRelease>>> {
+fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<GitlabRelease>>> {
     RELEASES_CACHE
         .write()
         .unwrap()
@@ -71,7 +82,7 @@ fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<GithubRel
     RELEASES_CACHE.read().unwrap()
 }
 
-fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<GithubRelease>> {
+fn get_release_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<GitlabRelease>> {
     RELEASE_CACHE
         .write()
         .unwrap()
@@ -84,7 +95,8 @@ fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<GithubRele
     RELEASE_CACHE.read().unwrap()
 }
 
-pub fn list_releases(repo: &str) -> Result<Vec<GithubRelease>> {
+#[allow(dead_code)]
+pub fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
     let key = repo.to_kebab_case();
     let cache = get_releases_cache(&key);
     let cache = cache.get(&key).unwrap();
@@ -93,7 +105,7 @@ pub fn list_releases(repo: &str) -> Result<Vec<GithubRelease>> {
         .to_vec())
 }
 
-pub fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
+pub fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GitlabRelease>> {
     let key = format!("{api_url}-{repo}").to_kebab_case();
     let cache = get_releases_cache(&key);
     let cache = cache.get(&key).unwrap();
@@ -102,25 +114,30 @@ pub fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GithubRel
         .to_vec())
 }
 
-fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
-    let url = format!("{api_url}/{repo}/releases");
+fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GitlabRelease>> {
+    let url = format!(
+        "{}/projects/{}/releases",
+        api_url,
+        urlencoding::encode(repo)
+    );
+
     let headers = get_headers(&url);
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
-        .json_headers_with_headers::<Vec<GithubRelease>, _>(url, &headers)?;
+        .json_headers_with_headers::<Vec<GitlabRelease>, _>(url, &headers)?;
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
             let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<GithubRelease>, _>(next, &headers)?;
+                .json_headers_with_headers::<Vec<GitlabRelease>, _>(next, &headers)?;
             releases.extend(more);
             headers = h;
         }
     }
-    releases.retain(|r| !r.draft && !r.prerelease);
 
     Ok(releases)
 }
 
+#[allow(dead_code)]
 pub fn list_tags(repo: &str) -> Result<Vec<String>> {
     let key = repo.to_kebab_case();
     let cache = get_tags_cache(&key);
@@ -140,15 +157,19 @@ pub fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
 }
 
 fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let url = format!("{api_url}/{repo}/tags");
+    let url = format!(
+        "{}/projects/{}/repository/tags",
+        api_url,
+        urlencoding::encode(repo)
+    );
     let headers = get_headers(&url);
     let (mut tags, mut headers) =
-        crate::http::HTTP_FETCH.json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)?;
+        crate::http::HTTP_FETCH.json_headers_with_headers::<Vec<GitlabTag>, _>(url, &headers)?;
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
             let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<GithubTag>, _>(next, &headers)?;
+                .json_headers_with_headers::<Vec<GitlabTag>, _>(next, &headers)?;
             tags.extend(more);
             headers = h;
         }
@@ -157,7 +178,8 @@ fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
     Ok(tags.into_iter().map(|t| t.name).collect())
 }
 
-pub fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
+#[allow(dead_code)]
+pub fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
     let key = format!("{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key);
     let cache = cache.get(&key).unwrap();
@@ -166,7 +188,7 @@ pub fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
         .clone())
 }
 
-pub fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
+pub fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
     let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key);
     let cache = cache.get(&key).unwrap();
@@ -175,8 +197,13 @@ pub fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<Githu
         .clone())
 }
 
-fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
-    let url = format!("{api_url}/{repo}/releases/tags/{tag}");
+fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
+    let url = format!(
+        "{}/projects/{}/releases/{}",
+        api_url,
+        urlencoding::encode(repo),
+        tag
+    );
     let headers = get_headers(&url);
     crate::http::HTTP_FETCH.json_with_headers(url, &headers)
 }
@@ -192,7 +219,7 @@ fn next_page(headers: &HeaderMap) -> Option<String> {
 }
 
 fn cache_dir() -> PathBuf {
-    dirs::CACHE.join("github")
+    dirs::CACHE.join("gitlab")
 }
 
 fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
@@ -200,22 +227,16 @@ fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let url = url.into_url().unwrap();
     let mut set_headers = |token: &str| {
         headers.insert(
-            "authorization",
-            HeaderValue::from_str(format!("token {token}").as_str()).unwrap(),
-        );
-        headers.insert(
-            "x-github-api-version",
-            HeaderValue::from_static("2022-11-28"),
+            "Authorization",
+            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
         );
     };
-
-    if url.host_str() == Some("api.github.com") {
-        if let Some(token) = env::GITHUB_TOKEN.as_ref() {
+    if url.host_str() == Some("gitlab.com") {
+        if let Some(token) = env::GITLAB_TOKEN.as_ref() {
             set_headers(token);
         }
-    } else if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_ref() {
+    } else if let Some(token) = env::MISE_GITLAB_ENTERPRISE_TOKEN.as_ref() {
         set_headers(token);
     }
-
     headers
 }
