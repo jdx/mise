@@ -202,7 +202,7 @@ impl Upgrade {
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&versions)?;
+        config::rebuild_shims_and_runtime_symlinks(&successful_versions)?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
             PIPXBackend::reinstall_all().unwrap_or_else(|err| {
