@@ -183,7 +183,7 @@ impl Upgrade {
                 }
 
                 if let Err(e) = cf.save() {
-                    warn!("Failed to save config for {}: {}", o.name, e);
+                    return Err(eyre!("Failed to save config for {}: {}", o.name, e));
                 }
             }
         }
