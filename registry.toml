@@ -1084,7 +1084,6 @@ kpack.backends = [
 kpack.test = ["kp version", "{{version}}"]
 kpt.backends = ["aqua:kptdev/kpt", "asdf:nlamirault/asdf-kpt"]
 kpt.os = ["linux", "macos"]
-kpt.test = ["kpt version", "{{version}}"]
 krab.backends = ["ubi:ohkrab/krab", "asdf:ohkrab/asdf-krab"]
 krew.backends = ["aqua:kubernetes-sigs/krew", "asdf:bjw-s/asdf-krew"]
 kscript.backends = ["ubi:kscripting/kscript", "asdf:edgelevel/asdf-kscript"]
