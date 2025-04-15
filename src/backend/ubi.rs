@@ -46,7 +46,7 @@ impl Backend for UbiBackend {
                 None => ForgeType::default(),
             };
             let api_url = match opts.get("api_url") {
-                Some(api_url) => api_url,
+                Some(api_url) => api_url.strip_suffix("/").unwrap_or(api_url),
                 None => match forge {
                     ForgeType::GitHub => github::API_URL,
                     ForgeType::GitLab => gitlab::API_URL,
@@ -111,7 +111,7 @@ impl Backend for UbiBackend {
             None => ForgeType::default(),
         };
         let api_url = match opts.get("api_url") {
-            Some(api_url) => api_url,
+            Some(api_url) => api_url.strip_suffix("/").unwrap_or(api_url),
             None => match forge {
                 ForgeType::GitHub => github::API_URL,
                 ForgeType::GitLab => gitlab::API_URL,
@@ -172,7 +172,7 @@ impl Backend for UbiBackend {
 
             if let Some(api_url) = opts.get("api_url") {
                 if !api_url.contains("github.com") && !api_url.contains("gitlab.com") {
-                    builder = builder.api_base_url(api_url);
+                    builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
                     builder = set_enterprise_token(builder, &forge);
                 }
             }
