@@ -178,9 +178,7 @@ impl Upgrade {
                 if let Err(e) =
                     cf.replace_versions(o.tool_request.ba(), vec![o.tool_request.clone()])
                 {
-                    had_errors = true;
-                    warn!("Failed to update config for {}: {}", o.name, e);
-                    continue;
+                    return Err(eyre!("Failed to update config for {}: {}", o.name, e));
                 }
 
                 if let Err(e) = cf.save() {
