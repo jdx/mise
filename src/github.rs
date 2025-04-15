@@ -43,7 +43,7 @@ static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GithubRelease>>> = Lazy::new(Defaul
 
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
 
-pub static API_URL: &str = "https://api.github.com/repos";
+pub static API_URL: &str = "https://api.github.com";
 
 fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
     TAGS_CACHE
@@ -103,7 +103,7 @@ pub fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GithubRel
 }
 
 fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
-    let url = format!("{api_url}/{repo}/releases");
+    let url = format!("{api_url}/repos/{repo}/releases");
     let headers = get_headers(&url);
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubRelease>, _>(url, &headers)?;
@@ -140,7 +140,7 @@ pub fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
 }
 
 fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let url = format!("{api_url}/{repo}/tags");
+    let url = format!("{api_url}/repos/{repo}/tags");
     let headers = get_headers(&url);
     let (mut tags, mut headers) =
         crate::http::HTTP_FETCH.json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)?;
@@ -176,7 +176,7 @@ pub fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<Githu
 }
 
 fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
-    let url = format!("{api_url}/{repo}/releases/tags/{tag}");
+    let url = format!("{api_url}/repos/{repo}/releases/tags/{tag}");
     let headers = get_headers(&url);
     crate::http::HTTP_FETCH.json_with_headers(url, &headers)
 }
