@@ -212,7 +212,7 @@ impl Upgrade {
         }
 
         if had_errors {
-            warn!("Some tools failed to upgrade. Check the logs for details.");
+            return Err(eyre!("Some tools failed to upgrade"));
         }
 
         Ok(())
