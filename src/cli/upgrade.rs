@@ -202,7 +202,7 @@ impl Upgrade {
         }
 
         if let Err(e) = config::rebuild_shims_and_runtime_symlinks(&successful_versions) {
-            warn!("Failed to rebuild shims and runtime symlinks: {}", e);
+            warn!("Failed to rebuild shims and runtime symlinks: {:?}", e);
         }
 
         if successful_versions.iter().any(|v| v.short() == "python") {
