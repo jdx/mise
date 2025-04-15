@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.4.4](https://github.com/jdx/mise/compare/v2025.4.3..v2025.4.4) - 2025-04-15
+
+### 🧪 Testing
+
+- remove kpt test by [@jdx](https://github.com/jdx) in [b9d35ac](https://github.com/jdx/mise/commit/b9d35ac57936291a0a4629f9c200dfdb500a7efb)
+
 ## [2025.4.3](https://github.com/jdx/mise/compare/v2025.4.2..v2025.4.3) - 2025-04-15
 
 ### 🚀 Features
