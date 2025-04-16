@@ -13,6 +13,7 @@ use tera::Context as TeraContext;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
+use crate::backend::BackendOptions;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
@@ -337,12 +338,12 @@ impl ConfigFile for MiseToml {
             if opts.os.is_some() || !opts.install_env.is_empty() {
                 return false;
             }
-            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
-                if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
-                    // in this case the options specified are the same as in the registry so output no options and rely on the defaults
-                    return true;
-                }
-            }
+            // if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
+            //     if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
+            //         // in this case the options specified are the same as in the registry so output no options and rely on the defaults
+            //         return true;
+            //     }
+            // }
             opts.is_empty()
         };
         existing.0 = versions

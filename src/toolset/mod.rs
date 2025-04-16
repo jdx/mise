@@ -64,18 +64,6 @@ impl ToolVersionOptions {
     }
 }
 
-pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
-    let mut tvo = ToolVersionOptions::default();
-    for opt in s.split(',') {
-        let (k, v) = opt.split_once('=').unwrap_or((opt, ""));
-        if k.is_empty() {
-            continue;
-        }
-        tvo.opts.insert(k.to_string(), v.to_string());
-    }
-    tvo
-}
-
 #[derive(Debug)]
 pub struct InstallOptions {
     pub force: bool,
@@ -799,43 +787,4 @@ fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<ToolReque
         .map_ok(|tr| tr.clone())
         .collect::<Result<Vec<_>>>()?;
     Ok(leaves)
-}
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_eq;
-    use test_log::test;
-
-    use super::ToolVersionOptions;
-    #[test]
-    fn test_tool_version_options() {
-        let t = |input, f| {
-            let opts = super::parse_tool_options(input);
-            assert_eq!(opts, f);
-        };
-        t("", ToolVersionOptions::default());
-        t(
-            "exe=rg",
-            ToolVersionOptions {
-                opts: [("exe".to_string(), "rg".to_string())]
-                    .iter()
-                    .cloned()
-                    .collect(),
-                ..Default::default()
-            },
-        );
-        t(
-            "exe=rg,match=musl",
-            ToolVersionOptions {
-                opts: [
-                    ("exe".to_string(), "rg".to_string()),
-                    ("match".to_string(), "musl".to_string()),
-                ]
-                .iter()
-                .cloned()
-                .collect(),
-                ..Default::default()
-            },
-        );
-    }
 }

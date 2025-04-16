@@ -50,6 +50,28 @@ pub type VersionCacheManager = CacheManager<Vec<String>>;
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct BackendOptions {
+    pub os: Option<Vec<String>>,
+    pub install_env: BTreeMap<String, String>,
+    #[serde(flatten)]
+    pub opts: BTreeMap<String, String>,
+}
+
+impl BackendOptions {
+    pub fn is_empty(&self) -> bool {
+        self.install_env.is_empty() && self.opts.is_empty()
+    }
+
+    pub fn get(&self, key: &str) -> Option<&String> {
+        self.opts.get(key)
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.opts.contains_key(key)
+    }
+}
+
 fn load_tools() -> Arc<BackendMap> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
         return memo_tools;

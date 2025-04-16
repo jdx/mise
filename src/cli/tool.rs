@@ -2,9 +2,10 @@ use eyre::Result;
 use itertools::Itertools;
 use serde_derive::Serialize;
 
+use crate::backend::BackendOptions;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
+use crate::toolset::{ToolSource, ToolsetBuilder};
 use crate::ui::table;
 
 /// Gets information about a tool
@@ -202,7 +203,7 @@ struct ToolInfo {
     requested_versions: Option<Vec<String>>,
     active_versions: Option<Vec<String>>,
     config_source: Option<ToolSource>,
-    tool_options: ToolVersionOptions,
+    tool_options: BackendOptions,
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
