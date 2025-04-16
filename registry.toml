@@ -1781,6 +1781,7 @@ swiftlint.backends = [
 swiftlint.test = ["swiftlint --version", "{{version}}"]
 swiprolog.backends = ["asdf:mise-plugins/mise-swiprolog"]
 syft.backends = ["aqua:anchore/syft", "asdf:davidgp1701/asdf-syft"]
+tailpipe.backends = ["aqua:turbot/tailpipe"]
 talhelper.backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
 talos.backends = [
     "ubi:siderolabs/talos[exe=talosctl]",
