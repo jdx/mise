@@ -193,7 +193,11 @@ impl Task {
         task.silent = p.parse_bool("silent").unwrap_or_default();
         task.tools = p
             .parse_table("tools")
-            .map(|t| t.into_iter().map(|(k, v)| (k, v.to_string())).collect())
+            .map(|t| {
+                t.into_iter()
+                    .filter_map(|(k, v)| v.as_str().map(|v| (k, v.to_string())))
+                    .collect()
+            })
             .unwrap_or_default();
         task.render(config_root)?;
         Ok(task)
