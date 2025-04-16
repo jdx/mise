@@ -8,11 +8,13 @@ use crate::tera::{get_tera, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
+use serde::Deserialize;
 use serde_json::Value;
 use std::cmp::PartialEq;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 mod file;
 mod module;
@@ -20,10 +22,34 @@ mod path;
 mod source;
 mod venv;
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Copy)]
 pub struct EnvDirectiveOptions {
     pub(crate) tools: bool,
     pub(crate) redact: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub enum PathOrPaths {
+    Path(String),
+    Paths(Vec<String>),
+}
+
+impl FromStr for PathOrPaths {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> eyre::Result<Self> {
+        if s.contains('[') {
+            let paths = s
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            Ok(Self::Paths(paths))
+        } else {
+            Ok(Self::Path(s.to_string()))
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +61,7 @@ pub enum EnvDirective {
     /// dotenv file
     File(String, EnvDirectiveOptions),
     /// add a path to the PATH
-    Path(String, EnvDirectiveOptions),
+    Path(PathOrPaths, EnvDirectiveOptions),
     /// run a bash script and apply the resulting env diff
     Source(String, EnvDirectiveOptions),
     PythonVenv {
@@ -81,7 +107,18 @@ impl Display for EnvDirective {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
             EnvDirective::File(path, _) => write!(f, "dotenv {}", display_path(path)),
-            EnvDirective::Path(path, _) => write!(f, "path_add {}", display_path(path)),
+            EnvDirective::Path(PathOrPaths::Path(path), _) => {
+                write!(f, "path_add {}", display_path(path))
+            }
+            EnvDirective::Path(PathOrPaths::Paths(paths), _) => {
+                for path in paths {
+                    write!(f, "path_add {}", display_path(path))?;
+                    if path != paths.last().unwrap() {
+                        writeln!(f)?;
+                    }
+                }
+                Ok(())
+            }
             EnvDirective::Source(path, _) => write!(f, "source {}", display_path(path)),
             EnvDirective::Module(name, _, _) => write!(f, "module {}", name),
             EnvDirective::PythonVenv {
@@ -235,14 +272,26 @@ impl EnvResults {
                     env.shift_remove(&k);
                     r.env_remove.insert(k);
                 }
-                EnvDirective::Path(input_str, _opts) => {
-                    let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str)?;
-                    paths.push((path.clone(), source.clone()));
-                    let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
-                    let mut env_path: PathEnv = env_path.parse()?;
-                    env_path.add(path);
-                    env.insert(env::PATH_KEY.to_string(), (env_path.to_string(), None));
-                }
+                EnvDirective::Path(path_or_paths, _opts) => match path_or_paths {
+                    PathOrPaths::Path(input_str) => {
+                        let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str)?;
+                        paths.push((path.clone(), source.clone()));
+                        let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
+                        let mut env_path: PathEnv = env_path.parse()?;
+                        env_path.add(path);
+                        env.insert(env::PATH_KEY.to_string(), (env_path.to_string(), None));
+                    }
+                    PathOrPaths::Paths(input_strs) => {
+                        for input_str in input_strs {
+                            let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str)?;
+                            paths.push((path.clone(), source.clone()));
+                            let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
+                            let mut env_path: PathEnv = env_path.parse()?;
+                            env_path.add(path);
+                            env.insert(env::PATH_KEY.to_string(), (env_path.to_string(), None));
+                        }
+                    }
+                },
                 EnvDirective::File(input, _opts) => {
                     let files = Self::file(
                         &mut ctx,

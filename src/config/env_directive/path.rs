@@ -19,7 +19,7 @@ impl EnvResults {
 #[cfg(unix)]
 mod tests {
     use super::*;
-    use crate::config::env_directive::{EnvDirective, EnvResolveOptions};
+    use crate::config::env_directive::{EnvDirective, EnvResolveOptions, PathOrPaths};
     use crate::env_diff::EnvMap;
     use crate::tera::BASE_CONTEXT;
     use crate::test::replace_path;
@@ -36,20 +36,23 @@ mod tests {
             &env,
             vec![
                 (
-                    EnvDirective::Path("/path/1".into(), Default::default()),
+                    EnvDirective::Path(PathOrPaths::Path("/path/1".into()), Default::default()),
                     PathBuf::from("/config"),
                 ),
                 (
-                    EnvDirective::Path("/path/2".into(), Default::default()),
+                    EnvDirective::Path(PathOrPaths::Path("/path/2".into()), Default::default()),
                     PathBuf::from("/config"),
                 ),
                 (
-                    EnvDirective::Path("~/foo/{{ env.A }}".into(), Default::default()),
+                    EnvDirective::Path(
+                        PathOrPaths::Path("~/foo/{{ env.A }}".into()),
+                        Default::default(),
+                    ),
                     Default::default(),
                 ),
                 (
                     EnvDirective::Path(
-                        "./rel/{{ env.A }}:./rel2/{{env.B}}".into(),
+                        PathOrPaths::Path("./rel/{{ env.A }}:./rel2/{{env.B}}".into()),
                         Default::default(),
                     ),
                     Default::default(),

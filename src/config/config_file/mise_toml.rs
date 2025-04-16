@@ -16,7 +16,7 @@ use versions::Versioning;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
-use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions, PathOrPaths};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap};
 use crate::file::{create_dir_all, display_path};
@@ -81,8 +81,14 @@ pub struct MiseTomlTool {
 }
 
 #[derive(Debug, Clone)]
+pub enum MiseTomlValue {
+    String(String),
+    Vec(Vec<String>),
+}
+
+#[derive(Debug, Clone)]
 pub struct MiseTomlEnvDirective {
-    pub value: String,
+    pub value: MiseTomlValue,
     pub options: EnvDirectiveOptions,
 }
 
@@ -285,7 +291,7 @@ impl ConfigFile for MiseToml {
         let path_entries = self
             .env_path
             .iter()
-            .map(|p| EnvDirective::Path(p.clone(), Default::default()))
+            .map(|p| EnvDirective::Path(PathOrPaths::Path(p.clone()), Default::default()))
             .collect_vec();
         let env_files = self
             .env_file
@@ -843,13 +849,44 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             let directives = map.next_value::<EnvDirectives>()?;
                             // TODO: parse these in the order they're defined somehow
                             for d in directives.path {
-                                env.push(EnvDirective::Path(d.value, d.options));
+                                match d.value {
+                                    MiseTomlValue::String(s) => {
+                                        env.push(EnvDirective::Path(
+                                            PathOrPaths::Path(s),
+                                            d.options,
+                                        ));
+                                    }
+                                    MiseTomlValue::Vec(v) => {
+                                        env.push(EnvDirective::Path(
+                                            PathOrPaths::Paths(v),
+                                            d.options,
+                                        ));
+                                    }
+                                }
                             }
                             for d in directives.file {
-                                env.push(EnvDirective::File(d.value, d.options));
+                                match d.value {
+                                    MiseTomlValue::String(s) => {
+                                        env.push(EnvDirective::File(s, d.options));
+                                    }
+                                    MiseTomlValue::Vec(v) => {
+                                        for s in v {
+                                            env.push(EnvDirective::File(s, d.options));
+                                        }
+                                    }
+                                }
                             }
                             for d in directives.source {
-                                env.push(EnvDirective::Source(d.value, d.options));
+                                match d.value {
+                                    MiseTomlValue::String(s) => {
+                                        env.push(EnvDirective::Source(s, d.options));
+                                    }
+                                    MiseTomlValue::Vec(v) => {
+                                        for s in v {
+                                            env.push(EnvDirective::Source(s, d.options));
+                                        }
+                                    }
+                                }
                             }
                             for (key, value) in directives.other {
                                 env.push(EnvDirective::Module(key, value, Default::default()));
@@ -1159,7 +1196,7 @@ impl FromStr for MiseTomlEnvDirective {
 
     fn from_str(s: &str) -> eyre::Result<Self> {
         Ok(MiseTomlEnvDirective {
-            value: s.into(),
+            value: MiseTomlValue::String(s.to_string()),
             options: Default::default(),
         })
     }
@@ -1183,7 +1220,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlEnvDirective {
                 E: de::Error,
             {
                 Ok(MiseTomlEnvDirective {
-                    value: v.into(),
+                    value: MiseTomlValue::String(v.to_string()),
                     options: Default::default(),
                 })
             }
@@ -1196,9 +1233,22 @@ impl<'de> de::Deserialize<'de> for MiseTomlEnvDirective {
                 let mut value = None;
                 while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
                     match k.as_str() {
-                        "value" | "path" => {
-                            value = Some(v.as_str().unwrap().to_string());
-                        }
+                        "value" | "path" => match v {
+                            toml::Value::String(s) => {
+                                value = Some(MiseTomlValue::String(s.to_string()));
+                            }
+                            toml::Value::Array(a) => {
+                                value = Some(MiseTomlValue::Vec(
+                                    a.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
+                                ));
+                            }
+                            _ => {
+                                return Err(de::Error::custom(format!(
+                                    "invalid value for {}, expected string or array",
+                                    k.as_str()
+                                )));
+                            }
+                        },
                         "tools" => {
                             options.tools = v.as_bool().unwrap();
                         }
@@ -1603,6 +1653,25 @@ mod tests {
             _.path = "/foo"
             [[env]]
             _.path = "./bar"
+            "#});
+        assert_snapshot!(env, @r"
+        path_add /foo
+        path_add ./bar
+        ");
+
+        let env = parse_env(formatdoc! {r#"
+            [[env]]
+            _.path = ["/foo", "./bar"]
+            "#});
+        assert_snapshot!(env, @r"
+        path_add /foo
+        path_add ./bar
+        ");
+
+        let env = parse_env(formatdoc! {r#"
+            [env._.path]
+            path = ["/foo", "./bar"]
+            tools = true
             "#});
         assert_snapshot!(env, @r"
         path_add /foo
