@@ -105,7 +105,8 @@ impl Backend for UbiBackend {
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         let mut v = tv.version.to_string();
-        let opts = tv.request.options();
+        // let opts = tv.request.options();
+        let opts = self.ba.opts();
         let forge = match opts.get("provider") {
             Some(forge) => ForgeType::from_str(forge)?,
             None => ForgeType::default(),

@@ -41,9 +41,9 @@ impl Unuse {
                         tv.version() == ta.version.as_ref().map_or("latest", |v| v.as_str())
                     })
                     .collect();
-                for _tool in tools_to_remove {
+                for tool in tools_to_remove {
                     removed.push(ta);
-                    cf.remove_tool(&ta.ba)?;
+                    cf.remove_tool(&tool.ba())?;
                 }
             }
         }

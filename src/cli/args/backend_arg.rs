@@ -125,6 +125,20 @@ impl BackendArg {
         BackendType::Unknown
     }
 
+    pub fn short_opts(&self) -> String {
+        let short_opts = self.short.clone();
+        let opts = self.opts().opts;
+        if !opts.is_empty() {
+            let opts: Vec<String> = opts
+                .iter()
+                .filter(|(_, v)| !v.is_empty())
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect();
+            return format!("{}[{}]", self.short, opts.join(","));
+        }
+        short_opts
+    }
+
     pub fn full(&self) -> String {
         let short = unalias_backend(&self.short);
         if config::is_loaded() {
@@ -175,10 +189,6 @@ impl BackendArg {
                 ToolVersionOptions::default()
             }
         })
-    }
-
-    pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
-        self.opts = opts;
     }
 
     pub fn tool_name(&self) -> String {

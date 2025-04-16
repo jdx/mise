@@ -59,14 +59,6 @@ impl ToolVersionOptions {
         self.opts.get(key)
     }
 
-    pub fn merge(&mut self, other: &BTreeMap<String, String>) {
-        for (key, value) in other {
-            self.opts
-                .entry(key.to_string())
-                .or_insert(value.to_string());
-        }
-    }
-
     pub fn contains_key(&self, key: &str) -> bool {
         self.opts.contains_key(key)
     }

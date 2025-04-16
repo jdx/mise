@@ -60,29 +60,34 @@ impl ToolRequest {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => format!("{ref_type}:{r}"),
             _ => s.to_string(),
         };
+        let opts = ToolVersionOptions {
+            os: backend.opts().os.clone(),
+            install_env: backend.opts().install_env.clone(),
+            ..Default::default()
+        };
         Ok(match s.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => Self::Ref {
                 ref_: r.to_string(),
                 ref_type: ref_type.to_string(),
-                options: backend.opts(),
+                options: opts,
                 backend,
                 source,
             },
             Some(("prefix", p)) => Self::Prefix {
                 prefix: p.to_string(),
-                options: backend.opts(),
+                options: opts,
                 backend,
                 source,
             },
             Some(("path", p)) => Self::Path {
                 path: PathBuf::from(p),
-                options: backend.opts(),
+                options: opts,
                 backend,
                 source,
             },
             Some((p, v)) if p.starts_with("sub-") => Self::Sub {
                 sub: p.split_once('-').unwrap().1.to_string(),
-                options: backend.opts(),
+                options: opts,
                 orig_version: v.to_string(),
                 backend,
                 source,
@@ -90,14 +95,14 @@ impl ToolRequest {
             None => {
                 if s == "system" {
                     Self::System {
-                        options: backend.opts(),
+                        options: opts,
                         backend,
                         source,
                     }
                 } else {
                     Self::Version {
                         version: s,
-                        options: backend.opts(),
+                        options: opts,
                         backend,
                         source,
                     }
