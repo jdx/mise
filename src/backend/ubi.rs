@@ -120,32 +120,37 @@ impl Backend for UbiBackend {
         let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
         let bin_dir = tv.install_path();
 
-        let release: Result<_, eyre::Report> = match forge {
-            ForgeType::GitHub => {
-                github::get_release_for_url(api_url, &self.tool_name(), &v).map(|_| "github")
+        if !name_is_url(&self.tool_name()) {
+            let release: Result<_, eyre::Report> = match forge {
+                ForgeType::GitHub => {
+                    github::get_release_for_url(api_url, &self.tool_name(), &v).map(|_| "github")
+                }
+                ForgeType::GitLab => {
+                    gitlab::get_release_for_url(api_url, &self.tool_name(), &v).map(|_| "gitlab")
+                }
+            };
+            if let Err(err) = release {
+                // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
+                // if http::error_code(&err) == Some(404) {
+                debug!(
+                    "Failed to get release for {}, trying with 'v' prefix: {}",
+                    tv, err
+                );
+                v = format!("v{v}");
+                // }
             }
-            ForgeType::GitLab => {
-                gitlab::get_release_for_url(api_url, &self.tool_name(), &v).map(|_| "gitlab")
-            }
-        };
-        if let Err(err) = release {
-            // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
-            // if http::error_code(&err) == Some(404) {
-            debug!(
-                "Failed to get release for {}, trying with 'v' prefix: {}",
-                tv, err
-            );
-            v = format!("v{v}");
-            // }
         }
 
         let install = |v: &str| {
             // Workaround because of not knowing how to pull out the value correctly without quoting
             let name = self.tool_name();
 
-            let mut builder = UbiBuilder::new().project(&name).install_dir(&bin_dir);
+            let mut builder = UbiBuilder::new().install_dir(&bin_dir);
 
-            if v != "latest" {
+            if name_is_url(&name) {
+                builder = builder.url(&name);
+            } else {
+                builder = builder.project(&name);
                 builder = builder.tag(v);
             }
 
