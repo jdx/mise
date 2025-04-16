@@ -13,7 +13,6 @@ use tera::Context as TeraContext;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
-use crate::backend::BackendOptions;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
@@ -23,7 +22,6 @@ use crate::config::{Alias, AliasMap};
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
 use crate::redactions::Redactions;
-use crate::registry::REGISTRY;
 use crate::task::Task;
 use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};

@@ -43,7 +43,7 @@ impl Unuse {
                     .collect();
                 for tool in tools_to_remove {
                     removed.push(ta);
-                    cf.remove_tool(&tool.ba())?;
+                    cf.remove_tool(tool.ba())?;
                 }
             }
         }

@@ -1,5 +1,4 @@
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env::consts::{ARCH, OS};
@@ -70,12 +69,6 @@ impl RegistryTool {
 
     pub fn is_supported_os(&self) -> bool {
         self.os.is_empty() || self.os.contains(&OS)
-    }
-
-    pub fn ba(&self) -> Option<BackendArg> {
-        self.backends()
-            .first()
-            .map(|f| BackendArg::new(self.short.to_string(), Some(f.to_string())))
     }
 }
 
