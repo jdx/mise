@@ -96,7 +96,7 @@ impl Backend for DenoPlugin {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json")?;
         let versions = versions
             .cli

@@ -4,6 +4,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
 use crate::http::HTTP_FETCH;
+use crate::toolset::ToolRequest;
 use eyre::eyre;
 
 #[derive(Debug)]
@@ -24,7 +25,7 @@ impl Backend for DotnetBackend {
         Ok(vec!["dotnet"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         let feed_url = self.get_search_url()?;
 
         let feed: NugetFeedSearch = HTTP_FETCH.json(format!(

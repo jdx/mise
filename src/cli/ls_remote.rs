@@ -52,7 +52,12 @@ impl LsRemote {
             _ => self.prefix.clone(),
         };
 
-        let versions = plugin.list_remote_versions()?;
+        let tr: Option<ToolRequest> = match &self.plugin {
+            Some(tool_arg) => tool_arg.tvr.clone(),
+            None => None,
+        };
+
+        let versions = plugin.list_remote_versions(tr)?;
         let versions = match prefix {
             Some(prefix) => versions
                 .into_iter()
@@ -72,7 +77,7 @@ impl LsRemote {
         let versions = backend::list()
             .into_par_iter()
             .map(|p| {
-                let versions = p.list_remote_versions()?;
+                let versions = p.list_remote_versions(None)?;
                 Ok((p, versions))
             })
             .collect::<Result<Vec<_>>>()?

@@ -175,7 +175,7 @@ impl Backend for ErlangPlugin {
     fn ba(&self) -> &BackendArg {
         &self.ba
     }
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         let versions = if SETTINGS.erlang.compile == Some(false) {
             github::list_releases("erlef/otp_builds")?
                 .into_iter()

@@ -61,6 +61,7 @@ impl Tool {
         let tv = tvl.map(|tvl| tvl.versions.first().unwrap());
         let ba = tv.map(|tv| tv.ba()).unwrap_or_else(|| &self.tool);
         let backend = ba.backend().ok();
+        let tvo = tv.map_or(ba.opts(), |tv| tv.request.options());
         let info = ToolInfo {
             backend: ba.full(),
             description: backend.and_then(|b| b.description()),
@@ -83,7 +84,7 @@ impl Tool {
                     .collect::<Vec<_>>()
             }),
             config_source: tvl.map(|tvl| tvl.source.clone()),
-            tool_options: ba.opts(),
+            tool_options: tvo,
         };
 
         if self.json {

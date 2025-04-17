@@ -6,7 +6,7 @@ use crate::config::SETTINGS;
 use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use indoc::formatdoc;
 use std::fmt::Debug;
 use url::Url;
@@ -29,7 +29,7 @@ impl Backend for GemBackend {
         Ok(vec!["ruby"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         // The `gem list` command does not supporting listing versions as json output
         // so we use the rubygems.org api to get the list of versions.
         let raw = HTTP_FETCH.get_text(get_gem_url(&self.tool_name())?)?;

@@ -10,7 +10,7 @@ use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, github, plugins};
 
@@ -83,7 +83,7 @@ impl Backend for BunPlugin {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         let versions = github::list_releases("oven-sh/bun")?
             .into_iter()
             .map(|r| r.tag_name)

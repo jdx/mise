@@ -193,7 +193,7 @@ impl ToolVersion {
                     return build(v);
                 }
             }
-            if let Some(v) = backend.latest_version(None)? {
+            if let Some(v) = backend.latest_version(Some(request.clone()), None)? {
                 return build(v);
             }
         }
@@ -206,7 +206,7 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        let matches = backend.list_versions_matching(&v)?;
+        let matches = backend.list_versions_matching(Some(request.clone()), &v)?;
         if matches.contains(&v) {
             return build(v);
         }
@@ -222,7 +222,9 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         let v = match v {
-            "latest" => backend.latest_version(None)?.unwrap(),
+            "latest" => backend
+                .latest_version(Some(request.clone()), None)?
+                .unwrap(),
             _ => Config::get().resolve_alias(&backend, v)?,
         };
         let v = tool_request::version_sub(&v, sub);
@@ -236,7 +238,7 @@ impl ToolVersion {
                 return Ok(Self::new(request, v.to_string()));
             }
         }
-        let matches = backend.list_versions_matching(prefix)?;
+        let matches = backend.list_versions_matching(Some(request.clone()), prefix)?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,

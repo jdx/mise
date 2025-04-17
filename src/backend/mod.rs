@@ -196,9 +196,26 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(deps)
     }
+    fn list_remote_versions(&self, tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
+        let get_remote_versions = || -> Result<Vec<String>> {
+            let versions = self
+                ._list_remote_versions(tr.clone())?
+                .into_iter()
+                .filter(|v| match v.parse::<ToolVersionType>() {
+                    Ok(ToolVersionType::Version(_)) => true,
+                    _ => {
+                        warn!("Invalid version: {}@{v}", self.id());
+                        false
+                    }
+                })
+                .collect_vec();
+            if versions.is_empty() {
+                warn!("No versions found for {}", self.id());
+            }
+            Ok(versions)
+        };
 
-    fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.get_remote_version_cache()
+        self.get_remote_version_cache(tr.clone())
             .get_or_try_init(|| {
                 trace!("Listing remote versions for {}", self.ba().to_string());
                 match versions_host::list_versions(self.ba()) {
@@ -212,27 +229,23 @@ pub trait Backend: Debug + Send + Sync {
                     "Calling backend to list remote versions for {}",
                     self.ba().to_string()
                 );
-                let versions = self
-                    ._list_remote_versions()?
-                    .into_iter()
-                    .filter(|v| match v.parse::<ToolVersionType>() {
-                        Ok(ToolVersionType::Version(_)) => true,
-                        _ => {
-                            warn!("Invalid version: {}@{v}", self.id());
-                            false
-                        }
-                    })
-                    .collect_vec();
-                if versions.is_empty() {
-                    warn!("No versions found for {}", self.id());
-                }
-                Ok(versions)
+                get_remote_versions()
             })
             .cloned()
     }
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
-    fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
-        self.latest_version(Some("latest".into()))
+    // we either get the ToolVersionOptions from the ToolRequest or from the BackendArg
+    fn _get_tool_version_opts(&self, tr: Option<ToolRequest>) -> BTreeMap<String, String> {
+        match tr {
+            Some(tr) => tr.options().opts,
+            None => match &self.ba().opts {
+                Some(opts) => opts.opts.clone(),
+                None => BTreeMap::new(),
+            },
+        }
+    }
+    fn _list_remote_versions(&self, tr: Option<ToolRequest>) -> eyre::Result<Vec<String>>;
+    fn latest_stable_version(&self, tr: Option<ToolRequest>) -> eyre::Result<Option<String>> {
+        self.latest_version(tr, Some("latest".into()))
     }
     fn list_installed_versions(&self) -> eyre::Result<Vec<String>> {
         install_state::list_versions(&self.ba().short)
@@ -308,20 +321,44 @@ pub trait Backend: Debug + Send + Sync {
         let versions = self.list_installed_versions()?;
         self.fuzzy_match_filter(versions, query)
     }
-    fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions()?;
+    fn list_versions_matching(
+        &self,
+        tr: Option<ToolRequest>,
+        query: &str,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = self.list_remote_versions(tr)?;
         self.fuzzy_match_filter(versions, query)
     }
-    fn latest_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
+    fn latest_version(
+        &self,
+        tr: Option<ToolRequest>,
+        query: Option<String>,
+    ) -> eyre::Result<Option<String>> {
         match query {
             Some(query) => {
-                let mut matches = self.list_versions_matching(&query)?;
+                let mut matches = self.list_versions_matching(tr.clone(), &query)?;
                 if matches.is_empty() && query == "latest" {
-                    matches = self.list_remote_versions()?;
+                    matches = self.list_remote_versions(tr)?;
                 }
                 Ok(find_match_in_list(&matches, &query))
             }
-            None => self.latest_stable_version(),
+            None => self.latest_stable_version(tr),
+        }
+    }
+    fn latest_version_for_tool(
+        &self,
+        tr: Option<ToolRequest>,
+        query: Option<String>,
+    ) -> eyre::Result<Option<String>> {
+        match query {
+            Some(query) => {
+                let mut matches = self.list_versions_matching(tr.clone(), &query)?;
+                if matches.is_empty() && query == "latest" {
+                    matches = self.list_remote_versions(tr)?;
+                }
+                Ok(find_match_in_list(&matches, &query))
+            }
+            None => self.latest_stable_version(tr),
         }
     }
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
@@ -626,7 +663,7 @@ pub trait Backend: Debug + Send + Sync {
         Ok(versions)
     }
 
-    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
+    fn get_remote_version_cache(&self, _tr: Option<ToolRequest>) -> Arc<VersionCacheManager> {
         static REMOTE_VERSION_CACHE: Lazy<Mutex<HashMap<String, Arc<VersionCacheManager>>>> =
             Lazy::new(|| Mutex::new(HashMap::new()));
 

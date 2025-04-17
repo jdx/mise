@@ -29,6 +29,7 @@ pub struct Latest {
 impl Latest {
     pub fn run(self) -> Result<()> {
         let config = Config::try_get()?;
+        let tr = self.tool.tvr.clone();
         let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
             Some(ToolRequest::Version { version, .. }) => Some(version),
@@ -47,7 +48,7 @@ impl Latest {
         let latest_version = if self.installed {
             backend.latest_installed_version(prefix)?
         } else {
-            backend.latest_version(prefix)?
+            backend.latest_version(tr, prefix)?
         };
         if let Some(version) = latest_version {
             miseprintln!("{}", version);

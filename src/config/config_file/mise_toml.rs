@@ -353,7 +353,7 @@ impl ConfigFile for MiseToml {
             .unwrap();
 
         // create a key from the short name preserving any decorations like prefix/suffix if the key already exists
-        let key = get_key_with_decor(tools, ba.short.as_str());
+        let key = get_key_with_decor(tools, &ba.short);
 
         // if a short name is used like "node", make sure we remove any long names like "core:node"
         if ba.short != ba.full() {
@@ -439,11 +439,7 @@ impl ConfigFile for MiseToml {
                     for v in options.opts.values_mut() {
                         *v = self.parse_template(v)?;
                     }
-                    let mut ba = ba.clone();
-                    let mut ba_opts = ba.opts().clone();
-                    ba_opts.merge(&options.opts);
-                    ba.set_opts(Some(ba_opts.clone()));
-                    ToolRequest::new_opts(ba, &version, options, source.clone())?
+                    ToolRequest::new_opts(ba.clone(), &version, options, source.clone())?
                 } else {
                     ToolRequest::new(ba.clone(), &version, source.clone())?
                 };

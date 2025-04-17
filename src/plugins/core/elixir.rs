@@ -6,7 +6,7 @@ use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
 use eyre::Result;
@@ -78,7 +78,7 @@ impl Backend for ElixirPlugin {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         let versions: Vec<String> = HTTP_FETCH
             .get_text("https://builds.hex.pm/builds/elixir/builds.txt")?
             .lines()

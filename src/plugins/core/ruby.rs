@@ -13,7 +13,7 @@ use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, file, plugins, timeout};
 use eyre::{Result, WrapErr};
@@ -311,7 +311,7 @@ impl Backend for RubyPlugin {
     fn ba(&self) -> &BackendArg {
         &self.ba
     }
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         timeout::run_with_timeout(
             || {
                 if let Err(err) = self.update_build_tool(None) {

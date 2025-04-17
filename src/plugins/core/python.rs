@@ -390,7 +390,7 @@ impl Backend for PythonPlugin {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         if cfg!(windows) || SETTINGS.python.compile == Some(false) {
             Ok(self
                 .fetch_precompiled_remote_versions()?
@@ -465,7 +465,7 @@ impl Backend for PythonPlugin {
         Ok(hm)
     }
 
-    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
+    fn get_remote_version_cache(&self, _tr: Option<ToolRequest>) -> Arc<VersionCacheManager> {
         static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
         CACHE
             .get_or_init(|| {

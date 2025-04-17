@@ -3731,6 +3731,7 @@ dependencies = [
  "nix",
  "num_cpus",
  "number_prefix",
+ "numeric-sort",
  "once_cell",
  "openssl",
  "os-release",
@@ -4016,6 +4017,12 @@ name = "number_prefix"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
+
+[[package]]
+name = "numeric-sort"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f218700a47ff14f06bb676b97e63a6fb2fd25db3bf05d6f369971188e303f7f"
 
 [[package]]
 name = "object"

@@ -236,15 +236,15 @@ impl Backend for AsdfBackend {
         Some(PluginType::Asdf)
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         self.plugin.fetch_remote_versions()
     }
 
-    fn latest_stable_version(&self) -> Result<Option<String>> {
+    fn latest_stable_version(&self, tr: Option<ToolRequest>) -> Result<Option<String>> {
         run_with_timeout(
             || {
                 if !self.plugin.has_latest_stable_script() {
-                    return self.latest_version(Some("latest".into()));
+                    return self.latest_version(tr, Some("latest".into()));
                 }
                 self.latest_stable_cache
                     .get_or_try_init(|| self.plugin.fetch_latest_stable())

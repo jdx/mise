@@ -149,7 +149,7 @@ impl Backend for ZigPlugin {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         let versions: Vec<String> = github::list_releases("ziglang/zig")?
             .into_iter()
             .map(|r| r.tag_name)

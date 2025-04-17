@@ -6,7 +6,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, SETTINGS};
 use crate::install_context::InstallContext;
 use crate::timeout;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use serde_json::Value;
 use std::fmt::Debug;
 
@@ -31,7 +31,7 @@ impl Backend for NPMBackend {
         Ok(vec!["node", "bun"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         timeout::run_with_timeout(
             || {
                 let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
@@ -44,7 +44,7 @@ impl Backend for NPMBackend {
         )
     }
 
-    fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
+    fn latest_stable_version(&self, tr: Option<ToolRequest>) -> eyre::Result<Option<String>> {
         timeout::run_with_timeout(
             || {
                 self.latest_version_cache
@@ -56,7 +56,7 @@ impl Backend for NPMBackend {
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         let latest = match dist_tags["latest"] {
                             Value::String(ref s) => Some(s.clone()),
-                            _ => self.latest_version(Some("latest".into())).unwrap(),
+                            _ => self.latest_version(tr, Some("latest".into())).unwrap(),
                         };
                         Ok(latest)
                     })

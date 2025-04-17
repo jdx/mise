@@ -180,7 +180,7 @@ impl Backend for GoPlugin {
     fn ba(&self) -> &BackendArg {
         &self.ba
     }
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         plugins::core::run_fetch_task_with_timeout(move || {
             let output = cmd!("git", "ls-remote", "--tags", &SETTINGS.go_repo, "go*").read()?;
             let lines = output.split('\n');

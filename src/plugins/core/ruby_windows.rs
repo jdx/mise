@@ -9,7 +9,7 @@ use crate::env::PATH_KEY;
 use crate::github::GithubRelease;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, github, plugins};
 use eyre::Result;
@@ -138,7 +138,7 @@ impl Backend for RubyPlugin {
     fn ba(&self) -> &BackendArg {
         &self.ba
     }
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         // TODO: use windows set of versions
         //  match self.core.fetch_remote_versions_from_mise() {
         //      Ok(Some(versions)) => return Ok(versions),
@@ -257,19 +257,19 @@ mod tests {
     fn test_list_versions_matching() {
         let plugin = RubyPlugin::new();
         assert!(
-            !plugin.list_versions_matching("3").unwrap().is_empty(),
+            !plugin.list_versions_matching(None, "3").unwrap().is_empty(),
             "versions for 3 should not be empty"
         );
         assert!(
             !plugin
-                .list_versions_matching("truffleruby-24")
+                .list_versions_matching(None, "truffleruby-24")
                 .unwrap()
                 .is_empty(),
             "versions for truffleruby-24 should not be empty"
         );
         assert!(
             !plugin
-                .list_versions_matching("truffleruby+graalvm-24")
+                .list_versions_matching(None, "truffleruby+graalvm-24")
                 .unwrap()
                 .is_empty(),
             "versions for truffleruby+graalvm-24 should not be empty"

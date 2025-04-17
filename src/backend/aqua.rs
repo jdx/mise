@@ -10,7 +10,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{file, github, minisign};
 use eyre::{ContextCompat, Result, bail};
 use indexmap::IndexSet;
@@ -46,7 +46,7 @@ impl Backend for AquaBackend {
         Ok(vec!["cosign", "slsa-verifier"])
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         let pkg = AQUA_REGISTRY.package(&self.id)?;
         if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
             let versions = get_versions(&pkg)?;

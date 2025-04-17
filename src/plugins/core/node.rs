@@ -8,7 +8,7 @@ use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, gpg, hash, http, plugins};
 use eyre::{Result, bail, ensure};
@@ -337,7 +337,7 @@ impl Backend for NodePlugin {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> Result<Vec<String>> {
         let base = SETTINGS.node.mirror_url();
         let versions = HTTP_FETCH
             .json::<Vec<NodeVersion>, _>(base.join("index.json")?)?
@@ -448,7 +448,7 @@ impl Backend for NodePlugin {
         Ok(vec![tv.install_path()])
     }
 
-    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
+    fn get_remote_version_cache(&self, _tr: Option<ToolRequest>) -> Arc<VersionCacheManager> {
         static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
         CACHE
             .get_or_init(|| {

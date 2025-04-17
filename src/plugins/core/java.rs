@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::fs::{self};
 use std::path::{Path, PathBuf};
 
-use crate::backend::Backend;
+use crate::backend::{Backend, VersionCacheManager};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
@@ -13,7 +13,7 @@ use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
 use color_eyre::eyre::{Result, eyre};
@@ -21,7 +21,7 @@ use indoc::formatdoc;
 use itertools::Itertools;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
-use std::sync::LazyLock as Lazy;
+use std::sync::{Arc, LazyLock as Lazy, Mutex};
 use versions::Versioning;
 use xx::regex;
 
@@ -281,7 +281,7 @@ impl Backend for JavaPlugin {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    fn _list_remote_versions(&self, tr: Option<ToolRequest>) -> Result<Vec<String>> {
         // TODO: find out how to get this to work for different os/arch
         // See https://github.com/jdx/mise/issues/1196
         // match self.core.fetch_remote_versions_from_mise() {
@@ -289,8 +289,13 @@ impl Backend for JavaPlugin {
         //     Ok(None) => {}
         //     Err(e) => warn!("failed to fetch remote versions: {}", e),
         // }
-        let versions = self
-            .fetch_java_metadata("ga")?
+        let opts = self._get_tool_version_opts(tr);
+        let release_type = opts
+            .get("release_type")
+            .map_or("ga".to_string(), |s| s.to_string());
+
+        let mut versions: Vec<String> = self
+            .fetch_java_metadata(&release_type)?
             .iter()
             .sorted_by_cached_key(|(v, m)| {
                 let is_shorthand = regex!(r"^\d").is_match(v);
@@ -313,6 +318,7 @@ impl Backend for JavaPlugin {
             .map(|(v, _)| v.clone())
             .unique()
             .collect();
+        versions.sort_by(|a, b| numeric_sort::cmp(a, b));
 
         Ok(versions)
     }
@@ -322,8 +328,12 @@ impl Backend for JavaPlugin {
         self.fuzzy_match_filter(versions, query)
     }
 
-    fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions()?;
+    fn list_versions_matching(
+        &self,
+        tr: Option<ToolRequest>,
+        query: &str,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = self.list_remote_versions(tr)?;
         self.fuzzy_match_filter(versions, query)
     }
 
@@ -426,6 +436,38 @@ impl Backend for JavaPlugin {
             })
             .collect();
         Ok(versions)
+    }
+
+    // remote version cache for GA/EA release types
+    fn get_remote_version_cache(&self, tr: Option<ToolRequest>) -> Arc<VersionCacheManager> {
+        static CACHE: Lazy<Mutex<HashMap<String, Arc<VersionCacheManager>>>> =
+            Lazy::new(|| Mutex::new(HashMap::new()));
+
+        let opts = self._get_tool_version_opts(tr);
+        let release_type = opts
+            .get("release_type")
+            .map_or("ga".to_string(), |s| s.to_string());
+        let key = format!("{}:{}", self.ba().full(), release_type);
+        CACHE
+            .lock()
+            .unwrap()
+            .entry(key)
+            .or_insert_with(|| {
+                let mut cm = CacheManagerBuilder::new(
+                    self.ba()
+                        .cache_path
+                        .join(format!("remote_versions_{release_type}.msgpack.z")),
+                )
+                .with_fresh_duration(SETTINGS.fetch_remote_versions_cache());
+                if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
+                    cm = cm
+                        .with_fresh_file(plugin_path.clone())
+                        .with_fresh_file(plugin_path.join("bin/list-all"))
+                }
+
+                Arc::new(cm.build())
+            })
+            .clone()
     }
 }
 

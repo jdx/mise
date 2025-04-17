@@ -5,7 +5,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
 use crate::install_context::InstallContext;
 use crate::timeout;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use std::fmt::Debug;
 use xx::regex;
 
@@ -27,7 +27,7 @@ impl Backend for GoBackend {
         Ok(vec!["go"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         timeout::run_with_timeout(
             || {
                 let mut mod_path = Some(self.tool_name());

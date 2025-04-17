@@ -52,7 +52,7 @@ impl OutdatedInfo {
             .find(&tv.request.version())
             .map(|m| m.as_str().to_string());
         let latest_result = if bump {
-            t.latest_version(prefix.clone())
+            t.latest_version(Some(tv.request.clone()), prefix.clone())
         } else {
             tv.latest_version().map(Option::from)
         };

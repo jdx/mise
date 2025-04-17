@@ -5,7 +5,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::git::{CloneOptions, Git};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{dirs, file, github};
 use eyre::WrapErr;
 use serde::Deserializer;
@@ -35,7 +35,7 @@ impl Backend for SPMBackend {
         Ok(vec!["swift"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         let repo = SwiftPackageRepo::new(&self.tool_name())?;
         Ok(github::list_releases(repo.shorthand.as_str())?
             .into_iter()
@@ -50,7 +50,7 @@ impl Backend for SPMBackend {
 
         let repo = SwiftPackageRepo::new(&self.tool_name())?;
         let revision = if tv.version == "latest" {
-            self.latest_stable_version()?
+            self.latest_stable_version(Some(tv.request.clone()))?
                 .ok_or_else(|| eyre::eyre!("No stable versions found"))?
         } else {
             tv.version.clone()

@@ -8,7 +8,7 @@ use crate::env::{
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::tokio::RUNTIME;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{file, github, gitlab, hash};
 use eyre::bail;
 use itertools::Itertools;
@@ -35,12 +35,11 @@ impl Backend for UbiBackend {
     fn ba(&self) -> &BackendArg {
         &self.ba
     }
-
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         if name_is_url(&self.tool_name()) {
             Ok(vec!["latest".to_string()])
         } else {
-            let opts = self.ba.opts();
+            let opts = self._get_tool_version_opts(tr);
             let forge = match opts.get("provider") {
                 Some(forge) => ForgeType::from_str(forge)?,
                 None => ForgeType::default(),

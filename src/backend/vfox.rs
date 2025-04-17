@@ -17,7 +17,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::plugins::{Plugin, PluginType};
 use crate::tokio::RUNTIME;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
@@ -41,7 +41,7 @@ impl Backend for VfoxBackend {
         Some(PluginType::Vfox)
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         timeout::run_with_timeout(
             || {
                 let (vfox, _log_rx) = self.plugin.vfox();

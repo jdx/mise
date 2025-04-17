@@ -7,7 +7,7 @@ use crate::config::{Config, SETTINGS};
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use eyre::Result;
@@ -45,7 +45,7 @@ impl Backend for PIPXBackend {
      * Pipx doesn't have a remote version concept across its backends, so
      * we return a single version.
      */
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    fn _list_remote_versions(&self, _tr: Option<ToolRequest>) -> eyre::Result<Vec<String>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
                 let url = format!("https://pypi.org/pypi/{}/json", package);
@@ -67,7 +67,7 @@ impl Backend for PIPXBackend {
         }
     }
 
-    fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
+    fn latest_stable_version(&self, tr: Option<ToolRequest>) -> eyre::Result<Option<String>> {
         self.latest_version_cache
             .get_or_try_init(|| match self.tool_name().parse()? {
                 PipxRequest::Pypi(package) => {
@@ -75,7 +75,7 @@ impl Backend for PIPXBackend {
                     let pkg: PypiPackage = HTTP_FETCH.json(url)?;
                     Ok(Some(pkg.info.version))
                 }
-                _ => self.latest_version(Some("latest".into())),
+                _ => self.latest_version(tr, Some("latest".into())),
             })
             .cloned()
     }
