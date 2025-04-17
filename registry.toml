@@ -1686,6 +1686,8 @@ shellspec.backends = [
 shfmt.backends = ["aqua:mvdan/sh", "asdf:luizm/asdf-shfmt"]
 shfmt.os = ["linux", "macos"]
 shorebird.backends = ["asdf:mise-plugins/mise-shorebird"]
+signadot.backends = ["ubi:signadot/cli[exe=signadot]"]
+signadot.test = ["signadot --version", "signadot version v{{version}}"]
 sinker.backends = ["aqua:plexsystems/sinker", "asdf:elementalvoid/asdf-sinker"]
 skaffold.backends = [
     "aqua:GoogleContainerTools/skaffold",
