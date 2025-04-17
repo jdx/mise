@@ -28,3 +28,18 @@ $ mise use -g go:github.com/DarthSim/hivemind
 $ hivemind --help
 Hivemind version 1.1.0
 ```
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `go` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `tags``
+
+The `tags` option allow you to specify go build tags. This is useful for tools that need specific
+build tags, like the following:
+
+```toml
+[tools]
+"go:github.com/golang-migrate/migrate/v4/cmd/migrate" = { version = "latest", tags = "postgres" }
+```
