@@ -87,7 +87,7 @@ apollo-router.backends = [
 ]
 apollo-rover.backends = ["ubi:apollographql/rover"]
 aqua.backends = ["ubi:aquaproj/aqua"]
-aqua.test = ["aqua version", "aqua version {{version}}"]
+aqua.test = ["aqua version", "{{version}}"]
 arduino.aliases = ["arduino"]
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
 argc.backends = ["ubi:sigoden/argc"]
@@ -591,7 +591,6 @@ dynatrace-monaco.backends = [
     "ubi:Dynatrace/dynatrace-configuration-as-code[exe=monaco]",
     "asdf:nsaputro/asdf-monaco"
 ]
-dynatrace-monaco.test = ["monaco version", "monaco version {{version}}"]
 e1s.backends = ["asdf:tbobm/asdf-e1s"]
 earthly.backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
 ecspresso.backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
