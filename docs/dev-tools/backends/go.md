@@ -34,7 +34,7 @@ Hivemind version 1.1.0
 The following [tool-options](/dev-tools/#tool-options) are available for the `go` backend—these
 go in `[tools]` in `mise.toml`.
 
-### `tags``
+### `tags`
 
 Specify go build tags (passed as `go install --tags`):
 
