@@ -1,7 +1,9 @@
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::hooks::Hooks;
-use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
+use crate::toolset::{
+    InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersionOptions, Toolset,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, env, hooks};
 use eyre::Result;
@@ -114,7 +116,7 @@ impl Install {
                                 let tvr = ToolRequest::Version {
                                     backend: ta.ba.clone(),
                                     version: "latest".into(),
-                                    options: ta.ba.opts(),
+                                    options: ToolVersionOptions::default(),
                                     source: ToolSource::Argument,
                                 };
                                 requests.push(tvr);

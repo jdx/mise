@@ -22,7 +22,6 @@ use crate::config::{Alias, AliasMap};
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
 use crate::redactions::Redactions;
-use crate::registry::REGISTRY;
 use crate::task::Task;
 use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -313,7 +312,11 @@ impl ConfigFile for MiseToml {
         let doc = self.doc_mut()?;
         if let Some(tools) = doc.get_mut("tools") {
             if let Some(tools) = tools.as_table_like_mut() {
-                tools.remove(&fa.to_string());
+                let keys = tools.iter().map(|(k, _)| k).collect::<Vec<_>>();
+                println!("keys: {keys:?}");
+                println!("removing: {}", fa.short_opts());
+
+                tools.remove(&fa.short_opts());
                 if tools.is_empty() {
                     doc.as_table_mut().remove("tools");
                 }
@@ -333,12 +336,12 @@ impl ConfigFile for MiseToml {
             if opts.os.is_some() || !opts.install_env.is_empty() {
                 return false;
             }
-            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
-                if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
-                    // in this case the options specified are the same as in the registry so output no options and rely on the defaults
-                    return true;
-                }
-            }
+            // if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
+            //     if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
+            //         // in this case the options specified are the same as in the registry so output no options and rely on the defaults
+            //         return true;
+            //     }
+            // }
             opts.is_empty()
         };
         existing.0 = versions
@@ -353,7 +356,7 @@ impl ConfigFile for MiseToml {
             .unwrap();
 
         // create a key from the short name preserving any decorations like prefix/suffix if the key already exists
-        let key = get_key_with_decor(tools, ba.short.as_str());
+        let key = get_key_with_decor(tools, &ba.short_opts());
 
         // if a short name is used like "node", make sure we remove any long names like "core:node"
         if ba.short != ba.full() {
@@ -439,11 +442,7 @@ impl ConfigFile for MiseToml {
                     for v in options.opts.values_mut() {
                         *v = self.parse_template(v)?;
                     }
-                    let mut ba = ba.clone();
-                    let mut ba_opts = ba.opts().clone();
-                    ba_opts.merge(&options.opts);
-                    ba.set_opts(Some(ba_opts.clone()));
-                    ToolRequest::new_opts(ba, &version, options, source.clone())?
+                    ToolRequest::new_opts(ba.clone(), &version, options, source.clone())?
                 } else {
                     ToolRequest::new(ba.clone(), &version, source.clone())?
                 };

@@ -1,10 +1,10 @@
 use crate::backend::backend_type::BackendType;
-use crate::backend::{ABackend, unalias_backend};
+use crate::backend::{ABackend, BackendOptions, unalias_backend};
 use crate::config::Config;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
+use crate::toolset::install_state;
 use crate::toolset::install_state::InstallStateTool;
-use crate::toolset::{ToolVersionOptions, install_state, parse_tool_options};
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
@@ -29,7 +29,7 @@ pub struct BackendArg {
     pub installs_path: PathBuf,
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
-    pub opts: Option<ToolVersionOptions>,
+    pub opts: Option<BackendOptions>,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
 }
@@ -61,7 +61,7 @@ impl BackendArg {
         let mut opts = None;
         if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(tool_name) {
             tool_name = c.get(1).unwrap().as_str();
-            opts = Some(parse_tool_options(c.get(2).unwrap().as_str()));
+            opts = Some(parse_options(c.get(2).unwrap().as_str()));
         }
 
         Self::new_raw(short.clone(), full.clone(), tool_name.to_string(), opts)
@@ -71,7 +71,7 @@ impl BackendArg {
         short: String,
         full: Option<String>,
         tool_name: String,
-        opts: Option<ToolVersionOptions>,
+        opts: Option<BackendOptions>,
     ) -> Self {
         let pathname = short.to_kebab_case();
         Self {
@@ -125,6 +125,20 @@ impl BackendArg {
         BackendType::Unknown
     }
 
+    pub fn short_opts(&self) -> String {
+        let short_opts = self.short.clone();
+        let opts = self.opts().opts;
+        if !opts.is_empty() {
+            let opts: Vec<String> = opts
+                .iter()
+                .filter(|(_, v)| !v.is_empty())
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect();
+            return format!("{}[{}]", self.short, opts.join(","));
+        }
+        short_opts
+    }
+
     pub fn full(&self) -> String {
         let short = unalias_backend(&self.short);
         if config::is_loaded() {
@@ -167,18 +181,14 @@ impl BackendArg {
         }
     }
 
-    pub fn opts(&self) -> ToolVersionOptions {
+    pub fn opts(&self) -> BackendOptions {
         self.opts.clone().unwrap_or_else(|| {
             if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&self.full()) {
-                parse_tool_options(c.get(2).unwrap().as_str())
+                parse_options(c.get(2).unwrap().as_str())
             } else {
-                ToolVersionOptions::default()
+                BackendOptions::default()
             }
         })
-    }
-
-    pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
-        self.opts = opts;
     }
 
     pub fn tool_name(&self) -> String {
@@ -262,10 +272,54 @@ impl Hash for BackendArg {
     }
 }
 
+pub fn parse_options(s: &str) -> BackendOptions {
+    let mut bo = BackendOptions::default();
+    for opt in s.split(',') {
+        let (k, v) = opt.split_once('=').unwrap_or((opt, ""));
+        if k.is_empty() {
+            continue;
+        }
+        bo.opts.insert(k.to_string(), v.to_string());
+    }
+    bo
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::{assert_eq, assert_str_eq};
+
+    #[test]
+    fn test_backend_options() {
+        let t = |input, f| {
+            let opts = super::parse_options(input);
+            assert_eq!(opts, f);
+        };
+        t("", BackendOptions::default());
+        t(
+            "exe=rg",
+            BackendOptions {
+                opts: [("exe".to_string(), "rg".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect(),
+                ..Default::default()
+            },
+        );
+        t(
+            "exe=rg,match=musl",
+            BackendOptions {
+                opts: [
+                    ("exe".to_string(), "rg".to_string()),
+                    ("match".to_string(), "musl".to_string()),
+                ]
+                .iter()
+                .cloned()
+                .collect(),
+                ..Default::default()
+            },
+        );
+    }
 
     #[test]
     fn test_backend_arg() {
