@@ -1,5 +1,19 @@
 # Changelog
 
+## [2025.4.6](https://github.com/jdx/mise/compare/v2025.4.5..v2025.4.6) - 2025-04-20
+
+### 🚀 Features
+
+- **(go)** support build tags by [@bamorim](https://github.com/bamorim) in [#4863](https://github.com/jdx/mise/pull/4863)
+
+### 📚 Documentation
+
+- fix typo in go backend tags option title by [@bamorim](https://github.com/bamorim) in [#4884](https://github.com/jdx/mise/pull/4884)
+
+### New Contributors
+
+- @bamorim made their first contribution in [#4884](https://github.com/jdx/mise/pull/4884)
+
 ## [2025.4.5](https://github.com/jdx/mise/compare/v2025.4.4..v2025.4.5) - 2025-04-18
 
 ### 🐛 Bug Fixes
