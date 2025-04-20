@@ -1122,7 +1122,7 @@ a quick way for mise to query for new versions. This host regularly grabs all th
 latest versions of core and community plugins. It's faster than running a plugin's
 `list-all` command and gets around GitHub rate limiting problems when using it.
 
-See [FAQ](/faq.html#new-version-of-a-tool-is-not-available) for more information.
+See [Troubleshooting](/troubleshooting.html#new-version-of-a-tool-is-not-available) for more information.
 """
 
 [verbose]
