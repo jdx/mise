@@ -1,0 +1,16 @@
+{
+    "name": "mise-en-place",
+    "id": "mise",
+    "version": "1.0.0",
+    "description": "Installs the mise CLI",
+    "options": {
+        "shims": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable activation of mise shims"
+        }
+    },
+    "installsAfter": [
+        "ghcr.io/devcontainers/features/common-utils"
+    ]
+}

@@ -1,0 +1,6 @@
+[tools]
+"npm:@devcontainers/cli" = "latest"
+
+[tasks.test]
+description = "Run all tests"
+run = "devcontainer features test --features mise --remote-user mise --base-image mcr.microsoft.com/devcontainers/base:ubuntu ."
