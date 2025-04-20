@@ -493,6 +493,12 @@ impl Task {
         if let Some(dir) = &mut self.dir {
             *dir = tera.render_str(dir, &tera_ctx)?;
         }
+        if let Some(shell) = &mut self.shell {
+            *shell = tera.render_str(shell, &tera_ctx)?;
+        }
+        for (_, v) in &mut self.tools {
+            *v = tera.render_str(v, &tera_ctx)?;
+        }
         Ok(())
     }
 
