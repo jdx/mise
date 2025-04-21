@@ -10,10 +10,15 @@
             "default": "latest",
             "description": "Install a specific version"
         },
-        "shims": {
-            "type": "boolean",
-            "default": false,
-            "description": "Use shims for activate"
+        "systemActivate": {
+            "type": "string",
+            "proposals": [
+                "none",
+                "path",
+                "shims"
+            ],
+            "default": "path",
+            "description": "Select how to activate mise in the system. `none` means no activation, `path` means add to PATH, and `shims` means use shims to activate."
         }
     },
     "installsAfter": [

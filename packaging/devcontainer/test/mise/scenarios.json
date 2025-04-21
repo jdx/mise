@@ -6,11 +6,27 @@
             }
         }
     },
-    "shims": {
+    "activate-none": {
         "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
         "features": {
             "mise": {
-                "shims": true
+                "systemActivate": "none"
+            }
+        }
+    },
+    "activate-path": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "mise": {
+                "systemActivate": "path"
+            }
+        }
+    },
+    "activate-shims": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "mise": {
+                "systemActivate": "shims"
             }
         }
     },

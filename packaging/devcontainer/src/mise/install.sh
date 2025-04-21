@@ -7,7 +7,6 @@ MISE_CLI_INSTALLER_GPG_KEY="0x7413A06D"
 export MISE_INSTALL_PATH="/usr/local/bin/mise"
 
 # Feature options
-SHIMS=${SHIMS:-false}
 if [ ! "$VERSION" = "latest" ]; then
     export MISE_VERSION="$VERSION"
 fi
@@ -119,14 +118,16 @@ install_mise_activate() {
     fi
 
     echo "Activating mise for $shell..."
-
-    echo >> $rc
-    echo "# Activate mise" >> $rc
-    if [ "$SHIMS" = "true" ]; then
-        echo "eval \"\$(mise activate $shell --shims)\"" >> $rc
-    else
-        echo "eval \"\$(mise activate $shell)\"" >> $rc
-    fi
+    case "$SYSTEMACTIVATE" in
+        path)
+            echo >> $rc
+            echo "eval \"\$(mise activate $shell)\"" >> $rc
+            ;;
+        shims)
+            echo >> $rc
+            echo "eval \"\$(mise activate $shell --shims)\"" >> $rc
+            ;;
+    esac
 }
 
 check_packages curl ca-certificates apt-transport-https dirmngr gnupg2

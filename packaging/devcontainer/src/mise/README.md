@@ -16,7 +16,7 @@ Installs the mise CLI
 | Options Id | Description | Type | Default Value |
 |-----|-----|-----|-----|
 | version | Install a specific version | string | latest |
-| shims | Use shims for activate | boolean | false |
+| systemActivate | Select how to activate mise in the system. `none` means no activation, `path` means add to PATH, and `shims` means use shims to activate. | string | path |
 
 
 
