@@ -7,7 +7,7 @@ Installs the mise CLI
 
 ```json
 "features": {
-    "ghcr.io/jdx/mise/mise:1": {}
+    "ghcr.io/jdx/devcontainer-features/mise:1": {}
 }
 ```
 

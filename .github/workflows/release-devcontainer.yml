@@ -1,0 +1,26 @@
+name: "Release dev container features"
+
+# This is sample workflow to publish dev container features
+# TODO: Integrate with a release.yml
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish
+        uses: devcontainers/action@v1
+        with:
+          publish-features: "true"
+          base-path-to-features: "./packaging/devcontainer/src"
+          disable-repo-tagging: "true"
+          features-namespace: "atty303/devcontainer-features"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
