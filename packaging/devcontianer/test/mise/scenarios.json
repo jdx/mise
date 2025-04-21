@@ -1,12 +1,5 @@
 {
-    "default-debian": {
-        "image": "mcr.microsoft.com/devcontainers/base:debian",
-        "features": {
-            "mise": {
-            }
-        }
-    },
-    "default-ubuntu": {
+    "default": {
         "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
         "features": {
             "mise": {
