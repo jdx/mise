@@ -1,6 +1,10 @@
 [tools]
 "npm:@devcontainers/cli" = "latest"
 
+[tasks.generate-docs]
+description = "Generate documentation"
+run = "devcontainer features generate-docs -n jdx/mise -p src"
+
 [tasks.test-default]
 description = "Run default test"
 run = "devcontainer features test --skip-scenarios ."
