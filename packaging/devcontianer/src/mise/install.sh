@@ -8,8 +8,9 @@ export MISE_INSTALL_PATH="/usr/local/bin/mise"
 
 # Feature options
 SHIMS=${SHIMS:-false}
-echo "Options:"
-echo "- SHIMS: ${SHIMS}"
+if [ ! "$VERSION" = "latest" ]; then
+    export MISE_VERSION="$VERSION"
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
     echo -e 'Script must be run as root. Use sudo, su, or add "USER root" to your Dockerfile before running this script.'
@@ -20,31 +21,30 @@ export DEBIAN_FRONTEND=noninteractive
 
 # Get the list of GPG key servers that are reachable
 get_gpg_key_servers() {
-    declare -A keyservers_curl_map=(
-        ["hkp://keyserver.ubuntu.com"]="http://keyserver.ubuntu.com:11371"
-        ["hkp://keyserver.ubuntu.com:80"]="http://keyserver.ubuntu.com"
-        ["hkps://keys.openpgp.org"]="https://keys.openpgp.org"
-        ["hkp://keyserver.pgp.com"]="http://keyserver.pgp.com:11371"
-    )
+    keyservers="hkp://keyserver.ubuntu.com hkp://keyserver.ubuntu.com:80 hkps://keys.openpgp.org hkp://keyserver.pgp.com"
+    urls="http://keyserver.ubuntu.com:11371 http://keyserver.ubuntu.com https://keys.openpgp.org http://keyserver.pgp.com:11371"
 
-    local curl_args=""
-    local keyserver_reachable=false  # Flag to indicate if any keyserver is reachable
+    curl_args=""
+    keyserver_reachable=0
 
-    if [ ! -z "${KEYSERVER_PROXY}" ]; then
-        curl_args="--proxy ${KEYSERVER_PROXY}"
+    if [ -n "$KEYSERVER_PROXY" ]; then
+        curl_args="--proxy $KEYSERVER_PROXY"
     fi
 
-    for keyserver in "${!keyservers_curl_map[@]}"; do
-        local keyserver_curl_url="${keyservers_curl_map[${keyserver}]}"
-        if curl -s ${curl_args} --max-time 5 ${keyserver_curl_url} > /dev/null; then
+    i=1
+    for keyserver in $keyservers; do
+        # nth URL
+        url=$(echo "$urls" | cut -d' ' -f"$i")
+        if curl -s $curl_args --max-time 5 "$url" > /dev/null; then
             echo "keyserver ${keyserver}"
-            keyserver_reachable=true
+            keyserver_reachable=1
         else
-            echo "(*) Keyserver ${keyserver} is not reachable." >&2
+            echo "(*) Keyserver $keyserver is not reachable." >&2
         fi
+        i=$((i + 1))
     done
 
-    if ! $keyserver_reachable; then
+    if [ "$keyserver_reachable" -ne 1 ]; then
         echo "(!) No keyserver is reachable." >&2
         exit 1
     fi
@@ -52,8 +52,8 @@ get_gpg_key_servers() {
 
 # Import the specified key in a variable name passed in as
 receive_gpg_keys() {
-    local keys=${!1}
-    local keyring_args=""
+    keys="$1"
+    keyring_args=""
     if [ ! -z "$2" ]; then
         keyring_args="--no-default-keyring --keyring $2"
     fi
@@ -69,8 +69,8 @@ receive_gpg_keys() {
     chmod 700 ${GNUPGHOME}
     echo -e "disable-ipv6\n$(get_gpg_key_servers)" > ${GNUPGHOME}/dirmngr.conf
     # GPG key download sometimes fails for some reason and retrying fixes it.
-    local retry_count=0
-    local gpg_ok="false"
+    retry_count=0
+    gpg_ok="false"
     set +e
     until [ "${gpg_ok}" = "true" ] || [ "${retry_count}" -eq "5" ];
     do
@@ -78,7 +78,7 @@ receive_gpg_keys() {
         ( echo "${keys}" | xargs -n 1 gpg -q ${keyring_args} --recv-keys) 2>&1 && gpg_ok="true"
         if [ "${gpg_ok}" != "true" ]; then
             echo "(*) Failed getting key, retrying in 10s..."
-            (( retry_count++ ))
+            retry_count=$((retry_count + 1))
             sleep 10s
         fi
     done
@@ -86,6 +86,13 @@ receive_gpg_keys() {
     if [ "${gpg_ok}" = "false" ]; then
         echo "(!) Failed to get gpg key."
         exit 1
+    fi
+}
+
+apt_get_update() {
+    if [ "$(find /var/lib/apt/lists/* | wc -l)" = "0" ]; then
+        echo "Running apt-get update..."
+        apt-get update -y
     fi
 }
 
@@ -98,8 +105,8 @@ check_packages() {
 }
 
 install_mise_activate() {
-    local shell=$1
-    local rc=$2
+    shell=$1
+    rc=$2
 
     if ! command -v $shell > /dev/null 2>&1; then
         echo "(*) $shell not found. Skipping mise activate for $shell."
@@ -114,9 +121,10 @@ install_mise_activate() {
 
     echo >> $rc
     echo "# Activate mise" >> $rc
-    echo "eval \"\$(mise activate $shell)\"" >> $rc
     if [ "$SHIMS" = "true" ]; then
         echo "eval \"\$(mise activate $shell --shims)\"" >> $rc
+    else
+        echo "eval \"\$(mise activate $shell)\"" >> $rc
     fi
 }
 
@@ -124,11 +132,11 @@ check_packages curl ca-certificates apt-transport-https dirmngr gnupg2
 
 # Import the GPG key for the mise CLI
 . /etc/os-release
-receive_gpg_keys MISE_CLI_INSTALLER_GPG_KEY /usr/share/keyrings/mise-installer-keyring.gpg
+receive_gpg_keys $MISE_CLI_INSTALLER_GPG_KEY
 
 # Run the mise CLI installer
 echo "Installing mise CLI..."
-curl -#flo https://mise.jdx.dev/install.sh.sig | gpg --decrypt | sh
+curl -s https://mise.jdx.dev/install.sh.sig | gpg --decrypt | sh
 
 chmod +x ${MISE_INSTALL_PATH}
 chown ${_REMOTE_USER} ${MISE_INSTALL_PATH}

@@ -1,0 +1,54 @@
+{
+    "default-debian": {
+        "image": "mcr.microsoft.com/devcontainers/base:debian",
+        "features": {
+            "mise": {
+            }
+        }
+    },
+    "default-ubuntu": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "mise": {
+            }
+        }
+    },
+    "shims": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "mise": {
+                "shims": true
+            }
+        }
+    },
+    "specify-user": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "ghcr.io/devcontainers/features/common-utils:2": {
+                "username": "mise"
+            },
+            "mise": {
+                "version": "v2025.4.1"
+            }
+        },
+        "remoteUser": "mise"
+    },
+    "specify-version": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "mise": {
+                "version": "v2025.4.1"
+            }
+        }
+    },
+    "activate-zsh": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "ghcr.io/devcontainers/features/common-utils:2": {
+                "installZsh": true
+            },
+            "mise": {
+            }
+        }
+    }
+}

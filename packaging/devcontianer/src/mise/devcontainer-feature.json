@@ -3,11 +3,17 @@
     "id": "mise",
     "version": "1.0.0",
     "description": "Installs the mise CLI",
+    "licenseURL": "https://raw.githubusercontent.com/jdx/mise/refs/heads/main/LICENSE",
     "options": {
+        "version": {
+            "type": "string",
+            "default": "latest",
+            "description": "Install a specific version"
+        },
         "shims": {
             "type": "boolean",
             "default": false,
-            "description": "Enable activation of mise shims"
+            "description": "Use shims for activate"
         }
     },
     "installsAfter": [
