@@ -732,13 +732,13 @@ impl AquaMinisign {
         self.r#type.as_ref().unwrap()
     }
     pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(&self.url.as_ref().unwrap(), v, &Default::default())
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
     }
     pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(&self.asset.as_ref().unwrap(), v, &Default::default())
+        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &Default::default())
     }
     pub fn public_key(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(&self.public_key.as_ref().unwrap(), v, &Default::default())
+        pkg.parse_aqua_str(self.public_key.as_ref().unwrap(), v, &Default::default())
     }
 
     fn merge(&mut self, other: Self) {
