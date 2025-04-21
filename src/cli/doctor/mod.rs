@@ -414,7 +414,12 @@ fn mise_dirs() -> Vec<(String, &'static Path)> {
 }
 
 fn mise_env_vars() -> Vec<(String, String)> {
-    const REDACT_KEYS: &[&str] = &["MISE_GITHUB_TOKEN"];
+    const REDACT_KEYS: &[&str] = &[
+        "MISE_GITHUB_TOKEN",
+        "MISE_GITLAB_TOKEN",
+        "MISE_GITHUB_ENTERPRISE_TOKEN",
+        "MISE_GITLAB_ENTERPRISE_TOKEN",
+    ];
     env::vars()
         .filter(|(k, _)| k.starts_with("MISE_"))
         .map(|(k, v)| {
