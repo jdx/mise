@@ -1,27 +1,21 @@
 {
-    "name": "mise-en-place",
-    "id": "mise",
-    "version": "1.0.0",
-    "description": "Installs the mise CLI",
-    "licenseURL": "https://raw.githubusercontent.com/jdx/mise/refs/heads/main/LICENSE",
-    "options": {
-        "version": {
-            "type": "string",
-            "default": "latest",
-            "description": "Install a specific version"
-        },
-        "systemActivate": {
-            "type": "string",
-            "proposals": [
-                "none",
-                "path",
-                "shims"
-            ],
-            "default": "path",
-            "description": "Select how to activate mise in the system. `none` means no activation, `path` means add to PATH, and `shims` means use shims to activate."
-        }
+  "name": "mise-en-place",
+  "id": "mise",
+  "version": "1.0.0",
+  "description": "Installs the mise CLI",
+  "licenseURL": "https://raw.githubusercontent.com/jdx/mise/refs/heads/main/LICENSE",
+  "options": {
+    "version": {
+      "type": "string",
+      "default": "latest",
+      "description": "Install a specific version"
     },
-    "installsAfter": [
-        "ghcr.io/devcontainers/features/common-utils"
-    ]
+    "systemActivate": {
+      "type": "string",
+      "proposals": ["none", "path", "shims"],
+      "default": "path",
+      "description": "Select how to activate mise in the system. `none` means no activation, `path` means add to PATH, and `shims` means use shims to activate."
+    }
+  },
+  "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
 }
