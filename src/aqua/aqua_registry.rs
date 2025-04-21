@@ -109,6 +109,13 @@ pub enum AquaChecksumType {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum AquaMinisignType {
+    GithubRelease,
+    Http,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaCosignSignature {
     pub r#type: Option<String>,
     pub repo_owner: Option<String>,
@@ -142,9 +149,12 @@ pub struct AquaSlsaProvenance {
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaMinisign {
     pub enabled: Option<bool>,
-    pub r#type: String,
-    pub url: String,
-    pub public_key: String,
+    pub r#type: Option<AquaMinisignType>,
+    pub repo_owner: Option<String>,
+    pub repo_name: Option<String>,
+    pub url: Option<String>,
+    pub asset: Option<String>,
+    pub public_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -718,25 +728,40 @@ impl AquaSlsaProvenance {
 }
 
 impl AquaMinisign {
+    pub fn _type(&self) -> &AquaMinisignType {
+        self.r#type.as_ref().unwrap()
+    }
     pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(&self.url, v, &Default::default())
+        pkg.parse_aqua_str(&self.url.as_ref().unwrap(), v, &Default::default())
+    }
+    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        pkg.parse_aqua_str(&self.asset.as_ref().unwrap(), v, &Default::default())
     }
     pub fn public_key(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(&self.public_key, v, &Default::default())
+        pkg.parse_aqua_str(&self.public_key.as_ref().unwrap(), v, &Default::default())
     }
 
     fn merge(&mut self, other: Self) {
         if let Some(enabled) = other.enabled {
             self.enabled = Some(enabled);
         }
-        if !other.r#type.is_empty() {
-            self.r#type = other.r#type;
+        if let Some(r#type) = other.r#type {
+            self.r#type = Some(r#type);
         }
-        if !other.url.is_empty() {
-            self.url = other.url;
+        if let Some(repo_owner) = other.repo_owner {
+            self.repo_owner = Some(repo_owner);
         }
-        if !other.public_key.is_empty() {
-            self.public_key = other.public_key;
+        if let Some(repo_name) = other.repo_name {
+            self.repo_name = Some(repo_name);
+        }
+        if let Some(url) = other.url {
+            self.url = Some(url);
+        }
+        if let Some(asset) = other.asset {
+            self.asset = Some(asset);
+        }
+        if let Some(public_key) = other.public_key {
+            self.public_key = Some(public_key);
         }
     }
 }
