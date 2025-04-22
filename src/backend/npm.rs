@@ -47,8 +47,8 @@ impl Backend for NPMBackend {
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
         timeout::run_with_timeout(
             || {
-                self.latest_version_cache
-                    .get_or_try_init(|| {
+                // self.latest_version_cache
+                //     .get_or_try_init(|| {
                         let raw =
                             cmd!(NPM_PROGRAM, "view", self.tool_name(), "dist-tags", "--json")
                                 .full_env(self.dependency_env()?)
@@ -59,8 +59,8 @@ impl Backend for NPMBackend {
                             _ => self.latest_version(Some("latest".into())).unwrap(),
                         };
                         Ok(latest)
-                    })
-                    .cloned()
+                    // })
+                    // .cloned()
             },
             SETTINGS.fetch_remote_versions_timeout(),
         )

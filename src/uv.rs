@@ -6,7 +6,7 @@ use crate::{dirs, file};
 use eyre::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::LazyLock as Lazy;
+use std::sync::{LazyLock as Lazy, Mutex};
 
 #[derive(Debug)]
 pub struct Venv {
@@ -14,7 +14,9 @@ pub struct Venv {
     pub env: HashMap<String, String>,
 }
 
-pub static UV_VENV: Lazy<Option<Venv>> = Lazy::new(|| {
+// use a mutex to prevent deadlocks that may occur due to recursive initialization
+// when resolving the venv path or env vars
+pub static UV_VENV: Mutex<Lazy<Option<Venv>>> = Mutex::new(Lazy::new(|| {
     if !SETTINGS.python.uv_venv_auto {
         return None;
     }
@@ -27,7 +29,7 @@ pub static UV_VENV: Lazy<Option<Venv>> = Lazy::new(|| {
         }
     }
     None
-});
+}));
 
 fn get_or_create_venv(venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
     SETTINGS.ensure_experimental("uv venv auto")?;

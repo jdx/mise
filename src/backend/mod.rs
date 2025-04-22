@@ -630,11 +630,11 @@ pub trait Backend: Debug + Send + Sync {
         static REMOTE_VERSION_CACHE: Lazy<Mutex<HashMap<String, Arc<VersionCacheManager>>>> =
             Lazy::new(|| Mutex::new(HashMap::new()));
 
-        REMOTE_VERSION_CACHE
-            .lock()
-            .unwrap()
-            .entry(self.ba().full())
-            .or_insert_with(|| {
+        // REMOTE_VERSION_CACHE
+        //     .lock()
+        //     .unwrap()
+        //     .entry(self.ba().full())
+        //     .or_insert_with(|| {
                 let mut cm = CacheManagerBuilder::new(
                     self.ba().cache_path.join("remote_versions.msgpack.z"),
                 )
@@ -646,8 +646,8 @@ pub trait Backend: Debug + Send + Sync {
                 }
 
                 Arc::new(cm.build())
-            })
-            .clone()
+            // })
+            // .clone()
     }
 
     fn verify_checksum(
