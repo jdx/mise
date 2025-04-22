@@ -514,6 +514,9 @@ impl ConfigFile for MiseToml {
                 let mut hooks = Hook::from_toml(*hook, val.clone())?;
                 for hook in hooks.iter_mut() {
                     hook.script = self.parse_template(&hook.script)?;
+                    if let Some(shell) = &hook.shell {
+                        hook.shell = Some(self.parse_template(shell)?);
+                    }
                 }
                 eyre::Ok(hooks)
             })
