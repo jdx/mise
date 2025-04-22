@@ -1,4 +1,6 @@
-use crate::aqua::aqua_registry::{AQUA_REGISTRY, AquaChecksumType, AquaPackage, AquaPackageType};
+use crate::aqua::aqua_registry::{
+    AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
+};
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
@@ -329,16 +331,37 @@ impl AquaBackend {
                 return Ok(());
             }
             ctx.pr.set_message("verify minisign".to_string());
-            let sig_path = match minisign.r#type.as_str() {
-                "http" => {
+            debug!("minisign: {:?}", minisign);
+            let sig_path = match minisign._type() {
+                AquaMinisignType::GithubRelease => {
+                    let asset = minisign.asset(pkg, v)?;
+                    let repo_owner = minisign
+                        .repo_owner
+                        .clone()
+                        .unwrap_or_else(|| pkg.repo_owner.clone());
+                    let repo_name = minisign
+                        .repo_name
+                        .clone()
+                        .unwrap_or_else(|| pkg.repo_name.clone());
+                    let url = github::get_release(&format!("{repo_owner}/{repo_name}"), v)?
+                        .assets
+                        .into_iter()
+                        .find(|a| a.name == asset)
+                        .map(|a| a.browser_download_url);
+                    if let Some(url) = url {
+                        let path = tv.download_path().join(asset);
+                        HTTP.download_file(&url, &path, Some(&ctx.pr))?;
+                        path
+                    } else {
+                        warn!("no asset found for minisign of {tv}: {asset}");
+                        return Ok(());
+                    }
+                }
+                AquaMinisignType::Http => {
                     let url = minisign.url(pkg, v)?;
                     let path = tv.download_path().join(filename).with_extension(".minisig");
                     HTTP.download_file(&url, &path, Some(&ctx.pr))?;
                     path
-                }
-                t => {
-                    warn!("unsupported minisign type: {t}");
-                    return Ok(());
                 }
             };
             let data = file::read(tv.download_path().join(filename))?;
