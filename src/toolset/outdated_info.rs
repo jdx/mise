@@ -16,9 +16,9 @@ pub struct OutdatedInfo {
     #[tabled(skip)]
     pub tool_version: ToolVersion,
     pub requested: String,
-    #[tabled(display_with("Self::display_current", self))]
+    #[tabled(display("Self::display_current"))]
     pub current: Option<String>,
-    #[tabled(display_with("Self::display_bump", self))]
+    #[tabled(display("Self::display_bump"))]
     pub bump: Option<String>,
     pub latest: String,
     pub source: ToolSource,
@@ -123,17 +123,17 @@ impl OutdatedInfo {
         Ok(Some(oi))
     }
 
-    fn display_current(&self) -> String {
-        if let Some(current) = &self.current {
-            current.clone()
+    fn display_current(current: &Option<String>) -> String {
+        if let Some(current) = current {
+            current.to_string()
         } else {
             "[MISSING]".to_string()
         }
     }
 
-    fn display_bump(&self) -> String {
-        if let Some(bump) = &self.bump {
-            bump.clone()
+    fn display_bump(bump: &Option<String>) -> String {
+        if let Some(bump) = bump {
+            bump.to_string()
         } else {
             "[NONE]".to_string()
         }

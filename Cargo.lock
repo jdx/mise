@@ -146,18 +146,18 @@ dependencies = [
 
 [[package]]
 name = "ansi-str"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cf4578926a981ab0ca955dc023541d19de37112bc24c1a197bd806d3d86ad1d"
+checksum = "060de1453b69f46304b28274f382132f4e72c55637cf362920926a70d090890d"
 dependencies = [
  "ansitok",
 ]
 
 [[package]]
 name = "ansitok"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "220044e6a1bb31ddee4e3db724d29767f352de47445a6cd75e1a173142136c83"
+checksum = "c0a8acea8c2f1c60f0a92a8cd26bf96ca97db56f10bbcab238bbe0cceba659ee"
 dependencies = [
  "nom 7.1.3",
  "vte",
@@ -233,12 +233,6 @@ name = "arc-swap"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
-
-[[package]]
-name = "arrayvec"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
 name = "arrayvec"
@@ -615,7 +609,7 @@ version = "4.5.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09176aae279615badda0765c0c0b3f6ed53f4709118af73cf4655d85d1530cd7"
 dependencies = [
- "heck 0.5.0",
+ "heck",
  "proc-macro2",
  "quote",
  "syn 2.0.100",
@@ -733,7 +727,7 @@ version = "0.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df20583fae327154743356c4896906bda1aa9b7df30c5aed73a54cf27fede9de"
 dependencies = [
- "heck 0.5.0",
+ "heck",
  "proc-macro2",
  "quote",
  "syn 2.0.100",
@@ -2659,12 +2653,6 @@ dependencies = [
 
 [[package]]
 name = "heck"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
-
-[[package]]
-name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
@@ -3708,7 +3696,7 @@ dependencies = [
  "gix",
  "glob",
  "globset",
- "heck 0.5.0",
+ "heck",
  "homedir",
  "indenter",
  "indexmap 2.9.0",
@@ -4124,9 +4112,9 @@ checksum = "c1b04fb49957986fdce4d6ee7a65027d55d4b6d2265e5848bbb507b58ccfdb6f"
 
 [[package]]
 name = "papergrid"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2b0f8def1f117e13c895f3eda65a7b5650688da29d6ad04635f61bc7b92eebd"
+checksum = "b915f831b85d984193fdc3d3611505871dc139b2534530fa01c1a6a6707b6723"
 dependencies = [
  "ansi-str",
  "ansitok",
@@ -5536,7 +5524,7 @@ version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
 dependencies = [
- "heck 0.5.0",
+ "heck",
  "proc-macro2",
  "quote",
  "rustversion",
@@ -5549,7 +5537,7 @@ version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c77a8c5abcaf0f9ce05d62342b7d298c346515365c36b673df4ebe3ced01fde8"
 dependencies = [
- "heck 0.5.0",
+ "heck",
  "proc-macro2",
  "quote",
  "rustversion",
@@ -5637,9 +5625,9 @@ dependencies = [
 
 [[package]]
 name = "tabled"
-version = "0.17.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6709222f3973137427ce50559cd564dc187a95b9cfe01613d2f4e93610e510a"
+checksum = "121d8171ee5687a4978d1b244f7d99c43e7385a272185a2f1e1fa4dc0979d444"
 dependencies = [
  "ansi-str",
  "ansitok",
@@ -5649,15 +5637,15 @@ dependencies = [
 
 [[package]]
 name = "tabled_derive"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "931be476627d4c54070a1f3a9739ccbfec9b36b39815106a20cce2243bbcefe1"
+checksum = "52d9946811baad81710ec921809e2af67ad77719418673b2a3794932d57b7538"
 dependencies = [
- "heck 0.4.1",
+ "heck",
  "proc-macro-error2",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.100",
 ]
 
 [[package]]
@@ -6151,7 +6139,7 @@ version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c8a2469e56e6e5095c82ccd3afb98dad95f7af7929aab6d8ba8d6e0f73657da"
 dependencies = [
- "arrayvec 0.7.6",
+ "arrayvec",
 ]
 
 [[package]]
@@ -6309,7 +6297,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1706435caf04e58ce1020a4fe18db7354fba447cdffc26273d1a39dc0cf543af"
 dependencies = [
  "clap",
- "heck 0.5.0",
+ "heck",
  "indexmap 2.9.0",
  "itertools 0.14.0",
  "kdl",
@@ -6407,23 +6395,12 @@ dependencies = [
 
 [[package]]
 name = "vte"
-version = "0.10.1"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cbce692ab4ca2f1f3047fcf732430249c0e971bfdd2b234cf2c47ad93af5983"
+checksum = "231fdcd7ef3037e8330d8e17e61011a2c244126acc0a982f4040ac3f9f0bc077"
 dependencies = [
- "arrayvec 0.5.2",
- "utf8parse",
- "vte_generate_state_changes",
-]
-
-[[package]]
-name = "vte_generate_state_changes"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e369bee1b05d510a7b4ed645f5faa90619e05437111783ea5848f28d97d3c2e"
-dependencies = [
- "proc-macro2",
- "quote",
+ "arrayvec",
+ "memchr",
 ]
 
 [[package]]
