@@ -29,7 +29,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::watch_files::WatchFile;
 use crate::{dirs, file};
 
-use super::config_root;
+use super::{ConfigFileType, config_root};
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
@@ -244,6 +244,10 @@ impl MiseToml {
 }
 
 impl ConfigFile for MiseToml {
+    fn config_type(&self) -> ConfigFileType {
+        ConfigFileType::MiseToml
+    }
+
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
