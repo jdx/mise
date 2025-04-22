@@ -65,6 +65,7 @@ pub trait ConfigFile: Debug + Send + Sync {
             None => None,
         }
     }
+    fn config_type(&self) -> ConfigFileType;
     fn config_root(&self) -> PathBuf {
         config_root(self.get_path())
     }
