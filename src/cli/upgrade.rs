@@ -227,8 +227,7 @@ impl Upgrade {
         ui::ctrlc::show_cursor_after_ctrl_c();
         let mut ms = demand::MultiSelect::new("mise upgrade")
             .description("Select tools to upgrade")
-            .filterable(true)
-            .min(1);
+            .filterable(true);
         for out in outdated {
             ms = ms.option(DemandOption::new(out.clone()));
         }
