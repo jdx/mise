@@ -10,6 +10,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
+use crate::{Result, lock_file::LockFile};
 use crate::{cmd, dirs, file, plugins, sysconfig};
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
@@ -48,8 +49,16 @@ impl PythonPlugin {
         self.python_build_path()
             .join("plugins/python-build/bin/python-build")
     }
+    fn lock_pyenv(&self) -> Result<fslock::LockFile> {
+        LockFile::new(&self.python_build_path())
+            .with_callback(|l| {
+                trace!("install_or_update_pyenv {}", l.display());
+            })
+            .lock()
+    }
     fn install_or_update_python_build(&self, ctx: Option<&InstallContext>) -> eyre::Result<()> {
         ensure_not_windows()?;
+        let _lock = self.lock_pyenv();
         if self.python_build_bin().exists() {
             self.update_python_build()
         } else {
