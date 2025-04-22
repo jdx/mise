@@ -49,18 +49,17 @@ impl Backend for NPMBackend {
             || {
                 // self.latest_version_cache
                 //     .get_or_try_init(|| {
-                        let raw =
-                            cmd!(NPM_PROGRAM, "view", self.tool_name(), "dist-tags", "--json")
-                                .full_env(self.dependency_env()?)
-                                .read()?;
-                        let dist_tags: Value = serde_json::from_str(&raw)?;
-                        let latest = match dist_tags["latest"] {
-                            Value::String(ref s) => Some(s.clone()),
-                            _ => self.latest_version(Some("latest".into())).unwrap(),
-                        };
-                        Ok(latest)
-                    // })
-                    // .cloned()
+                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "dist-tags", "--json")
+                    .full_env(self.dependency_env()?)
+                    .read()?;
+                let dist_tags: Value = serde_json::from_str(&raw)?;
+                let latest = match dist_tags["latest"] {
+                    Value::String(ref s) => Some(s.clone()),
+                    _ => self.latest_version(Some("latest".into())).unwrap(),
+                };
+                Ok(latest)
+                // })
+                // .cloned()
             },
             SETTINGS.fetch_remote_versions_timeout(),
         )

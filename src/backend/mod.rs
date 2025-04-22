@@ -635,19 +635,18 @@ pub trait Backend: Debug + Send + Sync {
         //     .unwrap()
         //     .entry(self.ba().full())
         //     .or_insert_with(|| {
-                let mut cm = CacheManagerBuilder::new(
-                    self.ba().cache_path.join("remote_versions.msgpack.z"),
-                )
+        let mut cm =
+            CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
                 .with_fresh_duration(SETTINGS.fetch_remote_versions_cache());
-                if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
-                    cm = cm
-                        .with_fresh_file(plugin_path.clone())
-                        .with_fresh_file(plugin_path.join("bin/list-all"))
-                }
+        if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
+            cm = cm
+                .with_fresh_file(plugin_path.clone())
+                .with_fresh_file(plugin_path.join("bin/list-all"))
+        }
 
-                Arc::new(cm.build())
-            // })
-            // .clone()
+        Arc::new(cm.build())
+        // })
+        // .clone()
     }
 
     fn verify_checksum(
