@@ -1,4 +1,4 @@
-#!/usr/bin/env -S mise x aws-cli@2.22.35 -- bash
+#!/usr/bin/env bash
 set -xeuo pipefail
 #MISE depends=["docs:build"]
 #MISE dir="docs"
@@ -21,4 +21,4 @@ if [ $((RANDOM % 30)) -eq 0 ]; then
   aws s3 rm --recursive --exclude "*" --include "*.html" s3://mise/
 fi
 
-aws s3 cp --recursive .vitepress/dist s3://mise/
+aws s3 cp --recursive --checksum-algorithm CRC32 .vitepress/dist s3://mise/

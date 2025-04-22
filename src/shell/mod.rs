@@ -1,4 +1,5 @@
 use crate::env;
+use itertools::Itertools;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -75,12 +76,28 @@ pub trait Shell: Display {
     fn set_env(&self, k: &str, v: &str) -> String;
     fn prepend_env(&self, k: &str, v: &str) -> String;
     fn unset_env(&self, k: &str) -> String;
+
+    fn format_activate_prelude(&self, prelude: &[ActivatePrelude]) -> String {
+        prelude
+            .iter()
+            .map(|p| match p {
+                ActivatePrelude::SetEnv(k, v) => self.set_env(k, v),
+                ActivatePrelude::PrependEnv(k, v) => self.prepend_env(k, v),
+            })
+            .join("")
+    }
+}
+
+pub enum ActivatePrelude {
+    SetEnv(String, String),
+    PrependEnv(String, String),
 }
 
 pub struct ActivateOptions {
     pub exe: PathBuf,
     pub flags: String,
     pub no_hook_env: bool,
+    pub prelude: Vec<ActivatePrelude>,
 }
 
 pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {

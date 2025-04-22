@@ -82,7 +82,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise en [-s --shell <SHELL>] [DIR]`](/cli/en.md)
 - [`mise env [FLAGS] [TOOL@VERSION]...`](/cli/env.md)
 - [`mise exec [FLAGS] [TOOL@VERSION]... [-- COMMAND]...`](/cli/exec.md)
-- [`mise fmt [-a --all]`](/cli/fmt.md)
+- [`mise fmt [-a --all] [-s --stdin]`](/cli/fmt.md)
 - [`mise generate <SUBCOMMAND>`](/cli/generate.md)
 - [`mise generate bootstrap [FLAGS]`](/cli/generate/bootstrap.md)
 - [`mise generate config [-t --tool-versions <TOOL_VERSIONS>] [-o --output <OUTPUT>]`](/cli/generate/config.md)

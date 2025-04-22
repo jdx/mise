@@ -59,6 +59,14 @@ impl ToolVersionOptions {
         self.opts.get(key)
     }
 
+    pub fn merge(&mut self, other: &BTreeMap<String, String>) {
+        for (key, value) in other {
+            self.opts
+                .entry(key.to_string())
+                .or_insert(value.to_string());
+        }
+    }
+
     pub fn contains_key(&self, key: &str) -> bool {
         self.opts.contains_key(key)
     }
@@ -519,7 +527,7 @@ impl Toolset {
             env.insert(PATH_KEY.to_string(), add_paths);
         }
         env.extend(config.env()?.clone());
-        if let Some(venv) = &*UV_VENV {
+        if let Ok(Some(venv)) = UV_VENV.try_lock().as_deref() {
             for (k, v) in &venv.env {
                 env.insert(k.clone(), v.clone());
             }
@@ -573,7 +581,7 @@ impl Toolset {
         for p in config.path_dirs()?.clone() {
             paths.insert(p);
         }
-        if let Some(venv) = &*UV_VENV {
+        if let Ok(Some(venv)) = UV_VENV.try_lock().as_deref() {
             paths.insert(venv.venv_path.clone());
         }
         if let Some(path) = self.env(config)?.get(&*PATH_KEY) {

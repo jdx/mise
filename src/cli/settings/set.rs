@@ -2,7 +2,7 @@ use eyre::{Result, bail, eyre};
 use toml_edit::DocumentMut;
 
 use crate::config::settings::{SETTINGS_META, SettingsFile, SettingsType};
-use crate::{config, file};
+use crate::{config, duration, file};
 
 /// Add/update a setting
 ///
@@ -107,7 +107,7 @@ fn parse_i64(value: &str) -> Result<toml_edit::Value> {
 }
 
 fn parse_duration(value: &str) -> Result<toml_edit::Value> {
-    humantime::parse_duration(value)?;
+    duration::parse_duration(value)?;
     Ok(value.into())
 }
 

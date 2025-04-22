@@ -150,10 +150,7 @@ impl Hook {
 
 fn execute(ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
     SETTINGS.ensure_experimental("hooks")?;
-    #[cfg(unix)]
-    let shell = shell_words::split(&SETTINGS.unix_default_inline_shell_args)?;
-    #[cfg(windows)]
-    let shell = shell_words::split(&SETTINGS.windows_default_inline_shell_args)?;
+    let shell = SETTINGS.default_inline_shell()?;
 
     let args = shell
         .iter()

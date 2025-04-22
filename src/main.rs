@@ -42,6 +42,7 @@ mod fake_asdf;
 mod file;
 mod git;
 pub(crate) mod github;
+pub(crate) mod gitlab;
 mod gpg;
 mod hash;
 mod hook_env;

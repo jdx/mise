@@ -1,5 +1,325 @@
 # Changelog
 
+## [2025.4.6](https://github.com/jdx/mise/compare/v2025.4.5..v2025.4.6) - 2025-04-22
+
+### 🚀 Features
+
+- **(aqua)** support github_release minisign type by [@risu729](https://github.com/risu729) in [#4897](https://github.com/jdx/mise/pull/4897)
+- **(go)** support build tags by [@bamorim](https://github.com/bamorim) in [#4863](https://github.com/jdx/mise/pull/4863)
+- **(registry)** added Signadot by [@joehorsnell](https://github.com/joehorsnell) in [#4868](https://github.com/jdx/mise/pull/4868)
+- added `idiomatic_version_file_enable_tools` and deprecated `idiomatic_version_file_disable_tools` by [@jdx](https://github.com/jdx) in [#4902](https://github.com/jdx/mise/pull/4902)
+
+### 🐛 Bug Fixes
+
+- **(doctor)** redact gitlab/enterprise tokens by [@risu729](https://github.com/risu729) in [#4888](https://github.com/jdx/mise/pull/4888)
+- **(task)** enable templates in shell and tools of tasks by [@risu729](https://github.com/risu729) in [#4887](https://github.com/jdx/mise/pull/4887)
+- allow interactive upgrade to select nothing by [@risu729](https://github.com/risu729) in [#4891](https://github.com/jdx/mise/pull/4891)
+- enable templates for shell of hooks by [@risu729](https://github.com/risu729) in [#4893](https://github.com/jdx/mise/pull/4893)
+
+### 📚 Documentation
+
+- fix typo in go backend tags option title by [@bamorim](https://github.com/bamorim) in [#4884](https://github.com/jdx/mise/pull/4884)
+- update link to faq in use_versions_host by [@risu729](https://github.com/risu729) in [#4890](https://github.com/jdx/mise/pull/4890)
+
+### 🧪 Testing
+
+- remove flaky bazel-watcher by [@jdx](https://github.com/jdx) in [9e95e6a](https://github.com/jdx/mise/commit/9e95e6afd04a43cc7d43e2f2280c7880bb481507)
+
+### New Contributors
+
+- @joehorsnell made their first contribution in [#4868](https://github.com/jdx/mise/pull/4868)
+- @bamorim made their first contribution in [#4884](https://github.com/jdx/mise/pull/4884)
+
+## [2025.4.5](https://github.com/jdx/mise/compare/v2025.4.4..v2025.4.5) - 2025-04-18
+
+### 🐛 Bug Fixes
+
+- **(ubi)** API URL for GitHub should not have /repos segement by [@roele](https://github.com/roele) in [#4848](https://github.com/jdx/mise/pull/4848)
+- **(ubi)** URL syntax fails by [@roele](https://github.com/roele) in [#4859](https://github.com/jdx/mise/pull/4859)
+- allow to install non-numeric elixir versions by [@roele](https://github.com/roele) in [#4850](https://github.com/jdx/mise/pull/4850)
+- removed possible single-point-of-failure while running `mise upgrade` by [@hitblast](https://github.com/hitblast) in [#4847](https://github.com/jdx/mise/pull/4847)
+- `#MISE tools=` in task header by [@jdx](https://github.com/jdx) in [#4860](https://github.com/jdx/mise/pull/4860)
+
+### 🧪 Testing
+
+- fix aqua tool test by [@jdx](https://github.com/jdx) in [4f2c050](https://github.com/jdx/mise/commit/4f2c0505502c1e3c7bf3478d61a2c352591f281c)
+
+### New Contributors
+
+- @hitblast made their first contribution in [#4847](https://github.com/jdx/mise/pull/4847)
+
+## [2025.4.4](https://github.com/jdx/mise/compare/v2025.4.3..v2025.4.4) - 2025-04-15
+
+### 🧪 Testing
+
+- remove kpt test by [@jdx](https://github.com/jdx) in [b9d35ac](https://github.com/jdx/mise/commit/b9d35ac57936291a0a4629f9c200dfdb500a7efb)
+
+## [2025.4.3](https://github.com/jdx/mise/compare/v2025.4.2..v2025.4.3) - 2025-04-15
+
+### 🚀 Features
+
+- **(aqua)** support SLSA source_uri setting by [@scop](https://github.com/scop) in [#4833](https://github.com/jdx/mise/pull/4833)
+- **(aqua)** use source tag in SLSA verification by [@scop](https://github.com/scop) in [#4836](https://github.com/jdx/mise/pull/4836)
+- **(ubi)** add support for self-hosted GitHub/GitLab by [@roele](https://github.com/roele) in [#4765](https://github.com/jdx/mise/pull/4765)
+
+### 📚 Documentation
+
+- Update configuration.md by [@jdx](https://github.com/jdx) in [#4829](https://github.com/jdx/mise/pull/4829)
+- correct `mise use` paths by [@jdx](https://github.com/jdx) in [c8374c0](https://github.com/jdx/mise/commit/c8374c00ca68e5722c28f9abfd2425b9722bdd83)
+
+## [2025.4.2](https://github.com/jdx/mise/compare/v2025.4.1..v2025.4.2) - 2025-04-11
+
+### 🚀 Features
+
+- **(registry)** update aws-nuke backend by [@StingRayZA](https://github.com/StingRayZA) in [#4815](https://github.com/jdx/mise/pull/4815)
+
+### 🐛 Bug Fixes
+
+- do not default to writing to mise.$MISE_ENV.toml by [@jdx](https://github.com/jdx) in [#4817](https://github.com/jdx/mise/pull/4817)
+- mise watch forward --exts and --filter to watchexec by [@cmhms](https://github.com/cmhms) in [#4826](https://github.com/jdx/mise/pull/4826)
+
+### 📚 Documentation
+
+- Fixing typo in code for flags in toml-tasks.md by [@arafays](https://github.com/arafays) in [#4820](https://github.com/jdx/mise/pull/4820)
+- branding by [@jdx](https://github.com/jdx) in [9ad2c17](https://github.com/jdx/mise/commit/9ad2c17ec75b7460ebea09a9f0601a561349cc7f)
+- remove references to not-working docker: tasks by [@jdx](https://github.com/jdx) in [2c2fd27](https://github.com/jdx/mise/commit/2c2fd272e3d76329a7c67e4070bfb122ae1e1120)
+- document some dependencies by [@jdx](https://github.com/jdx) in [6e8bd51](https://github.com/jdx/mise/commit/6e8bd518757c5e49624fc2bef5777a2f2339c304)
+- simplify mise.toml example by [@jdx](https://github.com/jdx) in [66d927b](https://github.com/jdx/mise/commit/66d927ba4db81ba70de261cd76e399e9f4fe35da)
+
+### 📦️ Dependency Updates
+
+- update dependency vitepress-plugin-tabs to ^0.7.0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#4822](https://github.com/jdx/mise/pull/4822)
+- update rust crate petgraph to 0.8 by [@renovate[bot]](https://github.com/renovate[bot]) in [#4823](https://github.com/jdx/mise/pull/4823)
+- update rust crate strum to 0.27 by [@renovate[bot]](https://github.com/renovate[bot]) in [#4780](https://github.com/jdx/mise/pull/4780)
+
+### New Contributors
+
+- @cmhms made their first contribution in [#4826](https://github.com/jdx/mise/pull/4826)
+- @StingRayZA made their first contribution in [#4815](https://github.com/jdx/mise/pull/4815)
+
+## [2025.4.1](https://github.com/jdx/mise/compare/v2025.4.0..v2025.4.1) - 2025-04-09
+
+### 🚀 Features
+
+- **(registry)** added localstack by [@mnm364](https://github.com/mnm364) in [#4785](https://github.com/jdx/mise/pull/4785)
+- **(registry)** added skeema by [@mnm364](https://github.com/mnm364) in [#4786](https://github.com/jdx/mise/pull/4786)
+- **(registry)** add television by [@mangkoran](https://github.com/mangkoran) in [#4778](https://github.com/jdx/mise/pull/4778)
+
+### 🐛 Bug Fixes
+
+- show gh rate limit reset time in local time by [@someoneinjd](https://github.com/someoneinjd) in [#4799](https://github.com/jdx/mise/pull/4799)
+
+### 📚 Documentation
+
+- all experimental note for lockfile by [@zeitlinger](https://github.com/zeitlinger) in [#4781](https://github.com/jdx/mise/pull/4781)
+- Include post about Mise secrets in the context of Swift app dev by [@pepicrft](https://github.com/pepicrft) in [#4809](https://github.com/jdx/mise/pull/4809)
+
+### Chore
+
+- update deps to fix deny check by [@jdx](https://github.com/jdx) in [432023b](https://github.com/jdx/mise/commit/432023b2cd04d2ea7f590d7b338054944512abd0)
+- pin zip to avoid issue with ubi by [@jdx](https://github.com/jdx) in [315deb4](https://github.com/jdx/mise/commit/315deb4e24177408c598d22951adb95f3e841683)
+
+### New Contributors
+
+- @someoneinjd made their first contribution in [#4799](https://github.com/jdx/mise/pull/4799)
+- @mnm364 made their first contribution in [#4786](https://github.com/jdx/mise/pull/4786)
+- @zeitlinger made their first contribution in [#4781](https://github.com/jdx/mise/pull/4781)
+
+## [2025.4.0](https://github.com/jdx/mise/compare/v2025.3.11..v2025.4.0) - 2025-04-02
+
+### 🐛 Bug Fixes
+
+- s/runtimes/tools by [@jdx](https://github.com/jdx) in [#4754](https://github.com/jdx/mise/pull/4754)
+- add clarification on RUSTUP_HOME and CARGO_HOME by [@lachieh](https://github.com/lachieh) in [#4759](https://github.com/jdx/mise/pull/4759)
+- enhance confirmation logic to respect SETTINGS.yes by [@roele](https://github.com/roele) in [#4764](https://github.com/jdx/mise/pull/4764)
+
+### 🚜 Refactor
+
+- **(registry)** use aqua for ubi by [@scop](https://github.com/scop) in [#4745](https://github.com/jdx/mise/pull/4745)
+- **(registry)** use aqua for ksops by [@scop](https://github.com/scop) in [#4746](https://github.com/jdx/mise/pull/4746)
+
+### 📚 Documentation
+
+- mark code block for dnf5 install as shell code by [@sina-hide](https://github.com/sina-hide) in [#4747](https://github.com/jdx/mise/pull/4747)
+- update demo by [@hverlin](https://github.com/hverlin) in [#4350](https://github.com/jdx/mise/pull/4350)
+- move demo to top-level by [@jdx](https://github.com/jdx) in [2b6f45a](https://github.com/jdx/mise/commit/2b6f45ac73d6f59542f9c7b401042ad5c75e37e2)
+- Update config.ts by [@jdx](https://github.com/jdx) in [05ad4bc](https://github.com/jdx/mise/commit/05ad4bc9b2243737c0551fd36de1e37dc57ea578)
+- Update walkthrough.md by [@jdx](https://github.com/jdx) in [89904b4](https://github.com/jdx/mise/commit/89904b46d8649a66bf960b1e5c7c0364dad8f94f)
+- Update index.md by [@jdx](https://github.com/jdx) in [#4750](https://github.com/jdx/mise/pull/4750)
+- Update walkthrough.md by [@jdx](https://github.com/jdx) in [#4751](https://github.com/jdx/mise/pull/4751)
+- Update README.md by [@jdx](https://github.com/jdx) in [4f38142](https://github.com/jdx/mise/commit/4f38142bd3d822c3eafd78a74aa7a8d31791d2e3)
+
+### New Contributors
+
+- @lachieh made their first contribution in [#4759](https://github.com/jdx/mise/pull/4759)
+- @sina-hide made their first contribution in [#4747](https://github.com/jdx/mise/pull/4747)
+
+## [2025.3.11](https://github.com/jdx/mise/compare/v2025.3.10..v2025.3.11) - 2025-03-28
+
+### 🚀 Features
+
+- **(registry)** add protoc-gen-validate by [@akanter](https://github.com/akanter) in [#4703](https://github.com/jdx/mise/pull/4703)
+
+### 🚜 Refactor
+
+- **(registry)** use aqua for swiftlint by [@scop](https://github.com/scop) in [#4726](https://github.com/jdx/mise/pull/4726)
+- **(registry)** use ubi for opensearch-cli by [@scop](https://github.com/scop) in [#4725](https://github.com/jdx/mise/pull/4725)
+- **(registry)** use ubi for mdbook-linkcheck by [@scop](https://github.com/scop) in [#4724](https://github.com/jdx/mise/pull/4724)
+- **(registry)** use ubi for velad by [@scop](https://github.com/scop) in [#4727](https://github.com/jdx/mise/pull/4727)
+
+## [2025.3.10](https://github.com/jdx/mise/compare/v2025.3.9..v2025.3.10) - 2025-03-26
+
+## [2025.3.9](https://github.com/jdx/mise/compare/v2025.3.8..v2025.3.9) - 2025-03-26
+
+### 🚀 Features
+
+- Set usage arguments and flag as environment variables before running the command by [@gturi](https://github.com/gturi) in [#4700](https://github.com/jdx/mise/pull/4700)
+
+### 🚜 Refactor
+
+- **(registry)** use ubi for assh by [@scop](https://github.com/scop) in [#4713](https://github.com/jdx/mise/pull/4713)
+- **(registry)** use ubi for opsgenie-lamp by [@scop](https://github.com/scop) in [#4712](https://github.com/jdx/mise/pull/4712)
+- **(registry)** use ubi for auto-doc by [@scop](https://github.com/scop) in [#4714](https://github.com/jdx/mise/pull/4714)
+- **(registry)** use ubi for getenvoy by [@scop](https://github.com/scop) in [#4715](https://github.com/jdx/mise/pull/4715)
+- **(registry)** use ubi for mockolo by [@scop](https://github.com/scop) in [#4705](https://github.com/jdx/mise/pull/4705)
+- **(registry)** use ubi for haxe by [@scop](https://github.com/scop) in [#4716](https://github.com/jdx/mise/pull/4716)
+- **(registry)** use ubi for helm-diff by [@scop](https://github.com/scop) in [#4717](https://github.com/jdx/mise/pull/4717)
+- **(registry)** use ubi for grain by [@scop](https://github.com/scop) in [#4718](https://github.com/jdx/mise/pull/4718)
+
+## [2025.3.8](https://github.com/jdx/mise/compare/v2025.3.7..v2025.3.8) - 2025-03-24
+
+### 🚀 Features
+
+- **(registry)** add aichat by [@kit494way](https://github.com/kit494way) in [#4691](https://github.com/jdx/mise/pull/4691)
+
+### 🐛 Bug Fixes
+
+- Update flake to fix nix build by [@akanter](https://github.com/akanter) in [#4686](https://github.com/jdx/mise/pull/4686)
+
+### 📚 Documentation
+
+- fix bash completion setup instructions by [@bestagi](https://github.com/bestagi) in [#3920](https://github.com/jdx/mise/pull/3920)
+- small tidy of shims docs by [@AlecRust](https://github.com/AlecRust) in [#4693](https://github.com/jdx/mise/pull/4693)
+
+### Chore
+
+- remove broken ripsecrets test by [@jdx](https://github.com/jdx) in [bb382aa](https://github.com/jdx/mise/commit/bb382aa783a2a1bfc44f02a5bb34f9397efb2e57)
+- make awscli compatible with R2 by [@jdx](https://github.com/jdx) in [cad7fa2](https://github.com/jdx/mise/commit/cad7fa285e96483ba8d6aeb22f83de10e92700b2)
+- enable workflow_dispatch for docs task by [@jdx](https://github.com/jdx) in [b0578db](https://github.com/jdx/mise/commit/b0578db141decc63992ebb0f74e29a53238611ba)
+
+### New Contributors
+
+- @akanter made their first contribution in [#4686](https://github.com/jdx/mise/pull/4686)
+- @bestagi made their first contribution in [#3920](https://github.com/jdx/mise/pull/3920)
+
+## [2025.3.7](https://github.com/jdx/mise/compare/v2025.3.6..v2025.3.7) - 2025-03-21
+
+### 🐛 Bug Fixes
+
+- **(node)** skip gpg verification of sig file not found by [@jdx](https://github.com/jdx) in [#4663](https://github.com/jdx/mise/pull/4663)
+- **(task)** allow args to be used with tera tests by [@risu729](https://github.com/risu729) in [#4605](https://github.com/jdx/mise/pull/4605)
+- Fix syntax error on `activate nu` when PATH contains shims by [@atty303](https://github.com/atty303) in [#4349](https://github.com/jdx/mise/pull/4349)
+
+### 🚜 Refactor
+
+- **(registry)** use ubi for yamlscript by [@scop](https://github.com/scop) in [#4670](https://github.com/jdx/mise/pull/4670)
+
+### 📚 Documentation
+
+- Fix typo in java.md by [@hverlin](https://github.com/hverlin) in [#4672](https://github.com/jdx/mise/pull/4672)
+
+### ◀️ Revert
+
+- "chore: temporarily disable bootstrap test" by [@jdx](https://github.com/jdx) in [#4658](https://github.com/jdx/mise/pull/4658)
+
+### 📦️ Dependency Updates
+
+- update rust crate ctor to 0.4 by [@renovate[bot]](https://github.com/renovate[bot]) in [#4553](https://github.com/jdx/mise/pull/4553)
+
+### Chore
+
+- **(registry)** declare copier by [@looztra](https://github.com/looztra) in [#4669](https://github.com/jdx/mise/pull/4669)
+- Update to the latest version of ubi by [@autarch](https://github.com/autarch) in [#4648](https://github.com/jdx/mise/pull/4648)
+- bump expr by [@jdx](https://github.com/jdx) in [#4666](https://github.com/jdx/mise/pull/4666)
+- added android-sdk by [@jdx](https://github.com/jdx) in [#4668](https://github.com/jdx/mise/pull/4668)
+- rename mise-php to asdf-php by [@jdx](https://github.com/jdx) in [#4674](https://github.com/jdx/mise/pull/4674)
+
+### New Contributors
+
+- @atty303 made their first contribution in [#4349](https://github.com/jdx/mise/pull/4349)
+- @looztra made their first contribution in [#4669](https://github.com/jdx/mise/pull/4669)
+
+## [2025.3.6](https://github.com/jdx/mise/compare/v2025.3.5..v2025.3.6) - 2025-03-18
+
+### Chore
+
+- unpin aws-cli by [@jdx](https://github.com/jdx) in [7fabed5](https://github.com/jdx/mise/commit/7fabed5c70fccfe095647c7b2220965ca2f1c07d)
+- temporarily disable bootstrap test by [@jdx](https://github.com/jdx) in [599258a](https://github.com/jdx/mise/commit/599258aa4f5c0ab0b5581740b0c9eec17f1c7318)
+
+## [2025.3.5](https://github.com/jdx/mise/compare/v2025.3.4..v2025.3.5) - 2025-03-18
+
+### 🚀 Features
+
+- **(registry)** use ubi for glab by [@scop](https://github.com/scop) in [#4643](https://github.com/jdx/mise/pull/4643)
+- ubi forge option support by [@scop](https://github.com/scop) in [#4642](https://github.com/jdx/mise/pull/4642)
+
+### 🐛 Bug Fixes
+
+- **(tera)** use default inline shell to parse exec template by [@risu729](https://github.com/risu729) in [#4645](https://github.com/jdx/mise/pull/4645)
+
+## [2025.3.4](https://github.com/jdx/mise/compare/v2025.3.3..v2025.3.4) - 2025-03-18
+
+### 🐛 Bug Fixes
+
+- Failed to create venv at the same time by multiple uv processes by [@NavyD](https://github.com/NavyD) in [#4640](https://github.com/jdx/mise/pull/4640)
+
+## [2025.3.3](https://github.com/jdx/mise/compare/v2025.3.2..v2025.3.3) - 2025-03-14
+
+### 🚀 Features
+
+- **(env)** support env files in toml by [@risu729](https://github.com/risu729) in [#4618](https://github.com/jdx/mise/pull/4618)
+- **(registry)** add harper-ls and harper-cli by [@kit494way](https://github.com/kit494way) in [#4615](https://github.com/jdx/mise/pull/4615)
+- **(registry)** add curlie by [@reitzig](https://github.com/reitzig) in [#4599](https://github.com/jdx/mise/pull/4599)
+- cleanup the mutex use. by [@boris-smidt-klarrio](https://github.com/boris-smidt-klarrio) in [#4540](https://github.com/jdx/mise/pull/4540)
+- Add flag to fmt command to read from stdin by [@erickgnavar](https://github.com/erickgnavar) in [#4594](https://github.com/jdx/mise/pull/4594)
+
+### 🐛 Bug Fixes
+
+- **(uv)** avoid deadlocks while initializing UV_VENV by [@risu729](https://github.com/risu729) in [#4609](https://github.com/jdx/mise/pull/4609)
+- handle error when getting modified duration in file::modified_duration by [@roele](https://github.com/roele) in [#4624](https://github.com/jdx/mise/pull/4624)
+- SwiftPM backend not working with the Swift 6 toolchain by [@pepicrft](https://github.com/pepicrft) in [#4632](https://github.com/jdx/mise/pull/4632)
+- quiet in file task not working by [@roele](https://github.com/roele) in [#4588](https://github.com/jdx/mise/pull/4588)
+- Unable to find uv when first creating py venv by [@NavyD](https://github.com/NavyD) in [#4591](https://github.com/jdx/mise/pull/4591)
+
+### 🚜 Refactor
+
+- migrate humantime to jiff by [@risu729](https://github.com/risu729) in [#4616](https://github.com/jdx/mise/pull/4616)
+- use method to get the default inline shell instead of accessing the fields by [@risu729](https://github.com/risu729) in [#4621](https://github.com/jdx/mise/pull/4621)
+
+### 📚 Documentation
+
+- **(settings)** clarify the usage of disable_default_registry by [@gbloquel](https://github.com/gbloquel) in [#4589](https://github.com/jdx/mise/pull/4589)
+
+### ⚡ Performance
+
+- speed up self-update by calling /releases/latest api instead of /releases by [@vemoo](https://github.com/vemoo) in [#4619](https://github.com/jdx/mise/pull/4619)
+
+### 🧪 Testing
+
+- **(registry)** fix test of lazyjournal by [@risu729](https://github.com/risu729) in [#4610](https://github.com/jdx/mise/pull/4610)
+
+### Chore
+
+- deny fixes by [@jdx](https://github.com/jdx) in [17d7c6e](https://github.com/jdx/mise/commit/17d7c6ee5e035272a8dc1b93c8fc7ac9cffb7f80)
+- ignore humantime unmaintained advisory by [@risu729](https://github.com/risu729) in [#4612](https://github.com/jdx/mise/pull/4612)
+- remove rustup update in github actions by [@risu729](https://github.com/risu729) in [#4617](https://github.com/jdx/mise/pull/4617)
+
+### New Contributors
+
+- @erickgnavar made their first contribution in [#4594](https://github.com/jdx/mise/pull/4594)
+- @vemoo made their first contribution in [#4619](https://github.com/jdx/mise/pull/4619)
+- @gbloquel made their first contribution in [#4589](https://github.com/jdx/mise/pull/4589)
+
 ## [2025.3.1](https://github.com/jdx/mise/compare/v2025.3.0..v2025.3.1) - 2025-03-06
 
 ### 🚀 Features
@@ -1529,7 +1849,7 @@
 
 ### New Contributors
 
-- @gurgelio made their first contribution in [#3341](https://github.com/jdx/mise/pull/3341)
+- @leogurja made their first contribution in [#3341](https://github.com/jdx/mise/pull/3341)
 - @tmeijn made their first contribution in [#3335](https://github.com/jdx/mise/pull/3335)
 - @boris-smidt-klarrio made their first contribution in [#3336](https://github.com/jdx/mise/pull/3336)
 - @AliSajid made their first contribution in [#3305](https://github.com/jdx/mise/pull/3305)

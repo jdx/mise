@@ -29,7 +29,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::watch_files::WatchFile;
 use crate::{dirs, file};
 
-use super::config_root;
+use super::{ConfigFileType, config_root};
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
@@ -244,6 +244,10 @@ impl MiseToml {
 }
 
 impl ConfigFile for MiseToml {
+    fn config_type(&self) -> ConfigFileType {
+        ConfigFileType::MiseToml
+    }
+
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }
@@ -439,7 +443,11 @@ impl ConfigFile for MiseToml {
                     for v in options.opts.values_mut() {
                         *v = self.parse_template(v)?;
                     }
-                    ToolRequest::new_opts(ba.clone(), &version, options, source.clone())?
+                    let mut ba = ba.clone();
+                    let mut ba_opts = ba.opts().clone();
+                    ba_opts.merge(&options.opts);
+                    ba.set_opts(Some(ba_opts.clone()));
+                    ToolRequest::new_opts(ba, &version, options, source.clone())?
                 } else {
                     ToolRequest::new(ba.clone(), &version, source.clone())?
                 };
@@ -506,6 +514,9 @@ impl ConfigFile for MiseToml {
                 let mut hooks = Hook::from_toml(*hook, val.clone())?;
                 for hook in hooks.iter_mut() {
                     hook.script = self.parse_template(&hook.script)?;
+                    if let Some(shell) = &hook.shell {
+                        hook.shell = Some(self.parse_template(shell)?);
+                    }
                 }
                 eyre::Ok(hooks)
             })

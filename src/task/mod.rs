@@ -1,8 +1,6 @@
 use crate::config::Config;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::task::task_script_parser::{
-    TaskScriptParser, has_any_args_defined, replace_template_placeholders_with_args,
-};
+use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
@@ -172,7 +170,7 @@ impl Task {
         let p = TomlParser::new(&info);
         // trace!("task info: {:#?}", info);
 
-        task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
+        task.description = p.parse_str("description").unwrap_or_default();
         task.aliases = p
             .parse_array("alias")
             .or(p.parse_array("aliases"))
@@ -180,19 +178,26 @@ impl Task {
             .or(p.parse_str("aliases").map(|s| vec![s]))
             .unwrap_or_default();
         task.confirm = p.parse_str("confirm");
-        task.description = p.parse_str("description").unwrap_or_default();
-        task.sources = p.parse_array("sources").unwrap_or_default();
-        task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
         task.depends = p.parse_array("depends").unwrap_or_default();
         task.depends_post = p.parse_array("depends_post").unwrap_or_default();
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
-        task.dir = p.parse_str("dir");
         task.env = p.parse_env("env")?.unwrap_or_default();
+        task.dir = p.parse_str("dir");
+        task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
+        task.raw = p.parse_bool("raw").unwrap_or_default();
+        task.sources = p.parse_array("sources").unwrap_or_default();
+        task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
+        task.quiet = p.parse_bool("quiet").unwrap_or_default();
+        task.silent = p.parse_bool("silent").unwrap_or_default();
         task.tools = p
             .parse_table("tools")
-            .map(|t| t.into_iter().map(|(k, v)| (k, v.to_string())).collect())
+            .map(|t| {
+                t.into_iter()
+                    .filter_map(|(k, v)| v.as_str().map(|v| (k, v.to_string())))
+                    .collect()
+            })
             .unwrap_or_default();
         task.render(config_root)?;
         Ok(task)
@@ -352,14 +357,16 @@ impl Task {
         args: &[String],
         env: &EnvMap,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(cwd, env)?;
+        let (spec, scripts) = self.parse_usage_spec(cwd.clone(), env)?;
         if has_any_args_defined(&spec) {
-            Ok(
-                replace_template_placeholders_with_args(self, &spec, &scripts, args)?
-                    .into_iter()
-                    .map(|s| (s, vec![]))
-                    .collect(),
-            )
+            let scripts = TaskScriptParser::new(cwd).parse_run_scripts_with_args(
+                self,
+                self.run(),
+                env,
+                args,
+                &spec,
+            )?;
+            Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
             Ok(scripts
                 .iter()
@@ -485,6 +492,12 @@ impl Task {
         }
         if let Some(dir) = &mut self.dir {
             *dir = tera.render_str(dir, &tera_ctx)?;
+        }
+        if let Some(shell) = &mut self.shell {
+            *shell = tera.render_str(shell, &tera_ctx)?;
+        }
+        for (_, v) in &mut self.tools {
+            *v = tera.render_str(v, &tera_ctx)?;
         }
         Ok(())
     }

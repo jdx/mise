@@ -32,6 +32,27 @@ depends = ["docs:build"]
 dir = "docs"
 run = "bun run docs:preview"
 
+["docs:demos"]
+description = "Create recordings with vhs"
+dir = "docs"
+run = """
+#!/usr/bin/env bash
+
+if ! docker info > /dev/null 2>&1; then
+  echo "This script uses docker, and it isn't running - please start docker and try again!"
+  exit 1
+fi
+
+vhs() {
+    docker run --rm -v $(pwd)/tapes/:/data -w /data ghcr.io/charmbracelet/vhs "$@"
+}
+
+# Create VHS recordings of all tape files in the assets directory
+for i in $(ls -1 tapes/*.tape); do
+    vhs $(basename $i .tape).tape
+done
+"""
+
 ["render:usage"]
 depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }

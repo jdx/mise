@@ -177,6 +177,10 @@ impl BackendArg {
         })
     }
 
+    pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
+        self.opts = opts;
+    }
+
     pub fn tool_name(&self) -> String {
         let full = self.full();
         let (_backend, tool_name) = full.split_once(':').unwrap_or(("", &full));

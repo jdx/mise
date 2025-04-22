@@ -5,7 +5,7 @@ use crate::config::SETTINGS;
 use crate::duration::{DAILY, WEEKLY};
 use crate::git::{CloneOptions, Git};
 use crate::{dirs, file, hashmap, http};
-use expr::{Context, Parser, Program, Value};
+use expr::{Context, Program, Value};
 use eyre::{ContextCompat, Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -109,6 +109,13 @@ pub enum AquaChecksumType {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum AquaMinisignType {
+    GithubRelease,
+    Http,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaCosignSignature {
     pub r#type: Option<String>,
     pub repo_owner: Option<String>,
@@ -135,14 +142,19 @@ pub struct AquaSlsaProvenance {
     pub repo_name: Option<String>,
     pub url: Option<String>,
     pub asset: Option<String>,
+    pub source_uri: Option<String>,
+    pub source_tag: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaMinisign {
     pub enabled: Option<bool>,
-    pub r#type: String,
-    pub url: String,
-    pub public_key: String,
+    pub r#type: Option<AquaMinisignType>,
+    pub repo_owner: Option<String>,
+    pub repo_name: Option<String>,
+    pub url: Option<String>,
+    pub asset: Option<String>,
+    pub public_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -211,8 +223,7 @@ impl AquaRegistry {
             .next()
             .wrap_err(format!("no package found for {id} in {path:?}"))?;
         if let Some(version_filter) = &pkg.version_filter {
-            // TODO: should this use AquaPackage::expr_parser somehow?
-            pkg.version_filter_expr = Some(Parser::new().compile(version_filter)?);
+            pkg.version_filter_expr = Some(expr::compile(version_filter)?);
         }
         Ok(pkg)
     }
@@ -392,11 +403,11 @@ impl AquaPackage {
         expr.run(program, &self.expr_ctx(v)).map_err(|e| eyre!(e))
     }
 
-    fn expr_parser(&self, v: &str) -> Parser {
+    fn expr_parser(&self, v: &str) -> expr::Environment {
         let prefix = Regex::new(r"^[^0-9.]+").unwrap();
         let ver = versions::Versioning::new(prefix.replace(v, ""));
-        let mut expr = Parser::new();
-        expr.add_function("semver", move |c| {
+        let mut env = expr::Environment::new();
+        env.add_function("semver", move |c| {
             if c.args.len() != 1 {
                 return Err("semver() takes exactly one argument".to_string().into());
             }
@@ -411,7 +422,7 @@ impl AquaPackage {
                 Err("invalid semver".to_string().into())
             }
         });
-        expr
+        env
     }
 
     fn expr_ctx(&self, v: &str) -> Context {
@@ -707,29 +718,50 @@ impl AquaSlsaProvenance {
         if let Some(asset) = other.asset {
             self.asset = Some(asset);
         }
+        if let Some(source_uri) = other.source_uri {
+            self.source_uri = Some(source_uri);
+        }
+        if let Some(source_tag) = other.source_tag {
+            self.source_tag = Some(source_tag);
+        }
     }
 }
 
 impl AquaMinisign {
+    pub fn _type(&self) -> &AquaMinisignType {
+        self.r#type.as_ref().unwrap()
+    }
     pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(&self.url, v, &Default::default())
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
+    }
+    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &Default::default())
     }
     pub fn public_key(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(&self.public_key, v, &Default::default())
+        pkg.parse_aqua_str(self.public_key.as_ref().unwrap(), v, &Default::default())
     }
 
     fn merge(&mut self, other: Self) {
         if let Some(enabled) = other.enabled {
             self.enabled = Some(enabled);
         }
-        if !other.r#type.is_empty() {
-            self.r#type = other.r#type;
+        if let Some(r#type) = other.r#type {
+            self.r#type = Some(r#type);
         }
-        if !other.url.is_empty() {
-            self.url = other.url;
+        if let Some(repo_owner) = other.repo_owner {
+            self.repo_owner = Some(repo_owner);
         }
-        if !other.public_key.is_empty() {
-            self.public_key = other.public_key;
+        if let Some(repo_name) = other.repo_name {
+            self.repo_name = Some(repo_name);
+        }
+        if let Some(url) = other.url {
+            self.url = Some(url);
+        }
+        if let Some(asset) = other.asset {
+            self.asset = Some(asset);
+        }
+        if let Some(public_key) = other.public_key {
+            self.public_key = Some(public_key);
         }
     }
 }

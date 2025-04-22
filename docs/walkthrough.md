@@ -5,7 +5,7 @@ This document offers a quick overview on some initial things you may want to try
 
 ## Installing Dev Tools
 
-The main command for working with tools in mise is [`mise use|u`](/cli/use). This does 2 main things:
+The main command for working with tools in mise is [`mise u|use`](/cli/use). This does 2 main things:
 
 - Installs tools (if not already installed)
 - Adds the tool to the `mise.toml` configuration file—in mise I say the tool is "active" if it's in `mise.toml`
@@ -74,7 +74,7 @@ mise use cargo:starship
 
 ## Upgrading Dev Tools
 
-Upgrading tool versions can be done with [`mise upgrade|up`](/cli/upgrade). By default, it will respect
+Upgrading tool versions can be done with [`mise up|upgrade`](/cli/upgrade). By default, it will respect
 the version prefix in `mise.toml`. If a [lockfile](/configuration/settings#lockfile) exists,
 mise will update `mise.lock` to the latest version of the tool with the prefix from `mise.toml`.
 
@@ -143,7 +143,7 @@ Or in a `mise-tasks` directory as a standalone file, such as `mise-tasks/build`:
 npm run build
 ```
 
-Tasks are executed with [`mise run|r`](/cli/run):
+Tasks are executed with [`mise r|run`](/cli/run):
 
 ```bash
 mise run build
@@ -200,22 +200,22 @@ _See [Tasks](/tasks/) for more information on working with tasks._
 Since there are a lot of commands available in mise, here are what I consider the most important:
 
 - [`mise completion`](/cli/completion) – Set up completions for your shell.
-- [`mise config|cfg`](/cli/config) – A bunch of commands for working with `mise.toml` files via the CLI.
-- [`mise exec|x`](/cli/exec) – Execute a command in the mise environment without activating mise.
-- [`mise generate|g`](/cli/generate) – Generates things like git hooks, task documentation, GitHub actions, and more for your project.
-- [`mise install|i`](/cli/install) – Install tools.
+- [`mise cfg|config`](/cli/config) – A bunch of commands for working with `mise.toml` files via the CLI.
+- [`mise x|exec`](/cli/exec) – Execute a command in the mise environment without activating mise.
+- [`mise g|generate`](/cli/generate) – Generates things like git hooks, task documentation, GitHub actions, and more for your project.
+- [`mise i|install`](/cli/install) – Install tools.
 - [`mise link`](/cli/link) – Symlink a tool installed by some other means into the mise.
 - [`mise ls-remote`](/cli/ls-remote) – List all available versions of a tool.
 - [`mise ls`](/cli/ls) – Lists information about installed/active tools.
 - [`mise outdated`](/cli/outdated) – Informs you of any tools with newer versions available.
 - [`mise plugin`](/cli/plugins) – Plugins can extend mise with new functionality like extra tools or environment variable management. Commonly, these are simply asdf/vfox plugins.
-- [`mise run|r`](/cli/run) – Run a task defined in `mise.toml` or `mise-tasks`.
+- [`mise r|run`](/cli/run) – Run a task defined in `mise.toml` or `mise-tasks`.
 - [`mise self-update`](/cli/self-update) – Update mise to the latest version. Don't use this if you installed mise via a package manager.
 - [`mise settings`](/cli/settings) – CLI access to get/set configuration settings.
-- [`mise uninstall|rm`](/cli/uninstall) – Uninstall a tool.
-- [`mise upgrade|up`](/cli/upgrade) – Upgrade tool versions.
-- [`mise use|u`](/cli/use) – Install and activate tools.
-- [`mise watch|w`](/cli/watch) – Watch for changes in a project and run tasks when they occur.
+- [`mise rm|uninstall`](/cli/uninstall) – Uninstall a tool.
+- [`mise up|upgrade`](/cli/upgrade) – Upgrade tool versions.
+- [`mise u|use`](/cli/use) – Install and activate tools.
+- [`mise w|watch`](/cli/watch) – Watch for changes in a project and run tasks when they occur.
 
 ## Final Thoughts
 

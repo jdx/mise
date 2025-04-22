@@ -20,30 +20,27 @@
 - Like [direnv](https://github.com/direnv/direnv) it manages [environment variables](https://mise.jdx.dev/environments/) for different project directories.
 - Like [make](https://www.gnu.org/software/make/manual/make.html) it manages [tasks](https://mise.jdx.dev/tasks/) used to build and test projects.
 
-## 30 Second Demo
+## Demo
 
-The following shows using mise to install different versions
-of [node](https://nodejs.org).
+The following demo shows how to install and use `mise` to manage multiple versions of `node` on the same system.
 Note that calling `which node` gives us a real path to node, not a shim.
 
-[![demo](./docs/demo.gif)](./docs/demo.gif)
+It also shows that you can use `mise` to install and many other tools such as `jq`, `terraform`, or `go`.
+
+[![demo](./docs/tapes/demo.gif)](https://mise.jdx.dev/demo.html)
+
+See [demo transcript](https://mise.jdx.dev/demo.html).
 
 ## Quickstart
 
-Install mise (other methods [here](https://mise.jdx.dev/getting-started.html)):
+### Install mise
+
+See [Getting started](https://mise.jdx.dev/getting-started.html) for more options.
 
 ```sh-session
 $ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
-2025.3.2 macos-arm64 (a1b2d3e 2025-03-07)
-```
-
-or install a specific a version:
-
-```sh-session
-$ curl https://mise.run | MISE_VERSION=v2024.5.16 sh
-$ ~/.local/bin/mise --version
-2024.5.16 macos-arm64 (8838098 2024-05-14)
+2025.4.6 macos-arm64 (a1b2d3e 2025-04-22)
 ```
 
 Hook mise into your shell (pick the right one for your shell):
@@ -57,13 +54,102 @@ echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 echo '~/.local/bin/mise activate mise activate pwsh | Out-String | Invoke-Expression' >> ~/.config/powershell/Microsoft.PowerShell_profile.ps1
 ```
 
-Install a runtime and set it as the global default:
+### Execute commands with specific tools
 
 ```sh-session
-$ mise use --global node@20
-$ node -v
-v20.0.0
+$ mise exec node@22 -- node -v
+mise node@22.x.x ✓ installed
+v22.x.x
 ```
+
+### Install tools
+
+```sh-session
+$ mise use --global node@22 go@1
+$ node -v
+v22.x.x
+$ go version
+go version go1.x.x macos/arm64
+```
+
+See [dev tools](https://mise.jdx.dev/dev-tools/) for more examples.
+
+### Manage environment variables
+
+```toml
+# mise.toml
+[env]
+SOME_VAR = "foo"
+```
+
+```sh-session
+$ mise set SOME_VAR=bar
+$ echo $SOME_VAR
+bar
+```
+
+Note that `mise` can also [load `.env` files](https://mise.jdx.dev/environments/#env-directives).
+
+### Run tasks
+
+```toml
+# mise.toml
+[tasks.build]
+description = "build the project"
+run = "echo building..."
+```
+
+```sh-session
+$ mise run build
+building...
+```
+
+See [tasks](https://mise.jdx.dev/tasks/) for more information.
+
+### Example mise project
+
+Here is a combined example to give you an idea of how you can use mise to manage your a project's tools, environment, and tasks.
+
+```toml
+# mise.toml
+[tools]
+terraform = "1"
+aws-cli = "2"
+
+[env]
+TF_WORKSPACE = "development"
+AWS_REGION = "us-west-2"
+AWS_PROFILE = "dev"
+
+[tasks.plan]
+description = "Run terraform plan with configured workspace"
+run = """
+terraform init
+terraform workspace select $TF_WORKSPACE
+terraform plan
+"""
+
+[tasks.validate]
+description = "Validate AWS credentials and terraform config"
+run = """
+aws sts get-caller-identity
+terraform validate
+"""
+
+[tasks.deploy]
+description = "Deploy infrastructure after validation"
+depends = ["validate", "plan"]
+run = "terraform apply -auto-approve"
+```
+
+Run it with:
+
+```sh-session
+mise install # install tools specified in mise.toml
+mise run deploy
+```
+
+Find more examples in the [mise cookbook](https://mise.jdx.dev/mise-cookbook/).
 
 ## Full Documentation
 
