@@ -200,7 +200,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 struct Row {
     key: String,
     value: String,
-    #[tabled(display_with = "Self::display_option_path")]
+    #[tabled(display = "Self::display_option_path")]
     source: Option<PathBuf>,
     #[tabled(skip)]
     toml_value: toml::Value,
