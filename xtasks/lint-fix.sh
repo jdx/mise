@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE alias=["format"]
+#MISE alias=["format", "fix"]
 #MISE wait_for=["render:settings"]
 set -euxo pipefail
 
@@ -24,4 +24,5 @@ imports_granularity = "Module"
 EOF
 cargo fmt --all
 rm rustfmt.toml
-cargo clippy --all-features --fix --allow-staged --allow-dirty -- -Dwarnings
+
+hk fix --all
