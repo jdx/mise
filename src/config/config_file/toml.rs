@@ -1,3 +1,4 @@
+use crate::Result;
 use std::collections::BTreeMap;
 use std::fmt::Formatter;
 use std::str::FromStr;
@@ -46,12 +47,17 @@ impl<'a> TomlParser<'a> {
         self.table
             .get(key)
             .and_then(|value| value.as_table())
-            .map(|table| table.clone().into_iter().collect())
+            .map(|table| {
+                table
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect::<BTreeMap<String, toml::Value>>()
+            })
     }
     pub fn parse_env(
         &self,
         key: &str,
-    ) -> eyre::Result<Option<BTreeMap<String, EitherStringOrIntOrBool>>> {
+    ) -> Result<Option<BTreeMap<String, EitherStringOrIntOrBool>>> {
         self.table
             .get(key)
             .and_then(|value| value.as_table())
@@ -79,13 +85,13 @@ impl<'a> TomlParser<'a> {
                             })?;
                         Ok((key.clone(), v))
                     })
-                    .collect::<eyre::Result<_>>()
+                    .collect::<Result<_>>()
             })
             .transpose()
     }
 }
 
-pub fn deserialize_arr<'de, D, T>(deserializer: D) -> eyre::Result<Vec<T>, D::Error>
+pub fn deserialize_arr<'de, D, T>(deserializer: D) -> std::result::Result<Vec<T>, D::Error>
 where
     D: de::Deserializer<'de>,
     T: FromStr + Deserialize<'de>,
@@ -133,4 +139,30 @@ where
     }
 
     deserializer.deserialize_any(ArrVisitor(std::marker::PhantomData))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_arr() {
+        let toml = r#"arr = ["1", "2", "3"]"#;
+        let table = toml::from_str(toml).unwrap();
+        let parser = TomlParser::new(&table);
+        let arr = parser.parse_array::<String>("arr");
+        assert_eq!(arr.unwrap().join(":"), "1:2:3");
+    }
+
+    #[test]
+    fn test_parse_table() {
+        let toml = r#"table = {foo = "bar", baz = "qux", num = 123}"#;
+        let table = toml::from_str(toml).unwrap();
+        let parser = TomlParser::new(&table);
+        let table = parser.parse_table("table").unwrap();
+        assert_eq!(table.len(), 3);
+        assert_eq!(table.get("foo").unwrap().as_str().unwrap(), "bar");
+        assert_eq!(table.get("baz").unwrap().as_str().unwrap(), "qux");
+        assert_eq!(table.get("num").unwrap().as_integer().unwrap(), 123);
+    }
 }

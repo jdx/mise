@@ -41,7 +41,12 @@ impl ElixirPlugin {
 
     fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let version = &tv.version;
-        let url = format!("https://builds.hex.pm/builds/elixir/v{version}.zip");
+        let version = if regex!(r"^[0-9]").is_match(version) {
+            &format!("v{version}")
+        } else {
+            version
+        };
+        let url = format!("https://builds.hex.pm/builds/elixir/{version}.zip");
 
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);

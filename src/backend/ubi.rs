@@ -2,12 +2,14 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
-use crate::env::GITHUB_TOKEN;
+use crate::env::{
+    GITHUB_TOKEN, GITLAB_TOKEN, MISE_GITHUB_ENTERPRISE_TOKEN, MISE_GITLAB_ENTERPRISE_TOKEN,
+};
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::tokio::RUNTIME;
 use crate::toolset::ToolVersion;
-use crate::{file, github, hash};
+use crate::{file, github, gitlab, hash};
 use eyre::bail;
 use itertools::Itertools;
 use regex::Regex;
@@ -39,14 +41,43 @@ impl Backend for UbiBackend {
             Ok(vec!["latest".to_string()])
         } else {
             let opts = self.ba.opts();
+            let forge = match opts.get("provider") {
+                Some(forge) => ForgeType::from_str(forge)?,
+                None => ForgeType::default(),
+            };
+            let api_url = match opts.get("api_url") {
+                Some(api_url) => api_url.strip_suffix("/").unwrap_or(api_url),
+                None => match forge {
+                    ForgeType::GitHub => github::API_URL,
+                    ForgeType::GitLab => gitlab::API_URL,
+                },
+            };
             let tag_regex = OnceLock::new();
-            let mut versions = github::list_releases(&self.tool_name())?
-                .into_iter()
-                .map(|r| r.tag_name)
-                .collect::<Vec<String>>();
+            let mut versions = match forge {
+                ForgeType::GitHub => github::list_releases_from_url(api_url, &self.tool_name())?
+                    .into_iter()
+                    .map(|r| r.tag_name)
+                    .collect::<Vec<String>>(),
+                ForgeType::GitLab => gitlab::list_releases_from_url(api_url, &self.tool_name())?
+                    .into_iter()
+                    .map(|r| r.tag_name)
+                    .collect::<Vec<String>>(),
+            };
             if versions.is_empty() {
-                versions = github::list_tags(&self.tool_name())?.into_iter().collect();
+                match forge {
+                    ForgeType::GitHub => {
+                        versions = github::list_tags_from_url(api_url, &self.tool_name())?
+                            .into_iter()
+                            .collect();
+                    }
+                    ForgeType::GitLab => {
+                        versions = gitlab::list_tags_from_url(api_url, &self.tool_name())?
+                            .into_iter()
+                            .collect();
+                    }
+                }
             }
+
             Ok(versions
                 .into_iter()
                 // trim 'v' prefixes if they exist
@@ -75,31 +106,51 @@ impl Backend for UbiBackend {
     ) -> eyre::Result<ToolVersion> {
         let mut v = tv.version.to_string();
         let opts = tv.request.options();
+        let forge = match opts.get("provider") {
+            Some(forge) => ForgeType::from_str(forge)?,
+            None => ForgeType::default(),
+        };
+        let api_url = match opts.get("api_url") {
+            Some(api_url) => api_url.strip_suffix("/").unwrap_or(api_url),
+            None => match forge {
+                ForgeType::GitHub => github::API_URL,
+                ForgeType::GitLab => gitlab::API_URL,
+            },
+        };
         let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
         let bin_dir = tv.install_path();
 
-        if let Err(err) = github::get_release(&self.tool_name(), &tv.version) {
-            // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
-            // if http::error_code(&err) == Some(404) {
-            debug!(
-                "Failed to get release for {}, trying with 'v' prefix: {}",
-                tv, err
-            );
-            v = format!("v{v}");
-            // }
+        if !name_is_url(&self.tool_name()) {
+            let release: Result<_, eyre::Report> = match forge {
+                ForgeType::GitHub => {
+                    github::get_release_for_url(api_url, &self.tool_name(), &v).map(|_| "github")
+                }
+                ForgeType::GitLab => {
+                    gitlab::get_release_for_url(api_url, &self.tool_name(), &v).map(|_| "gitlab")
+                }
+            };
+            if let Err(err) = release {
+                // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
+                // if http::error_code(&err) == Some(404) {
+                debug!(
+                    "Failed to get release for {}, trying with 'v' prefix: {}",
+                    tv, err
+                );
+                v = format!("v{v}");
+                // }
+            }
         }
 
         let install = |v: &str| {
             // Workaround because of not knowing how to pull out the value correctly without quoting
             let name = self.tool_name();
 
-            let mut builder = UbiBuilder::new().project(&name).install_dir(&bin_dir);
+            let mut builder = UbiBuilder::new().install_dir(&bin_dir);
 
-            if let Some(token) = &*GITHUB_TOKEN {
-                builder = builder.token(token);
-            }
-
-            if v != "latest" {
+            if name_is_url(&name) {
+                builder = builder.url(&name);
+            } else {
+                builder = builder.project(&name);
                 builder = builder.tag(v);
             }
 
@@ -116,8 +167,19 @@ impl Backend for UbiBackend {
             if let Some(matching) = opts.get("matching") {
                 builder = builder.matching(matching);
             }
-            if let Some(forge) = opts.get("forge") {
-                builder = builder.forge(ForgeType::from_str(forge)?);
+
+            let forge = match opts.get("provider") {
+                Some(forge) => ForgeType::from_str(forge)?,
+                None => ForgeType::default(),
+            };
+            builder = builder.forge(forge.clone());
+            builder = set_token(builder, &forge);
+
+            if let Some(api_url) = opts.get("api_url") {
+                if !api_url.contains("github.com") && !api_url.contains("gitlab.com") {
+                    builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
+                    builder = set_enterprise_token(builder, &forge);
+                }
             }
 
             let mut ubi = builder.build().map_err(|e| eyre::eyre!(e))?;
@@ -246,4 +308,38 @@ impl UbiBackend {
 
 fn name_is_url(n: &str) -> bool {
     n.starts_with("http")
+}
+
+fn set_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'a> {
+    match forge {
+        ForgeType::GitHub => {
+            if let Some(token) = &*GITHUB_TOKEN {
+                builder = builder.token(token)
+            }
+            builder
+        }
+        ForgeType::GitLab => {
+            if let Some(token) = &*GITLAB_TOKEN {
+                builder = builder.token(token)
+            }
+            builder
+        }
+    }
+}
+
+fn set_enterprise_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'a> {
+    match forge {
+        ForgeType::GitHub => {
+            if let Some(token) = &*MISE_GITHUB_ENTERPRISE_TOKEN {
+                builder = builder.token(token);
+            }
+            builder
+        }
+        ForgeType::GitLab => {
+            if let Some(token) = &*MISE_GITLAB_ENTERPRISE_TOKEN {
+                builder = builder.token(token);
+            }
+            builder
+        }
+    }
 }

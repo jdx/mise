@@ -69,6 +69,26 @@ then this will be ignored.
 "ubi:BurntSushi/ripgrep" = { version = "latest", matching = "musl" }
 ```
 
+### `provider`
+
+Set the provider type to use for fetching assets and release information. Either `github` or `gitlab` (default is `github`).
+Ensure the `provider` is set to the correct type if you use `api_url` as the type probably cannot be derived correctly
+from the URL.
+
+```toml
+[tools]
+"ubi:gitlab-org/cli" = { version = "latest", exe = "glab", provider = "gitlab" }
+```
+
+### `api_url`
+
+Set the URL for the provider's API. This is useful when using a self-hosted instance.
+
+```toml
+[tools]
+"ubi:acme/my-tool" = { version = "latest", provider= "gitlab", api_url = "https://gitlab.acme.com/api/v4" }
+```
+
 ### `extract_all`
 
 Set to `true` to extract all files in the tarball instead of just the "bin". Not compatible with `exe` nor `rename_exe`.
@@ -99,6 +119,12 @@ releases.
 [tools]
 "ubi:cargo-bins/cargo-binstall" = { version = "latest", tag_regex = "^\d+\." }
 ```
+
+## Self-hosted GitHub/GitLab
+
+If you are using a self-hosted GitHub/GitLab instance, you can set the `provider` and `api_url` tool options.
+Additionally, you can set the `MISE_GITHUB_ENTERPRISE_TOKEN` or `MISE_GITLAB_ENTERPRISE_TOKEN` environment variable to
+authenticate with the API.
 
 ## Supported Ubi Syntax
 

@@ -55,6 +55,13 @@ cosign-linux-amd64 = "sha256:8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c0
 cosign-linux-arm64 = "sha256:3b2e2e3854d0356c45fe6607047526ccd04742d20bd44afb5be91fa2a6e7cb4a"
 "cosign-windows-amd64.exe" = "sha256:8d57f8a42a981d27290c4227271fa9f0f62ca6630eb4a21d316bd6b01405b87c"
 
+[tools.hk]
+version = "0.8.3"
+backend = "aqua:jdx/hk"
+
+[tools.hk.checksums]
+"hk-aarch64-apple-darwin.tar.gz" = "sha256:0d68259c992cd40f046b02251c063dfa0ab7f4ebd6c8101a8b864adf4afa5405"
+
 [tools.jq]
 version = "1.7.1"
 backend = "aqua:jqlang/jq"
@@ -76,6 +83,10 @@ backend = "npm:prettier"
 [tools."pipx:toml-sort"]
 version = "0.24.2"
 backend = "pipx:toml-sort"
+
+[tools.pkl]
+version = "0.28.1"
+backend = "aqua:apple/pkl"
 
 [tools.pre-commit]
 version = "4.1.0"

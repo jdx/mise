@@ -60,11 +60,16 @@ impl Backend for GoBackend {
 
     fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
         SETTINGS.ensure_experimental("go backend")?;
+        let opts = self.ba.opts();
 
         let install = |v| {
-            CmdLineRunner::new("go")
-                .arg("install")
-                .arg(format!("{}@{v}", self.tool_name()))
+            let mut cmd = CmdLineRunner::new("go").arg("install");
+
+            if let Some(tags) = opts.get("tags") {
+                cmd = cmd.arg("-tags").arg(tags);
+            }
+
+            cmd.arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(&ctx.pr)
                 .envs(self.dependency_env()?)
                 .env("GOBIN", tv.install_path().join("bin"))

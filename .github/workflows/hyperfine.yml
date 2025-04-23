@@ -40,7 +40,7 @@ jobs:
       #- uses: actions/cache@v4
       #  with:
       #    path: ~/bin/mise-${{ steps.versions.outputs.main }}
-      #    key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}
+      #    key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}-${{ runner.arch }}
       #- name: build main
       #  run: |
       #    if [ ! -f "$HOME/bin/mise-${{ steps.versions.outputs.main }}" ]; then
@@ -53,7 +53,7 @@ jobs:
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
       - uses: actions/cache@v4
         with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
             ~/.local/share/mise
             ~/.cache/mise

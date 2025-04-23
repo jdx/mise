@@ -14,10 +14,12 @@ cargo-binstall = "latest"
 "cargo:toml-cli" = "latest"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
 cosign = "latest"
+hk = "latest"
 "jq" = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
 "pipx:toml-sort" = "latest"
+pkl = "latest"
 pre-commit = "latest"
 #"python" = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 "ripgrep" = "latest"

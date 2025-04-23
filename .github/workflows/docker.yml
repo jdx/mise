@@ -91,7 +91,7 @@ jobs:
       - run: cargo install --path . --debug
       - uses: actions/cache@v4
         with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
             ~/.local/share/mise
             ~/.cache/mise

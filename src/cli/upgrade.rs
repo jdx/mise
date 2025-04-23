@@ -136,6 +136,7 @@ impl Upgrade {
             }
             return Ok(());
         }
+
         let opts = InstallOptions {
             // TODO: can we remove this without breaking e2e/cli/test_upgrade? it may be causing tools to re-install
             force: true,
@@ -147,26 +148,70 @@ impl Upgrade {
             },
             ..Default::default()
         };
-        let new_versions = outdated.iter().map(|o| o.tool_request.clone()).collect();
-        let versions = ts.install_all_versions(new_versions, &mpr, &opts)?;
 
+        let mut successful_versions = Vec::new();
+        let mut had_errors = false;
+
+        for outdated_info in &outdated {
+            let tool_request = outdated_info.tool_request.clone();
+            let tool_name = outdated_info.name.clone();
+
+            match ts.install_all_versions(vec![tool_request], &mpr, &opts) {
+                Ok(versions) => {
+                    for version in versions {
+                        successful_versions.push(version);
+                    }
+                }
+                Err(e) => {
+                    had_errors = true;
+                    warn!("Failed to upgrade {}: {}", tool_name, e);
+                }
+            }
+        }
+
+        // Only update config files for tools that were successfully installed
         for (o, mut cf) in config_file_updates {
-            cf.replace_versions(o.tool_request.ba(), vec![o.tool_request.clone()])?;
-            cf.save()?;
+            if successful_versions
+                .iter()
+                .any(|v| v.ba() == o.tool_version.ba())
+            {
+                if let Err(e) =
+                    cf.replace_versions(o.tool_request.ba(), vec![o.tool_request.clone()])
+                {
+                    return Err(eyre!("Failed to update config for {}: {}", o.name, e));
+                }
+
+                if let Err(e) = cf.save() {
+                    return Err(eyre!("Failed to save config for {}: {}", o.name, e));
+                }
+            }
         }
 
+        // Only uninstall old versions of tools that were successfully upgraded
         for (o, tv) in to_remove {
-            let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
-            self.uninstall_old_version(&o.tool_version, &pr)?;
+            if successful_versions
+                .iter()
+                .any(|v| v.ba() == o.tool_version.ba())
+            {
+                let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
+                if let Err(e) = self.uninstall_old_version(&o.tool_version, &pr) {
+                    warn!("Failed to uninstall old version of {}: {}", o.name, e);
+                }
+            }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&versions)?;
+        config::rebuild_shims_and_runtime_symlinks(&successful_versions)?;
 
-        if versions.iter().any(|v| v.short() == "python") {
+        if successful_versions.iter().any(|v| v.short() == "python") {
             PIPXBackend::reinstall_all().unwrap_or_else(|err| {
                 warn!("failed to reinstall pipx tools: {err}");
-            })
+            });
         }
+
+        if had_errors {
+            return Err(eyre!("Some tools failed to upgrade"));
+        }
+
         Ok(())
     }
 
@@ -182,8 +227,7 @@ impl Upgrade {
         ui::ctrlc::show_cursor_after_ctrl_c();
         let mut ms = demand::MultiSelect::new("mise upgrade")
             .description("Select tools to upgrade")
-            .filterable(true)
-            .min(1);
+            .filterable(true);
         for out in outdated {
             ms = ms.option(DemandOption::new(out.clone()));
         }

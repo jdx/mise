@@ -5,6 +5,12 @@ assert "mise x ubi:goreleaser/goreleaser@v1.25.0 -- goreleaser -v | grep -o 1.25
 mise use ubi:kellyjonbrazil/jc@1.25.3
 assert_contains "$MISE_DATA_DIR/shims/jc --version" "jc version:  1.25.3"
 
+# only run on linux/amd64
+if [ "$(uname -m)" = "x86_64" ] && [ "$(uname -s)" = "Linux" ]; then
+  mise use ubi:https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz[exe=ffmpeg]
+  assert_contains "$MISE_DATA_DIR/shims/ffmpeg -version" "ffmpeg version"
+fi
+
 cat <<EOF >mise.toml
 [tools]
 "ubi:cilium/cilium-cli" = { version = "latest", exe = "cilium" }
@@ -13,6 +19,15 @@ EOF
 mise use ubi:cilium/cilium-cli
 assert "cat mise.toml" '[tools]
 "ubi:cilium/cilium-cli" = { version = "latest", exe = "cilium" }'
+
+assert "mise x ubi:gitlab-org/cli[exe=glab,provider=gitlab]@1.54.0 -- glab --version | grep -o 1.54.0" "1.54.0"
+
+cat <<EOF >mise.toml
+[tools]
+"ubi:gitlab-org/cli" = { version = "1.55.0", exe = "glab", provider = "gitlab" }
+EOF
+mise use ubi:gitlab-org/cli@1.55.0
+assert "mise x ubi:gitlab-org/cli@1.55.0 -- glab --version | grep -o 1.55.0" "1.55.0"
 
 MISE_USE_VERSIONS_HOST=0 assert_not_contains "mise ls-remote cargo-binstall" "binstalk"
 

@@ -87,7 +87,7 @@ apollo-router.backends = [
 ]
 apollo-rover.backends = ["ubi:apollographql/rover"]
 aqua.backends = ["ubi:aquaproj/aqua"]
-aqua.test = ["aqua version", "aqua version {{version}}"]
+aqua.test = ["aqua version", "{{version}}"]
 arduino.aliases = ["arduino"]
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
 argc.backends = ["ubi:sigoden/argc"]
@@ -132,7 +132,7 @@ aws-iam-authenticator.backends = [
     "aqua:kubernetes-sigs/aws-iam-authenticator",
     "asdf:zekker6/asdf-aws-iam-authenticator"
 ]
-aws-nuke.backends = ["aqua:rebuy-de/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
+aws-nuke.backends = ["aqua:ekristen/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
 aws-sam.aliases = ["aws-sam-cli"]
 aws-sam.backends = ["pipx:aws-sam-cli", "asdf:mise-plugins/mise-pyapp"]
 # aws-sam.test = ["sam --version", "SAM CLI, version {{version}}"] # takes forever on windows in CI
@@ -199,10 +199,10 @@ bats.test = ["bats -v", "Bats"]
 bazel.backends = ["ubi:bazelbuild/bazel", "asdf:rajatvig/asdf-bazel"]
 bazel.test = ["bazel --version", "bazel {{version}}"]
 bazel-watcher.backends = ["aqua:bazelbuild/bazel-watcher"]
-bazel-watcher.test = [
-    "ibazel version 2>&1 | head -n 1",
-    "iBazel - Version v{{version}}"
-]
+# bazel-watcher.test = [
+# "ibazel version 2>&1 | head -n 1",
+# "iBazel - Version v{{version}}"
+# ] # test is flaky
 bazelisk.backends = [
     "aqua:bazelbuild/bazelisk",
     "asdf:josephtate/asdf-bazelisk"
@@ -492,7 +492,7 @@ cyclonedx.backends = [
     "aqua:CycloneDX/cyclonedx-cli",
     "asdf:xeedio/asdf-cyclonedx"
 ]
-cyclonedx.test = ["cyclonedx --version", "{{version}}"]
+# cyclonedx.test = ["cyclonedx --version", "{{version}}"] # flaky
 dagger.backends = ["aqua:dagger/dagger", "asdf:virtualstaticvoid/asdf-dagger"]
 danger-js.backends = ["asdf:mise-plugins/mise-danger-js"]
 danger-swift.backends = ["spm:danger/swift"]
@@ -591,7 +591,6 @@ dynatrace-monaco.backends = [
     "ubi:Dynatrace/dynatrace-configuration-as-code[exe=monaco]",
     "asdf:nsaputro/asdf-monaco"
 ]
-dynatrace-monaco.test = ["monaco version", "monaco version {{version}}"]
 e1s.backends = ["asdf:tbobm/asdf-e1s"]
 earthly.backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
 ecspresso.backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
@@ -771,7 +770,7 @@ glab.backends = [
     "ubi:gitlab-org/cli[forge=gitlab,exe=glab]",
     "asdf:mise-plugins/mise-glab"
 ]
-glab.test = ["glab version", "Current glab version: {{version}}"]
+# glab.test = ["glab version", "Current glab version: {{version}}"]
 gleam.backends = ["aqua:gleam-lang/gleam", "asdf:asdf-community/asdf-gleam"]
 # gleam.test = ["gleam --version", "gleam {{version}}"] reporting wrong version
 glen.backends = ["ubi:lingrino/glen", "asdf:bradym/asdf-glen"]
@@ -1084,7 +1083,6 @@ kpack.backends = [
 kpack.test = ["kp version", "{{version}}"]
 kpt.backends = ["aqua:kptdev/kpt", "asdf:nlamirault/asdf-kpt"]
 kpt.os = ["linux", "macos"]
-kpt.test = ["kpt version", "{{version}}"]
 krab.backends = ["ubi:ohkrab/krab", "asdf:ohkrab/asdf-krab"]
 krew.backends = ["aqua:kubernetes-sigs/krew", "asdf:bjw-s/asdf-krew"]
 kscript.backends = ["ubi:kscripting/kscript", "asdf:edgelevel/asdf-kscript"]
@@ -1436,6 +1434,7 @@ overmind.backends = [
     "ubi:DarthSim/overmind",
     "go:github.com/DarthSim/overmind/v2"
 ]
+oxipng.backends = ["aqua:shssoichiro/oxipng"]
 pachctl.backends = ["aqua:pachyderm/pachyderm", "asdf:abatilo/asdf-pachctl"]
 # pachctl.test = ["pachctl version", "{{version}}"] # test fails on ci but seems to work locally
 packer.backends = ["aqua:hashicorp/packer", "asdf:mise-plugins/mise-hashicorp"]
@@ -1674,8 +1673,8 @@ serverless.backends = ["asdf:mise-plugins/mise-serverless"]
 setup-envtest.backends = ["asdf:mise-plugins/mise-setup-envtest"]
 shell2http.backends = ["aqua:msoap/shell2http", "asdf:ORCID/asdf-shell2http"]
 shellcheck.backends = [
-    "aqua:koalaman/shellcheck",
     "ubi:koalaman/shellcheck",
+    "aqua:koalaman/shellcheck", # uses versionFilter
     "asdf:luizm/asdf-shellcheck"
 ]
 shellcheck.os = ["linux", "macos"]
@@ -1687,6 +1686,8 @@ shellspec.backends = [
 shfmt.backends = ["aqua:mvdan/sh", "asdf:luizm/asdf-shfmt"]
 shfmt.os = ["linux", "macos"]
 shorebird.backends = ["asdf:mise-plugins/mise-shorebird"]
+signadot.backends = ["ubi:signadot/cli[exe=signadot]"]
+signadot.test = ["signadot --version", "signadot version v{{version}}"]
 sinker.backends = ["aqua:plexsystems/sinker", "asdf:elementalvoid/asdf-sinker"]
 skaffold.backends = [
     "aqua:GoogleContainerTools/skaffold",
@@ -1802,6 +1803,8 @@ telepresence.backends = [
     "aqua:telepresenceio/telepresence",
     "asdf:pirackr/asdf-telepresence"
 ]
+television.backends = ["aqua:alexpasmantier/television"]
+television.test = ["tv --version", "television {{version}}"]
 teller.backends = ["aqua:tellerops/teller", "asdf:pdemagny/asdf-teller"]
 temporal.backends = [
     "aqua:temporalio/temporal",

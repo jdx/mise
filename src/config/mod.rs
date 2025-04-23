@@ -1,3 +1,4 @@
+use config_file::ConfigFileType;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -14,7 +15,6 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 use walkdir::WalkDir;
 
-use crate::backend::ABackend;
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
@@ -29,6 +29,7 @@ use crate::toolset::{
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
+use crate::{backend::ABackend, cli::version::VERSION};
 
 pub mod config_file;
 pub mod env_directive;
@@ -107,6 +108,7 @@ impl Config {
         trace!("config_paths: {config_paths:?}");
         let config_files = load_all_config_files(&config_paths, &idiomatic_files)?;
         time!("load config_files");
+        warn_about_idiomatic_version_files(&config_files);
 
         let mut tera_ctx = BASE_CONTEXT.clone();
         let vars_results = load_vars(tera_ctx.clone(), &config_files)?;
@@ -422,8 +424,8 @@ impl Config {
     }
 
     fn load_local_tasks(&self) -> Result<Vec<Task>> {
-        let file_tasks = file::all_dirs()?
-            .into_iter()
+        Ok(file::all_dirs()?
+            .into_par_iter()
             .filter(|d| {
                 if cfg!(test) {
                     d.starts_with(*dirs::HOME)
@@ -431,14 +433,11 @@ impl Config {
                     true
                 }
             })
-            .collect_vec()
-            .into_par_iter()
             .map(|d| self.load_tasks_in_dir(&d))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()
-            .collect_vec();
-        Ok(file_tasks)
+            .collect())
     }
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
@@ -448,6 +447,10 @@ impl Config {
             .load_config_tasks(&cf.map(|cf| cf.as_ref()), config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, config_root))
+            .map(|mut t| {
+                t.global = true;
+                t
+            })
             .collect())
     }
 
@@ -461,18 +464,26 @@ impl Config {
             .load_config_tasks(&cf.map(|cf| cf.as_ref()), &config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, &config_root))
+            .map(|mut t| {
+                t.global = true;
+                t
+            })
             .collect())
     }
 
     fn load_config_tasks(&self, cf: &Option<&dyn ConfigFile>, config_root: &Path) -> Vec<Task> {
-        cf.map(|cf| cf.tasks())
-            .unwrap_or_default()
+        let Some(cf) = cf else {
+            return vec![];
+        };
+        let is_global = is_global_config(cf.get_path());
+        cf.tasks()
             .into_iter()
             .cloned()
             .map(|mut t| {
                 if let Err(err) = t.render(config_root) {
                     warn!("rendering task: {err:?}");
                 }
+                t.global = is_global;
                 t
             })
             .collect()
@@ -756,12 +767,24 @@ fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
     if !SETTINGS.idiomatic_version_file {
         return BTreeMap::new();
     }
+    if !SETTINGS.idiomatic_version_file_disable_tools.is_empty() {
+        deprecated!(
+            "idiomatic_version_file_disable_tools",
+            "is deprecated, use idiomatic_version_file_enable_tools instead"
+        );
+    }
     let idiomatic = backend::list()
         .into_par_iter()
         .filter(|tool| {
-            !SETTINGS
-                .idiomatic_version_file_disable_tools
-                .contains(tool.id())
+            if let Some(enable_tools) = &SETTINGS.idiomatic_version_file_enable_tools {
+                enable_tools.contains(tool.id())
+            } else if !SETTINGS.idiomatic_version_file_disable_tools.is_empty() {
+                !SETTINGS
+                    .idiomatic_version_file_disable_tools
+                    .contains(tool.id())
+            } else {
+                true
+            }
         })
         .filter_map(|tool| match tool.idiomatic_filenames() {
             Ok(filenames) => Some(
@@ -1217,6 +1240,48 @@ pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Resul
         .wrap_err("failed to update lockfiles")?;
 
     Ok(())
+}
+
+fn warn_about_idiomatic_version_files(config_files: &ConfigMap) {
+    if SETTINGS
+        .idiomatic_version_file_enable_tools
+        .as_ref()
+        .is_some()
+    {
+        return;
+    }
+    debug_assert!(
+        !VERSION.starts_with("2025.10"),
+        "default idiomatic version files to disabled"
+    );
+    if let Some((p, cf)) = config_files
+        .iter()
+        .find(|(_, cf)| cf.config_type() == ConfigFileType::IdiomaticVersion)
+    {
+        let tool = cf
+            .to_toolset()
+            .ok()
+            .and_then(|ts| ts.versions.keys().map(|ba| ba.to_string()).next())
+            .unwrap_or("<TOOL>".to_string());
+        deprecated!(
+            "idiomatic_version_file_enable_tools",
+            r#"
+Idiomatic version files like {} are currently enabled by default. However, this will change in mise 2025.10.0 to instead default to disabled.
+
+You can remove this warning by explicitly enabling idiomatic version files for {} with:
+
+    mise settings add idiomatic_version_file_enable_tools {}
+
+You can disable idiomatic version files with:
+
+    mise settings add idiomatic_version_file_enable_tools "[]"
+
+See https://github.com/jdx/mise/discussions/4345 for more information."#,
+            display_path(p),
+            tool,
+            tool
+        );
+    }
 }
 
 fn reset() {

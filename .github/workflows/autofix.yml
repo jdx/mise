@@ -39,7 +39,7 @@ jobs:
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: actions/cache@v4
         with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
             ~/.local/share/mise
             ~/.cache/mise
@@ -64,7 +64,7 @@ jobs:
 #        shell: pwsh
 #      - uses: actions/cache@v4
 #        with:
-#          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+#          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
 #          path: |
 #            ~/.local/share/mise
 #            ~/.cache/mise

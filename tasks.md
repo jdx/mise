@@ -103,7 +103,7 @@ User to run as
 ## `lint-fix`
 
 - **Usage**: `lint-fix`
-- **Aliases**: `format`
+- **Aliases**: `format`, `fix`
 
 ## `lint:actionlint`
 

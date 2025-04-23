@@ -111,7 +111,8 @@ fn show_version() -> std::io::Result<()> {
                                             /_/"#
                 .trim_start_matches("\n"),
         );
-        miseprintln!("{banner}");
+        let jdx = style::nbright("by @jdx");
+        miseprintln!("{banner}                 {jdx}");
     }
     miseprintln!("{}", *VERSION);
     Ok(())

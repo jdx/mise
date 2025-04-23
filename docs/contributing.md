@@ -14,17 +14,9 @@ for executing since it does not require having a proper local setup.
 
 To run locally you will need to first disable mise if you are using it.
 
-:::code-group
-
-```sh [dev container]
-mise run docker:cargo test
-```
-
 ```sh [local]
 cargo test
 ```
-
-:::
 
 ### E2E Tests
 
@@ -32,15 +24,9 @@ Like unit tests, the e2e tests should be run either in the dev container (recomm
 
 :::code-group
 
-```sh [dev container]
-mise run docker:e2e
-```
-
 ```sh [local]
 mise run test:e2e
 ```
-
-:::
 
 Slow tests do not run by default or on PRs. They can be manually enabled with `TEST_ALL=1`.
 
@@ -53,8 +39,10 @@ pwsh e2e-win\run.ps1 task # run tests matching `*task*`
 
 ## Dependencies
 
-- [rust](https://www.rust-lang.org/) stable 1.70.0+ (I test with the beta channel locally, but CI uses stable, you can use whatever)
+- [rust](https://www.rust-lang.org/) latest stable
 - [just](https://github.com/casey/just) this should be removed in favor of mise tasks but it's still used for some things.
+- `pipx` or `uv`
+- bash newer than the 20-year-old version macOS provides
 
 ## Tasks
 
@@ -64,10 +52,6 @@ Mise uses mise itself to run tasks. See available tasks with `mise tasks`:
 ~/src/mise ❯ mise tasks
 build                                                        ~/src/mise/.mise.toml
 clean                                                        ~/src/mise/.mise.toml
-docker:cargo        run cargo inside of development docker … ~/src/mise/.mise.toml
-docker:e2e          run e2e tests inside of development doc… ~/src/mise/.mise.toml
-docker:image        build docker image from Dockerfile       ~/src/mise/.mise.toml
-docker:mise         run mise inside of development docker c… ~/src/mise/.mise.toml
 format                                                       ~/src/mise/.mise.toml
 lint                                                         ~/src/mise/.mise/config.toml
 lint:fix                                                     ~/src/mise/.mise.toml

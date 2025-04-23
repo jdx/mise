@@ -68,6 +68,8 @@ pub struct Task {
     #[serde(default)]
     pub hide: bool,
     #[serde(default)]
+    pub global: bool,
+    #[serde(default)]
     pub raw: bool,
     #[serde(default)]
     pub sources: Vec<String>,
@@ -193,7 +195,11 @@ impl Task {
         task.silent = p.parse_bool("silent").unwrap_or_default();
         task.tools = p
             .parse_table("tools")
-            .map(|t| t.into_iter().map(|(k, v)| (k, v.to_string())).collect())
+            .map(|t| {
+                t.into_iter()
+                    .filter_map(|(k, v)| v.as_str().map(|v| (k, v.to_string())))
+                    .collect()
+            })
             .unwrap_or_default();
         task.render(config_root)?;
         Ok(task)
@@ -489,6 +495,12 @@ impl Task {
         if let Some(dir) = &mut self.dir {
             *dir = tera.render_str(dir, &tera_ctx)?;
         }
+        if let Some(shell) = &mut self.shell {
+            *shell = tera.render_str(shell, &tera_ctx)?;
+        }
+        for (_, v) in &mut self.tools {
+            *v = tera.render_str(v, &tera_ctx)?;
+        }
         Ok(())
     }
 
@@ -590,6 +602,7 @@ impl Default for Task {
             env: BTreeMap::new(),
             dir: None,
             hide: false,
+            global: false,
             raw: false,
             sources: vec![],
             outputs: Default::default(),
