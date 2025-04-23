@@ -52,6 +52,4 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit && mise test-tool --all
-        env:
-          MISE_USE_VERSIONS_HOST: 0
+          command: mise test-tool --all
