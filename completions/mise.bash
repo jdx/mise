@@ -6,14 +6,14 @@ _mise() {
         return 1
     fi
 
-    if [[ -z ${_usage_spec_mise_2025_4_7:-} ]]; then
-        _usage_spec_mise_2025_4_7="$(mise usage)"
+    if [[ -z ${_usage_spec_mise_2025_4_8:-} ]]; then
+        _usage_spec_mise_2025_4_8="$(mise usage)"
     fi
 
 	local cur prev words cword was_split comp_args
     _comp_initialize -n : -- "$@" || return
     # shellcheck disable=SC2207
-	_comp_compgen -- -W "$(usage complete-word --shell bash -s "${_usage_spec_mise_2025_4_7}" --cword="$cword" -- "${words[@]}")"
+	_comp_compgen -- -W "$(usage complete-word --shell bash -s "${_usage_spec_mise_2025_4_8}" --cword="$cword" -- "${words[@]}")"
 	_comp_ltrim_colon_completions "$cur"
     # shellcheck disable=SC2181
     if [[ $? -ne 0 ]]; then

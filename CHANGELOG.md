@@ -1,5 +1,16 @@
 # Changelog
 
+## [2025.4.8](https://github.com/jdx/mise/compare/v2025.4.7..v2025.4.8) - 2025-04-23
+
+### 🐛 Bug Fixes
+
+- hide idiomatic warning if no versions in idiomatic file by [@jdx](https://github.com/jdx) in [#4922](https://github.com/jdx/mise/pull/4922)
+
+### 📚 Documentation
+
+- clean up idiomatic deprecation message by [@jdx](https://github.com/jdx) in [c31aa2c](https://github.com/jdx/mise/commit/c31aa2cbd07a1f74049a0c6b72dfb91632ff5816)
+- punctuation improvements to idiomatic deprecation message by [@glasser](https://github.com/glasser) in [#4915](https://github.com/jdx/mise/pull/4915)
+
 ## [2025.4.7](https://github.com/jdx/mise/compare/v2025.4.6..v2025.4.7) - 2025-04-23
 
 ### 🚀 Features
