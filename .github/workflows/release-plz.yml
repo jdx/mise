@@ -46,7 +46,7 @@ jobs:
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
       - uses: actions/cache@v4
         with:
-          key: ${{ runner.os }}-mise-tools-${{ hashFiles('mise.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
             ~/.local/share/mise
             ~/.cache/mise

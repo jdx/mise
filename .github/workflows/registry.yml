@@ -1,0 +1,57 @@
+name: registry
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release
+  pull_request:
+    paths:
+      - registry.toml
+      - .github/workflows/registry.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  MISE_EXPERIMENTAL: 1
+  MISE_LOCKFILE: 1
+  RUST_BACKTRACE: 1
+  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
+
+jobs:
+  test-tool:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: rui314/setup-mold@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build
+          save-if: false
+      - run: cargo build --all-features
+      - run: echo target/debug >> "$GITHUB_PATH"
+      - run: mise -v
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+      - run: mise i
+      - uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          retry_wait_seconds: 30
+          max_attempts: 2
+          command: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit && mise test-tool --all
+        env:
+          MISE_USE_VERSIONS_HOST: 0
