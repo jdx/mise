@@ -770,7 +770,7 @@ glab.backends = [
     "ubi:gitlab-org/cli[forge=gitlab,exe=glab]",
     "asdf:mise-plugins/mise-glab"
 ]
-#glab.test = ["glab version", "Current glab version: {{version}}"]
+# glab.test = ["glab version", "Current glab version: {{version}}"]
 gleam.backends = ["aqua:gleam-lang/gleam", "asdf:asdf-community/asdf-gleam"]
 # gleam.test = ["gleam --version", "gleam {{version}}"] reporting wrong version
 glen.backends = ["ubi:lingrino/glen", "asdf:bradym/asdf-glen"]
