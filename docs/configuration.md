@@ -258,7 +258,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 
 In mise, these are enabled by default. However, in 2025.10.0 they will default to disabled (see <https://github.com/jdx/mise/discussions/4345>).
 
-- `mise settings idiomatic_version_file_enable_tools python` for a specific tool such as Python ([docs](/configuration/settings.html#idiomatic_version_file_enable_tools))
+- `mise settings add idiomatic_version_file_enable_tools python` for a specific tool such as Python ([docs](/configuration/settings.html#idiomatic_version_file_enable_tools))
 
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
 `bin/parse-version-file`. However, these are [cached](/cache-behavior) so it's not a huge deal.
