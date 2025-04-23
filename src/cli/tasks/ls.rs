@@ -18,10 +18,6 @@ use serde_json::json;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TasksLs {
-    /// Do not print table header
-    #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
-    pub no_header: bool,
-
     /// Display tasks for usage completion
     #[clap(long, hide = true)]
     pub complete: bool,
@@ -30,9 +26,37 @@ pub struct TasksLs {
     #[clap(short = 'x', long, global = true, verbatim_doc_comment)]
     pub extended: bool,
 
+    /// Do not print table header
+    #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
+    pub no_header: bool,
+
     /// Show hidden tasks
     #[clap(long, global = true, verbatim_doc_comment)]
     pub hidden: bool,
+
+    /// Only show global tasks
+    #[clap(
+        short,
+        long,
+        global = true,
+        overrides_with = "local",
+        verbatim_doc_comment
+    )]
+    pub global: bool,
+
+    /// Output in JSON format
+    #[clap(short = 'J', global = true, long, verbatim_doc_comment)]
+    pub json: bool,
+
+    /// Only show non-global tasks
+    #[clap(
+        short,
+        long,
+        global = true,
+        overrides_with = "global",
+        verbatim_doc_comment
+    )]
+    pub local: bool,
 
     /// Sort by column. Default is name.
     #[clap(long, global = true, value_name = "COLUMN", verbatim_doc_comment)]
@@ -41,10 +65,6 @@ pub struct TasksLs {
     /// Sort order. Default is asc.
     #[clap(long, global = true, verbatim_doc_comment)]
     pub sort_order: Option<SortOrder>,
-
-    /// Output in JSON format
-    #[clap(short = 'J', global = true, long, verbatim_doc_comment)]
-    pub json: bool,
 
     #[clap(long, global = true, hide = true)]
     pub usage: bool,
@@ -72,6 +92,8 @@ impl TasksLs {
             .tasks()?
             .values()
             .filter(|t| self.hidden || !t.hide)
+            .filter(|t| !self.local || !t.global)
+            .filter(|t| !self.global || t.global)
             .cloned()
             .sorted_by(|a, b| self.sort(a, b))
             .collect::<Vec<Task>>();

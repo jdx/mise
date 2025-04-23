@@ -424,8 +424,8 @@ impl Config {
     }
 
     fn load_local_tasks(&self) -> Result<Vec<Task>> {
-        let file_tasks = file::all_dirs()?
-            .into_iter()
+        Ok(file::all_dirs()?
+            .into_par_iter()
             .filter(|d| {
                 if cfg!(test) {
                     d.starts_with(*dirs::HOME)
@@ -433,14 +433,11 @@ impl Config {
                     true
                 }
             })
-            .collect_vec()
-            .into_par_iter()
             .map(|d| self.load_tasks_in_dir(&d))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()
-            .collect_vec();
-        Ok(file_tasks)
+            .collect())
     }
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
@@ -450,6 +447,10 @@ impl Config {
             .load_config_tasks(&cf.map(|cf| cf.as_ref()), config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, config_root))
+            .map(|mut t| {
+                t.global = true;
+                t
+            })
             .collect())
     }
 
@@ -463,18 +464,26 @@ impl Config {
             .load_config_tasks(&cf.map(|cf| cf.as_ref()), &config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, &config_root))
+            .map(|mut t| {
+                t.global = true;
+                t
+            })
             .collect())
     }
 
     fn load_config_tasks(&self, cf: &Option<&dyn ConfigFile>, config_root: &Path) -> Vec<Task> {
-        cf.map(|cf| cf.tasks())
-            .unwrap_or_default()
+        let Some(cf) = cf else {
+            return vec![];
+        };
+        let is_global = is_global_config(cf.get_path());
+        cf.tasks()
             .into_iter()
             .cloned()
             .map(|mut t| {
                 if let Err(err) = t.render(config_root) {
                     warn!("rendering task: {err:?}");
                 }
+                t.global = is_global;
                 t
             })
             .collect()

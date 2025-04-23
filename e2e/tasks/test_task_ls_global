@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+echo "tasks.mylocal = { run = 'echo mylocal' }" >mise.toml
+echo "tasks.myglobal = { run = 'echo myglobal' }" >~/.config/mise/config.toml
+
+assert "mise tasks" "myglobal
+mylocal"
+assert "mise tasks --local" "mylocal"
+assert "mise tasks --global" "myglobal"
