@@ -296,11 +296,12 @@ jobs:
     continue-on-error: true
     if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
-      - name: Bump Homebrew formula
-        uses: dawidd6/action-homebrew-bump-formula@v4
-        with:
-          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
-          formula: mise
+      - run: |
+          VERSION="$(git describe --tags)"
+          VERSION="${VERSION#v}"
+          brew bump-formula-pr mise --version "$VERSION"
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
   bump-alpine:
     runs-on: ubuntu-latest
     container: ghcr.io/jdx/mise:alpine
