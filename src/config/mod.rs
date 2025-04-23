@@ -1254,18 +1254,18 @@ fn warn_about_idiomatic_version_files(config_files: &ConfigMap) {
         !VERSION.starts_with("2025.10"),
         "default idiomatic version files to disabled"
     );
-    if let Some((p, cf)) = config_files
+    let Some((p, tool)) = config_files
         .iter()
-        .find(|(_, cf)| cf.config_type() == ConfigFileType::IdiomaticVersion)
-    {
-        let tool = cf
-            .to_toolset()
-            .ok()
-            .and_then(|ts| ts.versions.keys().map(|ba| ba.to_string()).next())
-            .unwrap_or("<TOOL>".to_string());
-        deprecated!(
-            "idiomatic_version_file_enable_tools",
-            r#"
+        .filter(|(_, cf)| cf.config_type() == ConfigFileType::IdiomaticVersion)
+        .filter_map(|(p, cf)| cf.to_tool_request_set().ok().map(|ts| (p, ts.tools)))
+        .filter_map(|(p, tools)| tools.first().map(|(ba, _)| (p, ba.to_string())))
+        .next()
+    else {
+        return;
+    };
+    deprecated!(
+        "idiomatic_version_file_enable_tools",
+        r#"
 Idiomatic version files like {} are currently enabled by default. However, this will change in mise 2025.10.0 to instead default to disabled.
 
 You can remove this warning by explicitly enabling idiomatic version files for {} with:
@@ -1277,11 +1277,10 @@ You can disable idiomatic version files with:
     mise settings add idiomatic_version_file_enable_tools "[]"
 
 See https://github.com/jdx/mise/discussions/4345 for more information."#,
-            display_path(p),
-            tool,
-            tool
-        );
-    }
+        display_path(p),
+        tool,
+        tool
+    );
 }
 
 fn reset() {
