@@ -7,6 +7,8 @@ use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
+use super::ConfigFileType;
+
 #[derive(Debug, Clone)]
 pub struct IdiomaticVersionFile {
     path: PathBuf,
@@ -51,6 +53,10 @@ impl IdiomaticVersionFile {
 }
 
 impl ConfigFile for IdiomaticVersionFile {
+    fn config_type(&self) -> ConfigFileType {
+        ConfigFileType::IdiomaticVersion
+    }
+
     fn get_path(&self) -> &Path {
         self.path.as_path()
     }

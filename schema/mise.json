@@ -489,11 +489,19 @@
         "idiomatic_version_file": {
           "default": true,
           "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "idiomatic_version_file_disable_tools": {
           "default": [],
           "description": "Specific tools to disable idiomatic version files for.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "idiomatic_version_file_enable_tools": {
+          "description": "Specific tools to enable idiomatic version files for like .node-version, .ruby-version, etc.",
           "type": "array",
           "items": {
             "type": "string"
