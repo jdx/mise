@@ -1,5 +1,32 @@
 # Changelog
 
+## [2025.4.7](https://github.com/jdx/mise/compare/v2025.4.6..v2025.4.7) - 2025-04-23
+
+### 🚀 Features
+
+- **(registry)** added oxipng by [@ldrouard](https://github.com/ldrouard) in [#4452](https://github.com/jdx/mise/pull/4452)
+- `mise tasks --local|--global` by [@jdx](https://github.com/jdx) in [#4907](https://github.com/jdx/mise/pull/4907)
+
+### 🐛 Bug Fixes
+
+- added lockfile for pyenv by [@jdx](https://github.com/jdx) in [#4906](https://github.com/jdx/mise/pull/4906)
+- move idiomatic version breaking change from 2026.1.1 to 2025.10.0 by [@jdx](https://github.com/jdx) in [#4909](https://github.com/jdx/mise/pull/4909)
+- allow setting lists to be empty by [@jdx](https://github.com/jdx) in [#4912](https://github.com/jdx/mise/pull/4912)
+
+### 🧪 Testing
+
+- test registry changes by themselves by [@jdx](https://github.com/jdx) in [#4910](https://github.com/jdx/mise/pull/4910)
+- test registry changes by themselves by [@jdx](https://github.com/jdx) in [#4911](https://github.com/jdx/mise/pull/4911)
+
+### 📦️ Dependency Updates
+
+- update rust crate tabled to 0.18 by [@renovate[bot]](https://github.com/renovate[bot]) in [#4873](https://github.com/jdx/mise/pull/4873)
+
+### Chore
+
+- use hk for linting by [@jdx](https://github.com/jdx) in [#4908](https://github.com/jdx/mise/pull/4908)
+- prefer ubi for shellcheck by [@jdx](https://github.com/jdx) in [c805f39](https://github.com/jdx/mise/commit/c805f399a0987db2ce812f2bd6ff66beb53de989)
+
 ## [2025.4.6](https://github.com/jdx/mise/compare/v2025.4.5..v2025.4.6) - 2025-04-22
 
 ### 🚀 Features
