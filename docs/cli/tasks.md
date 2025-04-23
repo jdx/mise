@@ -14,17 +14,29 @@ Task name to get info of
 
 ## Global Flags
 
-### `--no-header`
-
-Do not print table header
-
 ### `-x --extended`
 
 Show all columns
 
+### `--no-header`
+
+Do not print table header
+
 ### `--hidden`
 
 Show hidden tasks
+
+### `-g --global`
+
+Only show global tasks
+
+### `-J --json`
+
+Output in JSON format
+
+### `-l --local`
+
+Only show non-global tasks
 
 ### `--sort <COLUMN>`
 
@@ -45,10 +57,6 @@ Sort order. Default is asc.
 
 - `asc`
 - `desc`
-
-### `-J --json`
-
-Output in JSON format
 
 ## Subcommands
 
