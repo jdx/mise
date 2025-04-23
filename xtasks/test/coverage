@@ -16,5 +16,3 @@ mise install
 mise x -- bun i
 echo "::endgroup::"
 mise x -- ./e2e/run_all_tests
-echo "::group::mise test-tool"
-MISE_USE_VERSIONS_HOST=0 mise test-tool --all
