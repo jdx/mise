@@ -729,10 +729,13 @@ cmd tasks help="Manage tasks" {
     alias t
     alias task hide=#true
     after_long_help "Examples:\n\n    $ mise tasks ls\n"
-    flag --no-header help="Do not print table header" global=#true
     flag --complete help="Display tasks for usage completion" hide=#true
     flag "-x --extended" help="Show all columns" global=#true
+    flag --no-header help="Do not print table header" global=#true
     flag --hidden help="Show hidden tasks" global=#true
+    flag "-g --global" help="Only show global tasks" global=#true
+    flag "-J --json" help="Output in JSON format" global=#true
+    flag "-l --local" help="Only show non-global tasks" global=#true
     flag --sort help="Sort by column. Default is name." global=#true {
         arg <COLUMN> {
             choices name alias description source
@@ -743,7 +746,6 @@ cmd tasks help="Manage tasks" {
             choices asc desc
         }
     }
-    flag "-J --json" help="Output in JSON format" global=#true
     flag --usage hide=#true global=#true
     arg "[TASK]" help="Task name to get info of" required=#false
     cmd add help="Create a new task" {
@@ -806,10 +808,13 @@ cmd tasks help="Manage tasks" {
     cmd ls help="List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list." {
         long_help "List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list.\n\nSo if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in\n~/myproject/.mise/tasks/*, then they'll both be available but the project-specific\ntasks will override the global ones if they have the same name."
         after_long_help "Examples:\n\n    $ mise tasks ls\n"
-        flag --no-header help="Do not print table header" global=#true
         flag --complete help="Display tasks for usage completion" hide=#true
         flag "-x --extended" help="Show all columns" global=#true
+        flag --no-header help="Do not print table header" global=#true
         flag --hidden help="Show hidden tasks" global=#true
+        flag "-g --global" help="Only show global tasks" global=#true
+        flag "-J --json" help="Output in JSON format" global=#true
+        flag "-l --local" help="Only show non-global tasks" global=#true
         flag --sort help="Sort by column. Default is name." global=#true {
             arg <COLUMN> {
                 choices name alias description source
@@ -820,7 +825,6 @@ cmd tasks help="Manage tasks" {
                 choices asc desc
             }
         }
-        flag "-J --json" help="Output in JSON format" global=#true
         flag --usage hide=#true global=#true
     }
     cmd run help="Run task(s)" {

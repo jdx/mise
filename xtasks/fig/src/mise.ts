@@ -2323,18 +2323,33 @@ const completionSpec: Fig.Spec = {
             "List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list.",
           options: [
             {
-              name: "--no-header",
-              description: "Do not print table header",
-              isRepeatable: false,
-            },
-            {
               name: ["-x", "--extended"],
               description: "Show all columns",
               isRepeatable: false,
             },
             {
+              name: "--no-header",
+              description: "Do not print table header",
+              isRepeatable: false,
+            },
+            {
               name: "--hidden",
               description: "Show hidden tasks",
+              isRepeatable: false,
+            },
+            {
+              name: ["-g", "--global"],
+              description: "Only show global tasks",
+              isRepeatable: false,
+            },
+            {
+              name: ["-J", "--json"],
+              description: "Output in JSON format",
+              isRepeatable: false,
+            },
+            {
+              name: ["-l", "--local"],
+              description: "Only show non-global tasks",
               isRepeatable: false,
             },
             {
@@ -2354,11 +2369,6 @@ const completionSpec: Fig.Spec = {
                 name: "sort_order",
                 suggestions: ["asc", "desc"],
               },
-            },
-            {
-              name: ["-J", "--json"],
-              description: "Output in JSON format",
-              isRepeatable: false,
             },
           ],
         },
@@ -2478,18 +2488,33 @@ const completionSpec: Fig.Spec = {
       ],
       options: [
         {
-          name: "--no-header",
-          description: "Do not print table header",
-          isRepeatable: false,
-        },
-        {
           name: ["-x", "--extended"],
           description: "Show all columns",
           isRepeatable: false,
         },
         {
+          name: "--no-header",
+          description: "Do not print table header",
+          isRepeatable: false,
+        },
+        {
           name: "--hidden",
           description: "Show hidden tasks",
+          isRepeatable: false,
+        },
+        {
+          name: ["-g", "--global"],
+          description: "Only show global tasks",
+          isRepeatable: false,
+        },
+        {
+          name: ["-J", "--json"],
+          description: "Output in JSON format",
+          isRepeatable: false,
+        },
+        {
+          name: ["-l", "--local"],
+          description: "Only show non-global tasks",
           isRepeatable: false,
         },
         {
@@ -2509,11 +2534,6 @@ const completionSpec: Fig.Spec = {
             name: "sort_order",
             suggestions: ["asc", "desc"],
           },
-        },
-        {
-          name: ["-J", "--json"],
-          description: "Output in JSON format",
-          isRepeatable: false,
         },
       ],
       args: {
