@@ -1265,7 +1265,18 @@ fn warn_about_idiomatic_version_files(config_files: &ConfigMap) {
             .unwrap_or("<TOOL>".to_string());
         deprecated!(
             "idiomatic_version_file_enable_tools",
-            "idiomatic version files like {} are currently enabled by default however this will change in mise 2025.10.0 to instead default to disabled.\nYou can remove this warning by explicitly enabling idiomatic version files for {} with `mise settings add idiomatic_version_file_enable_tools {}`.\nSee https://github.com/jdx/mise/discussions/4345 for more information.",
+            r#"
+Idiomatic version files like {} are currently enabled by default, however this will change in mise 2025.10.0 to instead default to disabled.
+
+You can remove this warning by explicitly enabling idiomatic version files for {} with:
+
+    mise settings add idiomatic_version_file_enable_tools {}
+
+You can disable idiomatic version files with:
+
+    mise settings add idiomatic_version_file_enable_tools "[]"
+
+See https://github.com/jdx/mise/discussions/4345 for more information."#,
             display_path(p),
             tool,
             tool
