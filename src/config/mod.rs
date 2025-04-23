@@ -1266,7 +1266,7 @@ fn warn_about_idiomatic_version_files(config_files: &ConfigMap) {
         deprecated!(
             "idiomatic_version_file_enable_tools",
             r#"
-Idiomatic version files like {} are currently enabled by default, however this will change in mise 2025.10.0 to instead default to disabled.
+Idiomatic version files like {} are currently enabled by default. However, this will change in mise 2025.10.0 to instead default to disabled.
 
 You can remove this warning by explicitly enabling idiomatic version files for {} with:
 
