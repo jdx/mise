@@ -68,7 +68,9 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         let value = match settings.get(key).map(|c| c.as_array()) {
             Some(Some(array)) if add => {
                 let mut array = array.clone();
-                array.extend(value.as_array().unwrap().iter().cloned());
+                if !array.iter().any(|item| item.as_str() == Some(value.as_str().unwrap())) {
+                    array.extend(value.as_array().unwrap().iter().cloned());
+                }
                 array.into()
             }
             _ => value,
@@ -123,3 +125,4 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise settings idiomatic_version_file=true</bold>
 "#
 );
+
