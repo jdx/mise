@@ -29,14 +29,12 @@ impl SettingsSet {
 pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let parsed_value = if let Some(meta) = SETTINGS_META.get(key) {
         match meta.type_ {
-            SettingsType::Bool       => parse_bool(value)?,
-            SettingsType::Integer    => parse_i64(value)?,
-            SettingsType::Duration   => parse_duration(value)?,
-            SettingsType::Url
-          | SettingsType::Path
-          | SettingsType::String    => value.into(),
+            SettingsType::Bool => parse_bool(value)?,
+            SettingsType::Integer => parse_i64(value)?,
+            SettingsType::Duration => parse_duration(value)?,
+            SettingsType::Url | SettingsType::Path | SettingsType::String => value.into(),
             SettingsType::ListString => parse_list_by_comma(value)?,
-            SettingsType::ListPath   => parse_list_by_colon(value)?,
+            SettingsType::ListPath => parse_list_by_colon(value)?,
         }
     } else {
         bail!("Unknown setting: {}", key);
@@ -71,10 +69,7 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         }
 
         let new_value: toml_edit::Value = if add {
-            if let Some(existing_arr) = settings
-                .get(key)
-                .and_then(|item| item.as_array())
-                .cloned()
+            if let Some(existing_arr) = settings.get(key).and_then(|item| item.as_array()).cloned()
             {
                 let mut arr = existing_arr;
                 // Dedupe by comparing to the original &str
