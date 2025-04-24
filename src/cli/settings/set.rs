@@ -31,14 +31,12 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
 
     let toml_value = if let Some(meta) = SETTINGS_META.get(key) {
         match meta.type_ {
-            SettingsType::Bool       => parse_bool(raw)?,
-            SettingsType::Integer    => parse_i64(raw)?,
-            SettingsType::Duration   => parse_duration(raw)?,
-            SettingsType::Url
-          | SettingsType::Path
-          | SettingsType::String    => raw.into(),
+            SettingsType::Bool => parse_bool(raw)?,
+            SettingsType::Integer => parse_i64(raw)?,
+            SettingsType::Duration => parse_duration(raw)?,
+            SettingsType::Url | SettingsType::Path | SettingsType::String => raw.into(),
             SettingsType::ListString => parse_list_by_comma(raw)?,
-            SettingsType::ListPath   => parse_list_by_colon(raw)?,
+            SettingsType::ListPath => parse_list_by_colon(raw)?,
         }
     } else {
         bail!("Unknown setting: {}", key);
@@ -74,11 +72,7 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         }
 
         let new_item: toml_edit::Value = if add {
-            if let Some(existing_arr) = settings
-                .get(key)
-                .and_then(|it| it.as_array())
-                .cloned()
-            {
+            if let Some(existing_arr) = settings.get(key).and_then(|it| it.as_array()).cloned() {
                 let mut arr = existing_arr;
 
                 // only push `raw` if not already in the list
