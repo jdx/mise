@@ -27,14 +27,18 @@ impl SettingsSet {
 }
 
 pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
-    let value = if let Some(meta) = SETTINGS_META.get(key) {
+    let raw = value;
+
+    let toml_value = if let Some(meta) = SETTINGS_META.get(key) {
         match meta.type_ {
-            SettingsType::Bool => parse_bool(value)?,
-            SettingsType::Integer => parse_i64(value)?,
-            SettingsType::Duration => parse_duration(value)?,
-            SettingsType::Url | SettingsType::Path | SettingsType::String => value.into(),
-            SettingsType::ListString => parse_list_by_comma(value)?,
-            SettingsType::ListPath => parse_list_by_colon(value)?,
+            SettingsType::Bool       => parse_bool(raw)?,
+            SettingsType::Integer    => parse_i64(raw)?,
+            SettingsType::Duration   => parse_duration(raw)?,
+            SettingsType::Url
+          | SettingsType::Path
+          | SettingsType::String    => raw.into(),
+            SettingsType::ListString => parse_list_by_comma(raw)?,
+            SettingsType::ListPath   => parse_list_by_colon(raw)?,
         }
     } else {
         bail!("Unknown setting: {}", key);
@@ -46,16 +50,20 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         config::global_config_path()
     };
     file::create_dir_all(path.parent().unwrap())?;
-    let raw = file::read_to_string(&path).unwrap_or_default();
-    let mut config: DocumentMut = raw.parse()?;
-    if !config.contains_key("settings") {
-        config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
+
+    let raw_toml = file::read_to_string(&path).unwrap_or_default();
+    let mut document: DocumentMut = raw_toml.parse()?;
+
+    if !document.contains_key("settings") {
+        document["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
-    if let Some(mut settings) = config["settings"].as_table_mut() {
-        if let Some((parent_key, child_key)) = key.split_once('.') {
-            key = child_key;
+
+    // 6)insert/merge under that table
+    if let Some(mut settings) = document["settings"].as_table_mut() {
+        if let Some((parent, child)) = key.split_once('.') {
+            key = child;
             settings = settings
-                .entry(parent_key)
+                .entry(parent)
                 .or_insert({
                     let mut t = toml_edit::Table::new();
                     t.set_implicit(true);
@@ -65,26 +73,34 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
                 .unwrap();
         }
 
-        let value = match settings.get(key).map(|c| c.as_array()) {
-            Some(Some(array)) if add => {
-                let mut array = array.clone();
-                if !array
-                    .iter()
-                    .any(|item| item.as_str() == Some(value.as_str().unwrap()))
-                {
-                    array.extend(value.as_array().unwrap().iter().cloned());
+        let new_item: toml_edit::Value = if add {
+            if let Some(existing_arr) = settings
+                .get(key)
+                .and_then(|it| it.as_array())
+                .cloned()
+            {
+                let mut arr = existing_arr;
+
+                // only push `raw` if not already in the list
+                if !arr.iter().any(|item| item.as_str() == Some(raw)) {
+                    arr.push(raw.into());
                 }
-                array.into()
+                toml_edit::Value::Array(arr)
+            } else {
+                toml_value.clone()
             }
-            _ => value,
+        } else {
+            toml_value.clone()
         };
-        settings.insert(key, value.into());
+
+        settings.insert(key, new_item.into());
 
         // validate
-        let _: SettingsFile = toml::from_str(&config.to_string())?;
+        let _: SettingsFile = toml::from_str(&document.to_string())?;
 
-        file::write(path, config.to_string())?;
+        file::write(&path, document.to_string())?;
     }
+
     Ok(())
 }
 
