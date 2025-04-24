@@ -29,8 +29,6 @@ pub fn rebuild(config: &Config) -> Result<()> {
             make_symlink_or_file(&to, &from)?;
         }
         remove_missing_symlinks(backend.clone())?;
-        // remove install dir if empty (ignore metadata)
-        file::remove_dir_ignore(installs_dir, vec![".mise.backend.json", ".mise.backend"])?;
     }
     Ok(())
 }
@@ -86,7 +84,7 @@ fn installed_versions(backend: &Arc<dyn Backend>) -> Result<Vec<String>> {
     Ok(versions)
 }
 
-fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
+pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
     let installs_dir = &backend.ba().installs_path;
     if !installs_dir.exists() {
         return Ok(());
@@ -99,6 +97,8 @@ fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
             file::remove_file(path)?;
         }
     }
+    // remove install dir if empty (ignore metadata)
+    file::remove_dir_ignore(installs_dir, vec![".mise.backend.json", ".mise.backend"])?;
     Ok(())
 }
 
