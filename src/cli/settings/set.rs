@@ -26,7 +26,7 @@ impl SettingsSet {
     }
 }
 
-pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
+pub fn set<V>(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let raw = value;
 
     let toml_value = if let Some(meta) = SETTINGS_META.get(key) {
