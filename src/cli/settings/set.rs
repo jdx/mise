@@ -27,7 +27,12 @@ impl SettingsSet {
 }
 
 pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
-    let parsed_value = if let Some(meta) = SETTINGS_META.get(key) {
+    let meta = SETTINGS_META.get(key);
+    let is_set_type = meta
+        .map(|m| matches!(m.type_, SettingsType::ListString | SettingsType::ListPath))
+        .unwrap_or(false);
+
+    let parsed_value = if let Some(meta) = meta {
         match meta.type_ {
             SettingsType::Bool => parse_bool(value)?,
             SettingsType::Integer => parse_i64(value)?,
@@ -72,8 +77,9 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
             if let Some(existing_arr) = settings.get(key).and_then(|item| item.as_array()).cloned()
             {
                 let mut arr = existing_arr;
-                // Dedupe by comparing to the original &str
-                if !arr.iter().any(|it| it.as_str() == Some(value)) {
+
+                // Only dedupe if it's a set type
+                if !is_set_type || !arr.iter().any(|it| it.as_str() == Some(value)) {
                     arr.push(value);
                 }
                 toml_edit::Value::Array(arr)

@@ -3,3 +3,6 @@
 assert "mise settings add disable_hints a" ""
 assert "mise settings add disable_hints b" ""
 assert "mise settings get disable_hints" '["a", "b"]'
+
+assert "mise settings add disable_hints a" ""  # mise should ignore identical values which have been passed using `add`
+assert "mise settings get disable_hints" '["a", "b"]'
