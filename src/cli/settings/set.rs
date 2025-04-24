@@ -74,7 +74,7 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
                 let mut arr = existing_arr;
                 // Dedupe by comparing to the original &str
                 if !arr.iter().any(|it| it.as_str() == Some(value)) {
-                    arr.push(value.into());
+                    arr.push(value);
                 }
                 toml_edit::Value::Array(arr)
             } else {
