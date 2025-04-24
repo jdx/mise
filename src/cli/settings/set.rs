@@ -56,7 +56,7 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         document["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
 
-    // 6)insert/merge under that table
+    // insert/merge under that table
     if let Some(mut settings) = document["settings"].as_table_mut() {
         if let Some((parent, child)) = key.split_once('.') {
             key = child;
