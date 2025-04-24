@@ -26,7 +26,7 @@ impl SettingsSet {
     }
 }
 
-pub fn set<V>(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
+pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let raw = value;
 
     let toml_value = if let Some(meta) = SETTINGS_META.get(key) {
@@ -76,7 +76,7 @@ pub fn set<V>(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> 
 
                 // only push `raw` if not already in the list
                 if !arr.iter().any(|item| item.as_str() == Some(raw)) {
-                    arr.push::<V>(raw.into())
+                    arr.push(raw)
                 }
                 toml_edit::Value::Array(arr)
             } else {
