@@ -27,16 +27,16 @@ impl SettingsSet {
 }
 
 pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
-    let raw = value;
-
-    let toml_value = if let Some(meta) = SETTINGS_META.get(key) {
+    let parsed_value = if let Some(meta) = SETTINGS_META.get(key) {
         match meta.type_ {
-            SettingsType::Bool => parse_bool(raw)?,
-            SettingsType::Integer => parse_i64(raw)?,
-            SettingsType::Duration => parse_duration(raw)?,
-            SettingsType::Url | SettingsType::Path | SettingsType::String => raw.into(),
-            SettingsType::ListString => parse_list_by_comma(raw)?,
-            SettingsType::ListPath => parse_list_by_colon(raw)?,
+            SettingsType::Bool       => parse_bool(value)?,
+            SettingsType::Integer    => parse_i64(value)?,
+            SettingsType::Duration   => parse_duration(value)?,
+            SettingsType::Url
+          | SettingsType::Path
+          | SettingsType::String    => value.into(),
+            SettingsType::ListString => parse_list_by_comma(value)?,
+            SettingsType::ListPath   => parse_list_by_colon(value)?,
         }
     } else {
         bail!("Unknown setting: {}", key);
@@ -49,14 +49,14 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     };
     file::create_dir_all(path.parent().unwrap())?;
 
-    let raw_toml = file::read_to_string(&path).unwrap_or_default();
-    let mut document: DocumentMut = raw_toml.parse()?;
+    let raw = file::read_to_string(&path).unwrap_or_default();
+    let mut config: DocumentMut = raw.parse()?;
 
-    if !document.contains_key("settings") {
-        document["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
+    if !config.contains_key("settings") {
+        config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
 
-    if let Some(mut settings) = document["settings"].as_table_mut() {
+    if let Some(mut settings) = config["settings"].as_table_mut() {
         if let Some((parent, child)) = key.split_once('.') {
             key = child;
             settings = settings
@@ -70,28 +70,31 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
                 .unwrap();
         }
 
-        let new_item: toml_edit::Value = if add {
-            if let Some(existing_arr) = settings.get(key).and_then(|it| it.as_array()).cloned() {
+        let new_value: toml_edit::Value = if add {
+            if let Some(existing_arr) = settings
+                .get(key)
+                .and_then(|item| item.as_array())
+                .cloned()
+            {
                 let mut arr = existing_arr;
-
-                // only push `raw` if not already in the list
-                if !arr.iter().any(|item| item.as_str() == Some(raw)) {
-                    arr.push(raw)
+                // Dedupe by comparing to the original &str
+                if !arr.iter().any(|it| it.as_str() == Some(value)) {
+                    arr.push(value.into());
                 }
                 toml_edit::Value::Array(arr)
             } else {
-                toml_value.clone()
+                parsed_value.clone()
             }
         } else {
-            toml_value.clone()
+            parsed_value.clone()
         };
 
-        settings.insert(key, new_item.into());
+        settings.insert(key, new_value.into());
 
         // validate
-        let _: SettingsFile = toml::from_str(&document.to_string())?;
+        let _: SettingsFile = toml::from_str(&config.to_string())?;
 
-        file::write(&path, document.to_string())?;
+        file::write(&path, config.to_string())?;
     }
 
     Ok(())
