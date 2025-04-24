@@ -1906,6 +1906,8 @@ tsuru.backends = [
 ]
 ttyd.backends = ["aqua:tsl0922/ttyd", "asdf:ivanvc/asdf-ttyd"]
 tuist.backends = ["asdf:mise-plugins/mise-tuist"]
+tusd.backends = ["ubi:tus/tusd"]
+tusd.tests = ["tusd --version | head -n1", "Version: v{{version}}"]
 typos.backends = ["aqua:crate-ci/typos", "asdf:aschiavon91/asdf-typos"]
 typst.backends = ["aqua:typst/typst", "asdf:stephane-klein/asdf-typst"]
 uaa.aliases = ["uaa-cli"]

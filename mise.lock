@@ -103,7 +103,7 @@ backend = "aqua:BurntSushi/ripgrep"
 
 [tools.shellcheck]
 version = "0.10.0"
-backend = "aqua:koalaman/shellcheck"
+backend = "ubi:koalaman/shellcheck"
 
 [tools.shellcheck.checksums]
 "shellcheck-v0.10.0.darwin.aarch64.tar.xz" = "sha256:bbd2f14826328eee7679da7221f2bc3afb011f6a928b848c80c321f6046ddf81"
