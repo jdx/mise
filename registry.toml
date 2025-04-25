@@ -632,6 +632,11 @@ eza.backends = [
     "asdf:mise-plugins/mise-eza",
     "cargo:eza"
 ]
+fastfetch.backends = ["aqua:fastfetch-cli/fastfetch"]
+fastfetch.test = [
+    "fastfetch --version | awk '{print $1, $2}'",
+    "fastfetch {{version}}"
+]
 fd.backends = [
     "aqua:sharkdp/fd",
     "ubi:sharkdp/fd",
