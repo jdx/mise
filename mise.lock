@@ -106,6 +106,7 @@ version = "0.10.0"
 backend = "ubi:koalaman/shellcheck"
 
 [tools.shellcheck.checksums]
+shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f8b02ea4811cd4cc1109"
 "shellcheck-v0.10.0.darwin.aarch64.tar.xz" = "sha256:bbd2f14826328eee7679da7221f2bc3afb011f6a928b848c80c321f6046ddf81"
 
 [tools.shfmt]
