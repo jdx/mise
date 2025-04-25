@@ -11,7 +11,6 @@ use crate::toolset::{ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use eyre::Result;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use std::fmt::Debug;
 use std::str::FromStr;
@@ -48,14 +47,26 @@ impl Backend for PIPXBackend {
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
-                let url = format!("https://pypi.org/pypi/{}/json", package);
-                let data: PypiPackage = HTTP_FETCH.json(url)?;
-                let versions = data
-                    .releases
-                    .keys()
-                    .map(|v| v.to_string())
+                let url = format!("https://pypi.org/simple/{}/", package);
+                let html = HTTP_FETCH.get_html(url)?;
+                
+                let version_re = regex!(r#"href=["'].*?/([^/]+)\.tar\.gz["']"#);
+                let versions: Vec<String> = version_re
+                    .captures_iter(&html)
+                    .filter_map(|cap| {
+                        let filename = cap.get(1)?.as_str();
+                        let escaped_package = regex::escape(&package);
+                        let re_str = format!("^{}-(.+)$", escaped_package);
+                        let pkg_re = regex::Regex::new(&re_str).ok()?;
+                        let pkg_version = pkg_re
+                            .captures(filename)?
+                            .get(1)?
+                            .as_str();
+                        Some(pkg_version.to_string())
+                    })
                     .sorted_by_cached_key(|v| Versioning::new(v))
                     .collect();
+                
                 Ok(versions)
             }
             PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
@@ -71,9 +82,28 @@ impl Backend for PIPXBackend {
         self.latest_version_cache
             .get_or_try_init(|| match self.tool_name().parse()? {
                 PipxRequest::Pypi(package) => {
-                    let url = format!("https://pypi.org/pypi/{}/json", package);
-                    let pkg: PypiPackage = HTTP_FETCH.json(url)?;
-                    Ok(Some(pkg.info.version))
+                    let url = format!("https://pypi.org/simple/{}/", package);
+                    let html = HTTP_FETCH.get_html(url)?;
+                    
+                    let version_re = regex!(r#"href=["'].*?/([^/]+)\.tar\.gz["']"#);
+                    let version = version_re
+                        .captures_iter(&html)
+                        .filter_map(|cap| {
+                            let filename = cap.get(1)?.as_str();
+                            let escaped_package = regex::escape(&package);
+                            let re_str = format!("^{}-(.+)$", escaped_package);
+                            let pkg_re = regex::Regex::new(&re_str).ok()?;
+                            let pkg_version = pkg_re
+                                .captures(filename)?
+                                .get(1)?
+                                .as_str();
+                            Some(pkg_version.to_string())
+                        })
+                        .filter(|v| !v.contains("dev") && !v.contains("a") && !v.contains("b") && !v.contains("rc"))
+                        .sorted_by_cached_key(|v| Versioning::new(v))
+                        .last();
+                    
+                    Ok(version)
                 }
                 _ => self.latest_version(Some("latest".into())),
             })
@@ -258,17 +288,3 @@ impl FromStr for PipxRequest {
         }
     }
 }
-
-#[derive(serde::Deserialize)]
-struct PypiPackage {
-    releases: IndexMap<String, Vec<PypiRelease>>,
-    info: PypiInfo,
-}
-
-#[derive(serde::Deserialize)]
-struct PypiInfo {
-    version: String,
-}
-
-#[derive(serde::Deserialize)]
-struct PypiRelease {}
