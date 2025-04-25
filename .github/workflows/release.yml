@@ -296,6 +296,7 @@ jobs:
     continue-on-error: true
     if: startsWith(github.event.ref, 'refs/tags/v')
     steps:
+      - uses: actions/checkout@v4
       - run: |
           VERSION="$(git describe --tags)"
           VERSION="${VERSION#v}"
