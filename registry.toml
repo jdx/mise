@@ -355,6 +355,7 @@ clangd.backends = ["asdf:mise-plugins/mise-llvm"]
 clarinet.backends = ["ubi:hirosystems/clarinet", "asdf:alexgo-io/asdf-clarinet"]
 clarinet.os = ["linux", "macos"]
 clarinet.test = ["clarinet --version", "clarinet {{version}}"]
+cli53.backends = ["aqua:barnybug/cli53"]
 # ubi not working on linux
 # clickhouse.backends = ["ubi:ClickHouse/ClickHouse", "asdf:mise-plugins/mise-clickhouse"]
 # clickhouse.os = ["linux", "macos"]
