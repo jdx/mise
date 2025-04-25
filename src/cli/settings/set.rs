@@ -52,7 +52,6 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let raw = file::read_to_string(&path).unwrap_or_default();
     let mut config: DocumentMut = raw.parse()?;
 
-    // Ensure we have a `[settings]` table
     if !config.contains_key("settings") {
         config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
