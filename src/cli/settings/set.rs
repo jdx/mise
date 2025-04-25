@@ -28,9 +28,6 @@ impl SettingsSet {
 
 pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let meta = SETTINGS_META.get(key);
-    let is_set_type = meta
-        .map(|m| matches!(m.type_, SettingsType::ListString | SettingsType::ListPath))
-        .unwrap_or(false);
 
     let parsed_value = if let Some(meta) = meta {
         match meta.type_ {
@@ -55,6 +52,7 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let raw = file::read_to_string(&path).unwrap_or_default();
     let mut config: DocumentMut = raw.parse()?;
 
+    // Ensure we have a `[settings]` table
     if !config.contains_key("settings") {
         config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
@@ -73,17 +71,28 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
                 .unwrap();
         }
 
-        let new_value: toml_edit::Value = if add {
-            if let Some(existing_arr) = settings.get(key).and_then(|item| item.as_array()).cloned()
+        // If we're in “add” mode and the key already exists as an array
+        // and already contains our value, just do nothing.
+        if add {
+            if let Some(toml_edit::Value::Array(arr)) =
+                settings.get(key).and_then(|it| it.as_value().cloned())
             {
-                let mut arr = existing_arr;
+                if arr.iter().any(|it| it.as_str() == Some(value)) {
+                    return Ok(());
+                }
+            }
+        }
 
-                // Only dedupe if it's a set type
-                if !is_set_type || !arr.iter().any(|it| it.as_str() == Some(value)) {
+        let new_value: toml_edit::Value = if add {
+            if let Some(existing_arr) = settings.get(key).and_then(|it| it.as_array()).cloned() {
+                let mut arr = existing_arr;
+                // dedupe: only push if it’s not already in the array
+                if !arr.iter().any(|it| it.as_str() == Some(value)) {
                     arr.push(value);
                 }
                 toml_edit::Value::Array(arr)
             } else {
+                // first time: parsed_value is already an array (ListString/ListPath)
                 parsed_value.clone()
             }
         } else {
