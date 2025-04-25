@@ -65,7 +65,7 @@ jobs:
       - if: matrix.os == 'ubuntu'
         uses: rui314/setup-mold@v1
       - if: matrix.os == 'macos'
-        uses: apple-actions/import-codesign-certs@v3
+        uses: apple-actions/import-codesign-certs@v5
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
