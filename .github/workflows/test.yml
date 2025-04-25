@@ -257,7 +257,7 @@ jobs:
           command: cargo test
   windows-e2e:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     needs: [build-windows]
     env:
       MISE_DATA_DIR: ~/.local/share/mise
