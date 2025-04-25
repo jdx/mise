@@ -1,5 +1,44 @@
 # Changelog
 
+## [2025.4.9](https://github.com/jdx/mise/compare/v2025.4.8..v2025.4.9) - 2025-04-25
+
+### 🚀 Features
+
+- **(registry)** added tusd by [@mnm364](https://github.com/mnm364) in [#4928](https://github.com/jdx/mise/pull/4928)
+- **(registry)** added fastfetch by [@sassdavid](https://github.com/sassdavid) in [#4932](https://github.com/jdx/mise/pull/4932)
+
+### 🐛 Bug Fixes
+
+- remove missing symlinks on unuse when pruning by [@roele](https://github.com/roele) in [#4930](https://github.com/jdx/mise/pull/4930)
+
+### 📚 Documentation
+
+- typo by [@jdx](https://github.com/jdx) in [314657f](https://github.com/jdx/mise/commit/314657fb6ee69646464c35ed4d8b72f0f2d551da)
+
+### ⚡ Performance
+
+- turn several of the list functions into parallel iters by [@lespea](https://github.com/lespea) in [#4924](https://github.com/jdx/mise/pull/4924)
+
+### 🧪 Testing
+
+- fix kwok by [@jdx](https://github.com/jdx) in [4516335](https://github.com/jdx/mise/commit/451633512b67d26f2b3263094826da7c7406c1da)
+- increase windows-e2e timeout by [@jdx](https://github.com/jdx) in [ce4f734](https://github.com/jdx/mise/commit/ce4f73462b10979f3721400393c4d3ba782c3bb4)
+
+### 📦️ Dependency Updates
+
+- update apple-actions/import-codesign-certs action to v5 by [@renovate[bot]](https://github.com/renovate[bot]) in [#4936](https://github.com/jdx/mise/pull/4936)
+- update rust crate tabled to 0.19 by [@renovate[bot]](https://github.com/renovate[bot]) in [#4935](https://github.com/jdx/mise/pull/4935)
+
+### Chore
+
+- use macos-latest in GHA by [@jdx](https://github.com/jdx) in [05b5d49](https://github.com/jdx/mise/commit/05b5d49eaa3c4e78f1102dd2d9cfbca63c276ec0)
+- attempt to fix brew bump by [@jdx](https://github.com/jdx) in [043f97f](https://github.com/jdx/mise/commit/043f97f23e9af914772474ee0379b5a7d9399f3e)
+- mise up by [@jdx](https://github.com/jdx) in [ee7436d](https://github.com/jdx/mise/commit/ee7436d65c89416ee39ee424e296ae329f747323)
+
+### New Contributors
+
+- @lespea made their first contribution in [#4924](https://github.com/jdx/mise/pull/4924)
+
 ## [2025.4.8](https://github.com/jdx/mise/compare/v2025.4.7..v2025.4.8) - 2025-04-23
 
 ### 🐛 Bug Fixes

@@ -479,9 +479,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.19"
+version = "1.2.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e3a13707ac958681c13b39b458c073d0d9bc8a22cb1b2f4c8e55eb72c13f362"
+checksum = "04da6a0d40b948dfc4fa8f5bbf402b0fc1a64a28dbf7d12ffd683550f2c1b63a"
 dependencies = [
  "jobserver",
  "libc",
@@ -1757,7 +1757,7 @@ dependencies = [
  "gix-utils",
  "itoa",
  "thiserror 2.0.12",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -1853,7 +1853,7 @@ dependencies = [
  "smallvec",
  "thiserror 2.0.12",
  "unicode-bom",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -2148,7 +2148,7 @@ dependencies = [
  "itoa",
  "smallvec",
  "thiserror 2.0.12",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -2281,7 +2281,7 @@ dependencies = [
  "gix-utils",
  "maybe-async",
  "thiserror 2.0.12",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -2313,7 +2313,7 @@ dependencies = [
  "gix-validate",
  "memmap2",
  "thiserror 2.0.12",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -3663,7 +3663,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.4.8"
+version = "2025.4.9"
 dependencies = [
  "base64 0.22.1",
  "built",
@@ -5981,7 +5981,7 @@ dependencies = [
  "serde",
  "serde_spanned",
  "toml_datetime",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -6952,9 +6952,9 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "0.7.6"
+version = "0.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63d3fcd9bba44b03821e7d699eeee959f3126dcc4aa8e4ae18ec617c2a5cea10"
+checksum = "6cb8234a863ea0e8cd7284fcdd4f145233eb00fee02bbdd9861aec44e6477bc5"
 dependencies = [
  "memchr",
 ]
@@ -7010,9 +7010,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "2.0.5"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbf219cc8899c850ca14e3e7c703cdd92331b5647011249dcf791700d6cb45c0"
+checksum = "e9a93c5b2191a4bdcbd320bb847ad302defbf37f2e517b1fe93984ed5217aa90"
 dependencies = [
  "bzip2",
  "duct",
