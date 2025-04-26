@@ -646,6 +646,22 @@ This sets `--pin` by default when running `mise use` in mise.toml files. This ca
 passing `--fuzzy` on the command line.
 """
 
+[pipx.registry_url]
+env = "MISE_PIPX_REGISTRY_URL"
+type = "String"
+default = "https://pypi.org/pypi/{}/json"
+description = "URL to use for pipx registries."
+docs = """
+URL to use for pipx registries.
+
+This is used to fetch the latest version of a package from the pypi registry.
+
+The default is `https://pypi.org/pypi/{}/json` which is the JSON endpoint for the pypi
+registry.
+
+You can also use the HTML endpoint by setting this to `https://pypi.org/simple/{}/`.
+"""
+
 [pipx.uvx]
 env = "MISE_PIPX_UVX"
 type = "Bool"

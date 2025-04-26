@@ -617,6 +617,11 @@
         "pipx": {
           "additionalProperties": false,
           "properties": {
+            "registry_url": {
+              "default": "https://pypi.org/pypi/{}/json",
+              "description": "URL to use for pipx registries.",
+              "type": "string"
+            },
             "uvx": {
               "description": "Use uvx instead of pipx if uv is installed and on PATH.",
               "type": "boolean"
