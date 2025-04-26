@@ -25,3 +25,4 @@ $MISE_DATA_DIR/installs/pitchfork/0.1.5
 $MISE_DATA_DIR/installs/jq/1.7.1"
 
 assert "mise env | grep PATH" "export PATH='$HOME/workdir/subdir/bin:$HOME/workdir/subdir/bin2:$HOME/workdir/bin:$HOME/workdir/bin2:$MISE_DATA_DIR/installs/dummy/2.0.0/bin:$MISE_DATA_DIR/installs/pitchfork/0.1.5:$MISE_DATA_DIR/installs/jq/1.7.1:$PATH'"
+assert "mise hook-env | grep PATH | tail -n1" "export PATH='$HOME/workdir/subdir/bin:$HOME/workdir/subdir/bin2:$HOME/workdir/bin:$HOME/workdir/bin2:$MISE_DATA_DIR/installs/dummy/2.0.0/bin:$MISE_DATA_DIR/installs/pitchfork/0.1.5:$MISE_DATA_DIR/installs/jq/1.7.1:$PATH'"
