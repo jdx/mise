@@ -96,7 +96,7 @@ impl Doctor {
         data.insert("env_vars".into(), mise_env_vars().into_iter().collect());
         data.insert(
             "settings".into(),
-            serde_json::from_str(&cmd!("mise", "settings", "-J").read()?)?,
+            serde_json::from_str(&cmd!(&*env::MISE_BIN, "settings", "-J").read()?)?,
         );
 
         let config = Config::get();
