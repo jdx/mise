@@ -1,6 +1,6 @@
 # `mise exec`
 
-- **Usage**: `mise exec [FLAGS] [TOOL@VERSION]... [-- COMMAND]...`
+- **Usage**: `mise exec [FLAGS] [TOOL@VERSION]… [-- COMMAND]…`
 - **Aliases**: `x`
 - **Source code**: [`src/cli/exec.rs`](https://github.com/jdx/mise/blob/main/src/cli/exec.rs)
 
@@ -16,11 +16,11 @@ The "--" separates runtimes from the commands to pass along to the subprocess.
 
 ## Arguments
 
-### `[TOOL@VERSION]...`
+### `[TOOL@VERSION]…`
 
 Tool(s) to start e.g.: node@20 python@3.10
 
-### `[-- COMMAND]...`
+### `[-- COMMAND]…`
 
 Command string to execute (same as --command)
 

@@ -1,6 +1,6 @@
 # `mise unset`
 
-- **Usage**: `mise unset [-f --file <FILE>] [-g --global] [ENV_KEY]...`
+- **Usage**: `mise unset [-f --file <FILE>] [-g --global] [ENV_KEY]…`
 - **Source code**: [`src/cli/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/unset.rs)
 
 Remove environment variable(s) from the config file.
@@ -9,7 +9,7 @@ By default, this command modifies `mise.toml` in the current directory.
 
 ## Arguments
 
-### `[ENV_KEY]...`
+### `[ENV_KEY]…`
 
 Environment variable(s) to remove
 e.g.: NODE_ENV
