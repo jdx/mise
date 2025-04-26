@@ -479,9 +479,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.19"
+version = "1.2.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e3a13707ac958681c13b39b458c073d0d9bc8a22cb1b2f4c8e55eb72c13f362"
+checksum = "04da6a0d40b948dfc4fa8f5bbf402b0fc1a64a28dbf7d12ffd683550f2c1b63a"
 dependencies = [
  "jobserver",
  "libc",
@@ -1757,7 +1757,7 @@ dependencies = [
  "gix-utils",
  "itoa",
  "thiserror 2.0.12",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -1853,7 +1853,7 @@ dependencies = [
  "smallvec",
  "thiserror 2.0.12",
  "unicode-bom",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -2148,7 +2148,7 @@ dependencies = [
  "itoa",
  "smallvec",
  "thiserror 2.0.12",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -2281,7 +2281,7 @@ dependencies = [
  "gix-utils",
  "maybe-async",
  "thiserror 2.0.12",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -2313,7 +2313,7 @@ dependencies = [
  "gix-validate",
  "memmap2",
  "thiserror 2.0.12",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -3663,7 +3663,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.4.8"
+version = "2025.4.9"
 dependencies = [
  "base64 0.22.1",
  "built",
@@ -4112,14 +4112,14 @@ checksum = "c1b04fb49957986fdce4d6ee7a65027d55d4b6d2265e5848bbb507b58ccfdb6f"
 
 [[package]]
 name = "papergrid"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b915f831b85d984193fdc3d3611505871dc139b2534530fa01c1a6a6707b6723"
+checksum = "30268a8d20c2c0d126b2b6610ab405f16517f6ba9f244d8c59ac2c512a8a1ce7"
 dependencies = [
+ "ahash",
  "ansi-str",
  "ansitok",
  "bytecount",
- "fnv",
  "unicode-width 0.2.0",
 ]
 
@@ -5625,21 +5625,22 @@ dependencies = [
 
 [[package]]
 name = "tabled"
-version = "0.18.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "121d8171ee5687a4978d1b244f7d99c43e7385a272185a2f1e1fa4dc0979d444"
+checksum = "228d124371171cd39f0f454b58f73ddebeeef3cef3207a82ffea1c29465aea43"
 dependencies = [
  "ansi-str",
  "ansitok",
  "papergrid",
  "tabled_derive",
+ "testing_table",
 ]
 
 [[package]]
 name = "tabled_derive"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52d9946811baad81710ec921809e2af67ad77719418673b2a3794932d57b7538"
+checksum = "0ea5d1b13ca6cff1f9231ffd62f15eefd72543dab5e468735f1a456728a02846"
 dependencies = [
  "heck",
  "proc-macro-error2",
@@ -5754,6 +5755,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+]
+
+[[package]]
+name = "testing_table"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f8daae29995a24f65619e19d8d31dea5b389f3d853d8bf297bbf607cd0014cc"
+dependencies = [
+ "ansitok",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -5970,7 +5981,7 @@ dependencies = [
  "serde",
  "serde_spanned",
  "toml_datetime",
- "winnow 0.7.6",
+ "winnow 0.7.7",
 ]
 
 [[package]]
@@ -6941,9 +6952,9 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "0.7.6"
+version = "0.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63d3fcd9bba44b03821e7d699eeee959f3126dcc4aa8e4ae18ec617c2a5cea10"
+checksum = "6cb8234a863ea0e8cd7284fcdd4f145233eb00fee02bbdd9861aec44e6477bc5"
 dependencies = [
  "memchr",
 ]
@@ -6999,9 +7010,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "2.0.5"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbf219cc8899c850ca14e3e7c703cdd92331b5647011249dcf791700d6cb45c0"
+checksum = "e9a93c5b2191a4bdcbd320bb847ad302defbf37f2e517b1fe93984ed5217aa90"
 dependencies = [
  "bzip2",
  "duct",
