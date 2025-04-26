@@ -126,7 +126,7 @@ impl Backend for PIPXBackend {
                                     && !v.contains("rc")
                             })
                             .sorted_by_cached_key(|v| Versioning::new(v))
-                            .last();
+                            .next_back();
 
                         Ok(version)
                     }
