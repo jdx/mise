@@ -51,7 +51,7 @@ impl Backend for PIPXBackend {
             PipxRequest::Pypi(package) => {
                 let registry_url = self.get_registry_url()?;
                 if registry_url.contains("/json") {
-                    debug!("Fetching JSON from {}", package);
+                    debug!("Fetching JSON for {}", package);
                     let url = format!("https://pypi.org/pypi/{}/json", package);
                     let data: PypiPackage = HTTP_FETCH.json(url)?;
                     let versions = data
@@ -63,7 +63,7 @@ impl Backend for PIPXBackend {
 
                     Ok(versions)
                 } else {
-                    debug!("Fetching HTML from {}", package);
+                    debug!("Fetching HTML for {}", package);
                     let url = format!("https://pypi.org/simple/{}/", package);
                     let html = HTTP_FETCH.get_html(url)?;
 
@@ -99,12 +99,12 @@ impl Backend for PIPXBackend {
                 PipxRequest::Pypi(package) => {
                     let registry_url = self.get_registry_url()?;
                     if registry_url.contains("/json") {
-                        debug!("Fetching JSON from {}", package);
+                        debug!("Fetching JSON for {}", package);
                         let url = format!("https://pypi.org/pypi/{}/json", package);
                         let pkg: PypiPackage = HTTP_FETCH.json(url)?;
                         Ok(Some(pkg.info.version))
                     } else {
-                        debug!("Fetching HTML from {}", package);
+                        debug!("Fetching HTML for {}", package);
                         let url = format!("https://pypi.org/simple/{}/", package);
                         let html = HTTP_FETCH.get_html(url)?;
 
