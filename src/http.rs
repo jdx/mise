@@ -150,6 +150,18 @@ impl Client {
         Ok(text)
     }
 
+    pub fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
+        let url = url.into_url().unwrap();
+        let html = RUNTIME.block_on(async {
+            let resp = self.get_async(url.clone()).await?;
+            Ok::<String, eyre::Error>(resp.text().await?)
+        })?;
+        if !html.starts_with("<!DOCTYPE html>") {
+            bail!("Got non-HTML text from {}", url);
+        }
+        Ok(html)
+    }
+
     pub fn json_headers<T, U: IntoUrl>(&self, url: U) -> Result<(T, HeaderMap)>
     where
         T: serde::de::DeserializeOwned,
