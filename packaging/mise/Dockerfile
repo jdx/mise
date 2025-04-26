@@ -16,6 +16,7 @@ ENV MISE_DATA_DIR="/mise"
 ENV MISE_CONFIG_DIR="/mise"
 ENV MISE_CACHE_DIR="/mise/cache"
 ENV PATH="/mise/shims:$PATH"
+ENV MISE_CACHE_PRUNE_AGE="10y"
 
 COPY --from=builder /usr/src/mise/target/release/mise /usr/local/bin/mise
 
