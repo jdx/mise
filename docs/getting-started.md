@@ -177,7 +177,6 @@ $newPath = $currentPath + ";" + $shimPath
 [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
 ```
 
-- When using `scoop`, mise is automatically activated
 - If not using powershell, add `<homedir>\AppData\Local\mise\shims` to `PATH`.
 
 == Other package managers
