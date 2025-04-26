@@ -5,6 +5,8 @@
 # or a backend may be disabled via MISE_DISABLE_BACKENDS=ubi
 
 [tools]
+sd.backends = ["aqua:chmln/sd"]
+sd.test = ["sd --version", "sd {{version}}"]
 1password.aliases = ["1password-cli", "op"]
 1password.backends = [
     "aqua:1password/cli",
