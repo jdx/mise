@@ -301,6 +301,7 @@ jobs:
           VERSION="$(git describe --tags)"
           VERSION="${VERSION#v}"
           brew developer on
+          brew update
           brew bump-formula-pr mise --version "$VERSION"
         env:
           HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
