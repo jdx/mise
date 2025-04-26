@@ -180,11 +180,11 @@ type = "String"
 optional = true
 description = "Name of the cargo registry to use."
 docs = """
-Packaged are installed from the official cargo registry.
+Packages are installed from the official cargo registry.
 
-You can set this to a different registry if you have a custom feed or want to use a different source.
+You can set this to a different registry name if you have a custom feed or want to use a different source.
 
-Please follow the [cargo alternative registries docs](https://doc.rust-lang.org/cargo/reference/registries.html#using-an-alternate-registry) to configure your registry.
+Please follow the [cargo alternative registries documentation](https://doc.rust-lang.org/cargo/reference/registries.html#using-an-alternate-registry) to configure your registry.
 """
 
 [cargo_binstall]
