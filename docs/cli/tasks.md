@@ -60,12 +60,12 @@ Sort order. Default is asc.
 
 ## Subcommands
 
-- [`mise tasks add [FLAGS] <TASK> [-- RUN]...`](/cli/tasks/add.md)
-- [`mise tasks deps [--hidden] [--dot] [TASKS]...`](/cli/tasks/deps.md)
+- [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)
+- [`mise tasks deps [--hidden] [--dot] [TASKS]…`](/cli/tasks/deps.md)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
-- [`mise tasks run [FLAGS] [TASK] [ARGS]...`](/cli/tasks/run.md)
+- [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.md)
 
 Examples:
 

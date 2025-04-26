@@ -1,6 +1,6 @@
 # `mise watch`
 
-- **Usage**: `mise watch [FLAGS] [TASK] [ARGS]...`
+- **Usage**: `mise watch [FLAGS] [TASK] [ARGS]…`
 - **Aliases**: `w`
 - **Source code**: [`src/cli/watch.rs`](https://github.com/jdx/mise/blob/main/src/cli/watch.rs)
 
@@ -17,13 +17,13 @@ Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
 
-### `[ARGS]...`
+### `[ARGS]…`
 
 Task and arguments to run
 
 ## Flags
 
-### `-w --watch... <PATH>`
+### `-w --watch… <PATH>`
 
 Watch a specific file or directory
 
@@ -37,7 +37,7 @@ This option can be specified multiple times to watch multiple files or directori
 
 The special value '/dev/null', provided as the only path watched, will cause Watchexec to not watch any paths. Other event sources (like signals or key events) may still be used.
 
-### `-W --watch-non-recursive... <PATH>`
+### `-W --watch-non-recursive… <PATH>`
 
 Watch a specific directory, non-recursively
 
@@ -121,7 +121,7 @@ The default is 10 seconds. Set to 0 to immediately force-kill the command.
 
 This has no practical effect on Windows as the command is always forcefully terminated; see '--stop-signal' for why.
 
-### `--map-signal... <SIGNAL:SIGNAL>`
+### `--map-signal… <SIGNAL:SIGNAL>`
 
 Translate signals from the OS to signals to send to the command
 
@@ -411,7 +411,7 @@ This is a convenience option for using Watchexec as a file watcher, without runn
 
 This option requires `--emit-events-to` to be set, and restricts the available modes to `stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin of the command.
 
-### `-E --env... <KEY=VALUE>`
+### `-E --env… <KEY=VALUE>`
 
 Add env vars to the command
 
@@ -485,19 +485,19 @@ Set the working directory
 
 By default, the working directory of the command is the working directory of Watchexec. You can change that with this option. Note that paths may be less intuitive to use with this.
 
-### `-e --exts... <EXTENSIONS>`
+### `-e --exts… <EXTENSIONS>`
 
 Filename extensions to filter to
 
 This is a quick filter to only emit events for files with the given extensions. Extensions can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can be given by repeating the option or by separating them with commas.
 
-### `-f --filter... <PATTERN>`
+### `-f --filter… <PATTERN>`
 
 Filename patterns to filter to
 
 Provide a glob-like filter pattern, and only events for files matching the pattern will be emitted. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
 
-### `--filter-file... <PATH>`
+### `--filter-file… <PATH>`
 
 Files to load filters from
 
@@ -505,7 +505,7 @@ Provide a path to a file containing filters, one per line. Empty lines and lines
 
 This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
 
-### `-J --filter-prog... <EXPRESSION>`
+### `-J --filter-prog… <EXPRESSION>`
 
 [experimental] Filter programs.
 
@@ -553,13 +553,13 @@ Ignore files that start with shebangs:
 
 'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
 
-### `-i --ignore... <PATTERN>`
+### `-i --ignore… <PATTERN>`
 
 Filename patterns to filter out
 
 Provide a glob-like filter pattern, and events for files matching the pattern will be excluded. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
 
-### `--ignore-file... <PATH>`
+### `--ignore-file… <PATH>`
 
 Files to load ignores from
 
@@ -567,7 +567,7 @@ Provide a path to a file containing ignores, one per line. Empty lines and lines
 
 This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
 
-### `--fs-events... <EVENTS>`
+### `--fs-events… <EVENTS>`
 
 Filesystem events to filter to
 

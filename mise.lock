@@ -26,7 +26,7 @@ version = "0.13.2"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
-version = "1.42.2"
+version = "1.43.0"
 backend = "cargo:cargo-insta"
 
 [tools."cargo:git-cliff"]
@@ -38,7 +38,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "2.0.7"
+version = "2.1.1"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
@@ -49,11 +49,11 @@ backend = "aqua:sigstore/cosign"
 cosign-darwin-arm64 = "sha256:780da3654d9601367b0d54686ac65cb9716578610cabe292d725c7008de4db85"
 
 [tools.hk]
-version = "0.8.5"
+version = "1.0.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.checksums]
-"hk-aarch64-apple-darwin.tar.gz" = "sha256:4ff6277e9edde84b82cb5728195d64fa9adb48b13279657cc71abfada078a17c"
+hk-macos-aarch64 = "sha256:878e12593fdaba5838cf5084afe6d019b0872d338558571475a581d722d00529"
 
 [tools.jq]
 version = "1.7.1"

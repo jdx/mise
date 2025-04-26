@@ -60,7 +60,7 @@ Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
 Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
 Or it can be overridden with the `shell` property on a task.
 
-### `-t --tool... <TOOL@VERSION>`
+### `-t --tool… <TOOL@VERSION>`
 
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 
