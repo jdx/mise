@@ -619,7 +619,7 @@
           "properties": {
             "registry_url": {
               "default": "https://pypi.org/pypi/{}/json",
-              "description": "URL to use for pipx registries.",
+              "description": "URL to use for pipx registry.",
               "type": "string"
             },
             "uvx": {

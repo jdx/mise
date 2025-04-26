@@ -650,9 +650,9 @@ passing `--fuzzy` on the command line.
 env = "MISE_PIPX_REGISTRY_URL"
 type = "String"
 default = "https://pypi.org/pypi/{}/json"
-description = "URL to use for pipx registries."
+description = "URL to use for pipx registry."
 docs = """
-URL to use for pipx registries.
+URL to use for pipx registry.
 
 This is used to fetch the latest version of a package from the pypi registry.
 
