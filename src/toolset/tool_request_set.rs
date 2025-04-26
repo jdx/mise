@@ -151,15 +151,14 @@ impl ToolRequestSetBuilder {
 
     pub fn build(&self) -> eyre::Result<ToolRequestSet> {
         let mut trs = ToolRequestSet::default();
-        self.load_config_files(&mut trs)?;
-        self.load_runtime_env(&mut trs)?;
-        self.load_runtime_args(&mut trs)?;
+        trs = self.load_config_files(trs)?;
+        trs = self.load_runtime_env(trs)?;
+        trs = self.load_runtime_args(trs)?;
 
-        let backends = trs.tools.keys().cloned().collect::<Vec<_>>();
-        for fa in &backends {
-            if self.is_disabled(fa) {
-                trs.tools.shift_remove(fa);
-                trs.sources.remove(fa);
+        for ba in trs.tools.keys().cloned().collect_vec() {
+            if self.is_disabled(&ba) {
+                trs.tools.shift_remove(&ba);
+                trs.sources.remove(&ba);
             }
         }
 
@@ -175,15 +174,15 @@ impl ToolRequestSetBuilder {
             || self.disable_tools.contains(ba)
     }
 
-    fn load_config_files(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
+    fn load_config_files(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
         let config = Config::get();
         for cf in config.config_files.values().rev() {
-            merge(trs, cf.to_tool_request_set()?);
+            trs = merge(trs, cf.to_tool_request_set()?);
         }
-        Ok(())
+        Ok(trs)
     }
 
-    fn load_runtime_env(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
+    fn load_runtime_env(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
         for (k, v) in env::vars() {
             if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
                 let plugin_name = k
@@ -201,13 +200,13 @@ impl ToolRequestSetBuilder {
                     let tvr = ToolRequest::new(fa.clone(), v, source.clone())?;
                     env_ts.add_version(tvr, &source);
                 }
-                merge(trs, env_ts);
+                trs = merge(trs, env_ts);
             }
         }
-        Ok(())
+        Ok(trs)
     }
 
-    fn load_runtime_args(&self, trs: &mut ToolRequestSet) -> eyre::Result<()> {
+    fn load_runtime_args(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
         for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = ToolRequestSet::new();
             for arg in args {
@@ -225,7 +224,7 @@ impl ToolRequestSetBuilder {
                     }
                 }
             }
-            merge(trs, arg_ts);
+            trs = merge(trs, arg_ts);
         }
 
         let tool_args = env::TOOL_ARGS.read().unwrap();
@@ -239,16 +238,17 @@ impl ToolRequestSetBuilder {
                 arg_trs.add_version(tr, &ToolSource::Argument);
             }
         }
-        merge(trs, arg_trs);
+        trs = merge(trs, arg_trs);
 
-        Ok(())
+        Ok(trs)
     }
 }
 
-fn merge(a: &mut ToolRequestSet, b: ToolRequestSet) {
-    for (fa, versions) in b.tools {
-        let source = b.sources[&fa].clone();
-        a.tools.insert(fa.clone(), versions);
-        a.sources.insert(fa, source);
-    }
+fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
+    // move things around such that the tools are in the config order
+    a.tools.retain(|ba, _| !b.tools.contains_key(ba));
+    a.sources.retain(|ba, _| !b.sources.contains_key(ba));
+    b.tools.extend(a.tools);
+    b.sources.extend(a.sources);
+    b
 }
