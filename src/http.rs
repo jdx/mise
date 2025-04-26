@@ -72,6 +72,9 @@ impl Client {
             let mut req = self.reqwest.get(url.clone());
             req = req.headers(headers.clone());
             let resp = req.send().await?;
+            if *env::MISE_LOG_HTTP {
+                eprintln!("GET {url} {}", resp.status());
+            }
             debug!("GET {url} {}", resp.status());
             display_github_rate_limit(&resp);
             resp.error_for_status_ref()?;
@@ -113,6 +116,9 @@ impl Client {
             let mut req = self.reqwest.head(url.clone());
             req = req.headers(headers.clone());
             let resp = req.send().await?;
+            if *env::MISE_LOG_HTTP {
+                eprintln!("HEAD {url} {}", resp.status());
+            }
             debug!("HEAD {url} {}", resp.status());
             display_github_rate_limit(&resp);
             resp.error_for_status_ref()?;
