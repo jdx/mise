@@ -1,5 +1,33 @@
 # Changelog
 
+## [2025.4.10](https://github.com/jdx/mise/compare/v2025.4.9..v2025.4.10) - 2025-04-26
+
+### 🚀 Features
+
+- **(registry)** add `cli53` backend by [@garysassano](https://github.com/garysassano) in [#4937](https://github.com/jdx/mise/pull/4937)
+- pipx custom repository url by [@acesyde](https://github.com/acesyde) in [#4945](https://github.com/jdx/mise/pull/4945)
+
+### 🐛 Bug Fixes
+
+- **(hook-env)** path order by [@jdx](https://github.com/jdx) in [#4946](https://github.com/jdx/mise/pull/4946)
+- **(unuse)** allow unusing any version if version not specified by [@jdx](https://github.com/jdx) in [#4944](https://github.com/jdx/mise/pull/4944)
+- Always use env::MISE_BIN when calling mise from itself by [@hverlin](https://github.com/hverlin) in [#4943](https://github.com/jdx/mise/pull/4943)
+
+### 📚 Documentation
+
+- remove outdated note about automatic shim activation with Scoop by [@jgutierrezre](https://github.com/jgutierrezre) in [#4941](https://github.com/jdx/mise/pull/4941)
+
+### Chore
+
+- checkout for homebrew bump by [@jdx](https://github.com/jdx) in [6d7b0f6](https://github.com/jdx/mise/commit/6d7b0f6fdf83ee9d7be29a61b5b5be202ac0526a)
+- mise.lock by [@jdx](https://github.com/jdx) in [05c9a24](https://github.com/jdx/mise/commit/05c9a241744fa330677402a365344b8430a4984c)
+- updated deps by [@jdx](https://github.com/jdx) in [ac5cf5d](https://github.com/jdx/mise/commit/ac5cf5d840dc3a997dce0b1d3a1af963ef456ac2)
+
+### New Contributors
+
+- @garysassano made their first contribution in [#4937](https://github.com/jdx/mise/pull/4937)
+- @jgutierrezre made their first contribution in [#4941](https://github.com/jdx/mise/pull/4941)
+
 ## [2025.4.9](https://github.com/jdx/mise/compare/v2025.4.8..v2025.4.9) - 2025-04-25
 
 ### 🚀 Features
