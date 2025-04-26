@@ -138,6 +138,9 @@ impl Doctor {
                         false => {
                             tool.insert("version".into(), tv.version.to_string().into());
                             tool.insert("missing".into(), true.into());
+                            self.errors.push(format!(
+                                "tool {tv} is not installed, install with `mise install`"
+                            ));
                         }
                     }
                     serde_json::Value::from(tool)
@@ -314,7 +317,12 @@ impl Doctor {
             .into_iter()
             .map(|(f, tv)| match f.is_version_installed(&tv, true) {
                 true => (tv.to_string(), style::nstyle("")),
-                false => (tv.to_string(), style::ndim("(missing)")),
+                false => {
+                    self.errors.push(format!(
+                        "tool {tv} is not installed, install with `mise install`"
+                    ));
+                    (tv.to_string(), style::ndim("(missing)"))
+                }
             })
             .collect_vec();
         let max_tool_len = tools
