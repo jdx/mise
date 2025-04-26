@@ -309,6 +309,10 @@
               "default": true,
               "description": "Use cargo-binstall instead of cargo install if available",
               "type": "boolean"
+            },
+            "registry_name": {
+              "description": "Name of the cargo registry to use.",
+              "type": "string"
             }
           }
         },
