@@ -298,6 +298,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
+          gh repo sync mise-en-dev/homebrew-core --source Homebrew/homebrew-core
           VERSION="$(git describe --tags)"
           VERSION="${VERSION#v}"
           brew developer on
