@@ -4,7 +4,6 @@ use crate::config;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, config_file};
 use crate::file::display_path;
-use crate::toolset::ToolRequest;
 use eyre::Result;
 use itertools::Itertools;
 
