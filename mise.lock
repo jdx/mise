@@ -66,10 +66,6 @@ jq-linux-arm64 = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4
 jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
 "jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
 
-[tools.mimirtool]
-version = "2.15.2"
-backend = "aqua:grafana/mimir/mimirtool"
-
 [tools."npm:markdownlint-cli"]
 version = "0.44.0"
 backend = "npm:markdownlint-cli"

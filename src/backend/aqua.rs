@@ -530,7 +530,7 @@ impl AquaBackend {
             pkg.files
                 .first()
                 .map(|f| f.name.as_str())
-                .or_else(|| pkg.name.as_ref().and_then(|n| n.split('/').last()))
+                .or_else(|| pkg.name.as_ref().and_then(|n| n.split('/').next_back()))
                 .unwrap_or(&pkg.repo_name),
         );
         if cfg!(windows) && bin_path.extension().is_none() {
