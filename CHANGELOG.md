@@ -1,5 +1,24 @@
 # Changelog
 
+## [2025.4.11](https://github.com/jdx/mise/compare/v2025.4.10..v2025.4.11) - 2025-04-27
+
+### 🚀 Features
+
+- **(cargo)** allow customizable registry by [@acesyde](https://github.com/acesyde) in [#4948](https://github.com/jdx/mise/pull/4948)
+- **(doctor)** show error if tool not installed by [@jdx](https://github.com/jdx) in [#4952](https://github.com/jdx/mise/pull/4952)
+- added sd by [@jdx](https://github.com/jdx) in [#4950](https://github.com/jdx/mise/pull/4950)
+- MISE_LOG_HTTP by [@jdx](https://github.com/jdx) in [#4951](https://github.com/jdx/mise/pull/4951)
+
+### 🐛 Bug Fixes
+
+- set prune age to 10y in dockerfile by [@jdx](https://github.com/jdx) in [9a521dc](https://github.com/jdx/mise/commit/9a521dc1e93e57567dcb262482a6a8d382fbebe8)
+
+### Chore
+
+- brew update by [@jdx](https://github.com/jdx) in [641f3b3](https://github.com/jdx/mise/commit/641f3b3ef1c8c7b2e4931c5012c2b8dc94533070)
+- brew sync repos by [@jdx](https://github.com/jdx) in [3318e98](https://github.com/jdx/mise/commit/3318e98d78af8a11e36f13574abe4f1cce181a92)
+- bump usage by [@jdx](https://github.com/jdx) in [#4949](https://github.com/jdx/mise/pull/4949)
+
 ## [2025.4.10](https://github.com/jdx/mise/compare/v2025.4.9..v2025.4.10) - 2025-04-26
 
 ### 🚀 Features
@@ -22,6 +41,7 @@
 - checkout for homebrew bump by [@jdx](https://github.com/jdx) in [6d7b0f6](https://github.com/jdx/mise/commit/6d7b0f6fdf83ee9d7be29a61b5b5be202ac0526a)
 - mise.lock by [@jdx](https://github.com/jdx) in [05c9a24](https://github.com/jdx/mise/commit/05c9a241744fa330677402a365344b8430a4984c)
 - updated deps by [@jdx](https://github.com/jdx) in [ac5cf5d](https://github.com/jdx/mise/commit/ac5cf5d840dc3a997dce0b1d3a1af963ef456ac2)
+- brew developer by [@jdx](https://github.com/jdx) in [445e313](https://github.com/jdx/mise/commit/445e313985cb948cf2a7cb57d896055b898a0f67)
 
 ### New Contributors
 
