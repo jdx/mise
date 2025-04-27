@@ -309,6 +309,10 @@
               "default": true,
               "description": "Use cargo-binstall instead of cargo install if available",
               "type": "boolean"
+            },
+            "registry_name": {
+              "description": "Name of the cargo registry to use.",
+              "type": "string"
             }
           }
         },
@@ -617,6 +621,11 @@
         "pipx": {
           "additionalProperties": false,
           "properties": {
+            "registry_url": {
+              "default": "https://pypi.org/pypi/{}/json",
+              "description": "URL to use for pipx registry.",
+              "type": "string"
+            },
             "uvx": {
               "description": "Use uvx instead of pipx if uv is installed and on PATH.",
               "type": "boolean"

@@ -1,6 +1,6 @@
 # `mise upgrade`
 
-- **Usage**: `mise upgrade [FLAGS] [TOOL@VERSION]...`
+- **Usage**: `mise upgrade [FLAGS] [TOOL@VERSION]…`
 - **Aliases**: `up`
 - **Source code**: [`src/cli/upgrade.rs`](https://github.com/jdx/mise/blob/main/src/cli/upgrade.rs)
 
@@ -14,7 +14,7 @@ This will update mise.lock if it is enabled, see <https://mise.jdx.dev/configura
 
 ## Arguments
 
-### `[TOOL@VERSION]...`
+### `[TOOL@VERSION]…`
 
 Tool(s) to upgrade
 e.g.: node@20 python@3.10

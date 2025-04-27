@@ -1,6 +1,6 @@
 # `mise install`
 
-- **Usage**: `mise install [FLAGS] [TOOL@VERSION]...`
+- **Usage**: `mise install [FLAGS] [TOOL@VERSION]…`
 - **Aliases**: `i`
 - **Source code**: [`src/cli/install.rs`](https://github.com/jdx/mise/blob/main/src/cli/install.rs)
 
@@ -16,7 +16,7 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
 ## Arguments
 
-### `[TOOL@VERSION]...`
+### `[TOOL@VERSION]…`
 
 Tool(s) to install e.g.: node@20
 
@@ -35,7 +35,7 @@ Number of jobs to run in parallel
 
 Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
-### `-v --verbose...`
+### `-v --verbose…`
 
 Show installation output
 

@@ -1,6 +1,6 @@
 # `mise plugins update`
 
-- **Usage**: `mise plugins update [-j --jobs <JOBS>] [PLUGIN]...`
+- **Usage**: `mise plugins update [-j --jobs <JOBS>] [PLUGIN]…`
 - **Aliases**: `up`, `upgrade`
 - **Source code**: [`src/cli/plugins/update.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/update.rs)
 
@@ -10,7 +10,7 @@ note: this updates the plugin itself, not the runtime versions
 
 ## Arguments
 
-### `[PLUGIN]...`
+### `[PLUGIN]…`
 
 Plugin(s) to update
 

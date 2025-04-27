@@ -72,6 +72,9 @@ impl Client {
             let mut req = self.reqwest.get(url.clone());
             req = req.headers(headers.clone());
             let resp = req.send().await?;
+            if *env::MISE_LOG_HTTP {
+                eprintln!("GET {url} {}", resp.status());
+            }
             debug!("GET {url} {}", resp.status());
             display_github_rate_limit(&resp);
             resp.error_for_status_ref()?;
@@ -113,6 +116,9 @@ impl Client {
             let mut req = self.reqwest.head(url.clone());
             req = req.headers(headers.clone());
             let resp = req.send().await?;
+            if *env::MISE_LOG_HTTP {
+                eprintln!("HEAD {url} {}", resp.status());
+            }
             debug!("HEAD {url} {}", resp.status());
             display_github_rate_limit(&resp);
             resp.error_for_status_ref()?;
@@ -148,6 +154,18 @@ impl Client {
             bail!("Got HTML instead of text from {}", url);
         }
         Ok(text)
+    }
+
+    pub fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
+        let url = url.into_url().unwrap();
+        let html = RUNTIME.block_on(async {
+            let resp = self.get_async(url.clone()).await?;
+            Ok::<String, eyre::Error>(resp.text().await?)
+        })?;
+        if !html.starts_with("<!DOCTYPE html>") {
+            bail!("Got non-HTML text from {}", url);
+        }
+        Ok(html)
     }
 
     pub fn json_headers<T, U: IntoUrl>(&self, url: U) -> Result<(T, HeaderMap)>

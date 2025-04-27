@@ -1,5 +1,5 @@
-amends "package://github.com/jdx/hk/releases/download/v0.8.3/hk@0.8.3#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v0.8.3/hk@0.8.3#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Builtins.pkl"
 
 local linters = new Mapping<String, Step> {
     // uses builtin prettier linter config

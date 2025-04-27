@@ -4,7 +4,6 @@ use crate::config;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, config_file};
 use crate::file::display_path;
-use crate::toolset::ToolRequest;
 use eyre::Result;
 use itertools::Itertools;
 
@@ -21,10 +20,6 @@ pub struct Unuse {
     /// Do not also prune the installed version
     #[clap(long)]
     no_prune: bool,
-
-    /// Remove tool from global config
-    #[clap(short, long)]
-    global: bool,
 }
 
 impl Unuse {
@@ -35,13 +30,13 @@ impl Unuse {
         let mut removed: Vec<&ToolArg> = vec![];
         for ta in &self.installed_tool {
             if let Some(tool_requests) = tools.get(&ta.ba) {
-                let tools_to_remove: Vec<&ToolRequest> = tool_requests
-                    .iter()
-                    .filter(|tv| {
-                        tv.version() == ta.version.as_ref().map_or("latest", |v| v.as_str())
-                    })
-                    .collect();
-                for _tool in tools_to_remove {
+                let should_remove = if let Some(v) = &ta.version {
+                    tool_requests.iter().any(|tv| &tv.version() == v)
+                } else {
+                    true
+                };
+                // TODO: this won't work properly for unusing a specific version in of multiple in a config
+                if should_remove {
                     removed.push(ta);
                     cf.remove_tool(&ta.ba)?;
                 }
