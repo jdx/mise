@@ -526,8 +526,12 @@ impl AquaBackend {
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         let format = pkg.format(v)?;
-        let mut bin_path =
-            install_path.join(pkg.files.first().map(|f| &f.name).unwrap_or(&pkg.repo_name));
+        let mut bin_path = install_path.join(
+            pkg.files
+                .first()
+                .map(|f| f.name.as_str())
+                .unwrap_or_else(|| pkg.name.split('/').last().unwrap()),
+        );
         if cfg!(windows) && bin_path.extension().is_none() {
             bin_path = bin_path.with_extension("exe");
         }

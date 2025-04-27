@@ -54,6 +54,7 @@ backend = "aqua:jdx/hk"
 
 [tools.hk.checksums]
 hk-macos-aarch64 = "sha256:878e12593fdaba5838cf5084afe6d019b0872d338558571475a581d722d00529"
+"hk-x86_64-unknown-linux-gnu.tar.gz" = "sha256:b98919d9045786d34afa61b7d34d84d5a13988e1f25fd3c1e188deda7f1acf31"
 
 [tools.jq]
 version = "1.7.1"
@@ -64,6 +65,10 @@ jq-linux-amd64 = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b8
 jq-linux-arm64 = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5"
 jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
 "jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
+
+[tools.mimirtool]
+version = "2.15.2"
+backend = "aqua:grafana/mimir/mimirtool"
 
 [tools."npm:markdownlint-cli"]
 version = "0.44.0"
