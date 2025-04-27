@@ -530,7 +530,8 @@ impl AquaBackend {
             pkg.files
                 .first()
                 .map(|f| f.name.as_str())
-                .unwrap_or_else(|| pkg.name.split('/').last().unwrap()),
+                .or_else(|| pkg.name.as_ref().and_then(|n| n.split('/').last()))
+                .unwrap_or(&pkg.repo_name),
         );
         if cfg!(windows) && bin_path.extension().is_none() {
             bin_path = bin_path.with_extension("exe");

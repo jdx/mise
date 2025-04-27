@@ -51,10 +51,10 @@ pub enum AquaPackageType {
 #[derive(Debug, Deserialize, Default, Clone)]
 #[serde(default)]
 pub struct AquaPackage {
-    pub name: String,
     pub r#type: AquaPackageType,
     pub repo_owner: String,
     pub repo_name: String,
+    pub name: Option<String>,
     pub asset: String,
     pub url: String,
     pub description: Option<String>,
