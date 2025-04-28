@@ -168,9 +168,9 @@ impl BackendArg {
     }
 
     pub fn full_with_opts(&self) -> String {
-        let mut full = self.full();
-        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
-            full = c.get(1).unwrap().as_str().to_string();
+        let full = self.full();
+        if regex!(r"^(.+)\[(.+)\]$").is_match(&full) {
+            return full;
         }
         if let Some(opts) = &self.opts {
             let opts_str = opts
