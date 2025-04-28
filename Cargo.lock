@@ -1090,9 +1090,9 @@ dependencies = [
 
 [[package]]
 name = "deunicode"
-version = "1.6.1"
+version = "1.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc55fe0d1f6c107595572ec8b107c0999bb1a2e0b75e37429a4fb0d6474a0e7d"
+checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
 
 [[package]]
 name = "diff"
@@ -3611,21 +3611,20 @@ dependencies = [
 
 [[package]]
 name = "miette"
-version = "7.5.0"
+version = "7.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a955165f87b37fd1862df2a59547ac542c77ef6d17c666f619d1ad22dd89484"
+checksum = "5f98efec8807c63c752b5bd61f862c165c115b0a35685bdcfd9238c7aeb592b7"
 dependencies = [
  "cfg-if",
  "miette-derive",
- "thiserror 1.0.69",
  "unicode-width 0.1.14",
 ]
 
 [[package]]
 name = "miette-derive"
-version = "7.5.0"
+version = "7.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf45bf44ab49be92fd1227a3be6fc6f617f1a337c06af54981048574d8783147"
+checksum = "db5b29714e950dbb20d5e6f74f9dcec4edbcc1067bb7f8ed198c097b8c1a818b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4494,9 +4493,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.37.4"
+version = "0.37.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4ce8c88de324ff838700f36fb6ab86c96df0e3c4ab6ef3a9b2044465cce1369"
+checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
 dependencies = [
  "memchr",
 ]
@@ -6566,9 +6565,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "0.26.8"
+version = "0.26.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2210b291f7ea53617fbafcc4939f10914214ec15aace5ba62293a668f322c5c9"
+checksum = "29aad86cec885cafd03e8305fd727c418e970a521322c91688414d5b8efba16b"
 dependencies = [
  "rustls-pki-types",
 ]
