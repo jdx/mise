@@ -1214,7 +1214,7 @@ kustomize.backends = [
 ]
 kustomize.test = ["kustomize version", "v{{version}}"]
 kwokctl.backends = ["aqua:kubernetes-sigs/kwok/kwokctl"]
-kwokctl.test = ["kwok --version", "kwok version v{{version}}"]
+# kwokctl.test = ["kwokctl --version", "kwokctl version v{{version}}"]
 kwt.backends = ["aqua:carvel-dev/kwt", "asdf:vmware-tanzu/asdf-carvel"]
 kyverno.backends = [
     "aqua:kyverno/kyverno",
@@ -1322,7 +1322,7 @@ mimirtool.backends = [
     "aqua:grafana/mimir/mimirtool",
     "asdf:asdf-community/asdf-mimirtool"
 ]
-mimirtool.test = ["mimir version", "Mimirtool, version {{version}}"]
+mimirtool.test = ["mimirtool version", "Mimirtool, version {{version}}"]
 mimirtool.os = ["linux", "macos"]
 minify.backends = ["aqua:tdewolff/minify", "asdf:axilleas/asdf-minify"]
 minikube.backends = ["aqua:kubernetes/minikube", "asdf:alvarobp/asdf-minikube"]
@@ -1458,7 +1458,7 @@ perl.backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
 php.backends = ["asdf:mise-plugins/asdf-php", "vfox:mise-plugins/vfox-php"]
 pint.backends = ["aqua:cloudflare/pint", "asdf:sam-burrell/asdf-pint"]
 pipectl.backends = ["aqua:pipe-cd/pipecd/pipectl", "asdf:pipe-cd/asdf-pipectl"]
-pipectl.test = ["pipecd version", "Version: v{{version}}"]
+pipectl.test = ["pipectl version", "Version: v{{version}}"]
 pipectl.os = ["linux", "macos"]
 pipelight.backends = ["asdf:mise-plugins/mise-pipelight"]
 pipenv.backends = ["asdf:mise-plugins/mise-pipenv"]

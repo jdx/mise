@@ -168,6 +168,9 @@ dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
 dnf install -y mise
 ```
 
+> [!NOTE]
+> This repository maintains only the latest version of the mise CLI. Previous versions are removed and are not available once a new release is made.
+
 ### Docker
 
 ```sh
