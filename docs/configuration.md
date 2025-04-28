@@ -365,6 +365,10 @@ Output logs to a file.
 Same as `MISE_LOG_LEVEL` but for the log _file_ output level. This is useful if you want
 to store the logs but not have them litter your display.
 
+### `MISE_LOG_HTTP=1`
+
+Display HTTP requests/responses in the logs.
+
 ### `MISE_QUIET=1`
 
 Equivalent to `MISE_LOG_LEVEL=warn`.

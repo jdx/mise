@@ -2736,11 +2736,6 @@ const completionSpec: Fig.Spec = {
           description: "Do not also prune the installed version",
           isRepeatable: false,
         },
-        {
-          name: ["-g", "--global"],
-          description: "Remove tool from global config",
-          isRepeatable: false,
-        },
       ],
       args: {
         name: "installed_tool@version",

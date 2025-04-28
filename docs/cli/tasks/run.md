@@ -1,6 +1,6 @@
 # `mise tasks run`
 
-- **Usage**: `mise tasks run [FLAGS] [TASK] [ARGS]...`
+- **Usage**: `mise tasks run [FLAGS] [TASK] [ARGS]…`
 - **Aliases**: `r`
 - **Source code**: [`src/cli/tasks/run.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/run.rs)
 
@@ -44,7 +44,7 @@ e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
 
 **Default:** `default`
 
-### `[ARGS]...`
+### `[ARGS]…`
 
 Arguments to pass to the tasks. Use ":::" to separate tasks
 
@@ -74,7 +74,7 @@ Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
 Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
 Or it can be overridden with the `shell` property on a task.
 
-### `-t --tool... <TOOL@VERSION>`
+### `-t --tool… <TOOL@VERSION>`
 
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 

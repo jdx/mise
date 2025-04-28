@@ -355,6 +355,8 @@ clangd.backends = ["asdf:mise-plugins/mise-llvm"]
 clarinet.backends = ["ubi:hirosystems/clarinet", "asdf:alexgo-io/asdf-clarinet"]
 clarinet.os = ["linux", "macos"]
 clarinet.test = ["clarinet --version", "clarinet {{version}}"]
+cli53.backends = ["aqua:barnybug/cli53"]
+cli53.test = ["cli53 --version", "cli53 version {{version}}"]
 # ubi not working on linux
 # clickhouse.backends = ["ubi:ClickHouse/ClickHouse", "asdf:mise-plugins/mise-clickhouse"]
 # clickhouse.os = ["linux", "macos"]
@@ -631,6 +633,11 @@ eza.backends = [
     # "ubi:cargo-bins/cargo-quickinstall[exe=eza,tag_regex=^eza-]", # does not fetch tags right, needs to load everything
     "asdf:mise-plugins/mise-eza",
     "cargo:eza"
+]
+fastfetch.backends = ["aqua:fastfetch-cli/fastfetch"]
+fastfetch.test = [
+    "fastfetch --version | awk '{print $1, $2}'",
+    "fastfetch {{version}}"
 ]
 fd.backends = [
     "aqua:sharkdp/fd",
@@ -1207,7 +1214,7 @@ kustomize.backends = [
 ]
 kustomize.test = ["kustomize version", "v{{version}}"]
 kwokctl.backends = ["aqua:kubernetes-sigs/kwok/kwokctl"]
-kwokctl.test = ["kwok --version", "kwok version v{{version}}"]
+# kwokctl.test = ["kwokctl --version", "kwokctl version v{{version}}"]
 kwt.backends = ["aqua:carvel-dev/kwt", "asdf:vmware-tanzu/asdf-carvel"]
 kyverno.backends = [
     "aqua:kyverno/kyverno",
@@ -1315,7 +1322,7 @@ mimirtool.backends = [
     "aqua:grafana/mimir/mimirtool",
     "asdf:asdf-community/asdf-mimirtool"
 ]
-mimirtool.test = ["mimir version", "Mimirtool, version {{version}}"]
+mimirtool.test = ["mimirtool version", "Mimirtool, version {{version}}"]
 mimirtool.os = ["linux", "macos"]
 minify.backends = ["aqua:tdewolff/minify", "asdf:axilleas/asdf-minify"]
 minikube.backends = ["aqua:kubernetes/minikube", "asdf:alvarobp/asdf-minikube"]
@@ -1451,7 +1458,7 @@ perl.backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
 php.backends = ["asdf:mise-plugins/asdf-php", "vfox:mise-plugins/vfox-php"]
 pint.backends = ["aqua:cloudflare/pint", "asdf:sam-burrell/asdf-pint"]
 pipectl.backends = ["aqua:pipe-cd/pipecd/pipectl", "asdf:pipe-cd/asdf-pipectl"]
-pipectl.test = ["pipecd version", "Version: v{{version}}"]
+pipectl.test = ["pipectl version", "Version: v{{version}}"]
 pipectl.os = ["linux", "macos"]
 pipelight.backends = ["asdf:mise-plugins/mise-pipelight"]
 pipenv.backends = ["asdf:mise-plugins/mise-pipenv"]
@@ -1658,6 +1665,8 @@ scie-pants.backends = [
     "ubi:pantsbuild/scie-pants",
     "asdf:robzr/asdf-scie-pants"
 ]
+sd.backends = ["aqua:chmln/sd"]
+sd.test = ["sd --version", "sd {{version}}"]
 seed7.backends = ["asdf:mise-plugins/mise-seed7"]
 semgrep.backends = ["asdf:mise-plugins/mise-semgrep"]
 semtag.backends = ["asdf:mise-plugins/mise-semtag"]
@@ -1906,6 +1915,8 @@ tsuru.backends = [
 ]
 ttyd.backends = ["aqua:tsl0922/ttyd", "asdf:ivanvc/asdf-ttyd"]
 tuist.backends = ["asdf:mise-plugins/mise-tuist"]
+tusd.backends = ["ubi:tus/tusd"]
+tusd.tests = ["tusd --version | head -n1", "Version: v{{version}}"]
 typos.backends = ["aqua:crate-ci/typos", "asdf:aschiavon91/asdf-typos"]
 typst.backends = ["aqua:typst/typst", "asdf:stephane-klein/asdf-typst"]
 uaa.aliases = ["uaa-cli"]

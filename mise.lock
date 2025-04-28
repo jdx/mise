@@ -26,7 +26,7 @@ version = "0.13.2"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
-version = "1.42.2"
+version = "1.43.0"
 backend = "cargo:cargo-insta"
 
 [tools."cargo:git-cliff"]
@@ -38,7 +38,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "2.0.7"
+version = "2.1.1"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
@@ -49,11 +49,13 @@ backend = "aqua:sigstore/cosign"
 cosign-darwin-arm64 = "sha256:780da3654d9601367b0d54686ac65cb9716578610cabe292d725c7008de4db85"
 
 [tools.hk]
-version = "0.8.5"
+version = "1.0.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.checksums]
-"hk-aarch64-apple-darwin.tar.gz" = "sha256:4ff6277e9edde84b82cb5728195d64fa9adb48b13279657cc71abfada078a17c"
+"hk-aarch64-apple-darwin.tar.gz" = "sha256:80a671912e3678a4fe156033153015da1fa435639ea7b4797c5ecb61250768ad"
+hk-macos-aarch64 = "sha256:878e12593fdaba5838cf5084afe6d019b0872d338558571475a581d722d00529"
+"hk-x86_64-unknown-linux-gnu.tar.gz" = "sha256:b98919d9045786d34afa61b7d34d84d5a13988e1f25fd3c1e188deda7f1acf31"
 
 [tools.jq]
 version = "1.7.1"
@@ -103,9 +105,10 @@ backend = "aqua:BurntSushi/ripgrep"
 
 [tools.shellcheck]
 version = "0.10.0"
-backend = "aqua:koalaman/shellcheck"
+backend = "ubi:koalaman/shellcheck"
 
 [tools.shellcheck.checksums]
+shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f8b02ea4811cd4cc1109"
 "shellcheck-v0.10.0.darwin.aarch64.tar.xz" = "sha256:bbd2f14826328eee7679da7221f2bc3afb011f6a928b848c80c321f6046ddf81"
 
 [tools.shfmt]

@@ -1,6 +1,7 @@
 use crate::cli::args::ToolArg;
 use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
+use crate::env::MISE_BIN;
 use crate::exit::exit;
 use crate::ui::ctrlc;
 use crate::{logger, migrate, shims};
@@ -334,6 +335,7 @@ impl Cli {
         }
 
         debug!("ARGS: {}", &args.join(" "));
+        trace!("MISE_BIN: {}", MISE_BIN.to_string_lossy().to_string());
         if print_version {
             version::show_latest();
             exit(0);
