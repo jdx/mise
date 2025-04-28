@@ -1414,6 +1414,24 @@
               }
             },
             "type": "object"
+          },
+          {
+            "description": "scripts to run",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "script": {
+                  "description": "script to run",
+                  "type": "string"
+                },
+                "shell": {
+                  "description": "specify the shell to run the script inside of",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
           }
         ]
       }
