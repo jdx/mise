@@ -54,6 +54,7 @@ backend = "aqua:jdx/hk"
 
 [tools.hk.checksums]
 hk-macos-aarch64 = "sha256:878e12593fdaba5838cf5084afe6d019b0872d338558571475a581d722d00529"
+"hk-x86_64-unknown-linux-gnu.tar.gz" = "sha256:b98919d9045786d34afa61b7d34d84d5a13988e1f25fd3c1e188deda7f1acf31"
 
 [tools.jq]
 version = "1.7.1"
