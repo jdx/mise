@@ -267,7 +267,7 @@ impl JavaPlugin {
             .json::<Vec<JavaMetadata>, _>(url)?
             .into_iter()
             // TODO: remove once we switch over to the new metadata which has these filtered out already
-            .filter(|m| jetbrains_with_features(m))
+            .filter(jetbrains_with_features)
             .filter(|m| {
                 m.file_type
                     .as_ref()
