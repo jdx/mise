@@ -62,7 +62,7 @@ impl Backend for NPMBackend {
                 if let Ok(cache) = self.latest_version_cache.try_lock() {
                     cache.get_or_try_init(fetch).cloned()
                 } else {
-                    return fetch();
+                    fetch()
                 }
             },
             SETTINGS.fetch_remote_versions_timeout(),

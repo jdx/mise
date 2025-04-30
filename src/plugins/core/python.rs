@@ -18,8 +18,8 @@ use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock as Lazy, Mutex};
 use std::sync::{Arc, OnceLock};
+use std::sync::{LazyLock as Lazy, Mutex};
 use versions::Versioning;
 use xx::regex;
 
