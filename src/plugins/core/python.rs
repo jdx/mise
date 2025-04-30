@@ -18,7 +18,7 @@ use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock as Lazy;
+use std::sync::{LazyLock as Lazy, Mutex};
 use std::sync::{Arc, OnceLock};
 use versions::Versioning;
 use xx::regex;
@@ -474,15 +474,19 @@ impl Backend for PythonPlugin {
         Ok(hm)
     }
 
-    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
-        static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
+    fn get_remote_version_cache(&self) -> Arc<Mutex<VersionCacheManager>> {
+        static CACHE: OnceLock<Arc<Mutex<VersionCacheManager>>> = OnceLock::new();
         CACHE
             .get_or_init(|| {
-                CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
+                Mutex::new(
+                    CacheManagerBuilder::new(
+                        self.ba().cache_path.join("remote_versions.msgpack.z"),
+                    )
                     .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
                     .with_cache_key((SETTINGS.python.compile == Some(false)).to_string())
-                    .build()
-                    .into()
+                    .build(),
+                )
+                .into()
             })
             .clone()
     }
