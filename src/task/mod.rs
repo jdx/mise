@@ -68,6 +68,8 @@ pub struct Task {
     #[serde(default)]
     pub hide: bool,
     #[serde(default)]
+    pub global: bool,
+    #[serde(default)]
     pub raw: bool,
     #[serde(default)]
     pub sources: Vec<String>,
@@ -600,6 +602,7 @@ impl Default for Task {
             env: BTreeMap::new(),
             dir: None,
             hide: false,
+            global: false,
             raw: false,
             sources: vec![],
             outputs: Default::default(),

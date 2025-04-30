@@ -424,8 +424,8 @@ impl Config {
     }
 
     fn load_local_tasks(&self) -> Result<Vec<Task>> {
-        let file_tasks = file::all_dirs()?
-            .into_iter()
+        Ok(file::all_dirs()?
+            .into_par_iter()
             .filter(|d| {
                 if cfg!(test) {
                     d.starts_with(*dirs::HOME)
@@ -433,14 +433,11 @@ impl Config {
                     true
                 }
             })
-            .collect_vec()
-            .into_par_iter()
             .map(|d| self.load_tasks_in_dir(&d))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()
-            .collect_vec();
-        Ok(file_tasks)
+            .collect())
     }
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
@@ -450,6 +447,10 @@ impl Config {
             .load_config_tasks(&cf.map(|cf| cf.as_ref()), config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, config_root))
+            .map(|mut t| {
+                t.global = true;
+                t
+            })
             .collect())
     }
 
@@ -463,18 +464,26 @@ impl Config {
             .load_config_tasks(&cf.map(|cf| cf.as_ref()), &config_root)
             .into_iter()
             .chain(self.load_file_tasks(&cf, &config_root))
+            .map(|mut t| {
+                t.global = true;
+                t
+            })
             .collect())
     }
 
     fn load_config_tasks(&self, cf: &Option<&dyn ConfigFile>, config_root: &Path) -> Vec<Task> {
-        cf.map(|cf| cf.tasks())
-            .unwrap_or_default()
+        let Some(cf) = cf else {
+            return vec![];
+        };
+        let is_global = is_global_config(cf.get_path());
+        cf.tasks()
             .into_iter()
             .cloned()
             .map(|mut t| {
                 if let Err(err) = t.render(config_root) {
                     warn!("rendering task: {err:?}");
                 }
+                t.global = is_global;
                 t
             })
             .collect()
@@ -1242,26 +1251,36 @@ fn warn_about_idiomatic_version_files(config_files: &ConfigMap) {
         return;
     }
     debug_assert!(
-        !VERSION.starts_with("2026"),
+        !VERSION.starts_with("2025.10"),
         "default idiomatic version files to disabled"
     );
-    if let Some((p, cf)) = config_files
+    let Some((p, tool)) = config_files
         .iter()
-        .find(|(_, cf)| cf.config_type() == ConfigFileType::IdiomaticVersion)
-    {
-        let tool = cf
-            .to_toolset()
-            .ok()
-            .and_then(|ts| ts.versions.keys().map(|ba| ba.to_string()).next())
-            .unwrap_or("<TOOL>".to_string());
-        deprecated!(
-            "idiomatic_version_file_enable_tools",
-            "idiomatic version files like {} are currently enabled by default however this will change in mise 2026.1.1 to instead default to disabled.\nYou can remove this warning by explicitly enabling idiomatic version files for {} with `mise settings add idiomatic_version_file_enable_tools {}`.\nSee https://github.com/jdx/mise/discussions/4345 for more information.",
-            display_path(p),
-            tool,
-            tool
-        );
-    }
+        .filter(|(_, cf)| cf.config_type() == ConfigFileType::IdiomaticVersion)
+        .filter_map(|(p, cf)| cf.to_tool_request_set().ok().map(|ts| (p, ts.tools)))
+        .filter_map(|(p, tools)| tools.first().map(|(ba, _)| (p, ba.to_string())))
+        .next()
+    else {
+        return;
+    };
+    deprecated!(
+        "idiomatic_version_file_enable_tools",
+        r#"
+Idiomatic version files like {} are currently enabled by default. However, this will change in mise 2025.10.0 to instead default to disabled.
+
+You can remove this warning by explicitly enabling idiomatic version files for {} with:
+
+    mise settings add idiomatic_version_file_enable_tools {}
+
+You can disable idiomatic version files with:
+
+    mise settings add idiomatic_version_file_enable_tools "[]"
+
+See https://github.com/jdx/mise/discussions/4345 for more information."#,
+        display_path(p),
+        tool,
+        tool
+    );
 }
 
 fn reset() {

@@ -1,0 +1,27 @@
+amends "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Builtins.pkl"
+
+local linters = new Mapping<String, Step> {
+    // uses builtin prettier linter config
+    ["prettier"] = Builtins.prettier
+    ["clippy"] = (Builtins.cargo_clippy) {
+        check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --allow-dirty --allow-staged"
+        fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged"
+    }
+
+    // uses custom pkl linter config
+    ["pkl"] {
+        glob = "*.pkl"
+        check = "pkl eval {{files}} >/dev/null"
+    }
+}
+
+hooks {
+    ["fix"] {
+        fix = true
+        steps = linters
+    }
+    ["check"] {
+        steps = linters
+    }
+}

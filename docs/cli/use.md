@@ -1,6 +1,6 @@
 # `mise use`
 
-- **Usage**: `mise use [FLAGS] [TOOL@VERSION]...`
+- **Usage**: `mise use [FLAGS] [TOOL@VERSION]…`
 - **Aliases**: `u`
 - **Source code**: [`src/cli/use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs)
 
@@ -22,7 +22,7 @@ Use the `--global` flag to use the global config file instead.
 
 ## Arguments
 
-### `[TOOL@VERSION]...`
+### `[TOOL@VERSION]…`
 
 Tool(s) to add to config file
 
@@ -65,7 +65,7 @@ Number of jobs to run in parallel
 
 Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`
 
-### `--remove... <PLUGIN>`
+### `--remove… <PLUGIN>`
 
 Remove the plugin(s) from config file
 

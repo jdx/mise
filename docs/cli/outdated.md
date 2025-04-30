@@ -1,6 +1,6 @@
 # `mise outdated`
 
-- **Usage**: `mise outdated [FLAGS] [TOOL@VERSION]...`
+- **Usage**: `mise outdated [FLAGS] [TOOL@VERSION]…`
 - **Source code**: [`src/cli/outdated.rs`](https://github.com/jdx/mise/blob/main/src/cli/outdated.rs)
 
 Shows outdated tool versions
@@ -9,7 +9,7 @@ See `mise upgrade` to upgrade these versions.
 
 ## Arguments
 
-### `[TOOL@VERSION]...`
+### `[TOOL@VERSION]…`
 
 Tool(s) to show outdated versions for
 e.g.: node@20 python@3.10

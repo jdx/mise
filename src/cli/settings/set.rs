@@ -84,10 +84,16 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
 }
 
 fn parse_list_by_comma(value: &str) -> Result<toml_edit::Value> {
+    if value.is_empty() || value == "[]" {
+        return Ok(toml_edit::Array::new().into());
+    }
     Ok(value.split(',').map(|s| s.trim().to_string()).collect())
 }
 
 fn parse_list_by_colon(value: &str) -> Result<toml_edit::Value> {
+    if value.is_empty() || value == "[]" {
+        return Ok(toml_edit::Array::new().into());
+    }
     Ok(value.split(':').map(|s| s.trim().to_string()).collect())
 }
 

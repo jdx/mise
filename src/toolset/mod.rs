@@ -357,7 +357,7 @@ impl Toolset {
 
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
         self.list_current_versions()
-            .into_iter()
+            .into_par_iter()
             .filter(|(p, tv)| tv.request.is_os_supported() && !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
             .collect()
@@ -365,7 +365,7 @@ impl Toolset {
     pub fn list_installed_versions(&self) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
         let current_versions: HashMap<(String, String), (Arc<dyn Backend>, ToolVersion)> = self
             .list_current_versions()
-            .into_iter()
+            .into_par_iter()
             .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
             .collect();
         let versions = backend::list()
@@ -442,13 +442,13 @@ impl Toolset {
     }
     pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_versions()
-            .into_iter()
+            .into_par_iter()
             .filter(|(p, v)| p.is_version_installed(v, true))
             .collect()
     }
     pub fn list_outdated_versions(&self, bump: bool) -> Vec<OutdatedInfo> {
         self.list_current_versions()
-            .into_iter()
+            .into_par_iter()
             .filter_map(|(t, tv)| {
                 match t.outdated_info(&tv, bump) {
                     Ok(Some(oi)) => return Some(oi),

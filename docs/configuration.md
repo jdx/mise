@@ -18,7 +18,7 @@ a lot easier than figuring out mise's rules.
 
 Notes:
 
-- Paths which start with `mise` can be dotfiles, e.g.: `mise.toml` or `.mise/config.toml`.
+- Paths which start with `mise` can be dotfiles, e.g.: `.mise.toml` or `.mise/config.toml`.
 - This list doesn't include [Configuration Environments](/configuration/environments) which allow for environment-specific config files like `mise.development.toml`—set with `MISE_ENV=development`.
 - See [`LOCAL_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
 
@@ -256,9 +256,9 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | terraform | `.terraform-version`, `.packer-version`, `main.tf` |
 | yarn      | `.yarnrc`                                          |
 
-In mise these are enabled by default however in 2026.1.1 they will default to disabled (see <https://github.com/jdx/mise/discussions/4345>)
+In mise, these are enabled by default. However, in 2025.10.0 they will default to disabled (see <https://github.com/jdx/mise/discussions/4345>).
 
-- `mise settings idiomatic_version_file_enable_tools python` for a specific tool such as Python ([docs](/configuration/settings.html#idiomatic_version_file_enable_tools))
+- `mise settings add idiomatic_version_file_enable_tools python` for a specific tool such as Python ([docs](/configuration/settings.html#idiomatic_version_file_enable_tools))
 
 There is a performance cost to having these when they're parsed as it's performed by the plugin in
 `bin/parse-version-file`. However, these are [cached](/cache-behavior) so it's not a huge deal.
@@ -364,6 +364,10 @@ Output logs to a file.
 
 Same as `MISE_LOG_LEVEL` but for the log _file_ output level. This is useful if you want
 to store the logs but not have them litter your display.
+
+### `MISE_LOG_HTTP=1`
+
+Display HTTP requests/responses in the logs.
 
 ### `MISE_QUIET=1`
 
