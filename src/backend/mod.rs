@@ -199,6 +199,7 @@ pub trait Backend: Debug + Send + Sync {
 
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
         self.get_remote_version_cache()
+            // TODO: fix deadlock
             .get_or_try_init(|| {
                 trace!("Listing remote versions for {}", self.ba().to_string());
                 match versions_host::list_versions(self.ba()) {
@@ -630,23 +631,24 @@ pub trait Backend: Debug + Send + Sync {
         static REMOTE_VERSION_CACHE: Lazy<Mutex<HashMap<String, Arc<VersionCacheManager>>>> =
             Lazy::new(|| Mutex::new(HashMap::new()));
 
-        // REMOTE_VERSION_CACHE
-        //     .lock()
-        //     .unwrap()
-        //     .entry(self.ba().full())
-        //     .or_insert_with(|| {
-        let mut cm =
-            CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
+        REMOTE_VERSION_CACHE
+            .lock()
+            .unwrap()
+            .entry(self.ba().full())
+            .or_insert_with(|| {
+                let mut cm = CacheManagerBuilder::new(
+                    self.ba().cache_path.join("remote_versions.msgpack.z"),
+                )
                 .with_fresh_duration(SETTINGS.fetch_remote_versions_cache());
-        if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
-            cm = cm
-                .with_fresh_file(plugin_path.clone())
-                .with_fresh_file(plugin_path.join("bin/list-all"))
-        }
+                if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
+                    cm = cm
+                        .with_fresh_file(plugin_path.clone())
+                        .with_fresh_file(plugin_path.join("bin/list-all"))
+                }
 
-        Arc::new(cm.build())
-        // })
-        // .clone()
+                Arc::new(cm.build())
+            })
+            .clone()
     }
 
     fn verify_checksum(
