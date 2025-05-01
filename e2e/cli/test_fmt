@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+echo '[settings]
+idiomatic_version_file_enable_tools = [
+"go", "ruby"
+]
+
+
+
+[env]
+TEST = "Hello World!"
+' >mise.toml
+assert_fail "mise fmt --check" "mise ERROR Following config files are not properly formatted"
+
+mise fmt
+assert "mise fmt --check"
+assert "cat mise.toml" '[settings]
+idiomatic_version_file_enable_tools = ["go", "ruby"]
+
+
+[env]
+TEST = "Hello World!"'
