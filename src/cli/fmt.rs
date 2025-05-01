@@ -69,7 +69,7 @@ impl Fmt {
             file::write(&p, &toml)?;
         }
 
-        if errors.len() > 0 {
+        if !errors.is_empty() {
             bail!(
                 "Following config files are not properly formatted:\n{}",
                 errors.join("\n")
