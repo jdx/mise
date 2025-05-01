@@ -275,6 +275,7 @@ cmd fmt help="Formats mise.toml" {
     long_help "Formats mise.toml\n\nSorts keys and cleans up whitespace in mise.toml"
     after_long_help "Examples:\n\n    $ mise fmt\n"
     flag "-a --all" help="Format all files from the current directory"
+    flag "-c --check" help="Check if the configs are formatted, no formatting is done"
     flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout"
 }
 cmd generate subcommand_required=#true help="[experimental] Generate files for various tools/services" {
