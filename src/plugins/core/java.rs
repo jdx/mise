@@ -266,6 +266,8 @@ impl JavaPlugin {
         let metadata = HTTP_FETCH
             .json::<Vec<JavaMetadata>, _>(url)?
             .into_iter()
+            // TODO: remove once we switch over to the new metadata which has these filtered out already
+            .filter(jetbrains_with_features)
             .filter(|m| {
                 m.file_type
                     .as_ref()
@@ -448,6 +450,23 @@ fn arch() -> &'static str {
     } else {
         arch
     }
+}
+
+// filter JetBrains releases with features debug or fastdebug
+fn jetbrains_with_features(m: &JavaMetadata) -> bool {
+    if m.vendor != "jetbrains" {
+        return true;
+    }
+    // use name to filter since features are not always correct
+    if m.url.contains("_diz")
+        || m.url.contains("jcef")
+        || m.url.contains("-fastdebug")
+        || m.url.contains("_fd")
+        || m.url.contains("_ft")
+    {
+        return false;
+    }
+    true
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
