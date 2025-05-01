@@ -862,6 +862,11 @@
             "show_tools": {
               "description": "Show configured tools when entering a directory with a mise.toml file.",
               "type": "boolean"
+            },
+            "truncate": {
+              "default": true,
+              "description": "Truncate status messages.",
+              "type": "boolean"
             }
           }
         },
