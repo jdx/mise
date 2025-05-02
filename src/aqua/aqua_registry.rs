@@ -299,7 +299,10 @@ impl AquaPackage {
                 "tar.gz"
             } else if asset.ends_with(".tar.xz") || asset.ends_with(".txz") {
                 "tar.xz"
-            } else if asset.ends_with(".tar.bz2") || asset.ends_with(".tbz2") {
+            } else if asset.ends_with(".tar.bz2")
+                || asset.ends_with(".tbz2")
+                || asset.ends_with(".tbz")
+            {
                 "tar.bz2"
             } else if asset.ends_with(".gz") {
                 "gz"
@@ -316,7 +319,7 @@ impl AquaPackage {
             match self.format.as_str() {
                 "tgz" => "tar.gz",
                 "txz" => "tar.xz",
-                "tbz2" => "tar.bz2",
+                "tbz2" | "tbz" => "tar.bz2",
                 format => format,
             }
         };
@@ -464,6 +467,7 @@ impl AquaFile {
         let asset = asset.strip_suffix(".tgz").unwrap_or(asset);
         let asset = asset.strip_suffix(".txz").unwrap_or(asset);
         let asset = asset.strip_suffix(".tbz2").unwrap_or(asset);
+        let asset = asset.strip_suffix(".tbz").unwrap_or(asset);
         let ctx = hashmap! {
             "AssetWithoutExt".to_string() => asset.to_string(),
         };
