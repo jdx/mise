@@ -261,7 +261,7 @@ bpkg.backends = ["asdf:mise-plugins/mise-bpkg"]
 brig.backends = ["aqua:brigadecore/brigade", "asdf:Ibotta/asdf-brig"]
 brig.test = ["brig version", "Brigade client: version v{{version}}"]
 btop.backends = ['ubi:aristocratos/btop']
-btop.test = ["btop --version", "btop version: {{version}}"]
+btop.test = ["btop -V", "{{version}}"]
 btrace.backends = ["asdf:mise-plugins/mise-btrace"]
 buf.backends = [
     "aqua:bufbuild/buf",
