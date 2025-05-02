@@ -260,8 +260,11 @@ boundary.backends = [
 bpkg.backends = ["asdf:mise-plugins/mise-bpkg"]
 brig.backends = ["aqua:brigadecore/brigade", "asdf:Ibotta/asdf-brig"]
 brig.test = ["brig version", "Brigade client: version v{{version}}"]
-btop.backends = ['ubi:aristocratos/btop']
-btop.test = ["btop -V", "{{version}}"]
+btop.backends = ['aqua:aristocratos/btop', 'ubi:aristocratos/btop']
+btop.test = [
+    "btop --version | sed -e 's/\\x1b\\[[0-9;]*m//g'",
+    "btop version: {{version}}"
+]
 btrace.backends = ["asdf:mise-plugins/mise-btrace"]
 buf.backends = [
     "aqua:bufbuild/buf",
