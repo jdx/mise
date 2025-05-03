@@ -1387,6 +1387,8 @@ nomad-pack.backends = ["asdf:mise-plugins/mise-hashicorp"]
 notation.backends = ["aqua:notaryproject/notation", "asdf:bodgit/asdf-notation"]
 nova.backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 nsc.backends = ["ubi:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
+numbat.backends = ["ubi:sharkdp/numbat"]
+numbat.test = ["numbat --version", "numbat {{version}}"]
 oapi-codegen.backends = [
     "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
     "asdf:dylanrayboss/asdf-oapi-codegen"
