@@ -1,5 +1,33 @@
 # Changelog
 
+## [2025.5.0](https://github.com/jdx/mise/compare/v2025.4.12..v2025.5.0) - 2025-05-03
+
+### 🚀 Features
+
+- **(registry)** add luau by [@rhanneken](https://github.com/rhanneken) in [#4993](https://github.com/jdx/mise/pull/4993)
+- **(registry)** add numbat by [@risu729](https://github.com/risu729) in [#4980](https://github.com/jdx/mise/pull/4980)
+- add check flag for the fmt command by [@roele](https://github.com/roele) in [#4972](https://github.com/jdx/mise/pull/4972)
+- use aqua for btop by [@jdx](https://github.com/jdx) in [#4979](https://github.com/jdx/mise/pull/4979)
+
+### 🐛 Bug Fixes
+
+- **(java)** filter out JetBrains releases with features by [@roele](https://github.com/roele) in [#4970](https://github.com/jdx/mise/pull/4970)
+- fix deadlocks caused by uv_venv_auto by [@risu729](https://github.com/risu729) in [#4900](https://github.com/jdx/mise/pull/4900)
+
+### 📚 Documentation
+
+- Put dot in dotfile example by [@ryanbrainard](https://github.com/ryanbrainard) in [#4965](https://github.com/jdx/mise/pull/4965)
+
+### Chore
+
+- only use mold when available by [@jdx](https://github.com/jdx) in [#4978](https://github.com/jdx/mise/pull/4978)
+- enable clearing screen for confirm and dialog by [@roele](https://github.com/roele) in [#4990](https://github.com/jdx/mise/pull/4990)
+
+### New Contributors
+
+- @rhanneken made their first contribution in [#4993](https://github.com/jdx/mise/pull/4993)
+- @ryanbrainard made their first contribution in [#4965](https://github.com/jdx/mise/pull/4965)
+
 ## [2025.4.12](https://github.com/jdx/mise/compare/v2025.4.11..v2025.4.12) - 2025-04-29
 
 ### 🐛 Bug Fixes
