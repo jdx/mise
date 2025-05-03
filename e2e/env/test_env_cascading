@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<EOF
+[vars]
+ROOT = "somewhere"
+
+[env]
+KEY = "value"
+CONFIG_ROOT= "{{ vars.ROOT }}/conf.d"
+
+_.file = [
+    "conf.d/secrets.env",
+    "conf.d/app.env",
+]
+EOF
+
+mkdir -p conf.d
+
+cat >conf.d/secrets.env <<EOF
+API_KEY=my-api-key
+SECRET_FILE=\${CONFIG_ROOT}/secret.file
+EOF
+
+cat >conf.d/app.env <<EOF
+APP_CONF=\${CONFIG_ROOT}/app.yaml
+APP_KEY=\${KEY}-subvalue
+APP_API_KEY=\${API_KEY}
+EOF
+
+assert_contains "mise env -s bash" "API_KEY=my-api-key"
+assert_contains "mise env -s bash" "APP_API_KEY=my-api-key"
+assert_contains "mise env -s bash" "APP_CONF=somewhere/conf.d/app.yaml"
+assert_contains "mise env -s bash" "APP_KEY=value-subvalue"
+assert_contains "mise env -s bash" "CONFIG_ROOT=somewhere/conf.d"
+assert_contains "mise env -s bash" "KEY=value"
+assert_contains "mise env -s bash" "SECRET_FILE=somewhere/conf.d/secret.file"
