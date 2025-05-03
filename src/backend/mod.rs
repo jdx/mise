@@ -198,37 +198,40 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        self.get_remote_version_cache()
-            .get_or_try_init(|| {
-                trace!("Listing remote versions for {}", self.ba().to_string());
-                match versions_host::list_versions(self.ba()) {
-                    Ok(Some(versions)) => return Ok(versions),
-                    Ok(None) => {}
-                    Err(e) => {
-                        debug!("Error getting versions from versions host: {:#}", e);
-                    }
-                };
-                trace!(
-                    "Calling backend to list remote versions for {}",
-                    self.ba().to_string()
-                );
-                let versions = self
-                    ._list_remote_versions()?
-                    .into_iter()
-                    .filter(|v| match v.parse::<ToolVersionType>() {
-                        Ok(ToolVersionType::Version(_)) => true,
-                        _ => {
-                            warn!("Invalid version: {}@{v}", self.id());
-                            false
-                        }
-                    })
-                    .collect_vec();
-                if versions.is_empty() {
-                    warn!("No versions found for {}", self.id());
+        let fetch = || {
+            trace!("Listing remote versions for {}", self.ba().to_string());
+            match versions_host::list_versions(self.ba()) {
+                Ok(Some(versions)) => return Ok(versions),
+                Ok(None) => {}
+                Err(e) => {
+                    debug!("Error getting versions from versions host: {:#}", e);
                 }
-                Ok(versions)
-            })
-            .cloned()
+            };
+            trace!(
+                "Calling backend to list remote versions for {}",
+                self.ba().to_string()
+            );
+            let versions = self
+                ._list_remote_versions()?
+                .into_iter()
+                .filter(|v| match v.parse::<ToolVersionType>() {
+                    Ok(ToolVersionType::Version(_)) => true,
+                    _ => {
+                        warn!("Invalid version: {}@{v}", self.id());
+                        false
+                    }
+                })
+                .collect_vec();
+            if versions.is_empty() {
+                warn!("No versions found for {}", self.id());
+            }
+            Ok(versions)
+        };
+        if let Ok(cache) = self.get_remote_version_cache().try_lock() {
+            cache.get_or_try_init(fetch).cloned()
+        } else {
+            fetch()
+        }
     }
     fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
@@ -626,8 +629,9 @@ pub trait Backend: Debug + Send + Sync {
         Ok(versions)
     }
 
-    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
-        static REMOTE_VERSION_CACHE: Lazy<Mutex<HashMap<String, Arc<VersionCacheManager>>>> =
+    fn get_remote_version_cache(&self) -> Arc<Mutex<VersionCacheManager>> {
+        // use a mutex to prevent deadlocks that occurs due to reentrant cache access
+        static REMOTE_VERSION_CACHE: Lazy<Mutex<HashMap<String, Arc<Mutex<VersionCacheManager>>>>> =
             Lazy::new(|| Mutex::new(HashMap::new()));
 
         REMOTE_VERSION_CACHE
@@ -645,7 +649,7 @@ pub trait Backend: Debug + Send + Sync {
                         .with_fresh_file(plugin_path.join("bin/list-all"))
                 }
 
-                Arc::new(cm.build())
+                Mutex::new(cm.build()).into()
             })
             .clone()
     }
