@@ -1278,6 +1278,9 @@ lua-language-server.backends = [
     "asdf:bellini666/asdf-lua-language-server"
 ]
 luajit.backends = ["asdf:mise-plugins/mise-luaJIT"]
+luau.backends = ["aqua:luau-lang/luau"]
+luau.description = "A fast, small, safe, gradually typed embeddable scripting language derived from Lua"
+luau.test = ["echo 'print(_VERSION)' | luau", "Luau"]
 lychee.backends = ["aqua:lycheeverse/lychee"]
 lychee.test = ["lychee --version", "lychee {{version}}"]
 maestro.backends = [
@@ -1384,6 +1387,8 @@ nomad-pack.backends = ["asdf:mise-plugins/mise-hashicorp"]
 notation.backends = ["aqua:notaryproject/notation", "asdf:bodgit/asdf-notation"]
 nova.backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 nsc.backends = ["ubi:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
+numbat.backends = ["ubi:sharkdp/numbat"]
+numbat.test = ["numbat --version", "numbat {{version}}"]
 oapi-codegen.backends = [
     "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
     "asdf:dylanrayboss/asdf-oapi-codegen"
