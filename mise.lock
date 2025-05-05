@@ -133,12 +133,13 @@ slsa-verifier-macos-aarch64 = "sha256:84d9122ce12e0c79080844285fd5c4976407ed3463
 
 [tools.taplo]
 version = "0.9.3"
-backend = "ubi:tamasfe/taplo[matching=full]"
+backend = "aqua:tamasfe/taplo"
 
 [tools.taplo.checksums]
 taplo-full-linux-aarch64 = "sha256:9ffa2a799ff0ca601a0e7ff93dcae64a34c81c677916e6f0d3c81d62e0670d83"
 taplo-full-linux-x86_64 = "sha256:e89d2303ea9a5ec07971feec807fa493dc9ab6624c19b313ff90fdede247ee08"
 taplo-full-macos-aarch64 = "sha256:cf55aa3e4c9b631c1fbb3f8a4adac59ca2ecc7898d26e749cd9b62d5ed858fce"
+"taplo-linux-x86_64.gz" = "sha256:889efcfa067b179fda488427d3b13ce2d679537da8b9ed8138ba415db7da2a5e"
 "taplo.exe-full-windows-aarch64" = "sha256:13eaa7f30f321a02a43bcc476450b9a79307f12addc25df132613cbb76d03f86"
 
 [tools.wait-for-gh-rate-limit]
