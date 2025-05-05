@@ -10,7 +10,7 @@ MISE_ENV=override1,override2 assert "mise env --json | jq -r .AAA" "override-2"
 
 cat <<EOF >mise.toml
 [tasks.print]
-run = 'echo {{mise_env}}'
+run = '{% if mise_env %}echo {{mise_env}}{% endif %}'
 EOF
 assert "mise run print" ""
 MISE_ENV=env1 assert "mise run print" "[env1]"

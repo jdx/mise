@@ -22,7 +22,9 @@ pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("mise_bin", &*env::MISE_BIN);
     context.insert("mise_pid", &*env::MISE_PID);
-    context.insert("mise_env", &*env::MISE_ENV);
+    if !(&*env::MISE_ENV).is_empty() {
+        context.insert("mise_env", &*env::MISE_ENV);
+    }
     if let Ok(dir) = env::current_dir() {
         context.insert("cwd", &dir);
     }
@@ -384,7 +386,7 @@ mod tests {
 
     #[test]
     fn test_mise_env() {
-        assert_eq!(render("{{mise_env}}"), "[]");
+        assert_eq!(render("{% if mise_env %}{{mise_env}}{% endif %}"), "");
     }
 
     #[test]
