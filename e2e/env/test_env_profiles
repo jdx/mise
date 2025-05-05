@@ -15,3 +15,5 @@ EOF
 assert "mise run print" ""
 MISE_ENV=env1 assert "mise run print" "[env1]"
 MISE_ENV=env1,env2 assert "mise run print" "[env1, env2]"
+assert "mise --env env3 run print" "[env3]"
+assert "mise -E env3,env4 run print" "[env3, env4]"
