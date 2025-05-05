@@ -1,11 +1,27 @@
 # Changelog
 
+## [2025.5.1](https://github.com/jdx/mise/compare/v2025.5.0..v2025.5.1) - 2025-05-05
+
+### 🚀 Features
+
+- **(registry)** use aqua for taplo by [@risu729](https://github.com/risu729) in [#4991](https://github.com/jdx/mise/pull/4991)
+- add mise_env tera variable for templates by [@auxesis](https://github.com/auxesis) in [#5002](https://github.com/jdx/mise/pull/5002)
+
+### 🐛 Bug Fixes
+
+- **(env)** fix dotenv files cascading (fix #4688) by [@noirbizarre](https://github.com/noirbizarre) in [#4996](https://github.com/jdx/mise/pull/4996)
+
+### Ci
+
+- **(registry)** increaset timeout to 30 mins by [@risu729](https://github.com/risu729) in [#5006](https://github.com/jdx/mise/pull/5006)
+
 ## [2025.5.0](https://github.com/jdx/mise/compare/v2025.4.12..v2025.5.0) - 2025-05-03
 
 ### 🚀 Features
 
 - **(registry)** add luau by [@rhanneken](https://github.com/rhanneken) in [#4993](https://github.com/jdx/mise/pull/4993)
 - **(registry)** add numbat by [@risu729](https://github.com/risu729) in [#4980](https://github.com/jdx/mise/pull/4980)
+- **(status)** add setting to control status message truncation by [@rarescosma](https://github.com/rarescosma) in [#4986](https://github.com/jdx/mise/pull/4986)
 - add check flag for the fmt command by [@roele](https://github.com/roele) in [#4972](https://github.com/jdx/mise/pull/4972)
 - use aqua for btop by [@jdx](https://github.com/jdx) in [#4979](https://github.com/jdx/mise/pull/4979)
 
@@ -25,6 +41,7 @@
 
 ### New Contributors
 
+- @rarescosma made their first contribution in [#4986](https://github.com/jdx/mise/pull/4986)
 - @rhanneken made their first contribution in [#4993](https://github.com/jdx/mise/pull/4993)
 - @ryanbrainard made their first contribution in [#4965](https://github.com/jdx/mise/pull/4965)
 
