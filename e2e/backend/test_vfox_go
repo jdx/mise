@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
-version="$(mise latest vfox:version-fox/vfox-golang)"
+export MISE_USE_VERSIONS_HOST=0
+version="$(mise latest vfox:version-fox/vfox-golang --debug)"
 assert "mise i vfox:version-fox/vfox-golang"
 assert_contains "mise x vfox:version-fox/vfox-golang -- go version" "go version go$version"
