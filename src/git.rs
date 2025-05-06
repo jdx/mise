@@ -117,12 +117,11 @@ impl Git {
     }
 
     pub fn clone(&self, url: &str, options: CloneOptions) -> Result<()> {
-        debug!("cloning {} to {}", url, self.dir.display());
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
         if SETTINGS.libgit2 || SETTINGS.gix {
-            debug!("Use libgit2 or gix");
+            debug!("cloning {} to {} with gix", url, self.dir.display());
             let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
 
             if let Some(branch) = &options.branch {
@@ -137,6 +136,7 @@ impl Git {
 
             return Ok(());
         }
+        debug!("cloning {} to {} with git", url, self.dir.display());
         match get_git_version() {
             Ok(version) => trace!("git version: {}", version),
             Err(err) => warn!(
