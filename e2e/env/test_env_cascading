@@ -6,7 +6,8 @@ ROOT = "somewhere"
 
 [env]
 KEY = "value"
-CONFIG_ROOT= "{{ vars.ROOT }}/conf.d"
+CONFIG_ROOT = "{{ vars.ROOT }}/conf.d"
+SPECIAL = "#'{\"}"
 
 _.file = [
     "conf.d/secrets.env",
@@ -34,3 +35,4 @@ assert_contains "mise env -s bash" "APP_KEY=value-subvalue"
 assert_contains "mise env -s bash" "CONFIG_ROOT=somewhere/conf.d"
 assert_contains "mise env -s bash" "KEY=value"
 assert_contains "mise env -s bash" "SECRET_FILE=somewhere/conf.d/secret.file"
+assert_contains "mise env -s bash" "SPECIAL='#'\''{\"}'"
