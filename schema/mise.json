@@ -500,6 +500,7 @@
           "default": [],
           "description": "Specific tools to disable idiomatic version files for.",
           "type": "array",
+          "deprecated": true,
           "items": {
             "type": "string"
           }
