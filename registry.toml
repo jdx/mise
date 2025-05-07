@@ -1810,7 +1810,7 @@ talosctl.backends = [
 tanka.backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
 tanzu.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
 taplo.backends = [
-    "aqua:tamasfe/taplo",
+    "aqua:tamasfe/taplo/full",
     "ubi:tamasfe/taplo[matching=full]",
     "cargo:taplo-cli"
 ]
