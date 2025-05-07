@@ -1,5 +1,23 @@
 # Changelog
 
+## [2025.5.2](https://github.com/jdx/mise/compare/v2025.5.1..v2025.5.2) - 2025-05-07
+
+### 🐛 Bug Fixes
+
+- **(dotenv)** properly escape values in generated dotenv by [@noirbizarre](https://github.com/noirbizarre) in [#5010](https://github.com/jdx/mise/pull/5010)
+- **(registry)** use full version of taplo by [@risu729](https://github.com/risu729) in [#5017](https://github.com/jdx/mise/pull/5017)
+
+### 📚 Documentation
+
+- hide rtx docs by [@jdx](https://github.com/jdx) in [90ae2ce](https://github.com/jdx/mise/commit/90ae2ce5abf4faa65ef2414385e587d97ff0ca2c)
+- describe cache auto-prune by [@jdx](https://github.com/jdx) in [#5013](https://github.com/jdx/mise/pull/5013)
+- mark idiomatic_version_file_disable_tools as deprecated by [@jdx](https://github.com/jdx) in [9bb80f3](https://github.com/jdx/mise/commit/9bb80f301e29fcc668f51de8e0a168a32c9ac8db)
+
+### Chore
+
+- remove homebrew bump step by [@jdx](https://github.com/jdx) in [1625608](https://github.com/jdx/mise/commit/1625608c0025ec21a49eedcc85533facde52a8a7)
+- simplify git logs by [@jdx](https://github.com/jdx) in [#5012](https://github.com/jdx/mise/pull/5012)
+
 ## [2025.5.1](https://github.com/jdx/mise/compare/v2025.5.0..v2025.5.1) - 2025-05-05
 
 ### 🚀 Features
