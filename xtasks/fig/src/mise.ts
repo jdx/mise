@@ -2738,6 +2738,30 @@ const completionSpec: Fig.Spec = {
       description: "Removes installed tool versions from mise.toml",
       options: [
         {
+          name: ["-g", "--global"],
+          description:
+            "Use the global config file (`~/.config/mise/config.toml`) instead of the local one",
+          isRepeatable: false,
+        },
+        {
+          name: ["-e", "--env"],
+          description:
+            "Create/modify an environment-specific config file like .mise.<env>.toml",
+          isRepeatable: false,
+          args: {
+            name: "env",
+          },
+        },
+        {
+          name: ["-p", "--path"],
+          description: "Specify a path to a config file or directory",
+          isRepeatable: false,
+          args: {
+            name: "path",
+            template: "filepaths",
+          },
+        },
+        {
           name: "--no-prune",
           description: "Do not also prune the installed version",
           isRepeatable: false,

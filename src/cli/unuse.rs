@@ -13,7 +13,7 @@ use path_absolutize::Absolutize;
 
 /// Removes installed tool versions from mise.toml
 ///
-/// By default, this will use a `mise.toml` file in the current directory.
+/// By default, this will use the `mise.toml` file that has the tool defined.
 ///
 /// In the following order:
 ///   - If `--global` is set, it will use the global config file.
