@@ -1,6 +1,6 @@
 # `mise shell`
 
-- **Usage**: `mise shell [FLAGS] <TOOL@VERSION>...`
+- **Usage**: `mise shell [FLAGS] <TOOL@VERSION>…`
 - **Aliases**: `sh`
 - **Source code**: [`src/cli/shell.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell.rs)
 
@@ -13,7 +13,7 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
 
 ## Arguments
 
-### `<TOOL@VERSION>...`
+### `<TOOL@VERSION>…`
 
 Tool(s) to use
 

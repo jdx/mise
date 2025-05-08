@@ -1,6 +1,6 @@
 # `mise fmt`
 
-- **Usage**: `mise fmt [-a --all] [-s --stdin]`
+- **Usage**: `mise fmt [FLAGS]`
 - **Source code**: [`src/cli/fmt.rs`](https://github.com/jdx/mise/blob/main/src/cli/fmt.rs)
 
 Formats mise.toml
@@ -12,6 +12,10 @@ Sorts keys and cleans up whitespace in mise.toml
 ### `-a --all`
 
 Format all files from the current directory
+
+### `-c --check`
+
+Check if the configs are formatted, no formatting is done
 
 ### `-s --stdin`
 

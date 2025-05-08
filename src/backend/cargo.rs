@@ -58,6 +58,7 @@ impl Backend for CargoBackend {
     fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
         let config = Config::try_get()?;
         let install_arg = format!("{}@{}", self.tool_name(), tv.version);
+        let registry_name = &SETTINGS.cargo.registry_name;
 
         let cmd = CmdLineRunner::new("cargo").arg("install");
         let mut cmd = if let Some(url) = self.git_url() {
@@ -108,6 +109,9 @@ impl Backend for CargoBackend {
         }
         if let Some(c) = opts.get("crate") {
             cmd = cmd.arg(c);
+        }
+        if let Some(registry_name) = registry_name {
+            cmd = cmd.arg(format!("--registry={registry_name}"));
         }
 
         cmd.arg("--root")

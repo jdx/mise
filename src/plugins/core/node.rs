@@ -15,7 +15,7 @@ use eyre::{Result, bail, ensure};
 use serde_derive::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use tempfile::tempdir_in;
 use url::Url;
 use xx::regex;
@@ -448,16 +448,20 @@ impl Backend for NodePlugin {
         Ok(vec![tv.install_path()])
     }
 
-    fn get_remote_version_cache(&self) -> Arc<VersionCacheManager> {
-        static CACHE: OnceLock<Arc<VersionCacheManager>> = OnceLock::new();
+    fn get_remote_version_cache(&self) -> Arc<Mutex<VersionCacheManager>> {
+        static CACHE: OnceLock<Arc<Mutex<VersionCacheManager>>> = OnceLock::new();
         CACHE
             .get_or_init(|| {
-                CacheManagerBuilder::new(self.ba().cache_path.join("remote_versions.msgpack.z"))
+                Mutex::new(
+                    CacheManagerBuilder::new(
+                        self.ba().cache_path.join("remote_versions.msgpack.z"),
+                    )
                     .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
                     .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
                     .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())
-                    .build()
-                    .into()
+                    .build(),
+                )
+                .into()
             })
             .clone()
     }

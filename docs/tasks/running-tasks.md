@@ -122,3 +122,45 @@ This may change in the future.)
 Tasks can be run with `mise run <TASK>` or `mise <TASK>`—if the name doesn't conflict with a mise command.
 Because mise may later add a command with a conflicting name, it's recommended to use `mise run <TASK>` in
 scripts and documentation.
+
+## Execution order
+
+You can use [depends](/tasks/task-configuration.html#depends), [wait_for](/tasks/task-configuration.html#wait-for) and [depends_post](/tasks/task-configuration.html#depends-post) to control the order of execution.
+
+```toml
+[tasks.build]
+run = "echo 'build'"
+
+[tasks.test]
+run = "echo 'test'"
+depends = ["build"]
+```
+
+This will ensure that the `build` task is run before the `test` task.
+
+You can also define a mise task to run other tasks sequentially (or in series).
+You can do this by calling `mise run <task>` in the `run` property of a task.
+
+```toml
+[tasks.example1]
+run = "echo 'example1'"
+
+[tasks.example2]
+run = "mise example2"
+
+[tasks.one_by_one]
+run = [
+    'mise run example1',
+    'mise run example2',
+]
+```
+
+This assumes that `mise` is in your `PATH`. If you are using [mise generate bootstrap](/cli/generate/bootstrap.html) or if `mise` is not on `PATH`, it's better to use <span v-pre>[`{{mise_bin}}`](/templates.html#variables)</span> instead of `mise` in the task definition.
+
+```toml
+[tasks.one_by_one]
+run = [
+    '{{mise_bin}} run example1',
+    '{{mise_bin}} run example2',
+]
+```

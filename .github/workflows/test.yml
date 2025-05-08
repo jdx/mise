@@ -19,8 +19,6 @@ env:
   MISE_LOCKFILE: 1
   RUST_BACKTRACE: 1
   GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
 
 permissions:
   pull-requests: write
@@ -29,6 +27,9 @@ jobs:
   build-ubuntu:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,6 +125,9 @@ jobs:
     permissions:
       contents: write
     needs: [build-ubuntu, build-macos]
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v4
         with:
@@ -257,7 +261,7 @@ jobs:
           command: cargo test
   windows-e2e:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     needs: [build-windows]
     env:
       MISE_DATA_DIR: ~/.local/share/mise

@@ -35,7 +35,7 @@ Install all missing plugins
 This will only install plugins that have matching shorthands.
 i.e.: they don't need the full git repo url
 
-### `-v --verbose...`
+### `-v --verbose…`
 
 Show installation output
 

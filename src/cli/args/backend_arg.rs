@@ -167,6 +167,25 @@ impl BackendArg {
         }
     }
 
+    pub fn full_with_opts(&self) -> String {
+        let full = self.full();
+        if regex!(r"^(.+)\[(.+)\]$").is_match(&full) {
+            return full;
+        }
+        if let Some(opts) = &self.opts {
+            let opts_str = opts
+                .opts
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            if !full.contains(['[', ']']) && !opts_str.is_empty() {
+                return format!("{full}[{opts_str}]");
+            }
+        }
+        full
+    }
+
     pub fn opts(&self) -> ToolVersionOptions {
         self.opts.clone().unwrap_or_else(|| {
             if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&self.full()) {

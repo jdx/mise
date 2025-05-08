@@ -1,6 +1,6 @@
 # `mise tasks add`
 
-- **Usage**: `mise tasks add [FLAGS] <TASK> [-- RUN]...`
+- **Usage**: `mise tasks add [FLAGS] <TASK> [-- RUN]…`
 - **Source code**: [`src/cli/tasks/add.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/add.rs)
 
 Create a new task
@@ -11,7 +11,7 @@ Create a new task
 
 Tasks name to add
 
-### `[-- RUN]...`
+### `[-- RUN]…`
 
 ## Flags
 
@@ -19,15 +19,15 @@ Tasks name to add
 
 Description of the task
 
-### `-a --alias... <ALIAS>`
+### `-a --alias… <ALIAS>`
 
 Other names for the task
 
-### `--depends-post... <DEPENDS_POST>`
+### `--depends-post… <DEPENDS_POST>`
 
 Dependencies to run after the task runs
 
-### `-w --wait-for... <WAIT_FOR>`
+### `-w --wait-for… <WAIT_FOR>`
 
 Wait for these tasks to complete if they are to run
 
@@ -43,11 +43,11 @@ Hide the task from `mise task` and completions
 
 Directly connect stdin/stdout/stderr
 
-### `-s --sources... <SOURCES>`
+### `-s --sources… <SOURCES>`
 
 Glob patterns of files this task uses as input
 
-### `--outputs... <OUTPUTS>`
+### `--outputs… <OUTPUTS>`
 
 Glob patterns of files this task creates, to skip if they are not modified
 
@@ -63,7 +63,7 @@ Do not print the command before running
 
 Do not print the command or its output
 
-### `-d --depends... <DEPENDS>`
+### `-d --depends… <DEPENDS>`
 
 Add dependencies to the task
 

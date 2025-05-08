@@ -1,6 +1,6 @@
 # `mise plugins uninstall`
 
-- **Usage**: `mise plugins uninstall [-p --purge] [-a --all] [PLUGIN]...`
+- **Usage**: `mise plugins uninstall [-p --purge] [-a --all] [PLUGIN]…`
 - **Aliases**: `remove`, `rm`
 - **Source code**: [`src/cli/plugins/uninstall.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/uninstall.rs)
 
@@ -8,7 +8,7 @@ Removes a plugin
 
 ## Arguments
 
-### `[PLUGIN]...`
+### `[PLUGIN]…`
 
 Plugin(s) to remove
 

@@ -8,6 +8,23 @@ assert "mise generate task-stubs --mise-bin ./bin/mise"
 assert "./bin/xxx" "running xxx"
 
 assert "mise generate bootstrap -l -w"
+
+# ensure that that the commands don't rely on the global mise bin
+orginal_mise="$(which mise)"
+mv "$orginal_mise" "orginal_mise"
+
 assert_contains "./bin/mise tasks ls" "xxx"
 
 assert_not_contains "MISE_IGNORED_CONFIG_PATHS=$(pwd) ./bin/mise tasks ls" "xxx"
+
+echo '
+[tasks.other_task]
+run = "echo running other_task"
+
+[tasks.my_task]
+run = ["{{mise_bin}} run other_task"]
+' >mise.toml
+
+assert_contains "./bin/mise run my_task" "running other_task"
+
+mv "orginal_mise" "$orginal_mise"

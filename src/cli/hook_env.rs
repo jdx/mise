@@ -12,6 +12,7 @@ use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -85,11 +86,11 @@ impl HookEnv {
             let new = cur.difference(prev).collect::<IndexSet<_>>();
             if !new.is_empty() {
                 let status = new.into_iter().map(|t| format!("+{t}")).rev().join(" ");
-                info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
+                info!("{}", format_status(&status));
             }
             if !removed.is_empty() {
                 let status = removed.into_iter().map(|t| format!("-{t}")).rev().join(" ");
-                info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
+                info!("{}", format_status(&status));
             }
         }
         if self.status || SETTINGS.status.show_env {
@@ -119,14 +120,14 @@ impl HookEnv {
                     .iter()
                     .map(|p| format!("+{}", display_rel_path(p)))
                     .join(" ");
-                info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
+                info!("{}", format_status(&status));
             }
             if !removed_paths.is_empty() {
                 let status = removed_paths
                     .iter()
                     .map(|p| format!("-{}", display_rel_path(p)))
                     .join(" ");
-                info!("{}", truncate_str(&status, TERM_WIDTH.max(60) - 5, "…"));
+                info!("{}", format_status(&status));
             }
         }
         ts.notify_if_versions_missing();
@@ -229,5 +230,13 @@ fn patch_to_status(patch: EnvDiffOperation) -> String {
         EnvDiffOperation::Add(k, _) => format!("+{}", k),
         EnvDiffOperation::Change(k, _) => format!("~{}", k),
         EnvDiffOperation::Remove(k) => format!("-{}", k),
+    }
+}
+
+fn format_status(status: &str) -> Cow<'_, str> {
+    if SETTINGS.status.truncate {
+        truncate_str(status, TERM_WIDTH.max(60) - 5, "…")
+    } else {
+        status.into()
     }
 }

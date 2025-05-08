@@ -233,7 +233,12 @@ fn read_backend_meta(short: &str) -> Option<Vec<String>> {
 }
 
 pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
-    let doc = format!("{}\n{}", ba.short, ba.full());
+    // do not write options for core plugins
+    let full = match ba.full().starts_with("core:") {
+        true => ba.full(),
+        false => ba.full_with_opts(),
+    };
+    let doc = format!("{}\n{}", ba.short, full);
     file::write(backend_meta_path(&ba.short), doc.trim())?;
     Ok(())
 }

@@ -5,6 +5,7 @@ use crate::backend::Backend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::tracking::Tracker;
 use crate::config::{Config, SETTINGS};
+use crate::runtime_symlinks;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
@@ -107,6 +108,7 @@ fn delete(dry_run: bool, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Res
         let pr = mpr.add(&prefix);
         if dry_run || SETTINGS.yes || prompt::confirm_with_all(format!("remove {} ?", &tv))? {
             p.uninstall_version(&tv, &pr, dry_run)?;
+            runtime_symlinks::remove_missing_symlinks(p)?;
             pr.finish();
         }
     }

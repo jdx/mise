@@ -16,3 +16,9 @@ EOF
 
 mise i
 mise uninstall cargo:cargo-show cargo-binstall
+
+###### TEST CUSTOM REGISTRY ######
+export CARGO_REGISTRIES_OFFICIAL_GIT_INDEX=https://github.com/rust-lang/crates.io-index
+export MISE_CARGO_REGISTRY_NAME=official_git
+mise i
+mise uninstall cargo:cargo-show cargo-binstall

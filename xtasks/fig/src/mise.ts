@@ -994,6 +994,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: ["-c", "--check"],
+          description:
+            "Check if the configs are formatted, no formatting is done",
+          isRepeatable: false,
+        },
+        {
           name: ["-s", "--stdin"],
           description:
             "Read config from stdin and write its formatted version into stdout",
@@ -2734,11 +2740,6 @@ const completionSpec: Fig.Spec = {
         {
           name: "--no-prune",
           description: "Do not also prune the installed version",
-          isRepeatable: false,
-        },
-        {
-          name: ["-g", "--global"],
-          description: "Remove tool from global config",
           isRepeatable: false,
         },
       ],

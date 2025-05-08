@@ -16,7 +16,7 @@ pub fn confirm<S: Into<String>>(message: S) -> eyre::Result<bool> {
     if !console::user_attended_stderr() || env::__USAGE.is_some() {
         return Ok(false);
     }
-    let result = Confirm::new(message).run()?;
+    let result = Confirm::new(message).clear_screen(true).run()?;
     Ok(result)
 }
 
@@ -40,6 +40,7 @@ pub fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<bool> {
             DialogButton::new("All"),
         ])
         .selected_button(1)
+        .clear_screen(true)
         .run()?;
 
     let result = match answer.as_str() {

@@ -1,6 +1,6 @@
 # `mise prune`
 
-- **Usage**: `mise prune [FLAGS] [INSTALLED_TOOL]...`
+- **Usage**: `mise prune [FLAGS] [INSTALLED_TOOL]…`
 - **Source code**: [`src/cli/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/prune.rs)
 
 Delete unused versions of tools
@@ -14,7 +14,7 @@ You can list prunable tools with `mise ls --prunable`
 
 ## Arguments
 
-### `[INSTALLED_TOOL]...`
+### `[INSTALLED_TOOL]…`
 
 Prune only these tools
 

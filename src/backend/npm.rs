@@ -9,11 +9,13 @@ use crate::timeout;
 use crate::toolset::ToolVersion;
 use serde_json::Value;
 use std::fmt::Debug;
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub struct NPMBackend {
     ba: BackendArg,
-    latest_version_cache: CacheManager<Option<String>>,
+    // use a mutex to prevent deadlocks that occurs due to reentrant cache access
+    latest_version_cache: Mutex<CacheManager<Option<String>>>,
 }
 
 const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
@@ -45,22 +47,23 @@ impl Backend for NPMBackend {
     }
 
     fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
+        let fetch = || {
+            let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "dist-tags", "--json")
+                .full_env(self.dependency_env()?)
+                .read()?;
+            let dist_tags: Value = serde_json::from_str(&raw)?;
+            match dist_tags["latest"] {
+                Value::String(ref s) => Ok(Some(s.clone())),
+                _ => self.latest_version(Some("latest".into())),
+            }
+        };
         timeout::run_with_timeout(
             || {
-                self.latest_version_cache
-                    .get_or_try_init(|| {
-                        let raw =
-                            cmd!(NPM_PROGRAM, "view", self.tool_name(), "dist-tags", "--json")
-                                .full_env(self.dependency_env()?)
-                                .read()?;
-                        let dist_tags: Value = serde_json::from_str(&raw)?;
-                        let latest = match dist_tags["latest"] {
-                            Value::String(ref s) => Some(s.clone()),
-                            _ => self.latest_version(Some("latest".into())).unwrap(),
-                        };
-                        Ok(latest)
-                    })
-                    .cloned()
+                if let Ok(cache) = self.latest_version_cache.try_lock() {
+                    cache.get_or_try_init(fetch).cloned()
+                } else {
+                    fetch()
+                }
             },
             SETTINGS.fetch_remote_versions_timeout(),
         )
@@ -112,11 +115,11 @@ impl Backend for NPMBackend {
 impl NPMBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
-            latest_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("latest_version.msgpack.z"),
-            )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-            .build(),
+            latest_version_cache: Mutex::new(
+                CacheManagerBuilder::new(ba.cache_path.join("latest_version.msgpack.z"))
+                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .build(),
+            ),
             ba,
         }
     }

@@ -1,6 +1,6 @@
 # `mise env`
 
-- **Usage**: `mise env [FLAGS] [TOOL@VERSION]...`
+- **Usage**: `mise env [FLAGS] [TOOL@VERSION]…`
 - **Aliases**: `e`
 - **Source code**: [`src/cli/env.rs`](https://github.com/jdx/mise/blob/main/src/cli/env.rs)
 
@@ -11,7 +11,7 @@ use this if you have `mise activate` in your shell rc file.
 
 ## Arguments
 
-### `[TOOL@VERSION]...`
+### `[TOOL@VERSION]…`
 
 Tool(s) to use
 
