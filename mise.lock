@@ -13,6 +13,7 @@ backend = "core:bun"
 
 [tools.bun.checksums]
 "bun-darwin-aarch64.zip" = "sha256:07895ef0fb661249b86b0b723b65b1cc4790c7f3685b63cda90122b00299972c"
+"bun-linux-x64-baseline.zip" = "sha256:4b62f599048ef320a761bacbeeb71f8784f5e373b976a9d53b3ee7811f19b004"
 
 [tools.cargo-binstall]
 version = "1.12.3"
@@ -20,6 +21,7 @@ backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
 "cargo-binstall-aarch64-apple-darwin.zip" = "sha256:88467030db096ceddf97405750fe9e67cf25106da241db7a60900c58f192206f"
+"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:deeee17791719fc544dd1f542d4a482da70ea4ebfddf414d3ca27e5dc12242e3"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.2"
@@ -47,6 +49,7 @@ backend = "aqua:sigstore/cosign"
 
 [tools.cosign.checksums]
 cosign-darwin-arm64 = "sha256:780da3654d9601367b0d54686ac65cb9716578610cabe292d725c7008de4db85"
+cosign-linux-amd64 = "sha256:1f6c194dd0891eb345b436bb71ff9f996768355f5e0ce02dde88567029ac2188"
 
 [tools.hk]
 version = "1.0.0"
@@ -84,6 +87,7 @@ version = "0.28.2"
 backend = "aqua:apple/pkl"
 
 [tools.pkl.checksums]
+pkl-linux-amd64 = "sha256:ba8722ba6971f7cb2b8b90fdca76c947a9510a57119baf05263bf4fcf9f9b0ba"
 pkl-macos-aarch64 = "sha256:452c75769d85c07714356f223a9d99a02bdc0bf360c0741765958e9aa080a50c"
 
 [tools.pre-commit]
@@ -108,6 +112,7 @@ version = "0.10.0"
 backend = "ubi:koalaman/shellcheck"
 
 [tools.shellcheck.checksums]
+shellcheck-linux-x86_64 = "sha256:f35ae15a4677945428bdfe61ccc297490d89dd1e544cc06317102637638c6deb"
 shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f8b02ea4811cd4cc1109"
 "shellcheck-v0.10.0.darwin.aarch64.tar.xz" = "sha256:bbd2f14826328eee7679da7221f2bc3afb011f6a928b848c80c321f6046ddf81"
 
@@ -115,21 +120,26 @@ shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f
 version = "3.11.0"
 backend = "aqua:mvdan/sh"
 
+[tools.shfmt.checksums]
+"shfmt_v3.11.0_linux_amd64" = "sha256:1904ec6bac715c1d05cd7f6612eec8f67a625c3749cb327e5bfb4127d09035ff"
+
 [tools.slsa-verifier]
 version = "2.7.0"
 backend = "ubi:slsa-framework/slsa-verifier"
 
 [tools.slsa-verifier.checksums]
+slsa-verifier-linux-x86_64 = "sha256:499befb675efcca9001afe6e5156891b91e71f9c07ab120a8943979f85cc82e6"
 slsa-verifier-macos-aarch64 = "sha256:84d9122ce12e0c79080844285fd5c4976407ed3463e434a1b21b0979c46b1e55"
 
 [tools.taplo]
 version = "0.9.3"
-backend = "ubi:tamasfe/taplo[matching=full]"
+backend = "aqua:tamasfe/taplo"
 
 [tools.taplo.checksums]
 taplo-full-linux-aarch64 = "sha256:9ffa2a799ff0ca601a0e7ff93dcae64a34c81c677916e6f0d3c81d62e0670d83"
 taplo-full-linux-x86_64 = "sha256:e89d2303ea9a5ec07971feec807fa493dc9ab6624c19b313ff90fdede247ee08"
 taplo-full-macos-aarch64 = "sha256:cf55aa3e4c9b631c1fbb3f8a4adac59ca2ecc7898d26e749cd9b62d5ed858fce"
+"taplo-linux-x86_64.gz" = "sha256:889efcfa067b179fda488427d3b13ce2d679537da8b9ed8138ba415db7da2a5e"
 "taplo.exe-full-windows-aarch64" = "sha256:13eaa7f30f321a02a43bcc476450b9a79307f12addc25df132613cbb76d03f86"
 
 [tools.wait-for-gh-rate-limit]

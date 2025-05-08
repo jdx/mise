@@ -18,7 +18,7 @@ a lot easier than figuring out mise's rules.
 
 Notes:
 
-- Paths which start with `mise` can be dotfiles, e.g.: `mise.toml` or `.mise/config.toml`.
+- Paths which start with `mise` can be dotfiles, e.g.: `.mise.toml` or `.mise/config.toml`.
 - This list doesn't include [Configuration Environments](/configuration/environments) which allow for environment-specific config files like `mise.development.toml`—set with `MISE_ENV=development`.
 - See [`LOCAL_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
 

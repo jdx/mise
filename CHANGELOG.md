@@ -1,5 +1,88 @@
 # Changelog
 
+## [2025.5.2](https://github.com/jdx/mise/compare/v2025.5.1..v2025.5.2) - 2025-05-07
+
+### 🐛 Bug Fixes
+
+- **(dotenv)** properly escape values in generated dotenv by [@noirbizarre](https://github.com/noirbizarre) in [#5010](https://github.com/jdx/mise/pull/5010)
+- **(registry)** use full version of taplo by [@risu729](https://github.com/risu729) in [#5017](https://github.com/jdx/mise/pull/5017)
+
+### 📚 Documentation
+
+- hide rtx docs by [@jdx](https://github.com/jdx) in [90ae2ce](https://github.com/jdx/mise/commit/90ae2ce5abf4faa65ef2414385e587d97ff0ca2c)
+- describe cache auto-prune by [@jdx](https://github.com/jdx) in [#5013](https://github.com/jdx/mise/pull/5013)
+- mark idiomatic_version_file_disable_tools as deprecated by [@jdx](https://github.com/jdx) in [9bb80f3](https://github.com/jdx/mise/commit/9bb80f301e29fcc668f51de8e0a168a32c9ac8db)
+
+### Chore
+
+- remove homebrew bump step by [@jdx](https://github.com/jdx) in [1625608](https://github.com/jdx/mise/commit/1625608c0025ec21a49eedcc85533facde52a8a7)
+- simplify git logs by [@jdx](https://github.com/jdx) in [#5012](https://github.com/jdx/mise/pull/5012)
+
+## [2025.5.1](https://github.com/jdx/mise/compare/v2025.5.0..v2025.5.1) - 2025-05-05
+
+### 🚀 Features
+
+- **(registry)** use aqua for taplo by [@risu729](https://github.com/risu729) in [#4991](https://github.com/jdx/mise/pull/4991)
+- add mise_env tera variable for templates by [@auxesis](https://github.com/auxesis) in [#5002](https://github.com/jdx/mise/pull/5002)
+
+### 🐛 Bug Fixes
+
+- **(env)** fix dotenv files cascading (fix #4688) by [@noirbizarre](https://github.com/noirbizarre) in [#4996](https://github.com/jdx/mise/pull/4996)
+
+### Ci
+
+- **(registry)** increaset timeout to 30 mins by [@risu729](https://github.com/risu729) in [#5006](https://github.com/jdx/mise/pull/5006)
+
+## [2025.5.0](https://github.com/jdx/mise/compare/v2025.4.12..v2025.5.0) - 2025-05-03
+
+### 🚀 Features
+
+- **(registry)** add luau by [@rhanneken](https://github.com/rhanneken) in [#4993](https://github.com/jdx/mise/pull/4993)
+- **(registry)** add numbat by [@risu729](https://github.com/risu729) in [#4980](https://github.com/jdx/mise/pull/4980)
+- **(status)** add setting to control status message truncation by [@rarescosma](https://github.com/rarescosma) in [#4986](https://github.com/jdx/mise/pull/4986)
+- add check flag for the fmt command by [@roele](https://github.com/roele) in [#4972](https://github.com/jdx/mise/pull/4972)
+- use aqua for btop by [@jdx](https://github.com/jdx) in [#4979](https://github.com/jdx/mise/pull/4979)
+
+### 🐛 Bug Fixes
+
+- **(java)** filter out JetBrains releases with features by [@roele](https://github.com/roele) in [#4970](https://github.com/jdx/mise/pull/4970)
+- fix deadlocks caused by uv_venv_auto by [@risu729](https://github.com/risu729) in [#4900](https://github.com/jdx/mise/pull/4900)
+
+### 📚 Documentation
+
+- Put dot in dotfile example by [@ryanbrainard](https://github.com/ryanbrainard) in [#4965](https://github.com/jdx/mise/pull/4965)
+
+### Chore
+
+- only use mold when available by [@jdx](https://github.com/jdx) in [#4978](https://github.com/jdx/mise/pull/4978)
+- enable clearing screen for confirm and dialog by [@roele](https://github.com/roele) in [#4990](https://github.com/jdx/mise/pull/4990)
+
+### New Contributors
+
+- @rarescosma made their first contribution in [#4986](https://github.com/jdx/mise/pull/4986)
+- @rhanneken made their first contribution in [#4993](https://github.com/jdx/mise/pull/4993)
+- @ryanbrainard made their first contribution in [#4965](https://github.com/jdx/mise/pull/4965)
+
+## [2025.4.12](https://github.com/jdx/mise/compare/v2025.4.11..v2025.4.12) - 2025-04-29
+
+### 🐛 Bug Fixes
+
+- **(aqua)** fix bin_path of tools in monorepo by [@risu729](https://github.com/risu729) in [#4954](https://github.com/jdx/mise/pull/4954)
+- **(schema)** allow array of objects for hooks by [@risu729](https://github.com/risu729) in [#4955](https://github.com/jdx/mise/pull/4955)
+- store tool version opts in .mise.backend by [@roele](https://github.com/roele) in [#4960](https://github.com/jdx/mise/pull/4960)
+
+### 📚 Documentation
+
+- add information about the DNF repository by [@acesyde](https://github.com/acesyde) in [#4956](https://github.com/jdx/mise/pull/4956)
+
+### 🧪 Testing
+
+- fix registry tools by [@jdx](https://github.com/jdx) in [#4959](https://github.com/jdx/mise/pull/4959)
+
+### Chore
+
+- **(deny)** added CDLA-Permissive-2.0 by [@jdx](https://github.com/jdx) in [#4961](https://github.com/jdx/mise/pull/4961)
+
 ## [2025.4.11](https://github.com/jdx/mise/compare/v2025.4.10..v2025.4.11) - 2025-04-27
 
 ### 🚀 Features

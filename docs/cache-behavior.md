@@ -29,3 +29,8 @@ a ticket and we can try to figure out what to do.
 Caching `exec-env` massively improved the performance of mise since it requires calling bash
 every time mise is initialized. Ideally, we can keep this
 behavior.
+
+## Cache auto-pruning
+
+mise will automatically delete old files in its cache directory (configured with [`cache_prune_age`](https://mise.jdx.dev/configuration/settings.html#cache_prune_age)). Much of
+the contents are also ignored by mise if they are >24 hours old or a few days. For this reason, it's likely wasteful to store this directory in CI jobs.
