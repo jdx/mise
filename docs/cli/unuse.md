@@ -6,7 +6,7 @@
 
 Removes installed tool versions from mise.toml
 
-By default, this will use a `mise.toml` file in the current directory.
+By default, this will use the `mise.toml` file that has the tool defined.
 
 In the following order:
 
