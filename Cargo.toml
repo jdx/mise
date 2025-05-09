@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2025.5.2"
+version = "2025.5.3"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -155,7 +155,7 @@ urlencoding = "2.1.3"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
-nix = { version = "0.29", features = ["signal", "user"] }
+nix = { version = "0.30", features = ["signal", "user"] }
 self_update = { version = "0.42", optional = true, default-features = false, features = [
   "archive-tar",
   "compression-flate2",
@@ -170,7 +170,7 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
 sevenz-rust = "0.6"
 
 [build-dependencies]
-built = { version = "0.7", features = ["chrono"] }
+built = { version = "0.8", features = ["chrono"] }
 cfg_aliases = "0.2"
 heck = "0.5"
 toml = "0.8"

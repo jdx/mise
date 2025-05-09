@@ -87,7 +87,7 @@ apollo-router.backends = [
 ]
 apollo-rover.backends = ["ubi:apollographql/rover"]
 aqua.backends = ["ubi:aquaproj/aqua"]
-aqua.test = ["aqua version", "{{version}}"]
+# aqua.test = ["aqua version", "{{version}}"]
 arduino.aliases = ["arduino"]
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
 argc.backends = ["ubi:sigoden/argc"]
@@ -451,6 +451,8 @@ copper.test = ["copper version", ""]
 coq.backends = ["asdf:mise-plugins/mise-coq"]
 coredns.backends = ["ubi:coredns/coredns", "asdf:s3than/asdf-coredns"]
 coredns.test = ["coredns --version", "CoreDNS-{{version}}"]
+coreutils.backends = ["aqua:uutils/coreutils", "ubi:uutils/coreutils"]
+coreutils.test = ["coreutils", "coreutils {{version}}"]
 cosign.backends = [
     "aqua:sigstore/cosign",
     "asdf:https://gitlab.com/wt0f/asdf-cosign"

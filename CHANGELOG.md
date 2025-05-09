@@ -1,5 +1,25 @@
 # Changelog
 
+## [2025.5.3](https://github.com/jdx/mise/compare/v2025.5.2..v2025.5.3) - 2025-05-09
+
+### 🚀 Features
+
+- **(registry)** add coreutils by [@kit494way](https://github.com/kit494way) in [#5033](https://github.com/jdx/mise/pull/5033)
+
+### 🐛 Bug Fixes
+
+- unuse command does not support env, global and path options by [@roele](https://github.com/roele) in [#5021](https://github.com/jdx/mise/pull/5021)
+
+### 🧪 Testing
+
+- disable aqua for now due to bad version output by [@jdx](https://github.com/jdx) in [fa3daa2](https://github.com/jdx/mise/commit/fa3daa2cab09ba7e0140fcf2112375eef8427a85)
+- fix python poetry test by [@jdx](https://github.com/jdx) in [c46a190](https://github.com/jdx/mise/commit/c46a190cb699b7700aa636a2bc888222ed7e9dbc)
+
+### 📦️ Dependency Updates
+
+- update rust crate nix to 0.30 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5032](https://github.com/jdx/mise/pull/5032)
+- update rust crate built to 0.8 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5031](https://github.com/jdx/mise/pull/5031)
+
 ## [2025.5.2](https://github.com/jdx/mise/compare/v2025.5.1..v2025.5.2) - 2025-05-07
 
 ### 🐛 Bug Fixes
