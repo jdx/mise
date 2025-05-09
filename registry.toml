@@ -451,6 +451,8 @@ copper.test = ["copper version", ""]
 coq.backends = ["asdf:mise-plugins/mise-coq"]
 coredns.backends = ["ubi:coredns/coredns", "asdf:s3than/asdf-coredns"]
 coredns.test = ["coredns --version", "CoreDNS-{{version}}"]
+coreutils.backends = ["aqua:uutils/coreutils", "ubi:uutils/coreutils"]
+coreutils.test = ["coreutils", "coreutils {{version}}"]
 cosign.backends = [
     "aqua:sigstore/cosign",
     "asdf:https://gitlab.com/wt0f/asdf-cosign"
