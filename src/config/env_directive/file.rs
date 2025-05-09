@@ -5,7 +5,6 @@ use crate::{Result, file, sops};
 use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, YamlFileFormat};
-use shell_escape::unix::escape;
 use std::path::{Path, PathBuf};
 
 // use indexmap so source is after value for `mise env --json` output
@@ -145,7 +144,7 @@ impl EnvResults {
         // Convert env vars to string format
         let env_as_string = env
             .iter()
-            .map(|(key, value)| format!("{}={}", key, escape(value.into())))
+            .map(|(key, value)| format!("{}='{}'", key, value.replace("'", "\\'")))
             .collect::<Vec<_>>()
             .join("\n");
 
