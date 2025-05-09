@@ -251,6 +251,7 @@ impl EnvResults {
                         normalize_path,
                         &source,
                         &config_root,
+                        &env_vars,
                         input,
                     )?;
                     for (f, new_env) in files {

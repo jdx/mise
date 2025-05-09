@@ -21,6 +21,7 @@ use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::{ConfigFile, config_trust_root};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults};
 use crate::config::tracking::Tracker;
+use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::Task;
@@ -919,6 +920,23 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
         .iter()
         .flat_map(|f| glob(dir, f).unwrap_or_default())
         .collect()
+}
+
+pub fn config_file_from_dir(p: &Path) -> PathBuf {
+    if !p.is_dir() {
+        return p.to_path_buf();
+    }
+    for dir in file::all_dirs().unwrap_or_default() {
+        if let Some(cf) = self::config_files_in_dir(&dir).last() {
+            if !is_global_config(cf) {
+                return cf.clone();
+            }
+        }
+    }
+    match SETTINGS.asdf_compat {
+        true => p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
+        false => p.join(&*MISE_DEFAULT_CONFIG_FILENAME),
+    }
 }
 
 pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> Vec<PathBuf> {

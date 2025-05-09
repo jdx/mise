@@ -128,6 +128,7 @@ These variables offer key information about the current environment:
 - `config_root: PathBuf` – Locates the directory containing your `mise.toml` file, or in the case of something like `~/src/myproj/.config/mise.toml`, it will point to `~/src/myproj`.
 - `mise_bin: String` - Points to the path to the current mise executable
 - `mise_pid: String` - Points to the pid of the current mise process
+- `mise_env: String` - The configuration environment as specified by `MISE_ENV`, `-E`, or `--env`. Will be undefined if the configuration environment is not set.
 - `xdg_cache_home: PathBuf` - Points to the directory of XDG cache home
 - `xdg_config_home: PathBuf` - Points to the directory of XDG config home
 - `xdg_data_home: PathBuf` - Points to the directory of XDG data home

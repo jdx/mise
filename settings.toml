@@ -474,6 +474,7 @@ type = "ListString"
 rust_type = "BTreeSet<String>"
 default = []
 parse_env = "list_by_comma"
+deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Specific tools to disable idiomatic version files for."
 
 [idiomatic_version_file_enable_tools]
@@ -1022,6 +1023,12 @@ description = "Show configured env vars when entering a directory with a mise.to
 env = "MISE_STATUS_MESSAGE_SHOW_TOOLS"
 type = "Bool"
 description = "Show configured tools when entering a directory with a mise.toml file."
+
+[status.truncate]
+env = "MISE_STATUS_MESSAGE_TRUNCATE"
+type = "Bool"
+default = true
+description = "Truncate status messages."
 
 [swift.gpg_verify]
 env = "MISE_SWIFT_GPG_VERIFY"
