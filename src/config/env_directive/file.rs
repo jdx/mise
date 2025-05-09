@@ -1,5 +1,4 @@
 use crate::config::env_directive::EnvResults;
-use crate::env_diff;
 use crate::file::display_path;
 use crate::{Result, file, sops};
 use eyre::{WrapErr, bail, eyre};
@@ -27,26 +26,23 @@ impl EnvResults {
         normalize_path: fn(&Path, PathBuf) -> PathBuf,
         source: &Path,
         config_root: &Path,
-        env_vars: &env_diff::EnvMap,
         input: String,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
         let s = r.parse_template(ctx, tera, source, &input)?;
-        let mut tmpenv = env_vars.clone();
         for p in xx::file::glob(normalize_path(config_root, s.into())).unwrap_or_default() {
-            let new_env = out.entry(p.clone()).or_insert_with(IndexMap::new);
+            let env = out.entry(p.clone()).or_insert_with(IndexMap::new);
             let parse_template = |s: String| r.parse_template(ctx, tera, source, &s);
             let ext = p
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
-            *new_env = match ext.as_str() {
+            *env = match ext.as_str() {
                 "json" => Self::json(&p, parse_template)?,
                 "yaml" => Self::yaml(&p, parse_template)?,
                 "toml" => Self::toml(&p)?,
-                _ => Self::dotenv(&p, &tmpenv)?,
+                _ => Self::dotenv(&p)?,
             };
-            tmpenv.extend(new_env.clone());
         }
         Ok(out)
     }
@@ -136,35 +132,15 @@ impl EnvResults {
         }
     }
 
-    fn dotenv(p: &Path, env: &env_diff::EnvMap) -> Result<EnvMap> {
+    fn dotenv(p: &Path) -> Result<EnvMap> {
         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(p));
-        let mut full_env = EnvMap::new();
-        let mut new_env = EnvMap::new();
-
-        // Convert env vars to string format
-        let env_as_string = env
-            .iter()
-            .map(|(key, value)| format!("{}='{}'", key, value.replace("'", "\\'")))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        // Read the file content and concatenate with env_as_string
-        let file_content = file::read_to_string(p).unwrap_or_default();
-        let combined_content = format!("{}\n{}", env_as_string, file_content);
-
-        for item in dotenvy::from_read_iter(combined_content.as_bytes()) {
-            let (k, v) = item.wrap_err_with(errfn)?;
-            full_env.insert(k, v);
-        }
-        // A 2nd pass is needed to only keep new values
+        let mut env = EnvMap::new();
         if let Ok(dotenv) = dotenvy::from_path_iter(p) {
             for item in dotenv {
-                let (k, _) = item.wrap_err_with(errfn)?;
-                let value = full_env.get(&k).cloned().unwrap_or_default();
-                new_env.insert(k, value);
+                let (k, v) = item.wrap_err_with(errfn)?;
+                env.insert(k, v);
             }
         }
-
-        Ok(new_env)
+        Ok(env)
     }
 }
