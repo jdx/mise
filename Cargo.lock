@@ -2702,7 +2702,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5bdbbd5bc8c5749697ccaa352fa45aff8730cf21c68029c0eef1ffed7c3d6ba2"
 dependencies = [
  "cfg-if",
- "nix",
+ "nix 0.29.0",
  "widestring",
  "windows",
 ]
@@ -3697,7 +3697,7 @@ dependencies = [
  "md-5",
  "minisign-verify",
  "mockito",
- "nix",
+ "nix 0.30.1",
  "num_cpus",
  "number_prefix",
  "once_cell",
@@ -3845,6 +3845,18 @@ name = "nix"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
+name = "nix"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
 dependencies = [
  "bitflags",
  "cfg-if",
