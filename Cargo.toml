@@ -170,7 +170,7 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
 sevenz-rust = "0.6"
 
 [build-dependencies]
-built = { version = "0.7", features = ["chrono"] }
+built = { version = "0.8", features = ["chrono"] }
 cfg_aliases = "0.2"
 heck = "0.5"
 toml = "0.8"
