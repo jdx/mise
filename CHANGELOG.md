@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.5.4](https://github.com/jdx/mise/compare/v2025.5.3..v2025.5.4) - 2025-05-10
+
+### 🚜 Refactor
+
+- **(hooks)** remove duplicated code by [@risu729](https://github.com/risu729) in [#5036](https://github.com/jdx/mise/pull/5036)
+
 ## [2025.5.3](https://github.com/jdx/mise/compare/v2025.5.2..v2025.5.3) - 2025-05-09
 
 ### 🚀 Features
