@@ -27,7 +27,9 @@ impl SettingsSet {
 }
 
 pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
-    let value = if let Some(meta) = SETTINGS_META.get(key) {
+    let meta = SETTINGS_META.get(key);
+
+    let parsed_value = if let Some(meta) = meta {
         match meta.type_ {
             SettingsType::Bool => parse_bool(value)?,
             SettingsType::Integer => parse_i64(value)?,
@@ -46,16 +48,19 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         config::global_config_path()
     };
     file::create_dir_all(path.parent().unwrap())?;
+
     let raw = file::read_to_string(&path).unwrap_or_default();
     let mut config: DocumentMut = raw.parse()?;
+
     if !config.contains_key("settings") {
         config["settings"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
+
     if let Some(mut settings) = config["settings"].as_table_mut() {
-        if let Some((parent_key, child_key)) = key.split_once('.') {
-            key = child_key;
+        if let Some((parent, child)) = key.split_once('.') {
+            key = child;
             settings = settings
-                .entry(parent_key)
+                .entry(parent)
                 .or_insert({
                     let mut t = toml_edit::Table::new();
                     t.set_implicit(true);
@@ -65,21 +70,42 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
                 .unwrap();
         }
 
-        let value = match settings.get(key).map(|c| c.as_array()) {
-            Some(Some(array)) if add => {
-                let mut array = array.clone();
-                array.extend(value.as_array().unwrap().iter().cloned());
-                array.into()
+        // If we're in “add” mode and the key already exists as an array
+        // and already contains our value, just do nothing.
+        if add {
+            if let Some(toml_edit::Value::Array(arr)) =
+                settings.get(key).and_then(|it| it.as_value().cloned())
+            {
+                if arr.iter().any(|it| it.as_str() == Some(value)) {
+                    return Ok(());
+                }
             }
-            _ => value,
+        }
+
+        let new_value: toml_edit::Value = if add {
+            if let Some(existing_arr) = settings.get(key).and_then(|it| it.as_array()).cloned() {
+                let mut arr = existing_arr;
+                // dedupe: only push if it’s not already in the array
+                if !arr.iter().any(|it| it.as_str() == Some(value)) {
+                    arr.push(value);
+                }
+                toml_edit::Value::Array(arr)
+            } else {
+                // first time: parsed_value is already an array (ListString/ListPath)
+                parsed_value.clone()
+            }
+        } else {
+            parsed_value.clone()
         };
-        settings.insert(key, value.into());
+
+        settings.insert(key, new_value.into());
 
         // validate
         let _: SettingsFile = toml::from_str(&config.to_string())?;
 
-        file::write(path, config.to_string())?;
+        file::write(&path, config.to_string())?;
     }
+
     Ok(())
 }
 
