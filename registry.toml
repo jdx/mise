@@ -1532,7 +1532,9 @@ pre-commit.backends = [
     "asdf:jonathanmorley/asdf-pre-commit"
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
-probe-rs-tools.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall[exe=probe-rs]"]
+probe-rs-tools.backends = [
+    "asdf:vic1707/asdf-any-cargo-quickinstall[exe=probe-rs]"
+]
 probe-rs-tools.test = [
     "probe-rs --version",
     "probe-rs {{version}} (git commit: crates.io)"
