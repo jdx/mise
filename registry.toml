@@ -170,6 +170,8 @@ babashka.backends = [
     "asdf:pitch-io/asdf-babashka"
 ]
 babashka.test = ["bb --version", "babashka v{{version}}"]
+bacon.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall"]
+bacon.test = ["bacon --version", "bacon {{version}}"]
 balena.aliases = ["balena-cli"]
 balena.backends = [
     "ubi:balena-io/balena-cli[exe=balena]",
@@ -292,6 +294,9 @@ calicoctl.backends = [
     "aqua:projectcalico/calico/calicoctl",
     "asdf:TheCubicleJockey/asdf-calicoctl"
 ]
+carapace.aliases = ["carapace-bin"]
+carapace.backends = ["asdf:vic1707/asdf-carapace-bin[exe=carapace]"]
+carapace.tests = ["carapace --version", "carapace-bin {{version}}"]
 cargo-binstall.backends = [
     "aqua:cargo-bins/cargo-binstall",
     'ubi:cargo-bins/cargo-binstall[tag_regex=^\\d\\.]',
@@ -532,6 +537,8 @@ difftastic.backends = [
 ]
 digdag.backends = ["asdf:mise-plugins/mise-digdag"]
 direnv.backends = ["aqua:direnv/direnv", "asdf:asdf-community/asdf-direnv"]
+diskonaut.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall"]
+diskonaut.test = ["diskonaut --version", "diskonaut {{version}}"]
 dive.backends = ["ubi:wagoodman/dive", "asdf:looztra/asdf-dive"]
 djinni.backends = [
     "ubi:cross-language-cpp/djinni-generator",
@@ -668,6 +675,8 @@ fission.backends = [
     "aqua:fission/fission",
     "asdf:virtualstaticvoid/asdf-fission"
 ]
+flamegraph.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall"]
+flamegraph.test = ["flamegraph --version", "flamegraph {{version}}"]
 flamingo.backends = [
     "ubi:flux-subsystem-argo/flamingo",
     "asdf:log2/asdf-flamingo"
@@ -1523,6 +1532,11 @@ pre-commit.backends = [
     "asdf:jonathanmorley/asdf-pre-commit"
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
+probe-rs.aliases = ["probe-rs-tools"]
+probe-rs.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall[exe=probe-rs]"]
+probe-rs.test = ["probe-rs --version", "probe-rs {{version}} (git commit: crates.io)"]
+procs.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall"]
+procs.test = ["procs --version", "procs {{version}}"]
 promtool.backends = [
     "aqua:prometheus/prometheus",
     "asdf:asdf-community/asdf-promtool"
