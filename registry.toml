@@ -171,7 +171,7 @@ babashka.backends = [
 ]
 babashka.test = ["bb --version", "babashka v{{version}}"]
 bacon.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall"]
-bacon.test = ["bacon --version", "bacon {{version}}"]
+# bacon.test = ["bacon --version", "bacon {{version}}"] # 3.13.0 unavailable for CI's x86_64-unknown-linux-gnu
 balena.aliases = ["balena-cli"]
 balena.backends = [
     "ubi:balena-io/balena-cli[exe=balena]",
@@ -676,7 +676,7 @@ fission.backends = [
     "asdf:virtualstaticvoid/asdf-fission"
 ]
 flamegraph.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall"]
-flamegraph.test = ["flamegraph --version", "flamegraph {{version}}"]
+# flamegraph.test = ["flamegraph --version", "flamegraph {{version}}"] # 0.11.0 unavailable for CI's x86_64-unknown-linux-gnu
 flamingo.backends = [
     "ubi:flux-subsystem-argo/flamingo",
     "asdf:log2/asdf-flamingo"
@@ -1539,7 +1539,7 @@ probe-rs.test = [
     "probe-rs {{version}} (git commit: crates.io)"
 ]
 procs.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall"]
-procs.test = ["procs --version", "procs {{version}}"]
+# procs.test = ["procs --version", "procs {{version}}"] # 0.11.0 unavailable for CI's x86_64-unknown-linux-gnu
 promtool.backends = [
     "aqua:prometheus/prometheus",
     "asdf:asdf-community/asdf-promtool"
