@@ -87,7 +87,7 @@ apollo-router.backends = [
 ]
 apollo-rover.backends = ["ubi:apollographql/rover"]
 aqua.backends = ["ubi:aquaproj/aqua"]
-# aqua.test = ["aqua version", "{{version}}"]
+aqua.test = ["aqua --version", "aqua version {{version}}"]
 arduino.aliases = ["arduino"]
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
 argc.backends = ["ubi:sigoden/argc"]
