@@ -842,10 +842,7 @@ gomigrate.backends = [
     "asdf:joschi/asdf-gomigrate"
 ]
 gomigrate.test = ["migrate --version 2>&1", "{{version}}"]
-gomplate.backends = [
-    "aqua:hairyhenderson/gomplate",
-    "asdf:tapih/asdf-gomplate"
-]
+gomplate.backends = ["aqua:hairyhenderson/gomplate", "asdf:tapih/asdf-gomplate"]
 gomplate.test = ["gomplate --version", "gomplate version {{version}}"]
 gopass.backends = ["aqua:gopasspw/gopass", "asdf:trallnag/asdf-gopass"]
 goreleaser.backends = [
@@ -922,7 +919,10 @@ hcl2json.backends = ["aqua:tmccombs/hcl2json", "asdf:dex4er/asdf-hcl2json"]
 hcloud.backends = ["aqua:hetznercloud/cli", "asdf:chessmango/asdf-hcloud"]
 hcloud.test = ["hcloud version", "hcloud {{version}}"]
 hcloud-upload-image.backends = ["asdf:vic1707/asdf-hcloud-upload-image"]
-hcloud-upload-image.test = ["hcloud-upload-image --version", "hcloud-upload-image version {{version}}"]
+hcloud-upload-image.test = [
+    "hcloud-upload-image --version",
+    "hcloud-upload-image version {{version}}"
+]
 helix.backends = ["ubi:helix-editor/helix[extract_all=true]"]
 helm.backends = ["aqua:helm/helm", "asdf:Antiarchitect/asdf-helm"]
 helm-cr.backends = [
