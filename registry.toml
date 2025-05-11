@@ -278,6 +278,8 @@ buildpack.backends = ["aqua:buildpacks/pack", "asdf:johnlayton/asdf-buildpack"]
 buildpack.test = ["pack --version", "{{version}}"]
 bun.backends = ["core:bun"]
 bun.test = ["bun --version", "{{version}}"]
+butane.backends = ["asdf:Okeanos/asdf-butane"]
+butane.test = ["butane --version", "Butane {{version}}"]
 cabal.backends = ["aqua:haskell/cabal/cabal-install"]
 # cabal.test = ["cabal --version", "cabal-install version {{version}}"]
 caddy.backends = ["aqua:caddyserver/caddy", "asdf:salasrod/asdf-caddy"]
@@ -842,8 +844,9 @@ gomigrate.backends = [
 gomigrate.test = ["migrate --version 2>&1", "{{version}}"]
 gomplate.backends = [
     "aqua:hairyhenderson/gomplate",
-    "asdf:sneakybeaky/asdf-gomplate"
+    "asdf:tapih/asdf-gomplate"
 ]
+gomplate.test = ["gomplate --version", "gomplate version {{version}}"]
 gopass.backends = ["aqua:gopasspw/gopass", "asdf:trallnag/asdf-gopass"]
 goreleaser.backends = [
     "aqua:goreleaser/goreleaser",
@@ -917,6 +920,9 @@ haxe.backends = ["ubi:HaxeFoundation/haxe", "asdf:mise-plugins/mise-haxe"]
 haxe.test = ["haxe --version", "{{version}}"]
 hcl2json.backends = ["aqua:tmccombs/hcl2json", "asdf:dex4er/asdf-hcl2json"]
 hcloud.backends = ["aqua:hetznercloud/cli", "asdf:chessmango/asdf-hcloud"]
+hcloud.test = ["hcloud version", "hcloud {{version}}"]
+hcloud-upload-image.backends = ["asdf:vic1707/asdf-hcloud-upload-image"]
+hcloud-upload-image.test = ["hcloud-upload-image --version", "hcloud-upload-image version {{version}}"]
 helix.backends = ["ubi:helix-editor/helix[extract_all=true]"]
 helm.backends = ["aqua:helm/helm", "asdf:Antiarchitect/asdf-helm"]
 helm-cr.backends = [
@@ -2052,6 +2058,8 @@ zephyr.backends = ["ubi:MaybeJustJames/zephyr", "asdf:nsaunders/asdf-zephyr"]
 zig.backends = ["core:zig"]
 zigmod.backends = ["ubi:nektro/zigmod", "asdf:mise-plugins/asdf-zigmod"]
 zigmod.test = ["zigmod version", "{{version}}"]
+zizmor.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall"]
+zizmor.test = ["zizmor --version", "zizmor {{version}}"]
 zls.backends = ["aqua:zigtools/zls", "ubi:zigtools/zls"]
 zls.test = ["zls --version", "{{version}}"]
 zola.backends = ["ubi:getzola/zola", "asdf:salasrod/asdf-zola"]
