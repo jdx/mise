@@ -1532,9 +1532,8 @@ pre-commit.backends = [
     "asdf:jonathanmorley/asdf-pre-commit"
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
-probe-rs.aliases = ["probe-rs-tools"]
-probe-rs.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall[exe=probe-rs]"]
-probe-rs.test = [
+probe-rs-tools.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall[exe=probe-rs]"]
+probe-rs-tools.test = [
     "probe-rs --version",
     "probe-rs {{version}} (git commit: crates.io)"
 ]
@@ -2076,7 +2075,7 @@ zig.backends = ["core:zig"]
 zigmod.backends = ["ubi:nektro/zigmod", "asdf:mise-plugins/asdf-zigmod"]
 zigmod.test = ["zigmod version", "{{version}}"]
 zizmor.backends = ["asdf:vic1707/asdf-any-cargo-quickinstall"]
-zizmor.test = ["zizmor --version", "zizmor {{version}}"]
+# zizmor.test = ["zizmor --version", "zizmor {{version}}"] # 1.7.0 unavailable for CI's x86_64-unknown-linux-gnu
 zls.backends = ["aqua:zigtools/zls", "ubi:zigtools/zls"]
 zls.test = ["zls --version", "{{version}}"]
 zola.backends = ["ubi:getzola/zola", "asdf:salasrod/asdf-zola"]
