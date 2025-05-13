@@ -1755,6 +1755,8 @@ spring-boot.backends = ["asdf:mise-plugins/mise-spring-boot"]
 spruce.backends = ["aqua:geofffranks/spruce", "asdf:woneill/asdf-spruce"]
 sqlite.backends = ["asdf:mise-plugins/mise-sqlite"]
 sqlite3def.backends = ["aqua:sqldef/sqldef/sqlite3def"]
+sshi.backends = ["aqua:aakso/ssh-inscribe/sshi"]
+sshi.test = ["sshi version", "local: {{version}}"]
 sshuttle.backends = ["asdf:mise-plugins/mise-sshuttle"]
 stack.backends = [
     "aqua:commercialhaskell/stack",
