@@ -779,7 +779,7 @@ gitu.backends = ["ubi:altsem/gitu", "cargo:gitu"]
 gitui.backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui"]
 gitversion.backends = ["aqua:gittools/gitversion", "ubi:gittools/gitversion"]
 glab.backends = [
-    "ubi:gitlab-org/cli[forge=gitlab,exe=glab]",
+    "ubi:gitlab-org/cli[provider=gitlab,exe=glab]",
     "asdf:mise-plugins/mise-glab"
 ]
 # glab.test = ["glab version", "Current glab version: {{version}}"]
