@@ -36,10 +36,6 @@ Only show tool versions currently specified in the local mise.toml
 
 Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
 
-### `-o --offline`
-
-Don't fetch information such as outdated versions
-
 ### `--outdated`
 
 Display whether a version is outdated
