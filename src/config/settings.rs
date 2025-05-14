@@ -10,7 +10,8 @@ use eyre::{Result, bail};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
 use serde::ser::Error;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer};
+use serde_derive::Serialize;
 use std::collections::{BTreeSet, HashSet};
 use std::env::consts::ARCH;
 use std::fmt::{Debug, Display, Formatter};
@@ -465,5 +466,18 @@ impl SettingsNode {
 impl SettingsStatus {
     pub fn missing_tools(&self) -> SettingsStatusMissingTools {
         SettingsStatusMissingTools::from_str(&self.missing_tools).unwrap()
+    }
+}
+
+/// Deserialize a string to a boolean, accepting "false", "no", "0"
+/// and their case-insensitive variants as `false`. Any other value (incl. "") is considered `true`.
+fn bool_string<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "false" | "no" | "0" => Ok(false),
+        _ => Ok(true),
     }
 }

@@ -204,6 +204,8 @@ hide = true
 [ci]
 env = "CI"
 type = "Bool"
+default = "false"
+deserialize_with = "bool_string"
 description = "Set to true if running in a CI environment"
 hide = true
 
