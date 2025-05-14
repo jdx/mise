@@ -732,7 +732,10 @@ getenvoy.backends = [
     "asdf:mise-plugins/mise-getenvoy"
 ]
 getenvoy.test = ["getenvoy --version", "getenvoy version {{version}}"]
-ghalint.backends = ["aqua:suzuki-shunsuke/ghalint", "ubi:suzuki-shunsuke/ghalint"]
+ghalint.backends = [
+    "aqua:suzuki-shunsuke/ghalint",
+    "ubi:suzuki-shunsuke/ghalint"
+]
 ghalint.test = ["ghalint version", "{{version}}"]
 ghc.backends = ["asdf:mise-plugins/mise-ghcup"]
 ghcup.backends = [
