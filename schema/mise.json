@@ -326,6 +326,7 @@
           "type": "string"
         },
         "ci": {
+          "default": "false",
           "description": "Set to true if running in a CI environment",
           "type": "boolean"
         },
@@ -500,6 +501,7 @@
           "default": [],
           "description": "Specific tools to disable idiomatic version files for.",
           "type": "array",
+          "deprecated": true,
           "items": {
             "type": "string"
           }
@@ -861,6 +863,11 @@
             },
             "show_tools": {
               "description": "Show configured tools when entering a directory with a mise.toml file.",
+              "type": "boolean"
+            },
+            "truncate": {
+              "default": true,
+              "description": "Truncate status messages.",
               "type": "boolean"
             }
           }

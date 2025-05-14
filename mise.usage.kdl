@@ -465,7 +465,7 @@ cmd ls help="List installed and active tool versions" {
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
     flag "-l --local" help="Only show tool versions currently specified in the local mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
-    flag "-o --offline" help="Don't fetch information such as outdated versions"
+    flag "-o --offline" help="Don't fetch information such as outdated versions" hide=#true
     flag --outdated help="Display whether a version is outdated"
     flag "-J --json" help="Output in JSON format"
     flag "-m --missing" help="Display missing tool versions"
@@ -920,8 +920,16 @@ cmd unset help="Remove environment variable(s) from the config file." {
 }
 cmd unuse help="Removes installed tool versions from mise.toml" {
     alias rm remove
-    long_help "Removes installed tool versions from mise.toml\n\nWill also prune the installed version if no other configurations are using it."
-    after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise unuse node@18.0.0\n\n    # will uninstall specific version from global config\n    $ mise unuse -g node@18.0.0\n"
+    long_help "Removes installed tool versions from mise.toml\n\nBy default, this will use the `mise.toml` file that has the tool defined.\n\nIn the following order:\n  - If `--global` is set, it will use the global config file.\n  - If `--path` is set, it will use the config file at the given path.\n  - If `--env` is set, it will use `mise.<env>.toml`.\n  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.\n  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.\n  - Otherwise just \"mise.toml\" or global config if cwd is home directory.\n\nWill also prune the installed version if no other configurations are using it."
+    after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise unuse node@18.0.0\n\n    # will uninstall specific version from global config\n    $ mise unuse -g node@18.0.0\n\n    # will uninstall specific version from .mise.local.toml\n    $ mise unuse --env local node@20\n\n    # will uninstall specific version from .mise.staging.toml\n    $ mise unuse --env staging node@20\n"
+    flag "-g --global" help="Use the global config file (`~/.config/mise/config.toml`) instead of the local one"
+    flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
+        arg <ENV>
+    }
+    flag "-p --path" help="Specify a path to a config file or directory" {
+        long_help "Specify a path to a config file or directory\n\nIf a directory is specified, it will look for a config file in that directory following the rules above."
+        arg <PATH>
+    }
     flag --no-prune help="Do not also prune the installed version"
     arg <INSTALLED_TOOL@VERSION>… help="Tool(s) to remove" var=#true
 }

@@ -11,7 +11,7 @@ use thiserror::Error;
 pub enum Error {
     #[error("[{ts}] {tr}: {source:#}")]
     FailedToResolveVersion {
-        tr: ToolRequest,
+        tr: Box<ToolRequest>,
         ts: ToolSource,
         source: Report,
     },

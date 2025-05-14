@@ -1,5 +1,115 @@
 # Changelog
 
+## [2025.5.4](https://github.com/jdx/mise/compare/v2025.5.3..v2025.5.4) - 2025-05-14
+
+### 🚀 Features
+
+- **(registry)** add sshi by [@scop](https://github.com/scop) in [#5048](https://github.com/jdx/mise/pull/5048)
+- **(registry)** added Neon CLI by [@joehorsnell](https://github.com/joehorsnell) in [#4994](https://github.com/jdx/mise/pull/4994)
+
+### 🐛 Bug Fixes
+
+- **(registry)** update glab ubi provider by [@StingRayZA](https://github.com/StingRayZA) in [#5052](https://github.com/jdx/mise/pull/5052)
+- mise panics if CI env var isn't a boolean by [@roele](https://github.com/roele) in [#5059](https://github.com/jdx/mise/pull/5059)
+- `aqua` version test by [@joehorsnell](https://github.com/joehorsnell) in [#5038](https://github.com/jdx/mise/pull/5038)
+- run hook-env after trusting config file by [@jdx](https://github.com/jdx) in [#5062](https://github.com/jdx/mise/pull/5062)
+
+### 🚜 Refactor
+
+- **(hooks)** remove duplicated code by [@risu729](https://github.com/risu729) in [#5036](https://github.com/jdx/mise/pull/5036)
+
+### 📚 Documentation
+
+- fix add_predicate handler in neovim cookbook by [@okuuva](https://github.com/okuuva) in [#5044](https://github.com/jdx/mise/pull/5044)
+- improve treesitter queries in neovim cookbook by [@okuuva](https://github.com/okuuva) in [#5045](https://github.com/jdx/mise/pull/5045)
+
+### New Contributors
+
+- @okuuva made their first contribution in [#5045](https://github.com/jdx/mise/pull/5045)
+
+## [2025.5.3](https://github.com/jdx/mise/compare/v2025.5.2..v2025.5.3) - 2025-05-09
+
+### 🚀 Features
+
+- **(registry)** add coreutils by [@kit494way](https://github.com/kit494way) in [#5033](https://github.com/jdx/mise/pull/5033)
+
+### 🐛 Bug Fixes
+
+- unuse command does not support env, global and path options by [@roele](https://github.com/roele) in [#5021](https://github.com/jdx/mise/pull/5021)
+
+### 🧪 Testing
+
+- disable aqua for now due to bad version output by [@jdx](https://github.com/jdx) in [fa3daa2](https://github.com/jdx/mise/commit/fa3daa2cab09ba7e0140fcf2112375eef8427a85)
+- fix python poetry test by [@jdx](https://github.com/jdx) in [c46a190](https://github.com/jdx/mise/commit/c46a190cb699b7700aa636a2bc888222ed7e9dbc)
+
+### 📦️ Dependency Updates
+
+- update rust crate nix to 0.30 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5032](https://github.com/jdx/mise/pull/5032)
+- update rust crate built to 0.8 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5031](https://github.com/jdx/mise/pull/5031)
+
+## [2025.5.2](https://github.com/jdx/mise/compare/v2025.5.1..v2025.5.2) - 2025-05-07
+
+### 🐛 Bug Fixes
+
+- **(dotenv)** properly escape values in generated dotenv by [@noirbizarre](https://github.com/noirbizarre) in [#5010](https://github.com/jdx/mise/pull/5010)
+- **(registry)** use full version of taplo by [@risu729](https://github.com/risu729) in [#5017](https://github.com/jdx/mise/pull/5017)
+
+### 📚 Documentation
+
+- hide rtx docs by [@jdx](https://github.com/jdx) in [90ae2ce](https://github.com/jdx/mise/commit/90ae2ce5abf4faa65ef2414385e587d97ff0ca2c)
+- describe cache auto-prune by [@jdx](https://github.com/jdx) in [#5013](https://github.com/jdx/mise/pull/5013)
+- mark idiomatic_version_file_disable_tools as deprecated by [@jdx](https://github.com/jdx) in [9bb80f3](https://github.com/jdx/mise/commit/9bb80f301e29fcc668f51de8e0a168a32c9ac8db)
+
+### Chore
+
+- remove homebrew bump step by [@jdx](https://github.com/jdx) in [1625608](https://github.com/jdx/mise/commit/1625608c0025ec21a49eedcc85533facde52a8a7)
+- simplify git logs by [@jdx](https://github.com/jdx) in [#5012](https://github.com/jdx/mise/pull/5012)
+
+## [2025.5.1](https://github.com/jdx/mise/compare/v2025.5.0..v2025.5.1) - 2025-05-05
+
+### 🚀 Features
+
+- **(registry)** use aqua for taplo by [@risu729](https://github.com/risu729) in [#4991](https://github.com/jdx/mise/pull/4991)
+- add mise_env tera variable for templates by [@auxesis](https://github.com/auxesis) in [#5002](https://github.com/jdx/mise/pull/5002)
+
+### 🐛 Bug Fixes
+
+- **(env)** fix dotenv files cascading (fix #4688) by [@noirbizarre](https://github.com/noirbizarre) in [#4996](https://github.com/jdx/mise/pull/4996)
+
+### Ci
+
+- **(registry)** increaset timeout to 30 mins by [@risu729](https://github.com/risu729) in [#5006](https://github.com/jdx/mise/pull/5006)
+
+## [2025.5.0](https://github.com/jdx/mise/compare/v2025.4.12..v2025.5.0) - 2025-05-03
+
+### 🚀 Features
+
+- **(registry)** add luau by [@rhanneken](https://github.com/rhanneken) in [#4993](https://github.com/jdx/mise/pull/4993)
+- **(registry)** add numbat by [@risu729](https://github.com/risu729) in [#4980](https://github.com/jdx/mise/pull/4980)
+- **(status)** add setting to control status message truncation by [@rarescosma](https://github.com/rarescosma) in [#4986](https://github.com/jdx/mise/pull/4986)
+- add check flag for the fmt command by [@roele](https://github.com/roele) in [#4972](https://github.com/jdx/mise/pull/4972)
+- use aqua for btop by [@jdx](https://github.com/jdx) in [#4979](https://github.com/jdx/mise/pull/4979)
+
+### 🐛 Bug Fixes
+
+- **(java)** filter out JetBrains releases with features by [@roele](https://github.com/roele) in [#4970](https://github.com/jdx/mise/pull/4970)
+- fix deadlocks caused by uv_venv_auto by [@risu729](https://github.com/risu729) in [#4900](https://github.com/jdx/mise/pull/4900)
+
+### 📚 Documentation
+
+- Put dot in dotfile example by [@ryanbrainard](https://github.com/ryanbrainard) in [#4965](https://github.com/jdx/mise/pull/4965)
+
+### Chore
+
+- only use mold when available by [@jdx](https://github.com/jdx) in [#4978](https://github.com/jdx/mise/pull/4978)
+- enable clearing screen for confirm and dialog by [@roele](https://github.com/roele) in [#4990](https://github.com/jdx/mise/pull/4990)
+
+### New Contributors
+
+- @rarescosma made their first contribution in [#4986](https://github.com/jdx/mise/pull/4986)
+- @rhanneken made their first contribution in [#4993](https://github.com/jdx/mise/pull/4993)
+- @ryanbrainard made their first contribution in [#4965](https://github.com/jdx/mise/pull/4965)
+
 ## [2025.4.12](https://github.com/jdx/mise/compare/v2025.4.11..v2025.4.12) - 2025-04-29
 
 ### 🐛 Bug Fixes

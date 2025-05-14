@@ -218,6 +218,12 @@ pub struct Settings {"#
                     parse_env.as_str().unwrap().to_string(),
                 );
             }
+            if let Some(deserialize_with) = props.get("deserialize_with") {
+                opts.insert(
+                    "deserialize_with".to_string(),
+                    deserialize_with.as_str().unwrap().to_string(),
+                );
+            }
             lines.push(format!(
                 "    #[config({})]",
                 opts.iter()

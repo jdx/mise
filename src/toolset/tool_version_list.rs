@@ -29,7 +29,7 @@ impl ToolVersionList {
                 Ok(v) => self.versions.push(v),
                 Err(err) => {
                     return Err(Error::FailedToResolveVersion {
-                        tr: tvr.clone(),
+                        tr: Box::new(tvr.clone()),
                         ts: self.source.clone(),
                         source: err,
                     }

@@ -18,7 +18,7 @@ In your neovim config, create a `after/queries/toml/injections.scm` file with th
   (string) @injection.content @injection.language
 
   (#is-mise?)
-  (#match? @injection.language "^\"\"\"\n*#!(/\\w+)+/env\\s+\\w+") ; multiline shebang using env
+  (#match? @injection.language "^['\"]{3}\n*#!(/\\w+)+/env\\s+\\w+") ; multiline shebang using env
   (#gsub! @injection.language "^.*#!/.*/env%s+([^%s]+).*" "%1") ; extract lang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
 )
@@ -28,7 +28,7 @@ In your neovim config, create a `after/queries/toml/injections.scm` file with th
   (string) @injection.content @injection.language
 
   (#is-mise?)
-  (#match? @injection.language "^\"\"\"\n*#!(/\\w+)+\s*\n") ; multiline shebang
+  (#match? @injection.language "^['\"]{3}\n*#!(/\\w+)+\s*\n") ; multiline shebang
   (#gsub! @injection.language "^.*#!/.*/([^/%s]+).*" "%1") ; extract lang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
 )
@@ -38,8 +38,8 @@ In your neovim config, create a `after/queries/toml/injections.scm` file with th
   (string) @injection.content
 
   (#is-mise?)
-  (#match? @injection.content "^\"\"\"\n*.*") ; multiline
-  (#not-match? @injection.content "^\"\"\"\n*#!") ; no shebang
+  (#match? @injection.content "^['\"]{3}\n*.*") ; multiline
+  (#not-match? @injection.content "^['\"]{3}\n*#!") ; no shebang
   (#offset! @injection.content 0 3 0 -3) ; rm quotes
   (#set! injection.language "bash") ; default to bash
 )
@@ -49,7 +49,7 @@ In your neovim config, create a `after/queries/toml/injections.scm` file with th
   (string) @injection.content
 
   (#is-mise?)
-  (#not-match? @injection.content "^\"\"\"") ; not multiline
+  (#not-match? @injection.content "^['\"]{3}") ; not multiline
   (#offset! @injection.content 0 1 0 -1) ; rm quotes
   (#set! injection.language "bash") ; default to bash
 )
@@ -67,7 +67,7 @@ For example, using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
     require("vim.treesitter.query").add_predicate("is-mise?", function(_, _, bufnr, _)
       local filepath = vim.api.nvim_buf_get_name(tonumber(bufnr) or 0)
       local filename = vim.fn.fnamemodify(filepath, ":t")
-      return string.match(filename, ".*mise.*%.toml$")
+      return string.match(filename, ".*mise.*%.toml$") ~= nil
     end, { force = true, all = false })
   end,
 },

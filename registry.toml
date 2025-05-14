@@ -451,6 +451,8 @@ copper.test = ["copper version", ""]
 coq.backends = ["asdf:mise-plugins/mise-coq"]
 coredns.backends = ["ubi:coredns/coredns", "asdf:s3than/asdf-coredns"]
 coredns.test = ["coredns --version", "CoreDNS-{{version}}"]
+coreutils.backends = ["aqua:uutils/coreutils", "ubi:uutils/coreutils"]
+coreutils.test = ["coreutils", "coreutils {{version}}"]
 cosign.backends = [
     "aqua:sigstore/cosign",
     "asdf:https://gitlab.com/wt0f/asdf-cosign"
@@ -777,7 +779,7 @@ gitu.backends = ["ubi:altsem/gitu", "cargo:gitu"]
 gitui.backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui"]
 gitversion.backends = ["aqua:gittools/gitversion", "ubi:gittools/gitversion"]
 glab.backends = [
-    "ubi:gitlab-org/cli[forge=gitlab,exe=glab]",
+    "ubi:gitlab-org/cli[provider=gitlab,exe=glab]",
     "asdf:mise-plugins/mise-glab"
 ]
 # glab.test = ["glab version", "Current glab version: {{version}}"]
@@ -1278,6 +1280,9 @@ lua-language-server.backends = [
     "asdf:bellini666/asdf-lua-language-server"
 ]
 luajit.backends = ["asdf:mise-plugins/mise-luaJIT"]
+luau.backends = ["aqua:luau-lang/luau"]
+luau.description = "A fast, small, safe, gradually typed embeddable scripting language derived from Lua"
+luau.test = ["echo 'print(_VERSION)' | luau", "Luau"]
 lychee.backends = ["aqua:lycheeverse/lychee"]
 lychee.test = ["lychee --version", "lychee {{version}}"]
 maestro.backends = [
@@ -1362,6 +1367,8 @@ nasm.backends = ["asdf:mise-plugins/mise-nasm"]
 navi.backends = ["aqua:denisidoro/navi", "ubi:denisidoro/navi"]
 navi.test = ["navi --version", "navi {{version}}"]
 neko.backends = ["ubi:HaxeFoundation/neko", "asdf:asdf-community/asdf-neko"]
+neonctl.backends = ["aqua:neondatabase/neonctl", "ubi:neondatabase/neonctl"]
+neonctl.test = ["neonctl --version", "{{version}}"]
 neovim.backends = ["aqua:neovim/neovim", "asdf:richin13/asdf-neovim"]
 nerdctl.backends = ["aqua:containerd/nerdctl", "asdf:dmpe/asdf-nerdctl"]
 nerdctl.test = ["nerdctl --version", "nerdctl version {{version}}"]
@@ -1384,6 +1391,8 @@ nomad-pack.backends = ["asdf:mise-plugins/mise-hashicorp"]
 notation.backends = ["aqua:notaryproject/notation", "asdf:bodgit/asdf-notation"]
 nova.backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 nsc.backends = ["ubi:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
+numbat.backends = ["ubi:sharkdp/numbat"]
+numbat.test = ["numbat --version", "numbat {{version}}"]
 oapi-codegen.backends = [
     "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
     "asdf:dylanrayboss/asdf-oapi-codegen"
@@ -1459,6 +1468,8 @@ periphery.backends = [
 ]
 perl.backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
 php.backends = ["asdf:mise-plugins/asdf-php", "vfox:mise-plugins/vfox-php"]
+pinact.backends = ["aqua:suzuki-shunsuke/pinact", "ubi:suzuki-shunsuke/pinact"]
+pinact.test = ["pinact version", "{{version}}"]
 pint.backends = ["aqua:cloudflare/pint", "asdf:sam-burrell/asdf-pint"]
 pipectl.backends = ["aqua:pipe-cd/pipecd/pipectl", "asdf:pipe-cd/asdf-pipectl"]
 pipectl.test = ["pipectl version", "Version: v{{version}}"]
@@ -1751,6 +1762,8 @@ spring-boot.backends = ["asdf:mise-plugins/mise-spring-boot"]
 spruce.backends = ["aqua:geofffranks/spruce", "asdf:woneill/asdf-spruce"]
 sqlite.backends = ["asdf:mise-plugins/mise-sqlite"]
 sqlite3def.backends = ["aqua:sqldef/sqldef/sqlite3def"]
+sshi.backends = ["aqua:aakso/ssh-inscribe/sshi"]
+sshi.test = ["sshi version", "local: {{version}}"]
 sshuttle.backends = ["asdf:mise-plugins/mise-sshuttle"]
 stack.backends = [
     "aqua:commercialhaskell/stack",
@@ -1807,7 +1820,12 @@ talosctl.backends = [
 ]
 tanka.backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
 tanzu.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
-taplo.backends = ["ubi:tamasfe/taplo[matching=full]", "cargo:taplo-cli"]
+taplo.backends = [
+    "aqua:tamasfe/taplo/full",
+    "ubi:tamasfe/taplo[matching=full]",
+    "cargo:taplo-cli"
+]
+taplo.test = ["taplo --version", "taplo {{version}}"]
 task.backends = ["ubi:go-task/task", "asdf:particledecay/asdf-task"]
 tctl.backends = ["aqua:temporalio/tctl", "asdf:eko/asdf-tctl"]
 tekton.aliases = ["tekton-cli"]

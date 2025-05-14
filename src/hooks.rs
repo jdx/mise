@@ -81,9 +81,6 @@ pub fn run_one_hook(ts: &Toolset, hook: Hooks, shell: Option<&dyn Shell>) {
                 if !new.starts_with(root) {
                     continue;
                 }
-                if !new.starts_with(root) {
-                    continue;
-                }
                 if old.as_ref().is_some_and(|old| old.starts_with(root)) {
                     continue;
                 }
