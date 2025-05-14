@@ -12,7 +12,7 @@ on:
       - src/cli/test_tool.rs
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.pull_request.number || github.event.pull_request.number || 'push' }}
   cancel-in-progress: true
 
 env:
@@ -60,6 +60,7 @@ jobs:
       - uses: thollander/actions-comment-pull-request@v3
         if: github.event.pull_request.number != null
         with:
+          comment-tag: "mise-registry-bot"
           message: |
             If you are adding a new tool to mise, note the following:
 
