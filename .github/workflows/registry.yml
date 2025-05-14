@@ -41,7 +41,7 @@ jobs:
 
             - New asdf plugins are not accepted
             - Tools may be rejected if they are not notable
-            - A test are required in `registry.toml`
+            - A test is required in `registry.toml`
       - uses: actions/checkout@v4
         with:
           submodules: true
