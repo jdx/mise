@@ -7,10 +7,8 @@ use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{Config, SETTINGS, config_file, is_global_config};
-use crate::env::{
-    MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME, MISE_GLOBAL_CONFIG_FILE,
-};
+use crate::config::{Config, SETTINGS, config_file};
+use crate::env::MISE_GLOBAL_CONFIG_FILE;
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::toolset::{
@@ -200,7 +198,7 @@ impl Use {
         let path = if self.global {
             MISE_GLOBAL_CONFIG_FILE.clone()
         } else if let Some(p) = &self.path {
-            let from_dir = config_file_from_dir(p).absolutize()?.to_path_buf();
+            let from_dir = config::config_file_from_dir(p).absolutize()?.to_path_buf();
             if from_dir.starts_with(&cwd) {
                 from_dir
             } else {
@@ -216,7 +214,7 @@ impl Use {
         } else if env::in_home_dir() {
             MISE_GLOBAL_CONFIG_FILE.clone()
         } else {
-            config_file_from_dir(&cwd)
+            config::config_file_from_dir(&cwd)
         };
         config_file::parse_or_init(&path)
     }
@@ -275,23 +273,6 @@ impl Use {
                 Err(eyre!(err))
             }
         }
-    }
-}
-
-fn config_file_from_dir(p: &Path) -> PathBuf {
-    if !p.is_dir() {
-        return p.to_path_buf();
-    }
-    for dir in file::all_dirs().unwrap_or_default() {
-        if let Some(cf) = config::config_files_in_dir(&dir).last() {
-            if !is_global_config(cf) {
-                return cf.clone();
-            }
-        }
-    }
-    match SETTINGS.asdf_compat {
-        true => p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
-        false => p.join(&*MISE_DEFAULT_CONFIG_FILENAME),
     }
 }
 

@@ -28,11 +28,27 @@ cd - || exit 1
 
 assert "mise use -g dummy@1.0.0"
 assert "mise ls dummy" "dummy  1.0.0  ~/.config/mise/config.toml  1.0.0"
+assert "mise use dummy@1.0.0"
+assert "mise ls dummy" "dummy  1.0.0  ~/workdir/mise.toml  1.0.0"
 assert "mise unuse dummy@1.0.0"
+assert "mise ls dummy" "dummy  1.0.0  ~/.config/mise/config.toml  1.0.0"
+assert "mise unuse -g dummy@1.0.0"
 assert_empty "mise ls dummy"
+
+assert "mise use -e test dummy@1.0.0"
+assert "mise ls -E test dummy" "dummy  1.0.0  ~/workdir/mise.test.toml  1.0.0"
+assert "mise unuse -e test dummy@1.0.0"
+assert_empty "mise ls -E test dummy"
+rm ~/workdir/mise.test.toml
 
 assert "mise use dummy@2.0.0"
 assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  2.0.0"
 # tool is not removed because version does not match
 assert "mise unuse dummy@1.0.0"
 assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  2.0.0"
+
+# not specifying version means it will remove any version
+assert "mise use dummy@2"
+assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  2"
+assert "mise unuse dummy"
+assert_empty "mise ls dummy"

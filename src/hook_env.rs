@@ -196,6 +196,12 @@ pub fn get_watch_files(
     if dirs::DATA.exists() {
         watches.insert(dirs::DATA.to_path_buf());
     }
+    if dirs::TRUSTED_CONFIGS.exists() {
+        watches.insert(dirs::TRUSTED_CONFIGS.to_path_buf());
+    }
+    if dirs::IGNORED_CONFIGS.exists() {
+        watches.insert(dirs::IGNORED_CONFIGS.to_path_buf());
+    }
     for (root, patterns) in &watch_files.into_iter().chunk_by(|wfp| wfp.root.clone()) {
         if let Some(root) = root {
             let patterns = patterns.flat_map(|wfp| wfp.patterns).collect::<Vec<_>>();

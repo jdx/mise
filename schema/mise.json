@@ -309,6 +309,10 @@
               "default": true,
               "description": "Use cargo-binstall instead of cargo install if available",
               "type": "boolean"
+            },
+            "registry_name": {
+              "description": "Name of the cargo registry to use.",
+              "type": "string"
             }
           }
         },
@@ -322,6 +326,7 @@
           "type": "string"
         },
         "ci": {
+          "default": "false",
           "description": "Set to true if running in a CI environment",
           "type": "boolean"
         },
@@ -496,6 +501,7 @@
           "default": [],
           "description": "Specific tools to disable idiomatic version files for.",
           "type": "array",
+          "deprecated": true,
           "items": {
             "type": "string"
           }
@@ -617,6 +623,11 @@
         "pipx": {
           "additionalProperties": false,
           "properties": {
+            "registry_url": {
+              "default": "https://pypi.org/pypi/{}/json",
+              "description": "URL to use for pipx registry.",
+              "type": "string"
+            },
             "uvx": {
               "description": "Use uvx instead of pipx if uv is installed and on PATH.",
               "type": "boolean"
@@ -852,6 +863,11 @@
             },
             "show_tools": {
               "description": "Show configured tools when entering a directory with a mise.toml file.",
+              "type": "boolean"
+            },
+            "truncate": {
+              "default": true,
+              "description": "Truncate status messages.",
               "type": "boolean"
             }
           }
@@ -1405,6 +1421,24 @@
               }
             },
             "type": "object"
+          },
+          {
+            "description": "scripts to run",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "script": {
+                  "description": "script to run",
+                  "type": "string"
+                },
+                "shell": {
+                  "description": "specify the shell to run the script inside of",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
           }
         ]
       }

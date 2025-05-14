@@ -150,7 +150,6 @@ export default defineConfig({
         items: [
           { text: "Paranoid", link: "/paranoid" },
           { text: "Templates", link: "/templates" },
-          { text: "Coming from rtx", link: "/rtx" },
           { text: "How I Use mise", link: "/how-i-use-mise" },
           { text: "Directory Structure", link: "/directories" },
           { text: "Cache Behavior", link: "/cache-behavior" },

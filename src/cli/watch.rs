@@ -184,7 +184,11 @@ impl Watch {
             args.push("-f".to_string());
             args.extend(itertools::intersperse(globs, "-f".to_string()).collect::<Vec<_>>());
         }
-        args.extend(["--".to_string(), "mise".to_string(), "run".to_string()]);
+        args.extend([
+            "--".to_string(),
+            env::MISE_BIN.to_string_lossy().to_string(),
+            "run".to_string(),
+        ]);
         let task_args = itertools::intersperse(
             tasks.iter().map(|t| {
                 let mut args = vec![t.name.to_string()];

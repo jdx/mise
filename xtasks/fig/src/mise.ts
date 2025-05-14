@@ -994,6 +994,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: ["-c", "--check"],
+          description:
+            "Check if the configs are formatted, no formatting is done",
+          isRepeatable: false,
+        },
+        {
           name: ["-s", "--stdin"],
           description:
             "Read config from stdin and write its formatted version into stdout",
@@ -1371,11 +1377,6 @@ const completionSpec: Fig.Spec = {
           name: ["-i", "--installed"],
           description:
             "Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)",
-          isRepeatable: false,
-        },
-        {
-          name: ["-o", "--offline"],
-          description: "Don't fetch information such as outdated versions",
           isRepeatable: false,
         },
         {
@@ -2732,13 +2733,32 @@ const completionSpec: Fig.Spec = {
       description: "Removes installed tool versions from mise.toml",
       options: [
         {
-          name: "--no-prune",
-          description: "Do not also prune the installed version",
+          name: ["-g", "--global"],
+          description:
+            "Use the global config file (`~/.config/mise/config.toml`) instead of the local one",
           isRepeatable: false,
         },
         {
-          name: ["-g", "--global"],
-          description: "Remove tool from global config",
+          name: ["-e", "--env"],
+          description:
+            "Create/modify an environment-specific config file like .mise.<env>.toml",
+          isRepeatable: false,
+          args: {
+            name: "env",
+          },
+        },
+        {
+          name: ["-p", "--path"],
+          description: "Specify a path to a config file or directory",
+          isRepeatable: false,
+          args: {
+            name: "path",
+            template: "filepaths",
+          },
+        },
+        {
+          name: "--no-prune",
+          description: "Do not also prune the installed version",
           isRepeatable: false,
         },
       ],

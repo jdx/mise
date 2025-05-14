@@ -16,7 +16,7 @@ use crate::hooks::Hooks;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::uv::UV_VENV;
+use crate::uv::get_uv_venv;
 use crate::{backend, config, env, hooks};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
@@ -357,7 +357,7 @@ impl Toolset {
 
     pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
         self.list_current_versions()
-            .into_iter()
+            .into_par_iter()
             .filter(|(p, tv)| tv.request.is_os_supported() && !p.is_version_installed(tv, true))
             .map(|(_, tv)| tv)
             .collect()
@@ -365,7 +365,7 @@ impl Toolset {
     pub fn list_installed_versions(&self) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
         let current_versions: HashMap<(String, String), (Arc<dyn Backend>, ToolVersion)> = self
             .list_current_versions()
-            .into_iter()
+            .into_par_iter()
             .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
             .collect();
         let versions = backend::list()
@@ -442,13 +442,13 @@ impl Toolset {
     }
     pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_versions()
-            .into_iter()
+            .into_par_iter()
             .filter(|(p, v)| p.is_version_installed(v, true))
             .collect()
     }
     pub fn list_outdated_versions(&self, bump: bool) -> Vec<OutdatedInfo> {
         self.list_current_versions()
-            .into_iter()
+            .into_par_iter()
             .filter_map(|(t, tv)| {
                 match t.outdated_info(&tv, bump) {
                     Ok(Some(oi)) => return Some(oi),
@@ -527,9 +527,9 @@ impl Toolset {
             env.insert(PATH_KEY.to_string(), add_paths);
         }
         env.extend(config.env()?.clone());
-        if let Ok(Some(venv)) = UV_VENV.try_lock().as_deref() {
-            for (k, v) in &venv.env {
-                env.insert(k.clone(), v.clone());
+        if let Some(venv) = get_uv_venv() {
+            for (k, v) in venv.env {
+                env.insert(k, v);
             }
         }
         time!("env end");
@@ -581,8 +581,8 @@ impl Toolset {
         for p in config.path_dirs()?.clone() {
             paths.insert(p);
         }
-        if let Ok(Some(venv)) = UV_VENV.try_lock().as_deref() {
-            paths.insert(venv.venv_path.clone());
+        if let Some(venv) = get_uv_venv() {
+            paths.insert(venv.venv_path);
         }
         if let Some(path) = self.env(config)?.get(&*PATH_KEY) {
             paths.insert(PathBuf::from(path));

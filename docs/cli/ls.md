@@ -1,6 +1,6 @@
 # `mise ls`
 
-- **Usage**: `mise ls [FLAGS] [INSTALLED_TOOL]...`
+- **Usage**: `mise ls [FLAGS] [INSTALLED_TOOL]…`
 - **Aliases**: `list`
 - **Source code**: [`src/cli/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls.rs)
 
@@ -14,7 +14,7 @@ It's a useful command to get the current state of your tools.
 
 ## Arguments
 
-### `[INSTALLED_TOOL]...`
+### `[INSTALLED_TOOL]…`
 
 Only show tool versions from [TOOL]
 
@@ -35,10 +35,6 @@ Only show tool versions currently specified in the local mise.toml
 ### `-i --installed`
 
 Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
-
-### `-o --offline`
-
-Don't fetch information such as outdated versions
 
 ### `--outdated`
 

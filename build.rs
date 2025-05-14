@@ -135,7 +135,7 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
             test = test
-                .map(|(t, v)| format!("Some((\"{t}\", \"{v}\"))", t = t, v = v))
+                .map(|(t, v)| format!("Some((r\"{t}\", r\"{v}\"))", t = t, v = v))
                 .unwrap_or("None".to_string()),
             os = os
                 .iter()
@@ -216,6 +216,12 @@ pub struct Settings {"#
                 opts.insert(
                     "parse_env".to_string(),
                     parse_env.as_str().unwrap().to_string(),
+                );
+            }
+            if let Some(deserialize_with) = props.get("deserialize_with") {
+                opts.insert(
+                    "deserialize_with".to_string(),
+                    deserialize_with.as_str().unwrap().to_string(),
                 );
             }
             lines.push(format!(
