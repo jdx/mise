@@ -1468,7 +1468,7 @@ periphery.backends = [
 ]
 perl.backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
 php.backends = ["asdf:mise-plugins/asdf-php", "vfox:mise-plugins/vfox-php"]
-pinact.backends = ["aqua:suzuki-shunsuke/pinact"]
+pinact.backends = ["aqua:suzuki-shunsuke/pinact", "ubi:suzuki-shunsuke/pinact"]
 pint.backends = ["aqua:cloudflare/pint", "asdf:sam-burrell/asdf-pint"]
 pipectl.backends = ["aqua:pipe-cd/pipecd/pipectl", "asdf:pipe-cd/asdf-pipectl"]
 pipectl.test = ["pipectl version", "Version: v{{version}}"]
