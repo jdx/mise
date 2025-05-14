@@ -1,5 +1,32 @@
 # Changelog
 
+## [2025.5.4](https://github.com/jdx/mise/compare/v2025.5.3..v2025.5.4) - 2025-05-14
+
+### 🚀 Features
+
+- **(registry)** add sshi by [@scop](https://github.com/scop) in [#5048](https://github.com/jdx/mise/pull/5048)
+- **(registry)** added Neon CLI by [@joehorsnell](https://github.com/joehorsnell) in [#4994](https://github.com/jdx/mise/pull/4994)
+
+### 🐛 Bug Fixes
+
+- **(registry)** update glab ubi provider by [@StingRayZA](https://github.com/StingRayZA) in [#5052](https://github.com/jdx/mise/pull/5052)
+- mise panics if CI env var isn't a boolean by [@roele](https://github.com/roele) in [#5059](https://github.com/jdx/mise/pull/5059)
+- `aqua` version test by [@joehorsnell](https://github.com/joehorsnell) in [#5038](https://github.com/jdx/mise/pull/5038)
+- run hook-env after trusting config file by [@jdx](https://github.com/jdx) in [#5062](https://github.com/jdx/mise/pull/5062)
+
+### 🚜 Refactor
+
+- **(hooks)** remove duplicated code by [@risu729](https://github.com/risu729) in [#5036](https://github.com/jdx/mise/pull/5036)
+
+### 📚 Documentation
+
+- fix add_predicate handler in neovim cookbook by [@okuuva](https://github.com/okuuva) in [#5044](https://github.com/jdx/mise/pull/5044)
+- improve treesitter queries in neovim cookbook by [@okuuva](https://github.com/okuuva) in [#5045](https://github.com/jdx/mise/pull/5045)
+
+### New Contributors
+
+- @okuuva made their first contribution in [#5045](https://github.com/jdx/mise/pull/5045)
+
 ## [2025.5.3](https://github.com/jdx/mise/compare/v2025.5.2..v2025.5.3) - 2025-05-09
 
 ### 🚀 Features

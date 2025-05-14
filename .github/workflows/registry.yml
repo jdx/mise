@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - release
-  pull_request:
+  pull_request_target:
+    branches: [main]
     paths:
       - registry.toml
       - .github/workflows/registry.yml
+      - src/cli/test_tool.rs
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -27,6 +29,8 @@ jobs:
   test-tool:
     timeout-minutes: 30
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,3 +57,12 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: mise test-tool --all
+      - uses: thollander/actions-comment-pull-request@v3
+        if: github.event.pull_request.number != null
+        with:
+          message: |
+            If you are adding a new tool to mise, note the following:
+
+            - New asdf plugins are not accepted
+            - Tools may be rejected if they are not notable
+            - A test are required in `registry.toml`
