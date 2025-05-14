@@ -51,7 +51,7 @@ pub struct Ls {
     installed: bool,
 
     /// Don't fetch information such as outdated versions
-    #[clap(long, short)]
+    #[clap(long, short, hide = true)]
     offline: bool,
 
     /// Display whether a version is outdated
