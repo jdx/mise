@@ -326,6 +326,7 @@
           "type": "string"
         },
         "ci": {
+          "default": "false",
           "description": "Set to true if running in a CI environment",
           "type": "boolean"
         },
