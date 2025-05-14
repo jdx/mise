@@ -1380,11 +1380,6 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: ["-o", "--offline"],
-          description: "Don't fetch information such as outdated versions",
-          isRepeatable: false,
-        },
-        {
           name: "--outdated",
           description: "Display whether a version is outdated",
           isRepeatable: false,
