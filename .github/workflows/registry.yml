@@ -26,37 +26,12 @@ env:
   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
 
 jobs:
-  test-tool:
-    timeout-minutes: 30
+  build:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: build
-          save-if: false
-      - run: cargo build --all-features
-      - run: echo target/debug >> "$GITHUB_PATH"
-      - run: mise -v
-      - uses: actions/cache@v4
-        with:
-          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise i
-      - uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 30
-          retry_wait_seconds: 30
-          max_attempts: 2
-          command: mise test-tool --all
       - uses: thollander/actions-comment-pull-request@v3
         if: github.event.pull_request.number != null
         with:
@@ -67,3 +42,61 @@ jobs:
             - New asdf plugins are not accepted
             - Tools may be rejected if they are not notable
             - A test are required in `registry.toml`
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: rui314/setup-mold@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build
+          save-if: false
+      - run: cargo build --all-features
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mise
+          path: target/debug/mise
+  test-tool:
+    name: test-tool-${{ matrix.tranche }}
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        tranche:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+          - 6
+          - 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: mise
+          path: target/debug
+      - uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: echo target/debug >> "$GITHUB_PATH"
+      - run: chmod +x target/debug/mise
+      - run: mise -v
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+      - run: mise i
+      - uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          retry_wait_seconds: 30
+          max_attempts: 2
+          command: mise test-tool --all
+        env:
+          TEST_TRANCHE: ${{ matrix.tranche }}
+          TEST_TRANCHE_COUNT: 8
