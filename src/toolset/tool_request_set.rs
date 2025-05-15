@@ -5,7 +5,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::env;
-use crate::registry::{REGISTRY, tool_disabled};
+use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -174,7 +174,7 @@ impl ToolRequestSetBuilder {
         backend_type == BackendType::Unknown
             || (cfg!(windows) && backend_type == BackendType::Asdf)
             || !ba.is_os_supported()
-            || tool_disabled(&self.enable_tools, &self.disable_tools, ba)
+            || !tool_enabled(&self.enable_tools, &self.disable_tools, ba)
     }
 
     fn load_config_files(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {

@@ -1,6 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::config::SETTINGS;
-use crate::registry::{REGISTRY, RegistryTool, tool_disabled};
+use crate::registry::{REGISTRY, RegistryTool, tool_enabled};
 use crate::ui::table::MiseTable;
 use eyre::{Result, bail};
 use itertools::Itertools;
@@ -60,7 +60,7 @@ impl Registry {
         let mut table = MiseTable::new(false, &["Tool", "Backends"]);
         let data = REGISTRY
             .iter()
-            .filter(|(short, _)| filter_disabled(short))
+            .filter(|(short, _)| filter_enabled(short))
             .filter(|(short, rt)| !self.hide_aliased || **short == rt.short)
             .map(|(short, rt)| (short.to_string(), filter_backend(rt).join(" ")))
             .filter(|(_, backends)| !backends.is_empty())
@@ -76,7 +76,7 @@ impl Registry {
     fn complete(&self) -> Result<()> {
         REGISTRY
             .iter()
-            .filter(|(short, _)| filter_disabled(short))
+            .filter(|(short, _)| filter_enabled(short))
             .filter(|(short, rt)| !self.hide_aliased || **short == rt.short)
             .map(|(short, rt)| {
                 (
@@ -111,8 +111,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 "#
 );
 
-fn filter_disabled(short: &str) -> bool {
-    tool_disabled(
+fn filter_enabled(short: &str) -> bool {
+    tool_enabled(
         &SETTINGS.enable_tools,
         &SETTINGS.disable_tools,
         &short.to_string(),

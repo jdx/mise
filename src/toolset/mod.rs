@@ -15,7 +15,7 @@ use crate::errors::Error;
 use crate::hooks::Hooks;
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
-use crate::registry::tool_disabled;
+use crate::registry::tool_enabled;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::uv::get_uv_venv;
 use crate::{backend, config, env, hooks};
@@ -705,7 +705,7 @@ impl Toolset {
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
         !ba.is_os_supported()
-            || tool_disabled(
+            || !tool_enabled(
                 &SETTINGS.enable_tools(),
                 &SETTINGS.disable_tools(),
                 &ba.short.to_string(),
