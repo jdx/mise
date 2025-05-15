@@ -165,7 +165,7 @@ impl TestTool {
         } else {
             cmd!("sh", "-c", cmd)
         };
-        cmd = cmd.stdout_capture();
+        cmd = cmd.stdout_capture().stderr_capture();
         for (k, v) in env.iter() {
             cmd = cmd.env(k, v);
         }
@@ -197,11 +197,12 @@ impl TestTool {
         let mut tera = get_tera(dirs::CWD.as_ref().map(|d| d.as_path()));
         let expected = tera.render_str(expected, &ctx)?;
         let stdout = String::from_utf8(res.stdout)?;
-        miseprintln!("{}", stdout.trim_end());
-        if !stdout.contains(&expected) {
-            return Err(eyre!(
-                "expected output not found: {expected}, got: {stdout}"
-            ));
+        let stderr = String::from_utf8(res.stderr)?;
+
+        let got = if !stdout.is_empty() { stdout } else { stderr };
+        miseprintln!("{}", got.trim_end());
+        if !got.contains(&expected) {
+            return Err(eyre!("expected output not found: {expected}, got: {got}"));
         }
         Ok(())
     }
