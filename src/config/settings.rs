@@ -402,6 +402,13 @@ impl Settings {
             .collect()
     }
 
+    pub fn enable_tools(&self) -> BTreeSet<String> {
+        self.enable_tools
+            .iter()
+            .map(|t| t.trim().to_string())
+            .collect()
+    }
+
     pub fn partial_as_dict(partial: &SettingsPartial) -> eyre::Result<toml::Table> {
         let s = toml::to_string(partial)?;
         let table = toml::from_str(&s)?;

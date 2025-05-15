@@ -15,7 +15,7 @@ use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{Plugin, PluginType, VERSION_REGEX};
-use crate::registry::REGISTRY;
+use crate::registry::{REGISTRY, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version};
@@ -76,7 +76,13 @@ fn load_tools() -> Arc<BackendMap> {
             .flat_map(|ist| arg_to_backend(ist.clone().into())),
     );
     time!("load_tools install_state");
-    tools.retain(|backend| !SETTINGS.disable_tools().contains(backend.id()));
+    tools.retain(|backend| {
+        tool_enabled(
+            &SETTINGS.enable_tools(),
+            &SETTINGS.disable_tools(),
+            &backend.id().to_string(),
+        )
+    });
     tools.retain(|backend| {
         !SETTINGS
             .disable_backends

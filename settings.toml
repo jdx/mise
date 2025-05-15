@@ -302,6 +302,14 @@ By default, mise will use the [nuget](https://api.nuget.org/v3/index.json) API t
 However, you can set this to a different URL if you have a custom feed or want to use a different source.
 """
 
+[enable_tools]
+env = "MISE_ENABLE_TOOLS"
+type = "ListString"
+rust_type = "BTreeSet<String>"
+default = []
+parse_env = "list_by_comma"
+description = "Tools defined in mise.toml that should be used - all other tools are ignored"
+
 [env]
 env = "MISE_ENV"
 type = "ListString"
