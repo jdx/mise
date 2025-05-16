@@ -1781,6 +1781,7 @@ staticcheck.backends = [
     "asdf:pbr0ck3r/asdf-staticcheck"
 ]
 steampipe.backends = ["aqua:turbot/steampipe", "asdf:carnei-ro/asdf-steampipe"]
+steampipe.test = ["steampipe --version", "Steampipe v{{version}}"]
 step.backends = ["aqua:smallstep/cli", "asdf:log2/asdf-step"]
 stern.backends = ["aqua:stern/stern", "asdf:looztra/asdf-stern"]
 stripe.aliases = ["stripe-cli"]
