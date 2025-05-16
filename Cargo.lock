@@ -1168,6 +1168,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "duct"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6ce170a0e8454fa0f9b0e5ca38a6ba17ed76a50916839d217eb5357e05cdfde"
+dependencies = [
+ "libc",
+ "os_pipe",
+ "shared_child",
+ "shared_thread",
+]
+
+[[package]]
 name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3646,7 +3658,7 @@ dependencies = [
  "demand",
  "digest",
  "dotenvy",
- "duct",
+ "duct 0.13.7",
  "either",
  "exec",
  "expr-lang",
@@ -5327,6 +5339,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shared_thread"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7a6f98357c6bb0ebace19b22220e5543801d9de90ffe77f8abb27c056bac064"
+
+[[package]]
 name = "shell-escape"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6886,12 +6904,12 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "2.1.0"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9a93c5b2191a4bdcbd320bb847ad302defbf37f2e517b1fe93984ed5217aa90"
+checksum = "a0b0d18c02f29d5a0a5e543a90c0190a17370d4f9820b15ee347992d212c22db"
 dependencies = [
  "bzip2",
- "duct",
+ "duct 1.0.0",
  "filetime",
  "flate2",
  "globwalk",
@@ -6905,7 +6923,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "xz2",
- "zip 2.5.0",
+ "zip 3.0.0",
 ]
 
 [[package]]
@@ -7063,7 +7081,6 @@ dependencies = [
  "pbkdf2",
  "sha1",
  "time",
- "xz2",
  "zeroize",
  "zopfli",
  "zstd",
@@ -7075,12 +7092,25 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12598812502ed0105f607f941c386f43d441e00148fce9dec3ca5ffb0bde9308"
 dependencies = [
+ "aes",
  "arbitrary",
+ "bzip2",
+ "constant_time_eq",
  "crc32fast",
+ "deflate64",
  "flate2",
+ "getrandom 0.3.3",
+ "hmac",
  "indexmap 2.9.0",
+ "lzma-rs",
  "memchr",
+ "pbkdf2",
+ "sha1",
+ "time",
+ "xz2",
+ "zeroize",
  "zopfli",
+ "zstd",
 ]
 
 [[package]]
