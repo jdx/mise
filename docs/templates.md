@@ -223,11 +223,11 @@ Some filters:
   elements in an array.
 - `str | urlencode -> String` – Encodes a string to be safely used in URLs,
   converting special characters to percent-encoded values.
-- `str | map(attribute) -> Array` – Extracts an attribute from each object
+- `arr | map(attribute) -> Array` – Extracts an attribute from each object
   in an array.
-- `str | concat(with) -> Array` – Appends values to an array.
-- `str | abs -> Number` – Returns the absolute value of a number.
-- `str | filesizeformat -> String` – Converts an integer into
+- `arr | concat(with) -> Array` – Appends values to an array.
+- `num | abs -> Number` – Returns the absolute value of a number.
+- `num | filesizeformat -> String` – Converts an integer into
   a human-readable file size (e.g., 110 MB).
 - `str | date(format) -> String` – Converts a timestamp to
   a formatted date string using the provided format,
@@ -272,7 +272,7 @@ construct a file path:
 
 ```toml
 [env]
-PROJECT_CONFIG = "{{ config_root | concat(with='bar.txt') | join_path }}"
+PROJECT_CONFIG = "{{ [config_root] | concat(with='bar.txt') | join_path }}"
 ```
 
 #### String Manipulation

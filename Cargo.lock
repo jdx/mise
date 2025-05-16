@@ -3624,7 +3624,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.5.4"
+version = "2025.5.5"
 dependencies = [
  "base64 0.22.1",
  "built",
@@ -3722,7 +3722,7 @@ dependencies = [
  "which",
  "xx",
  "xz2",
- "zip",
+ "zip 3.0.0",
  "zstd",
 ]
 
@@ -5097,7 +5097,7 @@ dependencies = [
  "tar",
  "tempfile",
  "urlencoding",
- "zip",
+ "zip 2.5.0",
  "zipsign-api",
 ]
 
@@ -6074,7 +6074,7 @@ dependencies = [
  "url",
  "which",
  "xz2",
- "zip",
+ "zip 2.5.0",
 ]
 
 [[package]]
@@ -6905,7 +6905,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "xz2",
- "zip",
+ "zip 2.5.0",
 ]
 
 [[package]]
@@ -7067,6 +7067,20 @@ dependencies = [
  "zeroize",
  "zopfli",
  "zstd",
+]
+
+[[package]]
+name = "zip"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12598812502ed0105f607f941c386f43d441e00148fce9dec3ca5ffb0bde9308"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "flate2",
+ "indexmap 2.9.0",
+ "memchr",
+ "zopfli",
 ]
 
 [[package]]

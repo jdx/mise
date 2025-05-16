@@ -1,5 +1,27 @@
 # Changelog
 
+## [2025.5.5](https://github.com/jdx/mise/compare/v2025.5.4..v2025.5.5) - 2025-05-15
+
+### 🚀 Features
+
+- **(registry)** add pinact by [@3w36zj6](https://github.com/3w36zj6) in [#5061](https://github.com/jdx/mise/pull/5061)
+- **(registry)** add ghalint by [@risu729](https://github.com/risu729) in [#5063](https://github.com/jdx/mise/pull/5063)
+
+### 📚 Documentation
+
+- hide `ls --offline` flag that is a no-op by [@jdx](https://github.com/jdx) in [#5068](https://github.com/jdx/mise/pull/5068)
+
+### Chore
+
+- add pr comment for new tools by [@jdx](https://github.com/jdx) in [#5067](https://github.com/jdx/mise/pull/5067)
+- set comment-tag for registry pr comment by [@jdx](https://github.com/jdx) in [#5069](https://github.com/jdx/mise/pull/5069)
+- run multiple test-tool jobs by [@jdx](https://github.com/jdx) in [#5070](https://github.com/jdx/mise/pull/5070)
+- fix typo in registry comment by [@jdx](https://github.com/jdx) in [#5071](https://github.com/jdx/mise/pull/5071)
+
+### New Contributors
+
+- @3w36zj6 made their first contribution in [#5061](https://github.com/jdx/mise/pull/5061)
+
 ## [2025.5.4](https://github.com/jdx/mise/compare/v2025.5.3..v2025.5.4) - 2025-05-14
 
 ### 🚀 Features
