@@ -113,6 +113,8 @@ ast-grep.backends = [
 ast-grep.test = ["sg --version", "ast-grep {{version}}"]
 atlas.backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
+astro.backends = ["ubi:astronomer/astro-cli[exe=astro]"]
+astro.test = ["astro version", "Astro CLI Version: {{version}}"]
 auto-doc.backends = [
     "ubi:tj-actions/auto-doc",
     "asdf:mise-plugins/mise-auto-doc"
