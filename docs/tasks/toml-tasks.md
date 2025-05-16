@@ -108,7 +108,7 @@ run_windows = 'cargo test --features windows'
 
 ### Specifying which directory to use
 
-Tasks are executed with `cwd` set to the directory containing `mise.toml`. You can use the directory
+The [`dir`](/tasks/task-configuration.html#dir) property determines the `cwd` in which the task is executed. You can use the directory
 from where the task was run with <span v-pre>`dir = "{{cwd}}"`</span>:
 
 ```toml
