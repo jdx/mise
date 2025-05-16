@@ -219,7 +219,7 @@ mise run <TAB>
 ## CWD
 
 mise sets the current working directory to the directory of `mise.toml` before running tasks.
-This can be overridden by setting `dir="{{cwd}}"` in the task header:
+This can be overridden by setting <span v-pre>`dir="{{cwd}}"`</span> in the task header:
 
 ```bash
 #!/usr/bin/env bash
