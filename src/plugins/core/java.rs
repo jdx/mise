@@ -101,9 +101,9 @@ impl JavaPlugin {
         pr.set_message(format!("download {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr))?;
 
-        if !tv.checksums.contains_key(filename) {
+        if !tv.checksums.contains_key(filename) && m.checksum.is_some() {
             tv.checksums
-                .insert(filename.to_string(), format!("sha256:{}", m.sha256));
+                .insert(filename.to_string(), m.checksum.as_ref().unwrap().clone());
         }
         self.verify_checksum(ctx, tv, &tarball_path)?;
 
@@ -257,7 +257,7 @@ impl JavaPlugin {
 
     fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
         let url = format!(
-            "https://rtx-java-metadata.jdx.dev/metadata/{}/{}/{}.json",
+            "https://mise-java.jdx.dev/jvm/{}/{}/{}.json",
             release_type,
             os(),
             arch()
@@ -266,8 +266,6 @@ impl JavaPlugin {
         let metadata = HTTP_FETCH
             .json::<Vec<JavaMetadata>, _>(url)?
             .into_iter()
-            // TODO: remove once we switch over to the new metadata which has these filtered out already
-            .filter(jetbrains_with_features)
             .filter(|m| {
                 m.file_type
                     .as_ref()
@@ -301,7 +299,7 @@ impl Backend for JavaPlugin {
                     .image_type
                     .as_ref()
                     .is_some_and(|image_type| image_type == "jdk");
-                let features = 10 - m.features.len();
+                let features = 10 - m.features.as_ref().map_or(0, |f| f.len());
                 let version = Versioning::new(v);
                 (
                     is_shorthand,
@@ -452,46 +450,24 @@ fn arch() -> &'static str {
     }
 }
 
-// filter JetBrains releases with features debug or fastdebug
-fn jetbrains_with_features(m: &JavaMetadata) -> bool {
-    if m.vendor != "jetbrains" {
-        return true;
-    }
-    // use name to filter since features are not always correct
-    if m.url.contains("_diz")
-        || m.url.contains("jcef")
-        || m.url.contains("-fastdebug")
-        || m.url.contains("_fd")
-        || m.url.contains("_ft")
-    {
-        return false;
-    }
-    true
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 struct JavaMetadata {
-    vendor: String,
-    // filename: String,
-    release_type: String,
-    version: String,
-    jvm_impl: String,
-    os: String,
-    architecture: String,
+    // architecture: String,
+    checksum: Option<String>,
+    // checksum_url: Option<String>,
+    features: Option<Vec<String>>,
     file_type: Option<String>,
+    // filename: String,
     image_type: Option<String>,
-    features: Vec<String>,
+    // java_version: String,
+    jvm_impl: String,
+    // os: String,
+    // release_type: String,
+    // size: Option<i32>,
     url: String,
-    sha256: String,
-    // md5: String,
-    // md5_file: String,
-    // sha1: String,
-    // sha1_file: String,
-    // sha256_file: String,
-    // sha512: String,
-    // sha512_file: String,
-    // size: u64,
+    vendor: String,
+    version: String,
 }
 
 impl Display for JavaMetadata {
@@ -506,9 +482,11 @@ impl Display for JavaMetadata {
         } else if self.image_type.is_none() {
             v.push("unknown".to_string());
         }
-        for f in self.features.iter() {
-            if JAVA_FEATURES.contains(f) {
-                v.push(f.clone());
+        if let Some(features) = &self.features {
+            for f in features {
+                if JAVA_FEATURES.contains(f) {
+                    v.push(f.clone());
+                }
             }
         }
         if self.jvm_impl == "openj9" {
@@ -520,8 +498,9 @@ impl Display for JavaMetadata {
 }
 
 // only care about these features
-static JAVA_FEATURES: Lazy<HashSet<String>> =
-    Lazy::new(|| HashSet::from(["musl", "javafx", "lite", "large_heap"].map(|s| s.to_string())));
+static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
+    HashSet::from(["crac", "javafx", "jcef", "leyden", "lite", "musl"].map(|s| s.to_string()))
+});
 #[cfg(unix)]
 static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["tar.gz"].map(|s| s.to_string())));
