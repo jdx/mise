@@ -252,7 +252,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
+          node-version: "22.x"
           registry-url: "https://registry.npmjs.org"
       - uses: actions/download-artifact@v4
         with: { path: artifacts }
