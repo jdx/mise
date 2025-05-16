@@ -1596,7 +1596,11 @@ rbac-lookup.backends = [
     "aqua:FairwindsOps/rbac-lookup",
     "asdf:looztra/asdf-rbac-lookup"
 ]
-rclone.backends = ["aqua:rclone/rclone", "ubi:rclone/rclone", "asdf:johnlayton/asdf-rclone"]
+rclone.backends = [
+    "aqua:rclone/rclone",
+    "ubi:rclone/rclone",
+    "asdf:johnlayton/asdf-rclone"
+]
 rclone.test = ["rclone version", "rclone v{{version}}"]
 rebar.backends = ["asdf:mise-plugins/mise-rebar"]
 rebar.depends = ["erlang"]
