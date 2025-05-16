@@ -131,7 +131,7 @@ alias = 'b' # `mise run b`
 ```
 
 - This alias can be used to run the task
-- The description will be displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html)` with no arguments.
+- The description will be displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html) with no arguments.
 
 ```shell
 ❯ mise run
