@@ -1402,6 +1402,8 @@ oapi-codegen.backends = [
     "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
     "asdf:dylanrayboss/asdf-oapi-codegen"
 ]
+oauth2c.backends = ["ubi:cloudentity/oauth2c"]
+oauth2c.test = ["oauth2c version 2>&1", "oauth2c version {{version}}"]
 oc.backends = ["asdf:mise-plugins/mise-oc"]
 ocaml.backends = ["asdf:mise-plugins/mise-ocaml"]
 oci.backends = ["asdf:mise-plugins/mise-oci"]
