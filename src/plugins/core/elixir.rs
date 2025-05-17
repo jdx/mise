@@ -120,5 +120,9 @@ impl Backend for ElixirPlugin {
 }
 
 fn elixir_bin_name() -> &'static str {
-    if cfg!(windows) { "elixir.bat" } else { "elixir" }
+    if cfg!(windows) {
+        "elixir.bat"
+    } else {
+        "elixir"
+    }
 }
