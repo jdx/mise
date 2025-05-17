@@ -81,7 +81,7 @@ impl RemoteTaskGit {
     }
 
     fn detect_ssh(&self, file: &str) -> Result<GitRepoStructure, Box<dyn std::error::Error>> {
-        let re = Regex::new(r"^git::ssh://(?P<url>((?P<user>[^@]+)@)(?P<host>[^/]+)/(?P<repo>[^/]+)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap();
+        let re = Regex::new(r"^git::(?P<url>ssh://((?P<user>[^@]+)@)(?P<host>[^/]+)/(?P<repo>[^/]+)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap();
 
         if !re.is_match(file) {
             return Err("Invalid SSH URL".into());
@@ -251,19 +251,19 @@ mod tests {
         let test_cases: Vec<(&str, &str, &str, Option<String>)> = vec![
             (
                 "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
-                "git@github.com:myorg/example.git",
+                "ssh://git@github.com:myorg/example.git",
                 "myfile",
                 Some("v1.0.0".to_string()),
             ),
             (
                 "git::ssh://git@github.com:myorg/example.git//terraform/myfile?ref=master",
-                "git@github.com:myorg/example.git",
+                "ssh://git@github.com:myorg/example.git",
                 "terraform/myfile",
                 Some("master".to_string()),
             ),
             (
                 "git::ssh://git@myserver.com/example.git//terraform/myfile",
-                "git@myserver.com/example.git",
+                "ssh://git@myserver.com/example.git",
                 "terraform/myfile",
                 None,
             ),
