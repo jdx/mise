@@ -1,11 +1,51 @@
 # Changelog
 
+## [2025.5.6](https://github.com/jdx/mise/compare/v2025.5.5..v2025.5.6) - 2025-05-17
+
+### 🚀 Features
+
+- **(registry)** add oauth2c by [@kklee998](https://github.com/kklee998) in [#5056](https://github.com/jdx/mise/pull/5056)
+- use new Java metadata source by [@roele](https://github.com/roele) in [#5089](https://github.com/jdx/mise/pull/5089)
+
+### 🐛 Bug Fixes
+
+- **(config)** project root for files in .config/ or mise/ by [@scop](https://github.com/scop) in [#5102](https://github.com/jdx/mise/pull/5102)
+- Clarify some of the filters and fix the config_root filter example by [@afranchuk](https://github.com/afranchuk) in [#5086](https://github.com/jdx/mise/pull/5086)
+
+### 🚜 Refactor
+
+- **(registry)** use aqua for rclone by [@scop](https://github.com/scop) in [#5096](https://github.com/jdx/mise/pull/5096)
+
+### 📚 Documentation
+
+- **(tasks)** point to `dir` config for task default cwd by [@scop](https://github.com/scop) in [#5103](https://github.com/jdx/mise/pull/5103)
+- remove go.mod from idiomatic version files by [@Gandem](https://github.com/Gandem) in [#5090](https://github.com/jdx/mise/pull/5090)
+- remove stray backquote from toml-tasks by [@scop](https://github.com/scop) in [#5097](https://github.com/jdx/mise/pull/5097)
+- add some missing vue interpolation escapes by [@scop](https://github.com/scop) in [#5099](https://github.com/jdx/mise/pull/5099)
+- remove some references to rtx by [@jdx](https://github.com/jdx) in [#5105](https://github.com/jdx/mise/pull/5105)
+
+### 📦️ Dependency Updates
+
+- update dependency node to v22 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5093](https://github.com/jdx/mise/pull/5093)
+
+### Chore
+
+- sign source tarball by [@digital-wonderland](https://github.com/digital-wonderland) in [#5087](https://github.com/jdx/mise/pull/5087)
+
+### New Contributors
+
+- @digital-wonderland made their first contribution in [#5087](https://github.com/jdx/mise/pull/5087)
+- @kklee998 made their first contribution in [#5056](https://github.com/jdx/mise/pull/5056)
+- @afranchuk made their first contribution in [#5086](https://github.com/jdx/mise/pull/5086)
+- @Gandem made their first contribution in [#5090](https://github.com/jdx/mise/pull/5090)
+
 ## [2025.5.5](https://github.com/jdx/mise/compare/v2025.5.4..v2025.5.5) - 2025-05-15
 
 ### 🚀 Features
 
 - **(registry)** add pinact by [@3w36zj6](https://github.com/3w36zj6) in [#5061](https://github.com/jdx/mise/pull/5061)
 - **(registry)** add ghalint by [@risu729](https://github.com/risu729) in [#5063](https://github.com/jdx/mise/pull/5063)
+- new "enable-tools" option by [@zeitlinger](https://github.com/zeitlinger) in [#4784](https://github.com/jdx/mise/pull/4784)
 
 ### 📚 Documentation
 
@@ -17,6 +57,7 @@
 - set comment-tag for registry pr comment by [@jdx](https://github.com/jdx) in [#5069](https://github.com/jdx/mise/pull/5069)
 - run multiple test-tool jobs by [@jdx](https://github.com/jdx) in [#5070](https://github.com/jdx/mise/pull/5070)
 - fix typo in registry comment by [@jdx](https://github.com/jdx) in [#5071](https://github.com/jdx/mise/pull/5071)
+- bump zip-rs version by [@hkoosha](https://github.com/hkoosha) in [#5073](https://github.com/jdx/mise/pull/5073)
 
 ### New Contributors
 
