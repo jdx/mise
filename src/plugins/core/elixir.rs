@@ -27,7 +27,7 @@ impl ElixirPlugin {
     }
 
     fn elixir_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join("bin").join("elixir")
+        tv.install_path().join("bin").join(elixir_bin_name())
     }
 
     fn test_elixir(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
@@ -117,4 +117,8 @@ impl Backend for ElixirPlugin {
             .map(|p| tv.install_path().join(p))
             .collect())
     }
+}
+
+fn elixir_bin_name() -> &'static str {
+    if cfg!(windows) { "elixir.bat" } else { "elixir" }
 }
