@@ -513,7 +513,11 @@ datree.backends = ["aqua:datreeio/datree", "asdf:lukeab/asdf-datree"]
 daytona.backends = ["asdf:mise-plugins/mise-daytona"]
 dbmate.backends = ["aqua:amacneil/dbmate", "asdf:juusujanar/asdf-dbmate"]
 deck.backends = ["aqua:Kong/deck", "asdf:nutellinoit/asdf-deck"]
-delta.backends = ["aqua:dandavison/delta", "ubi:dandavison/delta", "asdf:andweeb/asdf-delta"]
+delta.backends = [
+    "aqua:dandavison/delta",
+    "ubi:dandavison/delta",
+    "asdf:andweeb/asdf-delta"
+]
 delta.test = ["delta --version", "delta {{version}}"]
 deno.backends = ["core:deno"]
 depot.backends = ["ubi:depot/cli[exe=depot]", "asdf:depot/asdf-depot"]
