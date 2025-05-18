@@ -79,7 +79,7 @@ cp "$RELEASE_DIR"/{install.sh,install.sh.sig,install.sh.minisig} "$RELEASE_DIR/$
 echo "::group::Sign source tarball"
 TMP_FILE="$(mktemp)"
 curl -L -o "$TMP_FILE" "https://github.com/jdx/mise/archive/refs/tags/$MISE_VERSION.tar.gz"
-gpg --clearsign -u 8B81C9D17413A06D <"$TMP_FILE" >"$RELEASE_DIR/$MISE_VERSION/$MISE_VERSION.tar.gz.asc"
+gpg --detach-sign -u 8B81C9D17413A06D <"$TMP_FILE" >"$RELEASE_DIR/$MISE_VERSION/$MISE_VERSION.tar.gz.sig"
 rm "$TMP_FILE"
 
 if [[ "$DRY_RUN" != 1 ]]; then
