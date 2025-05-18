@@ -1,5 +1,17 @@
 # Changelog
 
+## [2025.5.7](https://github.com/jdx/mise/compare/v2025.5.6..v2025.5.7) - 2025-05-18
+
+### 🐛 Bug Fixes
+
+- using custom port with SSH based remote tasks by [@roele](https://github.com/roele) in [#5110](https://github.com/jdx/mise/pull/5110)
+- update rabbitmq backend by [@SerhiiFesenko](https://github.com/SerhiiFesenko) in [#5115](https://github.com/jdx/mise/pull/5115)
+- maven-mvnd does not install with aqua by [@roele](https://github.com/roele) in [#5117](https://github.com/jdx/mise/pull/5117)
+
+### New Contributors
+
+- @SerhiiFesenko made their first contribution in [#5115](https://github.com/jdx/mise/pull/5115)
+
 ## [2025.5.6](https://github.com/jdx/mise/compare/v2025.5.5..v2025.5.6) - 2025-05-17
 
 ### 🚀 Features
