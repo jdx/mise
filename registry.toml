@@ -111,6 +111,8 @@ ast-grep.backends = [
     "pipx:ast-grep-cli"
 ]
 ast-grep.test = ["sg --version", "ast-grep {{version}}"]
+astro.backends = ["ubi:astronomer/astro-cli[exe=astro]"]
+astro.test = ["astro version", "Astro CLI Version: {{version}}"]
 atlas.backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
 auto-doc.backends = [
