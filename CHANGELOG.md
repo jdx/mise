@@ -1,5 +1,24 @@
 # Changelog
 
+## [2025.5.8](https://github.com/jdx/mise/compare/v2025.5.7..v2025.5.8) - 2025-05-18
+
+### 🚀 Features
+
+- **(registry)** added astro by [@mnm364](https://github.com/mnm364) in [#5106](https://github.com/jdx/mise/pull/5106)
+
+### 🐛 Bug Fixes
+
+- **(registry)** use aqua for delta by [@risu729](https://github.com/risu729) in [#5116](https://github.com/jdx/mise/pull/5116)
+- elixir bin name on windows by [@arilence](https://github.com/arilence) in [#5107](https://github.com/jdx/mise/pull/5107)
+
+### Chore
+
+- create a detached signature when signing the source tarball by [@digital-wonderland](https://github.com/digital-wonderland) in [#5108](https://github.com/jdx/mise/pull/5108)
+
+### New Contributors
+
+- @arilence made their first contribution in [#5107](https://github.com/jdx/mise/pull/5107)
+
 ## [2025.5.7](https://github.com/jdx/mise/compare/v2025.5.6..v2025.5.7) - 2025-05-18
 
 ### 🐛 Bug Fixes
