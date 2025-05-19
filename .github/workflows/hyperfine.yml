@@ -26,18 +26,18 @@ jobs:
     timeout-minutes: 20
     if: github.head_ref == 'release' || github.head_ref == 'hyperfine'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
-      - uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      - uses: rui314/setup-mold@e16410e7f8d9e167b74ad5697a9089a35126eb50 # v1
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
       - run: curl https://mise.run | MISE_INSTALL_PATH="$HOME/bin/mise-release" sh
       - run: echo "$HOME/bin" >> "$GITHUB_PATH"
       - id: versions
         run: |
           #echo "main=$(git rev-parse --short origin/main)" >> "$GITHUB_OUTPUT"
           echo "release=$(mise-release v | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      #- uses: actions/cache@v4
+      #- uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
       #  with:
       #    path: ~/bin/mise-${{ steps.versions.outputs.main }}
       #    key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}-${{ runner.arch }}
@@ -51,7 +51,7 @@ jobs:
       - run: mv "$HOME/bin/mise-release" "$HOME/bin/mise-${{ steps.versions.outputs.release }}"
       #- run: cp "$HOME/bin/mise-${{ steps.versions.outputs.main }}" "$HOME/bin/mise-main"
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
-      - uses: actions/cache@v4
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
@@ -77,7 +77,7 @@ jobs:
         env:
           SHELL: zsh
       - name: Comment on PR
-        uses: thollander/actions-comment-pull-request@v3
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3
         if: github.event_name == 'pull_request'
         continue-on-error: true
         #if: "startsWith(github.event.pull_request.title, 'perf:') || startsWith(github.event.pull_request.title, 'chore: release')"

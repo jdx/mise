@@ -74,6 +74,10 @@ jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea
 version = "0.44.0"
 backend = "npm:markdownlint-cli"
 
+[tools."npm:pin-github-action"]
+version = "3.3.1"
+backend = "npm:pin-github-action"
+
 [tools."npm:prettier"]
 version = "3.5.3"
 backend = "npm:prettier"

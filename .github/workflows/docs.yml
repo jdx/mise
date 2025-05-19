@@ -27,10 +27,10 @@ jobs:
     if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0 # for lastUpdated
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@c94f0bf9e520b150e34c017db785461f7e71c5fb # v2
         with:
           install_args: bun
           cache: true
