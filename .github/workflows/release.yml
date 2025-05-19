@@ -62,8 +62,6 @@ jobs:
             target: aarch64-apple-darwin
             runs-on: macos-latest
     steps:
-      - if: matrix.os == 'ubuntu'
-        uses: rui314/setup-mold@v1
       - if: matrix.os == 'macos'
         uses: apple-actions/import-codesign-certs@v5
         with:
