@@ -612,7 +612,6 @@ editorconfig-checker.backends = [
     "aqua:editorconfig-checker/editorconfig-checker",
     "asdf:gabitchov/asdf-editorconfig-checker"
 ]
-editorconfig-checker.os = ["linux", "macos"]
 # editorconfig-checker.test = ["ec --version", "v{{version}}"] # TODO: failing from https://github.com/editorconfig-checker/editorconfig-checker/issues/409
 ejson.backends = ["aqua:Shopify/ejson", "asdf:cipherstash/asdf-ejson"]
 eksctl.backends = ["aqua:eksctl-io/eksctl", "asdf:elementalvoid/asdf-eksctl"]
