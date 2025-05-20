@@ -29,20 +29,21 @@ export default {
         aliases: tool.aliases || [],
         backends: backends.map((backend: Backend) => {
           let name = typeof backend === "string" ? backend : backend.full;
-          let parts = name.toString().split(":");
-          let prefix = parts[0];
-          let slug = parts[1];
-          let urlMap: { [key: string]: string } = {
+          // replace selector square brackets
+          name = name.replace(/(.*?)\[.*\]/g, "$1");
+          const parts = name.toString().split(":");
+          const prefix = parts[0];
+          const slug = parts[1];
+          const urlMap: { [key: string]: string } = {
             core: `https://mise.jdx.dev/lang/${slug}.html`,
             cargo: `https://crates.io/crates/${slug}`,
             go: `https://pkg.go.dev/${slug}`,
             pipx: `https://pypi.org/project/${slug}`,
             npm: `https://www.npmjs.com/package/${slug}`,
           };
-          let url = urlMap[prefix] || `https://github.com/${slug}`;
+          const url = urlMap[prefix] || `https://github.com/${slug}`;
           return {
-            // replace selector square brackets
-            name: name.replace(/(.*?)\[.*\]/g, "$1"),
+            name,
             url,
           };
         }),
