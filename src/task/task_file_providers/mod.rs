@@ -108,7 +108,7 @@ mod tests {
     fn test_git_file_match_git_remote_task_provider() {
         let task_file_providers = TaskFileProvidersBuilder::new().build();
         let cases = vec![
-            "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
+            "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
             "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
             "git::ssh://user@myserver.com/example.git//subfolder/myfile.py",
             "git::https://myserver.com/example.git//subfolder/myfile.sh",
