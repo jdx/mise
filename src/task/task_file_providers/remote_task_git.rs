@@ -237,7 +237,7 @@ mod tests {
         let test_cases = vec![
             "git::https://myserver.com/example.git?ref=master",
             "git::https://user@myserver.com/example.git",
-            "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
+            "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
         ];
 
         for url in test_cases {
@@ -252,14 +252,14 @@ mod tests {
 
         let test_cases: Vec<(&str, &str, &str, Option<String>)> = vec![
             (
-                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
-                "ssh://git@github.com:myorg/example.git",
+                "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
+                "ssh://git@github.com/myorg/example.git",
                 "myfile",
                 Some("v1.0.0".to_string()),
             ),
             (
-                "git::ssh://git@github.com:myorg/example.git//terraform/myfile?ref=master",
-                "ssh://git@github.com:myorg/example.git",
+                "git::ssh://git@github.com/myorg/example.git//terraform/myfile?ref=master",
+                "ssh://git@github.com/myorg/example.git",
                 "terraform/myfile",
                 Some("master".to_string()),
             ),
@@ -318,12 +318,12 @@ mod tests {
 
         let test_cases = vec![
             (
-                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
-                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v2.0.0",
+                "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
+                "git::ssh://git@github.com/myorg/example.git//myfile?ref=v2.0.0",
                 false,
             ),
             (
-                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
+                "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
                 "git::ssh://user@myserver.com/example.git//myfile?ref=master",
                 false,
             ),
@@ -333,8 +333,8 @@ mod tests {
                 true,
             ),
             (
-                "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0",
-                "git::ssh://git@github.com:myorg/example.git//subfolder/mysecondfile?ref=v1.0.0",
+                "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
+                "git::ssh://git@github.com/myorg/example.git//subfolder/mysecondfile?ref=v1.0.0",
                 true,
             ),
         ];
