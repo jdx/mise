@@ -1807,6 +1807,7 @@ staticcheck.backends = [
     "asdf:pbr0ck3r/asdf-staticcheck"
 ]
 steampipe.backends = ["aqua:turbot/steampipe", "asdf:carnei-ro/asdf-steampipe"]
+steampipe.test = ["steampipe --version", "Steampipe v{{version}}"]
 step.backends = ["aqua:smallstep/cli", "asdf:log2/asdf-step"]
 stern.backends = ["aqua:stern/stern", "asdf:looztra/asdf-stern"]
 stripe.aliases = ["stripe-cli"]
@@ -1832,6 +1833,8 @@ swiftlint.backends = [
 swiftlint.test = ["swiftlint --version", "{{version}}"]
 swiprolog.backends = ["asdf:mise-plugins/mise-swiprolog"]
 syft.backends = ["aqua:anchore/syft", "asdf:davidgp1701/asdf-syft"]
+tailpipe.backends = ["aqua:turbot/tailpipe"]
+tailpipe.test = ["tailpipe --version", "Tailpipe v{{version}}"]
 talhelper.backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
 talos.backends = [
     "ubi:siderolabs/talos[exe=talosctl]",
