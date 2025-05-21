@@ -274,7 +274,7 @@ buf.backends = [
     "asdf:truepay/asdf-buf"
 ]
 buildifier.backends = ["aqua:bazelbuild/buildtools/buildifier"]
-buildifier.test = ["buildifier --version", "buildifier version {{version}}"]
+buildifier.test = ["buildifier --version", "buildifier version: {{version}}"]
 # test fails on windows
 # buf.test = ["buf --version", "{{version}}"]
 buildpack.aliases = ["pack", "buildpacks"]
