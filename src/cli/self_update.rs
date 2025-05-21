@@ -78,7 +78,7 @@ impl SelfUpdate {
                 || -> Result<String> { Ok(update.build()?.get_latest_release()?.version) },
                 Ok,
             )
-            .map(|v| format!("v{}", v))?;
+            .map(|v| format!("v{v}"))?;
         let target = format!("{}-{}", *OS, *ARCH);
         if self.force || self.version.is_some() {
             update.target_version_tag(&v);

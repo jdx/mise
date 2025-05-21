@@ -20,8 +20,6 @@ env:
   RUST_BACKTRACE: 1
   NPM_CONFIG_FUND: false
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
 
 jobs:
   autofix:
@@ -29,15 +27,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
         with:
           shared-key: autofix
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - uses: actions/cache@v4
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
@@ -48,21 +45,21 @@ jobs:
       - run: mise x -- bun i
       - run: mise run render
       - run: mise run lint-fix
-      - uses: autofix-ci/action@v1.3.1
+      - uses: autofix-ci/action@2891949f3779a1cafafae1523058501de3d4e944 # v1.3.1
 #  windows:
 #    runs-on: windows-latest
 #    timeout-minutes: 30
 #    steps:
 #      - run: git config --global core.autocrlf false
-#      - uses: actions/checkout@v4
-#      - uses: Swatinem/rust-cache@v2
+#      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+#      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
 #        with:
 #          shared-key: autofix
 #      - run: |
 #          cargo build
 #          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
 #        shell: pwsh
-#      - uses: actions/cache@v4
+#      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
 #        with:
 #          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
 #          path: |
@@ -72,4 +69,4 @@ jobs:
 #      - run: mise x -- npm i
 #      #- run: mise run render
 #      - run: mise run lint-fix
-#      - uses: autofix-ci/action@v1.3.1
+#      - uses: autofix-ci/action@2891949f3779a1cafafae1523058501de3d4e944 # v1.3.1

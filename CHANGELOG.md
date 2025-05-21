@@ -1,5 +1,128 @@
 # Changelog
 
+## [2025.5.9](https://github.com/jdx/mise/compare/v2025.5.8..v2025.5.9) - 2025-05-21
+
+### 🚀 Features
+
+- **(registry)** add microsoft `edit` by [@garysassano](https://github.com/garysassano) in [#5145](https://github.com/jdx/mise/pull/5145)
+- added buildifier by [@jdx](https://github.com/jdx) in [#5142](https://github.com/jdx/mise/pull/5142)
+- add shims in REMOTE ENV by [@acesyde](https://github.com/acesyde) in [#5139](https://github.com/jdx/mise/pull/5139)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** use complete_windows_ext by [@jdx](https://github.com/jdx) in [#5146](https://github.com/jdx/mise/pull/5146)
+- **(registry)** support editorconfig-checker in windows by [@risu729](https://github.com/risu729) in [#5125](https://github.com/jdx/mise/pull/5125)
+- SSH remote tasks do not support organizations in repository path by [@roele](https://github.com/roele) in [#5124](https://github.com/jdx/mise/pull/5124)
+- SSH remote tasks do not support organizations in repository path by [@roele](https://github.com/roele) in [#5132](https://github.com/jdx/mise/pull/5132)
+
+### 📚 Documentation
+
+- squeeze spaces when migrating from asdf by [@maximd](https://github.com/maximd) in [#5131](https://github.com/jdx/mise/pull/5131)
+
+### Chore
+
+- pin github actions by [@jdx](https://github.com/jdx) in [bf18644](https://github.com/jdx/mise/commit/bf1864472c3ed587fbdb497722849cf6cfacca5c)
+- use renovate to pin github actions by [@jdx](https://github.com/jdx) in [b80d8e3](https://github.com/jdx/mise/commit/b80d8e3ffe73d315c4214f77dedcf4cce7a54032)
+- disable mold in ci by [@jdx](https://github.com/jdx) in [#5128](https://github.com/jdx/mise/pull/5128)
+
+### New Contributors
+
+- @maximd made their first contribution in [#5131](https://github.com/jdx/mise/pull/5131)
+
+## [2025.5.8](https://github.com/jdx/mise/compare/v2025.5.7..v2025.5.8) - 2025-05-18
+
+### 🚀 Features
+
+- **(registry)** added astro by [@mnm364](https://github.com/mnm364) in [#5106](https://github.com/jdx/mise/pull/5106)
+
+### 🐛 Bug Fixes
+
+- **(registry)** use aqua for delta by [@risu729](https://github.com/risu729) in [#5116](https://github.com/jdx/mise/pull/5116)
+- elixir bin name on windows by [@arilence](https://github.com/arilence) in [#5107](https://github.com/jdx/mise/pull/5107)
+
+### Chore
+
+- create a detached signature when signing the source tarball by [@digital-wonderland](https://github.com/digital-wonderland) in [#5108](https://github.com/jdx/mise/pull/5108)
+
+### New Contributors
+
+- @arilence made their first contribution in [#5107](https://github.com/jdx/mise/pull/5107)
+
+## [2025.5.7](https://github.com/jdx/mise/compare/v2025.5.6..v2025.5.7) - 2025-05-18
+
+### 🐛 Bug Fixes
+
+- using custom port with SSH based remote tasks by [@roele](https://github.com/roele) in [#5110](https://github.com/jdx/mise/pull/5110)
+- update rabbitmq backend by [@SerhiiFesenko](https://github.com/SerhiiFesenko) in [#5115](https://github.com/jdx/mise/pull/5115)
+- maven-mvnd does not install with aqua by [@roele](https://github.com/roele) in [#5117](https://github.com/jdx/mise/pull/5117)
+
+### New Contributors
+
+- @SerhiiFesenko made their first contribution in [#5115](https://github.com/jdx/mise/pull/5115)
+
+## [2025.5.6](https://github.com/jdx/mise/compare/v2025.5.5..v2025.5.6) - 2025-05-17
+
+### 🚀 Features
+
+- **(registry)** add oauth2c by [@kklee998](https://github.com/kklee998) in [#5056](https://github.com/jdx/mise/pull/5056)
+- use new Java metadata source by [@roele](https://github.com/roele) in [#5089](https://github.com/jdx/mise/pull/5089)
+
+### 🐛 Bug Fixes
+
+- **(config)** project root for files in .config/ or mise/ by [@scop](https://github.com/scop) in [#5102](https://github.com/jdx/mise/pull/5102)
+- Clarify some of the filters and fix the config_root filter example by [@afranchuk](https://github.com/afranchuk) in [#5086](https://github.com/jdx/mise/pull/5086)
+
+### 🚜 Refactor
+
+- **(registry)** use aqua for rclone by [@scop](https://github.com/scop) in [#5096](https://github.com/jdx/mise/pull/5096)
+
+### 📚 Documentation
+
+- **(tasks)** point to `dir` config for task default cwd by [@scop](https://github.com/scop) in [#5103](https://github.com/jdx/mise/pull/5103)
+- remove go.mod from idiomatic version files by [@Gandem](https://github.com/Gandem) in [#5090](https://github.com/jdx/mise/pull/5090)
+- remove stray backquote from toml-tasks by [@scop](https://github.com/scop) in [#5097](https://github.com/jdx/mise/pull/5097)
+- add some missing vue interpolation escapes by [@scop](https://github.com/scop) in [#5099](https://github.com/jdx/mise/pull/5099)
+- remove some references to rtx by [@jdx](https://github.com/jdx) in [#5105](https://github.com/jdx/mise/pull/5105)
+
+### 📦️ Dependency Updates
+
+- update dependency node to v22 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5093](https://github.com/jdx/mise/pull/5093)
+
+### Chore
+
+- sign source tarball by [@digital-wonderland](https://github.com/digital-wonderland) in [#5087](https://github.com/jdx/mise/pull/5087)
+
+### New Contributors
+
+- @digital-wonderland made their first contribution in [#5087](https://github.com/jdx/mise/pull/5087)
+- @kklee998 made their first contribution in [#5056](https://github.com/jdx/mise/pull/5056)
+- @afranchuk made their first contribution in [#5086](https://github.com/jdx/mise/pull/5086)
+- @Gandem made their first contribution in [#5090](https://github.com/jdx/mise/pull/5090)
+
+## [2025.5.5](https://github.com/jdx/mise/compare/v2025.5.4..v2025.5.5) - 2025-05-15
+
+### 🚀 Features
+
+- **(registry)** add pinact by [@3w36zj6](https://github.com/3w36zj6) in [#5061](https://github.com/jdx/mise/pull/5061)
+- **(registry)** add ghalint by [@risu729](https://github.com/risu729) in [#5063](https://github.com/jdx/mise/pull/5063)
+- new "enable-tools" option by [@zeitlinger](https://github.com/zeitlinger) in [#4784](https://github.com/jdx/mise/pull/4784)
+
+### 📚 Documentation
+
+- hide `ls --offline` flag that is a no-op by [@jdx](https://github.com/jdx) in [#5068](https://github.com/jdx/mise/pull/5068)
+
+### Chore
+
+- add pr comment for new tools by [@jdx](https://github.com/jdx) in [#5067](https://github.com/jdx/mise/pull/5067)
+- set comment-tag for registry pr comment by [@jdx](https://github.com/jdx) in [#5069](https://github.com/jdx/mise/pull/5069)
+- run multiple test-tool jobs by [@jdx](https://github.com/jdx) in [#5070](https://github.com/jdx/mise/pull/5070)
+- fix typo in registry comment by [@jdx](https://github.com/jdx) in [#5071](https://github.com/jdx/mise/pull/5071)
+- bump zip-rs version by [@hkoosha](https://github.com/hkoosha) in [#5073](https://github.com/jdx/mise/pull/5073)
+
+### New Contributors
+
+- @3w36zj6 made their first contribution in [#5061](https://github.com/jdx/mise/pull/5061)
+
 ## [2025.5.4](https://github.com/jdx/mise/compare/v2025.5.3..v2025.5.4) - 2025-05-14
 
 ### 🚀 Features

@@ -1,7 +1,7 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::SETTINGS;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::consts::{ARCH, OS};
 use std::fmt::Display;
 use std::iter::Iterator;
@@ -135,5 +135,38 @@ fn url_like(s: &str) -> bool {
 impl Display for RegistryTool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.short)
+    }
+}
+
+pub fn tool_enabled<T: Ord>(
+    enable_tools: &BTreeSet<T>,
+    disable_tools: &BTreeSet<T>,
+    name: &T,
+) -> bool {
+    if enable_tools.is_empty() {
+        !disable_tools.contains(name)
+    } else {
+        enable_tools.contains(name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_tool_disabled() {
+        use super::*;
+        let name = "cargo";
+
+        assert!(tool_enabled(&BTreeSet::new(), &BTreeSet::new(), &name));
+        assert!(tool_enabled(
+            &BTreeSet::from(["cargo"]),
+            &BTreeSet::new(),
+            &name
+        ));
+        assert!(!tool_enabled(
+            &BTreeSet::new(),
+            &BTreeSet::from(["cargo"]),
+            &name
+        ));
     }
 }

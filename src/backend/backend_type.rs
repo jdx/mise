@@ -32,7 +32,7 @@ pub enum BackendType {
 
 impl Display for BackendType {
     fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        write!(formatter, "{}", format!("{:?}", self).to_lowercase())
+        write!(formatter, "{}", format!("{self:?}").to_lowercase())
     }
 }
 

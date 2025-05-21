@@ -111,6 +111,8 @@ ast-grep.backends = [
     "pipx:ast-grep-cli"
 ]
 ast-grep.test = ["sg --version", "ast-grep {{version}}"]
+astro.backends = ["ubi:astronomer/astro-cli[exe=astro]"]
+astro.test = ["astro version", "Astro CLI Version: {{version}}"]
 atlas.backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
 auto-doc.backends = [
@@ -271,6 +273,8 @@ buf.backends = [
     "ubi:bufbuild/buf",
     "asdf:truepay/asdf-buf"
 ]
+buildifier.backends = ["aqua:bazelbuild/buildtools/buildifier"]
+buildifier.test = ["buildifier --version", "buildifier version: {{version}}"]
 # test fails on windows
 # buf.test = ["buf --version", "{{version}}"]
 buildpack.aliases = ["pack", "buildpacks"]
@@ -513,7 +517,12 @@ datree.backends = ["aqua:datreeio/datree", "asdf:lukeab/asdf-datree"]
 daytona.backends = ["asdf:mise-plugins/mise-daytona"]
 dbmate.backends = ["aqua:amacneil/dbmate", "asdf:juusujanar/asdf-dbmate"]
 deck.backends = ["aqua:Kong/deck", "asdf:nutellinoit/asdf-deck"]
-delta.backends = ["ubi:dandavison/delta", "asdf:andweeb/asdf-delta"]
+delta.backends = [
+    "aqua:dandavison/delta",
+    "ubi:dandavison/delta",
+    "asdf:andweeb/asdf-delta"
+]
+delta.test = ["delta --version", "delta {{version}}"]
 deno.backends = ["core:deno"]
 depot.backends = ["ubi:depot/cli[exe=depot]", "asdf:depot/asdf-depot"]
 depot.test = ["depot --version", "depot version {{version}}"]
@@ -601,12 +610,14 @@ dynatrace-monaco.backends = [
 e1s.backends = ["asdf:tbobm/asdf-e1s"]
 earthly.backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
 ecspresso.backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
+edit.backends = ["aqua:microsoft/edit"]
+edit.test = ["edit --version", "edit version {{version}}"]
 editorconfig-checker.backends = [
     "aqua:editorconfig-checker/editorconfig-checker",
+    "ubi:editorconfig-checker/editorconfig-checker[exe=ec]",
     "asdf:gabitchov/asdf-editorconfig-checker"
 ]
-editorconfig-checker.os = ["linux", "macos"]
-# editorconfig-checker.test = ["ec --version", "v{{version}}"] # TODO: failing from https://github.com/editorconfig-checker/editorconfig-checker/issues/409
+editorconfig-checker.test = ["ec --version", "v{{version}}"]
 ejson.backends = ["aqua:Shopify/ejson", "asdf:cipherstash/asdf-ejson"]
 eksctl.backends = ["aqua:eksctl-io/eksctl", "asdf:elementalvoid/asdf-eksctl"]
 elasticsearch.backends = ["asdf:mise-plugins/mise-elasticsearch"]
@@ -732,6 +743,11 @@ getenvoy.backends = [
     "asdf:mise-plugins/mise-getenvoy"
 ]
 getenvoy.test = ["getenvoy --version", "getenvoy version {{version}}"]
+ghalint.backends = [
+    "aqua:suzuki-shunsuke/ghalint",
+    "ubi:suzuki-shunsuke/ghalint"
+]
+ghalint.test = ["ghalint version", "{{version}}"]
 ghc.backends = ["asdf:mise-plugins/mise-ghcup"]
 ghcup.backends = [
     "ubi:haskell/ghcup-hs[exe=ghcup]",
@@ -1397,6 +1413,8 @@ oapi-codegen.backends = [
     "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
     "asdf:dylanrayboss/asdf-oapi-codegen"
 ]
+oauth2c.backends = ["ubi:cloudentity/oauth2c"]
+oauth2c.test = ["oauth2c version 2>&1", "oauth2c version {{version}}"]
 oc.backends = ["asdf:mise-plugins/mise-oc"]
 ocaml.backends = ["asdf:mise-plugins/mise-ocaml"]
 oci.backends = ["asdf:mise-plugins/mise-oci"]
@@ -1583,7 +1601,7 @@ qsv.backends = ["ubi:dathere/qsv", "asdf:vjda/asdf-qsv"]
 qsv.test = ["qsv --version", "qsv {{version}}"]
 quarkus.backends = ["asdf:mise-plugins/mise-quarkus"]
 r.backends = ["asdf:mise-plugins/mise-r"]
-rabbitmq.backends = ["asdf:mise-plugins/mise-rabbitmq"]
+rabbitmq.backends = ["asdf:mise-plugins/asdf-rabbitmq"]
 racket.backends = ["asdf:mise-plugins/mise-racket"]
 raku.backends = ["asdf:mise-plugins/mise-raku"]
 rancher.backends = ["aqua:rancher/cli", "asdf:abinet/asdf-rancher"]
@@ -1592,7 +1610,12 @@ rbac-lookup.backends = [
     "aqua:FairwindsOps/rbac-lookup",
     "asdf:looztra/asdf-rbac-lookup"
 ]
-rclone.backends = ["ubi:rclone/rclone", "asdf:johnlayton/asdf-rclone"]
+rclone.backends = [
+    "aqua:rclone/rclone",
+    "ubi:rclone/rclone",
+    "asdf:johnlayton/asdf-rclone"
+]
+rclone.test = ["rclone version", "rclone v{{version}}"]
 rebar.backends = ["asdf:mise-plugins/mise-rebar"]
 rebar.depends = ["erlang"]
 reckoner.backends = [

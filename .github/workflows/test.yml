@@ -27,14 +27,10 @@ jobs:
   build-ubuntu:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: build
@@ -42,8 +38,6 @@ jobs:
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
-      - name: check for mold linker
-        run: readelf -p .comment target/debug/mise
       - uses: actions/upload-artifact@v4
         with:
           name: mise-ubuntu-latest
@@ -125,17 +119,12 @@ jobs:
     permissions:
       contents: write
     needs: [build-ubuntu, build-macos]
-    env:
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
           submodules: true
-      - uses: rui314/setup-mold@v1
-        if: ${{ matrix.os == 'ubuntu-latest' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny,cargo-msrv,cargo-machete
@@ -168,7 +157,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: rui314/setup-mold@v1
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}

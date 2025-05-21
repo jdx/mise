@@ -138,7 +138,7 @@ Here is an example script you can use to migrate your global `.tool-versions` fi
 
 ```shell
 mv ~/.tool-versions ~/.tool-versions.bak
-cat ~/.tool-versions.bak | tr ' ' '@' | xargs -n2 mise use -g
+cat ~/.tool-versions.bak | tr -s ' ' | tr ' ' '@' | xargs -n2 mise use -g
 ```
 
 Once you are comfortable with mise, you can remove the `.tool-versions.bak` file and [uninstall `asdf`](https://asdf-vm.com/manage/core.html#uninstall)

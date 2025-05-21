@@ -292,7 +292,7 @@ impl Settings {
             .filter_map(|cfg| match cfg {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
-                    eprintln!("Error loading settings file: {}", e);
+                    eprintln!("Error loading settings file: {e}");
                     None
                 }
             })
@@ -402,6 +402,13 @@ impl Settings {
             .collect()
     }
 
+    pub fn enable_tools(&self) -> BTreeSet<String> {
+        self.enable_tools
+            .iter()
+            .map(|t| t.trim().to_string())
+            .collect()
+    }
+
     pub fn partial_as_dict(partial: &SettingsPartial) -> eyre::Result<toml::Table> {
         let s = toml::to_string(partial)?;
         let table = toml::from_str(&s)?;
@@ -444,7 +451,7 @@ impl Settings {
 impl Display for Settings {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match toml::to_string_pretty(self) {
-            Ok(s) => write!(f, "{}", s),
+            Ok(s) => write!(f, "{s}"),
             Err(e) => Err(std::fmt::Error::custom(e)),
         }
     }

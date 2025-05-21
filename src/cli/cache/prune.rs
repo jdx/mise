@@ -52,7 +52,7 @@ impl CachePrune {
 
 fn bytes_str(bytes: u64) -> String {
     match NumberPrefix::binary(bytes as f64) {
-        NumberPrefix::Standalone(bytes) => format!("{} bytes", bytes),
-        NumberPrefix::Prefixed(prefix, n) => format!("{:.1} {}B", n, prefix),
+        NumberPrefix::Standalone(bytes) => format!("{bytes} bytes"),
+        NumberPrefix::Prefixed(prefix, n) => format!("{n:.1} {prefix}B"),
     }
 }

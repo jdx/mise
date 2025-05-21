@@ -76,6 +76,12 @@ gpg -u 8B81C9D17413A06D --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_
 minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m "$RELEASE_DIR"/install.sh </dev/zero
 cp "$RELEASE_DIR"/{install.sh,install.sh.sig,install.sh.minisig} "$RELEASE_DIR/$MISE_VERSION"
 
+echo "::group::Sign source tarball"
+TMP_FILE="$(mktemp)"
+curl -L -o "$TMP_FILE" "https://github.com/jdx/mise/archive/refs/tags/$MISE_VERSION.tar.gz"
+gpg --detach-sign -u 8B81C9D17413A06D <"$TMP_FILE" >"$RELEASE_DIR/$MISE_VERSION/$MISE_VERSION.tar.gz.sig"
+rm "$TMP_FILE"
+
 if [[ "$DRY_RUN" != 1 ]]; then
   echo "::group::Publish npm @jdxcode/mise"
   NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh

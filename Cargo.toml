@@ -1,6 +1,6 @@
 [package]
 name = "mise"
-version = "2025.5.4"
+version = "2025.5.9"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -147,7 +147,7 @@ walkdir = "2"
 which = "7"
 xx = { version = "2", features = ["glob"] }
 xz2 = "0.1"
-zip = { version = "=2.5.0", default-features = false, features = ["deflate"] }
+zip = { version = "3", default-features = false, features = ["deflate"] }
 zstd = "0.13"
 gix = { version = "<1", features = ["worktree-mutation"] }
 jiff = "0.2"

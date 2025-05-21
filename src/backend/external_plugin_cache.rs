@@ -33,7 +33,7 @@ impl ExternalPluginCache {
                 Some(key) => {
                     let config = Config::get();
                     let key = render_cache_key(&config, tv, key);
-                    let filename = format!("{}.msgpack.z", key);
+                    let filename = format!("{key}.msgpack.z");
                     tv.cache_path().join("list_bin_paths").join(filename)
                 }
                 None => tv.cache_path().join("list_bin_paths.msgpack.z"),
@@ -61,7 +61,7 @@ impl ExternalPluginCache {
             let exec_env_filename = match &plugin.toml.exec_env.cache_key {
                 Some(key) => {
                     let key = render_cache_key(config, tv, key);
-                    let filename = format!("{}.msgpack.z", key);
+                    let filename = format!("{key}.msgpack.z");
                     tv.cache_path().join("exec_env").join(filename)
                 }
                 None => tv.cache_path().join("exec_env.msgpack.z"),

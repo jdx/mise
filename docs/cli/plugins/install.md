@@ -42,16 +42,16 @@ Show installation output
 Examples:
 
 ```
-# install the node via shorthand
-$ mise plugins install node
+# install the poetry via shorthand
+$ mise plugins install poetry
 
-# install the node plugin using a specific git url
-$ mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git
+# install the poetry plugin using a specific git url
+$ mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git
 
-# install the node plugin using the git url only
-# (node is inferred from the url)
-$ mise plugins install https://github.com/mise-plugins/rtx-nodejs.git
+# install the poetry plugin using the git url only
+# (poetry is inferred from the url)
+$ mise plugins install https://github.com/mise-plugins/mise-poetry.git
 
-# install the node plugin using a specific ref
-$ mise plugins install node https://github.com/mise-plugins/rtx-nodejs.git#v1.0.0
+# install the poetry plugin using a specific ref
+$ mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git#11d0c1e
 ```

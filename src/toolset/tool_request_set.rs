@@ -5,7 +5,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::env;
-use crate::registry::REGISTRY;
+use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -98,7 +98,7 @@ impl Display for ToolRequestSet {
         if versions.is_empty() {
             write!(f, "ToolRequestSet: <empty>")?;
         } else {
-            write!(f, "ToolRequestSet: {}", versions)?;
+            write!(f, "ToolRequestSet: {versions}")?;
         }
         Ok(())
     }
@@ -127,6 +127,8 @@ pub struct ToolRequestSetBuilder {
     default_to_latest: bool,
     /// tools which will be disabled
     disable_tools: BTreeSet<BackendArg>,
+    /// tools which will be enabled
+    enable_tools: BTreeSet<BackendArg>,
 }
 
 impl ToolRequestSetBuilder {
@@ -134,6 +136,7 @@ impl ToolRequestSetBuilder {
         let settings = Settings::get();
         Self {
             disable_tools: settings.disable_tools().iter().map(|s| s.into()).collect(),
+            enable_tools: settings.enable_tools().iter().map(|s| s.into()).collect(),
             ..Default::default()
         }
     }
@@ -171,7 +174,7 @@ impl ToolRequestSetBuilder {
         backend_type == BackendType::Unknown
             || (cfg!(windows) && backend_type == BackendType::Asdf)
             || !ba.is_os_supported()
-            || self.disable_tools.contains(ba)
+            || !tool_enabled(&self.enable_tools, &self.disable_tools, ba)
     }
 
     fn load_config_files(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {

@@ -108,8 +108,8 @@ run_windows = 'cargo test --features windows'
 
 ### Specifying which directory to use
 
-Tasks are executed with `cwd` set to the directory containing `mise.toml`. You can use the directory
-from where the task was run with `dir = "{{cwd}}"`:
+The [`dir`](/tasks/task-configuration.html#dir) property determines the `cwd` in which the task is executed. You can use the directory
+from where the task was run with <span v-pre>`dir = "{{cwd}}"`</span>:
 
 ```toml
 [tasks.test]
@@ -131,7 +131,7 @@ alias = 'b' # `mise run b`
 ```
 
 - This alias can be used to run the task
-- The description will be displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html)` with no arguments.
+- The description will be displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html) with no arguments.
 
 ```shell
 ❯ mise run
@@ -378,7 +378,7 @@ Please note that the file will be downloaded and executed. Make sure you trust t
 
 ```toml [ssh]
 [tasks.build]
-file = "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0"
+file = "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0"
 ```
 
 ```toml [https]

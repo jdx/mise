@@ -83,7 +83,7 @@ impl Display for EnvDirective {
             EnvDirective::File(path, _) => write!(f, "dotenv {}", display_path(path)),
             EnvDirective::Path(path, _) => write!(f, "path_add {}", display_path(path)),
             EnvDirective::Source(path, _) => write!(f, "source {}", display_path(path)),
-            EnvDirective::Module(name, _, _) => write!(f, "module {}", name),
+            EnvDirective::Module(name, _, _) => write!(f, "module {name}"),
             EnvDirective::PythonVenv {
                 path,
                 create,
@@ -97,13 +97,13 @@ impl Display for EnvDirective {
                     write!(f, " create")?;
                 }
                 if let Some(python) = python {
-                    write!(f, " python={}", python)?;
+                    write!(f, " python={python}")?;
                 }
                 if let Some(args) = uv_create_args {
-                    write!(f, " uv_create_args={:?}", args)?;
+                    write!(f, " uv_create_args={args:?}")?;
                 }
                 if let Some(args) = python_create_args {
-                    write!(f, " python_create_args={:?}", args)?;
+                    write!(f, " python_create_args={args:?}")?;
                 }
                 Ok(())
             }

@@ -88,7 +88,7 @@ impl MiseTable {
         let re = regex!(r"^(\x{1b}[^ ]*\d+m) ");
         for line in table.lines() {
             let line = re.replacen(line.trim(), 1, "$1");
-            println!("{}", line);
+            println!("{line}");
         }
         Ok(())
     }

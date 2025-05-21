@@ -63,7 +63,7 @@ impl MisePluginToml {
             Some(table) => {
                 let mut config = MisePluginTomlScriptConfig::default();
                 for (k, v) in table.iter() {
-                    let key = format!("{}.{}", key, k);
+                    let key = format!("{key}.{k}");
                     match k {
                         "cache-key" => config.cache_key = Some(self.parse_string_array(k, v)?),
                         "data" => match v.as_value() {
