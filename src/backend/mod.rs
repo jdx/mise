@@ -619,7 +619,7 @@ pub trait Backend: Debug + Send + Sync {
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
+        let query_regex = Regex::new(&format!("^{query}([-.].+)?$"))?;
         let versions = versions
             .into_iter()
             .filter(|v| {

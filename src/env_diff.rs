@@ -107,7 +107,7 @@ impl EnvDiff {
                 }
                 None => {
                     if let Some(k) = &cur_key {
-                        let v = format!("\n{}", line);
+                        let v = format!("\n{line}");
                         additions.get_mut(k).unwrap().push_str(&v);
                     }
                 }

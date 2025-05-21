@@ -161,7 +161,7 @@ impl Doctor {
         }
 
         let out = serde_json::to_string_pretty(&data)?;
-        println!("{}", out);
+        println!("{out}");
 
         if !self.errors.is_empty() {
             exit(1);
@@ -305,7 +305,7 @@ impl Doctor {
                 self.analyze_toolset(&ts)?;
                 self.analyze_paths(&ts)?;
             }
-            Err(err) => self.errors.push(format!("failed to load toolset: {}", err)),
+            Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
         }
 
         Ok(())
@@ -453,7 +453,7 @@ fn render_config_files(config: &Config) -> String {
 fn render_backends() -> String {
     let mut s = vec![];
     for b in BackendType::iter().filter(|b| b != &BackendType::Unknown) {
-        s.push(format!("{}", b));
+        s.push(format!("{b}"));
     }
     s.join("\n")
 }
@@ -518,7 +518,7 @@ fn shell() -> String {
             };
             let version = cmd!(shell_cmd, "--version")
                 .read()
-                .unwrap_or_else(|e| format!("failed to get shell version: {}", e));
+                .unwrap_or_else(|e| format!("failed to get shell version: {e}"));
             format!("{shell_cmd}\n{version}")
         }
         None => "(unknown)".to_string(),

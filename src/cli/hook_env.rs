@@ -227,9 +227,9 @@ impl HookEnv {
 
 fn patch_to_status(patch: EnvDiffOperation) -> String {
     match patch {
-        EnvDiffOperation::Add(k, _) => format!("+{}", k),
-        EnvDiffOperation::Change(k, _) => format!("~{}", k),
-        EnvDiffOperation::Remove(k) => format!("-{}", k),
+        EnvDiffOperation::Add(k, _) => format!("+{k}"),
+        EnvDiffOperation::Change(k, _) => format!("~{k}"),
+        EnvDiffOperation::Remove(k) => format!("-{k}"),
     }
 }
 

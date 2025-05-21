@@ -75,7 +75,7 @@ impl Which {
             .sorted()
             .collect_vec();
         for bin in bins {
-            println!("{}", bin);
+            println!("{bin}");
         }
         Ok(())
     }

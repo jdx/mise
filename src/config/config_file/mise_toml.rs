@@ -894,15 +894,15 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             impl Display for Val {
                                 fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
                                     match self {
-                                        Val::Int(i) => write!(f, "{}", i),
-                                        Val::Str(s) => write!(f, "{}", s),
-                                        Val::Bool(b) => write!(f, "{}", b),
+                                        Val::Int(i) => write!(f, "{i}"),
+                                        Val::Str(s) => write!(f, "{s}"),
+                                        Val::Bool(b) => write!(f, "{b}"),
                                         Val::Map {
                                             value,
                                             tools,
                                             redact,
                                         } => {
-                                            write!(f, "{}", value)?;
+                                            write!(f, "{value}")?;
                                             if *tools {
                                                 write!(f, " tools")?;
                                             }

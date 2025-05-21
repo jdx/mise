@@ -197,7 +197,7 @@ fn migrate_backend_meta_json(dir: &str) {
                 .get("short")
                 .and_then(|short| short.as_str())
                 .unwrap_or(dir);
-            let doc = format!("{}\n{}", short, full);
+            let doc = format!("{short}\n{full}");
             file::write(backend_meta_path(dir), doc.trim())?;
         }
         Ok(())

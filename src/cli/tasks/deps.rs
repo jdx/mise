@@ -142,7 +142,7 @@ impl TasksDeps {
         let config = Config::get();
         let tasks = config
             .tasks()
-            .map(|t| t.iter().map(|(_, v)| v.display_name()).collect::<Vec<_>>())
+            .map(|t| t.values().map(|v| v.display_name()).collect::<Vec<_>>())
             .unwrap_or_default();
         let task_names = tasks.into_iter().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();

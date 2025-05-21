@@ -38,7 +38,7 @@ impl Envrc {
         let (env, env_results) = ts.final_env(config)?;
         for (k, v) in env {
             if k == *PATH_KEY {
-                writeln!(file, "PATH_add {}", v)?;
+                writeln!(file, "PATH_add {v}")?;
             } else {
                 writeln!(
                     file,

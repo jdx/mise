@@ -29,7 +29,7 @@ impl ErlangPlugin {
     }
 
     fn kerl_path(&self) -> PathBuf {
-        self.ba.cache_path.join(format!("kerl-{}", KERL_VERSION))
+        self.ba.cache_path.join(format!("kerl-{KERL_VERSION}"))
     }
 
     fn kerl_base_dir(&self) -> PathBuf {
@@ -94,11 +94,11 @@ impl ErlangPlugin {
                 return Ok(None);
             }
         };
-        ctx.pr.set_message(format!("Downloading {}", tarball_name));
+        ctx.pr.set_message(format!("Downloading {tarball_name}"));
         let tarball_path = tv.download_path().join(&tarball_name);
         HTTP.download_file(&asset.browser_download_url, &tarball_path, Some(&ctx.pr))?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
-        ctx.pr.set_message(format!("Extracting {}", tarball_name));
+        ctx.pr.set_message(format!("Extracting {tarball_name}"));
         file::untar(
             &tarball_path,
             &tv.install_path(),

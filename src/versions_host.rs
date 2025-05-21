@@ -10,8 +10,8 @@ use url::Url;
 
 static PLUGINS_USE_VERSION_HOST: Lazy<HashSet<&str>> = Lazy::new(|| {
     CORE_PLUGINS
-        .iter()
-        .map(|(name, _)| name.as_str())
+        .keys()
+        .map(|name| name.as_str())
         .chain(REGISTRY.keys().copied())
         .filter(|name| !matches!(*name, "java" | "python"))
         .collect()
