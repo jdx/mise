@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+# mise should ignore identical values which have been passed using `add`
 assert "mise settings add disable_hints a" ""
 assert "mise settings add disable_hints b" ""
 assert "mise settings get disable_hints" '["a", "b"]'
+assert "mise settings add disable_hints a" ""
+assert "grep disable_hints ~/.config/mise/config.toml" 'disable_hints = ["a", "b"]'
+
+assert "mise settings add idiomatic_version_file_enable_tools python" ""
+assert "mise settings add idiomatic_version_file_enable_tools rust" ""
+assert "mise settings get idiomatic_version_file_enable_tools" '["python", "rust"]'
+assert "mise settings add idiomatic_version_file_enable_tools python,rust,zig" ""
+assert "grep idiomatic_version_file_enable_tools ~/.config/mise/config.toml" 'idiomatic_version_file_enable_tools = ["python", "rust", "zig"]'

@@ -2,6 +2,7 @@ use eyre::{Result, bail, eyre};
 use toml_edit::DocumentMut;
 
 use crate::config::settings::{SETTINGS_META, SettingsFile, SettingsType};
+use crate::toml::dedup_toml_array;
 use crate::{config, duration, file};
 
 /// Add/update a setting
@@ -27,17 +28,21 @@ impl SettingsSet {
 }
 
 pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
-    let value = if let Some(meta) = SETTINGS_META.get(key) {
-        match meta.type_ {
-            SettingsType::Bool => parse_bool(value)?,
-            SettingsType::Integer => parse_i64(value)?,
-            SettingsType::Duration => parse_duration(value)?,
-            SettingsType::Url | SettingsType::Path | SettingsType::String => value.into(),
-            SettingsType::ListString => parse_list_by_comma(value)?,
-            SettingsType::ListPath => parse_list_by_colon(value)?,
+    let meta = match SETTINGS_META.get(key) {
+        Some(meta) => meta,
+        None => {
+            bail!("Unknown setting: {}", key);
         }
-    } else {
-        bail!("Unknown setting: {}", key);
+    };
+
+    let value = match meta.type_ {
+        SettingsType::Bool => parse_bool(value)?,
+        SettingsType::Integer => parse_i64(value)?,
+        SettingsType::Duration => parse_duration(value)?,
+        SettingsType::Url | SettingsType::Path | SettingsType::String => value.into(),
+        SettingsType::ListString => parse_list_by_comma(value)?,
+        SettingsType::ListPath => parse_list_by_colon(value)?,
+        SettingsType::SetString => parse_set_by_comma(value)?,
     };
 
     let path = if local {
@@ -67,9 +72,12 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
 
         let value = match settings.get(key).map(|c| c.as_array()) {
             Some(Some(array)) if add => {
-                let mut array = array.clone();
-                array.extend(value.as_array().unwrap().iter().cloned());
-                array.into()
+                let mut new_array = array.clone();
+                new_array.extend(value.as_array().unwrap().iter().cloned());
+                match meta.type_ {
+                    SettingsType::SetString => dedup_toml_array(&new_array).into(),
+                    _ => new_array.into(),
+                }
             }
             _ => value,
         };
@@ -95,6 +103,14 @@ fn parse_list_by_colon(value: &str) -> Result<toml_edit::Value> {
         return Ok(toml_edit::Array::new().into());
     }
     Ok(value.split(':').map(|s| s.trim().to_string()).collect())
+}
+
+fn parse_set_by_comma(value: &str) -> Result<toml_edit::Value> {
+    if value.is_empty() || value == "[]" {
+        return Ok(toml_edit::Array::new().into());
+    }
+    let array: toml_edit::Array = value.split(',').map(|s| s.trim().to_string()).collect();
+    Ok(dedup_toml_array(&array).into())
 }
 
 fn parse_bool(value: &str) -> Result<toml_edit::Value> {

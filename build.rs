@@ -195,6 +195,7 @@ pub struct Settings {"#
                 "Duration" => "String",
                 "ListString" => "Vec<String>",
                 "ListPath" => "Vec<PathBuf>",
+                "SetString" => "BTreeSet<String>",
                 t => panic!("Unknown type: {}", t),
             }));
         if let Some(type_) = type_ {

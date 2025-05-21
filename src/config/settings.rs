@@ -37,6 +37,7 @@ pub enum SettingsType {
     Url,
     ListString,
     ListPath,
+    SetString,
 }
 
 pub struct SettingsMeta {
@@ -487,4 +488,17 @@ where
         "false" | "no" | "0" => Ok(false),
         _ => Ok(true),
     }
+}
+
+fn set_by_comma<T, C>(input: &str) -> Result<C, <T as FromStr>::Err>
+where
+    T: FromStr + Eq + Ord,
+    C: FromIterator<T>,
+{
+    input
+        .split(',')
+        .map(T::from_str)
+        // collect into HashSet to remove duplicates
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map(|set| set.into_iter().collect())
 }

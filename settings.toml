@@ -260,18 +260,18 @@ installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/a
 
 [disable_hints]
 env = "MISE_DISABLE_HINTS"
-type = "ListString"
+type = "SetString"
 rust_type = "BTreeSet<String>"
 default = []
-parse_env = "list_by_comma"
+parse_env = "set_by_comma"
 description = "Turns off helpful hints when using different mise features"
 
 [disable_tools]
 env = "MISE_DISABLE_TOOLS"
-type = "ListString"
+type = "SetString"
 rust_type = "BTreeSet<String>"
 default = []
-parse_env = "list_by_comma"
+parse_env = "set_by_comma"
 description = "Tools defined in mise.toml that should be ignored"
 
 [dotnet.package_flags]
@@ -304,10 +304,10 @@ However, you can set this to a different URL if you have a custom feed or want t
 
 [enable_tools]
 env = "MISE_ENABLE_TOOLS"
-type = "ListString"
+type = "SetString"
 rust_type = "BTreeSet<String>"
 default = []
-parse_env = "list_by_comma"
+parse_env = "set_by_comma"
 description = "Tools defined in mise.toml that should be used - all other tools are ignored"
 
 [env]
@@ -480,18 +480,18 @@ Set to "false" to disable idiomatic version file parsing.
 
 [idiomatic_version_file_disable_tools]
 env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_TOOLS"
-type = "ListString"
+type = "SetString"
 rust_type = "BTreeSet<String>"
 default = []
-parse_env = "list_by_comma"
+parse_env = "set_by_comma"
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Specific tools to disable idiomatic version files for."
 
 [idiomatic_version_file_enable_tools]
 env = "MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS"
-type = "ListString"
+type = "SetString"
 rust_type = "Option<BTreeSet<String>>"
-parse_env = "list_by_comma"
+parse_env = "set_by_comma"
 description = "Specific tools to enable idiomatic version files for like .node-version, .ruby-version, etc."
 
 [ignored_config_paths]
@@ -519,10 +519,10 @@ hide = true
 
 [legacy_version_file_disable_tools]
 env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS"
-type = "ListString"
+type = "SetString"
 rust_type = "BTreeSet<String>"
 default = []
-parse_env = "list_by_comma"
+parse_env = "set_by_comma"
 deprecated = "Use idiomatic_version_file_disable_tools instead."
 description = "Specific tools to disable idiomatic version files for."
 hide = true
@@ -1121,10 +1121,10 @@ description = "Automatically install missing tools when executing tasks."
 
 [task_skip]
 env = "MISE_TASK_SKIP"
-type = "ListString"
+type = "SetString"
 rust_type = "BTreeSet<String>"
 default = []
-parse_env = "list_by_comma"
+parse_env = "set_by_comma"
 description = "Tasks to skip when running `mise run`."
 
 [task_timings]
