@@ -1539,6 +1539,9 @@ pre-commit.backends = [
     "asdf:jonathanmorley/asdf-pre-commit"
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
+process-compose.backends = ["ubi:F1bonacc1/process-compose"]
+process-compose.description = "Process Compose is a simple and flexible scheduler and orchestrator to manage non-containerized applications."
+process-compose.test = ["process-compose version --short", "{{version}}"]
 promtool.backends = [
     "aqua:prometheus/prometheus",
     "asdf:asdf-community/asdf-promtool"
