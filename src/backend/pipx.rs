@@ -52,7 +52,7 @@ impl Backend for PIPXBackend {
                 let registry_url = self.get_registry_url()?;
                 if registry_url.contains("/json") {
                     debug!("Fetching JSON for {}", package);
-                    let url = format!("https://pypi.org/pypi/{}/json", package);
+                    let url = format!("https://pypi.org/pypi/{package}/json");
                     let data: PypiPackage = HTTP_FETCH.json(url)?;
                     let versions = data
                         .releases
@@ -64,7 +64,7 @@ impl Backend for PIPXBackend {
                     Ok(versions)
                 } else {
                     debug!("Fetching HTML for {}", package);
-                    let url = format!("https://pypi.org/simple/{}/", package);
+                    let url = format!("https://pypi.org/simple/{package}/");
                     let html = HTTP_FETCH.get_html(url)?;
 
                     let version_re = regex!(r#"href=["'].*?/([^/]+)\.tar\.gz["']"#);
@@ -73,7 +73,7 @@ impl Backend for PIPXBackend {
                         .filter_map(|cap| {
                             let filename = cap.get(1)?.as_str();
                             let escaped_package = regex::escape(&package);
-                            let re_str = format!("^{}-(.+)$", escaped_package);
+                            let re_str = format!("^{escaped_package}-(.+)$");
                             let pkg_re = regex::Regex::new(&re_str).ok()?;
                             let pkg_version = pkg_re.captures(filename)?.get(1)?.as_str();
                             Some(pkg_version.to_string())
@@ -100,12 +100,12 @@ impl Backend for PIPXBackend {
                     let registry_url = self.get_registry_url()?;
                     if registry_url.contains("/json") {
                         debug!("Fetching JSON for {}", package);
-                        let url = format!("https://pypi.org/pypi/{}/json", package);
+                        let url = format!("https://pypi.org/pypi/{package}/json");
                         let pkg: PypiPackage = HTTP_FETCH.json(url)?;
                         Ok(Some(pkg.info.version))
                     } else {
                         debug!("Fetching HTML for {}", package);
-                        let url = format!("https://pypi.org/simple/{}/", package);
+                        let url = format!("https://pypi.org/simple/{package}/");
                         let html = HTTP_FETCH.get_html(url)?;
 
                         let version_re = regex!(r#"href=["'].*?/([^/]+)\.tar\.gz["']"#);
@@ -114,7 +114,7 @@ impl Backend for PIPXBackend {
                             .filter_map(|cap| {
                                 let filename = cap.get(1)?.as_str();
                                 let escaped_package = regex::escape(&package);
-                                let re_str = format!("^{}-(.+)$", escaped_package);
+                                let re_str = format!("^{escaped_package}-(.+)$");
                                 let pkg_re = regex::Regex::new(&re_str).ok()?;
                                 let pkg_version = pkg_re.captures(filename)?.get(1)?.as_str();
                                 Some(pkg_version.to_string())
@@ -295,7 +295,7 @@ enum PipxRequest {
 impl PipxRequest {
     fn extras_from_opts(&self, opts: &ToolVersionOptions) -> String {
         match opts.get("extras") {
-            Some(extras) => format!("[{}]", extras),
+            Some(extras) => format!("[{extras}]"),
             None => String::new(),
         }
     }
@@ -306,12 +306,12 @@ impl PipxRequest {
         if v == "latest" {
             match self {
                 PipxRequest::Git(url) => format!("git+{url}.git"),
-                PipxRequest::Pypi(package) => format!("{}{}", package, extras),
+                PipxRequest::Pypi(package) => format!("{package}{extras}"),
             }
         } else {
             match self {
-                PipxRequest::Git(url) => format!("git+{}.git@{}", url, v),
-                PipxRequest::Pypi(package) => format!("{}{}=={}", package, extras, v),
+                PipxRequest::Git(url) => format!("git+{url}.git@{v}"),
+                PipxRequest::Pypi(package) => format!("{package}{extras}=={v}"),
             }
         }
     }

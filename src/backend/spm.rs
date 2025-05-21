@@ -208,7 +208,7 @@ impl SwiftPackageRepo {
                 name
             ))?
         };
-        let url_str = format!("https://github.com/{}.git", shorthand);
+        let url_str = format!("https://github.com/{shorthand}.git");
         let url = Url::parse(&url_str)?;
 
         Ok(Self {

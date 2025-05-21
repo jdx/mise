@@ -106,7 +106,7 @@ impl EnvResults {
                         // The selected mise managed python tool path from env._.python.venv.python or first in list
                         (Some(python_path), _) => python_path,
                         // User specified in env._.python.venv.python but it's not in mise tools, so try to find it on path
-                        (_, Some(python)) => format!("python{}", python),
+                        (_, Some(python)) => format!("python{python}"),
                         // Default to whatever python3 points to on path
                         _ => "python3".to_string(),
                     };

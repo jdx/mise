@@ -144,13 +144,13 @@ impl Display for OutdatedInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:<20} ", self.name)?;
         if let Some(current) = &self.current {
-            write!(f, "{:<20} ", current)?;
+            write!(f, "{current:<20} ")?;
         } else {
             write!(f, "{:<20} ", "MISSING")?;
         }
         write!(f, "-> {:<10} (", self.latest)?;
         if let Some(bump) = &self.bump {
-            write!(f, "bump to {} in ", bump)?;
+            write!(f, "bump to {bump} in ")?;
         }
         write!(f, "{})", self.source)
     }
@@ -197,7 +197,7 @@ fn chunkify_version(v: &str) -> Vec<String> {
     fn chunkify(m: &Mess, sep0: &str, chunks: &mut Vec<String>) {
         for (i, chunk) in m.chunks.iter().enumerate() {
             let sep = if i == 0 { sep0 } else { "." };
-            chunks.push(format!("{}{}", sep, chunk));
+            chunks.push(format!("{sep}{chunk}"));
         }
         if let Some((next_sep, next_mess)) = &m.next {
             chunkify(next_mess, next_sep.to_string().as_ref(), chunks)

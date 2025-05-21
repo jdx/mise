@@ -285,7 +285,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |input: Option<&Value>, args: &[Value]| match input {
             Some(Value::String(version)) => match args.first() {
                 Some(Value::String(requirement)) => {
-                    println!("{}", requirement);
+                    println!("{requirement}");
                     let result = Requirement::new(requirement)
                         .unwrap()
                         .matches(&Versioning::new(version).unwrap());
@@ -322,7 +322,7 @@ pub fn tera_exec(
             Some(Value::String(duration)) => {
                 match duration::parse_duration(&duration.to_string()) {
                     Ok(duration) => Some(duration),
-                    Err(e) => return Err(format!("exec cache_duration: {}", e).into()),
+                    Err(e) => return Err(format!("exec cache_duration: {e}").into()),
                 }
             }
             None => None,
@@ -362,7 +362,7 @@ pub fn tera_exec(
                     let cache = cacheman.build();
                     match cache.get_or_try_init(|| Ok(cmd.read()?)) {
                         Ok(result) => result.clone(),
-                        Err(e) => return Err(format!("exec command: {}", e).into()),
+                        Err(e) => return Err(format!("exec command: {e}").into()),
                     }
                 } else {
                     cmd.read()?

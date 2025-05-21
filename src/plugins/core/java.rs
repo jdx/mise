@@ -200,7 +200,7 @@ impl JavaPlugin {
                 .unwrap_or_else(|| (&m.version, ""));
             file::make_symlink(
                 tv.install_path()
-                    .join(format!("zulu-{}.jdk", major_version))
+                    .join(format!("zulu-{major_version}.jdk"))
                     .join("Contents")
                     .as_path(),
                 &tv.install_path().join("Contents"),
@@ -367,7 +367,7 @@ impl Backend for JavaPlugin {
             if vendor == "zulu" {
                 version = version.split_once('.').unwrap_or_default().0;
             }
-            Ok(format!("{}-{}", vendor, version))
+            Ok(format!("{vendor}-{version}"))
         } else {
             Ok(contents)
         }
@@ -402,7 +402,7 @@ impl Backend for JavaPlugin {
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
         let query_trim = regex::escape(query.trim_end_matches('-'));
         let query_version = format!("{}[0-9.]+", regex::escape(query));
-        let query_trim_version = format!("{}-[0-9.]+", query_trim);
+        let query_trim_version = format!("{query_trim}-[0-9.]+");
         let query = match query {
             "latest" => "[0-9].*",
             // ends with a dash; use <query><version>
@@ -412,7 +412,7 @@ impl Backend for JavaPlugin {
             // else; use trimmed query
             _ => &query_trim,
         };
-        let query_regex = Regex::new(&format!("^{}([+-.].+)?$", query))?;
+        let query_regex = Regex::new(&format!("^{query}([+-.].+)?$"))?;
         let versions = versions
             .into_iter()
             .filter(|v| {

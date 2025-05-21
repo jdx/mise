@@ -256,7 +256,7 @@ impl NodePlugin {
             if package.is_empty() {
                 continue;
             }
-            pr.set_message(format!("install default package: {}", package));
+            pr.set_message(format!("install default package: {package}"));
             let npm = self.npm_path(tv);
             CmdLineRunner::new(npm)
                 .with_pr(pr)
@@ -526,7 +526,7 @@ fn configure_cmd(install_path: &Path) -> String {
         configure_cmd.push_str(" --ninja");
     }
     if let Some(opts) = &*env::MISE_NODE_CONFIGURE_OPTS {
-        configure_cmd.push_str(&format!(" {}", opts));
+        configure_cmd.push_str(&format!(" {opts}"));
     }
     configure_cmd
 }

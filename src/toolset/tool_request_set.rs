@@ -98,7 +98,7 @@ impl Display for ToolRequestSet {
         if versions.is_empty() {
             write!(f, "ToolRequestSet: <empty>")?;
         } else {
-            write!(f, "ToolRequestSet: {}", versions)?;
+            write!(f, "ToolRequestSet: {versions}")?;
         }
         Ok(())
     }

@@ -86,7 +86,7 @@ impl Backend for AquaBackend {
         let mut v = format!("v{}", tv.version);
         let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v)?;
         if let Some(prefix) = &pkg.version_prefix {
-            v = format!("{}{}", prefix, v);
+            v = format!("{prefix}{v}");
         }
         validate(&pkg)?;
         let url = match self.fetch_url(&pkg, &v) {
@@ -131,7 +131,7 @@ impl Backend for AquaBackend {
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
+        let query_regex = Regex::new(&format!("^{query}([-.].+)?$"))?;
         let versions = versions
             .into_iter()
             .filter(|v| {
@@ -253,7 +253,7 @@ impl AquaBackend {
                         }
                         AquaChecksumType::Http => checksum.url(pkg, v)?,
                     };
-                    let checksum_path = tv.download_path().join(format!("{}.checksum", filename));
+                    let checksum_path = tv.download_path().join(format!("{filename}.checksum"));
                     HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))?;
                     self.cosign_checksums(ctx, pkg, v, tv, &checksum_path)?;
                     let mut checksum_file = file::read_to_string(&checksum_path)?;
@@ -638,7 +638,7 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
     let envs: HashSet<&str> = pkg.supported_envs.iter().map(|s| s.as_str()).collect();
     let os = os();
     let arch = arch();
-    let os_arch = format!("{}/{}", os, arch);
+    let os_arch = format!("{os}/{arch}");
     let mut myself: HashSet<&str> = ["all", os, arch, os_arch.as_str()].into();
     if os == "windows" && arch == "arm64" {
         // assume windows/arm64 is supported

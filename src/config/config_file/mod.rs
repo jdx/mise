@@ -625,7 +625,7 @@ mod tests {
             "/foo/bar/.mise/config.env.toml",
             "/foo/bar/.mise.env.toml",
         ] {
-            println!("{}", p);
+            println!("{p}");
             assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/bar"));
         }
     }

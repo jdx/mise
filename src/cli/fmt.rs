@@ -34,7 +34,7 @@ impl Fmt {
             let toml = sort(toml)?;
             let toml = format(toml)?;
             let mut stdout = io::stdout();
-            write!(stdout, "{}", toml)?;
+            write!(stdout, "{toml}")?;
 
             return Ok(());
         }

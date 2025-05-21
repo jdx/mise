@@ -236,7 +236,7 @@ impl Backend for UbiBackend {
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{}([-.].+)?$", query))?;
+        let query_regex = Regex::new(&format!("^{query}([-.].+)?$"))?;
         let versions = versions
             .into_iter()
             .filter(|v| {
@@ -260,10 +260,10 @@ impl Backend for UbiBackend {
     ) -> eyre::Result<()> {
         let mut checksum_key = file.file_name().unwrap().to_string_lossy().to_string();
         if let Some(exe) = tv.request.options().get("exe") {
-            checksum_key = format!("{}-{}", checksum_key, exe);
+            checksum_key = format!("{checksum_key}-{exe}");
         }
         if let Some(matching) = tv.request.options().get("matching") {
-            checksum_key = format!("{}-{}", checksum_key, matching);
+            checksum_key = format!("{checksum_key}-{matching}");
         }
         checksum_key = format!("{}-{}-{}", checksum_key, env::consts::OS, env::consts::ARCH);
         if let Some(checksum) = &tv.checksums.get(&checksum_key) {

@@ -79,11 +79,11 @@ impl Display for ToolVersionType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Path(p) => write!(f, "path:{}", p.to_string_lossy()),
-            Self::Prefix(p) => write!(f, "prefix:{}", p),
+            Self::Prefix(p) => write!(f, "prefix:{p}"),
             Self::Ref(rt, r) => write!(f, "{rt}:{r}"),
-            Self::Sub { sub, orig_version } => write!(f, "sub-{}:{}", sub, orig_version),
+            Self::Sub { sub, orig_version } => write!(f, "sub-{sub}:{orig_version}"),
             Self::System => write!(f, "system"),
-            Self::Version(v) => write!(f, "{}", v),
+            Self::Version(v) => write!(f, "{v}"),
         }
     }
 }
@@ -144,7 +144,7 @@ impl ToolArg {
 impl Display for ToolArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.tvr {
-            Some(tvr) => write!(f, "{}", tvr),
+            Some(tvr) => write!(f, "{tvr}"),
             _ => write!(f, "{}", self.ba.tool_name),
         }
     }

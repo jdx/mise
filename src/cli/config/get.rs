@@ -46,7 +46,7 @@ impl ConfigGet {
                     let elements: Vec<String> = a
                         .iter()
                         .map(|v| match v {
-                            toml::Value::String(s) => format!("\"{}\"", s),
+                            toml::Value::String(s) => format!("\"{s}\""),
                             toml::Value::Integer(i) => i.to_string(),
                             toml::Value::Boolean(b) => b.to_string(),
                             toml::Value::Float(f) => f.to_string(),
