@@ -1,5 +1,34 @@
 # Changelog
 
+## [2025.5.9](https://github.com/jdx/mise/compare/v2025.5.8..v2025.5.9) - 2025-05-21
+
+### 🚀 Features
+
+- **(registry)** add microsoft `edit` by [@garysassano](https://github.com/garysassano) in [#5145](https://github.com/jdx/mise/pull/5145)
+- added buildifier by [@jdx](https://github.com/jdx) in [#5142](https://github.com/jdx/mise/pull/5142)
+- add shims in REMOTE ENV by [@acesyde](https://github.com/acesyde) in [#5139](https://github.com/jdx/mise/pull/5139)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** use complete_windows_ext by [@jdx](https://github.com/jdx) in [#5146](https://github.com/jdx/mise/pull/5146)
+- **(registry)** support editorconfig-checker in windows by [@risu729](https://github.com/risu729) in [#5125](https://github.com/jdx/mise/pull/5125)
+- SSH remote tasks do not support organizations in repository path by [@roele](https://github.com/roele) in [#5124](https://github.com/jdx/mise/pull/5124)
+- SSH remote tasks do not support organizations in repository path by [@roele](https://github.com/roele) in [#5132](https://github.com/jdx/mise/pull/5132)
+
+### 📚 Documentation
+
+- squeeze spaces when migrating from asdf by [@maximd](https://github.com/maximd) in [#5131](https://github.com/jdx/mise/pull/5131)
+
+### Chore
+
+- pin github actions by [@jdx](https://github.com/jdx) in [bf18644](https://github.com/jdx/mise/commit/bf1864472c3ed587fbdb497722849cf6cfacca5c)
+- use renovate to pin github actions by [@jdx](https://github.com/jdx) in [b80d8e3](https://github.com/jdx/mise/commit/b80d8e3ffe73d315c4214f77dedcf4cce7a54032)
+- disable mold in ci by [@jdx](https://github.com/jdx) in [#5128](https://github.com/jdx/mise/pull/5128)
+
+### New Contributors
+
+- @maximd made their first contribution in [#5131](https://github.com/jdx/mise/pull/5131)
+
 ## [2025.5.8](https://github.com/jdx/mise/compare/v2025.5.7..v2025.5.8) - 2025-05-18
 
 ### 🚀 Features
