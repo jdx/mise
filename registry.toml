@@ -610,6 +610,8 @@ dynatrace-monaco.backends = [
 e1s.backends = ["asdf:tbobm/asdf-e1s"]
 earthly.backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
 ecspresso.backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
+edit.backends = ["aqua:microsoft/edit"]
+edit.test = ["edit --version", "edit version {{version}}"]
 editorconfig-checker.backends = [
     "aqua:editorconfig-checker/editorconfig-checker",
     "ubi:editorconfig-checker/editorconfig-checker[exe=ec]",
