@@ -47,6 +47,9 @@ assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,
     \"containerEnv\": {
       \"MISE_DATA_DIR\": \"/mnt/mise-data\"
     },
+    \"remoteEnv\": {
+      \"PATH\": \"\${containerEnv:PATH}:/mnt/mise-data/shims\"
+    },
     \"postCreateCommand\": \"sudo chown -R vscode:vscode /mnt/mise-data\"
   }
 "
