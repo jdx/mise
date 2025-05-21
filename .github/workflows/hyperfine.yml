@@ -14,8 +14,6 @@ env:
   CARGO_TERM_COLOR: always
   GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
   MISE_EXPERIMENTAL: 1
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
 
 permissions:
   pull-requests: write
@@ -29,8 +27,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
-      - uses: rui314/setup-mold@e16410e7f8d9e167b74ad5697a9089a35126eb50 # v1
-      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+      - uses: Swatinem/rust-cache@v2
       - run: curl https://mise.run | MISE_INSTALL_PATH="$HOME/bin/mise-release" sh
       - run: echo "$HOME/bin" >> "$GITHUB_PATH"
       - id: versions

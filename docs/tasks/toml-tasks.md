@@ -378,7 +378,7 @@ Please note that the file will be downloaded and executed. Make sure you trust t
 
 ```toml [ssh]
 [tasks.build]
-file = "git::ssh://git@github.com:myorg/example.git//myfile?ref=v1.0.0"
+file = "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0"
 ```
 
 ```toml [https]

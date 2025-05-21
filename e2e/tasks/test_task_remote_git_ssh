@@ -20,7 +20,7 @@ cargo init --name hello_cargo
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_ssh_latest]
-file  = "git::ssh://git@github.com:jdx/mise.git//xtasks/lint/clippy"
+file  = "git::ssh://git@github.com/jdx/mise.git//xtasks/lint/clippy"
 EOF
 
 assert_contains "mise tasks" "remote_lint_ssh_latest"
@@ -52,7 +52,7 @@ mise cache clear # Clear cache to force redownload
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_ssh_ref]
-file  = "git::ssh://git@github.com:jdx/mise.git//xtasks/lint/clippy?ref=v2025.1.17"
+file  = "git::ssh://git@github.com/jdx/mise.git//xtasks/lint/clippy?ref=v2025.1.17"
 EOF
 
 assert_contains "mise tasks" "remote_lint_ssh_ref"

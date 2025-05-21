@@ -612,10 +612,10 @@ earthly.backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
 ecspresso.backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
 editorconfig-checker.backends = [
     "aqua:editorconfig-checker/editorconfig-checker",
+    "ubi:editorconfig-checker/editorconfig-checker[exe=ec]",
     "asdf:gabitchov/asdf-editorconfig-checker"
 ]
-editorconfig-checker.os = ["linux", "macos"]
-# editorconfig-checker.test = ["ec --version", "v{{version}}"] # TODO: failing from https://github.com/editorconfig-checker/editorconfig-checker/issues/409
+editorconfig-checker.test = ["ec --version", "v{{version}}"]
 ejson.backends = ["aqua:Shopify/ejson", "asdf:cipherstash/asdf-ejson"]
 eksctl.backends = ["aqua:eksctl-io/eksctl", "asdf:elementalvoid/asdf-eksctl"]
 elasticsearch.backends = ["asdf:mise-plugins/mise-elasticsearch"]
