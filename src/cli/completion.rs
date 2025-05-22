@@ -87,7 +87,7 @@ impl Completion {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise completion bash > /etc/bash_completion.d/mise</bold>
+    $ <bold>mise completion bash > ~/local/share/bash-completion/mise</bold>
     $ <bold>mise completion zsh  > /usr/local/share/zsh/site-functions/_mise</bold>
     $ <bold>mise completion fish > ~/.config/fish/completions/mise.fish</bold>
 "#
