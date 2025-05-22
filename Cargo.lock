@@ -3666,6 +3666,7 @@ dependencies = [
  "filetime",
  "flate2",
  "fslock",
+ "fuzzy-matcher",
  "gix",
  "glob",
  "globset",
