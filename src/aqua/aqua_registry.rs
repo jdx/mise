@@ -282,6 +282,26 @@ impl AquaPackage {
             .unwrap_or(self)
     }
 
+    fn detect_format(&self, asset_name: &str) -> &'static str {
+        let formats = [
+            "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2",
+            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "gz", "bz2", "lz4", "sz", "xz", "zst",
+            "dmg", "pkg", "rar", "tar",
+        ];
+
+        for format in formats {
+            if asset_name.ends_with(&format!(".{format}")) {
+                return match format {
+                    "tgz" => "tar.gz",
+                    "txz" => "tar.xz",
+                    "tbz2" | "tbz" => "tar.bz2",
+                    _ => format,
+                };
+            }
+        }
+        "raw"
+    }
+
     pub fn format(&self, v: &str) -> Result<&str> {
         if self.r#type == AquaPackageType::GithubArchive {
             return Ok("tar.gz");
@@ -295,26 +315,7 @@ impl AquaPackage {
                 debug!("no asset or url for {}/{}", self.repo_owner, self.repo_name);
                 "".to_string()
             };
-            if asset.ends_with(".tar.gz") || asset.ends_with(".tgz") {
-                "tar.gz"
-            } else if asset.ends_with(".tar.xz") || asset.ends_with(".txz") {
-                "tar.xz"
-            } else if asset.ends_with(".tar.bz2")
-                || asset.ends_with(".tbz2")
-                || asset.ends_with(".tbz")
-            {
-                "tar.bz2"
-            } else if asset.ends_with(".gz") {
-                "gz"
-            } else if asset.ends_with(".xz") {
-                "xz"
-            } else if asset.ends_with(".bz2") {
-                "bz2"
-            } else if asset.ends_with(".zip") {
-                "zip"
-            } else {
-                "raw"
-            }
+            self.detect_format(&asset)
         } else {
             match self.format.as_str() {
                 "tgz" => "tar.gz",
@@ -345,7 +346,7 @@ impl AquaPackage {
         } else if cfg!(windows) {
             let mut ctx = HashMap::default();
             let asset = self.parse_aqua_str(&self.asset, v, &ctx)?;
-            if self.complete_windows_ext {
+            if self.complete_windows_ext && self.format(v)? == "raw" {
                 strs.insert(format!("{asset}.exe"));
             } else {
                 strs.insert(asset);
@@ -355,7 +356,7 @@ impl AquaPackage {
                 ctx.insert("Arch".to_string(), "amd64".to_string());
                 strs.insert(self.parse_aqua_str(&self.asset, v, &ctx)?);
                 let asset = self.parse_aqua_str(&self.asset, v, &ctx)?;
-                if self.complete_windows_ext {
+                if self.complete_windows_ext && self.format(v)? == "raw" {
                     strs.insert(format!("{asset}.exe"));
                 } else {
                     strs.insert(asset);
@@ -367,10 +368,7 @@ impl AquaPackage {
 
     pub fn url(&self, v: &str) -> Result<String> {
         let mut url = self.url.clone();
-        if cfg!(windows)
-            && self.complete_windows_ext
-            && (self.format.is_empty() || self.format == "raw")
-        {
+        if cfg!(windows) && self.complete_windows_ext && self.format(v)? == "raw" {
             url.push_str(".exe");
         }
         self.parse_aqua_str(&url, v, &Default::default())
