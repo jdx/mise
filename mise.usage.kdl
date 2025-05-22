@@ -621,6 +621,18 @@ cmd run help="Run task(s)" {
     flag --no-cache
     mount run="mise tasks --usage"
 }
+cmd search help="Search for tools in the registry" {
+    long_help "Search for tools in the registry\n\nThis command searches a tool in the registry.\n\nBy default, it will show all tools that fuzzy match the search term. For\nnon-fuzzy matches, use the `--match-type` flag."
+    after_long_help "Examples:\n\n    $ mise search jq\n    Tool  Description\n    jq    Command-line JSON processor. https://github.com/jqlang/jq\n    jqp   https://github.com/noahgorstein/jqp\n    jiq   https://github.com/fiatjaf/jiq\n    gojq  https://github.com/itchyny/gojq\n\n    $ mise search --interactive\n    Tool\n    Search a tool\n    ❯ jq    Command-line JSON processor. https://github.com/jqlang/jq\n      jqp   https://github.com/noahgorstein/jqp\n      jiq   https://github.com/fiatjaf/jiq\n      gojq  https://github.com/itchyny/gojq\n    /jq \n    esc clear filter • enter confirm\n"
+    flag "-i --interactive" help="Show interactive search"
+    flag "-m --match-type" help="Match type: equal, contains, or fuzzy" {
+        arg <MATCH_TYPE> {
+            choices equal contains fuzzy
+        }
+    }
+    flag --no-header help="Don't display headers"
+    arg "[NAME]" help="The tool to search for" required=#false
+}
 cmd self-update help="Updates mise itself." {
     long_help "Updates mise itself.\n\nUses the GitHub Releases API to find the latest release and binary.\nBy default, this will also update any installed plugins.\nUses the `GITHUB_API_TOKEN` environment variable if set for higher rate limits.\n\nThis command is not available if mise is installed via a package manager."
     flag "-f --force" help="Update even if already up to date"

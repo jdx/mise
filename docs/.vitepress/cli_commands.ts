@@ -216,6 +216,9 @@ export const commands: { [key: string]: Command } = {
   run: {
     hide: false,
   },
+  search: {
+    hide: false,
+  },
   "self-update": {
     hide: false,
   },

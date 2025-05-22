@@ -110,6 +110,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise registry [-b --backend <BACKEND>] [--hide-aliased] [NAME]`](/cli/registry.md)
 - [`mise reshim [-f --force]`](/cli/reshim.md)
 - [`mise run [FLAGS]`](/cli/run.md)
+- [`mise search [FLAGS] [NAME]`](/cli/search.md)
 - [`mise self-update [FLAGS] [VERSION]`](/cli/self-update.md)
 - [`mise set [--file <FILE>] [-g --global] [ENV_VAR]…`](/cli/set.md)
 - [`mise settings [FLAGS] [SETTING] [VALUE] <SUBCOMMAND>`](/cli/settings.md)

@@ -191,7 +191,7 @@ fn get_description(tool: &RegistryTool) -> String {
         .next()
         .unwrap_or_default();
     if description.is_empty() {
-        format!("{backend}")
+        backend.to_string()
     } else {
         format!("{description}. {backend}")
     }
@@ -205,7 +205,7 @@ fn get_backends(backends: Vec<&'static str>) -> Vec<String> {
         .iter()
         .map(|backend| {
             let prefix = backend.split(':').next().unwrap_or("");
-            let slug = backend.split(':').last().unwrap_or("");
+            let slug = backend.split(':').next_back().unwrap_or("");
             let slug = regex!(r"^(.*?)\[.*\]$").replace_all(slug, "$1");
             match prefix {
                 "core" => format!("https://mise.jdx.dev/lang/{slug}.html"),
