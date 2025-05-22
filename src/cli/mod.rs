@@ -49,6 +49,7 @@ mod render_help;
 mod render_mangen;
 mod reshim;
 pub mod run;
+mod search;
 #[cfg_attr(not(feature = "self_update"), path = "self_update_stub.rs")]
 pub mod self_update;
 mod set;
@@ -221,6 +222,7 @@ pub enum Commands {
     Registry(registry::Registry),
     Reshim(reshim::Reshim),
     Run(run::Run),
+    Search(search::Search),
     #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
     Set(set::Set),
@@ -286,6 +288,7 @@ impl Commands {
             Self::Registry(cmd) => cmd.run(),
             Self::Reshim(cmd) => cmd.run(),
             Self::Run(cmd) => cmd.run(),
+            Self::Search(cmd) => cmd.run(),
             #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run(),
             Self::Set(cmd) => cmd.run(),

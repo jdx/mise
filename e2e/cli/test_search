@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+assert "mise search jq" "jq    Command-line JSON processor. https://github.com/jqlang/jq
+jqp   https://github.com/noahgorstein/jqp
+jiq   https://github.com/fiatjaf/jiq
+gojq  https://github.com/itchyny/gojq"
+
+assert "mise search --match-type contains jq" "gojq  https://github.com/itchyny/gojq
+jq    Command-line JSON processor. https://github.com/jqlang/jq
+jqp   https://github.com/noahgorstein/jqp"
+
+assert "mise search --match-type equal jq" "jq  Command-line JSON processor. https://github.com/jqlang/jq"
