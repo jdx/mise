@@ -1,5 +1,30 @@
 # Changelog
 
+## [2025.5.10](https://github.com/jdx/mise/compare/v2025.5.9..v2025.5.10) - 2025-05-22
+
+### 🚀 Features
+
+- **(registry)** add process-compose by [@evanleck](https://github.com/evanleck) in [#4788](https://github.com/jdx/mise/pull/4788)
+- **(registry)** add tailpipe by [@pdecat](https://github.com/pdecat) in [#4858](https://github.com/jdx/mise/pull/4858)
+- mise search by [@roele](https://github.com/roele) in [#5153](https://github.com/jdx/mise/pull/5153)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** windows exe fix by [@jdx](https://github.com/jdx) in [#5154](https://github.com/jdx/mise/pull/5154)
+
+### 🧪 Testing
+
+- disable failing edit test by [@jdx](https://github.com/jdx) in [8698bce](https://github.com/jdx/mise/commit/8698bce774eafa86afa9d5b56a225fa6cdbe6ea1)
+
+### Chore
+
+- disable failing docker dev build by [@jdx](https://github.com/jdx) in [496c1c9](https://github.com/jdx/mise/commit/496c1c91545ed7f013726cd48e746835bdf570d8)
+- temporarily disable cargo up to fix build by [@jdx](https://github.com/jdx) in [90c66b7](https://github.com/jdx/mise/commit/90c66b7b561e81efe7d951a0ce9574c11e7b91a7)
+
+### New Contributors
+
+- @evanleck made their first contribution in [#4788](https://github.com/jdx/mise/pull/4788)
+
 ## [2025.5.9](https://github.com/jdx/mise/compare/v2025.5.8..v2025.5.9) - 2025-05-21
 
 ### 🚀 Features
@@ -24,6 +49,7 @@
 - pin github actions by [@jdx](https://github.com/jdx) in [bf18644](https://github.com/jdx/mise/commit/bf1864472c3ed587fbdb497722849cf6cfacca5c)
 - use renovate to pin github actions by [@jdx](https://github.com/jdx) in [b80d8e3](https://github.com/jdx/mise/commit/b80d8e3ffe73d315c4214f77dedcf4cce7a54032)
 - disable mold in ci by [@jdx](https://github.com/jdx) in [#5128](https://github.com/jdx/mise/pull/5128)
+- fix buildifier test by [@jdx](https://github.com/jdx) in [232a4c6](https://github.com/jdx/mise/commit/232a4c641fedc9dfb83ce048ad5b47253b139854)
 
 ### New Contributors
 
