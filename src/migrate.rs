@@ -23,7 +23,7 @@ pub fn run() {
 fn task(s: &Scope, job: impl FnOnce() -> Result<()> + Send + 'static) {
     s.spawn(|_| {
         if let Err(err) = job() {
-            eprintln!("[WARN] migrate: {}", err);
+            eprintln!("[WARN] migrate: {err}");
         }
     });
 }

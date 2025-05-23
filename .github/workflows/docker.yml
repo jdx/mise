@@ -52,6 +52,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           file: packaging/${{ matrix.flavor }}/Dockerfile
   dev:
+    if: false # getting 503 errors from mcr.microsoft.com
     runs-on: ubuntu-latest
     permissions:
       contents: read

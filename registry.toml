@@ -273,6 +273,8 @@ buf.backends = [
     "ubi:bufbuild/buf",
     "asdf:truepay/asdf-buf"
 ]
+buildifier.backends = ["aqua:bazelbuild/buildtools/buildifier"]
+buildifier.test = ["buildifier --version", "buildifier version: {{version}}"]
 # test fails on windows
 # buf.test = ["buf --version", "{{version}}"]
 buildpack.aliases = ["pack", "buildpacks"]
@@ -608,6 +610,8 @@ dynatrace-monaco.backends = [
 e1s.backends = ["asdf:tbobm/asdf-e1s"]
 earthly.backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
 ecspresso.backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
+edit.backends = ["aqua:microsoft/edit"]
+# edit.test = ["edit --version", "edit version {{version}}"]
 editorconfig-checker.backends = [
     "aqua:editorconfig-checker/editorconfig-checker",
     "ubi:editorconfig-checker/editorconfig-checker[exe=ec]",
@@ -1359,7 +1363,7 @@ mkcert.backends = ["ubi:FiloSottile/mkcert", "asdf:salasrod/asdf-mkcert"]
 mlton.backends = ["asdf:mise-plugins/mise-mlton"]
 mockery.backends = ["aqua:vektra/mockery", "asdf:cabify/asdf-mockery"]
 mockolo.backends = ["ubi:uber/mockolo", "asdf:mise-plugins/mise-mockolo"]
-mockolo.test = ["mockolo --help", "Show help information"]
+# mockolo.test = ["mockolo --help", "Show help information"]
 mold.backends = ["ubi:rui314/mold"]
 monarch.backends = ["asdf:mise-plugins/mise-monarch"]
 mongodb.backends = ["asdf:mise-plugins/mise-mongodb"]
@@ -1535,6 +1539,9 @@ pre-commit.backends = [
     "asdf:jonathanmorley/asdf-pre-commit"
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
+process-compose.backends = ["ubi:F1bonacc1/process-compose"]
+process-compose.description = "Process Compose is a simple and flexible scheduler and orchestrator to manage non-containerized applications."
+process-compose.test = ["process-compose version --short", "{{version}}"]
 promtool.backends = [
     "aqua:prometheus/prometheus",
     "asdf:asdf-community/asdf-promtool"
@@ -1800,6 +1807,7 @@ staticcheck.backends = [
     "asdf:pbr0ck3r/asdf-staticcheck"
 ]
 steampipe.backends = ["aqua:turbot/steampipe", "asdf:carnei-ro/asdf-steampipe"]
+steampipe.test = ["steampipe --version", "Steampipe v{{version}}"]
 step.backends = ["aqua:smallstep/cli", "asdf:log2/asdf-step"]
 stern.backends = ["aqua:stern/stern", "asdf:looztra/asdf-stern"]
 stripe.aliases = ["stripe-cli"]
@@ -1825,6 +1833,8 @@ swiftlint.backends = [
 swiftlint.test = ["swiftlint --version", "{{version}}"]
 swiprolog.backends = ["asdf:mise-plugins/mise-swiprolog"]
 syft.backends = ["aqua:anchore/syft", "asdf:davidgp1701/asdf-syft"]
+tailpipe.backends = ["aqua:turbot/tailpipe"]
+tailpipe.test = ["tailpipe --version", "Tailpipe v{{version}}"]
 talhelper.backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
 talos.backends = [
     "ubi:siderolabs/talos[exe=talosctl]",
@@ -1836,11 +1846,7 @@ talosctl.backends = [
 ]
 tanka.backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
 tanzu.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
-taplo.backends = [
-    "aqua:tamasfe/taplo/full",
-    "ubi:tamasfe/taplo[matching=full]",
-    "cargo:taplo-cli"
-]
+taplo.backends = ["aqua:tamasfe/taplo", "ubi:tamasfe/taplo", "cargo:taplo-cli"]
 taplo.test = ["taplo --version", "taplo {{version}}"]
 task.backends = ["ubi:go-task/task", "asdf:particledecay/asdf-task"]
 tctl.backends = ["aqua:temporalio/tctl", "asdf:eko/asdf-tctl"]

@@ -137,7 +137,7 @@ impl ToolVersion {
             ToolRequest::Version { .. } => self.version.to_string(),
             ToolRequest::Prefix { .. } => self.version.to_string(),
             ToolRequest::Sub { .. } => self.version.to_string(),
-            ToolRequest::Ref { ref_: r, .. } => format!("ref-{}", r),
+            ToolRequest::Ref { ref_: r, .. } => format!("ref-{r}"),
             ToolRequest::Path { path: p, .. } => format!("path-{}", hash_to_str(p)),
             ToolRequest::System { .. } => {
                 deprecated!(

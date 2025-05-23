@@ -54,8 +54,7 @@ fn codegen_registry() {
                         r##"RegistryBackend{{
                             full: r#"{backend}"#,
                             platforms: &[],
-                        }}"##,
-                        backend = backend
+                        }}"##
                     ));
                 }
                 toml::Value::Table(backend) => {
@@ -126,7 +125,7 @@ fn codegen_registry() {
         let rt = format!(
             r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
             description = description
-                .map(|d| format!("Some(r###\"{}\"###)", d))
+                .map(|d| format!("Some(r###\"{d}\"###)"))
                 .unwrap_or("None".to_string()),
             backends = backends.into_iter().collect::<Vec<_>>().join(", "),
             aliases = aliases
@@ -135,7 +134,7 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
             test = test
-                .map(|(t, v)| format!("Some((r\"{t}\", r\"{v}\"))", t = t, v = v))
+                .map(|(t, v)| format!("Some((r\"{t}\", r\"{v}\"))"))
                 .unwrap_or("None".to_string()),
             os = os
                 .iter()
@@ -196,11 +195,11 @@ pub struct Settings {"#
                 "ListString" => "Vec<String>",
                 "ListPath" => "Vec<PathBuf>",
                 "SetString" => "BTreeSet<String>",
-                t => panic!("Unknown type: {}", t),
+                t => panic!("Unknown type: {t}"),
             }));
         if let Some(type_) = type_ {
             let type_ = if props.get("optional").is_some_and(|v| v.as_bool().unwrap()) {
-                format!("Option<{}>", type_)
+                format!("Option<{type_}>")
             } else {
                 type_.to_string()
             };
@@ -232,7 +231,7 @@ pub struct Settings {"#
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
-            lines.push(format!("    pub {}: {},", key, type_));
+            lines.push(format!("    pub {key}: {type_},"));
         } else {
             lines.push("    #[config(nested)]".to_string());
             lines.push(format!(

@@ -13,7 +13,7 @@ use regex::Regex;
 use serde_derive::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 use url::Url;
 
@@ -48,7 +48,7 @@ pub enum AquaPackageType {
     Cargo,
 }
 
-#[derive(Debug, Deserialize, Default, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(default)]
 pub struct AquaPackage {
     pub r#type: AquaPackageType,
@@ -282,6 +282,26 @@ impl AquaPackage {
             .unwrap_or(self)
     }
 
+    fn detect_format(&self, asset_name: &str) -> &'static str {
+        let formats = [
+            "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2",
+            "tgz", "tlz4", "tsz", "txz", "tar.zst", "zip", "gz", "bz2", "lz4", "sz", "xz", "zst",
+            "dmg", "pkg", "rar", "tar",
+        ];
+
+        for format in formats {
+            if asset_name.ends_with(&format!(".{format}")) {
+                return match format {
+                    "tgz" => "tar.gz",
+                    "txz" => "tar.xz",
+                    "tbz2" | "tbz" => "tar.bz2",
+                    _ => format,
+                };
+            }
+        }
+        "raw"
+    }
+
     pub fn format(&self, v: &str) -> Result<&str> {
         if self.r#type == AquaPackageType::GithubArchive {
             return Ok("tar.gz");
@@ -295,26 +315,7 @@ impl AquaPackage {
                 debug!("no asset or url for {}/{}", self.repo_owner, self.repo_name);
                 "".to_string()
             };
-            if asset.ends_with(".tar.gz") || asset.ends_with(".tgz") {
-                "tar.gz"
-            } else if asset.ends_with(".tar.xz") || asset.ends_with(".txz") {
-                "tar.xz"
-            } else if asset.ends_with(".tar.bz2")
-                || asset.ends_with(".tbz2")
-                || asset.ends_with(".tbz")
-            {
-                "tar.bz2"
-            } else if asset.ends_with(".gz") {
-                "gz"
-            } else if asset.ends_with(".xz") {
-                "xz"
-            } else if asset.ends_with(".bz2") {
-                "bz2"
-            } else if asset.ends_with(".zip") {
-                "zip"
-            } else {
-                "raw"
-            }
+            self.detect_format(&asset)
         } else {
             match self.format.as_str() {
                 "tgz" => "tar.gz",
@@ -344,16 +345,22 @@ impl AquaPackage {
             strs.insert(self.parse_aqua_str(&self.asset, v, &ctx)?);
         } else if cfg!(windows) {
             let mut ctx = HashMap::default();
-            let with_exe = format!("{}.exe", self.parse_aqua_str(&self.asset, v, &ctx)?);
-            strs.insert(with_exe);
+            let asset = self.parse_aqua_str(&self.asset, v, &ctx)?;
+            if self.complete_windows_ext && self.format(v)? == "raw" {
+                strs.insert(format!("{asset}.exe"));
+            } else {
+                strs.insert(asset);
+            }
             if cfg!(target_arch = "aarch64") {
                 // assume windows arm64 emulation is supported
                 ctx.insert("Arch".to_string(), "amd64".to_string());
                 strs.insert(self.parse_aqua_str(&self.asset, v, &ctx)?);
-                strs.insert(format!(
-                    "{}.exe",
-                    self.parse_aqua_str(&self.asset, v, &ctx)?
-                ));
+                let asset = self.parse_aqua_str(&self.asset, v, &ctx)?;
+                if self.complete_windows_ext && self.format(v)? == "raw" {
+                    strs.insert(format!("{asset}.exe"));
+                } else {
+                    strs.insert(asset);
+                }
             }
         }
         Ok(strs)
@@ -361,10 +368,7 @@ impl AquaPackage {
 
     pub fn url(&self, v: &str) -> Result<String> {
         let mut url = self.url.clone();
-        if cfg!(windows)
-            && Path::new(&url).extension().is_none()
-            && (self.format.is_empty() || self.format == "raw")
-        {
+        if cfg!(windows) && self.complete_windows_ext && self.format(v)? == "raw" {
             url.push_str(".exe");
         }
         self.parse_aqua_str(&url, v, &Default::default())
@@ -509,8 +513,8 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     if avo.windows_arm_emulation {
         orig.windows_arm_emulation = true;
     }
-    if avo.complete_windows_ext {
-        orig.complete_windows_ext = true;
+    if !avo.complete_windows_ext {
+        orig.complete_windows_ext = false;
     }
     if !avo.supported_envs.is_empty() {
         orig.supported_envs = avo.supported_envs.clone();
@@ -773,6 +777,37 @@ impl AquaMinisign {
         }
         if let Some(public_key) = other.public_key {
             self.public_key = Some(public_key);
+        }
+    }
+}
+
+impl Default for AquaPackage {
+    fn default() -> Self {
+        Self {
+            r#type: AquaPackageType::GithubRelease,
+            repo_owner: "".to_string(),
+            repo_name: "".to_string(),
+            name: None,
+            asset: "".to_string(),
+            url: "".to_string(),
+            description: None,
+            format: "".to_string(),
+            rosetta2: false,
+            windows_arm_emulation: false,
+            complete_windows_ext: true,
+            supported_envs: vec![],
+            files: vec![],
+            replacements: HashMap::new(),
+            version_prefix: None,
+            version_filter: None,
+            version_filter_expr: None,
+            version_source: None,
+            checksum: None,
+            slsa_provenance: None,
+            minisign: None,
+            overrides: vec![],
+            version_constraint: "".to_string(),
+            version_overrides: vec![],
         }
     }
 }

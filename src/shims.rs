@@ -358,7 +358,7 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
         .filter(|t| missing_plugins.contains(t.ba()))
         .collect_vec();
     if missing_tools.is_empty() {
-        let mut msg = format!("No version is set for shim: {}\n", bin_name);
+        let mut msg = format!("No version is set for shim: {bin_name}\n");
         msg.push_str("Set a global default version with one of the following:\n");
         for tv in tvs {
             msg.push_str(&format!("mise use -g {}@{}\n", tv.ba(), tv.version));
@@ -371,7 +371,7 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
             bin_name
         );
         for t in missing_tools.drain(..) {
-            msg.push_str(&format!("Missing tool version: {}\n", t));
+            msg.push_str(&format!("Missing tool version: {t}\n"));
         }
         msg.push_str("Install all missing tools with: mise install\n");
         Err(eyre!(msg.trim().to_string()))

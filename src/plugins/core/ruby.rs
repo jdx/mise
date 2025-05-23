@@ -184,7 +184,7 @@ impl RubyPlugin {
             if package.is_empty() {
                 continue;
             }
-            pr.set_message(format!("install default gem: {}", package));
+            pr.set_message(format!("install default gem: {package}"));
             let gem = self.gem_path(tv);
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)

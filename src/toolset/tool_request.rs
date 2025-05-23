@@ -186,7 +186,7 @@ impl ToolRequest {
             Self::Path { path: p, .. } => format!("path:{}", p.display()),
             Self::Sub {
                 sub, orig_version, ..
-            } => format!("sub-{}:{}", sub, orig_version),
+            } => format!("sub-{sub}:{orig_version}"),
             Self::System { .. } => "system".to_string(),
         }
     }

@@ -292,7 +292,7 @@ impl Run {
         let mut all_tools = self.tool.clone();
         for t in tasks.all() {
             for (k, v) in &t.tools {
-                all_tools.push(format!("{}@{}", k, v).parse()?);
+                all_tools.push(format!("{k}@{v}").parse()?);
             }
         }
         let mut ts = ToolsetBuilder::new()
@@ -413,7 +413,7 @@ impl Run {
         match self.output(Some(task)) {
             TaskOutput::Replacing => {
                 let pr = self.task_prs.get(task).unwrap().clone();
-                pr.set_message(format!("{} {}", prefix, line));
+                pr.set_message(format!("{prefix} {line}"));
             }
             _ => {
                 prefix_eprintln!(prefix, "{line}");
@@ -444,7 +444,7 @@ impl Run {
         let config = Config::get();
         let mut tools = self.tool.clone();
         for (k, v) in &task.tools {
-            tools.push(format!("{}@{}", k, v).parse()?);
+            tools.push(format!("{k}@{v}").parse()?);
         }
         let ts = ToolsetBuilder::new().with_args(&tools).build(&config)?;
         let mut env = task.render_env(&ts)?;

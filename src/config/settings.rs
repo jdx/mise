@@ -293,7 +293,7 @@ impl Settings {
             .filter_map(|cfg| match cfg {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
-                    eprintln!("Error loading settings file: {}", e);
+                    eprintln!("Error loading settings file: {e}");
                     None
                 }
             })
@@ -452,7 +452,7 @@ impl Settings {
 impl Display for Settings {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match toml::to_string_pretty(self) {
-            Ok(s) => write!(f, "{}", s),
+            Ok(s) => write!(f, "{s}"),
             Err(e) => Err(std::fmt::Error::custom(e)),
         }
     }

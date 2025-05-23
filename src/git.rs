@@ -87,9 +87,9 @@ impl Git {
         debug!("updating {} to {} with git", self.dir.display(), gitref);
 
         let refspec = if is_tag_ref {
-            format!("refs/tags/{}:refs/tags/{}", gitref, gitref)
+            format!("refs/tags/{gitref}:refs/tags/{gitref}")
         } else {
-            format!("{}:{}", gitref, gitref)
+            format!("{gitref}:{gitref}")
         };
         exec(git_cmd!(
             &self.dir,

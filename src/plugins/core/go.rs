@@ -67,11 +67,11 @@ impl GoPlugin {
             if package.is_empty() {
                 continue;
             }
-            pr.set_message(format!("install default package: {}", package));
+            pr.set_message(format!("install default package: {package}"));
             let package = if package.contains('@') {
                 package.to_string()
             } else {
-                format!("{}@latest", package)
+                format!("{package}@latest")
             };
             CmdLineRunner::new(self.go_bin(tv))
                 .with_pr(pr)
@@ -123,7 +123,7 @@ impl GoPlugin {
             .file_name()
             .unwrap_or_default()
             .to_string_lossy();
-        pr.set_message(format!("extract {}", tarball));
+        pr.set_message(format!("extract {tarball}"));
         let tmp_extract_path = tempdir_in(tv.install_path().parent().unwrap())?;
         if cfg!(windows) {
             file::unzip(tarball_path, tmp_extract_path.path())?;

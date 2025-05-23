@@ -397,6 +397,6 @@ mod tests {
     #[test]
     fn test_debug() {
         let plugin = AsdfBackend::from_arg("dummy".into());
-        assert!(format!("{:?}", plugin).starts_with("AsdfPlugin { name: \"dummy\""));
+        assert!(format!("{plugin:?}").starts_with("AsdfPlugin { name: \"dummy\""));
     }
 }
