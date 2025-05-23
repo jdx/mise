@@ -1,6 +1,7 @@
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::settings::{SETTINGS_META, SettingsType};
 use crate::config::top_toml_config;
+use crate::toml::dedup_toml_array;
 use clap::ValueEnum;
 use eyre::bail;
 use std::path::PathBuf;
@@ -39,6 +40,8 @@ pub enum TomlValueTypes {
     Bool,
     #[value()]
     List,
+    #[value()]
+    Set,
 }
 
 impl ConfigSet {
@@ -91,6 +94,7 @@ impl ConfigSet {
                         SettingsType::Url => TomlValueTypes::String,
                         SettingsType::ListString => TomlValueTypes::List,
                         SettingsType::ListPath => TomlValueTypes::List,
+                        SettingsType::SetString => TomlValueTypes::Set,
                     },
                     None => match self.value.as_str() {
                         "true" | "false" => TomlValueTypes::Bool,
@@ -112,6 +116,10 @@ impl ConfigSet {
                     list.push(item);
                 }
                 toml_edit::Item::Value(toml_edit::Value::Array(list))
+            }
+            TomlValueTypes::Set => {
+                let set = toml_edit::Array::new();
+                toml_edit::Item::Value(toml_edit::Value::Array(dedup_toml_array(&set)))
             }
             TomlValueTypes::Infer => bail!("Type not found"),
         };

@@ -43,6 +43,7 @@ function buildElement(key: string, props: Props): Element {
     .with("Integer", () => "number")
     .with("ListString", () => "string[]")
     .with("ListPath", () => "string[]")
+    .with("SetString", () => "string[]")
     .otherwise(() => {
       throw new Error(`Unknown type: ${type}`);
     });

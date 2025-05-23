@@ -199,7 +199,7 @@ cmd config help="Manage config files" {
         }
         flag "-t --type" {
             arg <TYPE> {
-                choices infer string integer float bool list
+                choices infer string integer float bool list set
             }
         }
         arg <KEY> help="The path of the config to display"

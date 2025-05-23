@@ -54,6 +54,7 @@ fn settings_type_to_string(st: &SettingsType) -> String {
         SettingsType::Url => "string".to_string(),
         SettingsType::ListString => "array".to_string(),
         SettingsType::ListPath => "array".to_string(),
+        SettingsType::SetString => "array".to_string(),
     }
 }
 

@@ -810,6 +810,7 @@ const completionSpec: Fig.Spec = {
                   "float",
                   "bool",
                   "list",
+                  "set",
                 ],
               },
             },
