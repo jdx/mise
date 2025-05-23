@@ -392,8 +392,8 @@ Then, run the following commands to install the completion script for your shell
 
 ```sh [bash]
 # This requires bash-completion to be installed
-mkdir -p ~/local/share/bash-completion/
-mise completion bash --include-bash-completion-lib > ~/local/share/bash-completion/mise
+mkdir -p ~/.local/share/bash-completion/
+mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/mise
 ```
 
 ```sh [zsh]
