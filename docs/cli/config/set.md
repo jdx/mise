@@ -33,6 +33,7 @@ If not provided, the nearest mise.toml file will be used
 - `float`
 - `bool`
 - `list`
+- `set`
 
 Examples:
 
