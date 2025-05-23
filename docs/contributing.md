@@ -40,6 +40,7 @@ pwsh e2e-win\run.ps1 task # run tests matching `*task*`
 ## Dependencies
 
 - [rust](https://www.rust-lang.org/) latest stable
+- `node`
 - `pipx` or `uv`
 - bash newer than the 20-year-old version macOS provides
 
