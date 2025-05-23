@@ -131,7 +131,7 @@ slsa-verifier-macos-aarch64 = "sha256:84d9122ce12e0c79080844285fd5c4976407ed3463
 
 [tools.taplo]
 version = "0.9.3"
-backend = "aqua:tamasfe/taplo/full"
+backend = "aqua:tamasfe/taplo"
 
 [tools.taplo.checksums]
 taplo-full-linux-aarch64 = "sha256:9ffa2a799ff0ca601a0e7ff93dcae64a34c81c677916e6f0d3c81d62e0670d83"
