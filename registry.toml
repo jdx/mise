@@ -2007,6 +2007,11 @@ velero.backends = ["aqua:vmware-tanzu/velero", "asdf:looztra/asdf-velero"]
 vendir.backends = ["aqua:carvel-dev/vendir", "asdf:vmware-tanzu/asdf-carvel"]
 venom.backends = ["aqua:ovh/venom", "asdf:aabouzaid/asdf-venom"]
 vhs.backends = ["aqua:charmbracelet/vhs", "asdf:chessmango/asdf-vhs"]
+victoria-metrics.backends = ["aqua:victoriametrics/victoriametrics/victoria-metrics"]
+victoria-metrics.test = [
+    "victoria-metrics --version | awk -F'-' '{print $6}'",
+    "{{version}}"
+]
 viddy.backends = ["aqua:sachaos/viddy", "asdf:ryodocx/asdf-viddy"]
 vim.backends = ["asdf:mise-plugins/mise-vim"]
 virtualos.backends = ["asdf:mise-plugins/mise-virtualos"]
