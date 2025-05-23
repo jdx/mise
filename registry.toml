@@ -1846,11 +1846,7 @@ talosctl.backends = [
 ]
 tanka.backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
 tanzu.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
-taplo.backends = [
-    "aqua:tamasfe/taplo/full",
-    "ubi:tamasfe/taplo[matching=full]",
-    "cargo:taplo-cli"
-]
+taplo.backends = ["aqua:tamasfe/taplo", "ubi:tamasfe/taplo", "cargo:taplo-cli"]
 taplo.test = ["taplo --version", "taplo {{version}}"]
 task.backends = ["ubi:go-task/task", "asdf:particledecay/asdf-task"]
 tctl.backends = ["aqua:temporalio/tctl", "asdf:eko/asdf-tctl"]
