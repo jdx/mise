@@ -416,6 +416,7 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
     let shebang = script.lines().next()?.strip_prefix("#!")?;
     let shebang = shebang.strip_prefix("/usr/bin/env -S").unwrap_or(shebang);
     let shebang = shebang.strip_prefix("/usr/bin/env").unwrap_or(shebang);
+    let shebang = shebang.strip_prefix("usage").unwrap_or(shebang);
     let mut parts = shebang.split_whitespace();
     let shell = parts.next()?;
     let args = parts.map(|s| s.to_string()).collect_vec();
