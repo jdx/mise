@@ -8,7 +8,6 @@ use path_absolutize::Absolutize;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, SETTINGS, config_file};
-use crate::env::MISE_GLOBAL_CONFIG_FILE;
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::toolset::{
@@ -196,7 +195,7 @@ impl Use {
     fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
         let path = if self.global {
-            MISE_GLOBAL_CONFIG_FILE.clone()
+            config::global_config_path()
         } else if let Some(p) = &self.path {
             let from_dir = config::config_file_from_dir(p).absolutize()?.to_path_buf();
             if from_dir.starts_with(&cwd) {
@@ -212,7 +211,7 @@ impl Use {
                 cwd.join(format!("mise.{env}.toml"))
             }
         } else if env::in_home_dir() {
-            MISE_GLOBAL_CONFIG_FILE.clone()
+            config::global_config_path()
         } else {
             config::config_file_from_dir(&cwd)
         };

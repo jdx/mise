@@ -124,16 +124,12 @@ pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
         Err(_) => Default::default(),
     });
 pub static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
-pub static MISE_GLOBAL_CONFIG_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_GLOBAL_CONFIG_FILE")
-        .or_else(|| var_path("MISE_CONFIG_FILE"))
-        .unwrap_or_else(|| MISE_CONFIG_DIR.join("config.toml"))
-});
+pub static MISE_GLOBAL_CONFIG_FILE: Lazy<Option<PathBuf>> =
+    Lazy::new(|| var_path("MISE_GLOBAL_CONFIG_FILE").or_else(|| var_path("MISE_CONFIG_FILE")));
 pub static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_GLOBAL_CONFIG_ROOT").unwrap_or_else(|| HOME.to_path_buf()));
-pub static MISE_SYSTEM_CONFIG_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_SYSTEM_CONFIG_FILE").unwrap_or_else(|| MISE_SYSTEM_DIR.join("config.toml"))
-});
+pub static MISE_SYSTEM_CONFIG_FILE: Lazy<Option<PathBuf>> =
+    Lazy::new(|| var_path("MISE_SYSTEM_CONFIG_FILE"));
 pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     var("MISE_IGNORED_CONFIG_PATHS")
         .ok()
