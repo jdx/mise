@@ -239,7 +239,7 @@ impl Run {
     }
 
     fn parallelize_tasks(mut self, mut tasks: Vec<Task>) -> Result<()> {
-        time!("paralellize_tasks start");
+        time!("parallelize_tasks start");
 
         ctrlc::exit_on_ctrl_c(false);
 
