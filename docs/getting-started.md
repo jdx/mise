@@ -105,7 +105,7 @@ mise exec node@22 -- node -v
 # v22.x.x
 ```
 
-[`mise x|exec`](/cli/exec.html) is a powerful way to load the current `mise` context (tools & environment variables) without modifying your shell session or running ad-hoc commands with mise tools set. Installing [`tools`](/dev-tools/) is as simple as running [`mise use|u`](/cli/use.html).
+[`mise x|exec`](/cli/exec.html) is a powerful way to load the current `mise` context (tools & environment variables) without modifying your shell session or running ad-hoc commands with mise tools set. Installing [`tools`](/dev-tools/) is as simple as running [`mise u|use`](/cli/use.html).
 
 ```shell
 mise use --global node@22 # install node 22 and set it as the global default
