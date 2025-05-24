@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use eyre::Result;
 use itertools::Itertools;
 
@@ -35,14 +37,14 @@ impl ToolsetBuilder {
         self
     }
 
-    pub fn build(self, config: &Config) -> Result<Toolset> {
+    pub async fn build(self, config: &Config) -> Result<Toolset> {
         let mut toolset = Toolset {
             ..Default::default()
         };
         self.load_config_files(config, &mut toolset)?;
         self.load_runtime_env(&mut toolset, env::vars().collect())?;
         self.load_runtime_args(&mut toolset)?;
-        if let Err(err) = toolset.resolve() {
+        if let Err(err) = toolset.resolve().await {
             if Error::is_argument_err(&err) {
                 return Err(err);
             }
@@ -74,11 +76,11 @@ impl ToolsetBuilder {
                     // ignore MISE_INSTALL_VERSION
                     continue;
                 }
-                let fa: BackendArg = plugin_name.as_str().into();
+                let ba: Arc<BackendArg> = Arc::new(plugin_name.as_str().into());
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = Toolset::new(source.clone());
                 for v in v.split_whitespace() {
-                    let tvr = ToolRequest::new(fa.clone(), v, source.clone())?;
+                    let tvr = ToolRequest::new(ba.clone(), v, source.clone())?;
                     env_ts.add_version(tvr);
                 }
                 ts.merge(env_ts);

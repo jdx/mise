@@ -23,17 +23,17 @@ pub struct SyncPython {
 }
 
 impl SyncPython {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.pyenv {
-            self.pyenv()?;
+            self.pyenv().await?;
         }
         if self.uv {
-            self.uv()?;
+            self.uv().await?;
         }
-        config::rebuild_shims_and_runtime_symlinks(&[])
+        config::rebuild_shims_and_runtime_symlinks(&[]).await
     }
 
-    fn pyenv(&self) -> Result<()> {
+    async fn pyenv(&self) -> Result<()> {
         let python = backend::get(&"python".into()).unwrap();
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
@@ -55,7 +55,7 @@ impl SyncPython {
         Ok(())
     }
 
-    fn uv(&self) -> Result<()> {
+    async fn uv(&self) -> Result<()> {
         let python = backend::get(&"python".into()).unwrap();
         let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
         let installed_python_versions_path = dirs::INSTALLS.join("python");

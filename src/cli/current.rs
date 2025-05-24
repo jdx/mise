@@ -20,9 +20,9 @@ pub struct Current {
 }
 
 impl Current {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let ts = ToolsetBuilder::new().build(&config).await?;
         match &self.plugin {
             Some(ba) => {
                 if let Some(plugin) = ba.backend()?.plugin() {
@@ -30,13 +30,13 @@ impl Current {
                         bail!("Plugin {ba} is not installed");
                     }
                 }
-                self.one(ts, ba.backend()?.as_ref())
+                self.one(ts, ba.backend()?.as_ref()).await
             }
-            None => self.all(ts),
+            None => self.all(ts).await,
         }
     }
 
-    fn one(&self, ts: Toolset, tool: &dyn Backend) -> Result<()> {
+    async fn one(&self, ts: Toolset, tool: &dyn Backend) -> Result<()> {
         if let Some(plugin) = tool.plugin() {
             if !plugin.is_installed() {
                 warn!("Plugin {} is not installed", tool.id());
@@ -68,13 +68,14 @@ impl Current {
         Ok(())
     }
 
-    fn all(&self, ts: Toolset) -> Result<()> {
+    async fn all(&self, ts: Toolset) -> Result<()> {
+        let config = Config::try_get().await?;
         for (plugin, versions) in ts.list_versions_by_plugin() {
             if versions.is_empty() {
                 continue;
             }
             for tv in versions {
-                if !plugin.is_version_installed(tv, true) {
+                if !plugin.is_version_installed(&config, tv, true) {
                     let source = ts.versions.get(tv.ba()).unwrap().source.clone();
                     warn!(
                         "{}@{} is specified in {}, but not installed",

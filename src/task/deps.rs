@@ -4,7 +4,6 @@ use itertools::Itertools;
 use petgraph::Direction;
 use petgraph::graph::DiGraph;
 use std::collections::{HashMap, HashSet};
-use std::iter::once;
 
 #[derive(Debug, Clone)]
 pub struct Deps {
@@ -20,7 +19,7 @@ fn task_key(task: &Task) -> (String, Vec<String>) {
 
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
-    pub fn new(tasks: Vec<Task>) -> eyre::Result<Self> {
+    pub async fn new(tasks: Vec<Task>) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
         let mut stack = vec![];
@@ -38,21 +37,19 @@ impl Deps {
             stack.push(t.clone());
             add_idx(t, &mut graph);
         }
-        let all_tasks_to_run: Vec<Task> = tasks
-            .into_iter()
-            .map(|t| {
-                let depends = t.all_depends()?;
-                eyre::Ok(once(t).chain(depends).collect::<Vec<_>>())
-            })
-            .flatten_ok()
-            .collect::<eyre::Result<Vec<_>>>()?;
+        let mut all_tasks_to_run = vec![];
+        for t in tasks {
+            let depends = t.all_depends().await?;
+            all_tasks_to_run.push(t);
+            all_tasks_to_run.extend(depends);
+        }
         while let Some(a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop
                 continue;
             }
             let a_idx = add_idx(&a, &mut graph);
-            let (pre, post) = a.resolve_depends(&all_tasks_to_run)?;
+            let (pre, post) = a.resolve_depends(&all_tasks_to_run).await?;
             for b in pre {
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(a_idx, b_idx, ());

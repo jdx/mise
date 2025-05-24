@@ -36,10 +36,10 @@ pub struct Completion {
 }
 
 impl Completion {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
 
-        let script = match self.call_usage(shell) {
+        let script = match self.call_usage(shell).await {
             Ok(script) => script,
             Err(e) => {
                 debug!("usage command failed, falling back to prerendered completions");
@@ -52,8 +52,9 @@ impl Completion {
         Ok(())
     }
 
-    fn call_usage(&self, shell: Shell) -> Result<String> {
-        let toolset = ToolsetBuilder::new().build(&Config::get())?;
+    async fn call_usage(&self, shell: Shell) -> Result<String> {
+        let config = Config::try_get().await?;
+        let toolset = ToolsetBuilder::new().build(&config).await?;
         let mut args = vec![
             "generate".into(),
             "completion".into(),
@@ -67,9 +68,9 @@ impl Completion {
         if self.include_bash_completion_lib {
             args.push("--include-bash-completion-lib".into());
         }
-        let config = Config::get();
+        let config = Config::get().await;
         let output = cmd("usage", args)
-            .full_env(toolset.full_env(&config)?)
+            .full_env(toolset.full_env(&config).await?)
             .read()?;
         Ok(output)
     }

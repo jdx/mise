@@ -27,7 +27,7 @@ pub struct GitPreCommit {
 }
 
 impl GitPreCommit {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         let settings = Settings::get();
         settings.ensure_experimental("generate git-pre-commit")?;
         let output = self.generate();

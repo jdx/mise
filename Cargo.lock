@@ -260,6 +260,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-scoped"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4042078ea593edffc452eef14e99fdb2b120caa4ad9618bcdeabc4a023b98740"
+dependencies = [
+ "futures",
+ "pin-project",
+ "tokio",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.88"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3638,6 +3649,8 @@ dependencies = [
 name = "mise"
 version = "2025.5.11"
 dependencies = [
+ "async-scoped",
+ "async-trait",
  "base64 0.22.1",
  "built",
  "bzip2",

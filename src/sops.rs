@@ -7,16 +7,16 @@ use rops::cryptography::cipher::AES256GCM;
 use rops::cryptography::hasher::SHA512;
 use rops::file::RopsFile;
 use rops::file::state::EncryptedFile;
-use std::sync::{Mutex, OnceLock};
+use tokio::sync::{Mutex, OnceCell};
 
-pub fn decrypt<PT, F>(input: &str, mut parse_template: PT, format: &str) -> result::Result<String>
+pub async fn decrypt<PT, F>(config: &Config, input: &str, mut parse_template: PT, format: &str) -> result::Result<String>
 where
     PT: FnMut(String) -> result::Result<String>,
     F: rops::file::format::FileFormat,
 {
-    static AGE_KEY: OnceLock<Option<String>> = OnceLock::new();
-    static MUTEX: Mutex<()> = Mutex::new(());
-    let age = AGE_KEY.get_or_init(|| {
+    static AGE_KEY: OnceCell<Option<String>> = OnceCell::const_new();
+    static MUTEX: Mutex<()> = Mutex::const_new(());
+    let age = AGE_KEY.get_or_init(async || {
         let p = SETTINGS
             .sops
             .age_key_file
@@ -47,8 +47,8 @@ where
             }
         }
         None
-    });
-    let _lock = MUTEX.lock().unwrap(); // prevent multiple threads from using the same age key
+    }).await;
+    let _lock = MUTEX.lock().await; // prevent multiple threads from using the same age key
     let age_env_key = if SETTINGS.sops.rops {
         "ROPS_AGE"
     } else {
@@ -66,16 +66,17 @@ where
             .wrap_err("failed to decrypt sops file")?
             .to_string()
     } else {
-        let config = Config::get();
         let mut ts = config
             .get_tool_request_set()
+            .await
             .cloned()
             .unwrap_or_default()
             .filter_by_tool(["sops".into()].into())
             .into_toolset();
-        ts.resolve()?;
+        Box::pin(ts.resolve()).await?;
         let sops = ts
             .which_bin("sops")
+            .await
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or("sops".into());
         // TODO: this obviously won't work on windows

@@ -46,16 +46,16 @@ pub struct Set {
 }
 
 impl Set {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.complete {
-            return self.complete();
+            return self.complete().await;
         }
         match (&self.remove, &self.env_vars) {
             (None, None) => {
-                return self.list_all();
+                return self.list_all().await;
             }
             (None, Some(env_vars)) if env_vars.iter().all(|ev| ev.value.is_none()) => {
-                return self.get();
+                return self.get().await;
             }
             _ => {}
         }
@@ -93,23 +93,23 @@ impl Set {
         mise_toml.save()
     }
 
-    fn complete(&self) -> Result<()> {
-        for ev in self.cur_env()? {
+    async fn complete(&self) -> Result<()> {
+        for ev in self.cur_env().await? {
             println!("{}", ev.key);
         }
         Ok(())
     }
 
-    fn list_all(self) -> Result<()> {
-        let env = self.cur_env()?;
+    async fn list_all(self) -> Result<()> {
+        let env = self.cur_env().await?;
         let mut table = tabled::Table::new(env);
         table::default_style(&mut table, false);
         miseprintln!("{table}");
         Ok(())
     }
 
-    fn get(self) -> Result<()> {
-        let env = self.cur_env()?;
+    async fn get(self) -> Result<()> {
+        let env = self.cur_env().await?;
         let filter = self.env_vars.unwrap();
         let vars = filter
             .iter()
@@ -129,7 +129,7 @@ impl Set {
         Ok(())
     }
 
-    fn cur_env(&self) -> Result<Vec<Row>> {
+    async fn cur_env(&self) -> Result<Vec<Row>> {
         let rows = if let Some(file) = &self.file {
             let config = MiseToml::from_file(file).unwrap_or_default();
             config
@@ -146,7 +146,9 @@ impl Set {
                 .collect()
         } else {
             Config::get()
-                .env_with_sources()?
+                .await
+                .env_with_sources()
+                .await?
                 .iter()
                 .map(|(key, (value, source))| Row {
                     key: key.clone(),

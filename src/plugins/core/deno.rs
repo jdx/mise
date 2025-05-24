@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, sync::Arc};
 
 use eyre::Result;
 use itertools::Itertools;
 use serde::Deserialize;
 use versions::Versioning;
+use async_trait::async_trait;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -19,13 +20,13 @@ use crate::{file, plugins};
 
 #[derive(Debug)]
 pub struct DenoPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl DenoPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("deno"),
+            ba: Arc::new(plugins::core::new_backend_arg("deno")),
         }
     }
 
@@ -45,7 +46,7 @@ impl DenoPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let url = format!(
             "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
             tv.version,
@@ -56,7 +57,7 @@ impl DenoPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr))?;
+        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
 
         // TODO: hash::ensure_checksum_sha256(&tarball_path, &m.sha256)?;
 
@@ -91,13 +92,14 @@ impl DenoPlugin {
     }
 }
 
+#[async_trait]
 impl Backend for DenoPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json")?;
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+        let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json").await?;
         let versions = versions
             .cli
             .into_iter()
@@ -113,8 +115,8 @@ impl Backend for DenoPlugin {
         Ok(vec![".deno-version".into()])
     }
 
-    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr)?;
+    async fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
+        let tarball_path = self.download(&tv, &ctx.pr).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(&tv, &ctx.pr, &tarball_path)?;
         self.verify(&tv, &ctx.pr)?;
@@ -122,7 +124,7 @@ impl Backend for DenoPlugin {
         Ok(tv)
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         if let ToolRequest::System { .. } = tv.request {
             return Ok(vec![]);
         }
@@ -133,7 +135,7 @@ impl Backend for DenoPlugin {
         Ok(bin_paths)
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         _config: &Config,
         _ts: &Toolset,
