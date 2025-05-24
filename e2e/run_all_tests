@@ -7,8 +7,15 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/style.sh"
 
 pushd e2e
-mapfile -t SLOW_FILES < <(fd -tf -g "test_*_slow" | sort)
-mapfile -t FAST_FILES < <(fd -tf -g "test_*" | grep -v "_slow$" | sort)
+# Avoid mapfile that is not available on bash 3.2 for compatibility with macOS
+SLOW_FILES=()
+while IFS= read -r line; do
+  SLOW_FILES+=("$line")
+done < <(fd -tf -g "test_*_slow" | sort)
+FAST_FILES=()
+while IFS= read -r line; do
+  FAST_FILES+=("$line")
+done < <(fd -tf -g "test_*" | grep -v "_slow$" | sort)
 popd
 FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
 test_count=0
