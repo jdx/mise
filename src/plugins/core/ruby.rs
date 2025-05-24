@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
 use std::env::temp_dir;
 use std::path::{Path, PathBuf};
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -16,19 +16,20 @@ use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, file, plugins, timeout};
+use async_trait::async_trait;
 use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use xx::regex;
 
 #[derive(Debug)]
 pub struct RubyPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl RubyPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("ruby"),
+            ba: Arc::new(plugins::core::new_backend_arg("ruby")),
         }
     }
 
@@ -61,13 +62,15 @@ impl RubyPlugin {
             .lock()
     }
 
-    fn update_build_tool(&self, ctx: Option<&InstallContext>) -> Result<()> {
+    async fn update_build_tool(&self, ctx: Option<&InstallContext>) -> Result<()> {
         let pr = ctx.map(|ctx| &ctx.pr);
         if SETTINGS.ruby.ruby_install {
             self.update_ruby_install(pr)
+                .await
                 .wrap_err("failed to update ruby-install")
         } else {
             self.update_ruby_build(pr)
+                .await
                 .wrap_err("failed to update ruby-build")
         }
     }
@@ -94,11 +97,11 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         Ok(())
     }
-    fn update_ruby_build(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
+    async fn update_ruby_build(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
         let _lock = self.lock_build_tool();
         if self.ruby_build_bin().exists() {
             let cur = self.ruby_build_version()?;
-            let latest = self.latest_ruby_build_version();
+            let latest = self.latest_ruby_build_version().await;
             match (cur, latest) {
                 // ruby-build is up-to-date
                 (cur, Ok(latest)) if cur == latest => return Ok(()),
@@ -141,7 +144,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         Ok(())
     }
-    fn update_ruby_install(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
+    async fn update_ruby_install(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
         let _lock = self.lock_build_tool();
         let ruby_install_path = self.ruby_install_path();
         if !ruby_install_path.exists() {
@@ -170,7 +173,7 @@ impl RubyPlugin {
         tv.install_path().join("bin/gem")
     }
 
-    fn install_default_gems(
+    async fn install_default_gems(
         &self,
         config: &Config,
         tv: &ToolVersion,
@@ -189,7 +192,7 @@ impl RubyPlugin {
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
                 .arg("install")
-                .envs(config.env()?);
+                .envs(config.env().await?);
             match package.split_once(' ') {
                 Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
@@ -208,9 +211,10 @@ impl RubyPlugin {
         Ok(caps.get(1).unwrap().as_str().to_string())
     }
 
-    fn latest_ruby_build_version(&self) -> Result<String> {
-        let release: GithubRelease =
-            HTTP_FETCH.json("https://api.github.com/repos/rbenv/ruby-build/releases/latest")?;
+    async fn latest_ruby_build_version(&self) -> Result<String> {
+        let release: GithubRelease = HTTP_FETCH
+            .json("https://api.github.com/repos/rbenv/ruby-build/releases/latest")
+            .await?;
         Ok(release.tag_name.trim_start_matches('v').to_string())
     }
 
@@ -222,7 +226,7 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn install_cmd<'a>(
+    async fn install_cmd<'a>(
         &self,
         config: &Config,
         tv: &ToolVersion,
@@ -234,9 +238,9 @@ impl RubyPlugin {
         } else {
             CmdLineRunner::new(self.ruby_build_bin())
                 .args(self.install_args_ruby_build(tv)?)
-                .stdin_string(self.fetch_patches()?)
+                .stdin_string(self.fetch_patches().await?)
         };
-        Ok(cmd.with_pr(pr).envs(config.env()?))
+        Ok(cmd.with_pr(pr).envs(config.env().await?))
     }
     fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
         let settings = Settings::get();
@@ -293,12 +297,12 @@ impl RubyPlugin {
             .collect()
     }
 
-    fn fetch_patches(&self) -> Result<String> {
+    async fn fetch_patches(&self) -> Result<String> {
         let mut patches = vec![];
         let re = regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#);
         for f in &self.fetch_patch_sources() {
             if re.is_match(f) {
-                patches.push(HTTP.get_text(f)?);
+                patches.push(HTTP.get_text(f).await?);
             } else {
                 patches.push(file::read_to_string(f)?);
             }
@@ -307,14 +311,15 @@ impl RubyPlugin {
     }
 }
 
+#[async_trait]
 impl Backend for RubyPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        timeout::run_with_timeout(
-            || {
-                if let Err(err) = self.update_build_tool(None) {
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+        timeout::run_with_timeout_async(
+            async || {
+                if let Err(err) = self.update_build_tool(None).await {
                     warn!("{err}");
                 }
                 let ruby_build_bin = self.ruby_build_bin();
@@ -331,6 +336,7 @@ impl Backend for RubyPlugin {
             },
             SETTINGS.fetch_remote_versions_timeout(),
         )
+        .await
     }
 
     fn idiomatic_filenames(&self) -> Result<Vec<String>> {
@@ -352,22 +358,22 @@ impl Backend for RubyPlugin {
         Ok(v)
     }
 
-    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
-        if let Err(err) = self.update_build_tool(Some(ctx)) {
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        if let Err(err) = self.update_build_tool(Some(ctx)).await {
             warn!("ruby build tool update error: {err:#}");
         }
         ctx.pr.set_message("ruby-build".into());
-        let config = Config::get();
-        self.install_cmd(&config, &tv, &ctx.pr)?.execute()?;
+        let config = Config::get().await;
+        self.install_cmd(&config, &tv, &ctx.pr).await?.execute()?;
 
         self.install_rubygems_hook(&tv)?;
-        if let Err(err) = self.install_default_gems(&config, &tv, &ctx.pr) {
+        if let Err(err) = self.install_default_gems(&config, &tv, &ctx.pr).await {
             warn!("failed to install default ruby gems {err:#}");
         }
         Ok(tv)
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         _config: &Config,
         _ts: &Toolset,

@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 
 impl EnvResults {
     #[allow(clippy::too_many_arguments)]
-    pub fn venv(
+    pub async fn venv(
+        config: &Config,
         ctx: &mut tera::Context,
         tera: &mut tera::Tera,
         env: &mut IndexMap<String, (String, Option<PathBuf>)>,
@@ -37,8 +38,7 @@ impl EnvResults {
         if !venv.exists() && create {
             // TODO: the toolset stuff doesn't feel like it's in the right place here
             // TODO: in fact this should probably be moved to execute at the same time as src/uv.rs runs in ts.env() instead of config.env()
-            let config = Config::get();
-            let ts = ToolsetBuilder::new().build(&config)?;
+            let ts = Box::pin(ToolsetBuilder::new().build(config)).await?;
             let ba = BackendArg::from("python");
             let tv = ts.versions.get(&ba).and_then(|tv| {
                 // if a python version is specified, check if that version is installed
@@ -54,14 +54,13 @@ impl EnvResults {
                     .to_string_lossy()
                     .to_string()
             });
-            let installed = tv
-                .map(|tv: &crate::toolset::ToolVersion| {
-                    let backend = backend::get(&ba).unwrap();
-                    backend.is_version_installed(tv, false)
-                })
-                // if no version is specified, we're assuming python3 is provided outside of mise
-                // so return "true" here
-                .unwrap_or(true);
+            let installed = if let Some(tv) = tv {
+                let backend = backend::get(&ba).unwrap();
+                backend.is_version_installed(config, tv, false)
+            } else {
+                // if no version is specified, we're assuming python3 is provided outside of mise so return "true" here
+                true
+            };
             if !installed {
                 warn!(
                     "no venv found at: {p}\n\n\
@@ -71,7 +70,10 @@ impl EnvResults {
                     p = display_path(&venv)
                 );
             } else {
-                let uv_bin = ts.which_bin("uv").or_else(|| which_non_pristine("uv"));
+                let uv_bin = ts
+                    .which_bin("uv")
+                    .await
+                    .or_else(|| which_non_pristine("uv"));
                 let use_uv = !SETTINGS.python.venv_stdlib && uv_bin.is_some();
                 let cmd = if use_uv {
                     info!("creating venv with uv at: {}", display_path(&venv));
@@ -151,12 +153,13 @@ mod tests {
     use crate::tera::BASE_CONTEXT;
     use crate::test::replace_path;
     use insta::assert_debug_snapshot;
-    use test_log::test;
 
-    #[test]
-    fn test_venv_path() {
+    #[tokio::test]
+    async fn test_venv_path() {
         let env = EnvMap::new();
+        let config = Config::get().await;
         let results = EnvResults::resolve(
+            &config,
             BASE_CONTEXT.clone(),
             &env,
             vec![
@@ -194,6 +197,7 @@ mod tests {
                 ..Default::default()
             },
         )
+        .await
         .unwrap();
         // expect order to be reversed as it processes directives from global to dir specific
         assert_debug_snapshot!(

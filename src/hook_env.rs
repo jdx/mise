@@ -165,12 +165,12 @@ pub fn deserialize<T: serde::de::DeserializeOwned>(raw: String) -> Result<T> {
     Ok(rmp_serde::from_slice(&writer[..])?)
 }
 
-pub fn build_session(
+pub async fn build_session(
     env: EnvMap,
     loaded_tools: IndexSet<String>,
     watch_files: BTreeSet<WatchFilePattern>,
 ) -> Result<HookEnvSession> {
-    let config = Config::get();
+    let config = Config::get().await;
     let mut max_modtime = UNIX_EPOCH;
     for cf in get_watch_files(watch_files)? {
         if let Ok(Ok(modified)) = cf.metadata().map(|m| m.modified()) {
@@ -178,7 +178,7 @@ pub fn build_session(
         }
     }
 
-    let config_paths = if let Ok(paths) = config.path_dirs() {
+    let config_paths = if let Ok(paths) = config.path_dirs().await {
         paths.iter().cloned().collect()
     } else {
         IndexSet::new()

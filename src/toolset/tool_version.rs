@@ -36,10 +36,14 @@ impl ToolVersion {
         }
     }
 
-    pub fn resolve(request: ToolRequest, opts: &ResolveOptions) -> Result<Self> {
+    pub async fn resolve(
+        config: &Config,
+        request: ToolRequest,
+        opts: &ResolveOptions,
+    ) -> Result<Self> {
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version {
-            if let Some(lt) = request.lockfile_resolve()? {
+            if let Some(lt) = request.lockfile_resolve(config)? {
                 let mut tv = Self::new(request.clone(), lt.version);
                 tv.checksums = lt.checksums;
                 return Ok(tv);
@@ -53,16 +57,21 @@ impl ToolVersion {
             }
         }
         let tv = match request.clone() {
-            ToolRequest::Version { version: v, .. } => Self::resolve_version(request, &v, opts)?,
-            ToolRequest::Prefix { prefix, .. } => Self::resolve_prefix(request, &prefix, opts)?,
+            ToolRequest::Version { version: v, .. } => {
+                Self::resolve_version(config, request, &v, opts).await?
+            }
+            ToolRequest::Prefix { prefix, .. } => {
+                Self::resolve_prefix(request, &prefix, opts).await?
+            }
             ToolRequest::Sub {
                 sub, orig_version, ..
-            } => Self::resolve_sub(request, &sub, &orig_version, opts)?,
+            } => Self::resolve_sub(config, request, &sub, &orig_version, opts).await?,
             _ => {
                 let version = request.version();
                 Self::new(request, version)
             }
         };
+        trace!("resolved: {tv}");
         Ok(tv)
     }
 
@@ -110,12 +119,12 @@ impl ToolVersion {
     pub fn download_path(&self) -> PathBuf {
         self.request.ba().downloads_path.join(self.tv_pathname())
     }
-    pub fn latest_version(&self) -> Result<String> {
+    pub async fn latest_version(&self, config: &Config) -> Result<String> {
         let opts = ResolveOptions {
             latest_versions: true,
             use_locked_version: false,
         };
-        let tv = self.request.resolve(&opts)?;
+        let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref
         let version = match tv.request.version().split_once(':') {
             Some((_ref_type @ ("tag" | "branch" | "rev"), r)) => {
@@ -149,14 +158,14 @@ impl ToolVersion {
         }
         .replace([':', '/'], "-")
     }
-    fn resolve_version(
+    async fn resolve_version(
+        config: &Config,
         request: ToolRequest,
         v: &str,
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
-        let config = Config::get();
         let backend = request.backend()?;
-        let v = config.resolve_alias(&backend, v)?;
+        let v = config.resolve_alias(&backend, v).await?;
         match v.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
                 return Ok(Self::resolve_ref(
@@ -170,11 +179,11 @@ impl ToolVersion {
                 return Self::resolve_path(PathBuf::from(p), &request);
             }
             Some(("prefix", p)) => {
-                return Self::resolve_prefix(request, p, opts);
+                return Self::resolve_prefix(request, p, opts).await;
             }
             Some((part, v)) if part.starts_with("sub-") => {
                 let sub = part.split_once('-').unwrap().1;
-                return Self::resolve_sub(request, sub, v, opts);
+                return Self::resolve_sub(config, request, sub, v, opts).await;
             }
             _ => (),
         }
@@ -193,7 +202,7 @@ impl ToolVersion {
                     return build(v);
                 }
             }
-            if let Some(v) = backend.latest_version(None)? {
+            if let Some(v) = backend.latest_version(None).await? {
                 return build(v);
             }
         }
@@ -206,15 +215,16 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        let matches = backend.list_versions_matching(&v)?;
+        let matches = backend.list_versions_matching(&v).await?;
         if matches.contains(&v) {
             return build(v);
         }
-        Self::resolve_prefix(request, &v, opts)
+        Self::resolve_prefix(request, &v, opts).await
     }
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
-    fn resolve_sub(
+    async fn resolve_sub(
+        config: &Config,
         request: ToolRequest,
         sub: &str,
         v: &str,
@@ -222,21 +232,25 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         let v = match v {
-            "latest" => backend.latest_version(None)?.unwrap(),
-            _ => Config::get().resolve_alias(&backend, v)?,
+            "latest" => backend.latest_version(None).await?.unwrap(),
+            _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
-        Self::resolve_version(request, &v, opts)
+        Box::pin(Self::resolve_version(config, request, &v, opts)).await
     }
 
-    fn resolve_prefix(request: ToolRequest, prefix: &str, opts: &ResolveOptions) -> Result<Self> {
+    async fn resolve_prefix(
+        request: ToolRequest,
+        prefix: &str,
+        opts: &ResolveOptions,
+    ) -> Result<Self> {
         let backend = request.backend()?;
         if !opts.latest_versions {
             if let Some(v) = backend.list_installed_versions_matching(prefix)?.last() {
                 return Ok(Self::new(request, v.to_string()));
             }
         }
-        let matches = backend.list_versions_matching(prefix)?;
+        let matches = backend.list_versions_matching(prefix).await?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,
@@ -297,7 +311,7 @@ impl PartialOrd for ToolVersion {
 
 impl Ord for ToolVersion {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.request.ba().cmp(other.ba()) {
+        match self.request.ba().as_ref().cmp(other.ba()) {
             Ordering::Equal => self.version.cmp(&other.version),
             o => o,
         }

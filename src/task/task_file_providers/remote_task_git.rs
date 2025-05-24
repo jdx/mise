@@ -1,5 +1,8 @@
+use crate::Result;
 use std::path::PathBuf;
 
+use async_trait::async_trait;
+use eyre::eyre;
 use regex::Regex;
 
 use crate::{
@@ -80,11 +83,11 @@ impl RemoteTaskGit {
         self.detect_https(file).unwrap()
     }
 
-    fn detect_ssh(&self, file: &str) -> Result<GitRepoStructure, Box<dyn std::error::Error>> {
+    fn detect_ssh(&self, file: &str) -> Result<GitRepoStructure> {
         let re = Regex::new(r"^git::(?P<url>ssh://((?P<user>[^@]+)@)(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap();
 
         if !re.is_match(file) {
-            return Err("Invalid SSH URL".into());
+            return Err(eyre!("Invalid SSH URL"));
         }
 
         let captures = re.captures(file).unwrap();
@@ -98,11 +101,11 @@ impl RemoteTaskGit {
         Ok(GitRepoStructure::new(url_without_path, path, branch))
     }
 
-    fn detect_https(&self, file: &str) -> Result<GitRepoStructure, Box<dyn std::error::Error>> {
+    fn detect_https(&self, file: &str) -> Result<GitRepoStructure> {
         let re = Regex::new(r"^git::(?P<url>https://(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap();
 
         if !re.is_match(file) {
-            return Err("Invalid HTTPS URL".into());
+            return Err(eyre!("Invalid HTTPS URL"));
         }
 
         let captures = re.captures(file).unwrap();
@@ -117,6 +120,7 @@ impl RemoteTaskGit {
     }
 }
 
+#[async_trait]
 impl TaskFileProvider for RemoteTaskGit {
     fn is_match(&self, file: &str) -> bool {
         if self.detect_ssh(file).is_ok() {
@@ -130,7 +134,7 @@ impl TaskFileProvider for RemoteTaskGit {
         false
     }
 
-    fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    async fn get_local_path(&self, file: &str) -> Result<PathBuf> {
         let repo_structure = self.get_repo_structure(file);
         let cache_key = self.get_cache_key(&repo_structure);
         let destination = self.storage_path.join(&cache_key);

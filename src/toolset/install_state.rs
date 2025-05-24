@@ -7,7 +7,6 @@ use crate::{dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
 use itertools::Itertools;
-use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -28,21 +27,11 @@ pub struct InstallStateTool {
 static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
 static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
 
-pub(crate) fn init() -> Result<()> {
-    let (plugins, tools) = rayon::join(
-        || {
-            measure!("init_plugins", { drop(init_plugins()?) });
-            Ok(())
-        },
-        || {
-            measure!("init_tools", {
-                drop(init_tools()?);
-            });
-            Ok(())
-        },
-    );
-    plugins?;
-    tools?;
+pub(crate) async fn init() -> Result<()> {
+    tokio::try_join!(
+        async { measure!("init_plugins", { init_plugins() }) },
+        async { measure!("init_tools", { init_tools() }) },
+    )?;
     Ok(())
 }
 
@@ -79,7 +68,7 @@ fn init_tools() -> MutexResult<InstallStateTools> {
         return Ok(tools);
     }
     let mut tools = file::dir_subdirs(&dirs::INSTALLS)?
-        .into_par_iter()
+        .into_iter()
         .map(|dir| {
             let backend_meta = read_backend_meta(&dir).unwrap_or_default();
             let short = backend_meta.first().unwrap_or(&dir).to_string();

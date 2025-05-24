@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
 use eyre::Result;
-use itertools::Itertools;
-use rayon::prelude::*;
 
 use crate::backend;
 use crate::backend::Backend;
@@ -32,15 +30,15 @@ pub struct LsRemote {
 }
 
 impl LsRemote {
-    pub fn run(self) -> Result<()> {
-        if let Some(plugin) = self.get_plugin()? {
-            self.run_single(plugin)
+    pub async fn run(self) -> Result<()> {
+        if let Some(plugin) = self.get_plugin().await? {
+            self.run_single(plugin).await
         } else {
-            self.run_all()
+            self.run_all().await
         }
     }
 
-    fn run_single(self, plugin: Arc<dyn Backend>) -> Result<()> {
+    async fn run_single(self, plugin: Arc<dyn Backend>) -> Result<()> {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
@@ -52,7 +50,7 @@ impl LsRemote {
             _ => self.prefix.clone(),
         };
 
-        let versions = plugin.list_remote_versions()?;
+        let versions = plugin.list_remote_versions().await?;
         let versions = match prefix {
             Some(prefix) => versions
                 .into_iter()
@@ -68,32 +66,27 @@ impl LsRemote {
         Ok(())
     }
 
-    fn run_all(self) -> Result<()> {
-        let versions = backend::list()
-            .into_par_iter()
-            .map(|p| {
-                let versions = p.list_remote_versions()?;
-                Ok((p, versions))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .sorted_by_cached_key(|(p, _)| p.id().to_string())
-            .collect::<Vec<_>>();
-        for (plugin, versions) in versions {
-            for v in versions {
-                miseprintln!("{}@{v}", plugin);
-            }
+    async fn run_all(self) -> Result<()> {
+        let mut versions = vec![];
+        for b in backend::list() {
+            let v = b.list_remote_versions().await?;
+            versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
+        }
+        versions.sort_by_cached_key(|(id, _)| id.to_string());
+
+        for (tool, v) in versions {
+            miseprintln!("{tool}@{v}");
         }
         Ok(())
     }
 
-    fn get_plugin(&self) -> Result<Option<Arc<dyn Backend>>> {
+    async fn get_plugin(&self) -> Result<Option<Arc<dyn Backend>>> {
         match &self.plugin {
             Some(tool_arg) => {
                 let backend = tool_arg.ba.backend()?;
                 let mpr = MultiProgressReport::get();
                 if let Some(plugin) = backend.plugin() {
-                    plugin.ensure_installed(&mpr, false)?;
+                    plugin.ensure_installed(&mpr, false).await?;
                 }
                 Ok(Some(backend))
             }

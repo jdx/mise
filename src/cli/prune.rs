@@ -43,7 +43,7 @@ pub struct Prune {
 }
 
 impl Prune {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.configs || !self.tools {
             self.prune_configs()?;
         }
@@ -51,8 +51,8 @@ impl Prune {
             let backends = self
                 .installed_tool
                 .as_ref()
-                .map(|it| it.iter().map(|ta| &ta.ba).collect());
-            prune(backends.unwrap_or_default(), self.dry_run)?;
+                .map(|it| it.iter().map(|ta| ta.ba.as_ref()).collect());
+            prune(backends.unwrap_or_default(), self.dry_run).await?;
         }
         Ok(())
     }
@@ -69,11 +69,14 @@ impl Prune {
     }
 }
 
-pub fn prunable_tools(tools: Vec<&BackendArg>) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-    let config = Config::try_get()?;
-    let ts = ToolsetBuilder::new().build(&config)?;
+pub async fn prunable_tools(
+    tools: Vec<&BackendArg>,
+) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
+    let config = Config::try_get().await?;
+    let ts = ToolsetBuilder::new().build(&config).await?;
     let mut to_delete = ts
-        .list_installed_versions()?
+        .list_installed_versions()
+        .await?
         .into_iter()
         .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
         .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
@@ -84,7 +87,7 @@ pub fn prunable_tools(tools: Vec<&BackendArg>) -> Result<Vec<(Arc<dyn Backend>, 
 
     for cf in config.get_tracked_config_files()?.values() {
         let mut ts = Toolset::from(cf.to_tool_request_set()?);
-        ts.resolve()?;
+        ts.resolve().await?;
         for (_, tv) in ts.list_current_versions() {
             to_delete.remove(&(tv.ba().short.to_string(), tv.tv_pathname()));
         }
@@ -93,12 +96,12 @@ pub fn prunable_tools(tools: Vec<&BackendArg>) -> Result<Vec<(Arc<dyn Backend>, 
     Ok(to_delete.into_values().collect())
 }
 
-pub fn prune(tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
-    let to_delete = prunable_tools(tools)?;
-    delete(dry_run, to_delete)
+pub async fn prune(tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
+    let to_delete = prunable_tools(tools).await?;
+    delete(dry_run, to_delete).await
 }
 
-fn delete(dry_run: bool, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Result<()> {
+async fn delete(dry_run: bool, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Result<()> {
     let mpr = MultiProgressReport::get();
     for (p, tv) in to_delete {
         let mut prefix = tv.style();
@@ -107,7 +110,7 @@ fn delete(dry_run: bool, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Res
         }
         let pr = mpr.add(&prefix);
         if dry_run || SETTINGS.yes || prompt::confirm_with_all(format!("remove {} ?", &tv))? {
-            p.uninstall_version(&tv, &pr, dry_run)?;
+            p.uninstall_version(&tv, &pr, dry_run).await?;
             runtime_symlinks::remove_missing_symlinks(p)?;
             pr.finish();
         }

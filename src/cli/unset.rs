@@ -38,7 +38,7 @@ const AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 impl Unset {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let filename = if let Some(file) = &self.file {
             file.clone()
         } else if self.global {

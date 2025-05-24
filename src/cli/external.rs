@@ -1,6 +1,5 @@
 use clap::Command;
 use eyre::Result;
-use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::LazyLock as Lazy;
 
@@ -9,7 +8,7 @@ use crate::cli::args::BackendArg;
 
 pub static COMMANDS: Lazy<HashMap<String, Command>> = Lazy::new(|| {
     backend::list()
-        .into_par_iter()
+        .into_iter()
         .flat_map(|b| {
             if let Some(p) = b.plugin() {
                 return p.external_commands().unwrap_or_else(|e| {

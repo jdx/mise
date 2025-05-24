@@ -38,7 +38,7 @@ impl ConfigGenerate {
     }
 
     fn tool_versions(&self, tool_versions: &Path) -> Result<String> {
-        let mut to = config_file::parse_or_init(&PathBuf::from("mise.toml"))?;
+        let to = config_file::parse_or_init(&PathBuf::from("mise.toml"))?;
         let from = config_file::parse(tool_versions)?;
         let tools = from.to_tool_request_set()?.tools;
         for (ba, tools) in tools {

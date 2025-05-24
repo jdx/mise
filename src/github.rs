@@ -8,7 +8,8 @@ use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
-use std::sync::{RwLock, RwLockReadGuard};
+use tokio::sync::RwLock;
+use tokio::sync::RwLockReadGuard;
 use xx::regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,73 +46,77 @@ static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::de
 
 pub static API_URL: &str = "https://api.github.com";
 
-fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
+async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
     TAGS_CACHE
         .write()
-        .unwrap()
+        .await
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-tags.msgpack.z")))
                 .with_fresh_duration(Some(duration::DAILY))
                 .build()
         });
-    TAGS_CACHE.read().unwrap()
+    TAGS_CACHE.read().await
 }
 
-fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<GithubRelease>>> {
+async fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<GithubRelease>>> {
     RELEASES_CACHE
         .write()
-        .unwrap()
+        .await
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-releases.msgpack.z")))
                 .with_fresh_duration(Some(duration::DAILY))
                 .build()
         });
-    RELEASES_CACHE.read().unwrap()
+    RELEASES_CACHE.read().await
 }
 
-fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<GithubRelease>> {
+async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<GithubRelease>> {
     RELEASE_CACHE
         .write()
-        .unwrap()
+        .await
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
                 .with_fresh_duration(Some(duration::DAILY))
                 .build()
         });
-    RELEASE_CACHE.read().unwrap()
+    RELEASE_CACHE.read().await
 }
 
-pub fn list_releases(repo: &str) -> Result<Vec<GithubRelease>> {
+pub async fn list_releases(repo: &str) -> Result<Vec<GithubRelease>> {
     let key = repo.to_kebab_case();
-    let cache = get_releases_cache(&key);
+    let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init(|| list_releases_(API_URL, repo))?
+        .get_or_try_init_async(async || list_releases_(API_URL, repo).await)
+        .await?
         .to_vec())
 }
 
-pub fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
+pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
     let key = format!("{api_url}-{repo}").to_kebab_case();
-    let cache = get_releases_cache(&key);
+    let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init(|| list_releases_(api_url, repo))?
+        .get_or_try_init_async(async || list_releases_(api_url, repo).await)
+        .await?
         .to_vec())
 }
 
-fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
+async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
     let url = format!("{api_url}/repos/{repo}/releases");
     let headers = get_headers(&url);
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
-        .json_headers_with_headers::<Vec<GithubRelease>, _>(url, &headers)?;
+        .json_headers_with_headers::<Vec<GithubRelease>, _>(url, &headers)
+        .await?;
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
             let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<GithubRelease>, _>(next, &headers)?;
+                .json_headers_with_headers::<Vec<GithubRelease>, _>(next, &headers)
+                .await?;
             releases.extend(more);
             headers = h;
         }
@@ -121,34 +126,38 @@ fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
     Ok(releases)
 }
 
-pub fn list_tags(repo: &str) -> Result<Vec<String>> {
+pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
     let key = repo.to_kebab_case();
-    let cache = get_tags_cache(&key);
+    let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init(|| list_tags_(API_URL, repo))?
+        .get_or_try_init_async(async || list_tags_(API_URL, repo).await)
+        .await?
         .to_vec())
 }
 
-pub fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
+pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
     let key = format!("{api_url}-{repo}").to_kebab_case();
-    let cache = get_tags_cache(&key);
+    let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init(|| list_tags_(api_url, repo))?
+        .get_or_try_init_async(async || list_tags_(api_url, repo).await)
+        .await?
         .to_vec())
 }
 
-fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
+async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
     let url = format!("{api_url}/repos/{repo}/tags");
     let headers = get_headers(&url);
-    let (mut tags, mut headers) =
-        crate::http::HTTP_FETCH.json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)?;
+    let (mut tags, mut headers) = crate::http::HTTP_FETCH
+        .json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)
+        .await?;
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
             let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<GithubTag>, _>(next, &headers)?;
+                .json_headers_with_headers::<Vec<GithubTag>, _>(next, &headers)
+                .await?;
             tags.extend(more);
             headers = h;
         }
@@ -157,28 +166,32 @@ fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
     Ok(tags.into_iter().map(|t| t.name).collect())
 }
 
-pub fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
+pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
     let key = format!("{repo}-{tag}").to_kebab_case();
-    let cache = get_release_cache(&key);
+    let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init(|| get_release_(API_URL, repo, tag))?
+        .get_or_try_init_async(async || get_release_(API_URL, repo, tag).await)
+        .await?
         .clone())
 }
 
-pub fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
+pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
     let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
-    let cache = get_release_cache(&key);
+    let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init(|| get_release_(api_url, repo, tag))?
+        .get_or_try_init_async(async || get_release_(api_url, repo, tag).await)
+        .await?
         .clone())
 }
 
-fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
+async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
     let url = format!("{api_url}/repos/{repo}/releases/tags/{tag}");
     let headers = get_headers(&url);
-    crate::http::HTTP_FETCH.json_with_headers(url, &headers)
+    crate::http::HTTP_FETCH
+        .json_with_headers(url, &headers)
+        .await
 }
 
 fn next_page(headers: &HeaderMap) -> Option<String> {

@@ -1,17 +1,17 @@
 use crate::cli::run::resolve_depends;
 use crate::task::Task;
-use crossbeam_channel as channel;
 use itertools::Itertools;
 use petgraph::Direction;
 use petgraph::graph::DiGraph;
 use std::collections::{HashMap, HashSet};
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub struct Deps {
     pub graph: DiGraph<Task, ()>,
     sent: HashSet<(String, Vec<String>)>, // tasks+args that have already started so should not run again
     removed: HashSet<(String, Vec<String>)>, // tasks+args that have already finished to track if we are in an infinitve loop
-    tx: channel::Sender<Option<Task>>,
+    tx: mpsc::UnboundedSender<Option<Task>>,
 }
 
 fn task_key(task: &Task) -> (String, Vec<String>) {
@@ -20,7 +20,7 @@ fn task_key(task: &Task) -> (String, Vec<String>) {
 
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
-    pub fn new(tasks: Vec<Task>) -> eyre::Result<Self> {
+    pub async fn new(tasks: Vec<Task>) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
         let mut stack = vec![];
@@ -38,14 +38,14 @@ impl Deps {
             stack.push(t.clone());
             add_idx(t, &mut graph);
         }
-        let all_tasks_to_run = resolve_depends(tasks)?;
+        let all_tasks_to_run = resolve_depends(tasks).await?;
         while let Some(a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop
                 continue;
             }
             let a_idx = add_idx(&a, &mut graph);
-            let (pre, post) = a.resolve_depends(&all_tasks_to_run)?;
+            let (pre, post) = a.resolve_depends(&all_tasks_to_run).await?;
             for b in pre {
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(a_idx, b_idx, ());
@@ -58,7 +58,7 @@ impl Deps {
             }
             seen.insert(a);
         }
-        let (tx, _) = channel::unbounded();
+        let (tx, _) = mpsc::unbounded_channel();
         let sent = HashSet::new();
         let removed = HashSet::new();
         Ok(Self {
@@ -100,8 +100,8 @@ impl Deps {
     }
 
     /// listened to by `mise run` which gets a stream of tasks to run
-    pub fn subscribe(&mut self) -> channel::Receiver<Option<Task>> {
-        let (tx, rx) = channel::unbounded();
+    pub fn subscribe(&mut self) -> mpsc::UnboundedReceiver<Option<Task>> {
+        let (tx, rx) = mpsc::unbounded_channel();
         self.tx = tx;
         self.emit_leaves();
         rx

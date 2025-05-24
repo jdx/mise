@@ -9,7 +9,6 @@ use crate::ui::progress_report::SingleReport;
 use digest::Digest;
 use eyre::{Result, bail};
 use md5::Md5;
-use rayon::prelude::*;
 use sha1::Sha1;
 use sha2::{Sha256, Sha512};
 use siphasher::sip::SipHasher;
@@ -109,7 +108,7 @@ pub fn ensure_checksum(
 }
 
 pub fn parse_shasums(text: &str) -> HashMap<String, String> {
-    text.par_lines()
+    text.lines()
         .map(|l| {
             let mut parts = l.split_whitespace();
             let hash = parts.next().unwrap();

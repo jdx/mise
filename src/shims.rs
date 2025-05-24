@@ -15,10 +15,10 @@ use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
-use rayon::prelude::*;
+use tokio::task::JoinSet;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
-pub fn handle_shim() -> Result<()> {
+pub async fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
     if bin_name.starts_with("mise") || cfg!(test) {
@@ -27,7 +27,8 @@ pub fn handle_shim() -> Result<()> {
     logger::init();
     let mut args = env::ARGS.read().unwrap().clone();
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    args[0] = which_shim(&env::MISE_BIN_NAME)?
+    args[0] = which_shim(&env::MISE_BIN_NAME)
+        .await?
         .to_string_lossy()
         .to_string();
     env::set_var("__MISE_SHIM", "1");
@@ -39,14 +40,15 @@ pub fn handle_shim() -> Result<()> {
         raw: false,
     };
     time!("shim exec");
-    exec.run()?;
+    exec.run().await?;
     exit(0);
 }
 
-fn which_shim(bin_name: &str) -> Result<PathBuf> {
-    let mut ts = ToolsetBuilder::new().build(&Config::get())?;
-    if let Some((p, tv)) = ts.which(bin_name) {
-        if let Some(bin) = p.which(&tv, bin_name)? {
+async fn which_shim(bin_name: &str) -> Result<PathBuf> {
+    let config = Config::try_get().await?;
+    let mut ts = ToolsetBuilder::new().build(&config).await?;
+    if let Some((p, tv)) = ts.which(bin_name).await {
+        if let Some(bin) = p.which(&tv, bin_name).await? {
             trace!(
                 "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
                 bin = display_path(&bin)
@@ -55,9 +57,13 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
         }
     }
     if SETTINGS.not_found_auto_install && console::user_attended() {
-        for tv in ts.install_missing_bin(bin_name)?.unwrap_or_default() {
+        for tv in ts
+            .install_missing_bin(&config, bin_name)
+            .await?
+            .unwrap_or_default()
+        {
             let p = tv.backend()?;
-            if let Some(bin) = p.which(&tv, bin_name)? {
+            if let Some(bin) = p.which(&tv, bin_name).await? {
                 trace!(
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
@@ -79,11 +85,11 @@ fn which_shim(bin_name: &str) -> Result<PathBuf> {
             return Ok(bin);
         }
     }
-    let tvs = ts.list_rtvs_with_bin(bin_name)?;
-    err_no_version_set(ts, bin_name, tvs)
+    let tvs = ts.list_rtvs_with_bin(bin_name).await?;
+    err_no_version_set(ts, bin_name, tvs).await
 }
 
-pub fn reshim(ts: &Toolset, force: bool) -> Result<()> {
+pub async fn reshim(ts: &Toolset, force: bool) -> Result<()> {
     let _lock = LockFile::new(&dirs::SHIMS)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
@@ -97,7 +103,7 @@ pub fn reshim(ts: &Toolset, force: bool) -> Result<()> {
     }
     file::create_dir_all(*dirs::SHIMS)?;
 
-    let (shims_to_add, shims_to_remove) = get_shim_diffs(&mise_bin, ts)?;
+    let (shims_to_add, shims_to_remove) = get_shim_diffs(&mise_bin, ts).await?;
 
     for shim in shims_to_add {
         let symlink_path = dirs::SHIMS.join(&shim);
@@ -107,21 +113,24 @@ pub fn reshim(ts: &Toolset, force: bool) -> Result<()> {
         let symlink_path = dirs::SHIMS.join(shim);
         file::remove_all(&symlink_path)?;
     }
+    let mut jset = JoinSet::new();
     for plugin in backend::list() {
-        match dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
-            Ok(files) => {
+        jset.spawn(async move {
+            if let Ok(files) = dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
                 for bin in files {
                     let bin = bin?;
                     let bin_name = bin.file_name().into_string().unwrap();
                     let symlink_path = dirs::SHIMS.join(bin_name);
-                    make_shim(&bin.path(), &symlink_path)?;
+                    make_shim(&bin.path(), &symlink_path).await?;
                 }
             }
-            Err(_) => {
-                continue;
-            }
-        }
+            Ok(())
+        });
     }
+    jset.join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(())
 }
@@ -198,13 +207,13 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, _shim: &str) -> Result<()> {
 // get_shim_diffs contrasts the actual shims on disk
 // with the desired shims specified by the Toolset
 // and returns a tuple of (missing shims, extra shims)
-pub fn get_shim_diffs(
+pub async fn get_shim_diffs(
     mise_bin: impl AsRef<Path>,
     toolset: &Toolset,
 ) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
     let mise_bin = mise_bin.as_ref();
     let (actual_shims, desired_shims) =
-        rayon::join(|| get_actual_shims(mise_bin), || get_desired_shims(toolset));
+        tokio::join!(get_actual_shims(mise_bin), get_desired_shims(toolset));
     let (actual_shims, desired_shims) = (actual_shims?, desired_shims?);
     let out: (BTreeSet<String>, BTreeSet<String>) = (
         desired_shims.difference(&actual_shims).cloned().collect(),
@@ -214,11 +223,11 @@ pub fn get_shim_diffs(
     Ok(out)
 }
 
-fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
+async fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
     let mise_bin = mise_bin.as_ref();
 
     Ok(list_shims()?
-        .into_par_iter()
+        .into_iter()
         .filter(|bin| {
             let path = dirs::SHIMS.join(bin);
 
@@ -230,7 +239,6 @@ fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
 fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
     Ok(dir
         .read_dir()?
-        .par_bridge()
         .map(|bin| {
             let bin = bin?;
             // files and symlinks which are executable
@@ -251,7 +259,6 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
 fn list_shims() -> Result<HashSet<String>> {
     Ok(dirs::SHIMS
         .read_dir()?
-        .par_bridge()
         .map(|bin| {
             let bin = bin?;
             // files and symlinks which are executable or extensionless files (Git Bash/Cygwin)
@@ -269,48 +276,44 @@ fn list_shims() -> Result<HashSet<String>> {
         .collect())
 }
 
-fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
-    Ok(toolset
-        .list_installed_versions()?
-        .into_par_iter()
-        .flat_map(|(t, tv)| {
-            let bins = list_tool_bins(t.clone(), &tv).unwrap_or_else(|e| {
-                warn!("Error listing bin paths for {}: {:#}", tv, e);
-                Vec::new()
-            });
-            if cfg!(windows) {
-                bins.into_iter()
-                    .flat_map(|b| {
-                        let p = PathBuf::from(&b);
-                        match SETTINGS.windows_shim_mode.as_ref() {
-                            "hardlink" | "symlink" => {
-                                vec![p.with_extension("exe").to_string_lossy().to_string()]
-                            }
-                            "file" => {
-                                vec![
-                                    p.with_extension("").to_string_lossy().to_string(),
-                                    p.with_extension("cmd").to_string_lossy().to_string(),
-                                ]
-                            }
-                            _ => panic!("Unknown shim mode"),
-                        }
-                    })
-                    .collect()
-            } else if cfg!(macos) {
-                // some bins might be uppercased but on mac APFS is case insensitive
-                bins.into_iter().map(|b| b.to_lowercase()).collect()
-            } else {
-                bins
-            }
-        })
-        .collect())
+async fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
+    let mut shims = HashSet::new();
+    for (t, tv) in toolset.list_installed_versions().await? {
+        let bins = list_tool_bins(t.clone(), &tv).await.unwrap_or_else(|e| {
+            warn!("Error listing bin paths for {}: {:#}", tv, e);
+            Vec::new()
+        });
+        if cfg!(windows) {
+            shims.extend(bins.into_iter().flat_map(|b| {
+                let p = PathBuf::from(&b);
+                match SETTINGS.windows_shim_mode.as_ref() {
+                    "hardlink" | "symlink" => {
+                        vec![p.with_extension("exe").to_string_lossy().to_string()]
+                    }
+                    "file" => {
+                        vec![
+                            p.with_extension("").to_string_lossy().to_string(),
+                            p.with_extension("cmd").to_string_lossy().to_string(),
+                        ]
+                    }
+                    _ => panic!("Unknown shim mode"),
+                }
+            }));
+        } else if cfg!(macos) {
+            // some bins might be uppercased but on mac APFS is case insensitive
+            shims.extend(bins.into_iter().map(|b| b.to_lowercase()));
+        } else {
+            shims.extend(bins);
+        }
+    }
+    Ok(shims)
 }
 
 // lists all the paths to bins in a tv that shims will be needed for
-fn list_tool_bins(t: Arc<dyn Backend>, tv: &ToolVersion) -> Result<Vec<String>> {
-    Ok(t.list_bin_paths(tv)?
+async fn list_tool_bins(t: Arc<dyn Backend>, tv: &ToolVersion) -> Result<Vec<String>> {
+    Ok(t.list_bin_paths(tv)
+        .await?
         .into_iter()
-        .par_bridge()
         .filter(|p| p.parent().is_some())
         .filter(|path| path.exists())
         .map(|dir| list_executables_in_dir(&dir))
@@ -320,11 +323,11 @@ fn list_tool_bins(t: Arc<dyn Backend>, tv: &ToolVersion) -> Result<Vec<String>> 
         .collect())
 }
 
-fn make_shim(target: &Path, shim: &Path) -> Result<()> {
+async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     if shim.exists() {
-        file::remove_file(shim)?;
+        file::remove_file_async(shim).await?;
     }
-    file::write(
+    file::write_async(
         shim,
         formatdoc! {r#"
         #!/bin/sh
@@ -335,8 +338,9 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
         data_dir = dirs::DATA.display(),
         fake_asdf_dir = fake_asdf::setup()?.display(),
         target = target.display()},
-    )?;
-    file::make_executable(shim)?;
+    )
+    .await?;
+    file::make_executable_async(shim).await?;
     trace!(
         "shim created from {} to {}",
         target.display(),
@@ -345,7 +349,7 @@ fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     Ok(())
 }
 
-fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<PathBuf> {
+async fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<PathBuf> {
     if tvs.is_empty() {
         bail!(
             "{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool."
@@ -354,6 +358,7 @@ fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Res
     let missing_plugins = tvs.iter().map(|tv| tv.ba()).collect::<HashSet<_>>();
     let mut missing_tools = ts
         .list_missing_versions()
+        .await
         .into_iter()
         .filter(|t| missing_plugins.contains(t.ba()))
         .collect_vec();

@@ -35,37 +35,41 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
-        ts.install_missing_versions(&InstallOptions::default())?;
-        ts.notify_if_versions_missing();
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&config)
+            .await?;
+        ts.install_missing_versions(&config, &InstallOptions::default())
+            .await?;
+        ts.notify_if_versions_missing().await;
 
         if self.json {
-            self.output_json(&config, ts)
+            self.output_json(&config, ts).await
         } else if self.json_extended {
-            self.output_extended_json(&config, ts)
+            self.output_extended_json(&config, ts).await
         } else if self.dotenv {
-            self.output_dotenv(&config, ts)
+            self.output_dotenv(&config, ts).await
         } else {
-            self.output_shell(&config, ts)
+            self.output_shell(&config, ts).await
         }
     }
 
-    fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
-        let env = ts.env_with_path(config)?;
+    async fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
+        let env = ts.env_with_path(config).await?;
         miseprintln!("{}", serde_json::to_string_pretty(&env)?);
         Ok(())
     }
 
-    fn output_extended_json(&self, config: &Config, ts: Toolset) -> Result<()> {
+    async fn output_extended_json(&self, config: &Config, ts: Toolset) -> Result<()> {
         let mut res = BTreeMap::new();
 
-        ts.env_with_path(config)?.iter().for_each(|(k, v)| {
+        ts.env_with_path(config).await?.iter().for_each(|(k, v)| {
             res.insert(k.to_string(), BTreeMap::from([("value", v.to_string())]));
         });
 
-        config.env_with_sources()?.iter().for_each(|(k, v)| {
+        config.env_with_sources().await?.iter().for_each(|(k, v)| {
             res.insert(
                 k.to_string(),
                 BTreeMap::from([
@@ -76,7 +80,8 @@ impl Env {
         });
 
         let tool_map: BTreeMap<String, String> = ts
-            .list_all_versions()?
+            .list_all_versions()
+            .await?
             .into_iter()
             .map(|(b, tv)| {
                 (
@@ -90,7 +95,8 @@ impl Env {
             })
             .collect();
 
-        ts.env_from_tools(config)
+        ts.env_from_tools()
+            .await
             .iter()
             .for_each(|(name, value, tool_id)| {
                 res.insert(
@@ -113,10 +119,10 @@ impl Env {
         Ok(())
     }
 
-    fn output_shell(&self, config: &Config, ts: Toolset) -> Result<()> {
+    async fn output_shell(&self, config: &Config, ts: Toolset) -> Result<()> {
         let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
-        for (k, v) in ts.env_with_path(config)? {
+        for (k, v) in ts.env_with_path(config).await? {
             let k = k.to_string();
             let v = v.to_string();
             miseprint!("{}", shell.set_env(&k, &v))?;
@@ -124,8 +130,8 @@ impl Env {
         Ok(())
     }
 
-    fn output_dotenv(&self, config: &Config, ts: Toolset) -> Result<()> {
-        let (env, _) = ts.final_env(config)?;
+    async fn output_dotenv(&self, config: &Config, ts: Toolset) -> Result<()> {
+        let (env, _) = ts.final_env(config).await?;
         for (k, v) in env {
             let k = k.to_string();
             let v = v.to_string();

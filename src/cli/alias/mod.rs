@@ -36,23 +36,23 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self {
-            Self::Get(cmd) => cmd.run(),
-            Self::Ls(cmd) => cmd.run(),
-            Self::Set(cmd) => cmd.run(),
-            Self::Unset(cmd) => cmd.run(),
+            Self::Get(cmd) => cmd.run().await,
+            Self::Ls(cmd) => cmd.run().await,
+            Self::Set(cmd) => cmd.run().await,
+            Self::Unset(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Alias {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::AliasLs {
             tool: self.plugin,
             no_header: self.no_header,
         }));
 
-        cmd.run()
+        cmd.run().await
     }
 }

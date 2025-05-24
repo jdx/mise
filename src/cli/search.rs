@@ -54,7 +54,7 @@ pub struct Search {
 }
 
 impl Search {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.interactive {
             self.interactive()?;
         } else {

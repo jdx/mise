@@ -1,5 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashSet},
+    sync::Arc,
+};
 
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
@@ -12,8 +15,8 @@ use itertools::Itertools;
 
 #[derive(Debug, Default, Clone)]
 pub struct ToolRequestSet {
-    pub tools: IndexMap<BackendArg, Vec<ToolRequest>>,
-    pub sources: BTreeMap<BackendArg, ToolSource>,
+    pub tools: IndexMap<Arc<BackendArg>, Vec<ToolRequest>>,
+    pub sources: BTreeMap<Arc<BackendArg>, ToolSource>,
 }
 
 impl ToolRequestSet {
@@ -40,15 +43,17 @@ impl ToolRequestSet {
     //         .collect()
     // }
 
-    pub fn missing_tools(&self) -> Vec<&ToolRequest> {
-        self.tools
-            .values()
-            .flatten()
-            .filter(|tr| tr.is_os_supported() && !tr.is_installed())
-            .collect()
+    pub async fn missing_tools(&self) -> Vec<&ToolRequest> {
+        let mut tools = vec![];
+        for tr in self.tools.values().flatten() {
+            if tr.is_os_supported() && !tr.is_installed().await {
+                tools.push(tr);
+            }
+        }
+        tools
     }
 
-    pub fn list_tools(&self) -> Vec<&BackendArg> {
+    pub fn list_tools(&self) -> Vec<&Arc<BackendArg>> {
         self.tools.keys().collect()
     }
 
@@ -61,16 +66,18 @@ impl ToolRequestSet {
         list.push(tr);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&BackendArg, &Vec<ToolRequest>, &ToolSource)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Arc<BackendArg>, &Vec<ToolRequest>, &ToolSource)> {
         self.tools
             .iter()
             .map(|(backend, tvr)| (backend, tvr, self.sources.get(backend).unwrap()))
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = (BackendArg, Vec<ToolRequest>, ToolSource)> {
-        self.tools.into_iter().map(move |(fa, tvr)| {
-            let source = self.sources.get(&fa).unwrap().clone();
-            (fa, tvr, source)
+    pub fn into_iter(
+        self,
+    ) -> impl Iterator<Item = (Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> {
+        self.tools.into_iter().map(move |(ba, tvr)| {
+            let source = self.sources.get(&ba).unwrap().clone();
+            (ba, tvr, source)
         })
     }
 
@@ -83,7 +90,7 @@ impl ToolRequestSet {
         }
         self.iter()
             .filter(|(ba, ..)| tools.contains(&ba.short))
-            .map(|(fa, trl, ts)| (fa.clone(), trl.clone(), ts.clone()))
+            .map(|(ba, trl, ts)| (ba.clone(), trl.clone(), ts.clone()))
             .collect::<ToolRequestSet>()
     }
 
@@ -104,13 +111,13 @@ impl Display for ToolRequestSet {
     }
 }
 
-impl FromIterator<(BackendArg, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
+impl FromIterator<(Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
     fn from_iter<T>(iter: T) -> Self
     where
-        T: IntoIterator<Item = (BackendArg, Vec<ToolRequest>, ToolSource)>,
+        T: IntoIterator<Item = (Arc<BackendArg>, Vec<ToolRequest>, ToolSource)>,
     {
         let mut trs = ToolRequestSet::new();
-        for (_fa, tvr, source) in iter {
+        for (_ba, tvr, source) in iter {
             for tr in tvr {
                 trs.add_version(tr.clone(), &source);
             }
@@ -152,9 +159,9 @@ impl ToolRequestSetBuilder {
     // }
     //
 
-    pub fn build(&self) -> eyre::Result<ToolRequestSet> {
+    pub async fn build(&self, config: &Config) -> eyre::Result<ToolRequestSet> {
         let mut trs = ToolRequestSet::default();
-        trs = self.load_config_files(trs)?;
+        trs = self.load_config_files(config, trs).await?;
         trs = self.load_runtime_env(trs)?;
         trs = self.load_runtime_args(trs)?;
 
@@ -177,8 +184,11 @@ impl ToolRequestSetBuilder {
             || !tool_enabled(&self.enable_tools, &self.disable_tools, ba)
     }
 
-    fn load_config_files(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
-        let config = Config::get();
+    async fn load_config_files(
+        &self,
+        config: &Config,
+        mut trs: ToolRequestSet,
+    ) -> eyre::Result<ToolRequestSet> {
         for cf in config.config_files.values().rev() {
             trs = merge(trs, cf.to_tool_request_set()?);
         }
@@ -196,11 +206,11 @@ impl ToolRequestSetBuilder {
                     // ignore MISE_INSTALL_VERSION
                     continue;
                 }
-                let fa: BackendArg = plugin_name.as_str().into();
+                let ba: Arc<BackendArg> = Arc::new(plugin_name.as_str().into());
                 let source = ToolSource::Environment(k, v.clone());
                 let mut env_ts = ToolRequestSet::new();
                 for v in v.split_whitespace() {
-                    let tvr = ToolRequest::new(fa.clone(), v, source.clone())?;
+                    let tvr = ToolRequest::new(ba.clone(), v, source.clone())?;
                     env_ts.add_version(tvr, &source);
                 }
                 trs = merge(trs, env_ts);

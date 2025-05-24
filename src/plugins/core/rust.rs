@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::Backend;
 use crate::build_time::TARGET;
@@ -13,47 +13,53 @@ use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, github, plugins};
+use async_trait::async_trait;
 use eyre::Result;
 use xx::regex;
 
 #[derive(Debug)]
 pub struct RustPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl RustPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("rust"),
+            ba: plugins::core::new_backend_arg("rust").into(),
         }
     }
 
-    fn setup_rustup(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+    async fn setup_rustup(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         if rustup_home().join("settings.toml").exists() && cargo_bin().exists() {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
-        HTTP.download_file(rustup_url(), &rustup_path(), Some(&ctx.pr))?;
+        HTTP.download_file(rustup_url(), &rustup_path(), Some(&ctx.pr))
+            .await?;
         file::make_executable(rustup_path())?;
         file::create_dir_all(rustup_home())?;
+        let config = Config::get().await;
+        let ts = config.get_toolset().await?;
         let cmd = CmdLineRunner::new(rustup_path())
             .with_pr(&ctx.pr)
             .arg("--no-modify-path")
             .arg("--default-toolchain")
             .arg("none")
             .arg("-y")
-            .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)?);
+            .envs(self.exec_env(&config, ts, tv).await?);
         cmd.execute()?;
         Ok(())
     }
 
-    fn test_rust(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+    async fn test_rust(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message(format!("{RUSTC_BIN} -V"));
+        let config = Config::get().await;
+        let ts = config.get_toolset().await?;
         CmdLineRunner::new(RUSTC_BIN)
             .with_pr(&ctx.pr)
             .arg("-V")
-            .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)?)
-            .prepend_path(self.list_bin_paths(tv)?)?
+            .envs(self.exec_env(&config, ts, tv).await?)
+            .prepend_path(self.list_bin_paths(tv).await?)?
             .execute()
     }
 
@@ -62,13 +68,15 @@ impl RustPlugin {
     }
 }
 
+#[async_trait]
 impl Backend for RustPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        let versions = github::list_releases("rust-lang/rust")?
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+        let versions = github::list_releases("rust-lang/rust")
+            .await?
             .into_iter()
             .map(|r| r.tag_name)
             .rev()
@@ -90,8 +98,10 @@ impl Backend for RustPlugin {
         Ok(rt.channel)
     }
 
-    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        self.setup_rustup(ctx, &tv)?;
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        self.setup_rustup(ctx, &tv).await?;
+        let config = Config::try_get().await?;
+        let ts = config.get_toolset().await?;
 
         let (profile, components, targets) = get_args(&tv);
 
@@ -104,36 +114,42 @@ impl Backend for RustPlugin {
             .opt_arg(profile)
             .opt_args("--component", components)
             .opt_args("--target", targets)
-            .prepend_path(self.list_bin_paths(&tv)?)?
-            .envs(self.exec_env(&Config::get(), Config::get().get_toolset()?, &tv)?)
+            .prepend_path(self.list_bin_paths(&tv).await?)?
+            .envs(self.exec_env(&config, ts, &tv).await?)
             .execute()?;
 
         file::remove_all(tv.install_path())?;
         file::make_symlink(&cargo_home().join("bin"), &tv.install_path())?;
 
-        self.test_rust(ctx, &tv)?;
+        self.test_rust(ctx, &tv).await?;
 
         Ok(tv)
     }
 
-    fn uninstall_version_impl(&self, pr: &Box<dyn SingleReport>, tv: &ToolVersion) -> Result<()> {
-        let mut env = self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)?;
+    async fn uninstall_version_impl(
+        &self,
+        pr: &Box<dyn SingleReport>,
+        tv: &ToolVersion,
+    ) -> Result<()> {
+        let config = Config::try_get().await?;
+        let ts = config.get_toolset().await?;
+        let mut env = self.exec_env(&config, ts, tv).await?;
         env.remove("RUSTUP_TOOLCHAIN");
         CmdLineRunner::new(RUSTUP_BIN)
             .with_pr(pr)
             .arg("toolchain")
             .arg("uninstall")
             .arg(&tv.version)
-            .prepend_path(self.list_bin_paths(tv)?)?
+            .prepend_path(self.list_bin_paths(tv).await?)?
             .envs(env)
             .execute()
     }
 
-    fn list_bin_paths(&self, _tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, _tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         Ok(vec![cargo_bindir()])
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
         _config: &Config,
         _ts: &Toolset,
@@ -154,14 +170,17 @@ impl Backend for RustPlugin {
         .into())
     }
 
-    fn outdated_info(&self, tv: &ToolVersion, bump: bool) -> Result<Option<OutdatedInfo>> {
+    async fn outdated_info(&self, tv: &ToolVersion, bump: bool) -> Result<Option<OutdatedInfo>> {
+        let config = Config::get().await;
         let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
         if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
-            let oi = OutdatedInfo::resolve(tv.clone(), bump)?;
+            let oi = OutdatedInfo::resolve(&config, tv.clone(), bump).await?;
             Ok(oi)
         } else {
-            let mut cmd = cmd!(RUSTUP_BIN, "check").env("PATH", self.path_env_for_cmd(tv)?);
-            for (k, v) in self.exec_env(&Config::get(), Config::get().get_toolset()?, tv)? {
+            let config = Config::get().await;
+            let ts = config.get_toolset().await?;
+            let mut cmd = cmd!(RUSTUP_BIN, "check").env("PATH", self.path_env_for_cmd(tv).await?);
+            for (k, v) in self.exec_env(&config, ts, tv).await? {
                 cmd = cmd.env(k, v);
             }
             let out = cmd.read()?;
@@ -170,7 +189,7 @@ impl Backend for RustPlugin {
                     if let Some(_cap) = v_re.captures(line) {
                         // let requested = cap.get(1).unwrap().as_str().to_string();
                         // let latest = cap.get(2).unwrap().as_str().to_string();
-                        let oi = OutdatedInfo::new(tv.clone(), tv.version.clone())?;
+                        let oi = OutdatedInfo::new(&config, tv.clone(), tv.version.clone())?;
                         return Ok(Some(oi));
                     }
                 }
@@ -288,7 +307,7 @@ fn rustup_url() -> String {
 
 #[cfg(windows)]
 fn rustup_url() -> String {
-    let arch = &*SETTINGS.arch();
+    let arch = SETTINGS.arch();
     format!("https://win.rustup.rs/{arch}")
 }
 

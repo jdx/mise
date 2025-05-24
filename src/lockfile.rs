@@ -6,10 +6,13 @@ use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{Report, Result, bail};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::Arc,
+};
 use toml_edit::DocumentMut;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -102,7 +105,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     for (backend, group) in &new_versions.iter().chunk_by(|tv| tv.ba()) {
         let tvs = group.cloned().collect_vec();
         let source = tvs[0].request.source().clone();
-        let mut tvl = ToolVersionList::new(backend.clone(), source.clone());
+        let mut tvl = ToolVersionList::new(Arc::new(backend.clone()), source.clone());
         tvl.versions.extend(tvs);
         tools_by_source
             .entry(source)
@@ -158,8 +161,8 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     Ok(())
 }
 
-fn read_all_lockfiles() -> Lockfile {
-    Config::get()
+fn read_all_lockfiles(config: &Config) -> Lockfile {
+    config
         .config_files
         .iter()
         .rev()
@@ -192,6 +195,7 @@ fn read_lockfile_for(path: &Path) -> Result<Lockfile> {
 }
 
 pub fn get_locked_version(
+    config: &Config,
     path: Option<&Path>,
     short: &str,
     prefix: &str,
@@ -210,7 +214,7 @@ pub fn get_locked_version(
         }
         None => {
             trace!("[{short}@{prefix}] reading all lockfiles");
-            read_all_lockfiles()
+            read_all_lockfiles(config)
         }
     };
 

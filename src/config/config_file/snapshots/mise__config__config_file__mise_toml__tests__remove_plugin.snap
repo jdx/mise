@@ -1,10 +1,11 @@
 ---
 source: src/config/config_file/mise_toml.rs
 expression: cf.to_toolset().unwrap()
-snapshot_kind: text
 ---
 Toolset {
     versions: {},
     source: None,
-    tera_ctx: OnceCell(Uninit),
+    tera_ctx: OnceCell {
+        value: None,
+    },
 }
