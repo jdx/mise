@@ -8,17 +8,17 @@ export AWS_REGION=auto
 export AWS_ENDPOINT_URL=https://6e243906ff257b965bcae8025c2fc344.r2.cloudflarestorage.com
 
 if [ "${DRY_RUN:-true}" = "true" ]; then
-  aws() {
-    echo "DRY RUN: aws $*"
-  }
+	aws() {
+		echo "DRY RUN: aws $*"
+	}
 fi
 
 if [ $((RANDOM % 30)) -eq 0 ]; then
-  # delete old assets only roughly 1/30 times
-  # deleting old assets can break the site for people currently on it
-  # but it's also good to keep things tidy
-  aws s3 rm --recursive s3://mise/assets/
-  aws s3 rm --recursive --exclude "*" --include "*.html" s3://mise/
+	# delete old assets only roughly 1/30 times
+	# deleting old assets can break the site for people currently on it
+	# but it's also good to keep things tidy
+	aws s3 rm --recursive s3://mise/assets/
+	aws s3 rm --recursive --exclude "*" --include "*.html" s3://mise/
 fi
 
 aws s3 cp --recursive --checksum-algorithm CRC32 .vitepress/dist s3://mise/

@@ -14,7 +14,7 @@ mise x shellcheck -- shellcheck tmp/install.sh
 
 ./tmp/install.sh
 if [[ ! "$("$HOME/.local/bin/mise" -v)" =~ ^${MISE_VERSION//v/} ]]; then
-  echo "mise version mismatch"
-  exit 1
+	echo "mise version mismatch"
+	exit 1
 fi
 rm -rf "$RELEASE_DIR"

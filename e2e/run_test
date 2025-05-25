@@ -102,7 +102,7 @@ run_test() {
 
   echo "$TEST: $DURATION" >&2
 
-  if [[ "$status" == 0 ]]; then
+  if [[ $status == 0 ]]; then
     remove_isolated_env
     summary "$TEST" "$DURATION" ":white_check_mark:"
   else
