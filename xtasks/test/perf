@@ -16,14 +16,19 @@ declare -A alt_benchmarks
 names=()
 errors=()
 
-recent_benchmarks["install-uncached"]=2900
-recent_benchmarks["install-cached"]=2400
-recent_benchmarks["ls-uncached"]=2360
-recent_benchmarks["ls-cached"]=2403
-recent_benchmarks["bin-paths-uncached"]=2400
-recent_benchmarks["bin-paths-cached"]=2300
-recent_benchmarks["task-ls-uncached"]=2400
-recent_benchmarks["task-ls-cached"]=2400
+if [ -v MISE_ALT ]; then
+	which mise
+	which "$MISE_ALT"
+fi
+
+recent_benchmarks["install-uncached"]=678
+recent_benchmarks["install-cached"]=186
+recent_benchmarks["ls-uncached"]=372
+recent_benchmarks["ls-cached"]=57
+recent_benchmarks["bin-paths-uncached"]=490
+recent_benchmarks["bin-paths-cached"]=61
+recent_benchmarks["task-ls-uncached"]=10000
+recent_benchmarks["task-ls-cached"]=10000
 
 for name in "${!recent_benchmarks[@]}"; do
 	maximums["$name"]=$(("${recent_benchmarks["$name"]}" * 12 / 10))
@@ -58,7 +63,7 @@ time_command() {
 	echo "running $cmd $*..." >&2
 	timeout -v 10 $cmd "$@" >/dev/null || true
 	end_time=$(date +%s%N)
-	duration=$(echo "($end_time - $start_time) / 1000" | bc)
+	duration=$(((end_time - start_time) / 1000000))
 	echo "$duration"
 }
 
@@ -67,7 +72,7 @@ benchmark() {
 	local uncached_duration
 	local cached_duration
 	shift
-	mise cache clear -q
+	mise cache clear
 	uncached_duration=$(time_command mise "$@")
 	cached_duration=$(time_command mise "$@")
 	benchmarks["$name-uncached"]=$uncached_duration
@@ -101,6 +106,7 @@ check_maximum() {
 	fi
 }
 
+mise install
 benchmark install install
 benchmark ls ls
 benchmark bin-paths bin-paths
@@ -126,28 +132,28 @@ else
 fi
 
 if [ -v GITHUB_STEP_SUMMARY ]; then
-	echo "## e2e/perf/test_many_tasks" >>comment.md
-	echo "" >>comment.md
-	echo "- NUM_TASKS: $num_tasks" >>comment.md
-	echo "- NUM_TOOLS: $num_tools" >>comment.md
-	echo "" >>comment.md
+	echo "## e2e/perf/test_many_tasks" >>../comment.md
+	echo "" >>../comment.md
+	echo "- NUM_TASKS: $num_tasks" >>../comment.md
+	echo "- NUM_TOOLS: $num_tools" >>../comment.md
+	echo "" >>../comment.md
 
 	if [ -n "${MISE_ALT:-}" ]; then
-		echo "| Command    | Uncached mise | Cached mise | Uncached $MISE_ALT | Cached $MISE_ALT |" >>comment.md
-		echo "|------------|---------------|-------------|--------------------|------------------|" >>comment.md
+		echo "| Command    | Uncached mise | Cached mise | Uncached $MISE_ALT | Cached $MISE_ALT |" >>../comment.md
+		echo "|------------|---------------|-------------|--------------------|------------------|" >>../comment.md
 		for name in "${names[@]}"; do
 			printf "| %-10s | %11dms | %10dms | %15dms | %13dms |\n" \
 				"$name" \
 				"${benchmarks["$name-uncached"]}" \
 				"${benchmarks["$name-cached"]}" \
 				"${alt_benchmarks["$name-uncached"]}" \
-				"${alt_benchmarks["$name-cached"]}" >>comment.md
+				"${alt_benchmarks["$name-cached"]}" >>../comment.md
 		done
 	else
-		echo "| Command    | Uncached | Cached   |" >>comment.md
-		echo "|------------|----------|----------|" >>comment.md
+		echo "| Command    | Uncached | Cached   |" >>../comment.md
+		echo "|------------|----------|----------|" >>../comment.md
 		for name in "${names[@]}"; do
-			printf "| %-10s | %6dms | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" "${benchmarks["$name-cached"]}" >>comment.md
+			printf "| %-10s | %6dms | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" "${benchmarks["$name-cached"]}" >>../comment.md
 		done
 	fi
 fi

@@ -240,6 +240,8 @@ run end-to-end tests
 
 ## `test:perf`
 
+- Depends: test:build-perf-workspace
+
 - **Usage**: `test:perf`
 
 ## `test:shuffle`
