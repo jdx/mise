@@ -55,25 +55,11 @@ impl ZigPlugin {
         let machengine_download_index = "https://machengine.org/zig/index.json";
 
         let url = if tv.version == "ref:master" {
-            self.get_tarball_url_from_json(
-                zig_download_index,
-                self.get_version_from_json(zig_download_index, "master")
-                    .await?
-                    .as_str(),
-                arch(),
-                os(),
-            )
-            .await?
+            self.get_tarball_url_from_json(zig_download_index, "master", arch(), os())
+                .await?
         } else if tv.version == "ref:mach-latest" {
-            self.get_tarball_url_from_json(
-                machengine_download_index,
-                self.get_version_from_json(machengine_download_index, "mach-latest")
-                    .await?
-                    .as_str(),
-                arch(),
-                os(),
-            )
-            .await?
+            self.get_tarball_url_from_json(machengine_download_index, "mach-latest", arch(), os())
+                .await?
         } else if regex!(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").is_match(&tv.version) {
             self.get_tarball_url_from_json(
                 machengine_download_index,
@@ -125,15 +111,6 @@ impl ZigPlugin {
 
     fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         self.test_zig(ctx, tv)
-    }
-
-    async fn get_version_from_json(&self, json_url: &str, key: &str) -> Result<String> {
-        let version_json: serde_json::Value = HTTP_FETCH.json(json_url).await?;
-        let zig_version = version_json
-            .pointer(&format!("/{key}/version"))
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| eyre::eyre!("Failed to get zig version from {:?}", json_url))?;
-        Ok(zig_version.to_string())
     }
 
     async fn get_tarball_url_from_json(
