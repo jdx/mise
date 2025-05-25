@@ -4,11 +4,11 @@ cat <<EOF >.sdkmanrc
 java=17.0.2
 EOF
 mise i java
-assert_contains "mise x java -- java -version 2>&1" "openjdk version \"17.0.2\""
+assert_contains "mise x java -- java -version 2>&1" 'openjdk version "17.0.2"'
 rm .sdkmanrc
 
 cat <<EOF >.java-version
 17.0.2
 EOF
-assert_contains "mise x java -- java -version 2>&1" "openjdk version \"17.0.2\""
+assert_contains "mise x java -- java -version 2>&1" 'openjdk version "17.0.2"'
 rm .java-version

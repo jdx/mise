@@ -33,19 +33,19 @@ abuild -r
 git add APKBUILD
 
 if git diff --cached --exit-code; then
-  echo "No changes to commit"
-  exit 0
+	echo "No changes to commit"
+	exit 0
 fi
 git commit -m "community/mise: upgrade to ${MISE_VERSION#v}"
 
 if [ "$DRY_RUN" == 0 ]; then
-  git push jdxcode -f
+	git push jdxcode -f
 fi
 
 open_mr="$(glab mr list -R alpine/aports --author=@me)"
-if [[ "$open_mr" != "Showing"* ]]; then
-  if [ "$DRY_RUN" == 0 ]; then
-    DEBUG=1 glab mr create --fill --yes -H jdxcode/aports -R alpine/aports
-  fi
+if [[ $open_mr != "Showing"* ]]; then
+	if [ "$DRY_RUN" == 0 ]; then
+		DEBUG=1 glab mr create --fill --yes -H jdxcode/aports -R alpine/aports
+	fi
 fi
 #git show

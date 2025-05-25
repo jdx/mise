@@ -238,8 +238,8 @@ impl Run {
             .clone()
     }
 
-    fn parallelize_tasks(mut self, mut tasks: Vec<Task>) -> Result<()> {
-        time!("paralellize_tasks start");
+    fn parallelize_tasks(mut self, tasks: Vec<Task>) -> Result<()> {
+        time!("parallelize_tasks start");
 
         ctrlc::exit_on_ctrl_c(false);
 
@@ -266,7 +266,9 @@ impl Run {
             });
         }
 
+        let mut tasks = resolve_depends(tasks)?;
         self.fetch_tasks(&mut tasks)?;
+
         let tasks = Deps::new(tasks)?;
         for task in tasks.all() {
             self.validate_task(task)?;
@@ -369,21 +371,6 @@ impl Run {
             }
         });
 
-        if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
-            let prefix = task.estyled_prefix();
-            self.eprint(
-                task,
-                &prefix,
-                &format!("{} task failed", style::ered("ERROR")),
-            );
-            exit(*status);
-        }
-
-        if self.timings() && num_tasks > 1 && *env::MISE_TASK_LEVEL == 0 {
-            let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
-            eprintln!("{}", style::edim(msg));
-        };
-
         if self.output(None) == TaskOutput::KeepOrder {
             // TODO: display these as tasks complete in order somehow rather than waiting until everything is done
             let output = self.keep_order_output.lock().unwrap();
@@ -403,6 +390,19 @@ impl Run {
                     }
                 }
             }
+        }
+        if self.timings() && num_tasks > 1 && *env::MISE_TASK_LEVEL == 0 {
+            let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
+            eprintln!("{}", style::edim(msg));
+        };
+        if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
+            let prefix = task.estyled_prefix();
+            self.eprint(
+                task,
+                &prefix,
+                &format!("{} task failed", style::ered("ERROR")),
+            );
+            exit(*status);
         }
         time!("parallelize_tasks done");
 
@@ -496,7 +496,7 @@ impl Run {
             }
         }
 
-        if self.timings() && (task.file.as_ref().is_some() || !task.run().is_empty()) {
+        if self.task_timings() && (task.file.as_ref().is_some() || !task.run().is_empty()) {
             self.eprint(
                 task,
                 &prefix,
@@ -1003,11 +1003,16 @@ impl Run {
     }
 
     fn timings(&self) -> bool {
-        !self.quiet(None)
-            && !self.no_timings
-            && SETTINGS
-                .task_timings
-                .unwrap_or(self.output == Some(TaskOutput::Prefix))
+        !self.quiet(None) && !self.no_timings
+    }
+
+    fn task_timings(&self) -> bool {
+        self.timings()
+            && SETTINGS.task_timings.unwrap_or(
+                self.output == Some(TaskOutput::Prefix)
+                    || self.output == Some(TaskOutput::Timed)
+                    || self.output == Some(TaskOutput::KeepOrder),
+            )
     }
 
     fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
@@ -1276,4 +1281,16 @@ pub fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
         })
         .flatten_ok()
         .collect()
+}
+
+pub fn resolve_depends(tasks: Vec<Task>) -> Result<Vec<Task>> {
+    let tasks = tasks
+        .into_iter()
+        .map(|t| {
+            let depends = t.all_depends()?;
+            eyre::Ok(once(t).chain(depends).collect::<Vec<_>>())
+        })
+        .flatten_ok()
+        .collect::<eyre::Result<Vec<_>>>()?;
+    Ok(tasks)
 }

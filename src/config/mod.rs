@@ -442,34 +442,31 @@ impl Config {
     }
 
     fn load_global_tasks(&self) -> Result<Vec<Task>> {
-        let cf = self.config_files.get(&*env::MISE_GLOBAL_CONFIG_FILE);
-        let config_root = cf.and_then(|cf| cf.project_root()).unwrap_or(&*env::HOME);
-        Ok(self
-            .load_config_tasks(&cf.map(|cf| cf.as_ref()), config_root)
-            .into_iter()
-            .chain(self.load_file_tasks(&cf, config_root))
-            .map(|mut t| {
-                t.global = true;
-                t
-            })
-            .collect())
+        let tasks = self
+            .config_files
+            .values()
+            .filter(|cf| is_global_config(cf.get_path()))
+            .flat_map(|cf| self.load_config_and_file_tasks(cf.as_ref()))
+            .collect();
+        Ok(tasks)
     }
 
     fn load_system_tasks(&self) -> Result<Vec<Task>> {
-        let cf = self.config_files.get(&*env::MISE_SYSTEM_CONFIG_FILE);
-        let config_root = cf
-            .and_then(|cf| cf.project_root())
-            .map(|p| p.to_path_buf())
-            .unwrap_or_default();
-        Ok(self
-            .load_config_tasks(&cf.map(|cf| cf.as_ref()), &config_root)
-            .into_iter()
-            .chain(self.load_file_tasks(&cf, &config_root))
-            .map(|mut t| {
-                t.global = true;
-                t
-            })
-            .collect())
+        let tasks = self
+            .config_files
+            .values()
+            .filter(|cf| is_system_config(cf.get_path()))
+            .flat_map(|cf| self.load_config_and_file_tasks(cf.as_ref()))
+            .collect();
+        Ok(tasks)
+    }
+
+    fn load_config_and_file_tasks(&self, cf: &dyn ConfigFile) -> Vec<Task> {
+        let project_root = cf.project_root().unwrap_or(&*env::HOME);
+        let cf = Some(cf);
+        let tasks = self.load_config_tasks(&cf, project_root);
+        let file_tasks = self.load_file_tasks(&cf, project_root);
+        tasks.into_iter().chain(file_tasks).collect()
     }
 
     fn load_config_tasks(&self, cf: &Option<&dyn ConfigFile>, config_root: &Path) -> Vec<Task> {
@@ -490,7 +487,7 @@ impl Config {
             .collect()
     }
 
-    fn load_file_tasks(&self, cf: &Option<&Box<dyn ConfigFile>>, config_root: &Path) -> Vec<Task> {
+    fn load_file_tasks(&self, cf: &Option<&dyn ConfigFile>, config_root: &Path) -> Vec<Task> {
         let includes = match cf {
             Some(cf) => cf
                 .task_config()
@@ -560,7 +557,7 @@ impl Config {
     }
 
     pub fn global_config(&self) -> Result<MiseToml> {
-        let settings_path = env::MISE_GLOBAL_CONFIG_FILE.to_path_buf();
+        let settings_path = global_config_path();
         match settings_path.exists() {
             false => {
                 trace!("settings does not exist {:?}", settings_path);
@@ -675,6 +672,9 @@ impl Config {
             .iter()
             .map(|(p, cf)| {
                 let mut watch_files: Vec<WatchFilePattern> = vec![p.as_path().into()];
+                if let Some(parent) = p.parent() {
+                    watch_files.push(parent.join("mise.lock").into());
+                }
                 watch_files.extend(cf.watch_files()?.iter().map(|wf| WatchFilePattern {
                     root: cf.project_root().map(|pr| pr.to_path_buf()),
                     patterns: wf.patterns.clone(),
@@ -834,6 +834,7 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
         paths.extend([
             ".config/mise/conf.d/*.toml",
             ".config/mise/config.toml",
+            ".config/mise/mise.toml",
             ".config/mise.toml",
             ".mise/config.toml",
             "mise/config.toml",
@@ -842,6 +843,7 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
             ".mise.toml",
             ".config/mise/config.local.toml",
+            ".config/mise/mise.local.toml",
             ".config/mise.local.toml",
             ".mise/config.local.toml",
             ".rtx.local.toml",
@@ -981,6 +983,10 @@ pub fn is_global_config(path: &Path) -> bool {
     global_config_files().contains(path) || system_config_files().contains(path)
 }
 
+pub fn is_system_config(path: &Path) -> bool {
+    system_config_files().contains(path)
+}
+
 static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
 static SYSTEM_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
 
@@ -989,33 +995,16 @@ pub fn global_config_files() -> IndexSet<PathBuf> {
     if let Some(g) = &*g {
         return g.clone();
     }
+    if let Some(global_config_file) = &*env::MISE_GLOBAL_CONFIG_FILE {
+        return vec![global_config_file.clone()].into_iter().collect();
+    }
     let mut config_files = IndexSet::new();
-    if env::var_path("MISE_CONFIG_FILE").is_none()
-        && env::var_path("MISE_GLOBAL_CONFIG_FILE").is_none()
-        && !*env::MISE_USE_TOML
-    {
+    if !*env::MISE_USE_TOML {
         // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
         // because that's how the user overrides the default
         config_files.insert(dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()));
     };
-    for p in file::ls(&dirs::CONFIG.join("conf.d")).unwrap_or_default() {
-        if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string()) {
-            if !file_name.starts_with(".") && file_name.ends_with(".toml") {
-                config_files.insert(p);
-            }
-        }
-    }
-    config_files.insert(env::MISE_GLOBAL_CONFIG_FILE.clone());
-    config_files.insert(env::MISE_GLOBAL_CONFIG_FILE.with_extension("local.toml"));
-    for env in &*env::MISE_ENV {
-        config_files.extend(vec![
-            dirs::CONFIG.join(format!("config.{env}.toml")),
-            dirs::CONFIG.join(format!("config.{env}.local.toml")),
-            dirs::CONFIG.join(format!("mise.{env}.toml")),
-            dirs::CONFIG.join(format!("mise.{env}.local.toml")),
-        ]);
-    }
-    config_files = config_files.into_iter().filter(|p| p.is_file()).collect();
+    config_files.extend(config_files_from_dir(&dirs::CONFIG));
     *g = Some(config_files.clone());
     config_files
 }
@@ -1025,16 +1014,40 @@ pub fn system_config_files() -> IndexSet<PathBuf> {
     if let Some(s) = &*s {
         return s.clone();
     }
-    let mut config_files = IndexSet::new();
-    if env::MISE_SYSTEM_CONFIG_FILE.is_file() {
-        config_files.insert(env::MISE_SYSTEM_CONFIG_FILE.clone());
+    if let Some(p) = &*env::MISE_SYSTEM_CONFIG_FILE {
+        return vec![p.clone()].into_iter().collect();
     }
-    let system_local = env::MISE_SYSTEM_CONFIG_FILE.with_extension("local.toml");
-    if system_local.is_file() {
-        config_files.insert(system_local);
-    }
+    let config_files = config_files_from_dir(&dirs::SYSTEM);
     *s = Some(config_files.clone());
     config_files
+}
+
+static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
+    let mut filenames = vec!["config.toml".to_string(), "mise.toml".to_string()];
+    for env in &*env::MISE_ENV {
+        filenames.push(format!("config.{env}.toml"));
+        filenames.push(format!("mise.{env}.toml"));
+    }
+    filenames.push("config.local.toml".to_string());
+    filenames.push("mise.local.toml".to_string());
+    for env in &*env::MISE_ENV {
+        filenames.push(format!("config.{env}.local.toml"));
+        filenames.push(format!("mise.{env}.local.toml"));
+    }
+    filenames
+});
+
+fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
+    let mut files = IndexSet::new();
+    for p in file::ls(&dir.join("conf.d")).unwrap_or_default() {
+        if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string()) {
+            if !file_name.starts_with(".") && file_name.ends_with(".toml") {
+                files.insert(p);
+            }
+        }
+    }
+    files.extend(CONFIG_FILENAMES.iter().map(|f| dir.join(f)));
+    files.into_iter().filter(|p| p.is_file()).collect()
 }
 
 /// the top-most global config file or the path to where it should be written to
@@ -1042,7 +1055,8 @@ pub fn global_config_path() -> PathBuf {
     global_config_files()
         .last()
         .cloned()
-        .unwrap_or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
+        .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
+        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 
 /// the top-most mise.toml (local or global)

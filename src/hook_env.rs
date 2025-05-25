@@ -49,6 +49,15 @@ impl From<&Path> for WatchFilePattern {
     }
 }
 
+impl From<PathBuf> for WatchFilePattern {
+    fn from(path: PathBuf) -> Self {
+        Self {
+            patterns: vec![path.to_string_lossy().to_string()],
+            root: Some(path),
+        }
+    }
+}
+
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
 pub fn should_exit_early(watch_files: impl IntoIterator<Item = WatchFilePattern>) -> bool {

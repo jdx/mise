@@ -582,6 +582,8 @@ dotnet.backends = [
     "vfox:mise-plugins/vfox-dotnet"
 ]
 dotnet-core.backends = ["asdf:mise-plugins/mise-dotnet-core"]
+dotslash.backends = ["ubi:facebook/dotslash"]
+dotslash.test = ["dotslash --version", "DotSlash"]
 dotty.backends = ["asdf:mise-plugins/mise-dotty"]
 dprint.backends = ["aqua:dprint/dprint", "asdf:asdf-community/asdf-dprint"]
 draft.backends = ["aqua:Azure/draft", "asdf:kristoflemmens/asdf-draft"]

@@ -1,3 +1,5 @@
 disable=SC1008
 disable=SC2088
+disable=SC2129
+disable=SC2164
 disable=SC2317
