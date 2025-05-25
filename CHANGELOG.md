@@ -1,10 +1,26 @@
 # Changelog
 
+## [2025.5.12](https://github.com/jdx/mise/compare/v2025.5.11..v2025.5.12) - 2025-05-25
+
+### 🐛 Bug Fixes
+
+- read global/system config file tasks properly by [@jdx](https://github.com/jdx) in [#5169](https://github.com/jdx/mise/pull/5169)
+- typo in time! parallelize_tasks by [@artemisart](https://github.com/artemisart) in [#5171](https://github.com/jdx/mise/pull/5171)
+
+### 🧪 Testing
+
+- disable non-working zig test by [@jdx](https://github.com/jdx) in [2ffb7ea](https://github.com/jdx/mise/commit/2ffb7eaa22e3623363dd153d581bb1a17da78483)
+
+### New Contributors
+
+- @artemisart made their first contribution in [#5171](https://github.com/jdx/mise/pull/5171)
+
 ## [2025.5.11](https://github.com/jdx/mise/compare/v2025.5.10..v2025.5.11) - 2025-05-23
 
 ### 🚀 Features
 
 - **(registry)** add victoriametrics by [@shikharbhardwaj](https://github.com/shikharbhardwaj) in [#5161](https://github.com/jdx/mise/pull/5161)
+- added dotslash by [@jdx](https://github.com/jdx) in [#5165](https://github.com/jdx/mise/pull/5165)
 
 ### 🐛 Bug Fixes
 
