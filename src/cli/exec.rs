@@ -140,6 +140,12 @@ impl Exec {
         for (k, v) in env.iter() {
             cmd = cmd.env(k, v);
         }
+
+        // Windows does not support exec in the same way as Unix,
+        // so we emulate it instead by not handling Ctrl-C and letting
+        // the child process deal with it instead.
+        win_exec::set_ctrlc_handler()?;
+
         let res = cmd.unchecked().run()?;
         match res.status.code() {
             Some(0) => Ok(()),
@@ -164,6 +170,34 @@ impl Exec {
             Some(0) => Ok(()),
             Some(code) => Err(eyre!("command failed: exit code {}", code)),
             None => Err(eyre!("command failed: terminated by signal")),
+        }
+    }
+}
+
+#[cfg(all(windows, not(test)))]
+mod win_exec {
+    use eyre::{Result, eyre};
+    use winapi::shared::minwindef::{BOOL, DWORD, FALSE, TRUE};
+    use winapi::um::consoleapi::SetConsoleCtrlHandler;
+    // Windows way of creating a process is to just go ahead and pop a new process
+    // with given program and args into existence. But in unix-land, it instead happens
+    // in a two-step process where you first fork the process and then exec the new program,
+    // essentially replacing the current process with the new one.
+    // We use Windows API to set a Ctrl-C handler that does nothing, essentially attempting
+    // to emulate the ctrl-c behavior by not handling it ourselves, and propagating it to
+    // the child process to handle it instead.
+    // This is the same way cargo does it in cargo run.
+    unsafe extern "system" fn ctrlc_handler(_: DWORD) -> BOOL {
+        // This is a no-op handler to prevent Ctrl-C from terminating the process.
+        // It allows the child process to handle Ctrl-C instead.
+        TRUE
+    }
+
+    pub(super) fn set_ctrlc_handler() -> Result<()> {
+        if unsafe { SetConsoleCtrlHandler(Some(ctrlc_handler), TRUE) } == FALSE {
+            Err(eyre!("Could not set Ctrl-C handler."))
+        } else {
+            Ok(())
         }
     }
 }
