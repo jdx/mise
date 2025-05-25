@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p perf-workspace
+cd perf-workspace
+MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
+mkdir -p .mise-tasks "$MISE_DATA_DIR/plugins"
+
+num_tasks=${NUM_TASKS:-1000}
+num_tools=${NUM_TOOLS:-100}
+
+create_tasks() {
+	cat <<EOF >.mise-tasks/perf-0
+#!/bin/sh
+#MISE description="task description"
+echo running task
+EOF
+	chmod +x .mise-tasks/perf-0
+	for i in $(seq 1 "$num_tasks"); do
+		ln -sf ./perf-0 ".mise-tasks/perf-$i"
+	done
+}
+
+create_tools() {
+	# shellcheck disable=SC2207
+	tools=($(seq 0 "$num_tools"))
+	if [ ! -d "$MISE_DATA_DIR/plugins/tiny" ]; then
+		git clone https://github.com/jdx/mise-tiny.git "$MISE_DATA_DIR/plugins/tiny"
+	fi
+	{
+		echo "[tools]"
+		for i in "${tools[@]}"; do
+			echo "\"perf-$i\" = \"$i\""
+		done
+		echo "[alias]"
+		for i in "${tools[@]}"; do
+			echo "\"perf-$i\" = \"asdf:jdx/mise-tiny\""
+		done
+	} >mise.toml
+
+	for i in "${tools[@]}"; do
+		ln -sf ./tiny "$MISE_DATA_DIR/plugins/perf-$i"
+	done
+}
+
+create_tasks
+create_tools

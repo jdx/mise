@@ -163,3 +163,8 @@ description = "a task for testing"
 [pre-commit]
 env = { PRE_COMMIT = 1 }
 run = ["mise run lint"]
+
+[flamegraph]
+tools = { "cargo:flamegraph" = "latest" }
+env = { CARGO_PROFILE_RELEASE_DEBUG = "true" }
+run = "cargo flamegraph"
