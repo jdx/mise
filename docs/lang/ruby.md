@@ -49,7 +49,7 @@ Create a `.ruby-version` file for the current version of ruby:
 ruby -v > .ruby-version
 ```
 
-Enable ideomatic version file reading for ruby:
+Enable idiomatic version file reading for ruby:
 
 ```sh
 mise settings add idiomatic_version_file_enable_tools ruby
