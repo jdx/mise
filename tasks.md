@@ -117,6 +117,10 @@ User to run as
 
 - **Usage**: `lint:clippy`
 
+## `lint:hk`
+
+- **Usage**: `lint:hk`
+
 ## `lint:markdownlint`
 
 - **Usage**: `lint:markdownlint`
@@ -128,14 +132,6 @@ User to run as
 ## `lint:ripgrep`
 
 - **Usage**: `lint:ripgrep`
-
-## `lint:shellcheck`
-
-- **Usage**: `lint:shellcheck`
-
-## `lint:shfmt`
-
-- **Usage**: `lint:shfmt`
 
 ## `lint:toml`
 

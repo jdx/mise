@@ -1,55 +1,56 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 
 # Default devcontainer
 
-assert_json_partial_object "mise generate devcontainer" "name,description,features,mounts,containerEnv,customizations" "
+assert_json_partial_object "mise generate devcontainer" "name,description,features,mounts,containerEnv,customizations" '
   {
-    \"name\": \"mise\",
-    \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\",
-    \"features\": {
-      \"ghcr.io/devcontainers-extra/features/mise:1\": {}
+    "name": "mise",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "ghcr.io/devcontainers-extra/features/mise:1": {}
     },
-    \"customizations\": {
-      \"vscode\": {
-        \"extensions\": [
-          \"hverlin.mise-vscode\"
+    "customizations": {
+      "vscode": {
+        "extensions": [
+          "hverlin.mise-vscode"
         ]
       }
     },
-    \"mounts\": [],
-    \"containerEnv\": {}
+    "mounts": [],
+    "containerEnv": {}
   }
-"
+'
 
 # With custom name and image
-assert_json_partial_object "mise generate devcontainer --name test --image testimage:latest" "name,description" "
+assert_json_partial_object "mise generate devcontainer --name test --image testimage:latest" "name,description" '
   {
-    \"name\": \"test\",
-    \"image\": \"testimage:latest\"
+    "name": "test",
+    "image": "testimage:latest"
   }
-"
+'
 
 # With mount
-assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,description,features,mounts,containerEnv,postCreateCommand" "
+assert_json_partial_object "mise generate devcontainer --mount-mise-data" "name,description,features,mounts,containerEnv,postCreateCommand" '
   {
-    \"name\": \"mise\",
-    \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\",
-    \"features\": {
-      \"ghcr.io/devcontainers-extra/features/mise:1\": {}
+    "name": "mise",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "ghcr.io/devcontainers-extra/features/mise:1": {}
     },
-    \"mounts\": [
+    "mounts": [
       {
-        \"source\": \"mise-data-volume\",
-        \"target\": \"/mnt/mise-data\",
-        \"type\": \"volume\"
+        "source": "mise-data-volume",
+        "target": "/mnt/mise-data",
+        "type": "volume"
       }
     ],
-    \"containerEnv\": {
-      \"MISE_DATA_DIR\": \"/mnt/mise-data\"
+    "containerEnv": {
+      "MISE_DATA_DIR": "/mnt/mise-data"
     },
-    \"remoteEnv\": {
-      \"PATH\": \"\${containerEnv:PATH}:/mnt/mise-data/shims\"
+    "remoteEnv": {
+      "PATH": "${containerEnv:PATH}:/mnt/mise-data/shims"
     },
-    \"postCreateCommand\": \"sudo chown -R vscode:vscode /mnt/mise-data\"
+    "postCreateCommand": "sudo chown -R vscode:vscode /mnt/mise-data"
   }
-"
+'

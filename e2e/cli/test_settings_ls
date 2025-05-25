@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 echo "settings.all_compile = false" >mise.toml
-echo "settings.disable_backends = [\"rust\", \"java\"]" >>mise.toml
+echo 'settings.disable_backends = ["rust", "java"]' >>mise.toml
 
 assert_contains "mise settings" 'all_compile       false            ~/workdir/mise.toml
 disable_backends  ["rust", "java"] ~/workdir/mise.toml'

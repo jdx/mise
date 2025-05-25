@@ -4,7 +4,7 @@ set -euo pipefail
 output=$("$@" 2>&1)
 status=$?
 if ((status)); then
-  echo "$output" >&2
+	echo "$output" >&2
 fi
 
 exit $status
