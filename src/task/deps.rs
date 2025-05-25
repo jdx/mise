@@ -1,10 +1,10 @@
+use crate::cli::run::resolve_depends;
 use crate::task::Task;
 use crossbeam_channel as channel;
 use itertools::Itertools;
 use petgraph::Direction;
 use petgraph::graph::DiGraph;
 use std::collections::{HashMap, HashSet};
-use std::iter::once;
 
 #[derive(Debug, Clone)]
 pub struct Deps {
@@ -38,14 +38,7 @@ impl Deps {
             stack.push(t.clone());
             add_idx(t, &mut graph);
         }
-        let all_tasks_to_run: Vec<Task> = tasks
-            .into_iter()
-            .map(|t| {
-                let depends = t.all_depends()?;
-                eyre::Ok(once(t).chain(depends).collect::<Vec<_>>())
-            })
-            .flatten_ok()
-            .collect::<eyre::Result<Vec<_>>>()?;
+        let all_tasks_to_run = resolve_depends(tasks)?;
         while let Some(a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop
