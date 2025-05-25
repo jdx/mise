@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+#MISE depends=["test:build-perf-workspace"]
+# shellcheck disable=SC2086,SC2129
+set -xeuo pipefail
+
+num_tools="${NUM_TOOLS:-100}"
+num_tasks="${NUM_TASKS:-1000}"
+cd perf-workspace
+mkdir -p flamegraphs
+MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
+declare -A benchmarks
+declare -A recent_benchmarks
+declare -A maximums
+declare -A minimums
+declare -A alt_benchmarks
+names=()
+errors=()
+
+recent_benchmarks["install-uncached"]=2900
+recent_benchmarks["install-cached"]=2400
+recent_benchmarks["ls-uncached"]=2360
+recent_benchmarks["ls-cached"]=2403
+recent_benchmarks["bin-paths-uncached"]=2400
+recent_benchmarks["bin-paths-cached"]=2300
+recent_benchmarks["task-ls-uncached"]=2400
+recent_benchmarks["task-ls-cached"]=2400
+
+for name in "${!recent_benchmarks[@]}"; do
+	maximums["$name"]=$(("${recent_benchmarks["$name"]}" * 12 / 10))
+	minimums["$name"]=$(("${recent_benchmarks["$name"]}" * 8 / 10))
+done
+
+benchmark_error() {
+	local name="$1"
+	local error="$2"
+	local cmd="$3"
+	mise cache clear
+	CLICOLOR_FORCE=1 MISE_TIMINGS=1 timeout -v 10 mise $4 >/dev/null || true
+	CLICOLOR_FORCE=1 MISE_TIMINGS=1 timeout -v 10 mise $4 >/dev/null || true
+	# TODO: mise task
+	if [ "$name" = "*-uncached" ]; then
+		mise cache clear
+	fi
+	CARGO_PROFILE_RELEASE_DEBUG=true timeout -v 120 \
+		mise x cargo:flamegraph -- \
+		cargo flamegraph --verbose -o "flamegraphs/$1.svg" --title "$1" --notes "$error" -- $cmd \
+		>/dev/null || true
+	errors+=("::error file=xtasks/test/perf,title=$1::$2")
+}
+
+time_command() {
+	local cmd="$1"
+	local start_time
+	local end_time
+	local duration
+	shift
+	start_time=$(date +%s%N)
+	echo "running $cmd $*..." >&2
+	timeout -v 10 $cmd "$@" >/dev/null || true
+	end_time=$(date +%s%N)
+	duration=$(echo "($end_time - $start_time) / 1000" | bc)
+	echo "$duration"
+}
+
+benchmark() {
+	local name="$1"
+	local uncached_duration
+	local cached_duration
+	shift
+	mise cache clear -q
+	uncached_duration=$(time_command mise "$@")
+	cached_duration=$(time_command mise "$@")
+	benchmarks["$name-uncached"]=$uncached_duration
+	benchmarks["$name-cached"]=$cached_duration
+
+	if [ -n "${MISE_ALT:-}" ]; then
+		mise cache clear
+		alt_uncached_duration=$(time_command "$MISE_ALT" "$@")
+		alt_cached_duration=$(time_command "$MISE_ALT" "$@")
+		alt_benchmarks["$name-uncached"]=$alt_uncached_duration
+		alt_benchmarks["$name-cached"]=$alt_cached_duration
+	fi
+
+	check_maximum "$name" "$uncached_duration" "$cached_duration" "$@"
+	names+=("$name")
+}
+
+check_maximum() {
+	local name="$1"
+	local uncached_duration="$2"
+	local cached_duration="$3"
+	local cmd="$4"
+	if [[ ${maximums["$name-uncached"]} -lt $uncached_duration ]]; then
+		benchmark_error "$name-uncached" "maximum for $name-uncached is ${maximums["$name-uncached"]}, got $uncached_duration" "$name" "$cmd"
+	elif [[ ${maximums["$name-cached"]} -lt $cached_duration ]]; then
+		benchmark_error "$name-cached" "maximum for $name-cached is ${maximums["$name-cached"]}, got $cached_duration" "$name" "$cmd"
+	elif [[ ${minimums["$name-uncached"]} -gt $uncached_duration ]]; then
+		benchmark_error "$name-uncached" "(yay!) minimum for $name-uncached is ${minimums["$name-uncached"]}, got $uncached_duration" "$name" "$cmd"
+	elif [[ ${minimums["$name-cached"]} -gt $cached_duration ]]; then
+		benchmark_error "$name-cached" "(yay!) minimum for $name-cached is ${minimums["$name-cached"]}, got $cached_duration" "$name" "$cmd"
+	fi
+}
+
+benchmark install install
+benchmark ls ls
+benchmark bin-paths bin-paths
+benchmark task-ls task ls
+
+if [ -n "${MISE_ALT:-}" ]; then
+	echo "| Command    | Uncached mise | Cached mise | Uncached $MISE_ALT | Cached $MISE_ALT |"
+	echo "|------------|---------------|-------------|--------------------|------------------|"
+	for name in "${names[@]}"; do
+		printf "| %-10s | %11dms | %10dms | %15dms | %13dms |\n" \
+			"$name" \
+			"${benchmarks["$name-uncached"]}" \
+			"${benchmarks["$name-cached"]}" \
+			"${alt_benchmarks["$name-uncached"]}" \
+			"${alt_benchmarks["$name-cached"]}"
+	done
+else
+	echo "| Command    | Uncached | Cached   |"
+	echo "|------------|----------|----------|"
+	for name in "${names[@]}"; do
+		printf "| %-10s | %6dms | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" "${benchmarks["$name-cached"]}"
+	done
+fi
+
+if [ -v GITHUB_STEP_SUMMARY ]; then
+	echo "## e2e/perf/test_many_tasks" >>comment.md
+	echo "" >>comment.md
+	echo "- NUM_TASKS: $num_tasks" >>comment.md
+	echo "- NUM_TOOLS: $num_tools" >>comment.md
+	echo "" >>comment.md
+
+	if [ -n "${MISE_ALT:-}" ]; then
+		echo "| Command    | Uncached mise | Cached mise | Uncached $MISE_ALT | Cached $MISE_ALT |" >>comment.md
+		echo "|------------|---------------|-------------|--------------------|------------------|" >>comment.md
+		for name in "${names[@]}"; do
+			printf "| %-10s | %11dms | %10dms | %15dms | %13dms |\n" \
+				"$name" \
+				"${benchmarks["$name-uncached"]}" \
+				"${benchmarks["$name-cached"]}" \
+				"${alt_benchmarks["$name-uncached"]}" \
+				"${alt_benchmarks["$name-cached"]}" >>comment.md
+		done
+	else
+		echo "| Command    | Uncached | Cached   |" >>comment.md
+		echo "|------------|----------|----------|" >>comment.md
+		for name in "${names[@]}"; do
+			printf "| %-10s | %6dms | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" "${benchmarks["$name-cached"]}" >>comment.md
+		done
+	fi
+fi
+
+if [ ${#errors[@]} -gt 0 ]; then
+	for error in "${errors[@]}"; do
+		echo "$error" >&2
+	done
+	exit 1
+fi

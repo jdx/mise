@@ -4,10 +4,13 @@
 package-lock.json
 .mise.lock
 /mise.local.toml
+/perf-workspace
 
 *.log
 *.profraw
 *.lcov
+flamegraph.svg
+cargo-flamegraph.trace
 
 **/snapshots/*.snap.new
 

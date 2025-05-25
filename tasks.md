@@ -90,6 +90,10 @@ User to run as
 
 - **Usage**: `filetask.bat`
 
+## `flamegraph`
+
+- **Usage**: `flamegraph`
+
 ## `install-dev`
 
 - **Usage**: `install-dev`
@@ -213,6 +217,12 @@ update test snapshots
 
 run all tests
 
+## `test:build-perf-workspace`
+
+- **Usage**: `test:build-perf-workspace`
+
+task description
+
 ## `test:coverage`
 
 - **Usage**: `test:coverage`
@@ -227,6 +237,10 @@ run all tests with coverage report
 - **Aliases**: `e`
 
 run end-to-end tests
+
+## `test:perf`
+
+- **Usage**: `test:perf`
 
 ## `test:shuffle`
 
