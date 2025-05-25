@@ -672,6 +672,9 @@ impl Config {
             .iter()
             .map(|(p, cf)| {
                 let mut watch_files: Vec<WatchFilePattern> = vec![p.as_path().into()];
+                if let Some(parent) = p.parent() {
+                    watch_files.push(parent.join("mise.lock").into());
+                }
                 watch_files.extend(cf.watch_files()?.iter().map(|wf| WatchFilePattern {
                     root: cf.project_root().map(|pr| pr.to_path_buf()),
                     patterns: wf.patterns.clone(),
