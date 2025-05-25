@@ -52,7 +52,7 @@ pub trait ConfigFile: Debug + Send + Sync {
     /// and ~/src/foo/.mise.config.toml will return None
     fn project_root(&self) -> Option<&Path> {
         let p = self.get_path();
-        if *env::MISE_GLOBAL_CONFIG_FILE == p {
+        if config::is_global_config(p) {
             return None;
         }
         match p.parent() {
