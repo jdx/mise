@@ -52,7 +52,7 @@ pub struct Local {
 }
 
 impl Local {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let path = if self.parent {
             get_parent_path()?
         } else {
@@ -65,7 +65,7 @@ impl Local {
             self.pin,
             self.fuzzy,
             self.path,
-        )
+        ).await
     }
 }
 
@@ -94,7 +94,7 @@ pub fn get_parent_path() -> Result<PathBuf> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn local(
+pub async fn local(
     path: &Path,
     runtime: Vec<ToolArg>,
     remove: Option<Vec<BackendArg>>,
@@ -107,7 +107,7 @@ pub fn local(
         "mise local/global are deprecated. Use `mise use` instead."
     );
     let settings = Settings::try_get()?;
-    let mut cf = config_file::parse_or_init(path)?;
+    let cf = config_file::parse_or_init(path)?;
     if show_path {
         miseprintln!("{}", path.display());
         return Ok(());
@@ -130,7 +130,7 @@ pub fn local(
             return Ok(());
         }
         let pin = pin || (settings.asdf_compat && !fuzzy);
-        cf.add_runtimes(&runtimes, pin)?;
+        cf.add_runtimes(&runtimes, pin).await?;
         let tools = runtimes.iter().map(|t| t.style()).join(" ");
         miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path));
     }

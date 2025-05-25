@@ -31,7 +31,7 @@ pub struct Link {
 }
 
 impl Link {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let version = match self.tool.tvr {
             Some(ref tvr) => tvr.version(),
             None => bail!("must provide a version for {}", self.tool.style()),
@@ -58,7 +58,7 @@ impl Link {
         file::create_dir_all(target.parent().unwrap())?;
         make_symlink(&path, &target)?;
 
-        config::rebuild_shims_and_runtime_symlinks(&[])
+        config::rebuild_shims_and_runtime_symlinks(&[]).await
     }
 }
 

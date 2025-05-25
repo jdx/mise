@@ -252,63 +252,63 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self {
             Self::Activate(cmd) => cmd.run(),
-            Self::Alias(cmd) => cmd.run(),
-            Self::Asdf(cmd) => cmd.run(),
-            Self::Backends(cmd) => cmd.run(),
-            Self::BinPaths(cmd) => cmd.run(),
+            Self::Alias(cmd) => cmd.run().await,
+            Self::Asdf(cmd) => cmd.run().await,
+            Self::Backends(cmd) => cmd.run().await,
+            Self::BinPaths(cmd) => cmd.run().await,
             Self::Cache(cmd) => cmd.run(),
-            Self::Completion(cmd) => cmd.run(),
-            Self::Config(cmd) => cmd.run(),
-            Self::Current(cmd) => cmd.run(),
+            Self::Completion(cmd) => cmd.run().await,
+            Self::Config(cmd) => cmd.run().await,
+            Self::Current(cmd) => cmd.run().await,
             Self::Deactivate(cmd) => cmd.run(),
-            Self::Direnv(cmd) => cmd.run(),
-            Self::Doctor(cmd) => cmd.run(),
-            Self::En(cmd) => cmd.run(),
-            Self::Env(cmd) => cmd.run(),
-            Self::Exec(cmd) => cmd.run(),
+            Self::Direnv(cmd) => cmd.run().await,
+            Self::Doctor(cmd) => cmd.run().await,
+            Self::En(cmd) => cmd.run().await,
+            Self::Env(cmd) => cmd.run().await,
+            Self::Exec(cmd) => cmd.run().await,
             Self::Fmt(cmd) => cmd.run(),
-            Self::Generate(cmd) => cmd.run(),
-            Self::Global(cmd) => cmd.run(),
-            Self::HookEnv(cmd) => cmd.run(),
-            Self::HookNotFound(cmd) => cmd.run(),
+            Self::Generate(cmd) => cmd.run().await,
+            Self::Global(cmd) => cmd.run().await,
+            Self::HookEnv(cmd) => cmd.run().await,
+            Self::HookNotFound(cmd) => cmd.run().await,
             Self::Implode(cmd) => cmd.run(),
-            Self::Install(cmd) => cmd.run(),
-            Self::InstallInto(cmd) => cmd.run(),
-            Self::Latest(cmd) => cmd.run(),
-            Self::Link(cmd) => cmd.run(),
-            Self::Local(cmd) => cmd.run(),
-            Self::Ls(cmd) => cmd.run(),
-            Self::LsRemote(cmd) => cmd.run(),
-            Self::Outdated(cmd) => cmd.run(),
-            Self::Plugins(cmd) => cmd.run(),
-            Self::Prune(cmd) => cmd.run(),
-            Self::Registry(cmd) => cmd.run(),
-            Self::Reshim(cmd) => cmd.run(),
-            Self::Run(cmd) => cmd.run(),
-            Self::Search(cmd) => cmd.run(),
+            Self::Install(cmd) => cmd.run().await,
+            Self::InstallInto(cmd) => cmd.run().await,
+            Self::Latest(cmd) => cmd.run().await,
+            Self::Link(cmd) => cmd.run().await,
+            Self::Local(cmd) => cmd.run().await,
+            Self::Ls(cmd) => cmd.run().await,
+            Self::LsRemote(cmd) => cmd.run().await,
+            Self::Outdated(cmd) => cmd.run().await,
+            Self::Plugins(cmd) => cmd.run().await,
+            Self::Prune(cmd) => cmd.run().await,
+            Self::Registry(cmd) => cmd.run().await,
+            Self::Reshim(cmd) => cmd.run().await,
+            Self::Run(cmd) => cmd.run().await,
+            Self::Search(cmd) => cmd.run().await,
             #[cfg(feature = "self_update")]
-            Self::SelfUpdate(cmd) => cmd.run(),
-            Self::Set(cmd) => cmd.run(),
-            Self::Settings(cmd) => cmd.run(),
-            Self::Shell(cmd) => cmd.run(),
-            Self::Sync(cmd) => cmd.run(),
-            Self::Tasks(cmd) => cmd.run(),
-            Self::TestTool(cmd) => cmd.run(),
-            Self::Tool(cmd) => cmd.run(),
-            Self::Trust(cmd) => cmd.run(),
-            Self::Uninstall(cmd) => cmd.run(),
-            Self::Unset(cmd) => cmd.run(),
-            Self::Unuse(cmd) => cmd.run(),
-            Self::Upgrade(cmd) => cmd.run(),
+            Self::SelfUpdate(cmd) => cmd.run().await,
+            Self::Set(cmd) => cmd.run().await,
+            Self::Settings(cmd) => cmd.run().await,
+            Self::Shell(cmd) => cmd.run().await,
+            Self::Sync(cmd) => cmd.run().await,
+            Self::Tasks(cmd) => cmd.run().await,
+            Self::TestTool(cmd) => cmd.run().await,
+            Self::Tool(cmd) => cmd.run().await,
+            Self::Trust(cmd) => cmd.run().await,
+            Self::Uninstall(cmd) => cmd.run().await,
+            Self::Unset(cmd) => cmd.run().await,
+            Self::Unuse(cmd) => cmd.run().await,
+            Self::Upgrade(cmd) => cmd.run().await,
             Self::Usage(cmd) => cmd.run(),
-            Self::Use(cmd) => cmd.run(),
-            Self::Version(cmd) => cmd.run(),
-            Self::Watch(cmd) => cmd.run(),
-            Self::Where(cmd) => cmd.run(),
-            Self::Which(cmd) => cmd.run(),
+            Self::Use(cmd) => cmd.run().await,
+            Self::Version(cmd) => cmd.run().await,
+            Self::Watch(cmd) => cmd.run().await,
+            Self::Where(cmd) => cmd.run().await,
+            Self::Which(cmd) => cmd.run().await,
 
             #[cfg(debug_assertions)]
             Self::RenderHelp(cmd) => cmd.run(),
@@ -320,9 +320,9 @@ impl Commands {
 }
 
 impl Cli {
-    pub fn run(args: &Vec<String>) -> Result<()> {
+    pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
-        measure!("hande_shim", { shims::handle_shim() })?;
+        measure!("hande_shim", { shims::handle_shim().await })?;
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
 
@@ -343,8 +343,8 @@ impl Cli {
             version::show_latest();
             exit(0);
         }
-        let cmd = cli.get_command()?;
-        measure!("run {cmd}", { cmd.run() })
+        let cmd = cli.get_command().await?;
+        measure!("run {cmd}", { cmd.run().await })
     }
 
     fn pre_settings(args: &Vec<String>) -> Result<Cli> {
@@ -364,13 +364,15 @@ impl Cli {
         Ok(cli.unwrap())
     }
 
-    fn get_command(self) -> Result<Commands> {
+    async fn get_command(self) -> Result<Commands> {
         if let Some(cmd) = self.command {
             Ok(cmd)
         } else {
             if let Some(task) = self.task {
-                if Config::get()
-                    .tasks()?
+                let config = Config::get().await;
+                if config
+                    .tasks()
+                    .await?
                     .iter()
                     .any(|(_, t)| t.is_match(&task))
                 {

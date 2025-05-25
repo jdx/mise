@@ -1,4 +1,4 @@
-use crate::hash;
+use crate::{config, hash};
 use std::collections::BTreeMap;
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -207,7 +207,7 @@ pub struct Run {
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
 impl Run {
-    pub fn run(mut self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         if self.task == "-h" {
             self.get_clap_command().print_help()?;
             return Ok(());
@@ -223,9 +223,9 @@ impl Run {
             .chain(self.args.clone())
             .chain(self.args_last.clone())
             .collect_vec();
-        let task_list = get_task_lists(&args, true)?;
+        let task_list = get_task_lists(&args, true).await?;
         time!("run get_task_lists");
-        self.parallelize_tasks(task_list)?;
+        self.parallelize_tasks(task_list).await?;
         time!("run done");
         Ok(())
     }
@@ -238,8 +238,8 @@ impl Run {
             .clone()
     }
 
-    fn parallelize_tasks(mut self, mut tasks: Vec<Task>) -> Result<()> {
-        time!("parallelize_tasks start");
+    async fn parallelize_tasks(mut self, mut tasks: Vec<Task>) -> Result<()> {
+        time!("paralellize_tasks start");
 
         ctrlc::exit_on_ctrl_c(false);
 
@@ -266,8 +266,8 @@ impl Run {
             });
         }
 
-        self.fetch_tasks(&mut tasks)?;
-        let tasks = Deps::new(tasks)?;
+        self.fetch_tasks(&mut tasks).await?;
+        let tasks = Deps::new(tasks).await?;
         for task in tasks.all() {
             self.validate_task(task)?;
             match self.output(Some(task)) {
@@ -295,14 +295,15 @@ impl Run {
                 all_tools.push(format!("{k}@{v}").parse()?);
             }
         }
+        let config = Config::get().await;
         let mut ts = ToolsetBuilder::new()
             .with_args(&all_tools)
-            .build(&Config::get())?;
+            .build(&config).await?;
 
         ts.install_missing_versions(&InstallOptions {
             missing_args_only: !SETTINGS.task_run_auto_install,
             ..Default::default()
-        })?;
+        }).await?;
 
         let tasks = Mutex::new(tasks);
         let timer = std::time::Instant::now();
@@ -325,7 +326,7 @@ impl Run {
                     }));
                     if !self.is_stopping() {
                         trace!("running task: {task}");
-                        if let Err(err) = self.run_task(&task) {
+                        if let Err(err) = self.run_task(&task).await {
                             let status = Error::get_exit_status(&err);
                             if !self.is_stopping() && status.is_none() {
                                 // only show this if it's the first failure, or we haven't killed all the remaining tasks
@@ -421,7 +422,7 @@ impl Run {
         }
     }
 
-    fn run_task(&self, task: &Task) -> Result<()> {
+    async fn run_task(&self, task: &Task) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
@@ -429,7 +430,7 @@ impl Run {
             }
             return Ok(());
         }
-        if !self.force && self.sources_are_fresh(task)? {
+        if !self.force && self.sources_are_fresh(task).await? {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
@@ -441,13 +442,13 @@ impl Run {
             }
         }
 
-        let config = Config::get();
+        let config = Config::get().await;
         let mut tools = self.tool.clone();
         for (k, v) in &task.tools {
             tools.push(format!("{k}@{v}").parse()?);
         }
-        let ts = ToolsetBuilder::new().with_args(&tools).build(&config)?;
-        let mut env = task.render_env(&ts)?;
+        let ts = ToolsetBuilder::new().with_args(&tools).build(&config).await?;
+        let mut env = task.render_env(&ts).await?;
         let output = self.output(Some(task));
         env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
         if output == TaskOutput::Prefix {
@@ -477,10 +478,10 @@ impl Run {
         let timer = std::time::Instant::now();
 
         if let Some(file) = &task.file {
-            self.exec_file(file, task, &env, &prefix)?;
+            self.exec_file(file, task, &env, &prefix).await?;
         } else {
             let rendered_run_scripts =
-                task.render_run_scripts_with_args(self.cd.clone(), &task.args, &env)?;
+                task.render_run_scripts_with_args(self.cd.clone(), &task.args, &env).await?;
 
             let get_args = || {
                 [String::new()]
@@ -489,10 +490,10 @@ impl Run {
                     .cloned()
                     .collect()
             };
-            self.parse_usage_spec_and_init_env(task, &mut env, get_args)?;
+            self.parse_usage_spec_and_init_env(task, &mut env, get_args).await?;
 
             for (script, args) in rendered_run_scripts {
-                self.exec_script(&script, &args, task, &env, &prefix)?;
+                self.exec_script(&script, &args, task, &env, &prefix).await?;
             }
         }
 
@@ -509,7 +510,7 @@ impl Run {
         Ok(())
     }
 
-    fn exec_script(
+    async fn exec_script(
         &self,
         script: &str,
         args: &[String],
@@ -517,7 +518,7 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
-        let config = Config::get();
+        let config = Config::get().await;
         let script = script.trim_start();
         let cmd = style::ebold(format!("$ {script} {args}", args = args.join(" ")))
             .bright()
@@ -535,10 +536,10 @@ impl Run {
             tmp.flush()?;
             drop(tmp);
             file::make_executable(&file)?;
-            self.exec(&file, args, task, env, prefix)
+            self.exec(&file, args, task, env, prefix).await
         } else {
             let (program, args) = self.get_cmd_program_and_args(script, task, args)?;
-            self.exec_program(&program, &args, task, env, prefix)
+            self.exec_program(&program, &args, task, env, prefix).await
         }
     }
 
@@ -601,13 +602,13 @@ impl Run {
         }
     }
 
-    fn exec_file(&self, file: &Path, task: &Task, env: &EnvMap, prefix: &str) -> Result<()> {
-        let config = Config::get();
+    async fn exec_file(&self, file: &Path, task: &Task, env: &EnvMap, prefix: &str) -> Result<()> {
+        let config = Config::get().await;
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
         let get_args = || once(command.clone()).chain(args.clone()).collect_vec();
-        self.parse_usage_spec_and_init_env(task, &mut env, get_args)?;
+        self.parse_usage_spec_and_init_env(task, &mut env, get_args).await?;
 
         if !self.quiet(Some(task)) {
             let cmd = format!("{} {}", display_path(file), args.join(" "))
@@ -618,10 +619,10 @@ impl Run {
             self.eprint(task, prefix, &cmd);
         }
 
-        self.exec(file, &args, task, &env, prefix)
+        self.exec(file, &args, task, &env, prefix).await
     }
 
-    fn exec(
+    async fn exec(
         &self,
         file: &Path,
         args: &[String],
@@ -630,10 +631,10 @@ impl Run {
         prefix: &str,
     ) -> Result<()> {
         let (program, args) = self.get_file_program_and_args(file, task, args)?;
-        self.exec_program(&program, &args, task, env, prefix)
+        self.exec_program(&program, &args, task, env, prefix).await
     }
 
-    fn exec_program(
+    async fn exec_program(
         &self,
         program: &str,
         args: &[String],
@@ -641,7 +642,7 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
-        let config = Config::get();
+        let config = Config::get().await;
         let program = program.to_executable();
         let redactions = config.redactions();
         let raw = self.raw(Some(task));
@@ -728,7 +729,7 @@ impl Run {
                 }
             }
         }
-        let dir = self.cwd(task)?;
+        let dir = self.cwd(task).await?;
         if !dir.exists() {
             self.eprint(
                 task,
@@ -811,13 +812,13 @@ impl Run {
         Ok(())
     }
 
-    fn parse_usage_spec_and_init_env(
+    async fn parse_usage_spec_and_init_env(
         &self,
         task: &Task,
         env: &mut EnvMap,
         get_args: impl Fn() -> Vec<String>,
     ) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(self.cd.clone(), env)?;
+        let (spec, _) = task.parse_usage_spec(self.cd.clone(), env).await?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args: Vec<String> = get_args();
             debug!("Parsing usage spec for {:?}", args);
@@ -833,15 +834,15 @@ impl Run {
         Ok(())
     }
 
-    fn sources_are_fresh(&self, task: &Task) -> Result<bool> {
+    async fn sources_are_fresh(&self, task: &Task) -> Result<bool> {
         let outputs = task.outputs.paths(task);
         if task.sources.is_empty() && outputs.is_empty() {
             return Ok(false);
         }
         // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
         // perhaps using some manifest in a state directory or something, maybe leveraging atime?
-        let run = || -> Result<bool> {
-            let root = self.cwd(task)?;
+        let run = async || -> Result<bool> {
+            let root = self.cwd(task).await?;
             let mut sources = task.sources.clone();
             sources.push(task.config_source.to_string_lossy().to_string());
             let source_metadatas = self.get_file_metadatas(&root, &sources)?;
@@ -870,7 +871,7 @@ impl Run {
                 _ => Ok(false),
             }
         };
-        Ok(run().unwrap_or_else(|err| {
+        Ok(run().await.unwrap_or_else(|err| {
             warn!("sources_are_fresh: {err:?}");
             false
         }))
@@ -975,13 +976,13 @@ impl Run {
         Ok(last_mod)
     }
 
-    fn cwd(&self, task: &Task) -> Result<PathBuf> {
+    async fn cwd(&self, task: &Task) -> Result<PathBuf> {
         if let Some(d) = &self.cd {
             Ok(d.clone())
-        } else if let Some(d) = task.dir()? {
+        } else if let Some(d) = task.dir().await? {
             Ok(d)
         } else {
-            Ok(Config::get()
+            Ok(Config::get().await
                 .project_root
                 .clone()
                 .or_else(|| dirs::CWD.clone())
@@ -1010,7 +1011,7 @@ impl Run {
                 .unwrap_or(self.output == Some(TaskOutput::Prefix))
     }
 
-    fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
+    async fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
         let no_cache = self.no_cache || SETTINGS.task_remote_no_cache.unwrap_or(false);
         let task_file_providers = TaskFileProvidersBuilder::new()
             .with_cache(!no_cache)
@@ -1026,7 +1027,7 @@ impl Run {
                     bail!("No provider found for file: {}", source);
                 }
 
-                let local_path = provider.unwrap().get_local_path(&source).unwrap();
+                let local_path = provider.unwrap().get_local_path(&source).await?;
 
                 t.file = Some(local_path);
             }
@@ -1156,15 +1157,15 @@ fn trunc(prefix: &str, msg: &str) -> String {
     console::truncate_str(msg, *env::TERM_WIDTH - prefix_len - 1, "…").to_string()
 }
 
-fn err_no_task(name: &str) -> Result<()> {
-    if Config::get().tasks().is_ok_and(|t| t.is_empty()) {
+async fn err_no_task(config: &Config, name: &str) -> Result<()> {
+    if config.tasks().await.is_ok_and(|t| t.is_empty()) {
         bail!(
             "no tasks defined in {}. Are you in a project directory?",
             display_path(dirs::CWD.clone().unwrap_or_default())
         );
     }
     if let Some(cwd) = &*dirs::CWD {
-        let includes = Config::get().task_includes_for_dir(cwd);
+        let includes = config::task_includes_for_dir(cwd, &config.config_files);
         let path = includes
             .iter()
             .map(|d| d.join(name))
@@ -1189,9 +1190,9 @@ fn err_no_task(name: &str) -> Result<()> {
     bail!("no task {} found", style::ered(name));
 }
 
-fn prompt_for_task() -> Result<Task> {
-    let config = Config::get();
-    let tasks = config.tasks()?;
+async fn prompt_for_task() -> Result<Task> {
+    let config = Config::get().await;
+    let tasks = config.tasks().await?;
     ensure!(
         !tasks.is_empty(),
         "no tasks defined. see {url}",
@@ -1204,7 +1205,7 @@ fn prompt_for_task() -> Result<Task> {
     for t in tasks.values().filter(|t| !t.hide) {
         s = s.option(
             DemandOption::new(&t.name)
-                .label(&t.display_name())
+                .label(&t.display_name)
                 .description(&t.description),
         );
     }
@@ -1221,8 +1222,9 @@ fn prompt_for_task() -> Result<Task> {
     }
 }
 
-pub fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
-    args.iter()
+pub async fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
+    let config = Config::get().await;
+    let args = args.iter()
         .map(|s| vec![s.to_string()])
         .coalesce(|a, b| {
             if b == vec![":::".to_string()] {
@@ -1234,7 +1236,9 @@ pub fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
             }
         })
         .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
-        .map(|(t, args)| {
+        .collect::<Vec<_>>();
+    let mut tasks = vec![];
+    for (t, args) in args {
             // can be any of the following:
             // - ./path/to/script
             // - ~/path/to/script
@@ -1245,35 +1249,32 @@ pub fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
             if regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#).is_match(&t) {
                 let path = PathBuf::from(&t);
                 if path.exists() {
-                    let config_root = Config::get()
+                    let config_root = config
                         .project_root
                         .clone()
                         .or_else(|| dirs::CWD.clone())
                         .unwrap_or_default();
-                    let task = Task::from_path(&path, &PathBuf::new(), &config_root)?;
+                    let task = Task::from_path(&path, &PathBuf::new(), &config_root).await?;
                     return Ok(vec![task.with_args(args)]);
                 }
             }
-            let config = Config::get();
-            let tasks = config
-                .tasks_with_aliases()?
+            let cur_tasks = config
+                .tasks_with_aliases().await?
                 .get_matching(&t)?
                 .into_iter()
                 .cloned()
                 .collect_vec();
-            if tasks.is_empty() {
+            if cur_tasks.is_empty() {
                 if t != "default" || !prompt || !console::user_attended_stderr() {
-                    err_no_task(&t)?;
+                    err_no_task(&config, &t).await?;
                 }
-
-                Ok(vec![prompt_for_task()?])
+                tasks.push(prompt_for_task().await?);
             } else {
-                Ok(tasks
+                cur_tasks
                     .into_iter()
                     .map(|t| t.clone().with_args(args.to_vec()))
-                    .collect())
+                    .for_each(|t| tasks.push(t));
             }
-        })
-        .flatten_ok()
-        .collect()
+    }
+    Ok(tasks)
 }

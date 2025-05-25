@@ -9,7 +9,7 @@ use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolVersion};
 use eyre::{WrapErr, eyre};
 use std::collections::HashMap;
-use std::sync::RwLock;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Default)]
 pub struct ExternalPluginCache {
@@ -18,20 +18,21 @@ pub struct ExternalPluginCache {
 }
 
 impl ExternalPluginCache {
-    pub fn list_bin_paths<F>(
+    pub async fn list_bin_paths<F, Fut>(
         &self,
         plugin: &AsdfBackend,
         tv: &ToolVersion,
         fetch: F,
     ) -> eyre::Result<Vec<String>>
     where
-        F: FnOnce() -> eyre::Result<Vec<String>>,
+        Fut: Future<Output = eyre::Result<Vec<String>>>,
+        F: FnOnce() -> Fut,
     {
-        let mut w = self.list_bin_paths.write().unwrap();
+        let config = Config::get().await;
+        let mut w = self.list_bin_paths.write().await;
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {
             let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
                 Some(key) => {
-                    let config = Config::get();
                     let key = render_cache_key(&config, tv, key);
                     let filename = format!("{key}.msgpack.z");
                     tv.cache_path().join("list_bin_paths").join(filename)
@@ -43,10 +44,10 @@ impl ExternalPluginCache {
                 .with_fresh_file(tv.install_path())
                 .build()
         });
-        cm.get_or_try_init(fetch).cloned()
+        cm.get_or_try_init_async(fetch).await.cloned()
     }
 
-    pub fn exec_env<F>(
+    pub async fn exec_env<F, Fut>(
         &self,
         config: &Config,
         plugin: &AsdfBackend,
@@ -54,9 +55,10 @@ impl ExternalPluginCache {
         fetch: F,
     ) -> eyre::Result<EnvMap>
     where
-        F: FnOnce() -> eyre::Result<EnvMap>,
+        Fut: Future<Output = eyre::Result<EnvMap>>,
+        F: FnOnce() -> Fut,
     {
-        let mut w = self.exec_env.write().unwrap();
+        let mut w = self.exec_env.write().await;
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {
             let exec_env_filename = match &plugin.toml.exec_env.cache_key {
                 Some(key) => {
@@ -72,7 +74,7 @@ impl ExternalPluginCache {
                 .with_fresh_file(tv.install_path())
                 .build()
         });
-        cm.get_or_try_init(fetch).cloned()
+        cm.get_or_try_init_async(fetch).await.cloned()
     }
 }
 

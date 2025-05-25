@@ -31,7 +31,7 @@ pub struct PluginsLink {
 }
 
 impl PluginsLink {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let (name, path) = match self.dir {
             Some(path) => (self.name, path),
             None => {

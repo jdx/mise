@@ -45,7 +45,7 @@ pub struct Watch {
 }
 
 impl Watch {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if let Some(task) = &self.task {
             if task == "-h" {
                 self.get_clap_command().print_help()?;
@@ -56,8 +56,8 @@ impl Watch {
                 return Ok(());
             }
         }
-        let config = Config::try_get()?;
-        let ts = ToolsetBuilder::new().build(&config)?;
+        let config = Config::get().await;
+        let ts = ToolsetBuilder::new().build(&config).await?;
         if let Err(err) = which::which("watchexec") {
             let watchexec: BackendArg = "watchexec".into();
             if !ts.versions.contains_key(&watchexec) {
@@ -75,7 +75,7 @@ impl Watch {
         if args.is_empty() {
             bail!("No tasks specified");
         }
-        let tasks = run::get_task_lists(&args, false)?;
+        let tasks = run::get_task_lists(&args, false).await?;
         let mut args = vec![];
         if let Some(delay_run) = self.watchexec.delay_run {
             args.push("--delay-run".to_string());
@@ -204,7 +204,7 @@ impl Watch {
         }
         debug!("$ watchexec {}", args.join(" "));
         let mut cmd = cmd::cmd("watchexec", &args);
-        for (k, v) in ts.env_with_path(&config)? {
+        for (k, v) in ts.env_with_path(&config).await? {
             cmd = cmd.env(k, v);
         }
         cmd.run()?;

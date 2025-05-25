@@ -3,14 +3,16 @@ use std::{fmt::Debug, path::PathBuf};
 mod local_task;
 mod remote_task_git;
 mod remote_task_http;
-
+use crate::Result;
+use async_trait::async_trait;
 use local_task::LocalTask;
 use remote_task_git::RemoteTaskGitBuilder;
 use remote_task_http::RemoteTaskHttpBuilder;
 
+#[async_trait]
 pub trait TaskFileProvider: Debug {
     fn is_match(&self, file: &str) -> bool;
-    fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>>;
+    async fn get_local_path(&self, file: &str) -> Result<PathBuf>;
 }
 
 pub struct TaskFileProvidersBuilder {

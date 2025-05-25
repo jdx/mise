@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, sync::Arc};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -8,10 +8,10 @@ use crate::config::SETTINGS;
 use crate::file::TarOptions;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolRequest, ToolVersion};
+use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{file, github, minisign, plugins};
-use contracts::requires;
+use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -19,7 +19,7 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct ZigPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 const ZIG_MINISIGN_KEY: &str = "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U";
@@ -27,7 +27,7 @@ const ZIG_MINISIGN_KEY: &str = "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wC
 impl ZigPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("zig"),
+            ba: Arc::new(plugins::core::new_backend_arg("zig")),
         }
     }
 
@@ -47,7 +47,7 @@ impl ZigPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let archive_ext = if cfg!(target_os = "windows") {
             "zip"
         } else {
@@ -59,14 +59,14 @@ impl ZigPlugin {
                 "https://ziglang.org/builds/zig-{}-{}-{}.{archive_ext}",
                 os(),
                 arch(),
-                self.get_version_from_json("master")?
+                self.get_version_from_json("master").await?
             )
         } else if tv.version == "ref:mach-latest" {
             format!(
                 "https://pkg.machengine.org/zig/zig-{}-{}-{}.{archive_ext}",
                 os(),
                 arch(),
-                self.get_version_from_json("mach-latest")?
+                self.get_version_from_json("mach-latest").await?
             )
         } else if regex!(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").is_match(&tv.version) {
             format!(
@@ -89,11 +89,11 @@ impl ZigPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr))?;
+        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
 
         pr.set_message(format!("minisign {filename}"));
         let tarball_data = file::read(&tarball_path)?;
-        let sig = HTTP.get_text(format!("{url}.minisig"))?;
+        let sig = HTTP.get_text(format!("{url}.minisig")).await?;
         minisign::verify(ZIG_MINISIGN_KEY, &tarball_data, &sig)?;
 
         Ok(tarball_path)
@@ -125,7 +125,7 @@ impl ZigPlugin {
         self.test_zig(ctx, tv)
     }
 
-    fn get_version_from_json(&self, key: &str) -> Result<String> {
+    async fn get_version_from_json(&self, key: &str) -> Result<String> {
         let json_url: &str = if key == "master" {
             "https://ziglang.org/download/index.json"
         } else if key == "mach-latest" {
@@ -135,7 +135,7 @@ impl ZigPlugin {
             ""
         };
 
-        let version_json: serde_json::Value = HTTP_FETCH.json(json_url)?;
+        let version_json: serde_json::Value = HTTP_FETCH.json(json_url).await?;
         let zig_version = version_json
             .pointer(&format!("/{key}/version"))
             .and_then(|v| v.as_str())
@@ -144,13 +144,14 @@ impl ZigPlugin {
     }
 }
 
+#[async_trait]
 impl Backend for ZigPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        let versions: Vec<String> = github::list_releases("ziglang/zig")?
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+        let versions: Vec<String> = github::list_releases("ziglang/zig").await?
             .into_iter()
             .map(|r| r.tag_name)
             .unique()
@@ -159,7 +160,7 @@ impl Backend for ZigPlugin {
         Ok(versions)
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         if cfg!(windows) {
             Ok(vec![tv.install_path()])
         } else {
@@ -171,9 +172,8 @@ impl Backend for ZigPlugin {
         Ok(vec![".zig-version".into()])
     }
 
-    #[requires(matches!(tv.request, ToolRequest::Version { .. } | ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }), "unsupported tool version request type")]
-    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr)?;
+    async fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
+        let tarball_path = self.download(&tv, &ctx.pr).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;
         self.verify(ctx, &tv)?;

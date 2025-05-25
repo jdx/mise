@@ -12,16 +12,16 @@ pub struct Path {
 }
 
 impl Path {
-    pub fn run(self) -> Result<()> {
-        let config = Config::get();
-        let ts = config.get_toolset()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let ts = config.get_toolset().await?;
         let paths = if self.full {
-            let env = ts.env_with_path(&config)?;
+            let env = ts.env_with_path(&config).await?;
             let path = env.get("PATH").cloned().unwrap_or_default();
             env::split_paths(&path).collect()
         } else {
-            let (_env, env_results) = ts.final_env(&config)?;
-            ts.list_final_paths(&config, env_results)?
+            let (_env, env_results) = ts.final_env(&config).await?;
+            ts.list_final_paths(&config, env_results).await?
         };
         for path in paths {
             println!("{}", path.display());

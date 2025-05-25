@@ -196,7 +196,7 @@ impl AquaRegistry {
         Ok(Self { path, repo_exists })
     }
 
-    pub fn package(&self, id: &str) -> Result<AquaPackage> {
+    pub async fn package(&self, id: &str) -> Result<AquaPackage> {
         let path_id = id.split('/').join(std::path::MAIN_SEPARATOR_STR);
         let path = self.path.join("pkgs").join(&path_id).join("registry.yaml");
         let registry: RegistryYaml = if !self.repo_exists {
@@ -208,7 +208,7 @@ impl AquaRegistry {
                 let url: Url =
                     format!("https://mise-versions.jdx.dev/aqua-registry/{path_id}/registry.yaml")
                         .parse()?;
-                http::HTTP_FETCH.download_file(url, &path, None)?;
+                http::HTTP_FETCH.download_file(url, &path, None).await?;
                 serde_yaml::from_reader(file::open(&path)?)?
             } else {
                 trace!("reading cached aqua-registry for {id} from {path:?}");
@@ -229,8 +229,8 @@ impl AquaRegistry {
         Ok(pkg)
     }
 
-    pub fn package_with_version(&self, id: &str, v: &str) -> Result<AquaPackage> {
-        Ok(self.package(id)?.with_version(v))
+    pub async fn package_with_version(&self, id: &str, v: &str) -> Result<AquaPackage> {
+        Ok(self.package(id).await?.with_version(v))
     }
 }
 

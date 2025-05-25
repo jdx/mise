@@ -138,7 +138,7 @@ impl Backend for RubyPlugin {
     fn ba(&self) -> &BackendArg {
         &self.ba
     }
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
         // TODO: use windows set of versions
         //  match self.core.fetch_remote_versions_from_mise() {
         //      Ok(Some(versions)) => return Ok(versions),

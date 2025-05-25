@@ -42,7 +42,7 @@ pub struct PluginsLs {
 }
 
 impl PluginsLs {
-    pub fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Config) -> Result<()> {
         let mut plugins: BTreeMap<_, _> = install_state::list_plugins()?
             .iter()
             .map(|(k, p)| (k.clone(), (*p, None)))
@@ -56,7 +56,7 @@ impl PluginsLs {
         }
 
         if self.all {
-            for (name, backends) in config.get_shorthands() {
+            for (name, backends) in &config.shorthands {
                 for full in backends {
                     let plugin_type = PluginType::from_full(full)?;
                     plugins.insert(name.clone(), (plugin_type, Some(full_to_url(full))));
@@ -67,7 +67,7 @@ impl PluginsLs {
         let plugins = plugins
             .into_iter()
             .map(|(short, (pt, url))| {
-                let mut plugin = pt.plugin(short.clone());
+                let plugin = pt.plugin(short.clone());
                 if let Some(url) = url {
                     plugin.set_remote_url(url);
                 }

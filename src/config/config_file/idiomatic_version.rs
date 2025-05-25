@@ -62,13 +62,13 @@ impl ConfigFile for IdiomaticVersionFile {
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn remove_tool(&mut self, _fa: &BackendArg) -> Result<()> {
+    fn remove_tool(&self, _fa: &BackendArg) -> Result<()> {
         unimplemented!()
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn replace_versions(
-        &mut self,
+        &self,
         _plugin_name: &BackendArg,
         _versions: Vec<ToolRequest>,
     ) -> Result<()> {

@@ -76,7 +76,7 @@ impl Logger {
     fn render(&self, record: &Record, level: LevelFilter) -> String {
         let mut args = record.args().to_string();
         if config::is_loaded() {
-            let config = Config::get();
+            let config = Config::get_();
             args = config.redact(args);
         }
         match level {
