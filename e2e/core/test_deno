@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-if [[ "${MISE_DISABLE_TOOLS:-}" = *deno* ]]; then
+if [[ ${MISE_DISABLE_TOOLS:-} == *deno* ]]; then
   warn "Skipping deno tests"
   exit 0
 fi

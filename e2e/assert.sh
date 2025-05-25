@@ -9,7 +9,7 @@ fail() {
 }
 
 # Safeguard against running the test directly, which would execute in the actual user home
-[[ -n "${TEST_NAME:-}" ]] || fail "tests should be called using run_test"
+[[ -n ${TEST_NAME:-} ]] || fail "tests should be called using run_test"
 
 quiet_assert_succeed() {
   local status=0
@@ -37,7 +37,7 @@ assert_succeed() {
 assert_fail() {
   local actual
   actual="$(quiet_assert_fail "$1")"
-  if [[ -z "${2:-}" ]]; then
+  if [[ -z ${2:-} ]]; then
     ok "[$1] expected failure"
   elif [[ $actual == *"$2"* ]]; then
     ok "[$1] output is equal to '$2'"
@@ -49,7 +49,7 @@ assert_fail() {
 assert() {
   local actual
   actual="$(quiet_assert_succeed "$1")"
-  if [[ -z "${2:-}" ]]; then
+  if [[ -z ${2:-} ]]; then
     ok "[$1]"
   elif [[ $actual == "$2" ]]; then
     ok "[$1] output is equal to '$2'"
@@ -89,7 +89,7 @@ assert_json_partial_array() {
   actual_filtered="$(jq -S "$filter" <<<"$actual")"
   expected_filtered="$(jq -S "$filter" <<<"$expected")"
 
-  if [[ "$actual_filtered" == "$expected_filtered" ]]; then
+  if [[ $actual_filtered == "$expected_filtered" ]]; then
     ok "[$command] partial array match successful"
   else
     echo "Expected:"
@@ -113,7 +113,7 @@ assert_json_partial_object() {
   actual_filtered="$(jq -S --arg fields "$fields" "$filter" <<<"$actual")"
   expected_filtered="$(jq -S --arg fields "$fields" "$filter" <<<"$expected")"
 
-  if [[ "$actual_filtered" == "$expected_filtered" ]]; then
+  if [[ $actual_filtered == "$expected_filtered" ]]; then
     ok "[$command] partial object match successful"
   else
     echo "Expected:"
@@ -168,7 +168,7 @@ assert_matches() {
 assert_empty() {
   local actual
   actual="$(quiet_assert_succeed "$1")"
-  if [[ -z "$actual" ]]; then
+  if [[ -z $actual ]]; then
     ok "[$1] output is empty"
   else
     fail "[$1] expected empty output but got '$actual'"
@@ -176,7 +176,7 @@ assert_empty() {
 }
 
 assert_directory_exists() {
-  if [[ -d "$1" ]]; then
+  if [[ -d $1 ]]; then
     ok "[$1] directory exists"
   else
     fail "[$1] directory does not exist"
@@ -184,7 +184,7 @@ assert_directory_exists() {
 }
 
 assert_directory_not_exists() {
-  if [[ ! -d "$1" ]]; then
+  if [[ ! -d $1 ]]; then
     ok "[$1] directory does not exist"
   else
     fail "[$1] directory exists"

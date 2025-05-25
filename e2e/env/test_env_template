@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 
 cat <<EOF >mise.toml
 [env]
@@ -33,10 +34,10 @@ echo "{% raw %}{{ env.FOO }}{% endraw %}: {{ env.FOO }}"
 echo "{% raw %}{{ env.BAR }}{% endraw %}: {{ env.BAR }}"
 """
 EOF
-assert "mise run --trace foo" "\$FOO: foo
-\$BAR: bar
+assert "mise run --trace foo" '$FOO: foo
+$BAR: bar
 {{ env.FOO }}: foo
-{{ env.BAR }}: bar"
+{{ env.BAR }}: bar'
 
 cat <<EOF >mise.toml
 [env]
@@ -48,7 +49,7 @@ env.BAZ = "{{ env.BAR }}"
 
 run = "printf '\$BAZ: %s\n' \$BAZ"
 EOF
-assert "mise run --trace foo" "\$BAZ: foo"
+assert "mise run --trace foo" '$BAZ: foo'
 
 cat <<EOF >mise.toml
 [env]

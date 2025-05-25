@@ -238,7 +238,7 @@ impl Run {
             .clone()
     }
 
-    fn parallelize_tasks(mut self, mut tasks: Vec<Task>) -> Result<()> {
+    fn parallelize_tasks(mut self, tasks: Vec<Task>) -> Result<()> {
         time!("parallelize_tasks start");
 
         ctrlc::exit_on_ctrl_c(false);
@@ -266,7 +266,9 @@ impl Run {
             });
         }
 
+        let mut tasks = resolve_depends(tasks)?;
         self.fetch_tasks(&mut tasks)?;
+
         let tasks = Deps::new(tasks)?;
         for task in tasks.all() {
             self.validate_task(task)?;
@@ -1279,4 +1281,16 @@ pub fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
         })
         .flatten_ok()
         .collect()
+}
+
+pub fn resolve_depends(tasks: Vec<Task>) -> Result<Vec<Task>> {
+    let tasks = tasks
+        .into_iter()
+        .map(|t| {
+            let depends = t.all_depends()?;
+            eyre::Ok(once(t).chain(depends).collect::<Vec<_>>())
+        })
+        .flatten_ok()
+        .collect::<eyre::Result<Vec<_>>>()?;
+    Ok(tasks)
 }

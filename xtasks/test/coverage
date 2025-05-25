@@ -5,7 +5,7 @@ echo "::group::Setup"
 set -euxo pipefail
 # shellcheck disable=SC1090
 if [[ -n ${MISE_GITHUB_BOT_TOKEN:-} ]]; then
-  export GITHUB_API_TOKEN="$MISE_GITHUB_BOT_TOKEN"
+	export GITHUB_API_TOKEN="$MISE_GITHUB_BOT_TOKEN"
 fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 export PATH="${CARGO_TARGET_DIR}/debug:$PATH"

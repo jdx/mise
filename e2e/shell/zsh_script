@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+# shellcheck disable=SC1071
 set -euo pipefail
 orig_path="$PATH"
 
@@ -18,7 +19,7 @@ assert_path() {
   local actual="${PATH/%$orig_path/}"
   actual="${actual//$HOME/\~}"
   actual="${actual/%:/}"
-  if [[ "$actual" != "$expected" ]]; then
+  if [[ $actual != "$expected" ]]; then
     echo "Invalid PATH:  $actual"
     echo "Expected PATH: $expected"
     exit 1
