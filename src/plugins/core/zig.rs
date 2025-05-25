@@ -60,7 +60,7 @@ impl ZigPlugin {
         } else if tv.version == "ref:mach-latest" {
             self.get_tarball_url_from_json(machengine_download_index, "mach-latest", arch(), os())
                 .await?
-        } else if regex!(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").is_match(&tv.version) {
+        } else if regex!(r"-mach$").is_match(&tv.version) {
             self.get_tarball_url_from_json(
                 machengine_download_index,
                 tv.version.as_str(),
