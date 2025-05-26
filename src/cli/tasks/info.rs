@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use eyre::{Result, bail};
 use itertools::Itertools;
 use serde_json::json;
@@ -31,11 +33,11 @@ impl TasksInfo {
 
         if let Some(task) = task {
             let ts = config.get_toolset().await?;
-            let env = task.render_env(ts).await?;
+            let env = task.render_env(&config, ts).await?;
             if self.json {
-                self.display_json(task, &env).await?;
+                self.display_json(&config, task, &env).await?;
             } else {
-                self.display(task, &env).await?;
+                self.display(&config, task, &env).await?;
             }
         } else {
             bail!(
@@ -47,7 +49,7 @@ impl TasksInfo {
         Ok(())
     }
 
-    async fn display(&self, task: &Task, env: &EnvMap) -> Result<()> {
+    async fn display(&self, config: &Arc<Config>, task: &Task, env: &EnvMap) -> Result<()> {
         info::inline_section("Task", &task.display_name)?;
         if !task.aliases.is_empty() {
             info::inline_section("Aliases", task.aliases.join(", "))?;
@@ -89,15 +91,15 @@ impl TasksInfo {
         if !task.env.is_empty() {
             info::section("Environment Variables", toml::to_string_pretty(&task.env)?)?;
         }
-        let (spec, _) = task.parse_usage_spec(None, env).await?;
+        let (spec, _) = task.parse_usage_spec(config, None, env).await?;
         if !spec.is_empty() {
             info::section("Usage Spec", &spec)?;
         }
         Ok(())
     }
 
-    async fn display_json(&self, task: &Task, env: &EnvMap) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(None, env).await?;
+    async fn display_json(&self, config: &Arc<Config>, task: &Task, env: &EnvMap) -> Result<()> {
+        let (spec, _) = task.parse_usage_spec(config, None, env).await?;
         let o = json!({
             "name": task.display_name,
             "aliases": task.aliases,

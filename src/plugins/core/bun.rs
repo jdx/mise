@@ -8,7 +8,6 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
@@ -16,6 +15,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::Backend, config::Config};
 use crate::{file, github, plugins};
 
 #[derive(Debug)]
@@ -88,7 +88,7 @@ impl Backend for BunPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions = github::list_releases("oven-sh/bun")
             .await?
             .into_iter()

@@ -13,7 +13,7 @@ use crate::config::{Config, SETTINGS};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
-use crate::{backend, dirs, env, fake_asdf, file, logger};
+use crate::{backend, dirs, env, fake_asdf, file};
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
 use indoc::formatdoc;
@@ -28,11 +28,11 @@ pub async fn handle_shim() -> Result<()> {
     if bin_name.starts_with("mise") || cfg!(test) {
         return Ok(());
     }
-    logger::init();
+    let config = Config::try_get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    args[0] = which_shim(&env::MISE_BIN_NAME)
+    args[0] = which_shim(&config, &env::MISE_BIN_NAME)
         .await?
         .to_string_lossy()
         .to_string();
@@ -49,10 +49,9 @@ pub async fn handle_shim() -> Result<()> {
     exit(0);
 }
 
-async fn which_shim(bin_name: &str) -> Result<PathBuf> {
-    let config = Config::try_get().await?;
-    let mut ts = ToolsetBuilder::new().build(&config).await?;
-    if let Some((p, tv)) = ts.which(bin_name).await {
+async fn which_shim(config: &Arc<Config>, bin_name: &str) -> Result<PathBuf> {
+    let mut ts = ToolsetBuilder::new().build(config).await?;
+    if let Some((p, tv)) = ts.which(config, bin_name).await {
         if let Some(bin) = p.which(&tv, bin_name).await? {
             trace!(
                 "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
@@ -63,7 +62,7 @@ async fn which_shim(bin_name: &str) -> Result<PathBuf> {
     }
     if SETTINGS.not_found_auto_install && console::user_attended() {
         for tv in ts
-            .install_missing_bin(&config, bin_name)
+            .install_missing_bin(config, bin_name)
             .await?
             .unwrap_or_default()
         {
@@ -90,11 +89,11 @@ async fn which_shim(bin_name: &str) -> Result<PathBuf> {
             return Ok(bin);
         }
     }
-    let tvs = ts.list_rtvs_with_bin(bin_name).await?;
-    err_no_version_set(ts, bin_name, tvs).await
+    let tvs = ts.list_rtvs_with_bin(config, bin_name).await?;
+    err_no_version_set(config, ts, bin_name, tvs).await
 }
 
-pub async fn reshim(ts: &Toolset, force: bool) -> Result<()> {
+pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<()> {
     let _lock = LockFile::new(&dirs::SHIMS)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
@@ -109,7 +108,7 @@ pub async fn reshim(ts: &Toolset, force: bool) -> Result<()> {
     }
     file::create_dir_all(*dirs::SHIMS)?;
 
-    let (shims_to_add, shims_to_remove) = get_shim_diffs(&mise_bin, ts).await?;
+    let (shims_to_add, shims_to_remove) = get_shim_diffs(config, &mise_bin, ts).await?;
 
     for shim in shims_to_add {
         let symlink_path = dirs::SHIMS.join(&shim);
@@ -214,12 +213,15 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, _shim: &str) -> Result<()> {
 // with the desired shims specified by the Toolset
 // and returns a tuple of (missing shims, extra shims)
 pub async fn get_shim_diffs(
+    config: &Arc<Config>,
     mise_bin: impl AsRef<Path>,
     toolset: &Toolset,
 ) -> Result<(BTreeSet<String>, BTreeSet<String>)> {
     let mise_bin = mise_bin.as_ref();
-    let (actual_shims, desired_shims) =
-        tokio::join!(get_actual_shims(mise_bin), get_desired_shims(toolset));
+    let (actual_shims, desired_shims) = tokio::join!(
+        get_actual_shims(mise_bin),
+        get_desired_shims(config, toolset)
+    );
     let (actual_shims, desired_shims) = (actual_shims?, desired_shims?);
     let out: (BTreeSet<String>, BTreeSet<String>) = (
         desired_shims.difference(&actual_shims).cloned().collect(),
@@ -282,9 +284,9 @@ fn list_shims() -> Result<HashSet<String>> {
         .collect())
 }
 
-async fn get_desired_shims(toolset: &Toolset) -> Result<HashSet<String>> {
+async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<HashSet<String>> {
     let mut shims = HashSet::new();
-    for (t, tv) in toolset.list_installed_versions().await? {
+    for (t, tv) in toolset.list_installed_versions(config).await? {
         let bins = list_tool_bins(t.clone(), &tv).await.unwrap_or_else(|e| {
             warn!("Error listing bin paths for {}: {:#}", tv, e);
             Vec::new()
@@ -355,7 +357,12 @@ async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) -> Result<PathBuf> {
+async fn err_no_version_set(
+    config: &Arc<Config>,
+    ts: Toolset,
+    bin_name: &str,
+    tvs: Vec<ToolVersion>,
+) -> Result<PathBuf> {
     if tvs.is_empty() {
         bail!(
             "{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool."
@@ -363,7 +370,7 @@ async fn err_no_version_set(ts: Toolset, bin_name: &str, tvs: Vec<ToolVersion>) 
     }
     let missing_plugins = tvs.iter().map(|tv| tv.ba()).collect::<HashSet<_>>();
     let mut missing_tools = ts
-        .list_missing_versions()
+        .list_missing_versions(config)
         .await
         .into_iter()
         .filter(|t| missing_plugins.contains(t.ba()))

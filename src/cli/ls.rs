@@ -87,7 +87,7 @@ impl Ls {
         self.verify_plugin()?;
 
         let mut runtimes = if self.prunable {
-            self.get_prunable_runtime_list().await?
+            self.get_prunable_runtime_list(&config).await?
         } else {
             self.get_runtime_list(&config).await?
         };
@@ -135,7 +135,11 @@ impl Ls {
         Ok(())
     }
 
-    async fn display_json(&self, config: &Config, runtimes: Vec<RuntimeRow<'_>>) -> Result<()> {
+    async fn display_json(
+        &self,
+        config: &Arc<Config>,
+        runtimes: Vec<RuntimeRow<'_>>,
+    ) -> Result<()> {
         if let Some(plugins) = &self.installed_tool {
             // only runtimes for 1 plugin
             let runtimes: Vec<RuntimeRow<'_>> = runtimes
@@ -167,7 +171,7 @@ impl Ls {
 
     async fn display_user<'a>(
         &'a self,
-        config: &Config,
+        config: &Arc<Config>,
         runtimes: Vec<RuntimeRow<'a>>,
     ) -> Result<()> {
         let mut rows = vec![];
@@ -199,13 +203,15 @@ impl Ls {
         table.truncate(true).print()
     }
 
-    async fn get_prunable_runtime_list(&self) -> Result<Vec<RuntimeRow>> {
+    async fn get_prunable_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow>> {
         let installed_tool = self.installed_tool.clone().unwrap_or_default();
-        Ok(prune::prunable_tools(installed_tool.iter().collect())
-            .await?
-            .into_iter()
-            .map(|(p, tv)| (self, p, tv, ToolSource::Unknown))
-            .collect())
+        Ok(
+            prune::prunable_tools(config, installed_tool.iter().collect())
+                .await?
+                .into_iter()
+                .map(|(p, tv)| (self, p, tv, ToolSource::Unknown))
+                .collect(),
+        )
     }
     async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow>> {
         let mut trs = config.get_tool_request_set().await?.clone();
@@ -230,10 +236,10 @@ impl Ls {
         }
 
         let mut ts = Toolset::from(trs);
-        ts.resolve().await?;
+        ts.resolve(config).await?;
 
         let rvs: Vec<RuntimeRow> = ts
-            .list_all_versions()
+            .list_all_versions(config)
             .await?
             .into_iter()
             .map(|(b, tv)| ((b, tv.version.clone()), tv))
@@ -330,7 +336,7 @@ impl Row {
     }
 }
 
-async fn json_tool_version_from(config: &Config, row: RuntimeRow<'_>) -> JSONToolVersion {
+async fn json_tool_version_from(config: &Arc<Config>, row: RuntimeRow<'_>) -> JSONToolVersion {
     let (ls, p, tv, source) = row;
     let vs: VersionStatus = version_status_from(config, (ls, p.as_ref(), &tv, &source)).await;
     JSONToolVersion {
@@ -365,7 +371,7 @@ enum VersionStatus {
 }
 
 async fn version_status_from(
-    config: &Config,
+    config: &Arc<Config>,
     (ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &ToolSource),
 ) -> VersionStatus {
     if p.symlink_path(tv).is_some() {

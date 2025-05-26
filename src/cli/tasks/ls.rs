@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::config::Config;
 use crate::file::display_rel_path;
 use crate::task::Task;
@@ -102,7 +104,7 @@ impl TasksLs {
         if self.complete {
             return self.complete(tasks);
         } else if self.usage {
-            self.display_usage(ts, tasks).await?;
+            self.display_usage(&config, ts, tasks).await?;
         } else if self.json {
             self.display_json(tasks)?;
         } else {
@@ -135,11 +137,16 @@ impl TasksLs {
         table.print()
     }
 
-    async fn display_usage(&self, ts: &Toolset, tasks: Vec<Task>) -> Result<()> {
+    async fn display_usage(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        tasks: Vec<Task>,
+    ) -> Result<()> {
         let mut usage = usage::Spec::default();
         for task in tasks {
-            let env = task.render_env(ts).await?;
-            let (mut task_spec, _) = task.parse_usage_spec(None, &env).await?;
+            let env = task.render_env(config, ts).await?;
+            let (mut task_spec, _) = task.parse_usage_spec(config, None, &env).await?;
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }

@@ -1,7 +1,7 @@
 mod path;
 
 use crate::{exit, plugins::PluginEnum};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
@@ -100,7 +100,7 @@ impl Doctor {
 
         let config = Config::get().await;
         let ts = config.get_toolset().await?;
-        self.analyze_shims(ts).await;
+        self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
         data.insert(
             "paths".into(),
@@ -191,7 +191,7 @@ impl Doctor {
         info::section("dirs", mise_dirs)?;
 
         match Config::try_get().await {
-            Ok(config) => self.analyze_config(config).await?,
+            Ok(config) => self.analyze_config(&config).await?,
             Err(err) => self.errors.push(format!("failed to load config: {err}")),
         }
 
@@ -254,9 +254,7 @@ impl Doctor {
         }
         Ok(())
     }
-    async fn analyze_config(&mut self, config: impl AsRef<Config>) -> eyre::Result<()> {
-        let config = config.as_ref();
-
+    async fn analyze_config(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
         info::section("config_files", render_config_files(config))?;
         if IGNORED_CONFIG_FILES.is_empty() {
             println!();
@@ -301,7 +299,7 @@ impl Doctor {
 
         match ToolsetBuilder::new().build(config).await {
             Ok(ts) => {
-                self.analyze_shims(&ts).await;
+                self.analyze_shims(config, &ts).await;
                 self.analyze_toolset(&ts).await?;
                 self.analyze_paths(&ts).await?;
             }
@@ -343,10 +341,10 @@ impl Doctor {
         Ok(())
     }
 
-    async fn analyze_shims(&mut self, toolset: &Toolset) {
+    async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) {
         let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
 
-        if let Ok((missing, extra)) = shims::get_shim_diffs(mise_bin, toolset).await {
+        if let Ok((missing, extra)) = shims::get_shim_diffs(config, mise_bin, toolset).await {
             let cmd = style::nyellow("mise reshim");
 
             if !missing.is_empty() {

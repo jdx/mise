@@ -10,12 +10,15 @@ use crate::lock_file::LockFile;
 use crate::toolset::ToolsetBuilder;
 use crate::{backend, plugins};
 use indexmap::IndexMap;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 impl EnvResults {
     #[allow(clippy::too_many_arguments)]
     pub async fn venv(
-        config: &Config,
+        config: &Arc<Config>,
         ctx: &mut tera::Context,
         tera: &mut tera::Tera,
         env: &mut IndexMap<String, (String, Option<PathBuf>)>,
@@ -71,7 +74,7 @@ impl EnvResults {
                 );
             } else {
                 let uv_bin = ts
-                    .which_bin("uv")
+                    .which_bin(config, "uv")
                     .await
                     .or_else(|| which_non_pristine("uv"));
                 let use_uv = !SETTINGS.python.venv_stdlib && uv_bin.is_some();

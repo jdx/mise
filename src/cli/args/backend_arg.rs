@@ -153,9 +153,9 @@ impl BackendArg {
         }
         if let Some(full) = &self.full {
             full.clone()
-        } else if let Some(full) = install_state::get_tool_full(short).unwrap_or_default() {
+        } else if let Some(full) = install_state::get_tool_full(short) {
             full
-        } else if let Some(pt) = install_state::get_plugin_type(short).unwrap_or_default() {
+        } else if let Some(pt) = install_state::get_plugin_type(short) {
             match pt {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
@@ -240,7 +240,7 @@ impl BackendArg {
     }
 
     pub fn uses_plugin(&self) -> bool {
-        install_state::get_plugin_type(&self.short).is_ok_and(|pt| pt.is_some())
+        install_state::get_plugin_type(&self.short).is_some()
     }
 }
 
@@ -291,8 +291,9 @@ mod tests {
     use super::*;
     use pretty_assertions::{assert_eq, assert_str_eq};
 
-    #[test]
-    fn test_backend_arg() {
+    #[tokio::test]
+    async fn test_backend_arg() {
+        let _config = Config::get().await;
         let t = |s: &str, full, tool_name, t| {
             let fa: BackendArg = s.into();
             assert_str_eq!(full, fa.full());

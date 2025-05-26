@@ -12,9 +12,9 @@ use itertools::Itertools;
 use versions::Versioning;
 use xx::regex;
 
-pub fn rebuild(config: &Config) -> Result<()> {
+pub async fn rebuild(config: &Config) -> Result<()> {
     for backend in backend::list() {
-        let symlinks = list_symlinks(config, backend.clone())?;
+        let symlinks = list_symlinks(config, backend.clone());
         let installs_dir = &backend.ba().installs_path;
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
@@ -33,12 +33,12 @@ pub fn rebuild(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> Result<IndexMap<String, PathBuf>> {
+fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> IndexMap<String, PathBuf> {
     // TODO: make this a pure function and add test cases
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
     let re = regex!(r"^[a-zA-Z0-9]+-");
-    for v in installed_versions(&backend)? {
+    for v in installed_versions(&backend) {
         let prefix = re
             .find(&v)
             .map(|s| s.as_str().to_string())
@@ -72,16 +72,15 @@ fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> Result<IndexMap<
         .into_iter()
         .sorted_by_cached_key(|(k, _)| (Versioning::new(k), k.to_string()))
         .collect();
-    Ok(symlinks)
+    symlinks
 }
 
-fn installed_versions(backend: &Arc<dyn Backend>) -> Result<Vec<String>> {
-    let versions = backend
-        .list_installed_versions()?
+fn installed_versions(backend: &Arc<dyn Backend>) -> Vec<String> {
+    backend
+        .list_installed_versions()
         .into_iter()
         .filter(|v| !VERSION_REGEX.is_match(v))
-        .collect();
-    Ok(versions)
+        .collect()
 }
 
 pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {

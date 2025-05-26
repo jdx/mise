@@ -43,7 +43,7 @@ impl RubyPlugin {
 
     async fn install_default_gems(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
@@ -72,8 +72,12 @@ impl RubyPlugin {
         Ok(())
     }
 
-    async fn test_ruby(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
-        let config = Config::get().await;
+    async fn test_ruby(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<()> {
         pr.set_message("ruby -v".into());
         CmdLineRunner::new(self.ruby_path(tv))
             .with_pr(pr)
@@ -84,7 +88,7 @@ impl RubyPlugin {
 
     async fn test_gem(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
@@ -140,7 +144,7 @@ impl RubyPlugin {
     }
 
     async fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        self.test_ruby(tv, &ctx.pr).await
+        self.test_ruby(&ctx.config, tv, &ctx.pr).await
     }
 }
 
@@ -149,7 +153,7 @@ impl Backend for RubyPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         // TODO: use windows set of versions
         //  match self.core.fetch_remote_versions_from_mise() {
         //      Ok(Some(versions)) => return Ok(versions),
@@ -196,14 +200,13 @@ impl Backend for RubyPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let config = Config::get().await;
         let tarball = self.download(&tv, &ctx.pr).await?;
         self.verify_checksum(ctx, &mut tv, &tarball)?;
         self.install(ctx, &tv, &tarball).await?;
         self.verify(ctx, &tv).await?;
         self.install_rubygems_hook(&tv)?;
-        self.test_gem(&config, &tv, &ctx.pr).await?;
-        if let Err(err) = self.install_default_gems(&config, &tv, &ctx.pr).await {
+        self.test_gem(&ctx.config, &tv, &ctx.pr).await?;
+        if let Err(err) = self.install_default_gems(&ctx.config, &tv, &ctx.pr).await {
             warn!("failed to install default ruby gems {err:#}");
         }
         Ok(tv)
@@ -211,7 +214,7 @@ impl Backend for RubyPlugin {
 
     async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         _tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {

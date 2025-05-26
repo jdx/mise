@@ -47,6 +47,7 @@ pub struct Install {
 }
 
 impl Install {
+    #[async_backtrace::framed]
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await;
         match &self.tool {
@@ -59,6 +60,7 @@ impl Install {
         Ok(())
     }
 
+    #[async_backtrace::framed]
     async fn install_runtimes(&self, config: &Arc<Config>, runtimes: &[ToolArg]) -> Result<()> {
         let tools = runtimes.iter().map(|ta| ta.ba.short.clone()).collect();
         let mut ts = config

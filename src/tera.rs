@@ -376,26 +376,32 @@ pub fn tera_exec(
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
+
     use super::*;
     use pretty_assertions::assert_str_eq;
 
-    #[test]
-    fn test_config_root() {
+    #[tokio::test]
+    async fn test_config_root() {
+        let _config = Config::get().await;
         assert_eq!(render("{{config_root}}"), "/");
     }
 
-    #[test]
-    fn test_mise_env() {
+    #[tokio::test]
+    async fn test_mise_env() {
+        let _config = Config::get().await;
         assert_eq!(render("{% if mise_env %}{{mise_env}}{% endif %}"), "");
     }
 
-    #[test]
-    fn test_cwd() {
+    #[tokio::test]
+    async fn test_cwd() {
+        let _config = Config::get().await;
         assert_eq!(render("{{cwd}}"), "/");
     }
 
-    #[test]
-    fn test_mise_bin() {
+    #[tokio::test]
+    async fn test_mise_bin() {
+        let _config = Config::get().await;
         assert_eq!(
             render("{{mise_bin}}"),
             env::current_exe()
@@ -406,42 +412,48 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_mise_pid() {
+    #[tokio::test]
+    async fn test_mise_pid() {
+        let _config = Config::get().await;
         let s = render("{{mise_pid}}");
         let pid = s.trim().parse::<u32>().unwrap();
         assert!(pid > 0);
     }
 
-    #[test]
-    fn test_xdg_cache_home() {
+    #[tokio::test]
+    async fn test_xdg_cache_home() {
+        let _config = Config::get().await;
         let s = render("{{xdg_cache_home}}");
         assert_str_eq!(s, env::XDG_CACHE_HOME.to_string_lossy());
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_xdg_config_home() {
+    async fn test_xdg_config_home() {
+        let _config = Config::get().await;
         let s = render("{{xdg_config_home}}");
         assert!(s.ends_with("/.config")); // test dir is not deterministic
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_xdg_data_home() {
+    async fn test_xdg_data_home() {
+        let _config = Config::get().await;
         let s = render("{{xdg_data_home}}");
         assert!(s.ends_with("/.local/share")); // test dir is not deterministic
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_xdg_state_home() {
+    async fn test_xdg_state_home() {
+        let _config = Config::get().await;
         let s = render("{{xdg_state_home}}");
         assert!(s.ends_with("/.local/state")); // test dir is not deterministic
     }
 
-    #[test]
-    fn test_arch() {
+    #[tokio::test]
+    async fn test_arch() {
+        let _config = Config::get().await;
         if cfg!(target_arch = "x86_64") {
             assert_eq!(render("{{arch()}}"), "x64");
         } else if cfg!(target_arch = "aarch64") {
@@ -451,15 +463,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_num_cpus() {
+    #[tokio::test]
+    async fn test_num_cpus() {
+        let _config = Config::get().await;
         let s = render("{{ num_cpus() }}");
         let num = s.parse::<u32>().unwrap();
         assert!(num > 0);
     }
 
-    #[test]
-    fn test_os() {
+    #[tokio::test]
+    async fn test_os() {
+        let _config = Config::get().await;
         if cfg!(target_os = "linux") {
             assert_eq!(render("{{os()}}"), "linux");
         } else if cfg!(target_os = "macos") {
@@ -469,8 +483,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_os_family() {
+    #[tokio::test]
+    async fn test_os_family() {
+        let _config = Config::get().await;
         if cfg!(target_family = "unix") {
             assert_eq!(render("{{os_family()}}"), "unix");
         } else if cfg!(target_os = "windows") {
@@ -478,139 +493,161 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_choice() {
+    #[tokio::test]
+    async fn test_choice() {
+        let _config = Config::get().await;
         let result = render("{{choice(n=8, alphabet=\"abcdefgh\")}}");
         assert_eq!(result.trim().len(), 8);
     }
 
-    #[test]
-    fn test_quote() {
+    #[tokio::test]
+    async fn test_quote() {
+        let _config = Config::get().await;
         let s = render("{{ \"quoted'str\" | quote }}");
         assert_eq!(s, "'quoted\\'str'");
     }
 
-    #[test]
-    fn test_kebabcase() {
+    #[tokio::test]
+    async fn test_kebabcase() {
+        let _config = Config::get().await;
         let s = render("{{ \"thisFilter\" | kebabcase }}");
         assert_eq!(s, "this-filter");
     }
 
-    #[test]
-    fn test_lowercamelcase() {
+    #[tokio::test]
+    async fn test_lowercamelcase() {
+        let _config = Config::get().await;
         let s = render("{{ \"Camel-case\" | lowercamelcase }}");
         assert_eq!(s, "camelCase");
     }
 
-    #[test]
-    fn test_shoutykebabcase() {
+    #[tokio::test]
+    async fn test_shoutykebabcase() {
+        let _config = Config::get().await;
         let s = render("{{ \"kebabCase\" | shoutykebabcase }}");
         assert_eq!(s, "KEBAB-CASE");
     }
 
-    #[test]
-    fn test_shoutysnakecase() {
+    #[tokio::test]
+    async fn test_shoutysnakecase() {
+        let _config = Config::get().await;
         let s = render("{{ \"snakeCase\" | shoutysnakecase }}");
         assert_eq!(s, "SNAKE_CASE");
     }
 
-    #[test]
-    fn test_snakecase() {
+    #[tokio::test]
+    async fn test_snakecase() {
+        let _config = Config::get().await;
         let s = render("{{ \"snakeCase\" | snakecase }}");
         assert_eq!(s, "snake_case");
     }
 
-    #[test]
-    fn test_uppercamelcase() {
+    #[tokio::test]
+    async fn test_uppercamelcase() {
+        let _config = Config::get().await;
         let s = render("{{ \"CamelCase\" | uppercamelcase }}");
         assert_eq!(s, "CamelCase");
     }
 
-    #[test]
-    fn test_hash() {
+    #[tokio::test]
+    async fn test_hash() {
+        let _config = Config::get().await;
         let s = render("{{ \"foo\" | hash(len=8) }}");
         assert_eq!(s, "2c26b46b");
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_hash_file() {
+    async fn test_hash_file() {
+        let _config = Config::get().await;
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
         insta::assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_canonicalize() {
+    async fn test_canonicalize() {
+        let _config = Config::get().await;
         let s = render("{{ \"../fixtures/shorthands.toml\" | canonicalize }}");
         assert!(s.ends_with("/fixtures/shorthands.toml")); // test dir is not deterministic
     }
 
-    #[test]
-    fn test_dirname() {
+    #[tokio::test]
+    async fn test_dirname() {
+        let _config = Config::get().await;
         let s = render(r#"{{ "a/b/c" | dirname }}"#);
         assert_eq!(s, "a/b");
     }
 
-    #[test]
-    fn test_basename() {
+    #[tokio::test]
+    async fn test_basename() {
+        let _config = Config::get().await;
         let s = render(r#"{{ "a/b/c" | basename }}"#);
         assert_eq!(s, "c");
     }
 
-    #[test]
-    fn test_extname() {
+    #[tokio::test]
+    async fn test_extname() {
+        let _config = Config::get().await;
         let s = render(r#"{{ "a/b/c.txt" | extname }}"#);
         assert_eq!(s, "txt");
     }
 
-    #[test]
-    fn test_file_stem() {
+    #[tokio::test]
+    async fn test_file_stem() {
+        let _config = Config::get().await;
         let s = render(r#"{{ "a/b/c.txt" | file_stem }}"#);
         assert_eq!(s, "c");
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_file_size() {
+    async fn test_file_size() {
+        let _config = Config::get().await;
         let s = render(r#"{{ "../fixtures/shorthands.toml" | file_size }}"#);
         assert_eq!(s, "48");
     }
 
-    #[test]
-    fn test_last_modified() {
+    #[tokio::test]
+    async fn test_last_modified() {
+        let _config = Config::get().await;
         let s = render(r#"{{ "../fixtures/shorthands.toml" | last_modified }}"#);
         let timestamp = s.parse::<u64>().unwrap();
         assert!((1725000000..=2725000000).contains(&timestamp));
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_join_path() {
+    async fn test_join_path() {
+        let _config = Config::get().await;
         let s = render(r#"{{ ["..", "fixtures", "shorthands.toml"] | join_path }}"#);
         assert_eq!(s, "../fixtures/shorthands.toml");
     }
 
-    #[test]
-    fn test_is_dir() {
+    #[tokio::test]
+    async fn test_is_dir() {
+        let _config = Config::get().await;
         let s = render(r#"{% set p = ".mise" %}{% if p is dir %} ok {% endif %}"#);
         assert_eq!(s.trim(), "ok");
     }
 
-    #[test]
-    fn test_is_file() {
+    #[tokio::test]
+    async fn test_is_file() {
+        let _config = Config::get().await;
         let s = render(r#"{% set p = ".test-tool-versions" %}{% if p is file %} ok {% endif %}"#);
         assert_eq!(s.trim(), "ok");
     }
 
-    #[test]
-    fn test_exists() {
+    #[tokio::test]
+    async fn test_exists() {
+        let _config = Config::get().await;
         let s = render(r#"{% set p = ".test-tool-versions" %}{% if p is exists %} ok {% endif %}"#);
         assert_eq!(s.trim(), "ok");
     }
 
-    #[test]
-    fn test_semver_matching() {
+    #[tokio::test]
+    async fn test_semver_matching() {
+        let _config = Config::get().await;
         let s = render(
             r#"{% set p = "1.10.2" %}{% if p is semver_matching("^1.10.0") %} ok {% endif %}"#,
         );

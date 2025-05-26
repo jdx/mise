@@ -150,7 +150,12 @@ impl Task {
         })
     }
 
-    pub async fn from_path(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
+    pub async fn from_path(
+        config: &Arc<Config>,
+        path: &Path,
+        prefix: &Path,
+        config_root: &Path,
+    ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
         let info = file::read_to_string(path)?
             .lines()
@@ -203,7 +208,7 @@ impl Task {
                     .collect()
             })
             .unwrap_or_default();
-        task.render(config_root).await?;
+        task.render(config, config_root).await?;
         Ok(task)
     }
 
@@ -312,6 +317,7 @@ impl Task {
 
     pub async fn parse_usage_spec(
         &self,
+        config: &Arc<Config>,
         cwd: Option<PathBuf>,
         env: &EnvMap,
     ) -> Result<(usage::Spec, Vec<String>)> {
@@ -327,7 +333,7 @@ impl Task {
             (spec, vec![])
         } else {
             let (scripts, spec) = TaskScriptParser::new(cwd)
-                .parse_run_scripts(self, self.run(), env)
+                .parse_run_scripts(config, self, self.run(), env)
                 .await?;
             (spec, scripts)
         };
@@ -351,14 +357,15 @@ impl Task {
 
     pub async fn render_run_scripts_with_args(
         &self,
+        config: &Arc<Config>,
         cwd: Option<PathBuf>,
         args: &[String],
         env: &EnvMap,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(cwd.clone(), env).await?;
+        let (spec, scripts) = self.parse_usage_spec(config, cwd.clone(), env).await?;
         if has_any_args_defined(&spec) {
             let scripts = TaskScriptParser::new(cwd)
-                .parse_run_scripts_with_args(self, self.run(), env, args, &spec)
+                .parse_run_scripts_with_args(config, self, self.run(), env, args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
@@ -376,9 +383,16 @@ impl Task {
         }
     }
 
-    pub async fn render_markdown(&self, ts: &Toolset, dir: &Path) -> Result<String> {
-        let env = self.render_env(ts).await?;
-        let (spec, _) = self.parse_usage_spec(Some(dir.to_path_buf()), &env).await?;
+    pub async fn render_markdown(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        dir: &Path,
+    ) -> Result<String> {
+        let env = self.render_env(config, ts).await?;
+        let (spec, _) = self
+            .parse_usage_spec(config, Some(dir.to_path_buf()), &env)
+            .await?;
         let ctx = usage::docs::markdown::MarkdownRenderer::new(spec)
             .with_replace_pre_with_code_fences(true)
             .with_header_level(2);
@@ -408,16 +422,15 @@ impl Task {
         }
     }
 
-    pub async fn dir(&self) -> Result<Option<PathBuf>> {
-        let config = Config::get().await;
+    pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(dir) = self.dir.clone().or_else(|| {
-            self.cf(&config)
+            self.cf(config)
                 .as_ref()
                 .and_then(|cf| cf.task_config().dir.clone())
         }) {
             let config_root = self.config_root.clone().unwrap_or_default();
             let mut tera = get_tera(Some(&config_root));
-            let tera_ctx = self.tera_ctx().await?;
+            let tera_ctx = self.tera_ctx(config).await?;
             let dir = tera.render_str(&dir, &tera_ctx)?;
             let dir = file::replace_path(&dir);
             if dir.is_absolute() {
@@ -432,10 +445,9 @@ impl Task {
         }
     }
 
-    pub async fn tera_ctx(&self) -> Result<tera::Context> {
-        let config = Config::get().await;
+    pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<tera::Context> {
         let ts = config.get_toolset().await?;
-        let mut tera_ctx = ts.tera_ctx().await?.clone();
+        let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         tera_ctx.insert("config_root", &self.config_root);
         Ok(tera_ctx)
     }
@@ -459,9 +471,9 @@ impl Task {
         })
     }
 
-    pub async fn render(&mut self, config_root: &Path) -> Result<()> {
+    pub async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
         let mut tera = get_tera(Some(config_root));
-        let tera_ctx = self.tera_ctx().await?;
+        let tera_ctx = self.tera_ctx(config).await?;
         for a in &mut self.aliases {
             *a = tera.render_str(a, &tera_ctx)?;
         }
@@ -495,11 +507,10 @@ impl Task {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
-    pub async fn render_env(&self, ts: &Toolset) -> Result<EnvMap> {
-        let config = Config::try_get().await?;
+    pub async fn render_env(&self, config: &Arc<Config>, ts: &Toolset) -> Result<EnvMap> {
         let mut tera = get_tera(self.config_root.as_deref());
-        let mut tera_ctx = ts.tera_ctx().await?.clone();
-        let mut env = ts.full_env(&config).await?;
+        let mut tera_ctx = ts.tera_ctx(config).await?.clone();
+        let mut env = ts.full_env(config).await?;
         if let Some(root) = &config.project_root {
             tera_ctx.insert("config_root", &root);
         }
@@ -707,8 +718,8 @@ where
 mod tests {
     use std::path::Path;
 
-    use crate::dirs;
     use crate::task::Task;
+    use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
     use super::name_from_path;
@@ -716,9 +727,10 @@ mod tests {
     #[tokio::test]
     async fn test_from_path() {
         let test_cases = [(".mise/tasks/filetask", "filetask", vec!["ft"])];
-
+        let config = Config::get().await;
         for (path, name, aliases) in test_cases {
             let t = Task::from_path(
+                &config,
                 Path::new(path),
                 Path::new(".mise/tasks"),
                 Path::new(dirs::CWD.as_ref().unwrap()),

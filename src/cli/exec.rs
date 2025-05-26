@@ -52,6 +52,7 @@ pub struct Exec {
 }
 
 impl Exec {
+    #[async_backtrace::framed]
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await;
         let mut ts = measure!("toolset", {
@@ -79,7 +80,7 @@ impl Exec {
             ts.install_missing_versions(&config, &opts).await?
         });
         measure!("notify_if_versions_missing", {
-            ts.notify_if_versions_missing().await;
+            ts.notify_if_versions_missing(&config).await;
         });
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);

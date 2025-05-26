@@ -176,7 +176,7 @@ jobs:
             ~/.cache/mise
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
-      - run: mise run test:shuffle
+      - run: mise run test
 
   coverage:
     name: coverage-${{matrix.tranche}}

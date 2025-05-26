@@ -47,6 +47,7 @@ lto = true
 opt-level = 3
 
 [dependencies]
+async-backtrace = "0.2"
 async-trait = "0.1"
 base64 = "0.22"
 bzip2 = "0.5"

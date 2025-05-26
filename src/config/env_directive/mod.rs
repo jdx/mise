@@ -9,10 +9,10 @@ use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_json::Value;
-use std::cmp::PartialEq;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::{cmp::PartialEq, sync::Arc};
 
 use super::Config;
 
@@ -132,7 +132,7 @@ pub struct EnvResolveOptions {
 
 impl EnvResults {
     pub async fn resolve(
-        config: &Config,
+        config: &Arc<Config>,
         mut ctx: tera::Context,
         initial: &EnvMap,
         input: Vec<(EnvDirective, PathBuf)>,

@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use eyre::Result;
 
-use crate::backend;
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::toolset::{ToolRequest, tool_request};
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{backend, config::Config};
 
 /// List runtime versions available for install.
 ///
@@ -31,14 +31,15 @@ pub struct LsRemote {
 
 impl LsRemote {
     pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         if let Some(plugin) = self.get_plugin().await? {
-            self.run_single(plugin).await
+            self.run_single(&config, plugin).await
         } else {
-            self.run_all().await
+            self.run_all(&config).await
         }
     }
 
-    async fn run_single(self, plugin: Arc<dyn Backend>) -> Result<()> {
+    async fn run_single(self, config: &Arc<Config>, plugin: Arc<dyn Backend>) -> Result<()> {
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
@@ -50,7 +51,7 @@ impl LsRemote {
             _ => self.prefix.clone(),
         };
 
-        let versions = plugin.list_remote_versions().await?;
+        let versions = plugin.list_remote_versions(config).await?;
         let versions = match prefix {
             Some(prefix) => versions
                 .into_iter()
@@ -66,10 +67,10 @@ impl LsRemote {
         Ok(())
     }
 
-    async fn run_all(self) -> Result<()> {
+    async fn run_all(self, config: &Arc<Config>) -> Result<()> {
         let mut versions = vec![];
         for b in backend::list() {
-            let v = b.list_remote_versions().await?;
+            let v = b.list_remote_versions(config).await?;
             versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
         }
         versions.sort_by_cached_key(|(id, _)| id.to_string());

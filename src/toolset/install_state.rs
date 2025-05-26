@@ -10,7 +10,9 @@ use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
+use tokio::task::JoinSet;
 use versions::Versioning;
 
 type InstallStatePlugins = BTreeMap<String, PluginType>;
@@ -28,16 +30,18 @@ static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::n
 static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
 
 pub(crate) async fn init() -> Result<()> {
-    let (plugins, tools) = tokio::join!(
-        tokio::task::spawn(async { measure!("init_plugins", { init_plugins() }) }),
-        tokio::task::spawn(async { measure!("init_tools", { init_tools() }) }),
-    );
-    plugins??;
-    tools??;
+    measure!("init_plugins", { init_plugins().await? });
+    measure!("init_tools", { init_tools().await? });
+    // let (plugins, tools) = tokio::join!(
+    //     tokio::task::spawn(async { measure!("init_plugins", { init_plugins().await }) }),
+    //     tokio::task::spawn(async { measure!("init_tools", { init_tools().await }) }),
+    // );
+    // plugins??;
+    // tools??;
     Ok(())
 }
 
-fn init_plugins() -> MutexResult<InstallStatePlugins> {
+async fn init_plugins() -> MutexResult<InstallStatePlugins> {
     if let Some(plugins) = INSTALL_STATE_PLUGINS.lock().unwrap().clone() {
         return Ok(plugins);
     }
@@ -65,14 +69,14 @@ fn init_plugins() -> MutexResult<InstallStatePlugins> {
     Ok(plugins)
 }
 
-fn init_tools() -> MutexResult<InstallStateTools> {
+async fn init_tools() -> MutexResult<InstallStateTools> {
     if let Some(tools) = INSTALL_STATE_TOOLS.lock().unwrap().clone() {
         return Ok(tools);
     }
-    let mut tools = file::dir_subdirs(&dirs::INSTALLS)?
-        .into_iter()
-        .map(|dir| {
-            let backend_meta = read_backend_meta(&dir).unwrap_or_default();
+    let mut jset = JoinSet::new();
+    for dir in file::dir_subdirs(&dirs::INSTALLS)? {
+        jset.spawn(async move {
+            let backend_meta = read_backend_meta(&dir).await.unwrap_or_default();
             let short = backend_meta.first().unwrap_or(&dir).to_string();
             let full = backend_meta.get(1).cloned();
             let dir = dirs::INSTALLS.join(&dir);
@@ -93,14 +97,16 @@ fn init_tools() -> MutexResult<InstallStateTools> {
                 versions,
             };
             time!("init_tools {short}");
-            Ok(Some((short, tool)))
-        })
-        .collect::<Result<Vec<_>>>()?
+            (short, tool)
+        });
+    }
+    let mut tools = jset
+        .join_all()
+        .await
         .into_iter()
-        .flatten()
         .filter(|(_, tool)| !tool.versions.is_empty())
         .collect::<BTreeMap<_, _>>();
-    for (short, pt) in init_plugins()?.iter() {
+    for (short, pt) in init_plugins().await?.iter() {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
             PluginType::Vfox => format!("vfox:{short}"),
@@ -119,9 +125,13 @@ fn init_tools() -> MutexResult<InstallStateTools> {
     Ok(tools)
 }
 
-pub fn list_plugins() -> Result<Arc<BTreeMap<String, PluginType>>> {
-    let plugins = init_plugins()?;
-    Ok(plugins)
+pub fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
+    INSTALL_STATE_PLUGINS
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .clone()
 }
 
 fn is_banned_plugin(path: &Path) -> bool {
@@ -134,40 +144,40 @@ fn is_banned_plugin(path: &Path) -> bool {
     false
 }
 
-pub fn get_tool_full(short: &str) -> Result<Option<String>> {
-    let tools = init_tools()?;
-    Ok(tools.get(short).and_then(|t| t.full.clone()))
+pub fn get_tool_full(short: &str) -> Option<String> {
+    list_tools().get(short).and_then(|t| t.full.clone())
 }
 
-pub fn get_plugin_type(short: &str) -> Result<Option<PluginType>> {
-    let plugins = init_plugins()?;
-    Ok(plugins.get(short).cloned())
+pub fn get_plugin_type(short: &str) -> Option<PluginType> {
+    list_plugins().get(short).cloned()
 }
 
-pub fn list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>> {
-    let tools = init_tools()?;
-    Ok(tools)
+pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
+    INSTALL_STATE_TOOLS
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .clone()
 }
 
 pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
-    let tools = init_tools()?;
-    let backend_type = tools
+    let backend_type = list_tools()
         .get(short)
         .and_then(|ist| ist.full.as_ref())
         .map(|full| BackendType::guess(full));
     Ok(backend_type)
 }
 
-pub fn list_versions(short: &str) -> Result<Vec<String>> {
-    let tools = init_tools()?;
-    Ok(tools
+pub fn list_versions(short: &str) -> Vec<String> {
+    list_tools()
         .get(short)
         .map(|tool| tool.versions.clone())
-        .unwrap_or_default())
+        .unwrap_or_default()
 }
 
-pub fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
-    let mut plugins = init_plugins()?.deref().clone();
+pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
+    let mut plugins = init_plugins().await?.deref().clone();
     plugins.insert(short.to_string(), plugin_type);
     *INSTALL_STATE_PLUGINS.lock().unwrap() = Some(Arc::new(plugins));
     Ok(())
@@ -203,11 +213,12 @@ fn migrate_backend_meta_json(dir: &str) {
     }
 }
 
-fn read_backend_meta(short: &str) -> Option<Vec<String>> {
+async fn read_backend_meta(short: &str) -> Option<Vec<String>> {
     migrate_backend_meta_json(short);
     let path = backend_meta_path(short);
     if path.exists() {
-        let body = file::read_to_string(&path)
+        let body = file::read_to_string_async(&path)
+            .await
             .map_err(|err| {
                 warn!("{err:?}");
             })

@@ -57,7 +57,7 @@ impl Tool {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await;
         let mut ts = ToolsetBuilder::new().build(&config).await?;
-        ts.resolve().await?;
+        ts.resolve(&config).await?;
         let tvl = ts.versions.get(&self.tool);
         let tv = tvl.map(|tvl| tvl.versions.first().unwrap());
         let ba = tv.map(|tv| tv.ba()).unwrap_or_else(|| &self.tool);
@@ -71,7 +71,7 @@ impl Tool {
             backend: ba.full(),
             description,
             installed_versions: ts
-                .list_installed_versions()
+                .list_installed_versions(&config)
                 .await?
                 .into_iter()
                 .filter(|(b, _)| b.ba().as_ref() == ba)

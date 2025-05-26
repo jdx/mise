@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
 use crate::http::HTTP_FETCH;
+use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
 
@@ -28,7 +28,7 @@ impl Backend for DotnetBackend {
         Ok(vec!["dotnet"])
     }
 
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         let feed_url = self.get_search_url().await?;
 
         let feed: NugetFeedSearch = HTTP_FETCH
@@ -76,7 +76,7 @@ impl Backend for DotnetBackend {
         }
 
         cli.with_pr(&ctx.pr)
-            .envs(self.dependency_env().await?)
+            .envs(self.dependency_env(&ctx.config).await?)
             .execute()?;
 
         Ok(tv)

@@ -518,10 +518,11 @@ enum ChildProcessOutput {
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::cmd;
+    use crate::{cmd, config::Config};
 
-    #[test]
-    fn test_cmd() {
+    #[tokio::test]
+    async fn test_cmd() {
+        let _config = Config::get().await;
         let output = cmd!("echo", "foo", "bar").read().unwrap();
         assert_eq!("foo bar", output);
     }

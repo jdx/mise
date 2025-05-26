@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::config::SETTINGS;
+use crate::config::{Config, SETTINGS};
 #[cfg(unix)]
 use crate::file::TarOptions;
 use crate::file::display_path;
@@ -186,7 +186,7 @@ impl Backend for ErlangPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions = if SETTINGS.erlang.compile == Some(false) {
             github::list_releases("erlef/otp_builds")
                 .await?

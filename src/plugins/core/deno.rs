@@ -101,7 +101,7 @@ impl Backend for DenoPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json").await?;
         let versions = versions
             .cli
@@ -144,7 +144,7 @@ impl Backend for DenoPlugin {
 
     async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {

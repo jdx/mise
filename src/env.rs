@@ -573,12 +573,14 @@ pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
-    use test_log::test;
+
+    use crate::config::Config;
 
     use super::*;
 
-    #[test]
-    fn test_apply_patches() {
+    #[tokio::test]
+    async fn test_apply_patches() {
+        let _config = Config::get().await;
         let mut env = EnvMap::new();
         env.insert("foo".into(), "bar".into());
         env.insert("baz".into(), "qux".into());
@@ -593,8 +595,9 @@ mod tests {
         assert_eq!(new_env.get("baz").unwrap(), "qux");
     }
 
-    #[test]
-    fn test_var_path() {
+    #[tokio::test]
+    async fn test_var_path() {
+        let _config = Config::get().await;
         set_var("MISE_TEST_PATH", "/foo/bar");
         assert_eq!(
             var_path("MISE_TEST_PATH").unwrap(),

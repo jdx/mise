@@ -1,5 +1,4 @@
-use dashmap::DashMap;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -56,10 +55,11 @@ pub type VersionCacheManager = CacheManager<Vec<String>>;
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
-fn load_tools() -> Arc<BackendMap> {
+pub async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
-        return memo_tools;
+        return Ok(memo_tools);
     }
+    install_state::init().await?;
     time!("load_tools start");
     let core_tools = CORE_PLUGINS.values().cloned().collect::<Vec<ABackend>>();
     let mut tools = core_tools;
@@ -73,10 +73,6 @@ fn load_tools() -> Arc<BackendMap> {
     time!("load_tools core");
     tools.extend(
         install_state::list_tools()
-            .map_err(|err| {
-                warn!("{err:#}");
-            })
-            .unwrap_or_default()
             .values()
             .filter(|ist| ist.full.is_some())
             .flat_map(|ist| arg_to_backend(ist.clone().into())),
@@ -102,21 +98,29 @@ fn load_tools() -> Arc<BackendMap> {
     let tools = Arc::new(tools);
     *TOOLS.lock().unwrap() = Some(tools.clone());
     time!("load_tools done");
-    tools
+    Ok(tools)
 }
 
 pub fn list() -> BackendList {
-    load_tools().values().cloned().collect()
+    TOOLS
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .values()
+        .cloned()
+        .collect()
 }
 
 pub fn get(ba: &BackendArg) -> Option<ABackend> {
-    let backends = load_tools();
-    if let Some(backend) = backends.get(&ba.short) {
+    let mut tools = TOOLS.lock().unwrap();
+    let tools_ = tools.as_ref().unwrap();
+    if let Some(backend) = tools_.get(&ba.short) {
         Some(backend.clone())
     } else if let Some(backend) = arg_to_backend(ba.clone()) {
-        let mut backends = backends.deref().clone();
-        backends.insert(ba.short.clone(), backend.clone());
-        *TOOLS.lock().unwrap() = Some(Arc::new(backends));
+        let mut tools_ = tools_.deref().clone();
+        tools_.insert(ba.short.clone(), backend.clone());
+        *tools = Some(Arc::new(tools_));
         Some(backend)
     } else {
         None
@@ -124,9 +128,10 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
 }
 
 pub fn remove(short: &str) {
-    let mut backends = load_tools().deref().clone();
-    backends.remove(short);
-    *TOOLS.lock().unwrap() = Some(Arc::new(backends));
+    let mut tools = TOOLS.lock().unwrap();
+    let mut tools_ = tools.as_ref().unwrap().deref().clone();
+    tools_.remove(short);
+    *tools = Some(Arc::new(tools_));
 }
 
 pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
@@ -210,7 +215,7 @@ pub trait Backend: Debug + Send + Sync {
         Ok(deps)
     }
 
-    async fn list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         let remote_versions = self.get_remote_version_cache();
         let remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
@@ -230,7 +235,7 @@ pub trait Backend: Debug + Send + Sync {
                     ba.to_string()
                 );
                 let versions = self
-                    ._list_remote_versions()
+                    ._list_remote_versions(config)
                     .await?
                     .into_iter()
                     .filter(|v| match v.parse::<ToolVersionType>() {
@@ -249,14 +254,19 @@ pub trait Backend: Debug + Send + Sync {
             .await?;
         Ok(versions.clone())
     }
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>>;
-    async fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
-        self.latest_version(Some("latest".into())).await
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>>;
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        self.latest_version(config, Some("latest".into())).await
     }
-    fn list_installed_versions(&self) -> eyre::Result<Vec<String>> {
+    fn list_installed_versions(&self) -> Vec<String> {
         install_state::list_versions(&self.ba().short)
     }
-    fn is_version_installed(&self, config: &Config, tv: &ToolVersion, check_symlink: bool) -> bool {
+    fn is_version_installed(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> bool {
         let check_path = |install_path: &Path, check_symlink: bool| {
             let is_installed = install_path.exists();
             let is_not_incomplete = !self.incomplete_file_path(tv).exists();
@@ -324,30 +334,38 @@ pub trait Backend: Debug + Send + Sync {
         let link = file::make_symlink(target, &link)?;
         Ok(Some(link))
     }
-    fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_installed_versions()?;
+    fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
+        let versions = self.list_installed_versions();
         self.fuzzy_match_filter(versions, query)
     }
-    async fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions().await?;
-        self.fuzzy_match_filter(versions, query)
+    async fn list_versions_matching(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = self.list_remote_versions(config).await?;
+        Ok(self.fuzzy_match_filter(versions, query))
     }
-    async fn latest_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
+    async fn latest_version(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+    ) -> eyre::Result<Option<String>> {
         match query {
             Some(query) => {
-                let mut matches = self.list_versions_matching(&query).await?;
+                let mut matches = self.list_versions_matching(config, &query).await?;
                 if matches.is_empty() && query == "latest" {
-                    matches = self.list_remote_versions().await?;
+                    matches = self.list_remote_versions(config).await?;
                 }
                 Ok(find_match_in_list(&matches, &query))
             }
-            None => self.latest_stable_version().await,
+            None => self.latest_stable_version(config).await,
         }
     }
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
         match query {
             Some(query) => {
-                let matches = self.list_installed_versions_matching(&query)?;
+                let matches = self.list_installed_versions_matching(&query);
                 Ok(find_match_in_list(&matches, &query))
             }
             None => {
@@ -532,7 +550,7 @@ pub trait Backend: Debug + Send + Sync {
 
     async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         _tv: &ToolVersion,
     ) -> Result<BTreeMap<String, String>> {
@@ -594,18 +612,17 @@ pub trait Backend: Debug + Send + Sync {
         install_state::incomplete_file_path(&tv.ba().short, &tv.tv_pathname())
     }
 
-    async fn path_env_for_cmd(&self, tv: &ToolVersion) -> Result<OsString> {
+    async fn path_env_for_cmd(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<OsString> {
         let path = self
             .list_bin_paths(tv)
             .await?
             .into_iter()
-            .chain(self.dependency_toolset().await?.list_paths().await)
+            .chain(self.dependency_toolset(config).await?.list_paths(config).await)
             .chain(env::PATH.clone());
         Ok(env::join_paths(path)?)
     }
 
-    async fn dependency_toolset(&self) -> eyre::Result<Toolset> {
-        let config = Config::get().await;
+    async fn dependency_toolset(&self, config: &Arc<Config>) -> eyre::Result<Toolset> {
         let dependencies = self
             .get_all_dependencies(true)?
             .into_iter()
@@ -616,35 +633,37 @@ pub trait Backend: Debug + Send + Sync {
             .await?
             .filter_by_tool(dependencies)
             .into();
-        ts.resolve().await?;
+        ts.resolve(config).await?;
         Ok(ts)
     }
 
-    async fn dependency_which(&self, bin: &str) -> Option<PathBuf> {
+    async fn dependency_which(&self, config: &Arc<Config>, bin: &str) -> Option<PathBuf> {
         if let Some(bin) = file::which_non_pristine(bin) {
             return Some(bin);
         }
-        let Ok(ts) = self.dependency_toolset().await else {
+        let Ok(ts) = self.dependency_toolset(config).await else {
             return None;
         };
-        let (b, tv) = ts.which(bin).await?;
+        let (b, tv) = ts.which(config, bin).await?;
         b.which(&tv, bin).await.ok().flatten()
     }
 
-    async fn dependency_env(&self) -> eyre::Result<BTreeMap<String, String>> {
-        let config = Config::get().await;
-        self.dependency_toolset().await?.full_env(&config).await
+    async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
+        self.dependency_toolset(config)
+            .await?
+            .full_env(config)
+            .await
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
             "v?[0-9].*"
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{query}([-.].+)?$"))?;
-        let versions = versions
+        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+        versions
             .into_iter()
             .filter(|v| {
                 if query == v {
@@ -655,15 +674,18 @@ pub trait Backend: Debug + Send + Sync {
                 }
                 query_regex.is_match(v)
             })
-            .collect();
-        Ok(versions)
+            .collect()
     }
 
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
-        static REMOTE_VERSION_CACHE: Lazy<DashMap<String, Arc<TokioMutex<VersionCacheManager>>>> =
-            Lazy::new(Default::default);
+        // use a mutex to prevent deadlocks that occurs due to reentrant cache access
+        static REMOTE_VERSION_CACHE: Lazy<
+            Mutex<HashMap<String, Arc<TokioMutex<VersionCacheManager>>>>,
+        > = Lazy::new(Default::default);
 
         REMOTE_VERSION_CACHE
+            .lock()
+            .unwrap()
             .entry(self.ba().full())
             .or_insert_with(|| {
                 let mut cm = CacheManagerBuilder::new(
@@ -703,7 +725,12 @@ pub trait Backend: Debug + Send + Sync {
         Ok(())
     }
 
-    async fn outdated_info(&self, _tv: &ToolVersion, _bump: bool) -> Result<Option<OutdatedInfo>> {
+    async fn outdated_info(
+        &self,
+        _config: &Arc<Config>,
+        _tv: &ToolVersion,
+        _bump: bool,
+    ) -> Result<Option<OutdatedInfo>> {
         Ok(None)
     }
 }
@@ -768,6 +795,9 @@ impl Ord for dyn Backend {
     }
 }
 
-pub fn reset() {
+pub async fn reset() -> Result<()> {
+    install_state::reset();
     *TOOLS.lock().unwrap() = None;
+    load_tools().await?;
+    Ok(())
 }

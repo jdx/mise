@@ -44,6 +44,7 @@ pub struct Prune {
 
 impl Prune {
     pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         if self.configs || !self.tools {
             self.prune_configs()?;
         }
@@ -52,7 +53,7 @@ impl Prune {
                 .installed_tool
                 .as_ref()
                 .map(|it| it.iter().map(|ta| ta.ba.as_ref()).collect());
-            prune(backends.unwrap_or_default(), self.dry_run).await?;
+            prune(&config, backends.unwrap_or_default(), self.dry_run).await?;
         }
         Ok(())
     }
@@ -70,12 +71,12 @@ impl Prune {
 }
 
 pub async fn prunable_tools(
+    config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-    let config = Config::try_get().await?;
-    let ts = ToolsetBuilder::new().build(&config).await?;
+    let ts = ToolsetBuilder::new().build(config).await?;
     let mut to_delete = ts
-        .list_installed_versions()
+        .list_installed_versions(config)
         .await?
         .into_iter()
         .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
@@ -87,7 +88,7 @@ pub async fn prunable_tools(
 
     for cf in config.get_tracked_config_files()?.values() {
         let mut ts = Toolset::from(cf.to_tool_request_set()?);
-        ts.resolve().await?;
+        ts.resolve(config).await?;
         for (_, tv) in ts.list_current_versions() {
             to_delete.remove(&(tv.ba().short.to_string(), tv.tv_pathname()));
         }
@@ -96,8 +97,8 @@ pub async fn prunable_tools(
     Ok(to_delete.into_values().collect())
 }
 
-pub async fn prune(tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
-    let to_delete = prunable_tools(tools).await?;
+pub async fn prune(config: &Arc<Config>, tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
+    let to_delete = prunable_tools(config, tools).await?;
     delete(dry_run, to_delete).await
 }
 

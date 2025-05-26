@@ -24,8 +24,8 @@ impl BinPaths {
         if let Some(tool) = &self.tool {
             ts.versions.retain(|k, _| tool.iter().any(|t| *t.ba == **k));
         }
-        ts.notify_if_versions_missing().await;
-        for p in ts.list_paths().await {
+        ts.notify_if_versions_missing(&config).await;
+        for p in ts.list_paths(&config).await {
             miseprintln!("{}", p.display());
         }
         Ok(())
