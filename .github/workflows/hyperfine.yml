@@ -86,7 +86,7 @@ jobs:
           done
         env:
           SHELL: zsh
-      - run: cp comment.md "$GITHUB_STEP_SUMMARY"
+      - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
         if: always() && github.event_name == 'pull_request'
       - name: Comment on PR
         uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3
