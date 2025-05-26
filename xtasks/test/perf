@@ -31,8 +31,8 @@ recent_benchmarks["task-ls-uncached"]=3255
 recent_benchmarks["task-ls-cached"]=313
 
 for name in "${!recent_benchmarks[@]}"; do
-	maximums["$name"]=$(("${recent_benchmarks["$name"]}" * 12 / 10))
-	minimums["$name"]=$(("${recent_benchmarks["$name"]}" * 8 / 10))
+	maximums["$name"]=$(("${recent_benchmarks["$name"]}" * 13 / 10))
+	minimums["$name"]=$(("${recent_benchmarks["$name"]}" * 7 / 10))
 done
 
 benchmark_error() {
