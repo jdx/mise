@@ -4,11 +4,17 @@ use crate::http::HTTP_FETCH;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
 use crate::{http, registry};
-use std::collections::HashSet;
-use std::sync::LazyLock as Lazy;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{
+        LazyLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+use tokio::sync::Mutex;
 use url::Url;
 
-static PLUGINS_USE_VERSION_HOST: Lazy<HashSet<&str>> = Lazy::new(|| {
+static PLUGINS_USE_VERSION_HOST: LazyLock<HashSet<&str>> = LazyLock::new(|| {
     CORE_PLUGINS
         .keys()
         .map(|name| name.as_str())
@@ -41,23 +47,35 @@ pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>>
             }
         }
     }
-    let response = match SETTINGS.paranoid {
-        true => {
-            HTTP_FETCH
-                .get_text(format!("https://mise-versions.jdx.dev/{}", &ba.short))
-                .await
-        }
-        false => {
-            HTTP_FETCH
-                .get_text(format!("http://mise-versions.jdx.dev/{}", &ba.short))
-                .await
-        }
+    static CACHE: LazyLock<Mutex<HashMap<String, Vec<String>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static RATE_LIMITED: AtomicBool = AtomicBool::new(false);
+    if let Some(versions) = CACHE.lock().await.get(ba.short.as_str()) {
+        return Ok(Some(versions.clone()));
+    }
+    if RATE_LIMITED.load(Ordering::Relaxed) {
+        warn!("{ba}: skipping versions host check due to rate limit");
+        return Ok(None);
+    }
+    let url = match SETTINGS.paranoid {
+        true => format!("https://mise-versions.jdx.dev/{}", &ba.short),
+        false => format!("http://mise-versions.jdx.dev/{}", &ba.short),
     };
     let versions =
         // using http is not a security concern and enabling tls makes mise significantly slower
-        match response {
-            Err(err) if http::error_code(&err) == Some(404) => return Ok(None),
-            res => res?,
+        match HTTP_FETCH.get_text(url).await {
+            Ok(res) => res,
+            Err(err) => {
+                match http::error_code(&err).unwrap_or(0) {
+                    404 => return Ok(None),
+                    429 => {
+                        RATE_LIMITED.store(true, Ordering::Relaxed);
+                        warn!("{ba}: mise-version rate limited");
+                        return Ok(None);
+                    }
+                    _ => return Err(err),
+                }
+            }
         };
     let versions = versions
         .lines()
@@ -69,6 +87,10 @@ pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>>
         versions.len(),
         &ba.short
     );
+    CACHE
+        .lock()
+        .await
+        .insert(ba.short.clone(), versions.clone());
     match versions.is_empty() {
         true => Ok(None),
         false => Ok(Some(versions)),
