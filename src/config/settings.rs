@@ -178,8 +178,8 @@ impl Settings {
             }
         }
         if settings.gpg_verify.is_some() {
-            settings.node.gpg_verify = settings.node.gpg_verify.or(SETTINGS.gpg_verify);
-            settings.swift.gpg_verify = settings.swift.gpg_verify.or(SETTINGS.gpg_verify);
+            settings.node.gpg_verify = settings.node.gpg_verify.or(settings.gpg_verify);
+            settings.swift.gpg_verify = settings.swift.gpg_verify.or(settings.gpg_verify);
         }
         settings.set_hidden_configs();
         if cfg!(test) {

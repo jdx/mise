@@ -89,11 +89,11 @@ impl ToolVersion {
     }
 
     pub fn install_path(&self) -> PathBuf {
-        static CACHE: LazyLock<DashMap<ToolVersion, PathBuf>> = LazyLock::new(DashMap::new);
-        if let Some(p) = CACHE.get(self) {
+        if let Some(p) = &self.install_path {
             return p.clone();
         }
-        if let Some(p) = &self.install_path {
+        static CACHE: LazyLock<DashMap<ToolVersion, PathBuf>> = LazyLock::new(DashMap::new);
+        if let Some(p) = CACHE.get(self) {
             return p.clone();
         }
         let pathname = match &self.request {
