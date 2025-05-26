@@ -262,9 +262,9 @@ fn arch() -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
-    use crate::config::Config;
 
     use super::*;
 

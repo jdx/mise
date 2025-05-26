@@ -70,7 +70,6 @@ feature-depth = 1
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-  { id = "RUSTSEC-2024-0370", reason = "subdependency cannot be updated" },
   { id = "RUSTSEC-2024-0436", reason = "subdependency cannot be updated" },
   #"RUSTSEC-0000-0000",
   #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
