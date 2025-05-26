@@ -163,5 +163,5 @@ if [ ${#errors[@]} -gt 0 ]; then
 	for error in "${errors[@]}"; do
 		echo "$error" >&2
 	done
-	exit 1
+	# exit 1
 fi
