@@ -2,7 +2,6 @@ use comfy_table::{Attribute, Cell, Color};
 use eyre::{Result, ensure};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use rayon::prelude::*;
 use serde_derive::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -80,17 +79,17 @@ pub struct Ls {
 }
 
 impl Ls {
-    pub fn run(mut self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(mut self) -> Result<()> {
+        let config = Config::get().await;
         self.installed_tool = self
             .installed_tool
             .or_else(|| self.tool_flag.clone().map(|p| vec![p]));
         self.verify_plugin()?;
 
         let mut runtimes = if self.prunable {
-            self.get_prunable_runtime_list()?
+            self.get_prunable_runtime_list().await?
         } else {
-            self.get_runtime_list(&config)?
+            self.get_runtime_list(&config).await?
         };
         if self.current || self.global || self.local {
             // TODO: global is a little weird: it will show global versions as the active ones even if
@@ -98,18 +97,30 @@ impl Ls {
             runtimes.retain(|(_, _, _, source)| !source.is_unknown());
         }
         if self.installed {
-            runtimes.retain(|(_, p, tv, _)| p.is_version_installed(tv, true));
+            let mut installed_runtimes = vec![];
+            for (ls, p, tv, source) in runtimes {
+                if p.is_version_installed(&config, &tv, true) {
+                    installed_runtimes.push((ls, p, tv, source));
+                }
+            }
+            runtimes = installed_runtimes;
         }
         if self.missing {
-            runtimes.retain(|(_, p, tv, _)| !p.is_version_installed(tv, true));
+            let mut missing_runtimes = vec![];
+            for (ls, p, tv, source) in runtimes {
+                if !p.is_version_installed(&config, &tv, true) {
+                    missing_runtimes.push((ls, p, tv, source));
+                }
+            }
+            runtimes = missing_runtimes;
         }
         if let Some(prefix) = &self.prefix {
             runtimes.retain(|(_, _, tv, _)| tv.version.starts_with(prefix));
         }
         if self.json {
-            self.display_json(runtimes)
+            self.display_json(&config, runtimes).await
         } else {
-            self.display_user(runtimes)
+            self.display_user(&config, runtimes).await
         }
     }
 
@@ -124,15 +135,18 @@ impl Ls {
         Ok(())
     }
 
-    fn display_json(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
+    async fn display_json(&self, config: &Config, runtimes: Vec<RuntimeRow<'_>>) -> Result<()> {
         if let Some(plugins) = &self.installed_tool {
             // only runtimes for 1 plugin
-            let runtimes: Vec<JSONToolVersion> = runtimes
+            let runtimes: Vec<RuntimeRow<'_>> = runtimes
                 .into_iter()
                 .filter(|(_, p, _, _)| plugins.contains(p.ba()))
-                .map(|row| row.into())
                 .collect();
-            miseprintln!("{}", serde_json::to_string_pretty(&runtimes)?);
+            let mut r = vec![];
+            for row in runtimes {
+                r.push(json_tool_version_from(config, row).await);
+            }
+            miseprintln!("{}", serde_json::to_string_pretty(&r)?);
             return Ok(());
         }
 
@@ -141,19 +155,26 @@ impl Ls {
             .into_iter()
             .chunk_by(|(_, p, _, _)| p.id().to_string())
         {
-            let runtimes = runtimes.map(|row| row.into()).collect();
-            plugins.insert(plugin_name.clone(), runtimes);
+            let mut r = vec![];
+            for (ls, p, tv, source) in runtimes {
+                r.push(json_tool_version_from(config, (ls, p, tv, source)).await);
+            }
+            plugins.insert(plugin_name.clone(), r);
         }
         miseprintln!("{}", serde_json::to_string_pretty(&plugins)?);
         Ok(())
     }
 
-    fn display_user(&self, runtimes: Vec<RuntimeRow>) -> Result<()> {
-        let rows = runtimes
-            .into_par_iter()
-            .map(|(ls, p, tv, source)| Row {
+    async fn display_user<'a>(
+        &'a self,
+        config: &Config,
+        runtimes: Vec<RuntimeRow<'a>>,
+    ) -> Result<()> {
+        let mut rows = vec![];
+        for (ls, p, tv, source) in runtimes {
+            rows.push(Row {
                 tool: p.clone(),
-                version: (ls, p.as_ref(), &tv, &source).into(),
+                version: version_status_from(config, (ls, p.as_ref(), &tv, &source)).await,
                 requested: match source.is_unknown() {
                     true => None,
                     false => Some(tv.request.version()),
@@ -163,8 +184,8 @@ impl Ls {
                 } else {
                     Some(source)
                 },
-            })
-            .collect::<Vec<_>>();
+            });
+        }
         let mut table = MiseTable::new(self.no_header, &["Tool", "Version", "Source", "Requested"]);
         for r in rows {
             let row = vec![
@@ -178,15 +199,16 @@ impl Ls {
         table.truncate(true).print()
     }
 
-    fn get_prunable_runtime_list(&self) -> Result<Vec<RuntimeRow>> {
+    async fn get_prunable_runtime_list(&self) -> Result<Vec<RuntimeRow>> {
         let installed_tool = self.installed_tool.clone().unwrap_or_default();
-        Ok(prune::prunable_tools(installed_tool.iter().collect())?
+        Ok(prune::prunable_tools(installed_tool.iter().collect())
+            .await?
             .into_iter()
             .map(|(p, tv)| (self, p, tv, ToolSource::Unknown))
             .collect())
     }
-    fn get_runtime_list(&self, config: &Config) -> Result<Vec<RuntimeRow>> {
-        let mut trs = config.get_tool_request_set()?.clone();
+    async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow>> {
+        let mut trs = config.get_tool_request_set().await?.clone();
         if self.global {
             trs = trs
                 .iter()
@@ -208,10 +230,11 @@ impl Ls {
         }
 
         let mut ts = Toolset::from(trs);
-        ts.resolve()?;
+        ts.resolve().await?;
 
         let rvs: Vec<RuntimeRow> = ts
-            .list_all_versions()?
+            .list_all_versions()
+            .await?
             .into_iter()
             .map(|(b, tv)| ((b, tv.version.clone()), tv))
             .filter(|((b, _), _)| match &self.installed_tool {
@@ -227,7 +250,9 @@ impl Ls {
             })
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
             // if it isn't installed and it's not specified, don't show it
-            .filter(|(_ls, p, tv, source)| !source.is_unknown() || p.is_version_installed(tv, true))
+            .filter(|(_ls, p, tv, source)| {
+                !source.is_unknown() || p.is_version_installed(config, tv, true)
+            })
             .filter(|(_ls, p, _, _)| match &self.installed_tool {
                 Some(backend) => backend.contains(p.ba()),
                 None => true,
@@ -305,31 +330,29 @@ impl Row {
     }
 }
 
-impl From<RuntimeRow<'_>> for JSONToolVersion {
-    fn from(row: RuntimeRow) -> Self {
-        let (ls, p, tv, source) = row;
-        let vs: VersionStatus = (ls, p.as_ref(), &tv, &source).into();
-        JSONToolVersion {
-            symlinked_to: p.symlink_path(&tv),
-            install_path: tv.install_path(),
-            version: tv.version.clone(),
-            requested_version: if source.is_unknown() {
-                None
-            } else {
-                Some(tv.request.version())
-            },
-            source: if source.is_unknown() {
-                None
-            } else {
-                Some(source.as_json())
-            },
-            installed: !matches!(vs, VersionStatus::Missing(_)),
-            active: match vs {
-                VersionStatus::Active(_, _) => true,
-                VersionStatus::Symlink(_, active) => active,
-                _ => false,
-            },
-        }
+async fn json_tool_version_from(config: &Config, row: RuntimeRow<'_>) -> JSONToolVersion {
+    let (ls, p, tv, source) = row;
+    let vs: VersionStatus = version_status_from(config, (ls, p.as_ref(), &tv, &source)).await;
+    JSONToolVersion {
+        symlinked_to: p.symlink_path(&tv),
+        install_path: tv.install_path(),
+        version: tv.version.clone(),
+        requested_version: if source.is_unknown() {
+            None
+        } else {
+            Some(tv.request.version())
+        },
+        source: if source.is_unknown() {
+            None
+        } else {
+            Some(source.as_json())
+        },
+        installed: !matches!(vs, VersionStatus::Missing(_)),
+        active: match vs {
+            VersionStatus::Active(_, _) => true,
+            VersionStatus::Symlink(_, active) => active,
+            _ => false,
+        },
     }
 }
 
@@ -341,22 +364,23 @@ enum VersionStatus {
     Symlink(String, bool),
 }
 
-impl From<(&Ls, &dyn Backend, &ToolVersion, &ToolSource)> for VersionStatus {
-    fn from((ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &ToolSource)) -> Self {
-        if p.symlink_path(tv).is_some() {
-            VersionStatus::Symlink(tv.version.clone(), !source.is_unknown())
-        } else if !p.is_version_installed(tv, true) {
-            VersionStatus::Missing(tv.version.clone())
-        } else if !source.is_unknown() {
-            let outdated = if ls.outdated {
-                p.is_version_outdated(tv)
-            } else {
-                false
-            };
-            VersionStatus::Active(tv.version.clone(), outdated)
+async fn version_status_from(
+    config: &Config,
+    (ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &ToolSource),
+) -> VersionStatus {
+    if p.symlink_path(tv).is_some() {
+        VersionStatus::Symlink(tv.version.clone(), !source.is_unknown())
+    } else if !p.is_version_installed(config, tv, true) {
+        VersionStatus::Missing(tv.version.clone())
+    } else if !source.is_unknown() {
+        let outdated = if ls.outdated {
+            p.is_version_outdated(tv).await
         } else {
-            VersionStatus::Inactive(tv.version.clone())
-        }
+            false
+        };
+        VersionStatus::Active(tv.version.clone(), outdated)
+    } else {
+        VersionStatus::Inactive(tv.version.clone())
     }
 }
 

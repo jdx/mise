@@ -1,11 +1,11 @@
 use crate::file::{display_path, remove_all};
 use crate::git::{CloneOptions, Git};
-use crate::plugins::{Plugin, PluginType};
+use crate::plugins::Plugin;
 use crate::result::Result;
-use crate::tokio::RUNTIME;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, registry};
+use async_trait::async_trait;
 use console::style;
 use contracts::requires;
 use eyre::{Context, eyre};
@@ -22,7 +22,7 @@ pub struct VfoxPlugin {
     pub full: Option<String>,
     pub plugin_path: PathBuf,
     pub repo: Mutex<Git>,
-    pub repo_url: Option<String>,
+    repo_url: Mutex<Option<String>>,
 }
 
 impl VfoxPlugin {
@@ -32,7 +32,7 @@ impl VfoxPlugin {
         Self {
             name,
             full: None,
-            repo_url: None,
+            repo_url: Mutex::new(None),
             repo: Mutex::new(repo),
             plugin_path,
         }
@@ -49,20 +49,20 @@ impl VfoxPlugin {
         vfox_to_url(self.full.as_ref().unwrap_or(&self.name))
     }
 
-    pub fn mise_env(&self, opts: &toml::Value) -> Result<Option<IndexMap<String, String>>> {
+    pub async fn mise_env(&self, opts: &toml::Value) -> Result<Option<IndexMap<String, String>>> {
         let (vfox, _) = self.vfox();
         let mut out = indexmap!();
-        let results = RUNTIME.block_on(vfox.mise_env(&self.name, opts))?;
+        let results = vfox.mise_env(&self.name, opts).await?;
         for env in results {
             out.insert(env.key, env.value);
         }
         Ok(Some(out))
     }
 
-    pub fn mise_path(&self, opts: &toml::Value) -> Result<Option<Vec<String>>> {
+    pub async fn mise_path(&self, opts: &toml::Value) -> Result<Option<Vec<String>>> {
         let (vfox, _) = self.vfox();
         let mut out = vec![];
-        let results = RUNTIME.block_on(vfox.mise_path(&self.name, opts))?;
+        let results = vfox.mise_path(&self.name, opts).await?;
         for env in results {
             out.push(env);
         }
@@ -80,6 +80,7 @@ impl VfoxPlugin {
     }
 }
 
+#[async_trait]
 impl Plugin for VfoxPlugin {
     fn name(&self) -> &str {
         &self.name
@@ -89,17 +90,13 @@ impl Plugin for VfoxPlugin {
         self.plugin_path.clone()
     }
 
-    fn get_plugin_type(&self) -> PluginType {
-        PluginType::Vfox
-    }
-
     fn get_remote_url(&self) -> eyre::Result<Option<String>> {
         let url = self.repo().get_remote_url();
-        Ok(url.or(self.repo_url.clone()))
+        Ok(url.or(self.repo_url.lock().unwrap().clone()))
     }
 
-    fn set_remote_url(&mut self, url: String) {
-        self.repo_url = Some(url);
+    fn set_remote_url(&self, url: String) {
+        *self.repo_url.lock().unwrap() = Some(url);
     }
 
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
@@ -128,7 +125,7 @@ impl Plugin for VfoxPlugin {
             .wrap_err("run with --yes to install plugin automatically"))
     }
 
-    fn ensure_installed(&self, mpr: &MultiProgressReport, _force: bool) -> Result<()> {
+    async fn ensure_installed(&self, mpr: &MultiProgressReport, _force: bool) -> Result<()> {
         if !self.plugin_path.exists() {
             let url = self.get_repo_url()?;
             trace!("Cloning vfox plugin: {url}");
@@ -139,7 +136,7 @@ impl Plugin for VfoxPlugin {
         Ok(())
     }
 
-    fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
+    async fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             warn!(
@@ -167,7 +164,7 @@ impl Plugin for VfoxPlugin {
         Ok(())
     }
 
-    fn uninstall(&self, pr: &Box<dyn SingleReport>) -> Result<()> {
+    async fn uninstall(&self, pr: &Box<dyn SingleReport>) -> Result<()> {
         if !self.is_installed() {
             return Ok(());
         }
@@ -191,13 +188,13 @@ impl Plugin for VfoxPlugin {
         Ok(())
     }
 
-    fn install(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    async fn install(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         let repository = self.get_repo_url()?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(repository.as_str());
         debug!("vfox_plugin[{}]:install {:?}", self.name, repository);
 
         if self.is_installed() {
-            self.uninstall(pr)?;
+            self.uninstall(pr).await?;
         }
 
         if regex!(r"^[/~]").is_match(&repo_url) {

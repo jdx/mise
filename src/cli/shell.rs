@@ -38,8 +38,8 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         if !env::is_activated() {
             err_inactive()?;
         }
@@ -57,18 +57,21 @@ impl Shell {
             return Ok(());
         }
 
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&config)
+            .await?;
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
             raw: self.raw,
             ..Default::default()
         };
-        ts.install_missing_versions(&opts)?;
-        ts.notify_if_versions_missing();
+        ts.install_missing_versions(&config, &opts).await?;
+        ts.notify_if_versions_missing().await;
 
-        for (p, tv) in ts.list_current_installed_versions() {
-            let source = &ts.versions.get(p.ba()).unwrap().source;
+        for (p, tv) in ts.list_current_installed_versions(&config) {
+            let source = &ts.versions.get(p.ba().as_ref()).unwrap().source;
             if matches!(source, ToolSource::Argument) {
                 let k = format!("MISE_{}_VERSION", p.id().to_shouty_snake_case());
                 let op = shell.set_env(&k, &tv.version);

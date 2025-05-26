@@ -1,5 +1,5 @@
-use crate::config::Config;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
+use crate::config::{self, Config};
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
@@ -43,6 +43,8 @@ use task_sources::TaskOutputs;
 pub struct Task {
     #[serde(skip)]
     pub name: String,
+    #[serde(skip)]
+    pub display_name: String,
     #[serde(default)]
     pub description: String,
     #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]
@@ -148,7 +150,7 @@ impl Task {
         })
     }
 
-    pub fn from_path(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
+    pub async fn from_path(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
         let info = file::read_to_string(path)?
             .lines()
@@ -201,24 +203,19 @@ impl Task {
                     .collect()
             })
             .unwrap_or_default();
-        task.render(config_root)?;
+        task.render(config_root).await?;
         Ok(task)
     }
 
     /// prints the task name without an extension
-    pub fn display_name(&self) -> String {
+    pub fn display_name(&self, all_tasks: &BTreeMap<String, Task>) -> String {
         let display_name = self
             .name
             .rsplitn(2, '.')
             .last()
             .unwrap_or_default()
             .to_string();
-        let config = Config::get();
-        if config
-            .tasks()
-            .map(|t| t.contains_key(&display_name))
-            .unwrap_or_default()
-        {
+        if all_tasks.contains_key(&display_name) {
             // this means another task has the name without an extension so use the full name
             self.name.clone()
         } else {
@@ -235,11 +232,11 @@ impl Task {
             || self.aliases.contains(&pat.to_string())
     }
 
-    pub fn task_dir() -> PathBuf {
-        let config = Config::get();
+    pub async fn task_dir() -> PathBuf {
+        let config = Config::get().await;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        for dir in config.task_includes_for_dir(&project_root) {
+        for dir in config::task_includes_for_dir(&project_root, &config.config_files) {
             if dir.is_dir() && project_root.join(&dir).exists() {
                 return project_root.join(dir);
             }
@@ -253,7 +250,7 @@ impl Task {
     }
 
     pub fn prefix(&self) -> String {
-        format!("[{}]", self.display_name())
+        format!("[{}]", self.display_name)
     }
 
     pub fn run(&self) -> &Vec<String> {
@@ -264,19 +261,17 @@ impl Task {
         }
     }
 
-    pub fn all_depends(&self) -> Result<Vec<Task>> {
-        let config = Config::get();
-        let tasks = config.tasks_with_aliases()?;
+    pub fn all_depends(&self, tasks: &BTreeMap<String, &Task>) -> Result<Vec<Task>> {
         let mut depends: Vec<Task> = self
             .depends
             .iter()
             .chain(self.depends_post.iter())
-            .map(|td| match_tasks(&tasks, td))
+            .map(|td| match_tasks(tasks, td))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
         for dep in depends.clone() {
-            let mut extra = dep.all_depends()?;
+            let mut extra = dep.all_depends(tasks)?;
             extra.retain(|t| t.name != self.name); // prevent depending on ourself
             depends.extend(extra);
         }
@@ -284,10 +279,10 @@ impl Task {
         Ok(depends)
     }
 
-    pub fn resolve_depends(&self, tasks_to_run: &[Task]) -> Result<(Vec<Task>, Vec<Task>)> {
-        let config = Config::get();
+    pub async fn resolve_depends(&self, tasks_to_run: &[Task]) -> Result<(Vec<Task>, Vec<Task>)> {
+        let config = Config::get().await;
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
-        let tasks = config.tasks_with_aliases()?;
+        let tasks = config.tasks_with_aliases().await?;
         let depends = self
             .depends
             .iter()
@@ -315,7 +310,7 @@ impl Task {
         Ok((depends, depends_post))
     }
 
-    pub fn parse_usage_spec(
+    pub async fn parse_usage_spec(
         &self,
         cwd: Option<PathBuf>,
         env: &EnvMap,
@@ -331,16 +326,17 @@ impl Task {
                 .unwrap_or_default();
             (spec, vec![])
         } else {
-            let (scripts, spec) =
-                TaskScriptParser::new(cwd).parse_run_scripts(self, self.run(), env)?;
+            let (scripts, spec) = TaskScriptParser::new(cwd)
+                .parse_run_scripts(self, self.run(), env)
+                .await?;
             (spec, scripts)
         };
-        spec.name = self.display_name();
-        spec.bin = self.display_name();
+        spec.name = self.display_name.clone();
+        spec.bin = self.display_name.clone();
         if spec.cmd.help.is_none() {
             spec.cmd.help = Some(self.description.clone());
         }
-        spec.cmd.name = self.display_name();
+        spec.cmd.name = self.display_name.clone();
         spec.cmd.aliases = self.aliases.clone();
         if spec.cmd.before_help.is_none()
             && spec.cmd.before_help_long.is_none()
@@ -353,21 +349,17 @@ impl Task {
         Ok((spec, scripts))
     }
 
-    pub fn render_run_scripts_with_args(
+    pub async fn render_run_scripts_with_args(
         &self,
         cwd: Option<PathBuf>,
         args: &[String],
         env: &EnvMap,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(cwd.clone(), env)?;
+        let (spec, scripts) = self.parse_usage_spec(cwd.clone(), env).await?;
         if has_any_args_defined(&spec) {
-            let scripts = TaskScriptParser::new(cwd).parse_run_scripts_with_args(
-                self,
-                self.run(),
-                env,
-                args,
-                &spec,
-            )?;
+            let scripts = TaskScriptParser::new(cwd)
+                .parse_run_scripts_with_args(self, self.run(), env, args, &spec)
+                .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
             Ok(scripts
@@ -384,9 +376,9 @@ impl Task {
         }
     }
 
-    pub fn render_markdown(&self, ts: &Toolset, dir: &Path) -> Result<String> {
-        let env = self.render_env(ts)?;
-        let (spec, _) = self.parse_usage_spec(Some(dir.to_path_buf()), &env)?;
+    pub async fn render_markdown(&self, ts: &Toolset, dir: &Path) -> Result<String> {
+        let env = self.render_env(ts).await?;
+        let (spec, _) = self.parse_usage_spec(Some(dir.to_path_buf()), &env).await?;
         let ctx = usage::docs::markdown::MarkdownRenderer::new(spec)
             .with_replace_pre_with_code_fences(true)
             .with_header_level(2);
@@ -404,12 +396,7 @@ impl Task {
                 Color::Red,
             ]
         });
-        let idx = self
-            .display_name()
-            .chars()
-            .map(|c| c as usize)
-            .sum::<usize>()
-            % COLORS.len();
+        let idx = self.display_name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
         let prefix = style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string();
         if *env::MISE_TASK_LEVEL > 0 {
             format!(
@@ -421,8 +408,8 @@ impl Task {
         }
     }
 
-    pub fn dir(&self) -> Result<Option<PathBuf>> {
-        let config = Config::get();
+    pub async fn dir(&self) -> Result<Option<PathBuf>> {
+        let config = Config::get().await;
         if let Some(dir) = self.dir.clone().or_else(|| {
             self.cf(&config)
                 .as_ref()
@@ -430,7 +417,7 @@ impl Task {
         }) {
             let config_root = self.config_root.clone().unwrap_or_default();
             let mut tera = get_tera(Some(&config_root));
-            let tera_ctx = self.tera_ctx()?;
+            let tera_ctx = self.tera_ctx().await?;
             let dir = tera.render_str(&dir, &tera_ctx)?;
             let dir = file::replace_path(&dir);
             if dir.is_absolute() {
@@ -445,15 +432,15 @@ impl Task {
         }
     }
 
-    pub fn tera_ctx(&self) -> Result<tera::Context> {
-        let config = Config::get();
-        let ts = config.get_toolset()?;
-        let mut tera_ctx = ts.tera_ctx()?.clone();
+    pub async fn tera_ctx(&self) -> Result<tera::Context> {
+        let config = Config::get().await;
+        let ts = config.get_toolset().await?;
+        let mut tera_ctx = ts.tera_ctx().await?.clone();
         tera_ctx.insert("config_root", &self.config_root);
         Ok(tera_ctx)
     }
 
-    pub fn cf<'a>(&self, config: &'a Config) -> Option<&'a Box<dyn ConfigFile>> {
+    pub fn cf<'a>(&self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {
         config.config_files.get(&self.config_source)
     }
 
@@ -472,9 +459,9 @@ impl Task {
         })
     }
 
-    pub fn render(&mut self, config_root: &Path) -> Result<()> {
+    pub async fn render(&mut self, config_root: &Path) -> Result<()> {
         let mut tera = get_tera(Some(config_root));
-        let tera_ctx = self.tera_ctx()?;
+        let tera_ctx = self.tera_ctx().await?;
         for a in &mut self.aliases {
             *a = tera.render_str(a, &tera_ctx)?;
         }
@@ -508,11 +495,11 @@ impl Task {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
-    pub fn render_env(&self, ts: &Toolset) -> Result<EnvMap> {
-        let config = Config::get();
+    pub async fn render_env(&self, ts: &Toolset) -> Result<EnvMap> {
+        let config = Config::try_get().await?;
         let mut tera = get_tera(self.config_root.as_deref());
-        let mut tera_ctx = ts.tera_ctx()?.clone();
-        let mut env = ts.full_env(&config)?;
+        let mut tera_ctx = ts.tera_ctx().await?.clone();
+        let mut env = ts.full_env(&config).await?;
         if let Some(root) = &config.project_root {
             tera_ctx.insert("config_root", &root);
         }
@@ -590,6 +577,7 @@ impl Default for Task {
     fn default() -> Self {
         Task {
             name: "".to_string(),
+            display_name: "".to_string(),
             description: "".to_string(),
             aliases: vec![],
             config_source: PathBuf::new(),
@@ -670,7 +658,7 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
 
     fn write_self(&self) -> std::io::Result<()> {
         if let Some(w) = self.0.node_weight(self.1) {
-            miseprint!("{}", w.display_name())?;
+            miseprint!("{}", w.display_name)?;
         }
         Ok(())
     }
@@ -725,8 +713,8 @@ mod tests {
 
     use super::name_from_path;
 
-    #[test]
-    fn test_from_path() {
+    #[tokio::test]
+    async fn test_from_path() {
         let test_cases = [(".mise/tasks/filetask", "filetask", vec!["ft"])];
 
         for (path, name, aliases) in test_cases {
@@ -735,6 +723,7 @@ mod tests {
                 Path::new(".mise/tasks"),
                 Path::new(dirs::CWD.as_ref().unwrap()),
             )
+            .await
             .unwrap();
             assert_eq!(t.name, name);
             assert_eq!(t.aliases, aliases);

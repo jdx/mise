@@ -28,21 +28,21 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         match self {
-            Self::Bootstrap(cmd) => cmd.run(),
-            Self::Config(cmd) => cmd.run(),
-            Self::Devcontainer(cmd) => cmd.run(),
-            Self::GitPreCommit(cmd) => cmd.run(),
-            Self::GithubAction(cmd) => cmd.run(),
-            Self::TaskDocs(cmd) => cmd.run(),
-            Self::TaskStubs(cmd) => cmd.run(),
+            Self::Bootstrap(cmd) => cmd.run().await,
+            Self::Config(cmd) => cmd.run().await,
+            Self::Devcontainer(cmd) => cmd.run().await,
+            Self::GitPreCommit(cmd) => cmd.run().await,
+            Self::GithubAction(cmd) => cmd.run().await,
+            Self::TaskDocs(cmd) => cmd.run().await,
+            Self::TaskStubs(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Generate {
-    pub fn run(self) -> eyre::Result<()> {
-        self.command.run()
+    pub async fn run(self) -> eyre::Result<()> {
+        self.command.run().await
     }
 }

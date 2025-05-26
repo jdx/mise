@@ -24,7 +24,7 @@ pub struct En {
 }
 
 impl En {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         let settings = Settings::get();
         settings.ensure_experimental("en")?;
 
@@ -40,6 +40,7 @@ impl En {
             command: Some(command),
         }
         .run()
+        .await
     }
 }
 

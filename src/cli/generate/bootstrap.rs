@@ -30,9 +30,9 @@ pub struct Bootstrap {
 }
 
 impl Bootstrap {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         SETTINGS.ensure_experimental("generate bootstrap")?;
-        let output = self.generate()?;
+        let output = self.generate().await?;
         if let Some(bin) = &self.write {
             if let Some(parent) = bin.parent() {
                 file::create_dir_all(parent)?;
@@ -46,14 +46,14 @@ impl Bootstrap {
         Ok(())
     }
 
-    fn generate(&self) -> Result<String> {
+    async fn generate(&self) -> Result<String> {
         let url = if let Some(v) = &self.version {
             format!("https://mise.jdx.dev/v{v}/install.sh")
         } else {
             "https://mise.jdx.dev/install.sh".into()
         };
-        let install = HTTP.get_text(&url)?;
-        let install_sig = HTTP.get_text(format!("{url}.minisig"))?;
+        let install = HTTP.get_text(&url).await?;
+        let install_sig = HTTP.get_text(format!("{url}.minisig")).await?;
         minisign::verify(&minisign::MISE_PUB_KEY, install.as_bytes(), &install_sig)?;
         let install = info::indent_by(install, "        ");
         let version = regex!(r#"version="\$\{MISE_VERSION:-v([0-9.]+)\}""#)

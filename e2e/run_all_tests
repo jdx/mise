@@ -52,9 +52,6 @@ for index in "${!FILES[@]}"; do
   test_count=$((test_count + 1))
 done
 
-if [[ -v GITHUB_STEP_SUMMARY ]] && [[ -f "$GITHUB_STEP_SUMMARY-extra" ]]; then
-  cat "$GITHUB_STEP_SUMMARY-extra" >>"$GITHUB_STEP_SUMMARY"
-fi
 echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2
 
 exit "$status"

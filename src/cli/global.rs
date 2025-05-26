@@ -45,7 +45,7 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let settings = Settings::try_get()?;
         local(
             &settings.global_tools_file(),
@@ -55,6 +55,7 @@ impl Global {
             self.fuzzy,
             self.path,
         )
+        .await
     }
 }
 

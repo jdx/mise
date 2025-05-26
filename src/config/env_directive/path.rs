@@ -3,7 +3,7 @@ use crate::result;
 use std::path::{Path, PathBuf};
 
 impl EnvResults {
-    pub fn path(
+    pub async fn path(
         ctx: &mut tera::Context,
         tera: &mut tera::Tera,
         r: &mut EnvResults,
@@ -19,19 +19,23 @@ impl EnvResults {
 #[cfg(unix)]
 mod tests {
     use super::*;
-    use crate::config::env_directive::{EnvDirective, EnvResolveOptions};
+    use crate::config::{
+        Config,
+        env_directive::{EnvDirective, EnvResolveOptions},
+    };
     use crate::env_diff::EnvMap;
     use crate::tera::BASE_CONTEXT;
     use crate::test::replace_path;
     use insta::assert_debug_snapshot;
-    use test_log::test;
 
-    #[test]
-    fn test_env_path() {
+    #[tokio::test]
+    async fn test_env_path() {
         let mut env = EnvMap::new();
         env.insert("A".to_string(), "1".to_string());
         env.insert("B".to_string(), "2".to_string());
+        let config = Config::get().await;
         let results = EnvResults::resolve(
+            &config,
             BASE_CONTEXT.clone(),
             &env,
             vec![
@@ -57,6 +61,7 @@ mod tests {
             ],
             EnvResolveOptions::default(),
         )
+        .await
         .unwrap();
         assert_debug_snapshot!(
             results.env_paths.into_iter().map(|p| replace_path(&p.display().to_string())).collect::<Vec<_>>(),

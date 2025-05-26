@@ -81,6 +81,7 @@ impl CacheManagerBuilder {
         CacheManager {
             cache_file_path,
             cache: Box::new(OnceCell::new()),
+            cache_async: Box::new(tokio::sync::OnceCell::new()),
             fresh_files: self.fresh_files,
             fresh_duration: self.fresh_duration,
         }
@@ -96,6 +97,7 @@ where
     fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
     cache: Box<OnceCell<T>>,
+    cache_async: Box<tokio::sync::OnceCell<T>>,
 }
 
 impl<T> CacheManager<T>
@@ -122,6 +124,33 @@ where
             }
             Ok(val)
         })?;
+        Ok(val)
+    }
+
+    pub async fn get_or_try_init_async<F, Fut>(&self, fetch: F) -> Result<&T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
+    {
+        let val = self
+            .cache_async
+            .get_or_try_init(|| async {
+                let path = &self.cache_file_path;
+                if self.is_fresh() {
+                    match self.parse() {
+                        Ok(val) => return Ok::<_, color_eyre::Report>(val),
+                        Err(err) => {
+                            warn!("failed to parse cache file: {} {:#}", path.display(), err);
+                        }
+                    }
+                }
+                let val = fetch().await?;
+                if let Err(err) = self.write(&val) {
+                    warn!("failed to write cache file: {} {:#}", path.display(), err);
+                }
+                Ok(val)
+            })
+            .await?;
         Ok(val)
     }
 

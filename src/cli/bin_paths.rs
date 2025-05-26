@@ -14,18 +14,18 @@ pub struct BinPaths {
 }
 
 impl BinPaths {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {
             tsb = tsb.with_args(tool);
         }
-        let mut ts = tsb.build(&config)?;
+        let mut ts = tsb.build(&config).await?;
         if let Some(tool) = &self.tool {
-            ts.versions.retain(|k, _| tool.iter().any(|t| t.ba == *k));
+            ts.versions.retain(|k, _| tool.iter().any(|t| *t.ba == **k));
         }
-        ts.notify_if_versions_missing();
-        for p in ts.list_paths() {
+        ts.notify_if_versions_missing().await;
+        for p in ts.list_paths().await {
             miseprintln!("{}", p.display());
         }
         Ok(())

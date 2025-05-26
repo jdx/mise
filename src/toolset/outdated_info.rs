@@ -1,6 +1,6 @@
-use crate::Result;
 use crate::toolset;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+use crate::{Result, config::Config};
 use serde_derive::Serialize;
 use std::fmt::{Display, Formatter};
 use tabled::Tabled;
@@ -25,9 +25,9 @@ pub struct OutdatedInfo {
 }
 
 impl OutdatedInfo {
-    pub fn new(tv: ToolVersion, latest: String) -> Result<Self> {
+    pub fn new(config: &Config, tv: ToolVersion, latest: String) -> Result<Self> {
         let t = tv.backend()?;
-        let current = if t.is_version_installed(&tv, true) {
+        let current = if t.is_version_installed(config, &tv, true) {
             Some(tv.version.clone())
         } else {
             None
@@ -45,16 +45,20 @@ impl OutdatedInfo {
         Ok(oi)
     }
 
-    pub fn resolve(tv: ToolVersion, bump: bool) -> eyre::Result<Option<Self>> {
+    pub async fn resolve(
+        config: &Config,
+        tv: ToolVersion,
+        bump: bool,
+    ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
         let prefix = xx::regex!(r"^[a-zA-Z-]+-")
             .find(&tv.request.version())
             .map(|m| m.as_str().to_string());
         let latest_result = if bump {
-            t.latest_version(prefix.clone())
+            t.latest_version(prefix.clone()).await
         } else {
-            tv.latest_version().map(Option::from)
+            tv.latest_version(config).await.map(Option::from)
         };
         let latest = match latest_result {
             Ok(Some(latest)) => latest,
@@ -67,7 +71,8 @@ impl OutdatedInfo {
                 return Ok(None);
             }
         };
-        let mut oi = Self::new(tv, latest)?;
+        let config = Config::try_get().await?;
+        let mut oi = Self::new(&config, tv, latest)?;
         if oi
             .current
             .as_ref()

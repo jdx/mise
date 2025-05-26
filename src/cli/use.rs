@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use console::{Term, style};
 use eyre::{Result, bail, eyre};
@@ -14,7 +17,6 @@ use crate::toolset::{
     InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder,
 };
 use crate::ui::ctrlc;
-use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, env, file};
 
 /// Installs a tool and adds the version to mise.toml.
@@ -96,17 +98,17 @@ pub struct Use {
 }
 
 impl Use {
-    pub fn run(mut self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         if self.tool.is_empty() && self.remove.is_empty() {
             self.tool = vec![self.tool_selector()?];
         }
         env::TOOL_ARGS.write().unwrap().clone_from(&self.tool);
-        let config = Config::try_get()?;
+        let config = Config::get().await;
         let mut ts = ToolsetBuilder::new()
             .with_global_only(self.global)
-            .build(&config)?;
-        let mpr = MultiProgressReport::get();
-        let mut cf = self.get_config_file()?;
+            .build(&config)
+            .await?;
+        let cf = self.get_config_file()?;
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
@@ -132,17 +134,19 @@ impl Use {
                 ),
             })
             .collect::<Result<_>>()?;
-        let mut versions = ts.install_all_versions(
-            versions.clone(),
-            &mpr,
-            &InstallOptions {
-                force: self.force,
-                jobs: self.jobs,
-                raw: self.raw,
-                resolve_options,
-                ..Default::default()
-            },
-        )?;
+        let mut versions = ts
+            .install_all_versions(
+                &config,
+                versions.clone(),
+                &InstallOptions {
+                    force: self.force,
+                    jobs: self.jobs,
+                    raw: self.raw,
+                    resolve_options,
+                    ..Default::default()
+                },
+            )
+            .await?;
 
         let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
 
@@ -174,7 +178,7 @@ impl Use {
         }
 
         if self.global {
-            self.warn_if_hidden(&config, cf.get_path());
+            self.warn_if_hidden(&config, cf.get_path()).await;
         }
         for plugin_name in &self.remove {
             cf.remove_tool(plugin_name)?;
@@ -186,13 +190,13 @@ impl Use {
             tv.request.set_source(cf.source());
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&versions)?;
+        config::rebuild_shims_and_runtime_symlinks(&versions).await?;
 
         self.render_success_message(cf.as_ref(), &versions)?;
         Ok(())
     }
 
-    fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
+    fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
         let path = if self.global {
             config::global_config_path()
@@ -218,8 +222,11 @@ impl Use {
         config_file::parse_or_init(&path)
     }
 
-    fn warn_if_hidden(&self, config: &Config, global: &Path) {
-        let ts = ToolsetBuilder::new().build(config).unwrap_or_default();
+    async fn warn_if_hidden(&self, config: &Config, global: &Path) {
+        let ts = ToolsetBuilder::new()
+            .build(config)
+            .await
+            .unwrap_or_default();
         let warn = |targ: &ToolArg, p| {
             let plugin = &targ.ba;
             let p = display_path(p);
@@ -227,7 +234,7 @@ impl Use {
             warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
-            if let Some(tv) = ts.versions.get(&targ.ba) {
+            if let Some(tv) = ts.versions.get(targ.ba.as_ref()) {
                 if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
                     if !file::same_file(p, global) {
                         warn(targ, p);

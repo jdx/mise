@@ -30,7 +30,7 @@ pub struct Registry {
 }
 
 impl Registry {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if let Some(name) = &self.name {
             if let Some(rt) = REGISTRY.get(name.as_str()) {
                 miseprintln!("{}", rt.backends().join(" "));

@@ -19,3 +19,16 @@ where
         rx.recv_timeout(timeout).context("timed out")
     })?
 }
+
+pub async fn run_with_timeout_async<F, Fut, T>(f: F, timeout: Duration) -> Result<T>
+where
+    Fut: Future<Output = Result<T>> + Send,
+    T: Send,
+    F: FnOnce() -> Fut,
+{
+    match tokio::time::timeout(timeout, f()).await {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(eyre::eyre!("timed out")),
+    }
+}

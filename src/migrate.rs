@@ -4,28 +4,25 @@ use std::path::Path;
 use crate::dirs::*;
 use crate::file;
 use eyre::Result;
-use rayon::Scope;
 
-pub fn run() {
-    rayon::scope(|s| {
-        task(s, || rename_plugin("nodejs", "node"));
-        task(s, || rename_plugin("golang", "go"));
-        task(s, migrate_trusted_configs);
-        task(s, migrate_tracked_configs);
-        task(s, || remove_deprecated_plugin("node", "rtx-nodejs"));
-        task(s, || remove_deprecated_plugin("go", "rtx-golang"));
-        task(s, || remove_deprecated_plugin("java", "rtx-java"));
-        task(s, || remove_deprecated_plugin("python", "rtx-python"));
-        task(s, || remove_deprecated_plugin("ruby", "rtx-ruby"));
-    });
+pub async fn run() {
+    tokio::join!(
+        task(|| rename_plugin("nodejs", "node")),
+        task(|| rename_plugin("golang", "go")),
+        task(migrate_trusted_configs),
+        task(migrate_tracked_configs),
+        task(|| remove_deprecated_plugin("node", "rtx-nodejs")),
+        task(|| remove_deprecated_plugin("go", "rtx-golang")),
+        task(|| remove_deprecated_plugin("java", "rtx-java")),
+        task(|| remove_deprecated_plugin("python", "rtx-python")),
+        task(|| remove_deprecated_plugin("ruby", "rtx-ruby")),
+    );
 }
 
-fn task(s: &Scope, job: impl FnOnce() -> Result<()> + Send + 'static) {
-    s.spawn(|_| {
-        if let Err(err) = job() {
-            eprintln!("[WARN] migrate: {err}");
-        }
-    });
+async fn task(job: impl FnOnce() -> Result<()> + Send + 'static) {
+    if let Err(err) = job() {
+        eprintln!("[WARN] migrate: {err}");
+    }
 }
 
 fn move_subdirs(from: &Path, to: &Path) -> Result<()> {

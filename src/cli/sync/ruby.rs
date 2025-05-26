@@ -22,14 +22,14 @@ pub struct SyncRubyType {
 }
 
 impl SyncRuby {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self._type.brew {
-            self.run_brew()?;
+            self.run_brew().await?;
         }
         Ok(())
     }
 
-    fn run_brew(&self) -> Result<()> {
+    async fn run_brew(&self) -> Result<()> {
         let ruby = backend::get(&"ruby".into()).unwrap();
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
@@ -51,7 +51,7 @@ impl SyncRuby {
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&[])
+        config::rebuild_shims_and_runtime_symlinks(&[]).await
     }
 }
 

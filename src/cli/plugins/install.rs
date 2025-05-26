@@ -1,12 +1,13 @@
+use std::sync::Arc;
+
 use color_eyre::eyre::{Result, bail, eyre};
 use contracts::ensures;
 use heck::ToKebabCase;
-use rayon::ThreadPoolBuilder;
-use rayon::prelude::*;
+use tokio::task::JoinSet;
 use url::Url;
 
 use crate::backend::unalias_backend;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::dirs;
 use crate::plugins::Plugin;
 use crate::plugins::asdf_plugin::AsdfPlugin;
@@ -56,14 +57,14 @@ pub struct PluginsInstall {
 }
 
 impl PluginsInstall {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let mpr = MultiProgressReport::get();
-        if self.all {
-            return self.install_all_missing_plugins(config, &mpr);
+    pub async fn run(self, config: &Config) -> Result<()> {
+        let this = Arc::new(self);
+        if this.all {
+            return this.install_all_missing_plugins(config).await;
         }
-        let (name, git_url) = get_name_and_url(&self.new_plugin.clone().unwrap(), &self.git_url)?;
+        let (name, git_url) = get_name_and_url(&this.new_plugin.clone().unwrap(), &this.git_url)?;
         if git_url.is_some() {
-            self.install_one(name, git_url, &mpr)?;
+            this.install_one(name, git_url).await?;
         } else {
             let is_core = CORE_PLUGINS.contains_key(&name);
             if is_core {
@@ -71,57 +72,58 @@ impl PluginsInstall {
                 bail!("{name} is a core plugin and does not need to be installed");
             }
             let mut plugins: Vec<String> = vec![name];
-            if let Some(second) = self.git_url.clone() {
+            if let Some(second) = this.git_url.clone() {
                 plugins.push(second);
             };
-            plugins.extend(self.rest.clone());
-            self.install_many(plugins, &mpr)?;
+            plugins.extend(this.rest.clone());
+            this.install_many(plugins).await?;
         }
 
         Ok(())
     }
 
-    fn install_all_missing_plugins(
-        &self,
-        config: &Config,
-        mpr: &MultiProgressReport,
-    ) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(config)?;
+    async fn install_all_missing_plugins(self: Arc<Self>, config: &Config) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config).await?;
         let missing_plugins = ts.list_missing_plugins();
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
-        self.install_many(missing_plugins, mpr)?;
+        self.install_many(missing_plugins).await?;
         Ok(())
     }
 
-    fn install_many(&self, plugins: Vec<String>, mpr: &MultiProgressReport) -> Result<()> {
-        ThreadPoolBuilder::new()
-            .num_threads(Settings::get().jobs)
-            .build()?
-            .install(|| -> Result<()> {
-                plugins
-                    .into_par_iter()
-                    .map(|plugin| self.install_one(plugin, None, mpr))
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(())
-            })
+    async fn install_many(self: Arc<Self>, plugins: Vec<String>) -> Result<()> {
+        let mut jset: JoinSet<Result<()>> = JoinSet::new();
+        for plugin in plugins {
+            let this = self.clone();
+            jset.spawn(async move { this.install_one(plugin, None).await });
+        }
+        while let Some(result) = jset.join_next().await {
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    return Err(e);
+                }
+                Err(e) => {
+                    return Err(eyre!(e));
+                }
+            }
+        }
+        Ok(())
     }
 
-    fn install_one(
-        &self,
-        name: String,
-        git_url: Option<String>,
-        mpr: &MultiProgressReport,
-    ) -> Result<()> {
+    async fn install_one(self: Arc<Self>, name: String, git_url: Option<String>) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
-        let mut plugin = AsdfPlugin::new(name.clone(), path);
-        plugin.repo_url = git_url;
+        let plugin = AsdfPlugin::new(name.clone(), path);
+        if let Some(url) = git_url {
+            plugin.set_remote_url(url);
+        }
         if !self.force && plugin.is_installed() {
             warn!("Plugin {name} already installed");
             warn!("Use --force to install anyway");
         } else {
-            plugin.ensure_installed(mpr, self.force)?;
+            let mpr = MultiProgressReport::get();
+            plugin.ensure_installed(&mpr, self.force).await?;
         }
         Ok(())
     }

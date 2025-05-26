@@ -113,7 +113,7 @@ impl BackendArg {
             return backend_type;
         }
         if config::is_loaded() {
-            if let Some(repo_url) = Config::get().get_repo_url(&self.short) {
+            if let Some(repo_url) = Config::get_().get_repo_url(&self.short) {
                 return if repo_url.contains("vfox-") {
                     BackendType::Vfox
                 } else {
@@ -128,21 +128,24 @@ impl BackendArg {
     pub fn full(&self) -> String {
         let short = unalias_backend(&self.short);
         if config::is_loaded() {
-            if let Some(full) = Config::get()
+            if let Some(full) = Config::get_()
                 .all_aliases
                 .get(short)
                 .and_then(|a| a.backend.clone())
             {
                 return full;
             }
-            if let Some(url) = Config::get().repo_urls.get(short) {
+            if let Some(url) = Config::get_().repo_urls.get(short) {
                 deprecated!(
                     "config_plugins",
                     "[plugins] section of mise.toml is deprecated. Use [alias] instead. https://mise.jdx.dev/dev-tools/aliases.html"
                 );
                 return format!("asdf:{url}");
             }
-            if let Some(lt) = lockfile::get_locked_version(None, short, "").unwrap_or_default() {
+            let config = Config::get_();
+            if let Some(lt) =
+                lockfile::get_locked_version(&config, None, short, "").unwrap_or_default()
+            {
                 if let Some(backend) = lt.backend {
                     return backend;
                 }

@@ -16,7 +16,6 @@ use eyre::bail;
 use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
-use rayon::prelude::*;
 use std::sync::LazyLock as Lazy;
 use tar::Archive;
 use walkdir::WalkDir;
@@ -91,6 +90,14 @@ pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("rm {}", display_path(path));
     fs::remove_file(path).wrap_err_with(|| format!("failed rm: {}", display_path(path)))
+}
+
+pub async fn remove_file_async<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("rm {}", display_path(path));
+    tokio::fs::remove_file(path)
+        .await
+        .wrap_err_with(|| format!("failed rm: {}", display_path(path)))
 }
 
 pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -169,6 +176,13 @@ pub fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()>
     let path = path.as_ref();
     trace!("write {}", display_path(path));
     fs::write(path, contents).wrap_err_with(|| format!("failed write: {}", display_path(path)))
+}
+pub async fn write_async<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("write {}", display_path(path));
+    tokio::fs::write(path, contents)
+        .await
+        .wrap_err_with(|| format!("failed write: {}", display_path(path)))
 }
 
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
@@ -384,11 +398,6 @@ pub fn resolve_symlink(link: &Path) -> Result<PathBuf> {
 
 #[cfg(unix)]
 pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
-    trace!("ln -sf {} {}", target.display(), link.display());
-    if link.is_file() || link.is_symlink() {
-        // remove existing file if exists
-        fs::remove_file(link)?;
-    }
     make_symlink(target, link)?;
     Ok(())
 }
@@ -453,6 +462,22 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
 
 #[cfg(windows)]
 pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+pub async fn make_executable_async<P: AsRef<Path>>(path: P) -> Result<()> {
+    trace!("chmod +x {}", display_path(&path));
+    let path = path.as_ref();
+    let mut perms = path.metadata()?.permissions();
+    perms.set_mode(perms.mode() | 0o111);
+    tokio::fs::set_permissions(path, perms)
+        .await
+        .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))
+}
+
+#[cfg(windows)]
+pub async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 
@@ -551,7 +576,7 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
 
 fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
     let name = name.as_ref();
-    paths.par_iter().find_map_first(|path| {
+    paths.iter().find_map(|path| {
         let bin = path.join(name);
         if is_executable(&bin) { Some(bin) } else { None }
     })

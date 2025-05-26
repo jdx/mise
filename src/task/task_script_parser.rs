@@ -24,7 +24,7 @@ impl TaskScriptParser {
         get_tera(self.dir.as_deref())
     }
 
-    pub fn parse_run_scripts(
+    pub async fn parse_run_scripts(
         &self,
         task: &Task,
         scripts: &[String],
@@ -273,7 +273,7 @@ impl TaskScriptParser {
                 }
             }
         });
-        let mut tera_ctx = task.tera_ctx()?;
+        let mut tera_ctx = task.tera_ctx().await?;
         tera_ctx.insert("env", &env);
         let scripts = scripts
             .iter()
@@ -306,7 +306,7 @@ impl TaskScriptParser {
         Ok((scripts, spec))
     }
 
-    pub fn parse_run_scripts_with_args(
+    pub async fn parse_run_scripts_with_args(
         &self,
         task: &Task,
         scripts: &[String],
@@ -397,7 +397,7 @@ impl TaskScriptParser {
             };
             tera.register_function("option", flag_func.clone());
             tera.register_function("flag", flag_func);
-            let mut tera_ctx = task.tera_ctx()?;
+            let mut tera_ctx = task.tera_ctx().await?;
             tera_ctx.insert("env", &env);
             out.push(
                 tera.render_str(script, &tera_ctx)
@@ -426,13 +426,14 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_task_parse_arg() {
+    #[tokio::test]
+    async fn test_task_parse_arg() {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(i=0, name='foo') }}".to_string()];
         let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo "]);
         let arg0 = spec.cmd.args.first().unwrap();
@@ -446,12 +447,13 @@ mod tests {
                 &["abc".to_string()],
                 &spec,
             )
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo abc"]);
     }
 
-    #[test]
-    fn test_task_parse_multi_use_arg() {
+    #[tokio::test]
+    async fn test_task_parse_multi_use_arg() {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec![
@@ -460,6 +462,7 @@ mod tests {
         ];
         let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo ; echo ; echo "]);
         let arg0 = spec.cmd.args.first().unwrap();
@@ -476,17 +479,19 @@ mod tests {
                 &["abc".to_string(), "def".to_string()],
                 &spec,
             )
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo abc; echo def; echo abc"]);
     }
 
-    #[test]
-    fn test_task_parse_arg_var() {
+    #[tokio::test]
+    async fn test_task_parse_arg_var() {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(var=true) }}".to_string()];
         let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo "]);
         let arg0 = spec.cmd.args.first().unwrap();
@@ -500,17 +505,19 @@ mod tests {
                 &["abc".to_string(), "def".to_string()],
                 &spec,
             )
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo abc def"]);
     }
 
-    #[test]
-    fn test_task_parse_flag() {
+    #[tokio::test]
+    async fn test_task_parse_flag() {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ flag(name='foo') }}".to_string()];
         let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo "]);
         let flag = spec.cmd.flags.iter().find(|f| &f.name == "foo").unwrap();
@@ -524,27 +531,31 @@ mod tests {
                 &["--foo".to_string()],
                 &spec,
             )
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo true"]);
 
         let scripts = vec!["echo {{ flag(name='foo') }}".to_string()];
         let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo "]);
         let parsed_scripts = parser
             .parse_run_scripts_with_args(&task, &scripts, &Default::default(), &[], &spec)
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo false"]);
     }
 
-    #[test]
-    fn test_task_parse_option() {
+    #[tokio::test]
+    async fn test_task_parse_option() {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ option(name='foo') }}".to_string()];
         let (parsed_scripts, spec) = parser
             .parse_run_scripts(&task, &scripts, &Default::default())
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo "]);
         let option = spec.cmd.flags.iter().find(|f| &f.name == "foo").unwrap();
@@ -558,24 +569,29 @@ mod tests {
                 &["--foo".to_string(), "abc".to_string()],
                 &spec,
             )
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo abc"]);
     }
 
-    #[test]
-    fn test_task_nested_template() {
+    #[tokio::test]
+    async fn test_task_nested_template() {
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts =
             vec!["echo {% if flag(name=env.FLAG_NAME) == 'true' %}TRUE{% endif %}".to_string()];
         let env = EnvMap::from_iter(vec![("FLAG_NAME".to_string(), "foo".to_string())]);
-        let (parsed_scripts, spec) = parser.parse_run_scripts(&task, &scripts, &env).unwrap();
+        let (parsed_scripts, spec) = parser
+            .parse_run_scripts(&task, &scripts, &env)
+            .await
+            .unwrap();
         assert_eq!(parsed_scripts, vec!["echo "]);
         let flag = spec.cmd.flags.first().unwrap();
         assert_eq!(&flag.name, "foo");
 
         let parsed_scripts = parser
             .parse_run_scripts_with_args(&task, &scripts, &env, &["--foo".to_string()], &spec)
+            .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo TRUE"]);
     }

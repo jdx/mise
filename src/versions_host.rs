@@ -17,7 +17,7 @@ static PLUGINS_USE_VERSION_HOST: Lazy<HashSet<&str>> = Lazy::new(|| {
         .collect()
 });
 
-pub fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>> {
+pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>> {
     if !SETTINGS.use_versions_host
         || ba.short.contains(':')
         || !PLUGINS_USE_VERSION_HOST.contains(ba.short.as_str())
@@ -42,8 +42,16 @@ pub fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>> {
         }
     }
     let response = match SETTINGS.paranoid {
-        true => HTTP_FETCH.get_text(format!("https://mise-versions.jdx.dev/{}", &ba.short)),
-        false => HTTP_FETCH.get_text(format!("http://mise-versions.jdx.dev/{}", &ba.short)),
+        true => {
+            HTTP_FETCH
+                .get_text(format!("https://mise-versions.jdx.dev/{}", &ba.short))
+                .await
+        }
+        false => {
+            HTTP_FETCH
+                .get_text(format!("http://mise-versions.jdx.dev/{}", &ba.short))
+                .await
+        }
     };
     let versions =
         // using http is not a security concern and enabling tls makes mise significantly slower

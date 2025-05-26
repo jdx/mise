@@ -24,7 +24,7 @@ impl Commands {
 }
 
 impl Backends {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::BackendsLs {}));
 
         cmd.run()

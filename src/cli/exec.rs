@@ -52,13 +52,14 @@ pub struct Exec {
 }
 
 impl Exec {
-    pub fn run(self) -> Result<()> {
-        let config = Config::get();
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         let mut ts = measure!("toolset", {
             ToolsetBuilder::new()
                 .with_args(&self.tool)
                 .with_default_to_latest(true)
-                .build(&config)?
+                .build(&config)
+                .await?
         });
         let opts = InstallOptions {
             force: false,
@@ -75,14 +76,14 @@ impl Exec {
             ..Default::default()
         };
         measure!("install_arg_versions", {
-            ts.install_missing_versions(&opts)?
+            ts.install_missing_versions(&config, &opts).await?
         });
         measure!("notify_if_versions_missing", {
-            ts.notify_if_versions_missing()
+            ts.notify_if_versions_missing().await;
         });
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = measure!("env_with_path", { ts.env_with_path(&config)? });
+        let env = measure!("env_with_path", { ts.env_with_path(&config).await? });
 
         if program.rsplit('/').next() == Some("fish") {
             let mut cmd = vec![];
@@ -94,8 +95,8 @@ impl Exec {
                 ));
             }
             // TODO: env is being calculated twice with final_env and env_with_path
-            let (_, env_results) = ts.final_env(&config)?;
-            for p in ts.list_final_paths(&config, env_results)? {
+            let (_, env_results) = ts.final_env(&config).await?;
+            for p in ts.list_final_paths(&config, env_results).await? {
                 cmd.push(format!(
                     "fish_add_path -gm {}",
                     shell_escape::escape(p.to_string_lossy())

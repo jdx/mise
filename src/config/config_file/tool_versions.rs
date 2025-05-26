@@ -1,5 +1,8 @@
-use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::{
+    fmt::{Display, Formatter},
+    sync::{Arc, Mutex},
+};
 
 use console::{Alignment, measure_text_width, pad_str};
 use eyre::Result;
@@ -21,13 +24,13 @@ use super::ConfigFileType;
 // shfmt 3.6.0
 
 /// represents asdf's .tool-versions file
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct ToolVersions {
     context: Context,
     path: PathBuf,
     pre: String,
-    plugins: IndexMap<BackendArg, ToolVersionPlugin>,
-    tools: ToolRequestSet,
+    plugins: Mutex<IndexMap<BackendArg, ToolVersionPlugin>>,
+    tools: Mutex<ToolRequestSet>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,7 +46,7 @@ impl ToolVersions {
         context.insert("config_root", filename.parent().unwrap().to_str().unwrap());
         ToolVersions {
             context,
-            tools: ToolRequestSet::new(),
+            tools: Mutex::new(ToolRequestSet::new()),
             path: filename.to_path_buf(),
             ..Default::default()
         }
@@ -66,20 +69,10 @@ impl ToolVersions {
             cf.pre.push('\n');
         }
 
-        cf.plugins = Self::parse_plugins(&s);
+        cf.plugins = Mutex::new(Self::parse_plugins(&s));
         cf.populate_toolset()?;
         trace!("{cf}");
         Ok(cf)
-    }
-
-    fn get_or_create_plugin(&mut self, fa: &BackendArg) -> &mut ToolVersionPlugin {
-        self.plugins
-            .entry(fa.clone())
-            .or_insert_with(|| ToolVersionPlugin {
-                orig_name: fa.short.to_string(),
-                versions: vec![],
-                post: "".into(),
-            })
     }
 
     fn parse_plugins(input: &str) -> IndexMap<BackendArg, ToolVersionPlugin> {
@@ -115,16 +108,21 @@ impl ToolVersions {
         plugins
     }
 
-    fn add_version(&mut self, fa: &BackendArg, version: String) {
-        self.get_or_create_plugin(fa).versions.push(version);
+    fn add_version(
+        &self,
+        plugins: &mut IndexMap<BackendArg, ToolVersionPlugin>,
+        fa: &BackendArg,
+        version: String,
+    ) {
+        get_or_create_plugin(plugins, fa).versions.push(version);
     }
 
-    fn populate_toolset(&mut self) -> eyre::Result<()> {
+    fn populate_toolset(&self) -> eyre::Result<()> {
         let source = ToolSource::ToolVersions(self.path.clone());
-        for (ba, tvp) in &self.plugins {
+        for (ba, tvp) in &*self.plugins.lock().unwrap() {
             for version in &tvp.versions {
-                let tvr = ToolRequest::new(ba.clone(), version, source.clone())?;
-                self.tools.add_version(tvr, &source)
+                let tvr = ToolRequest::new(Arc::new(ba.clone()), version, source.clone())?;
+                self.tools.lock().unwrap().add_version(tvr, &source)
             }
         }
         Ok(())
@@ -135,6 +133,8 @@ impl Display for ToolVersions {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let plugins = &self
             .plugins
+            .lock()
+            .unwrap()
             .iter()
             .map(|(p, v)| format!("{}@{}", p, v.versions.join("|")))
             .collect_vec();
@@ -156,22 +156,19 @@ impl ConfigFile for ToolVersions {
         self.path.as_path()
     }
 
-    fn remove_tool(&mut self, fa: &BackendArg) -> Result<()> {
-        self.plugins.shift_remove(fa);
+    fn remove_tool(&self, fa: &BackendArg) -> Result<()> {
+        self.plugins.lock().unwrap().shift_remove(fa);
         Ok(())
     }
 
-    fn replace_versions(
-        &mut self,
-        fa: &BackendArg,
-        versions: Vec<ToolRequest>,
-    ) -> eyre::Result<()> {
-        self.get_or_create_plugin(fa).versions.clear();
+    fn replace_versions(&self, fa: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
+        let mut plugins = self.plugins.lock().unwrap();
+        get_or_create_plugin(&mut plugins, fa).versions.clear();
         for tr in versions {
             if !tr.options().is_empty() {
                 warn!("tool options are not supported in .tool-versions files");
             }
-            self.add_version(fa, tr.version());
+            self.add_version(&mut plugins, fa, tr.version());
         }
         Ok(())
     }
@@ -184,13 +181,13 @@ impl ConfigFile for ToolVersions {
     fn dump(&self) -> eyre::Result<String> {
         let mut s = self.pre.clone();
 
-        let max_plugin_len = self
-            .plugins
+        let plugins = self.plugins.lock().unwrap();
+        let max_plugin_len = plugins
             .keys()
             .map(|p| measure_text_width(&p.to_string()))
             .max()
             .unwrap_or_default();
-        for (_, tv) in &self.plugins {
+        for (_, tv) in &*plugins {
             let mut plugin = tv.orig_name.to_string();
             if plugin == "node" {
                 plugin = "nodejs".into();
@@ -209,6 +206,31 @@ impl ConfigFile for ToolVersions {
     }
 
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
-        Ok(self.tools.clone())
+        Ok(self.tools.lock().unwrap().clone())
+    }
+}
+
+fn get_or_create_plugin<'a>(
+    plugins: &'a mut IndexMap<BackendArg, ToolVersionPlugin>,
+    fa: &BackendArg,
+) -> &'a mut ToolVersionPlugin {
+    plugins
+        .entry(fa.clone())
+        .or_insert_with(|| ToolVersionPlugin {
+            orig_name: fa.short.to_string(),
+            versions: vec![],
+            post: "".into(),
+        })
+}
+
+impl Clone for ToolVersions {
+    fn clone(&self) -> Self {
+        Self {
+            context: self.context.clone(),
+            path: self.path.clone(),
+            pre: self.pre.clone(),
+            plugins: Mutex::new(self.plugins.lock().unwrap().clone()),
+            tools: Mutex::new(self.tools.lock().unwrap().clone()),
+        }
     }
 }

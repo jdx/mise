@@ -36,11 +36,11 @@ pub struct Reshim {
 }
 
 impl Reshim {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let ts = ToolsetBuilder::new().build(&config).await?;
 
-        shims::reshim(&ts, self.force)
+        shims::reshim(&ts, self.force).await
     }
 }
 

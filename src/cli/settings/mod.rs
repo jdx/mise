@@ -44,7 +44,7 @@ impl Commands {
 }
 
 impl Settings {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or_else(|| {
             if let Some(value) = self.value {
                 Commands::Set(set::SettingsSet {

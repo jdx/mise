@@ -2,13 +2,14 @@ use crate::config::{Config, SETTINGS, Settings};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
 use crate::git::{CloneOptions, Git};
-use crate::plugins::{Plugin, PluginType, Script, ScriptManager};
+use crate::plugins::{Plugin, Script, ScriptManager};
 use crate::result::Result;
 use crate::timeout::run_with_timeout;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
 use crate::{dirs, env, exit, lock_file, registry};
+use async_trait::async_trait;
 use clap::Command;
 use console::style;
 use contracts::requires;
@@ -25,8 +26,8 @@ pub struct AsdfPlugin {
     pub name: String,
     pub plugin_path: PathBuf,
     pub repo: Mutex<Git>,
-    pub repo_url: Option<String>,
     pub script_man: ScriptManager,
+    repo_url: Mutex<Option<String>>,
 }
 
 impl AsdfPlugin {
@@ -36,7 +37,7 @@ impl AsdfPlugin {
         Self {
             script_man: build_script_man(&name, &plugin_path),
             name,
-            repo_url: None,
+            repo_url: Mutex::new(None),
             repo: Mutex::new(repo),
             plugin_path,
         }
@@ -48,6 +49,8 @@ impl AsdfPlugin {
 
     fn get_repo_url(&self, config: &Config) -> eyre::Result<String> {
         self.repo_url
+            .lock()
+            .unwrap()
             .clone()
             .or_else(|| self.repo().get_remote_url())
             .or_else(|| config.get_repo_url(&self.name))
@@ -179,6 +182,7 @@ impl AsdfPlugin {
     }
 }
 
+#[async_trait]
 impl Plugin for AsdfPlugin {
     fn name(&self) -> &str {
         &self.name
@@ -188,17 +192,13 @@ impl Plugin for AsdfPlugin {
         self.plugin_path.clone()
     }
 
-    fn get_plugin_type(&self) -> PluginType {
-        PluginType::Asdf
-    }
-
     fn get_remote_url(&self) -> eyre::Result<Option<String>> {
         let url = self.repo().get_remote_url();
-        Ok(url.or(self.repo_url.clone()))
+        Ok(url.or(self.repo_url.lock().unwrap().clone()))
     }
 
-    fn set_remote_url(&mut self, url: String) {
-        self.repo_url = Some(url);
+    fn set_remote_url(&self, url: String) {
+        *self.repo_url.lock().unwrap() = Some(url);
     }
 
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
@@ -227,14 +227,14 @@ impl Plugin for AsdfPlugin {
             .wrap_err("run with --yes to install plugin automatically"))
     }
 
-    fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {
-        let config = Config::get();
+    async fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {
+        let config = Config::try_get().await?;
         let settings = Settings::try_get()?;
         if !force {
             if self.is_installed() {
                 return Ok(());
             }
-            if !settings.yes && self.repo_url.is_none() {
+            if !settings.yes && self.repo_url.lock().unwrap().is_none() {
                 let url = self.get_repo_url(&config).unwrap_or_default();
                 if !registry::is_trusted_plugin(self.name(), &url) {
                     warn!(
@@ -259,10 +259,10 @@ impl Plugin for AsdfPlugin {
         let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
         let pr = mpr.add(&prefix);
         let _lock = lock_file::get(&self.plugin_path, force)?;
-        self.install(&pr)
+        self.install(&pr).await
     }
 
-    fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
+    async fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             warn!(
@@ -291,7 +291,7 @@ impl Plugin for AsdfPlugin {
         Ok(())
     }
 
-    fn uninstall(&self, pr: &Box<dyn SingleReport>) -> Result<()> {
+    async fn uninstall(&self, pr: &Box<dyn SingleReport>) -> Result<()> {
         if !self.is_installed() {
             return Ok(());
         }
@@ -316,14 +316,14 @@ impl Plugin for AsdfPlugin {
         Ok(())
     }
 
-    fn install(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
-        let config = Config::get();
+    async fn install(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+        let config = Config::try_get().await?;
         let repository = self.get_repo_url(&config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
         debug!("asdf_plugin[{}]:install {:?}", self.name, repository);
 
         if self.is_installed() {
-            self.uninstall(pr)?;
+            self.uninstall(pr).await?;
         }
 
         if regex!(r"^[/~]").is_match(&repo_url) {

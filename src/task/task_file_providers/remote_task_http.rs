@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use crate::{dirs, env, file, hash, http::HTTP};
+use async_trait::async_trait;
+
+use crate::{Result, dirs, env, file, hash, http::HTTP};
 
 use super::TaskFileProvider;
 
@@ -45,18 +47,15 @@ impl RemoteTaskHttp {
         hash::hash_sha256_to_str(file)
     }
 
-    fn download_file(
-        &self,
-        file: &str,
-        destination: &PathBuf,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    async fn download_file(&self, file: &str, destination: &PathBuf) -> Result<()> {
         trace!("Downloading file: {}", file);
-        HTTP.download_file(file, destination, None)?;
+        HTTP.download_file(file, destination, None).await?;
         file::make_executable(destination)?;
         Ok(())
     }
 }
 
+#[async_trait]
 impl TaskFileProvider for RemoteTaskHttp {
     fn is_match(&self, file: &str) -> bool {
         let url = url::Url::parse(file);
@@ -71,7 +70,7 @@ impl TaskFileProvider for RemoteTaskHttp {
         })
     }
 
-    fn get_local_path(&self, file: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    async fn get_local_path(&self, file: &str) -> Result<PathBuf> {
         let cache_key = self.get_cache_key(file);
         let destination = self.storage_path.join(&cache_key);
 
@@ -93,7 +92,7 @@ impl TaskFileProvider for RemoteTaskHttp {
             }
         }
 
-        self.download_file(file, &destination)?;
+        self.download_file(file, &destination).await?;
         Ok(destination)
     }
 }
@@ -103,8 +102,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_is_match() {
+    #[tokio::test]
+    async fn test_is_match() {
         let provider = RemoteTaskHttpBuilder::new().build();
 
         // Positive cases
@@ -120,14 +119,14 @@ mod tests {
         assert!(!provider.is_match("https://myhost.com/"));
     }
 
-    #[test]
-    fn test_http_remote_task_get_local_path_without_cache() {
+    #[tokio::test]
+    async fn test_http_remote_task_get_local_path_without_cache() {
         let paths = vec![
             "/myfile.py",
             "/subpath/myfile.sh",
             "/myfile.sh?query=1&sdfsdf=2",
         ];
-        let mut server = mockito::Server::new();
+        let mut server = mockito::Server::new_async().await;
 
         for request_path in paths {
             let mocked_server: mockito::Mock = server
@@ -135,14 +134,15 @@ mod tests {
                 .with_status(200)
                 .with_body("Random content")
                 .expect(2)
-                .create();
+                .create_async()
+                .await;
 
             let provider = RemoteTaskHttpBuilder::new().build();
             let request_url = format!("{}{}", server.url(), request_path);
             let cache_key = provider.get_cache_key(&request_url);
 
             for _ in 0..2 {
-                let local_path = provider.get_local_path(&request_url).unwrap();
+                let local_path = provider.get_local_path(&request_url).await.unwrap();
                 assert!(local_path.exists());
                 assert!(local_path.is_file());
                 assert!(local_path.ends_with(&cache_key));
@@ -152,14 +152,14 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_http_remote_task_get_local_path_with_cache() {
+    #[tokio::test]
+    async fn test_http_remote_task_get_local_path_with_cache() {
         let paths = vec![
             "/myfile.py",
             "/subpath/myfile.sh",
             "/myfile.sh?query=1&sdfsdf=2",
         ];
-        let mut server = mockito::Server::new();
+        let mut server = mockito::Server::new_async().await;
 
         for request_path in paths {
             let mocked_server = server
@@ -167,14 +167,15 @@ mod tests {
                 .with_status(200)
                 .with_body("Random content")
                 .expect(1)
-                .create();
+                .create_async()
+                .await;
 
             let provider = RemoteTaskHttpBuilder::new().with_cache(true).build();
             let request_url = format!("{}{}", server.url(), request_path);
             let cache_key = provider.get_cache_key(&request_url);
 
             for _ in 0..2 {
-                let path = provider.get_local_path(&request_url).unwrap();
+                let path = provider.get_local_path(&request_url).await.unwrap();
                 assert!(path.exists());
                 assert!(path.is_file());
                 assert!(path.ends_with(&cache_key));

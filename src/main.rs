@@ -70,7 +70,6 @@ mod sysconfig;
 pub(crate) mod task;
 pub(crate) mod tera;
 pub(crate) mod timeout;
-mod tokio;
 mod toml;
 mod toolset;
 mod ui;
@@ -85,18 +84,26 @@ pub(crate) use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> eyre::Result<()> {
-    color_eyre::install()?;
-    measure!("main", {
-        let args = env::args().collect_vec();
-        match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
-            Ok(()) => Ok(()),
-            Err(err) => handle_err(err),
-        }?;
-    });
-    if let Some(mpr) = MultiProgressReport::try_get() {
-        mpr.stop()?;
-    }
-    Ok(())
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(async {
+        color_eyre::install()?;
+        measure!("main", {
+            let args = env::args().collect_vec();
+            match Cli::run(&args)
+                .await
+                .with_section(|| VERSION.to_string().header("Version:"))
+            {
+                Ok(()) => Ok(()),
+                Err(err) => handle_err(err),
+            }?;
+        });
+        if let Some(mpr) = MultiProgressReport::try_get() {
+            mpr.stop()?;
+        }
+        Ok(())
+    })
 }
 
 fn handle_err(err: Report) -> eyre::Result<()> {

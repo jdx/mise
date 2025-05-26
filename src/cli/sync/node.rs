@@ -35,20 +35,20 @@ pub struct SyncNodeType {
 }
 
 impl SyncNode {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self._type.brew {
-            self.run_brew()?;
+            self.run_brew().await?;
         }
         if self._type.nvm {
-            self.run_nvm()?;
+            self.run_nvm().await?;
         }
         if self._type.nodenv {
-            self.run_nodenv()?;
+            self.run_nodenv().await?;
         }
         Ok(())
     }
 
-    fn run_brew(&self) -> Result<()> {
+    async fn run_brew(&self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
@@ -70,10 +70,10 @@ impl SyncNode {
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&[])
+        config::rebuild_shims_and_runtime_symlinks(&[]).await
     }
 
-    fn run_nvm(&self) -> Result<()> {
+    async fn run_nvm(&self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
 
         let nvm_versions_path = NVM_DIR.join("versions").join("node");
@@ -104,10 +104,10 @@ impl SyncNode {
             debug!("Created symlinks: {created:?}");
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&[])
+        config::rebuild_shims_and_runtime_symlinks(&[]).await
     }
 
-    fn run_nodenv(&self) -> Result<()> {
+    async fn run_nodenv(&self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
 
         let nodenv_versions_path = NODENV_ROOT.join("versions");
@@ -128,7 +128,7 @@ impl SyncNode {
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&[])
+        config::rebuild_shims_and_runtime_symlinks(&[]).await
     }
 }
 
