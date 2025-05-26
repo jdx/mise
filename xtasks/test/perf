@@ -23,7 +23,7 @@ fi
 
 recent_benchmarks["install-uncached"]=0
 recent_benchmarks["install-cached"]=186
-recent_benchmarks["ls-uncached"]=1003
+recent_benchmarks["ls-uncached"]=700
 recent_benchmarks["ls-cached"]=0
 recent_benchmarks["bin-paths-uncached"]=1077
 recent_benchmarks["bin-paths-cached"]=0
