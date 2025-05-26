@@ -523,11 +523,11 @@ impl Run {
     ) -> Result<()> {
         let config = Config::get().await;
         let script = script.trim_start();
-        let cmd = style::ebold(format!("$ {script} {args}", args = args.join(" ")))
-            .bright()
-            .to_string();
+        let cmd = format!("$ {script} {args}", args = args.join(" ")).to_string();
         if !self.quiet(Some(task)) {
-            let msg = trunc(prefix, config.redact(cmd).trim());
+            let msg = style::ebold(trunc(prefix, config.redact(cmd).trim()))
+                .bright()
+                .to_string();
             self.eprint(task, prefix, &msg)
         }
 
