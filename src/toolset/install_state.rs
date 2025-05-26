@@ -28,10 +28,12 @@ static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::n
 static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
 
 pub(crate) async fn init() -> Result<()> {
-    tokio::try_join!(
-        async { measure!("init_plugins", { init_plugins() }) },
-        async { measure!("init_tools", { init_tools() }) },
-    )?;
+    let (plugins, tools) = tokio::join!(
+        tokio::task::spawn(async { measure!("init_plugins", { init_plugins() }) }),
+        tokio::task::spawn(async { measure!("init_tools", { init_tools() }) }),
+    );
+    plugins??;
+    tools??;
     Ok(())
 }
 

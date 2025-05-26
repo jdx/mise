@@ -243,6 +243,11 @@
         "aqua": {
           "additionalProperties": false,
           "properties": {
+            "baked_registry": {
+              "default": true,
+              "description": "Use baked-in aqua registry (if compiled in).",
+              "type": "boolean"
+            },
             "cosign": {
               "default": true,
               "description": "Use cosign to verify aqua tool signatures.",

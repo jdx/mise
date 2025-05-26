@@ -1,5 +1,3 @@
-$shimPath = Join-Path -Path $env:MISE_DATA_DIR -ChildPath "shims"
-
 Describe 'shim_mode' {
 
     BeforeAll {
@@ -11,6 +9,8 @@ Describe 'shim_mode' {
             mise settings windows_shim_mode $mode
             mise reshim --force
         }
+
+        $shimPath = Join-Path -Path $env:MISE_DATA_DIR -ChildPath "shims"
     }
 
     AfterAll {

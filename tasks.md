@@ -117,10 +117,6 @@ User to run as
 
 - **Usage**: `lint:cargo-fmt`
 
-## `lint:clippy`
-
-- **Usage**: `lint:clippy`
-
 ## `lint:hk`
 
 - **Usage**: `lint:hk`
@@ -128,10 +124,6 @@ User to run as
 ## `lint:markdownlint`
 
 - **Usage**: `lint:markdownlint`
-
-## `lint:prettier`
-
-- **Usage**: `lint:prettier`
 
 ## `lint:ripgrep`
 

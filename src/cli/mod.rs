@@ -1,12 +1,11 @@
-use crate::cli::args::ToolArg;
+use crate::Result;
 use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
-use crate::env::MISE_BIN;
 use crate::exit::exit;
 use crate::ui::ctrlc;
+use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
-use color_eyre::Result;
 use std::path::PathBuf;
 
 mod activate;
@@ -326,11 +325,9 @@ impl Cli {
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
 
-        let cli = measure!("pre_settings", { Self::pre_settings(args).await })?;
+        let cli = measure!("pre_settings", { Self::pre_settings().await? });
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
-        measure!("settings", {
-            let _ = Settings::try_get();
-        });
+        let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
         measure!("migrate", { migrate::run().await });
         if let Err(err) = crate::cache::auto_prune() {
@@ -338,7 +335,7 @@ impl Cli {
         }
 
         debug!("ARGS: {}", &args.join(" "));
-        trace!("MISE_BIN: {}", MISE_BIN.to_string_lossy().to_string());
+        trace!("MISE_BIN: {}", crate::env::MISE_BIN.display_user());
         if print_version {
             version::show_latest().await;
             exit(0);
@@ -347,12 +344,16 @@ impl Cli {
         measure!("run {cmd}", { cmd.run().await })
     }
 
-    async fn pre_settings(args: &Vec<String>) -> Result<Cli> {
-        let (_, cli) = tokio::try_join!(
+    async fn pre_settings() -> Result<Cli> {
+        let (_, cli) = tokio::join!(
             measure!("install_state", { crate::install_state::init() }),
-            async { measure!("get_matches_from", { Ok(Cli::parse_from(args)) }) },
-        )?;
-        Ok(cli)
+            tokio::task::spawn(async {
+                measure!("get_matches_from", {
+                    Result::Ok(Cli::parse_from(crate::env::ARGS.read().unwrap().iter()))
+                })
+            }),
+        );
+        cli?
     }
 
     async fn get_command(self) -> Result<Commands> {
