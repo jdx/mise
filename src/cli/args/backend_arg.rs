@@ -179,6 +179,8 @@ impl BackendArg {
             let opts_str = opts
                 .opts
                 .iter()
+                // filter out global options that are only relevant for initial installation
+                .filter(|(k, _)| !["postinstall", "install_env"].contains(&k.as_str()))
                 .map(|(k, v)| format!("{k}={v}"))
                 .collect::<Vec<_>>()
                 .join(",");
