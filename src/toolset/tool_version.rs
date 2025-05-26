@@ -1,9 +1,9 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::{cmp::Ordering, sync::LazyLock};
 
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
@@ -13,6 +13,7 @@ use crate::file;
 use crate::hash::hash_to_str;
 use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
+use dashmap::DashMap;
 use eyre::Result;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
@@ -88,6 +89,10 @@ impl ToolVersion {
     }
 
     pub fn install_path(&self) -> PathBuf {
+        static CACHE: LazyLock<DashMap<ToolVersion, PathBuf>> = LazyLock::new(DashMap::new);
+        if let Some(p) = CACHE.get(self) {
+            return p.clone();
+        }
         if let Some(p) = &self.install_path {
             return p.clone();
         }
@@ -111,6 +116,7 @@ impl ToolVersion {
                 }
             }
         }
+        CACHE.insert(self.clone(), path.clone());
         path
     }
     pub fn cache_path(&self) -> PathBuf {

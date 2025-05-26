@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
-use eyre::{Report, Result, bail};
+use eyre::{Report, Result, bail, ensure};
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Response};
 use std::sync::LazyLock as Lazy;
@@ -64,6 +64,7 @@ impl Client {
         url: U,
         headers: &HeaderMap,
     ) -> Result<Response> {
+        ensure!(!*env::OFFLINE, "offline mode is enabled");
         let get = |url: Url| async move {
             debug!("GET {}", &url);
             let mut req = self.reqwest.get(url.clone());
@@ -103,6 +104,7 @@ impl Client {
         url: U,
         headers: &HeaderMap,
     ) -> Result<Response> {
+        ensure!(!*env::OFFLINE, "offline mode is enabled");
         let head = |url: Url| async move {
             debug!("HEAD {}", &url);
             let mut req = self.reqwest.head(url.clone());

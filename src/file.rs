@@ -1,3 +1,4 @@
+use crate::path::{Path, PathBuf, PathExt};
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::fs;
@@ -7,7 +8,6 @@ use std::io::Write;
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
 use std::os::unix::prelude::*;
-use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -220,12 +220,7 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
 
 /// replaces $HOME with "~"
 pub fn display_path<P: AsRef<Path>>(path: P) -> String {
-    let home = dirs::HOME.to_string_lossy();
-    let path = path.as_ref();
-    match cfg!(unix) && path.starts_with(home.as_ref()) && home != "/" {
-        true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
-        false => path.to_string_lossy().to_string(),
-    }
+    path.as_ref().display_user()
 }
 
 pub fn display_rel_path<P: AsRef<Path>>(path: P) -> String {

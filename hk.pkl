@@ -5,10 +5,12 @@ local bash_glob = List("*.sh", "xtasks/**", "scripts/**", "e2e/**")
 local bash_exclude = List("*.ps1", "*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**")
 local linters = new Mapping<String, Step> {
     // uses builtin prettier linter config
-    ["prettier"] = Builtins.prettier
+    ["prettier"] = (Builtins.prettier) {
+      batch = false
+    }
     ["clippy"] = (Builtins.cargo_clippy) {
-      check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features"
-      fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged"
+      check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
+      fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
     }
     ["shellcheck"] = (Builtins.shellcheck) {
       glob = bash_glob

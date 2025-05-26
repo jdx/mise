@@ -55,6 +55,12 @@ env = "MISE_ALWAYS_KEEP_INSTALL"
 type = "Bool"
 description = "should mise keep install files after installation even if the installation fails"
 
+[aqua.baked_registry]
+env = "MISE_AQUA_BAKED_REGISTRY"
+type = "Bool"
+default = true
+description = "Use baked-in aqua registry (if compiled in)."
+
 [aqua.cosign]
 env = "MISE_AQUA_COSIGN"
 type = "Bool"

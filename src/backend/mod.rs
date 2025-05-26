@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use dashmap::DashMap;
+use std::collections::{BTreeMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -659,14 +660,10 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
-        // use a mutex to prevent deadlocks that occurs due to reentrant cache access
-        static REMOTE_VERSION_CACHE: Lazy<
-            Mutex<HashMap<String, Arc<TokioMutex<VersionCacheManager>>>>,
-        > = Lazy::new(Default::default);
+        static REMOTE_VERSION_CACHE: Lazy<DashMap<String, Arc<TokioMutex<VersionCacheManager>>>> =
+            Lazy::new(Default::default);
 
         REMOTE_VERSION_CACHE
-            .lock()
-            .unwrap()
             .entry(self.ba().full())
             .or_insert_with(|| {
                 let mut cm = CacheManagerBuilder::new(

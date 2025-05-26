@@ -1,6 +1,3 @@
-use crate::aqua::aqua_registry::{
-    AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
-};
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
@@ -10,23 +7,31 @@ use crate::config::SETTINGS;
 use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
+use crate::{
+    aqua::aqua_registry::{
+        AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
+    },
+    cache::{CacheManager, CacheManagerBuilder},
+};
 use crate::{file, github, minisign};
 use async_trait::async_trait;
+use dashmap::DashMap;
 use eyre::{ContextCompat, Result, bail};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
 use std::fmt::Debug;
-use std::path::{Path, PathBuf};
 use std::{collections::HashSet, sync::Arc};
 
 #[derive(Debug)]
 pub struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
+    bin_path_caches: DashMap<String, CacheManager<Vec<PathBuf>>>,
 }
 
 #[async_trait]
@@ -118,21 +123,42 @@ impl Backend for AquaBackend {
     }
 
     async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
-        let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, &tv.version)
-            .await?;
+        // TODO: instead of caching it would probably be better to create this as part of installation
+        let cache = self
+            .bin_path_caches
+            .entry(tv.version.clone())
+            .or_insert_with(|| {
+                CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
+                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .build()
+            });
+        let install_path = tv.install_path();
+        let paths = cache
+            .get_or_try_init_async(async || {
+                let pkg = AQUA_REGISTRY
+                    .package_with_version(&self.id, &tv.version)
+                    .await?;
 
-        let srcs = self.srcs(&pkg, tv)?;
-        if srcs.is_empty() {
-            return Ok(vec![tv.install_path()]);
-        }
-
-        Ok(srcs
+                let srcs = self.srcs(&pkg, tv)?;
+                let paths = if srcs.is_empty() {
+                    vec![install_path.clone()]
+                } else {
+                    srcs.iter()
+                        .map(|(_, dst)| dst.parent().unwrap().to_path_buf())
+                        .collect()
+                };
+                Ok(paths
+                    .into_iter()
+                    .unique()
+                    .filter(|p| p.exists())
+                    .map(|p| p.strip_prefix(&install_path).unwrap().to_path_buf())
+                    .collect())
+            })
+            .await?
             .iter()
-            .map(|(_, dst)| dst.parent().unwrap().to_path_buf())
-            .filter(|p| p.exists())
-            .unique()
-            .collect())
+            .map(|p| p.mount(&install_path))
+            .collect();
+        Ok(paths)
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
@@ -175,6 +201,7 @@ impl AquaBackend {
         Self {
             id: id.to_string(),
             ba: Arc::new(ba),
+            bin_path_caches: Default::default(),
         }
     }
 

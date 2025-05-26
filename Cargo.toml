@@ -64,6 +64,7 @@ comfy-table = "7.1.3"
 confique = { version = "0.3", default-features = false }
 console = "0.15"
 contracts = "0.6"
+dashmap = "6"
 demand = "1"
 digest = "0.10.7"
 dotenvy = "0.15"
@@ -96,7 +97,7 @@ number_prefix = "0.4"
 once_cell = "1"
 openssl = { version = "0.10", optional = true }
 os-release = "0.1"
-path-absolutize = "3"
+path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
 rand = "0.9"
 regex = "1"
