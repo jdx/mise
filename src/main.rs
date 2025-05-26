@@ -55,6 +55,7 @@ pub(crate) mod logger;
 pub(crate) mod maplit;
 mod migrate;
 mod minisign;
+mod path;
 mod path_env;
 mod plugins;
 mod rand;
@@ -89,6 +90,9 @@ fn main() -> eyre::Result<()> {
         .build()?;
     rt.block_on(async {
         color_eyre::install()?;
+        unsafe {
+            path_absolutize::update_cwd();
+        }
         measure!("main", {
             let args = env::args().collect_vec();
             match Cli::run(&args)

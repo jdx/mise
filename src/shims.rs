@@ -1,8 +1,11 @@
 use crate::exit;
-use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{
+    collections::{BTreeSet, HashSet},
+    sync::atomic::Ordering,
+};
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
@@ -15,6 +18,7 @@ use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 use tokio::task::JoinSet;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
@@ -26,6 +30,7 @@ pub async fn handle_shim() -> Result<()> {
     }
     logger::init();
     let mut args = env::ARGS.read().unwrap().clone();
+    env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
     args[0] = which_shim(&env::MISE_BIN_NAME)
         .await?
@@ -97,6 +102,7 @@ pub async fn reshim(ts: &Toolset, force: bool) -> Result<()> {
         .lock();
 
     let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
+    let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
 
     if force {
         file::remove_all(*dirs::SHIMS)?;

@@ -204,44 +204,14 @@ impl AquaRegistry {
     pub async fn package(&self, id: &str) -> Result<AquaPackage> {
         static CACHE: LazyLock<Mutex<HashMap<String, AquaPackage>>> =
             LazyLock::new(|| Mutex::new(HashMap::new()));
-        static RATE_LIMITED: AtomicBool = AtomicBool::new(false);
         if let Some(pkg) = CACHE.lock().await.get(id) {
             return Ok(pkg.clone());
         }
         let path_id = id.split('/').join(std::path::MAIN_SEPARATOR_STR);
         let path = self.path.join("pkgs").join(&path_id).join("registry.yaml");
-        let registry: RegistryYaml = if !self.repo_exists {
-            if let Some(registry) = AQUA_STANDARD_REGISTRY_FILES.get(id) {
-                trace!("reading baked-in aqua-registry for {id}");
-                serde_yaml::from_str(registry)?
-            } else if !path.exists() || file::modified_duration(&path)? > DAILY {
-                if RATE_LIMITED.load(Ordering::Relaxed) {
-                    warn!("aqua-registry rate limited, skipping {id}");
-                    return Err(eyre!("aqua-registry rate limited"));
-                }
-                trace!("downloading aqua-registry for {id} to {path:?}");
-                let url: Url =
-                    format!("https://mise-versions.jdx.dev/aqua-registry/{path_id}/registry.yaml")
-                        .parse()?;
-                match http::HTTP_FETCH.download_file(url, &path, None).await {
-                    Ok(_) => {}
-                    Err(e) if http::error_code(&e) == Some(429) => {
-                        warn!("aqua-registry rate limited, skipping {id}");
-                        RATE_LIMITED.store(true, Ordering::Relaxed);
-                        return Err(e);
-                    }
-                    Err(e) => return Err(e),
-                }
-                serde_yaml::from_reader(file::open(&path)?)?
-            } else {
-                trace!("reading cached aqua-registry for {id} from {path:?}");
-                serde_yaml::from_reader(file::open(&path)?)?
-            }
-        } else {
-            trace!("reading aqua-registry for {id} from repo at {path:?}");
-            serde_yaml::from_reader(file::open(&path)?)?
-        };
-        let mut pkg = registry
+        let mut pkg = self
+            .fetch_package_yaml(id, &path, &path_id)
+            .await?
             .packages
             .into_iter()
             .next()
@@ -255,6 +225,45 @@ impl AquaRegistry {
 
     pub async fn package_with_version(&self, id: &str, v: &str) -> Result<AquaPackage> {
         Ok(self.package(id).await?.with_version(v))
+    }
+
+    async fn fetch_package_yaml(
+        &self,
+        id: &str,
+        path: &PathBuf,
+        path_id: &str,
+    ) -> Result<RegistryYaml> {
+        let registry = if self.repo_exists {
+            trace!("reading aqua-registry for {id} from repo at {path:?}");
+            serde_yaml::from_reader(file::open(path)?)?
+        } else if SETTINGS.aqua.baked_registry && AQUA_STANDARD_REGISTRY_FILES.contains_key(id) {
+            trace!("reading baked-in aqua-registry for {id}");
+            serde_yaml::from_str(AQUA_STANDARD_REGISTRY_FILES.get(id).unwrap())?
+        } else if !path.exists() || file::modified_duration(path)? > DAILY {
+            static RATE_LIMITED: AtomicBool = AtomicBool::new(false);
+            if RATE_LIMITED.load(Ordering::Relaxed) {
+                warn!("aqua-registry rate limited, skipping {id}");
+                return Err(eyre!("aqua-registry rate limited"));
+            }
+            trace!("downloading aqua-registry for {id} to {path:?}");
+            let url =
+                format!("https://mise-versions.jdx.dev/aqua-registry/{path_id}/registry.yaml");
+            let url: Url = url.parse()?;
+            match http::HTTP_FETCH.download_file(url, path, None).await {
+                Ok(_) => {}
+                Err(e) if http::error_code(&e) == Some(429) => {
+                    warn!("aqua-registry rate limited, skipping {id}");
+                    RATE_LIMITED.store(true, Ordering::Relaxed);
+                    return Err(e);
+                }
+                Err(e) => return Err(e),
+            }
+            serde_yaml::from_reader(file::open(path)?)?
+        } else {
+            trace!("reading cached aqua-registry for {id} from {path:?}");
+            serde_yaml::from_reader(file::open(path)?)?
+        };
+        Ok(registry)
     }
 }
 
