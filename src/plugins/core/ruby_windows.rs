@@ -264,19 +264,25 @@ fn arch() -> &'static str {
 mod tests {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+    use crate::config::Config;
 
     use super::*;
 
     #[tokio::test]
     async fn test_list_versions_matching() {
+        let config = Config::get().await;
         let plugin = RubyPlugin::new();
         assert!(
-            !plugin.list_versions_matching("3").await.unwrap().is_empty(),
+            !plugin
+                .list_versions_matching(&config, "3")
+                .await
+                .unwrap()
+                .is_empty(),
             "versions for 3 should not be empty"
         );
         assert!(
             !plugin
-                .list_versions_matching("truffleruby-24")
+                .list_versions_matching(&config, "truffleruby-24")
                 .await
                 .unwrap()
                 .is_empty(),
@@ -284,7 +290,7 @@ mod tests {
         );
         assert!(
             !plugin
-                .list_versions_matching("truffleruby+graalvm-24")
+                .list_versions_matching(&config, "truffleruby+graalvm-24")
                 .await
                 .unwrap()
                 .is_empty(),

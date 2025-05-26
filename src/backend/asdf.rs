@@ -137,7 +137,12 @@ impl AsdfBackend {
         };
         Ok(bin_paths)
     }
-    async fn fetch_exec_env(&self, config: &Arc<Config>, ts: &Toolset, tv: &ToolVersion) -> Result<EnvMap> {
+    async fn fetch_exec_env(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<EnvMap> {
         let mut sm = self.script_man_for_tv(tv).await?;
         for p in ts.list_paths(config).await {
             sm.prepend_path(p);
@@ -385,7 +390,9 @@ impl Backend for AsdfBackend {
             return Ok(BTreeMap::new());
         }
         self.cache
-            .exec_env(config, self, tv, async || self.fetch_exec_env(config, ts, tv).await)
+            .exec_env(config, self, tv, async || {
+                self.fetch_exec_env(config, ts, tv).await
+            })
             .await
     }
 }

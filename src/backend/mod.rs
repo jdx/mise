@@ -617,7 +617,12 @@ pub trait Backend: Debug + Send + Sync {
             .list_bin_paths(tv)
             .await?
             .into_iter()
-            .chain(self.dependency_toolset(config).await?.list_paths(config).await)
+            .chain(
+                self.dependency_toolset(config)
+                    .await?
+                    .list_paths(config)
+                    .await,
+            )
             .chain(env::PATH.clone());
         Ok(env::join_paths(path)?)
     }

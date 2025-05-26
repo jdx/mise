@@ -152,23 +152,11 @@ impl Toolset {
     #[async_backtrace::framed]
     pub async fn resolve(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
         self.list_missing_plugins();
-        let mut jset: JoinSet<Result<_>> = JoinSet::new();
-        for (i, (ba, mut tvl)) in self.versions.clone().into_iter().enumerate() {
-            let config = config.clone();
-            jset.spawn(async move {
-                tvl.resolve(&config, &Default::default()).await?;
-                Ok((i, ba, tvl))
-            });
+        let mut tvls = vec![];
+        for (ba, mut tvl) in self.versions.clone().into_iter() {
+            tvl.resolve(config, &Default::default()).await?;
+            tvls.push((ba, tvl));
         }
-        let tvls = jset
-            .join_all()
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .sorted_by_key(|(i, _, _)| *i)
-            .map(|(_, ba, tvl)| (ba, tvl))
-            .collect::<Vec<_>>();
         for (ba, tvl) in tvls {
             self.versions.insert(ba, tvl);
         }
@@ -390,33 +378,18 @@ impl Toolset {
             .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
             .collect();
         let current_versions = Arc::new(current_versions);
-        let mut jset: JoinSet<Result<_>> = JoinSet::new();
-        for (i, b) in backend::list().into_iter().enumerate() {
-            let current_versions = current_versions.clone();
-            let config = config.clone();
-            jset.spawn(async move {
-                let mut versions = vec![];
-                for v in b.list_installed_versions() {
-                    if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
-                        versions.push((p.clone(), tv.clone()));
-                    }
-                    let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
-                        .resolve(&config, &Default::default())
-                        .await?;
-                    versions.push((b.clone(), tv));
+        let mut versions = vec![];
+        for b in backend::list().into_iter() {
+            for v in b.list_installed_versions() {
+                if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
+                    versions.push((p.clone(), tv.clone()));
                 }
-                Ok((i, versions))
-            });
+                let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
+                    .resolve(config, &Default::default())
+                    .await?;
+                versions.push((b.clone(), tv));
+            }
         }
-        let versions = jset
-            .join_all()
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .sorted_by_key(|(i, _)| *i)
-            .flat_map(|(_, versions)| versions)
-            .collect();
         Ok(versions)
     }
     pub fn list_current_requests(&self) -> Vec<&ToolRequest> {
@@ -483,39 +456,30 @@ impl Toolset {
         config: &Arc<Config>,
         bump: bool,
     ) -> Vec<OutdatedInfo> {
-        let mut jset = JoinSet::new();
-        for (i, (t, tv)) in self.list_current_versions().into_iter().enumerate() {
-            let config = config.clone();
-            jset.spawn(async move {
-                match t.outdated_info(&config, &tv, bump).await {
-                    Ok(Some(oi)) => return Some((i, oi)),
-                    Ok(None) => {}
-                    Err(e) => {
-                        warn!("Error getting outdated info for {tv}: {e:#}");
-                        return None;
-                    }
+        let mut outdated = vec![];
+        for (t, tv) in self.list_current_versions().into_iter() {
+            match t.outdated_info(config, &tv, bump).await {
+                Ok(Some(oi)) => outdated.push(oi),
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("Error getting outdated info for {tv}: {e:#}");
+                    continue;
                 }
-                if t.symlink_path(&tv).is_some() {
-                    trace!("skipping symlinked version {tv}");
-                    // do not consider symlinked versions to be outdated
-                    return None;
+            }
+            if t.symlink_path(&tv).is_some() {
+                trace!("skipping symlinked version {tv}");
+                // do not consider symlinked versions to be outdated
+                continue;
+            }
+            match OutdatedInfo::resolve(config, tv.clone(), bump).await {
+                Ok(Some(oi)) => outdated.push(oi),
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("Error creating OutdatedInfo for {tv}: {e:#}");
                 }
-                OutdatedInfo::resolve(&config, tv.clone(), bump)
-                    .await
-                    .unwrap_or_else(|e| {
-                        warn!("Error creating OutdatedInfo for {tv}: {e:#}");
-                        None
-                    })
-                    .map(|oi| (i, oi))
-            });
+            }
         }
-        jset.join_all()
-            .await
-            .into_iter()
-            .flatten()
-            .sorted_by_key(|(i, _)| *i)
-            .map(|(_, oi)| oi)
-            .collect()
+        outdated
     }
     /// returns env_with_path but also with the existing env vars from the system
     pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
@@ -534,36 +498,26 @@ impl Toolset {
         Ok(env)
     }
     pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
-        let mut jset = JoinSet::new();
-        for (i, (b, tv)) in self
-            .list_current_installed_versions(&config)
-            .into_iter()
-            .enumerate()
-        {
+        let mut envs = vec![];
+        for (b, tv) in self.list_current_installed_versions(config).into_iter() {
             if matches!(tv.request, ToolRequest::System { .. }) {
                 continue;
             }
             let this = Arc::new(self.clone());
             let config = config.clone();
-            jset.spawn(async move {
-                match b.exec_env(&config, &this, &tv).await {
-                    Ok(env) => env
-                        .into_iter()
-                        .map(|(k, v)| (i, k, v, b.id().to_string()))
-                        .collect(),
-                    Err(e) => {
-                        warn!("Error running exec-env: {:#}", e);
-                        Vec::new()
-                    }
+            envs.push(match b.exec_env(&config, &this, &tv).await {
+                Ok(env) => env
+                    .into_iter()
+                    .map(|(k, v)| (k, v, b.id().to_string()))
+                    .collect(),
+                Err(e) => {
+                    warn!("Error running exec-env: {:#}", e);
+                    Vec::new()
                 }
             });
         }
-        jset.join_all()
-            .await
-            .into_iter()
+        envs.into_iter()
             .flatten()
-            .sorted_by_key(|(i, _, _, _)| *i)
-            .map(|(_, k, v, id)| (k, v, id))
             .filter(|(k, _, _)| k.to_uppercase() != "PATH")
             .collect()
     }
@@ -624,31 +578,16 @@ impl Toolset {
         Ok((env, env_results))
     }
     pub async fn list_paths(&self, config: &Arc<Config>) -> Vec<PathBuf> {
-        let mut jset = JoinSet::new();
-        for (i, (p, tv)) in self
-            .list_current_installed_versions(&config)
-            .into_iter()
-            .enumerate()
-        {
-            jset.spawn(async move {
-                p.list_bin_paths(&tv)
-                    .await
-                    .unwrap_or_else(|e| {
-                        warn!("Error listing bin paths for {tv}: {e:#}");
-                        Vec::new()
-                    })
-                    .into_iter()
-                    .map(|p| (i, p))
-                    .collect::<Vec<_>>()
-            });
+        let mut paths = vec![];
+        for (p, tv) in self.list_current_installed_versions(config).into_iter() {
+            paths.extend(p.list_bin_paths(&tv).await.unwrap_or_else(|e| {
+                warn!("Error listing bin paths for {tv}: {e:#}");
+                Vec::new()
+            }));
         }
 
-        jset.join_all()
-            .await
+        paths
             .into_iter()
-            .flatten()
-            .sorted_by_key(|(i, _)| *i)
-            .map(|(_, path)| path)
             .filter(|p| p.parent().is_some()) // TODO: why?
             .collect()
     }
@@ -770,29 +709,20 @@ impl Toolset {
         if SETTINGS.status.missing_tools() == SettingsStatusMissingTools::Never {
             return;
         }
-        let mut jset = JoinSet::new();
+        let mut missing = vec![];
         let missing_versions = self.list_missing_versions(config).await;
-        for (i, tv) in missing_versions.into_iter().enumerate() {
-            jset.spawn(async move {
-                if SETTINGS.status.missing_tools() == SettingsStatusMissingTools::Always {
-                    return Some((i, tv));
-                }
-                let backend = tv.backend().ok()?;
+        for tv in missing_versions.into_iter() {
+            if SETTINGS.status.missing_tools() == SettingsStatusMissingTools::Always {
+                missing.push(tv);
+                continue;
+            }
+            if let Ok(backend) = tv.backend() {
                 let installed = backend.list_installed_versions();
                 if !installed.is_empty() {
-                    return Some((i, tv));
+                    missing.push(tv);
                 }
-                None
-            });
+            }
         }
-        let missing = jset
-            .join_all()
-            .await
-            .into_iter()
-            .flatten()
-            .sorted_by_key(|(i, _)| *i)
-            .map(|(_, tv)| tv)
-            .collect_vec();
         if missing.is_empty() || *env::__MISE_SHIM {
             return;
         }
