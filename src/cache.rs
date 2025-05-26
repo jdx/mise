@@ -304,11 +304,14 @@ pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
+
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn test_cache() {
+    #[tokio::test]
+    async fn test_cache() {
+        let _config = Config::get().await;
         let cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
         cache.clear().unwrap();
         let val = cache.get_or_try_init(|| Ok(1)).unwrap();

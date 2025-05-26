@@ -47,7 +47,7 @@ impl Latest {
         let latest_version = if self.installed {
             backend.latest_installed_version(prefix)?
         } else {
-            backend.latest_version(prefix).await?
+            backend.latest_version(&config, prefix).await?
         };
         if let Some(version) = latest_version {
             miseprintln!("{}", version);

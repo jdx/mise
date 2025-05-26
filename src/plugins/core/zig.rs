@@ -7,7 +7,7 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
+use crate::config::{Config, SETTINGS};
 use crate::file::TarOptions;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -153,7 +153,7 @@ impl Backend for ZigPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions: Vec<String> = github::list_releases("ziglang/zig")
             .await?
             .into_iter()

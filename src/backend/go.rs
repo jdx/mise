@@ -1,4 +1,3 @@
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -6,6 +5,7 @@ use crate::config::SETTINGS;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
+use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use std::{fmt::Debug, sync::Arc};
 use xx::regex;
@@ -29,14 +29,14 @@ impl Backend for GoBackend {
         Ok(vec!["go"])
     }
 
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         timeout::run_with_timeout_async(
             async || {
                 let mut mod_path = Some(self.tool_name());
 
                 while let Some(cur_mod_path) = mod_path {
                     let res = cmd!("go", "list", "-m", "-versions", "-json", &cur_mod_path)
-                        .full_env(self.dependency_env().await?)
+                        .full_env(self.dependency_env(config).await?)
                         .read();
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);
@@ -78,7 +78,7 @@ impl Backend for GoBackend {
 
             cmd.arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(&ctx.pr)
-                .envs(self.dependency_env().await?)
+                .envs(self.dependency_env(&ctx.config).await?)
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()
         };

@@ -24,7 +24,11 @@ impl ToolVersionList {
             source,
         }
     }
-    pub async fn resolve(&mut self, config: &Config, opts: &ResolveOptions) -> eyre::Result<()> {
+    pub async fn resolve(
+        &mut self,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+    ) -> eyre::Result<()> {
         self.versions.clear();
         for tvr in &mut self.requests {
             match tvr.resolve(config, opts).await {
@@ -47,15 +51,15 @@ impl ToolVersionList {
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::{backend, dirs, env, file};
+    use crate::{dirs, env, file};
 
     use super::*;
 
     #[tokio::test]
     #[cfg(unix)]
     async fn test_tool_version_list() {
-        let ba: Arc<BackendArg> = Arc::new("tiny".into());
         let config = Config::get().await;
+        let ba: Arc<BackendArg> = Arc::new("tiny".into());
         let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
         tvl.requests
             .push(ToolRequest::new(ba, "latest", ToolSource::Argument).unwrap());
@@ -73,7 +77,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_version_list_failure() {
-        backend::reset();
+        Config::load().await.unwrap();
         env::set_var("MISE_FAILURE", "1");
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
         let config = Config::get().await;

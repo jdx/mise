@@ -12,10 +12,10 @@ use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::{borrow::Cow, sync::Arc};
 
 /// [internal] called by activate hook to update env vars directory change
 #[derive(Debug, clap::Args)]
@@ -76,7 +76,12 @@ impl HookEnv {
         Ok(())
     }
 
-    async fn display_status(&self, config: &Config, ts: &Toolset, cur_env: &EnvMap) -> Result<()> {
+    async fn display_status(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        cur_env: &EnvMap,
+    ) -> Result<()> {
         if self.status || SETTINGS.status.show_tools {
             let prev = &PREV_SESSION.loaded_tools;
             let cur = ts
@@ -134,7 +139,7 @@ impl HookEnv {
                 info!("{}", format_status(&status));
             }
         }
-        ts.notify_if_versions_missing().await;
+        ts.notify_if_versions_missing(config).await;
         Ok(())
     }
 

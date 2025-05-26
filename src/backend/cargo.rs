@@ -41,7 +41,7 @@ impl Backend for CargoBackend {
         Ok(vec!["cargo-binstall", "sccache"])
     }
 
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         if self.git_url().is_some() {
             // TODO: maybe fetch tags/branches from git?
             return Ok(vec!["HEAD".into()]);
@@ -61,7 +61,7 @@ impl Backend for CargoBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let config = Config::get().await;
+        let config = ctx.config.clone();
         let install_arg = format!("{}@{}", self.tool_name(), tv.version);
         let registry_name = &SETTINGS.cargo.registry_name;
 
@@ -82,7 +82,7 @@ impl Backend for CargoBackend {
                 ))?;
             }
             cmd
-        } else if self.is_binstall_enabled(&tv).await {
+        } else if self.is_binstall_enabled(&config, &tv).await {
             let mut cmd = CmdLineRunner::new("cargo-binstall").arg("-y");
             if let Some(token) = &*GITHUB_TOKEN {
                 cmd = cmd.env("GITHUB_TOKEN", token)
@@ -122,9 +122,14 @@ impl Backend for CargoBackend {
         cmd.arg("--root")
             .arg(tv.install_path())
             .with_pr(&ctx.pr)
-            .envs(ctx.ts.env_with_path(&config).await?)
-            .prepend_path(ctx.ts.list_paths().await)?
-            .prepend_path(self.dependency_toolset().await?.list_paths().await)?
+            .envs(ctx.ts.env_with_path(&ctx.config).await?)
+            .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+            .prepend_path(
+                self.dependency_toolset(&ctx.config)
+                    .await?
+                    .list_paths(&ctx.config)
+                    .await,
+            )?
             .execute()?;
 
         Ok(tv.clone())
@@ -136,14 +141,14 @@ impl CargoBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    async fn is_binstall_enabled(&self, tv: &ToolVersion) -> bool {
+    async fn is_binstall_enabled(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
         if !SETTINGS.cargo.binstall {
             return false;
         }
         if file::which_non_pristine("cargo-binstall").is_none() {
-            match self.dependency_toolset().await {
+            match self.dependency_toolset(config).await {
                 Ok(ts) => {
-                    if ts.which("cargo-binstall").await.is_none() {
+                    if ts.which(config, "cargo-binstall").await.is_none() {
                         return false;
                     }
                 }

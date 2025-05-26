@@ -40,7 +40,7 @@ impl Reshim {
         let config = Config::get().await;
         let ts = ToolsetBuilder::new().build(&config).await?;
 
-        shims::reshim(&ts, self.force).await
+        shims::reshim(&config, &ts, self.force).await
     }
 }
 

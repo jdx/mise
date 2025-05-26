@@ -312,7 +312,7 @@ impl PythonPlugin {
 
     async fn install_default_packages(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         packages_file: &Path,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
@@ -336,7 +336,7 @@ impl PythonPlugin {
 
     async fn get_virtualenv(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: Option<&Box<dyn SingleReport>>,
     ) -> eyre::Result<Option<PathBuf>> {
@@ -400,7 +400,7 @@ impl PythonPlugin {
 
     async fn test_python(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> eyre::Result<()> {
@@ -419,7 +419,7 @@ impl Backend for PythonPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         if cfg!(windows) || SETTINGS.python.compile == Some(false) {
             Ok(self
                 .fetch_precompiled_remote_versions()
@@ -452,20 +452,19 @@ impl Backend for PythonPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let config = Config::get().await;
         if cfg!(windows) || SETTINGS.python.compile != Some(true) {
             self.install_precompiled(ctx, &tv).await?;
         } else {
             self.install_compiled(ctx, &tv).await?;
         }
-        self.test_python(&config, &tv, &ctx.pr).await?;
-        if let Err(e) = self.get_virtualenv(&config, &tv, Some(&ctx.pr)).await {
+        self.test_python(&ctx.config, &tv, &ctx.pr).await?;
+        if let Err(e) = self.get_virtualenv(&ctx.config, &tv, Some(&ctx.pr)).await {
             warn!("failed to get virtualenv: {e:#}");
         }
         if let Some(default_file) = &SETTINGS.python.default_packages_file {
             let default_file = file::replace_path(default_file);
             if let Err(err) = self
-                .install_default_packages(&config, &default_file, &tv, &ctx.pr)
+                .install_default_packages(&ctx.config, &default_file, &tv, &ctx.pr)
                 .await
             {
                 warn!("failed to install default python packages: {err:#}");
@@ -481,7 +480,7 @@ impl Backend for PythonPlugin {
 
     async fn exec_env(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {

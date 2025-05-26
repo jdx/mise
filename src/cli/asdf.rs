@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use clap::ValueHint::CommandWithArguments;
 use eyre::Result;
 use itertools::Itertools;
@@ -37,7 +39,7 @@ impl Asdf {
     }
 }
 
-async fn list_versions(config: &Config, args: &[String]) -> Result<()> {
+async fn list_versions(config: &Arc<Config>, args: &[String]) -> Result<()> {
     if args[2] == "all" {
         return LsRemote {
             prefix: None,
@@ -48,7 +50,7 @@ async fn list_versions(config: &Config, args: &[String]) -> Result<()> {
         .await;
     }
     let ts = ToolsetBuilder::new().build(config).await?;
-    let mut versions = ts.list_installed_versions().await?;
+    let mut versions = ts.list_installed_versions(config).await?;
     let plugin = match args.len() {
         3 => Some(&args[2]),
         _ => None,

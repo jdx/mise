@@ -182,26 +182,29 @@ impl SingleReport for VerboseReport {
 
 #[cfg(test)]
 mod tests {
-    use test_log::test;
+    use crate::config::Config;
 
     use super::*;
 
-    #[test]
-    fn test_progress_report() {
+    #[tokio::test]
+    async fn test_progress_report() {
+        let _config = Config::get().await;
         let pr = ProgressReport::new("foo".into());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }
 
-    #[test]
-    fn test_progress_report_verbose() {
+    #[tokio::test]
+    async fn test_progress_report_verbose() {
+        let _config = Config::get().await;
         let pr = VerboseReport::new("PREFIX".to_string());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
     }
 
-    #[test]
-    fn test_progress_report_quiet() {
+    #[tokio::test]
+    async fn test_progress_report_quiet() {
+        let _config = Config::get().await;
         let pr = QuietReport::new();
         pr.set_message("message".into());
         pr.finish_with_message("message".into());

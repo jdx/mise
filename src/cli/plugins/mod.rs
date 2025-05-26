@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use clap::Subcommand;
 use eyre::Result;
 
@@ -56,7 +58,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
         match self {
             Self::Install(cmd) => cmd.run(config).await,
             Self::Link(cmd) => cmd.run().await,

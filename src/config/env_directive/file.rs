@@ -4,7 +4,10 @@ use crate::{Result, file, sops};
 use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, YamlFileFormat};
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 // use indexmap so source is after value for `mise env --json` output
 type EnvMap = IndexMap<String, String>;
@@ -20,7 +23,7 @@ struct Env<V> {
 impl EnvResults {
     #[allow(clippy::too_many_arguments)]
     pub async fn file(
-        config: &Config,
+        config: &Arc<Config>,
         ctx: &mut tera::Context,
         tera: &mut tera::Tera,
         r: &mut EnvResults,
@@ -48,7 +51,7 @@ impl EnvResults {
         Ok(out)
     }
 
-    async fn json<PT>(config: &Config, p: &Path, parse_template: PT) -> Result<EnvMap>
+    async fn json<PT>(config: &Arc<Config>, p: &Path, parse_template: PT) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
     {
@@ -79,7 +82,7 @@ impl EnvResults {
         }
     }
 
-    async fn yaml<PT>(config: &Config, p: &Path, parse_template: PT) -> Result<EnvMap>
+    async fn yaml<PT>(config: &Arc<Config>, p: &Path, parse_template: PT) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
     {

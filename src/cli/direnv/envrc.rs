@@ -1,5 +1,5 @@
-use std::fs::File;
 use std::io::Write;
+use std::{fs::File, sync::Arc};
 
 use eyre::Result;
 use xx::file;
@@ -17,7 +17,7 @@ use crate::toolset::ToolsetBuilder;
 pub struct Envrc {}
 
 impl Envrc {
-    pub async fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config).await?;
 
         let envrc_path = env::MISE_TMP_DIR

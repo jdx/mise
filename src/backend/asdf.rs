@@ -137,9 +137,14 @@ impl AsdfBackend {
         };
         Ok(bin_paths)
     }
-    async fn fetch_exec_env(&self, ts: &Toolset, tv: &ToolVersion) -> Result<EnvMap> {
+    async fn fetch_exec_env(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> Result<EnvMap> {
         let mut sm = self.script_man_for_tv(tv).await?;
-        for p in ts.list_paths().await {
+        for p in ts.list_paths(config).await {
             sm.prepend_path(p);
         }
         let script = sm.get_script_path(&ExecEnv);
@@ -238,15 +243,15 @@ impl Backend for AsdfBackend {
         Some(PluginType::Asdf)
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         self.plugin.fetch_remote_versions()
     }
 
-    async fn latest_stable_version(&self) -> Result<Option<String>> {
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
         timeout::run_with_timeout_async(
             || async {
                 if !self.plugin.has_latest_stable_script() {
-                    return self.latest_version(Some("latest".into())).await;
+                    return self.latest_version(config, Some("latest".into())).await;
                 }
                 self.latest_stable_cache
                     .get_or_try_init(|| self.plugin.fetch_latest_stable())
@@ -330,7 +335,7 @@ impl Backend for AsdfBackend {
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let mut sm = self.script_man_for_tv(&tv).await?;
 
-        for p in ctx.ts.list_paths().await {
+        for p in ctx.ts.list_paths(&ctx.config).await {
             sm.prepend_path(p);
         }
 
@@ -372,7 +377,7 @@ impl Backend for AsdfBackend {
 
     async fn exec_env(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<EnvMap> {
@@ -385,7 +390,9 @@ impl Backend for AsdfBackend {
             return Ok(BTreeMap::new());
         }
         self.cache
-            .exec_env(config, self, tv, async || self.fetch_exec_env(ts, tv).await)
+            .exec_env(config, self, tv, async || {
+                self.fetch_exec_env(config, ts, tv).await
+            })
             .await
     }
 }
@@ -405,12 +412,12 @@ impl Debug for AsdfBackend {
 
 #[cfg(test)]
 mod tests {
-    use test_log::test;
 
     use super::*;
 
-    #[test]
-    fn test_debug() {
+    #[tokio::test]
+    async fn test_debug() {
+        let _config = Config::get().await;
         let plugin = AsdfBackend::from_arg("dummy".into());
         assert!(format!("{plugin:?}").starts_with("AsdfPlugin { name: \"dummy\""));
     }

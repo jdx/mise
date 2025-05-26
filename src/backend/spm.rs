@@ -2,7 +2,7 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::Settings;
+use crate::config::{Config, Settings};
 use crate::git::{CloneOptions, Git};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
@@ -39,7 +39,7 @@ impl Backend for SPMBackend {
         Ok(vec!["swift"])
     }
 
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         let repo = SwiftPackageRepo::new(&self.tool_name())?;
         Ok(github::list_releases(repo.shorthand.as_str())
             .await?
@@ -59,7 +59,7 @@ impl Backend for SPMBackend {
 
         let repo = SwiftPackageRepo::new(&self.tool_name())?;
         let revision = if tv.version == "latest" {
-            self.latest_stable_version()
+            self.latest_stable_version(&ctx.config)
                 .await?
                 .ok_or_else(|| eyre::eyre!("No stable versions found"))?
         } else {
@@ -67,7 +67,7 @@ impl Backend for SPMBackend {
         };
         let repo_dir = self.clone_package_repo(ctx, &tv, &repo, &revision)?;
 
-        let executables = self.get_executable_names(&repo_dir, &tv).await?;
+        let executables = self.get_executable_names(ctx, &repo_dir, &tv).await?;
         if executables.is_empty() {
             return Err(eyre::eyre!("No executables found in the package"));
         }
@@ -120,6 +120,7 @@ impl SPMBackend {
 
     async fn get_executable_names(
         &self,
+        ctx: &InstallContext,
         repo_dir: &PathBuf,
         tv: &ToolVersion,
     ) -> Result<Vec<String>, eyre::Error> {
@@ -134,7 +135,7 @@ impl SPMBackend {
             "--cache-path",
             dirs::CACHE.join("spm"),
         )
-        .full_env(self.dependency_env().await?)
+        .full_env(self.dependency_env(&ctx.config).await?)
         .read()?;
         let executables = serde_json::from_str::<PackageDescription>(&package_json)
             .wrap_err("Failed to parse package description")?
@@ -168,7 +169,12 @@ impl SPMBackend {
             .arg("--cache-path")
             .arg(dirs::CACHE.join("spm"))
             .with_pr(&ctx.pr)
-            .prepend_path(self.dependency_toolset().await?.list_paths().await)?
+            .prepend_path(
+                self.dependency_toolset(&ctx.config)
+                    .await?
+                    .list_paths(&ctx.config)
+                    .await,
+            )?
             .execute()?;
 
         let bin_path = cmd!(
@@ -186,7 +192,7 @@ impl SPMBackend {
             dirs::CACHE.join("spm"),
             "--show-bin-path"
         )
-        .full_env(self.dependency_env().await?)
+        .full_env(self.dependency_env(&ctx.config).await?)
         .read()?;
         Ok(PathBuf::from(bin_path.trim().to_string()).join(executable))
     }
@@ -232,12 +238,14 @@ impl SwiftPackageRepo {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
+
     use super::*;
     use pretty_assertions::assert_str_eq;
-    use test_log::test;
 
-    #[test]
-    fn test_spm_repo_init_by_shorthand() {
+    #[tokio::test]
+    async fn test_spm_repo_init_by_shorthand() {
+        let _config = Config::get().await;
         let package_name = "nicklockwood/SwiftFormat";
         let package_repo = SwiftPackageRepo::new(package_name).unwrap();
         assert_str_eq!(
@@ -247,8 +255,9 @@ mod tests {
         assert_str_eq!(package_repo.shorthand, "nicklockwood/SwiftFormat");
     }
 
-    #[test]
-    fn test_spm_repo_init_name() {
+    #[tokio::test]
+    async fn test_spm_repo_init_name() {
+        let _config = Config::get().await;
         assert!(
             SwiftPackageRepo::new("owner/name.swift").is_ok(),
             "name part can contain ."
@@ -267,8 +276,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_spm_repo_init_by_url() {
+    #[tokio::test]
+    async fn test_spm_repo_init_by_url() {
+        let _config = Config::get().await;
         let package_name = "https://github.com/nicklockwood/SwiftFormat.git";
         let package_repo = SwiftPackageRepo::new(package_name).unwrap();
         assert_str_eq!(

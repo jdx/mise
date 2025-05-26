@@ -152,8 +152,11 @@ pub fn tool_enabled<T: Ord>(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_tool_disabled() {
+    use crate::config::Config;
+
+    #[tokio::test]
+    async fn test_tool_disabled() {
+        let _config = Config::get().await;
         use super::*;
         let name = "cargo";
 

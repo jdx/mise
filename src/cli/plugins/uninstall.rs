@@ -28,7 +28,7 @@ impl PluginsUninstall {
         let mpr = MultiProgressReport::get();
 
         let plugins = match self.all {
-            true => install_state::list_plugins()?.keys().cloned().collect(),
+            true => install_state::list_plugins().keys().cloned().collect(),
             false => self.plugin.clone(),
         };
 

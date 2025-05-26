@@ -57,7 +57,7 @@ pub struct PluginsInstall {
 }
 
 impl PluginsInstall {
-    pub async fn run(self, config: &Config) -> Result<()> {
+    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
         let this = Arc::new(self);
         if this.all {
             return this.install_all_missing_plugins(config).await;
@@ -82,7 +82,7 @@ impl PluginsInstall {
         Ok(())
     }
 
-    async fn install_all_missing_plugins(self: Arc<Self>, config: &Config) -> Result<()> {
+    async fn install_all_missing_plugins(self: Arc<Self>, config: &Arc<Config>) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config).await?;
         let missing_plugins = ts.list_missing_plugins();
         if missing_plugins.is_empty() {

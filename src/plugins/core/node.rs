@@ -267,7 +267,7 @@ impl NodePlugin {
 
     async fn install_default_packages(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
@@ -315,7 +315,7 @@ impl NodePlugin {
 
     async fn test_node(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
@@ -329,7 +329,7 @@ impl NodePlugin {
 
     async fn test_npm(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
@@ -359,7 +359,7 @@ impl Backend for NodePlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let base = SETTINGS.node.mirror_url();
         let versions = HTTP_FETCH
             .json::<Vec<NodeVersion>, _>(base.join("index.json")?)
@@ -440,7 +440,6 @@ impl Backend for NodePlugin {
             tv.version != "latest",
             "version should not be 'latest' for node, something is wrong"
         );
-        let config = Config::get().await;
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
@@ -451,12 +450,15 @@ impl Backend for NodePlugin {
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;
         }
-        self.test_node(&config, &tv, &ctx.pr).await?;
+        self.test_node(&ctx.config, &tv, &ctx.pr).await?;
         if !cfg!(windows) {
             self.install_npm_shim(&tv)?;
         }
-        self.test_npm(&config, &tv, &ctx.pr).await?;
-        if let Err(err) = self.install_default_packages(&config, &tv, &ctx.pr).await {
+        self.test_npm(&ctx.config, &tv, &ctx.pr).await?;
+        if let Err(err) = self
+            .install_default_packages(&ctx.config, &tv, &ctx.pr)
+            .await
+        {
             warn!("failed to install default npm packages: {err:#}");
         }
         if *env::MISE_NODE_COREPACK && self.corepack_path(&tv).exists() {
@@ -521,7 +523,7 @@ impl BuildOpts {
 
         Ok(Self {
             version: v.clone(),
-            path: ctx.ts.list_paths().await,
+            path: ctx.ts.list_paths(&ctx.config).await,
             build_dir: env::MISE_TMP_DIR.join(format!("node-v{v}")),
             configure_cmd: configure_cmd(&install_path),
             make_cmd: make_cmd(),

@@ -2,7 +2,10 @@ use crate::toolset;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, config::Config};
 use serde_derive::Serialize;
-use std::fmt::{Display, Formatter};
+use std::{
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 use tabled::Tabled;
 use versions::{Mess, Version, Versioning};
 
@@ -25,7 +28,7 @@ pub struct OutdatedInfo {
 }
 
 impl OutdatedInfo {
-    pub fn new(config: &Config, tv: ToolVersion, latest: String) -> Result<Self> {
+    pub fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
         let t = tv.backend()?;
         let current = if t.is_version_installed(config, &tv, true) {
             Some(tv.version.clone())
@@ -46,7 +49,7 @@ impl OutdatedInfo {
     }
 
     pub async fn resolve(
-        config: &Config,
+        config: &Arc<Config>,
         tv: ToolVersion,
         bump: bool,
     ) -> eyre::Result<Option<Self>> {
@@ -56,7 +59,7 @@ impl OutdatedInfo {
             .find(&tv.request.version())
             .map(|m| m.as_str().to_string());
         let latest_result = if bump {
-            t.latest_version(prefix.clone()).await
+            t.latest_version(config, prefix.clone()).await
         } else {
             tv.latest_version(config).await.map(Option::from)
         };
@@ -71,8 +74,7 @@ impl OutdatedInfo {
                 return Ok(None);
             }
         };
-        let config = Config::try_get().await?;
-        let mut oi = Self::new(&config, tv, latest)?;
+        let mut oi = Self::new(config, tv, latest)?;
         if oi
             .current
             .as_ref()

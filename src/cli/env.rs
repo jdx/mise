@@ -1,5 +1,5 @@
 use eyre::Result;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
@@ -43,7 +43,7 @@ impl Env {
             .await?;
         ts.install_missing_versions(&config, &InstallOptions::default())
             .await?;
-        ts.notify_if_versions_missing().await;
+        ts.notify_if_versions_missing(&config).await;
 
         if self.json {
             self.output_json(&config, ts).await
@@ -56,13 +56,13 @@ impl Env {
         }
     }
 
-    async fn output_json(&self, config: &Config, ts: Toolset) -> Result<()> {
+    async fn output_json(&self, config: &Arc<Config>, ts: Toolset) -> Result<()> {
         let env = ts.env_with_path(config).await?;
         miseprintln!("{}", serde_json::to_string_pretty(&env)?);
         Ok(())
     }
 
-    async fn output_extended_json(&self, config: &Config, ts: Toolset) -> Result<()> {
+    async fn output_extended_json(&self, config: &Arc<Config>, ts: Toolset) -> Result<()> {
         let mut res = BTreeMap::new();
 
         ts.env_with_path(config).await?.iter().for_each(|(k, v)| {
@@ -80,7 +80,7 @@ impl Env {
         });
 
         let tool_map: BTreeMap<String, String> = ts
-            .list_all_versions()
+            .list_all_versions(config)
             .await?
             .into_iter()
             .map(|(b, tv)| {
@@ -95,7 +95,7 @@ impl Env {
             })
             .collect();
 
-        ts.env_from_tools()
+        ts.env_from_tools(config)
             .await
             .iter()
             .for_each(|(name, value, tool_id)| {
@@ -119,7 +119,7 @@ impl Env {
         Ok(())
     }
 
-    async fn output_shell(&self, config: &Config, ts: Toolset) -> Result<()> {
+    async fn output_shell(&self, config: &Arc<Config>, ts: Toolset) -> Result<()> {
         let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
         for (k, v) in ts.env_with_path(config).await? {
@@ -130,7 +130,7 @@ impl Env {
         Ok(())
     }
 
-    async fn output_dotenv(&self, config: &Config, ts: Toolset) -> Result<()> {
+    async fn output_dotenv(&self, config: &Arc<Config>, ts: Toolset) -> Result<()> {
         let (env, _) = ts.final_env(config).await?;
         for (k, v) in env {
             let k = k.to_string();
