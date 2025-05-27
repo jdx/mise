@@ -54,13 +54,7 @@ impl ZigPlugin {
         let zig_download_index = "https://ziglang.org/download/index.json";
         let machengine_download_index = "https://machengine.org/zig/index.json";
 
-        let url = if tv.version == "ref:master" {
-            self.get_tarball_url_from_json(zig_download_index, "master", arch(), os())
-                .await?
-        } else if tv.version == "ref:mach-latest" {
-            self.get_tarball_url_from_json(machengine_download_index, "mach-latest", arch(), os())
-                .await?
-        } else if regex!(r"-mach$").is_match(&tv.version) {
+        let url = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
             self.get_tarball_url_from_json(
                 machengine_download_index,
                 tv.version.as_str(),
