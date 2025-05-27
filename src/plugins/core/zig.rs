@@ -51,41 +51,20 @@ impl ZigPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
-        let archive_ext = if cfg!(target_os = "windows") {
-            "zip"
-        } else {
-            "tar.xz"
-        };
+        let zig_download_index = "https://ziglang.org/download/index.json";
+        let machengine_download_index = "https://machengine.org/zig/index.json";
 
-        let url = if tv.version == "ref:master" {
-            format!(
-                "https://ziglang.org/builds/zig-{}-{}-{}.{archive_ext}",
-                os(),
+        let url = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
+            self.get_tarball_url_from_json(
+                machengine_download_index,
+                tv.version.as_str(),
                 arch(),
-                self.get_version_from_json("master").await?
-            )
-        } else if tv.version == "ref:mach-latest" {
-            format!(
-                "https://pkg.machengine.org/zig/zig-{}-{}-{}.{archive_ext}",
                 os(),
-                arch(),
-                self.get_version_from_json("mach-latest").await?
             )
-        } else if regex!(r"^[0-9]+\.[0-9]+\.[0-9]+-dev.[0-9]+\+[0-9a-f]+$").is_match(&tv.version) {
-            format!(
-                "https://pkg.machengine.org/zig/zig-{}-{}-{}.{archive_ext}",
-                os(),
-                arch(),
-                tv.version
-            )
+            .await?
         } else {
-            format!(
-                "https://ziglang.org/download/{}/zig-{}-{}-{}.{archive_ext}",
-                tv.version,
-                os(),
-                arch(),
-                tv.version
-            )
+            self.get_tarball_url_from_json(zig_download_index, tv.version.as_str(), arch(), os())
+                .await?
         };
 
         let filename = url.split('/').next_back().unwrap();
@@ -128,22 +107,19 @@ impl ZigPlugin {
         self.test_zig(ctx, tv)
     }
 
-    async fn get_version_from_json(&self, key: &str) -> Result<String> {
-        let json_url: &str = if key == "master" {
-            "https://ziglang.org/download/index.json"
-        } else if key == "mach-latest" {
-            "https://machengine.org/zig/index.json"
-        } else {
-            // Left blank for future sources just in case
-            ""
-        };
-
+    async fn get_tarball_url_from_json(
+        &self,
+        json_url: &str,
+        version: &str,
+        arch: &str,
+        os: &str,
+    ) -> Result<String> {
         let version_json: serde_json::Value = HTTP_FETCH.json(json_url).await?;
-        let zig_version = version_json
-            .pointer(&format!("/{key}/version"))
+        let zig_tarball_url = version_json
+            .pointer(&format!("/{version}/{arch}-{os}/tarball"))
             .and_then(|v| v.as_str())
-            .ok_or_else(|| eyre::eyre!("Failed to get zig version from {:?}", json_url))?;
-        Ok(zig_version.to_string())
+            .ok_or_else(|| eyre::eyre!("Failed to get zig tarball url from {:?}", json_url))?;
+        Ok(zig_tarball_url.to_string())
     }
 }
 

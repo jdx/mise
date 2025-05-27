@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 assert "mise x zig@0.13.0 -- zig version" "0.13.0"
-# TODO: enable this later when 0.15 is working
-# assert "mise x zig@ref:master -- zig version"
-assert "mise x zig@0.14.0-dev.2577+271452d22 -- zig version" "0.14.0-dev.2577+271452d22"
-assert "mise x zig@ref:mach-latest -- zig version"
+assert "mise x zig@master -- zig version"
+assert "mise x zig@2024.11.0-mach -- zig version" "0.14.0-dev.2577+271452d22"
+assert "mise x zig@mach-latest -- zig version"
