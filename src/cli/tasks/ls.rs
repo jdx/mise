@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::config::Config;
 use crate::file::display_rel_path;
 use crate::task::Task;
@@ -85,11 +87,12 @@ pub enum SortOrder {
 }
 
 impl TasksLs {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let ts = config.get_toolset()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let ts = config.get_toolset().await?;
         let tasks = config
-            .tasks()?
+            .tasks()
+            .await?
             .values()
             .filter(|t| self.hidden || !t.hide)
             .filter(|t| !self.local || !t.global)
@@ -101,7 +104,7 @@ impl TasksLs {
         if self.complete {
             return self.complete(tasks);
         } else if self.usage {
-            self.display_usage(ts, tasks)?;
+            self.display_usage(&config, ts, tasks).await?;
         } else if self.json {
             self.display_json(tasks)?;
         } else {
@@ -112,7 +115,7 @@ impl TasksLs {
 
     fn complete(&self, tasks: Vec<Task>) -> Result<()> {
         for t in tasks {
-            let name = t.display_name().replace(":", "\\:");
+            let name = t.display_name.replace(":", "\\:");
             let description = t.description.replace(":", "\\:");
             println!("{name}:{description}",);
         }
@@ -134,18 +137,23 @@ impl TasksLs {
         table.print()
     }
 
-    fn display_usage(&self, ts: &Toolset, tasks: Vec<Task>) -> Result<()> {
+    async fn display_usage(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+        tasks: Vec<Task>,
+    ) -> Result<()> {
         let mut usage = usage::Spec::default();
         for task in tasks {
-            let env = task.render_env(ts)?;
-            let (mut task_spec, _) = task.parse_usage_spec(None, &env)?;
+            let env = task.render_env(config, ts).await?;
+            let (mut task_spec, _) = task.parse_usage_spec(config, None, &env).await?;
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }
             usage
                 .cmd
                 .subcommands
-                .insert(task.display_name(), task_spec.cmd);
+                .insert(task.display_name.clone(), task_spec.cmd);
         }
         miseprintln!("{}", usage.to_string());
         Ok(())
@@ -156,7 +164,7 @@ impl TasksLs {
             .into_iter()
             .map(|task| {
                 json!({
-                  "name": task.display_name(),
+                  "name": task.display_name,
                   "aliases": task.aliases,
                   "description": task.description,
                   "source": task.config_source,
@@ -197,7 +205,7 @@ impl TasksLs {
     }
 
     fn task_to_row(&self, task: &Task) -> Row {
-        let mut row = vec![Cell::new(task.display_name()).add_attribute(Attribute::Bold)];
+        let mut row = vec![Cell::new(&task.display_name).add_attribute(Attribute::Bold)];
         if self.extended {
             row.push(Cell::new(task.aliases.join(", ")));
             row.push(Cell::new(display_rel_path(&task.config_source)));

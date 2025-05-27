@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs::{self};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -16,6 +17,7 @@ use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
+use async_trait::async_trait;
 use color_eyre::eyre::{Result, eyre};
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -27,14 +29,14 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct JavaPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
     java_metadata_ea_cache: CacheManager<HashMap<String, JavaMetadata>>,
     java_metadata_ga_cache: CacheManager<HashMap<String, JavaMetadata>>,
 }
 
 impl JavaPlugin {
     pub fn new() -> Self {
-        let ba = plugins::core::new_backend_arg("java");
+        let ba = Arc::new(plugins::core::new_backend_arg("java"));
         let java_metadata_ga_cache_filename =
             format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch());
         let java_metadata_ea_cache_filename =
@@ -54,26 +56,31 @@ impl JavaPlugin {
         }
     }
 
-    fn fetch_java_metadata(&self, release_type: &str) -> Result<&HashMap<String, JavaMetadata>> {
+    async fn fetch_java_metadata(
+        &self,
+        release_type: &str,
+    ) -> Result<&HashMap<String, JavaMetadata>> {
         let cache = if release_type == "ea" {
             &self.java_metadata_ea_cache
         } else {
             &self.java_metadata_ga_cache
         };
         let release_type = release_type.to_string();
-        cache.get_or_try_init(|| {
-            let mut metadata = HashMap::new();
+        cache
+            .get_or_try_init_async(async || {
+                let mut metadata = HashMap::new();
 
-            for m in self.download_java_metadata(&release_type)?.into_iter() {
-                // add openjdk short versions like "java@17.0.0" which default to openjdk
-                if m.vendor == "openjdk" {
-                    metadata.insert(m.version.to_string(), m.clone());
+                for m in self.download_java_metadata(&release_type).await? {
+                    // add openjdk short versions like "java@17.0.0" which default to openjdk
+                    if m.vendor == "openjdk" {
+                        metadata.insert(m.version.to_string(), m.clone());
+                    }
+                    metadata.insert(m.to_string(), m);
                 }
-                metadata.insert(m.to_string(), m);
-            }
 
-            Ok(metadata)
-        })
+                Ok(metadata)
+            })
+            .await
     }
 
     fn java_bin(&self, tv: &ToolVersion) -> PathBuf {
@@ -88,7 +95,7 @@ impl JavaPlugin {
             .execute()
     }
 
-    fn download(
+    async fn download(
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
@@ -99,7 +106,7 @@ impl JavaPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&m.url, &tarball_path, Some(pr))?;
+        HTTP.download_file(&m.url, &tarball_path, Some(pr)).await?;
 
         if !tv.checksums.contains_key(filename) && m.checksum.is_some() {
             tv.checksums
@@ -245,17 +252,18 @@ impl JavaPlugin {
         }
     }
 
-    fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
+    async fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
         let v: String = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
         let m = self
-            .fetch_java_metadata(&release_type)?
+            .fetch_java_metadata(&release_type)
+            .await?
             .get(&v)
             .ok_or_else(|| eyre!("no metadata found for version {}", tv.version))?;
         Ok(m)
     }
 
-    fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
+    async fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
         let url = format!(
             "https://mise-java.jdx.dev/jvm/{}/{}/{}.json",
             release_type,
@@ -264,7 +272,8 @@ impl JavaPlugin {
         );
 
         let metadata = HTTP_FETCH
-            .json::<Vec<JavaMetadata>, _>(url)?
+            .json::<Vec<JavaMetadata>, _>(url)
+            .await?
             .into_iter()
             .filter(|m| {
                 m.file_type
@@ -276,12 +285,13 @@ impl JavaPlugin {
     }
 }
 
+#[async_trait]
 impl Backend for JavaPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         // TODO: find out how to get this to work for different os/arch
         // See https://github.com/jdx/mise/issues/1196
         // match self.core.fetch_remote_versions_from_mise() {
@@ -290,7 +300,8 @@ impl Backend for JavaPlugin {
         //     Err(e) => warn!("failed to fetch remote versions: {}", e),
         // }
         let versions = self
-            .fetch_java_metadata("ga")?
+            .fetch_java_metadata("ga")
+            .await?
             .iter()
             .sorted_by_cached_key(|(v, m)| {
                 let is_shorthand = regex!(r"^\d").is_match(v);
@@ -317,14 +328,18 @@ impl Backend for JavaPlugin {
         Ok(versions)
     }
 
-    fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_installed_versions()?;
+    fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
+        let versions = self.list_installed_versions();
         self.fuzzy_match_filter(versions, query)
     }
 
-    fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions()?;
-        self.fuzzy_match_filter(versions, query)
+    async fn list_versions_matching(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = self.list_remote_versions(config).await?;
+        Ok(self.fuzzy_match_filter(versions, query))
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
@@ -373,22 +388,22 @@ impl Backend for JavaPlugin {
         }
     }
 
-    fn install_version_(
+    async fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let metadata = self.tv_to_metadata(&tv)?;
-        let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata)?;
+        let metadata = self.tv_to_metadata(&tv).await?;
+        let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
         self.install(&tv, &ctx.pr, &tarball_path, metadata)?;
         self.verify(&tv, &ctx.pr)?;
 
         Ok(tv)
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
@@ -399,7 +414,7 @@ impl Backend for JavaPlugin {
         Ok(map)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
         let query_trim = regex::escape(query.trim_end_matches('-'));
         let query_version = format!("{}[0-9.]+", regex::escape(query));
         let query_trim_version = format!("{query_trim}-[0-9.]+");
@@ -412,8 +427,9 @@ impl Backend for JavaPlugin {
             // else; use trimmed query
             _ => &query_trim,
         };
-        let query_regex = Regex::new(&format!("^{query}([+-.].+)?$"))?;
-        let versions = versions
+        let query_regex = Regex::new(&format!("^{query}([+-.].+)?$")).unwrap();
+
+        versions
             .into_iter()
             .filter(|v| {
                 if query == v {
@@ -424,8 +440,7 @@ impl Backend for JavaPlugin {
                 }
                 query_regex.is_match(v)
             })
-            .collect();
-        Ok(versions)
+            .collect()
     }
 }
 

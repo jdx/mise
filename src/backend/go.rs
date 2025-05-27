@@ -1,4 +1,3 @@
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -6,20 +5,23 @@ use crate::config::SETTINGS;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
-use std::fmt::Debug;
+use crate::{backend::Backend, config::Config};
+use async_trait::async_trait;
+use std::{fmt::Debug, sync::Arc};
 use xx::regex;
 
 #[derive(Debug)]
 pub struct GoBackend {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
+#[async_trait]
 impl Backend for GoBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Go
     }
 
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
@@ -27,14 +29,14 @@ impl Backend for GoBackend {
         Ok(vec!["go"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        timeout::run_with_timeout(
-            || {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        timeout::run_with_timeout_async(
+            async || {
                 let mut mod_path = Some(self.tool_name());
 
                 while let Some(cur_mod_path) = mod_path {
                     let res = cmd!("go", "list", "-m", "-versions", "-json", &cur_mod_path)
-                        .full_env(self.dependency_env()?)
+                        .full_env(self.dependency_env(config).await?)
                         .read();
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);
@@ -56,13 +58,18 @@ impl Backend for GoBackend {
             },
             SETTINGS.fetch_remote_versions_timeout(),
         )
+        .await
     }
 
-    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> eyre::Result<ToolVersion> {
         SETTINGS.ensure_experimental("go backend")?;
         let opts = self.ba.opts();
 
-        let install = |v| {
+        let install = async |v| {
             let mut cmd = CmdLineRunner::new("go").arg("install");
 
             if let Some(tags) = opts.get("tags") {
@@ -71,7 +78,7 @@ impl Backend for GoBackend {
 
             cmd.arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(&ctx.pr)
-                .envs(self.dependency_env()?)
+                .envs(self.dependency_env(&ctx.config).await?)
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()
         };
@@ -80,14 +87,14 @@ impl Backend for GoBackend {
         let use_v = regex!(r"^\d+\.\d+\.\d+").is_match(&tv.version);
 
         if use_v {
-            if install(format!("v{}", tv.version)).is_err() {
+            if install(format!("v{}", tv.version)).await.is_err() {
                 warn!("Failed to install, trying again without added 'v' prefix");
             } else {
                 return Ok(tv);
             }
         }
 
-        install(tv.version.clone())?;
+        install(tv.version.clone()).await?;
 
         Ok(tv)
     }
@@ -95,7 +102,7 @@ impl Backend for GoBackend {
 
 impl GoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba }
+        Self { ba: Arc::new(ba) }
     }
 }
 

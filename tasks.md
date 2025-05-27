@@ -90,6 +90,10 @@ User to run as
 
 - **Usage**: `filetask.bat`
 
+## `flamegraph`
+
+- **Usage**: `flamegraph`
+
 ## `install-dev`
 
 - **Usage**: `install-dev`
@@ -113,29 +117,17 @@ User to run as
 
 - **Usage**: `lint:cargo-fmt`
 
-## `lint:clippy`
+## `lint:hk`
 
-- **Usage**: `lint:clippy`
+- **Usage**: `lint:hk`
 
 ## `lint:markdownlint`
 
 - **Usage**: `lint:markdownlint`
 
-## `lint:prettier`
-
-- **Usage**: `lint:prettier`
-
 ## `lint:ripgrep`
 
 - **Usage**: `lint:ripgrep`
-
-## `lint:shellcheck`
-
-- **Usage**: `lint:shellcheck`
-
-## `lint:shfmt`
-
-- **Usage**: `lint:shfmt`
 
 ## `lint:toml`
 
@@ -217,6 +209,12 @@ update test snapshots
 
 run all tests
 
+## `test:build-perf-workspace`
+
+- **Usage**: `test:build-perf-workspace`
+
+task description
+
 ## `test:coverage`
 
 - **Usage**: `test:coverage`
@@ -231,6 +229,12 @@ run all tests with coverage report
 - **Aliases**: `e`
 
 run end-to-end tests
+
+## `test:perf`
+
+- Depends: test:build-perf-workspace
+
+- **Usage**: `test:perf`
 
 ## `test:shuffle`
 

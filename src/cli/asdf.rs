@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use clap::ValueHint::CommandWithArguments;
 use eyre::Result;
 use itertools::Itertools;
@@ -17,37 +19,38 @@ pub struct Asdf {
 }
 
 impl Asdf {
-    pub fn run(mut self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(mut self) -> Result<()> {
+        let config = Config::get().await;
         let mut args = vec![String::from("mise")];
         args.append(&mut self.args);
 
         match args.get(1).map(|s| s.as_str()) {
-            Some("reshim") => Cli::run(&args),
-            Some("list") => list_versions(&config, &args),
+            Some("reshim") => Box::pin(Cli::run(&args)).await,
+            Some("list") => list_versions(&config, &args).await,
             Some("install") => {
                 if args.len() == 4 {
                     let version = args.pop().unwrap();
                     args[2] = format!("{}@{}", args[2], version);
                 }
-                Cli::run(&args)
+                Box::pin(Cli::run(&args)).await
             }
-            _ => Cli::run(&args),
+            _ => Box::pin(Cli::run(&args)).await,
         }
     }
 }
 
-fn list_versions(config: &Config, args: &[String]) -> Result<()> {
+async fn list_versions(config: &Arc<Config>, args: &[String]) -> Result<()> {
     if args[2] == "all" {
         return LsRemote {
             prefix: None,
             all: false,
             plugin: args.get(3).map(|s| s.parse()).transpose()?,
         }
-        .run();
+        .run()
+        .await;
     }
-    let ts = ToolsetBuilder::new().build(config)?;
-    let mut versions = ts.list_installed_versions()?;
+    let ts = ToolsetBuilder::new().build(config).await?;
+    let mut versions = ts.list_installed_versions(config).await?;
     let plugin = match args.len() {
         3 => Some(&args[2]),
         _ => None,

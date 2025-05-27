@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+#MISE wait_for=["build"]
+HK_FAIL_FAST=0 exec hk check --all

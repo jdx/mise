@@ -1,12 +1,34 @@
 amends "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Config.pkl"
 import "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Builtins.pkl"
 
+local bash_glob = List("*.sh", "xtasks/**", "scripts/**", "e2e/**")
+local bash_exclude = List("*.ps1", "*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**")
 local linters = new Mapping<String, Step> {
     // uses builtin prettier linter config
-    ["prettier"] = Builtins.prettier
+    ["prettier"] = (Builtins.prettier) {
+      batch = false
+    }
     ["clippy"] = (Builtins.cargo_clippy) {
-        check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --allow-dirty --allow-staged"
-        fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged"
+      check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
+      fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
+    }
+    ["shellcheck"] = (Builtins.shellcheck) {
+      glob = bash_glob
+      exclude = bash_exclude
+      batch = true
+      check = "shellcheck -x {{ files }}"
+    }
+    ["shfmt"] = (Builtins.shfmt) {
+      check_list_files = """
+files=$(shfmt -l -s {{ files }})
+if [ -n "$files" ]; then
+  echo "$files"
+  exit 1
+fi
+"""
+      fix = "shfmt -w -s {{ files }}"
+      glob = bash_glob
+      exclude = bash_exclude
     }
 
     // uses custom pkl linter config

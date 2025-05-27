@@ -55,6 +55,12 @@ env = "MISE_ALWAYS_KEEP_INSTALL"
 type = "Bool"
 description = "should mise keep install files after installation even if the installation fails"
 
+[aqua.baked_registry]
+env = "MISE_AQUA_BAKED_REGISTRY"
+type = "Bool"
+default = true
+description = "Use baked-in aqua registry (if compiled in)."
+
 [aqua.cosign]
 env = "MISE_AQUA_COSIGN"
 type = "Bool"
@@ -456,6 +462,12 @@ description = "Sets GOROOT=~/.local/share/mise/installs/go/.../."
 env = "MISE_GO_SKIP_CHECKSUM"
 type = "Bool"
 description = "Set to true to skip checksum verification when downloading go sdk tarballs."
+
+[gpg_verify]
+env = "MISE_GPG_VERIFY"
+type = "Bool"
+optional = true
+description = "Use gpg to verify all tool signatures."
 
 [http_timeout]
 env = "MISE_HTTP_TIMEOUT"

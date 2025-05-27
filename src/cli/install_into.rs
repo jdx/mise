@@ -5,7 +5,7 @@ use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use clap::ValueHint;
 use eyre::{Result, eyre};
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 /// Install a tool version to a specific path
 ///
@@ -24,14 +24,17 @@ pub struct InstallInto {
 }
 
 impl InstallInto {
-    pub fn run(self) -> Result<()> {
-        let config = Config::get();
-        let ts = ToolsetBuilder::new()
-            .with_args(&[self.tool.clone()])
-            .build(&config)?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let ts = Arc::new(
+            ToolsetBuilder::new()
+                .with_args(&[self.tool.clone()])
+                .build(&config)
+                .await?,
+        );
         let mut tv = ts
             .versions
-            .get(&self.tool.ba)
+            .get(self.tool.ba.as_ref())
             .ok_or_else(|| eyre!("Tool not found"))?
             .versions
             .first()
@@ -40,12 +43,13 @@ impl InstallInto {
         let backend = tv.backend()?;
         let mpr = MultiProgressReport::get();
         let install_ctx = InstallContext {
-            ts: &ts,
+            config: config.clone(),
+            ts: ts.clone(),
             pr: mpr.add(&tv.style()),
             force: true,
         };
         tv.install_path = Some(self.path.clone());
-        backend.install_version(install_ctx, tv)?;
+        backend.install_version(install_ctx, tv).await?;
         Ok(())
     }
 }

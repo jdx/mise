@@ -7,21 +7,24 @@ use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
+use crate::{Result, config::Config};
+use async_trait::async_trait;
 use indoc::formatdoc;
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 use url::Url;
 
 #[derive(Debug)]
 pub struct GemBackend {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
+#[async_trait]
 impl Backend for GemBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Gem
     }
 
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
@@ -29,10 +32,10 @@ impl Backend for GemBackend {
         Ok(vec!["ruby"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         // The `gem list` command does not supporting listing versions as json output
         // so we use the rubygems.org api to get the list of versions.
-        let raw = HTTP_FETCH.get_text(get_gem_url(&self.tool_name())?)?;
+        let raw = HTTP_FETCH.get_text(get_gem_url(&self.tool_name())?).await?;
         let gem_versions: Vec<GemVersion> = serde_json::from_str(&raw)?;
         let mut versions: Vec<String> = vec![];
         for version in gem_versions.iter().rev() {
@@ -41,7 +44,7 @@ impl Backend for GemBackend {
         Ok(versions)
     }
 
-    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         SETTINGS.ensure_experimental("gem backend")?;
 
         CmdLineRunner::new("gem")
@@ -58,7 +61,7 @@ impl Backend for GemBackend {
             //       gem. We should find a way to fix this.
             // .arg("--env-shebang")
             .with_pr(&ctx.pr)
-            .envs(self.dependency_env()?)
+            .envs(self.dependency_env(&ctx.config).await?)
             .execute()?;
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable
@@ -71,7 +74,7 @@ impl Backend for GemBackend {
 
 impl GemBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba }
+        Self { ba: Arc::new(ba) }
     }
 }
 

@@ -25,19 +25,19 @@ pub struct ConfigLs {
 }
 
 impl ConfigLs {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.tracked_configs {
-            self.display_tracked_configs()?;
+            self.display_tracked_configs().await?;
         } else if self.json {
-            self.display_json()?;
+            self.display_json().await?;
         } else {
-            self.display()?;
+            self.display().await?;
         }
         Ok(())
     }
 
-    fn display(&self) -> Result<()> {
-        let config = Config::get();
+    async fn display(&self) -> Result<()> {
+        let config = Config::get().await;
         let configs = config
             .config_files
             .values()
@@ -60,8 +60,9 @@ impl ConfigLs {
         table.truncate(true).print()
     }
 
-    fn display_json(&self) -> Result<()> {
+    async fn display_json(&self) -> Result<()> {
         let array_items = Config::get()
+            .await
             .config_files
             .values()
             .map(|cf| {
@@ -87,7 +88,7 @@ impl ConfigLs {
         Ok(())
     }
 
-    fn display_tracked_configs(&self) -> Result<()> {
+    async fn display_tracked_configs(&self) -> Result<()> {
         let tracked_configs = Tracker::list_all()?.into_iter().unique().sorted();
         for path in tracked_configs {
             println!("{}", path.display());

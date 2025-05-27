@@ -10,7 +10,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         self.generate.run()
     }
 }

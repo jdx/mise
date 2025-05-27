@@ -1,13 +1,16 @@
-use crate::cli::args::{ENV_ARG, PROFILE_ARG, ToolArg};
+use crate::Result;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
+use crate::{
+    cli::args::{ENV_ARG, PROFILE_ARG, ToolArg},
+    file::display_path,
+};
+use eyre::Context;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
 pub use std::env::*;
-use std::path::PathBuf;
-use std::string::ToString;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
 use std::{
@@ -16,6 +19,8 @@ use std::{
     sync::Mutex,
 };
 use std::{path, process};
+use std::{path::Path, string::ToString};
+use std::{path::PathBuf, sync::atomic::AtomicBool};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
@@ -180,7 +185,9 @@ pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT")
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
-pub static PREFER_STALE: Lazy<bool> = Lazy::new(|| prefer_stale(&ARGS.read().unwrap()));
+pub static PREFER_OFFLINE: Lazy<AtomicBool> =
+    Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
+pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
@@ -443,18 +450,44 @@ fn apply_patches(env: &EnvMap, patches: &EnvDiffPatches) -> EnvMap {
     new_env
 }
 
+fn offline(args: &[String]) -> bool {
+    if var_is_true("MISE_OFFLINE") {
+        return true;
+    }
+
+    args.iter()
+        .take_while(|a| *a != "--")
+        .any(|a| a == "--offline")
+}
+
 /// returns true if new runtime versions should not be fetched
-fn prefer_stale(args: &[String]) -> bool {
-    let binding = String::new();
-    let c = args
-        .iter()
-        .filter(|a| !a.starts_with('-'))
+fn prefer_offline(args: &[String]) -> bool {
+    // First check if MISE_PREFER_OFFLINE is set
+    if var_is_true("MISE_PREFER_OFFLINE") {
+        return true;
+    }
+
+    // Otherwise fall back to the original command-based logic
+    args.iter()
+        .take_while(|a| *a != "--")
+        .filter(|a| !a.starts_with('-') || *a == "--prefer-offline")
         .nth(1)
-        .unwrap_or(&binding);
-    [
-        "env", "hook-env", "x", "exec", "direnv", "activate", "current", "ls", "where",
-    ]
-    .contains(&c.as_str())
+        .map(|a| {
+            [
+                "--prefer-offline",
+                "activate",
+                "current",
+                "direnv",
+                "env",
+                "exec",
+                "hook-env",
+                "ls",
+                "where",
+                "x",
+            ]
+            .contains(&a.as_str())
+        })
+        .unwrap_or_default()
 }
 
 fn environment(args: &[String]) -> Vec<String> {
@@ -525,15 +558,29 @@ pub fn remove_var<K: AsRef<OsStr>>(key: K) {
     }
 }
 
+pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("cd {}", display_path(path));
+    unsafe {
+        std::env::set_current_dir(path).wrap_err_with(|| {
+            format!("failed to set current directory to {}", display_path(path))
+        })?;
+        path_absolutize::update_cwd();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
-    use test_log::test;
+
+    use crate::config::Config;
 
     use super::*;
 
-    #[test]
-    fn test_apply_patches() {
+    #[tokio::test]
+    async fn test_apply_patches() {
+        let _config = Config::get().await;
         let mut env = EnvMap::new();
         env.insert("foo".into(), "bar".into());
         env.insert("baz".into(), "qux".into());
@@ -548,8 +595,9 @@ mod tests {
         assert_eq!(new_env.get("baz").unwrap(), "qux");
     }
 
-    #[test]
-    fn test_var_path() {
+    #[tokio::test]
+    async fn test_var_path() {
+        let _config = Config::get().await;
         set_var("MISE_TEST_PATH", "/foo/bar");
         assert_eq!(
             var_path("MISE_TEST_PATH").unwrap(),

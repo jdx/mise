@@ -1,6 +1,11 @@
 #![allow(unknown_lints)]
 #![allow(clippy::literal_string_with_formatting_args)]
 
+use std::{
+    panic,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
 use crate::cli::Cli;
 use crate::cli::version::VERSION;
 use color_eyre::{Section, SectionExt};
@@ -55,6 +60,7 @@ pub(crate) mod logger;
 pub(crate) mod maplit;
 mod migrate;
 mod minisign;
+mod path;
 mod path_env;
 mod plugins;
 mod rand;
@@ -70,7 +76,6 @@ mod sysconfig;
 pub(crate) mod task;
 pub(crate) mod tera;
 pub(crate) mod timeout;
-mod tokio;
 mod toml;
 mod toolset;
 mod ui;
@@ -81,22 +86,33 @@ mod wildcard;
 
 pub(crate) use crate::exit::exit;
 pub(crate) use crate::result::Result;
-pub(crate) use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> eyre::Result<()> {
-    color_eyre::install()?;
-    measure!("main", {
-        let args = env::args().collect_vec();
-        match Cli::run(&args).with_section(|| VERSION.to_string().header("Version:")) {
-            Ok(()) => Ok(()),
-            Err(err) => handle_err(err),
-        }?;
-    });
-    if let Some(mpr) = MultiProgressReport::try_get() {
-        mpr.stop()?;
-    }
-    Ok(())
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(async {
+        color_eyre::install()?;
+        install_panic_hook();
+        unsafe {
+            path_absolutize::update_cwd();
+        }
+        measure!("main", {
+            let args = env::args().collect_vec();
+            match Cli::run(&args)
+                .await
+                .with_section(|| VERSION.to_string().header("Version:"))
+            {
+                Ok(()) => Ok(()),
+                Err(err) => handle_err(err),
+            }?;
+        });
+        if let Some(mpr) = MultiProgressReport::try_get() {
+            mpr.stop()?;
+        }
+        Ok(())
+    })
 }
 
 fn handle_err(err: Report) -> eyre::Result<()> {
@@ -112,7 +128,8 @@ fn handle_err(err: Report) -> eyre::Result<()> {
         display_friendly_err(&err);
         exit(1);
     }
-    Err(err)
+    let async_backtrace = async_backtrace::taskdump_tree(true);
+    Err(err.section(async_backtrace.header("Async Tasks")))
 }
 
 fn show_github_rate_limit_err(err: &Report) {
@@ -138,4 +155,36 @@ fn display_friendly_err(err: &Report) {
     }
     let msg = ui::style::edim("Run with --verbose or MISE_VERBOSE=1 for more information");
     error!("{msg}");
+}
+
+static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
+
+pub fn install_panic_hook() {
+    let default_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        if tokio::runtime::Handle::try_current().is_ok()
+            && !ASYNC_PANIC_OCCURRED.swap(true, Ordering::SeqCst)
+        {
+            let bt = async_backtrace::backtrace();
+            let mut bt_buffer = String::new();
+            if let Some(bt) = bt {
+                let locations = &*bt;
+                for (index, loc) in locations.iter().enumerate() {
+                    bt_buffer.push_str(&format!("{index:3}: {loc:?}\n"));
+                }
+            } else {
+                bt_buffer.push_str("[no accessible async backtrace]");
+            }
+            let all = async_backtrace::taskdump_tree(true);
+            eprintln!(
+                "=== Async Backtrace (panic occurred in tokio runtime) ===\n\
+                {bt_buffer}\n\
+                ------- TASK DUMP TREE -------\n\
+                {all}\n\
+                === End Async Backtrace ===\n"
+            );
+        }
+
+        default_hook(panic_info);
+    }));
 }

@@ -104,8 +104,8 @@ pub struct CmdLineRunner<'a> {
     redactions: IndexSet<String>,
     raw: bool,
     pass_signals: bool,
-    on_stdout: Option<Box<dyn Fn(String) + 'a>>,
-    on_stderr: Option<Box<dyn Fn(String) + 'a>>,
+    on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
+    on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
 }
 
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
@@ -182,12 +182,12 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn with_on_stdout<F: Fn(String) + 'a>(mut self, on_stdout: F) -> Self {
+    pub fn with_on_stdout<F: Fn(String) + Send + 'a>(mut self, on_stdout: F) -> Self {
         self.on_stdout = Some(Box::new(on_stdout));
         self
     }
 
-    pub fn with_on_stderr<F: Fn(String) + 'a>(mut self, on_stderr: F) -> Self {
+    pub fn with_on_stderr<F: Fn(String) + Send + 'a>(mut self, on_stderr: F) -> Self {
         self.on_stderr = Some(Box::new(on_stderr));
         self
     }
@@ -518,10 +518,11 @@ enum ChildProcessOutput {
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::cmd;
+    use crate::{cmd, config::Config};
 
-    #[test]
-    fn test_cmd() {
+    #[tokio::test]
+    async fn test_cmd() {
+        let _config = Config::get().await;
         let output = cmd!("echo", "foo", "bar").read().unwrap();
         assert_eq!("foo bar", output);
     }

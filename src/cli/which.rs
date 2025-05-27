@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::dirs::SHIMS;
@@ -34,21 +36,22 @@ pub struct Which {
 }
 
 impl Which {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         if self.complete {
-            return self.complete();
+            return self.complete(&config).await;
         }
-        let ts = self.get_toolset()?;
+        let ts = self.get_toolset(&config).await?;
 
         let bin_name = self.bin_name.clone().unwrap();
-        match ts.which(&bin_name) {
+        match ts.which(&config, &bin_name).await {
             Some((p, tv)) => {
                 if self.version {
                     miseprintln!("{}", tv.version);
                 } else if self.plugin {
                     miseprintln!("{p}");
                 } else {
-                    let path = p.which(&tv, &bin_name)?;
+                    let path = p.which(&tv, &bin_name).await?;
                     miseprintln!("{}", path.unwrap().display());
                 }
                 Ok(())
@@ -64,10 +67,11 @@ impl Which {
             }
         }
     }
-    fn complete(&self) -> Result<()> {
-        let ts = self.get_toolset()?;
+    async fn complete(&self, config: &Arc<Config>) -> Result<()> {
+        let ts = self.get_toolset(config).await?;
         let bins = ts
-            .list_paths()
+            .list_paths(config)
+            .await
             .into_iter()
             .flat_map(|p| file::ls(&p).unwrap_or_default())
             .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
@@ -79,13 +83,12 @@ impl Which {
         }
         Ok(())
     }
-    fn get_toolset(&self) -> Result<Toolset> {
-        let config = Config::try_get()?;
+    async fn get_toolset(&self, config: &Arc<Config>) -> Result<Toolset> {
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {
             tsb = tsb.with_args(&[tool.clone()]);
         }
-        let ts = tsb.build(&config)?;
+        let ts = tsb.build(config).await?;
         Ok(ts)
     }
     fn has_shim(&self, shim: &str) -> bool {

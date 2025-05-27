@@ -1,4 +1,3 @@
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -10,27 +9,30 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::Backend, timeout};
+use async_trait::async_trait;
 use eyre::{Result, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use regex::Regex;
-use std::fmt::Debug;
 use std::str::FromStr;
+use std::{fmt::Debug, sync::Arc};
 use versions::Versioning;
 use xx::regex;
 
 #[derive(Debug)]
 pub struct PIPXBackend {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
     latest_version_cache: CacheManager<Option<String>>,
 }
 
+#[async_trait]
 impl Backend for PIPXBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Pipx
     }
 
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
@@ -46,14 +48,14 @@ impl Backend for PIPXBackend {
      * Pipx doesn't have a remote version concept across its backends, so
      * we return a single version.
      */
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
                 let registry_url = self.get_registry_url()?;
                 if registry_url.contains("/json") {
                     debug!("Fetching JSON for {}", package);
                     let url = format!("https://pypi.org/pypi/{package}/json");
-                    let data: PypiPackage = HTTP_FETCH.json(url)?;
+                    let data: PypiPackage = HTTP_FETCH.json(url).await?;
                     let versions = data
                         .releases
                         .keys()
@@ -65,7 +67,7 @@ impl Backend for PIPXBackend {
                 } else {
                     debug!("Fetching HTML for {}", package);
                     let url = format!("https://pypi.org/simple/{package}/");
-                    let html = HTTP_FETCH.get_html(url)?;
+                    let html = HTTP_FETCH.get_html(url).await?;
 
                     let version_re = regex!(r#"href=["'].*?/([^/]+)\.tar\.gz["']"#);
                     let versions: Vec<String> = version_re
@@ -86,77 +88,86 @@ impl Backend for PIPXBackend {
             }
             PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
                 let repo = url.strip_prefix("https://github.com/").unwrap();
-                let data = github::list_releases(repo)?;
+                let data = github::list_releases(repo).await?;
                 Ok(data.into_iter().rev().map(|r| r.tag_name).collect())
             }
             PipxRequest::Git { .. } => Ok(vec!["latest".to_string()]),
         }
     }
 
-    fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
-        self.latest_version_cache
-            .get_or_try_init(|| match self.tool_name().parse()? {
-                PipxRequest::Pypi(package) => {
-                    let registry_url = self.get_registry_url()?;
-                    if registry_url.contains("/json") {
-                        debug!("Fetching JSON for {}", package);
-                        let url = format!("https://pypi.org/pypi/{package}/json");
-                        let pkg: PypiPackage = HTTP_FETCH.json(url)?;
-                        Ok(Some(pkg.info.version))
-                    } else {
-                        debug!("Fetching HTML for {}", package);
-                        let url = format!("https://pypi.org/simple/{package}/");
-                        let html = HTTP_FETCH.get_html(url)?;
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        let this = self;
+        timeout::run_with_timeout_async(
+            async || {
+                this.latest_version_cache
+                    .get_or_try_init_async(async || match this.tool_name().parse()? {
+                        PipxRequest::Pypi(package) => {
+                            let registry_url = this.get_registry_url()?;
+                            if registry_url.contains("/json") {
+                                debug!("Fetching JSON for {}", package);
+                                let url = format!("https://pypi.org/pypi/{package}/json");
+                                let pkg: PypiPackage = HTTP_FETCH.json(url).await?;
+                                Ok(Some(pkg.info.version))
+                            } else {
+                                debug!("Fetching HTML for {}", package);
+                                let url = format!("https://pypi.org/simple/{package}/");
+                                let html = HTTP_FETCH.get_html(url).await?;
 
-                        let version_re = regex!(r#"href=["'].*?/([^/]+)\.tar\.gz["']"#);
-                        let version = version_re
-                            .captures_iter(&html)
-                            .filter_map(|cap| {
-                                let filename = cap.get(1)?.as_str();
-                                let escaped_package = regex::escape(&package);
-                                let re_str = format!("^{escaped_package}-(.+)$");
-                                let pkg_re = regex::Regex::new(&re_str).ok()?;
-                                let pkg_version = pkg_re.captures(filename)?.get(1)?.as_str();
-                                Some(pkg_version.to_string())
-                            })
-                            .filter(|v| {
-                                !v.contains("dev")
-                                    && !v.contains("a")
-                                    && !v.contains("b")
-                                    && !v.contains("rc")
-                            })
-                            .sorted_by_cached_key(|v| Versioning::new(v))
-                            .next_back();
+                                let version_re = regex!(r#"href=["'].*?/([^/]+)\.tar\.gz["']"#);
+                                let version = version_re
+                                    .captures_iter(&html)
+                                    .filter_map(|cap| {
+                                        let filename = cap.get(1)?.as_str();
+                                        let escaped_package = regex::escape(&package);
+                                        let re_str = format!("^{escaped_package}-(.+)$");
+                                        let pkg_re = regex::Regex::new(&re_str).ok()?;
+                                        let pkg_version =
+                                            pkg_re.captures(filename)?.get(1)?.as_str();
+                                        Some(pkg_version.to_string())
+                                    })
+                                    .filter(|v| {
+                                        !v.contains("dev")
+                                            && !v.contains("a")
+                                            && !v.contains("b")
+                                            && !v.contains("rc")
+                                    })
+                                    .sorted_by_cached_key(|v| Versioning::new(v))
+                                    .next_back();
 
-                        Ok(version)
-                    }
-                }
-                _ => self.latest_version(Some("latest".into())),
-            })
-            .cloned()
+                                Ok(version)
+                            }
+                        }
+                        _ => this.latest_version(config, Some("latest".into())).await,
+                    })
+                    .await
+            },
+            SETTINGS.fetch_remote_versions_timeout(),
+        )
+        .await
+        .cloned()
     }
 
-    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let config = Config::try_get()?;
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let pipx_request = self
             .tool_name()
             .parse::<PipxRequest>()?
             .pipx_request(&tv.version, &tv.request.options());
 
-        if self.uv_is_installed()
+        if self.uv_is_installed(&ctx.config).await
             && SETTINGS.pipx.uvx != Some(false)
             && tv.request.options().get("uvx") != Some(&"false".to_string())
         {
             ctx.pr
                 .set_message(format!("uv tool install {pipx_request}"));
             let mut cmd = Self::uvx_cmd(
-                &config,
+                &ctx.config,
                 &["tool", "install", &pipx_request],
                 self,
                 &tv,
-                ctx.ts,
+                &ctx.ts,
                 &ctx.pr,
-            )?;
+            )
+            .await?;
             if let Some(args) = tv.request.options().get("uvx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -164,13 +175,14 @@ impl Backend for PIPXBackend {
         } else {
             ctx.pr.set_message(format!("pipx install {pipx_request}"));
             let mut cmd = Self::pipx_cmd(
-                &config,
+                &ctx.config,
                 &["install", &pipx_request],
                 self,
                 &tv,
-                ctx.ts,
+                &ctx.ts,
                 &ctx.pr,
-            )?;
+            )
+            .await?;
             if let Some(args) = tv.request.options().get("pipx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -188,7 +200,7 @@ impl PIPXBackend {
             )
             .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
             .build(),
-            ba,
+            ba: Arc::new(ba),
         }
     }
 
@@ -208,11 +220,12 @@ impl PIPXBackend {
         Ok(registry_url)
     }
 
-    pub fn reinstall_all() -> Result<()> {
-        let config = Config::load()?;
-        let ts = ToolsetBuilder::new().build(&config)?;
+    pub async fn reinstall_all() -> Result<()> {
+        let config = Arc::new(Config::load().await?);
+        let ts = ToolsetBuilder::new().build(&config).await?;
         let pipx_tools = ts
-            .list_installed_versions()?
+            .list_installed_versions(&config)
+            .await?
             .into_iter()
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
             .collect_vec();
@@ -224,21 +237,25 @@ impl PIPXBackend {
                     ("install", format!("{}=={}", tv.ba().tool_name, tv.version)),
                 ] {
                     let args = &["tool", cmd, tool];
-                    Self::uvx_cmd(&config, args, &*b, &tv, &ts, &pr)?.execute()?;
+                    Self::uvx_cmd(&config, args, &*b, &tv, &ts, &pr)
+                        .await?
+                        .execute()?;
                 }
             }
         } else {
             let pr = MultiProgressReport::get().add("reinstalling pipx tools");
             for (b, tv) in pipx_tools {
                 let args = &["reinstall", &tv.ba().tool_name];
-                Self::pipx_cmd(&config, args, &*b, &tv, &ts, &pr)?.execute()?;
+                Self::pipx_cmd(&config, args, &*b, &tv, &ts, &pr)
+                    .await?
+                    .execute()?;
             }
         }
         Ok(())
     }
 
-    fn uvx_cmd<'a>(
-        config: &Config,
+    async fn uvx_cmd<'a>(
+        config: &Arc<Config>,
         args: &[&str],
         b: &dyn Backend,
         tv: &ToolVersion,
@@ -252,14 +269,14 @@ impl PIPXBackend {
         cmd.with_pr(pr)
             .env("UV_TOOL_DIR", tv.install_path())
             .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
-            .envs(ts.env_with_path(config)?)
-            .prepend_path(ts.list_paths())?
+            .envs(ts.env_with_path(config).await?)
+            .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
-            .prepend_path(b.dependency_toolset()?.list_paths())
+            .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
     }
 
-    fn pipx_cmd<'a>(
-        config: &Config,
+    async fn pipx_cmd<'a>(
+        config: &Arc<Config>,
         args: &[&str],
         b: &dyn Backend,
         tv: &ToolVersion,
@@ -273,14 +290,14 @@ impl PIPXBackend {
         cmd.with_pr(pr)
             .env("PIPX_HOME", tv.install_path())
             .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
-            .envs(ts.env_with_path(config)?)
-            .prepend_path(ts.list_paths())?
+            .envs(ts.env_with_path(config).await?)
+            .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
-            .prepend_path(b.dependency_toolset()?.list_paths())
+            .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
     }
 
-    fn uv_is_installed(&self) -> bool {
-        self.dependency_which("uv").is_some()
+    async fn uv_is_installed(&self, config: &Arc<Config>) -> bool {
+        self.dependency_which(config, "uv").await.is_some()
     }
 }
 

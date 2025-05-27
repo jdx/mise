@@ -20,21 +20,24 @@ pub struct TasksEdit {
 }
 
 impl TasksEdit {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        let path = Task::task_dir().join(&self.task);
+        let path = Task::task_dir().await.join(&self.task);
 
-        let task = config
-            .tasks_with_aliases()?
+        let task = if let Some(task) = config
+            .tasks_with_aliases()
+            .await?
             .remove(&self.task)
             .cloned()
-            .or_else(|| Task::from_path(&path, path.parent().unwrap(), &project_root).ok())
-            .map_or_else(
-                || Task::new(&path, path.parent().unwrap(), &project_root),
-                Ok,
-            )?;
+        {
+            task
+        } else {
+            Task::from_path(&config, &path, path.parent().unwrap(), &project_root)
+                .await
+                .or_else(|_| Task::new(&path, path.parent().unwrap(), &project_root))?
+        };
         let file = &task.config_source;
         if !file.exists() {
             file::write(file, default_task())?;

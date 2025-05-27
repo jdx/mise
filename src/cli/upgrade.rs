@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
 use crate::config::{Config, config_file};
@@ -57,14 +59,21 @@ pub struct Upgrade {
 }
 
 impl Upgrade {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
-        let ts = ToolsetBuilder::new().with_args(&self.tool).build(&config)?;
-        let mut outdated = ts.list_outdated_versions(self.bump);
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&config)
+            .await?;
+        let mut outdated = ts.list_outdated_versions(&config, self.bump).await;
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
         } else if !self.tool.is_empty() {
-            outdated.retain(|o| self.tool.iter().any(|t| &t.ba == o.tool_version.ba()));
+            outdated.retain(|o| {
+                self.tool
+                    .iter()
+                    .any(|t| t.ba.as_ref() == o.tool_version.ba())
+            });
         }
         if outdated.is_empty() {
             info!("All tools are up to date");
@@ -76,15 +85,18 @@ impl Upgrade {
                 );
             }
         } else {
-            self.upgrade(&config, outdated)?;
+            self.upgrade(&config, outdated).await?;
         }
 
         Ok(())
     }
 
-    fn upgrade(&self, config: &Config, outdated: Vec<OutdatedInfo>) -> Result<()> {
+    async fn upgrade(&self, config: &Arc<Config>, outdated: Vec<OutdatedInfo>) -> Result<()> {
         let mpr = MultiProgressReport::get();
-        let mut ts = ToolsetBuilder::new().with_args(&self.tool).build(config)?;
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(config)
+            .await?;
 
         let config_file_updates = outdated
             .iter()
@@ -156,7 +168,10 @@ impl Upgrade {
             let tool_request = outdated_info.tool_request.clone();
             let tool_name = outdated_info.name.clone();
 
-            match ts.install_all_versions(vec![tool_request], &mpr, &opts) {
+            match ts
+                .install_all_versions(config, vec![tool_request], &opts)
+                .await
+            {
                 Ok(versions) => {
                     for version in versions {
                         successful_versions.push(version);
@@ -170,7 +185,7 @@ impl Upgrade {
         }
 
         // Only update config files for tools that were successfully installed
-        for (o, mut cf) in config_file_updates {
+        for (o, cf) in config_file_updates {
             if successful_versions
                 .iter()
                 .any(|v| v.ba() == o.tool_version.ba())
@@ -194,16 +209,16 @@ impl Upgrade {
                 .any(|v| v.ba() == o.tool_version.ba())
             {
                 let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
-                if let Err(e) = self.uninstall_old_version(&o.tool_version, &pr) {
+                if let Err(e) = self.uninstall_old_version(&o.tool_version, &pr).await {
                     warn!("Failed to uninstall old version of {}: {}", o.name, e);
                 }
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&successful_versions)?;
+        config::rebuild_shims_and_runtime_symlinks(&successful_versions).await?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
-            PIPXBackend::reinstall_all().unwrap_or_else(|err| {
+            PIPXBackend::reinstall_all().await.unwrap_or_else(|err| {
                 warn!("failed to reinstall pipx tools: {err}");
             });
         }
@@ -215,9 +230,14 @@ impl Upgrade {
         Ok(())
     }
 
-    fn uninstall_old_version(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
+    async fn uninstall_old_version(
+        &self,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<()> {
         tv.backend()?
             .uninstall_version(tv, pr, self.dry_run)
+            .await
             .wrap_err_with(|| format!("failed to uninstall {tv}"))?;
         pr.finish();
         Ok(())

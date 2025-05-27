@@ -46,7 +46,7 @@ pub struct Trust {
 }
 
 impl Trust {
-    pub fn run(mut self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         if self.show {
             return self.show();
         }

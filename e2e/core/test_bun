@@ -4,8 +4,8 @@ cat <<EOF >.bun-version
 1.1.21
 EOF
 
-mise i
+assert "mise i"
 assert_contains "mise x bun -- bun -v" "1.1.21"
 
 require_cmd node
-assert_contains "mise x bun -- bunx cowsay \"hello world\"" "hello world"
+assert_contains 'mise x bun -- bunx cowsay "hello world"' "hello world"

@@ -49,6 +49,12 @@ Create a `.ruby-version` file for the current version of ruby:
 ruby -v > .ruby-version
 ```
 
+Enable idiomatic version file reading for ruby:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools ruby
+```
+
 See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
 
 ## Manually updating ruby-build

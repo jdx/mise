@@ -1,3 +1,4 @@
+use crate::Result;
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -7,25 +8,27 @@ use crate::config::{Config, SETTINGS};
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
+use async_trait::async_trait;
 use serde_json::Value;
-use std::fmt::Debug;
-use std::sync::Mutex;
+use std::{fmt::Debug, sync::Arc};
+use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Debug)]
 pub struct NPMBackend {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
-    latest_version_cache: Mutex<CacheManager<Option<String>>>,
+    latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
 }
 
 const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
 
+#[async_trait]
 impl Backend for NPMBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Npm
     }
 
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
@@ -33,44 +36,47 @@ impl Backend for NPMBackend {
         Ok(vec!["node", "bun"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        timeout::run_with_timeout(
-            || {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        timeout::run_with_timeout_async(
+            async || {
                 let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
-                    .full_env(self.dependency_env()?)
+                    .full_env(self.dependency_env(config).await?)
                     .read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
             },
             SETTINGS.fetch_remote_versions_timeout(),
         )
+        .await
     }
 
-    fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
-        let fetch = || {
-            let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "dist-tags", "--json")
-                .full_env(self.dependency_env()?)
-                .read()?;
-            let dist_tags: Value = serde_json::from_str(&raw)?;
-            match dist_tags["latest"] {
-                Value::String(ref s) => Ok(Some(s.clone())),
-                _ => self.latest_version(Some("latest".into())),
-            }
-        };
-        timeout::run_with_timeout(
-            || {
-                if let Ok(cache) = self.latest_version_cache.try_lock() {
-                    cache.get_or_try_init(fetch).cloned()
-                } else {
-                    fetch()
-                }
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        let cache = self.latest_version_cache.lock().await;
+        let this = self;
+        timeout::run_with_timeout_async(
+            async || {
+                cache
+                    .get_or_try_init_async(async || {
+                        let raw =
+                            cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
+                                .full_env(this.dependency_env(config).await?)
+                                .read()?;
+                        let dist_tags: Value = serde_json::from_str(&raw)?;
+                        match dist_tags["latest"] {
+                            Value::String(ref s) => Ok(Some(s.clone())),
+                            _ => this.latest_version(config, Some("latest".into())).await,
+                        }
+                    })
+                    .await
             },
             SETTINGS.fetch_remote_versions_timeout(),
         )
+        .await
+        .cloned()
     }
 
-    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
-        let config = Config::try_get()?;
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let config = Config::get().await;
 
         if SETTINGS.npm.bun {
             CmdLineRunner::new("bun")
@@ -81,11 +87,16 @@ impl Backend for NPMBackend {
                 .arg("--global")
                 .arg("--trust")
                 .with_pr(&ctx.pr)
-                .envs(ctx.ts.env_with_path(&config)?)
+                .envs(ctx.ts.env_with_path(&config).await?)
                 .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
                 .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
-                .prepend_path(ctx.ts.list_paths())?
-                .prepend_path(self.dependency_toolset()?.list_paths())?
+                .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+                .prepend_path(
+                    self.dependency_toolset(&ctx.config)
+                        .await?
+                        .list_paths(&ctx.config)
+                        .await,
+                )?
                 .execute()?;
         } else {
             CmdLineRunner::new(NPM_PROGRAM)
@@ -95,16 +106,21 @@ impl Backend for NPMBackend {
                 .arg("--prefix")
                 .arg(tv.install_path())
                 .with_pr(&ctx.pr)
-                .envs(ctx.ts.env_with_path(&config)?)
-                .prepend_path(ctx.ts.list_paths())?
-                .prepend_path(self.dependency_toolset()?.list_paths())?
+                .envs(ctx.ts.env_with_path(&config).await?)
+                .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+                .prepend_path(
+                    self.dependency_toolset(&ctx.config)
+                        .await?
+                        .list_paths(&ctx.config)
+                        .await,
+                )?
                 .execute()?;
         }
         Ok(tv)
     }
 
     #[cfg(windows)]
-    fn list_bin_paths(
+    async fn list_bin_paths(
         &self,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
@@ -115,12 +131,12 @@ impl Backend for NPMBackend {
 impl NPMBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
-            latest_version_cache: Mutex::new(
+            latest_version_cache: TokioMutex::new(
                 CacheManagerBuilder::new(ba.cache_path.join("latest_version.msgpack.z"))
                     .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
                     .build(),
             ),
-            ba,
+            ba: Arc::new(ba),
         }
     }
 }

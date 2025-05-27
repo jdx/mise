@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use duct::Expression;
 use eyre::{Result, WrapErr};
 use serde_derive::Deserialize;
@@ -18,12 +20,12 @@ struct DirenvWatches {
 }
 
 impl DirenvExec {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(config)?;
+    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config).await?;
 
         let mut cmd = env_cmd();
 
-        for (k, v) in ts.env_with_path(config)? {
+        for (k, v) in ts.env_with_path(config).await? {
             cmd = cmd.env(k, v);
         }
 

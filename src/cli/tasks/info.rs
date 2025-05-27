@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use eyre::{Result, bail};
 use itertools::Itertools;
 use serde_json::json;
@@ -21,23 +23,21 @@ pub struct TasksInfo {
 }
 
 impl TasksInfo {
-    pub fn run(self) -> Result<()> {
-        let config = Config::get();
-        let tasks = config.tasks()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let tasks = config.tasks().await?;
 
-        let task = tasks.get(&self.task).or_else(|| {
-            tasks
-                .values()
-                .find(|task| task.display_name().as_str() == self.task.as_str())
-        });
+        let task = tasks
+            .get(&self.task)
+            .or_else(|| tasks.values().find(|task| task.display_name == self.task));
 
         if let Some(task) = task {
-            let ts = config.get_toolset()?;
-            let env = task.render_env(ts)?;
+            let ts = config.get_toolset().await?;
+            let env = task.render_env(&config, ts).await?;
             if self.json {
-                self.display_json(task, &env)?;
+                self.display_json(&config, task, &env).await?;
             } else {
-                self.display(task, &env)?;
+                self.display(&config, task, &env).await?;
             }
         } else {
             bail!(
@@ -49,8 +49,8 @@ impl TasksInfo {
         Ok(())
     }
 
-    fn display(&self, task: &Task, env: &EnvMap) -> Result<()> {
-        info::inline_section("Task", task.display_name())?;
+    async fn display(&self, config: &Arc<Config>, task: &Task, env: &EnvMap) -> Result<()> {
+        info::inline_section("Task", &task.display_name)?;
         if !task.aliases.is_empty() {
             info::inline_section("Aliases", task.aliases.join(", "))?;
         }
@@ -91,17 +91,17 @@ impl TasksInfo {
         if !task.env.is_empty() {
             info::section("Environment Variables", toml::to_string_pretty(&task.env)?)?;
         }
-        let (spec, _) = task.parse_usage_spec(None, env)?;
+        let (spec, _) = task.parse_usage_spec(config, None, env).await?;
         if !spec.is_empty() {
             info::section("Usage Spec", &spec)?;
         }
         Ok(())
     }
 
-    fn display_json(&self, task: &Task, env: &EnvMap) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(None, env)?;
+    async fn display_json(&self, config: &Arc<Config>, task: &Task, env: &EnvMap) -> Result<()> {
+        let (spec, _) = task.parse_usage_spec(config, None, env).await?;
         let o = json!({
-            "name": task.display_name(),
+            "name": task.display_name,
             "aliases": task.aliases,
             "description": task.description,
             "source": task.config_source,

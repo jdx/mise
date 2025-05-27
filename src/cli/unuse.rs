@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use crate::cli::args::ToolArg;
 use crate::cli::prune::prune;
@@ -51,12 +51,13 @@ pub struct Unuse {
 }
 
 impl Unuse {
-    pub fn run(self) -> Result<()> {
-        let mut cf = self.get_config_file()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let cf = self.get_config_file().await?;
         let tools = cf.to_tool_request_set()?.tools;
         let mut removed: Vec<&ToolArg> = vec![];
         for ta in &self.installed_tool {
-            if let Some(tool_requests) = tools.get(&ta.ba) {
+            if let Some(tool_requests) = tools.get(ta.ba.as_ref()) {
                 let should_remove = if let Some(v) = &ta.version {
                     tool_requests.iter().any(|tv| &tv.version() == v)
                 } else {
@@ -78,14 +79,22 @@ impl Unuse {
         }
 
         if !self.no_prune {
-            prune(self.installed_tool.iter().map(|ta| &ta.ba).collect(), false)?;
-            config::rebuild_shims_and_runtime_symlinks(&[])?;
+            prune(
+                &config,
+                self.installed_tool
+                    .iter()
+                    .map(|ta| ta.ba.as_ref())
+                    .collect(),
+                false,
+            )
+            .await?;
+            config::rebuild_shims_and_runtime_symlinks(&[]).await?;
         }
 
         Ok(())
     }
 
-    fn get_config_file(&self) -> Result<Box<dyn ConfigFile>> {
+    async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
         let path = if self.global {
             config::global_config_path()
@@ -106,13 +115,13 @@ impl Unuse {
         } else if env::in_home_dir() {
             config::global_config_path()
         } else {
-            let config = Config::get();
+            let config = Config::get().await;
             for cf in config.config_files.values() {
                 if cf
                     .to_tool_request_set()?
                     .tools
                     .keys()
-                    .any(|ba| self.installed_tool.iter().any(|ta| ta.ba == *ba))
+                    .any(|ba| self.installed_tool.iter().any(|ta| &ta.ba == ba))
                 {
                     return config_file::parse(cf.get_path());
                 }

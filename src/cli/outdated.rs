@@ -41,10 +41,12 @@ pub struct Outdated {
 }
 
 impl Outdated {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
-            .build(&Config::get())?;
+            .build(&config)
+            .await?;
         let tool_set = self
             .tool
             .iter()
@@ -52,12 +54,12 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
-        let outdated = ts.list_outdated_versions(self.bump);
-        self.display(outdated)?;
+        let outdated = ts.list_outdated_versions(&config, self.bump).await;
+        self.display(outdated).await?;
         Ok(())
     }
 
-    fn display(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
+    async fn display(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
         match self.json {
             true => self.display_json(outdated)?,
             false => self.display_table(outdated)?,

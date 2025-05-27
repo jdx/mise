@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-#MISE wait_for=["render:settings"]
-set -euo pipefail
-
-prettier --cache --ignore-unknown --log-level warn -c "$@" .

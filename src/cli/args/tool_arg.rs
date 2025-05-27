@@ -1,6 +1,6 @@
-use std::fmt::Display;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::{fmt::Display, sync::Arc};
 
 use crate::cli::args::BackendArg;
 use crate::toolset::{ToolRequest, ToolSource};
@@ -12,7 +12,7 @@ use xx::regex;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ToolArg {
     pub short: String,
-    pub ba: BackendArg,
+    pub ba: Arc<BackendArg>,
     pub version: Option<String>,
     pub version_type: ToolVersionType,
     pub tvr: Option<ToolRequest>,
@@ -34,21 +34,21 @@ impl FromStr for ToolArg {
     fn from_str(input: &str) -> eyre::Result<Self> {
         let (backend_input, version) = parse_input(input);
 
-        let backend: BackendArg = backend_input.into();
+        let ba: Arc<BackendArg> = Arc::new(backend_input.into());
         let version_type = match version.as_ref() {
             Some(version) => version.parse()?,
             None => ToolVersionType::Version(String::from("latest")),
         };
         let tvr = version
             .as_ref()
-            .map(|v| ToolRequest::new(backend.clone(), v, ToolSource::Argument))
+            .map(|v| ToolRequest::new(ba.clone(), v, ToolSource::Argument))
             .transpose()?;
         Ok(Self {
-            short: backend.short.clone(),
+            short: ba.short.clone(),
             tvr,
             version: version.map(|v| v.to_string()),
             version_type,
-            ba: backend,
+            ba,
         })
     }
 }
@@ -111,7 +111,7 @@ impl ToolArg {
                 )?);
                 tools[1].ba = a.ba;
                 tools[1].version_type = b.ba.tool_name.parse()?;
-                tools[1].version = Some(b.ba.tool_name);
+                tools[1].version = Some(b.ba.tool_name.clone());
                 tools.remove(0);
             }
         }
@@ -178,16 +178,19 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
 mod tests {
     use pretty_assertions::assert_eq;
 
+    use crate::config::Config;
+
     use super::*;
 
-    #[test]
-    fn test_tool_arg() {
+    #[tokio::test]
+    async fn test_tool_arg() {
+        let _config = Config::get().await;
         let tool = ToolArg::from_str("node").unwrap();
         assert_eq!(
             tool,
             ToolArg {
                 short: "node".into(),
-                ba: "node".into(),
+                ba: Arc::new("node".into()),
                 version: None,
                 version_type: ToolVersionType::Version("latest".into()),
                 tvr: None,
@@ -195,38 +198,45 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_tool_arg_with_version() {
+    #[tokio::test]
+    async fn test_tool_arg_with_version() {
+        let _config = Config::get().await;
         let tool = ToolArg::from_str("node@20").unwrap();
         assert_eq!(
             tool,
             ToolArg {
                 short: "node".into(),
-                ba: "node".into(),
+                ba: Arc::new("node".into()),
                 version: Some("20".into()),
                 version_type: ToolVersionType::Version("20".into()),
-                tvr: Some(ToolRequest::new("node".into(), "20", ToolSource::Argument).unwrap()),
+                tvr: Some(
+                    ToolRequest::new(Arc::new("node".into()), "20", ToolSource::Argument).unwrap()
+                ),
             }
         );
     }
 
-    #[test]
-    fn test_tool_arg_with_version_and_alias() {
+    #[tokio::test]
+    async fn test_tool_arg_with_version_and_alias() {
+        let _config = Config::get().await;
         let tool = ToolArg::from_str("nodejs@lts").unwrap();
         assert_eq!(
             tool,
             ToolArg {
                 short: "node".into(),
-                ba: "node".into(),
+                ba: Arc::new("node".into()),
                 version: Some("lts".into()),
                 version_type: ToolVersionType::Version("lts".into()),
-                tvr: Some(ToolRequest::new("node".into(), "lts", ToolSource::Argument).unwrap()),
+                tvr: Some(
+                    ToolRequest::new(Arc::new("node".into()), "lts", ToolSource::Argument).unwrap()
+                ),
             }
         );
     }
 
-    #[test]
-    fn test_tool_arg_parse_input() {
+    #[tokio::test]
+    async fn test_tool_arg_parse_input() {
+        let _config = Config::get().await;
         let t = |input, f, v| {
             let (backend, version) = parse_input(input);
             assert_eq!(backend, f);

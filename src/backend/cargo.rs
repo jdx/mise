@@ -1,10 +1,12 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
+use async_trait::async_trait;
 use color_eyre::Section;
 use eyre::{bail, eyre};
 use serde_json::Deserializer;
 use url::Url;
 
+use crate::Result;
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
@@ -18,15 +20,16 @@ use crate::{env, file};
 
 #[derive(Debug)]
 pub struct CargoBackend {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
+#[async_trait]
 impl Backend for CargoBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Cargo
     }
 
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
@@ -38,12 +41,14 @@ impl Backend for CargoBackend {
         Ok(vec!["cargo-binstall", "sccache"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         if self.git_url().is_some() {
             // TODO: maybe fetch tags/branches from git?
             return Ok(vec!["HEAD".into()]);
         }
-        let raw = HTTP_FETCH.get_text(get_crate_url(&self.tool_name())?)?;
+        let raw = HTTP_FETCH
+            .get_text(get_crate_url(&self.tool_name())?)
+            .await?;
         let stream = Deserializer::from_str(&raw).into_iter::<CrateVersion>();
         let mut versions = vec![];
         for v in stream {
@@ -55,8 +60,8 @@ impl Backend for CargoBackend {
         Ok(versions)
     }
 
-    fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> eyre::Result<ToolVersion> {
-        let config = Config::try_get()?;
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let config = ctx.config.clone();
         let install_arg = format!("{}@{}", self.tool_name(), tv.version);
         let registry_name = &SETTINGS.cargo.registry_name;
 
@@ -77,7 +82,7 @@ impl Backend for CargoBackend {
                 ))?;
             }
             cmd
-        } else if self.is_binstall_enabled(&tv) {
+        } else if self.is_binstall_enabled(&config, &tv).await {
             let mut cmd = CmdLineRunner::new("cargo-binstall").arg("-y");
             if let Some(token) = &*GITHUB_TOKEN {
                 cmd = cmd.env("GITHUB_TOKEN", token)
@@ -117,30 +122,40 @@ impl Backend for CargoBackend {
         cmd.arg("--root")
             .arg(tv.install_path())
             .with_pr(&ctx.pr)
-            .envs(ctx.ts.env_with_path(&config)?)
-            .prepend_path(ctx.ts.list_paths())?
-            .prepend_path(self.dependency_toolset()?.list_paths())?
+            .envs(ctx.ts.env_with_path(&ctx.config).await?)
+            .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+            .prepend_path(
+                self.dependency_toolset(&ctx.config)
+                    .await?
+                    .list_paths(&ctx.config)
+                    .await,
+            )?
             .execute()?;
 
-        Ok(tv)
+        Ok(tv.clone())
     }
 }
 
 impl CargoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba }
+        Self { ba: Arc::new(ba) }
     }
 
-    fn is_binstall_enabled(&self, tv: &ToolVersion) -> bool {
+    async fn is_binstall_enabled(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
         if !SETTINGS.cargo.binstall {
             return false;
         }
-        if file::which_non_pristine("cargo-binstall").is_none()
-            && !self
-                .dependency_toolset()
-                .is_ok_and(|ts| ts.which("cargo-binstall").is_some())
-        {
-            return false;
+        if file::which_non_pristine("cargo-binstall").is_none() {
+            match self.dependency_toolset(config).await {
+                Ok(ts) => {
+                    if ts.which(config, "cargo-binstall").await.is_none() {
+                        return false;
+                    }
+                }
+                Err(_e) => {
+                    return false;
+                }
+            }
         }
         let opts = tv.request.options();
         if opts.contains_key("features") || opts.contains_key("default-features") {

@@ -12,7 +12,6 @@ use itertools::Itertools;
 use serde::ser::Error;
 use serde::{Deserialize, Deserializer};
 use serde_derive::Serialize;
-use std::collections::{BTreeSet, HashSet};
 use std::env::consts::ARCH;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -20,6 +19,10 @@ use std::str::FromStr;
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
+use std::{
+    collections::{BTreeSet, HashSet},
+    sync::atomic::Ordering,
+};
 use url::Url;
 
 pub static SETTINGS: Lazy<Arc<Settings>> = Lazy::new(Settings::get);
@@ -47,7 +50,16 @@ pub struct SettingsMeta {
 }
 
 #[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, Default, strum::EnumString, strum::Display,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Default,
+    strum::EnumString,
+    strum::Display,
+    PartialEq,
+    Eq,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -173,6 +185,10 @@ impl Settings {
             if settings.erlang.compile.is_none() {
                 settings.erlang.compile = Some(true);
             }
+        }
+        if settings.gpg_verify.is_some() {
+            settings.node.gpg_verify = settings.node.gpg_verify.or(settings.gpg_verify);
+            settings.swift.gpg_verify = settings.swift.gpg_verify.or(settings.gpg_verify);
         }
         settings.set_hidden_configs();
         if cfg!(test) {
@@ -376,12 +392,12 @@ impl Settings {
     }
 
     /// duration that remote version cache is kept for
-    /// for "fast" commands (represented by PREFER_STALE), these are always
+    /// for "fast" commands (represented by PREFER_OFFLINE), these are always
     /// cached. For "slow" commands like `mise ls-remote` or `mise install`:
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
     pub fn fetch_remote_versions_cache(&self) -> Option<Duration> {
-        if *env::PREFER_STALE {
+        if env::PREFER_OFFLINE.load(Ordering::Relaxed) {
             None
         } else {
             Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())

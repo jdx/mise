@@ -1,5 +1,5 @@
-use std::fs::File;
 use std::io::Write;
+use std::{fs::File, sync::Arc};
 
 use eyre::Result;
 use xx::file;
@@ -17,8 +17,8 @@ use crate::toolset::ToolsetBuilder;
 pub struct Envrc {}
 
 impl Envrc {
-    pub fn run(self, config: &Config) -> Result<()> {
-        let ts = ToolsetBuilder::new().build(config)?;
+    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config).await?;
 
         let envrc_path = env::MISE_TMP_DIR
             .join("direnv")
@@ -35,7 +35,7 @@ impl Envrc {
         for cf in config.config_files.keys() {
             writeln!(file, "watch_file {}", cf.to_string_lossy())?;
         }
-        let (env, env_results) = ts.final_env(config)?;
+        let (env, env_results) = ts.final_env(config).await?;
         for (k, v) in env {
             if k == *PATH_KEY {
                 writeln!(file, "PATH_add {v}")?;
@@ -48,7 +48,12 @@ impl Envrc {
                 )?;
             }
         }
-        for path in ts.list_final_paths(config, env_results)?.into_iter().rev() {
+        for path in ts
+            .list_final_paths(config, env_results)
+            .await?
+            .into_iter()
+            .rev()
+        {
             writeln!(file, "PATH_add {}", path.to_string_lossy())?;
         }
 

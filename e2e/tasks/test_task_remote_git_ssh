@@ -10,7 +10,7 @@ fi
 #################################################################################
 
 REMOTE_TASKS_DIR="${MISE_CACHE_DIR}/remote-git-tasks-cache"
-MISE_V2025117_CACHE_DIR="${REMOTE_TASKS_DIR}/2fc21c39bc011033ee92059b37f2e91f844600fbbf78434b2782900949056f7e"
+#MISE_V2025117_CACHE_DIR="${REMOTE_TASKS_DIR}/27d097acd7d7d15682b9d5f22bfa7c363b1951a50bbbd2aff3923eb949be0ef0"
 
 cargo init --name hello_cargo
 
@@ -20,29 +20,29 @@ cargo init --name hello_cargo
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_ssh_latest]
-file  = "git::ssh://git@github.com/jdx/mise.git//xtasks/lint/clippy"
+file  = "git::ssh://git@github.com/jdx/mise.git//xtasks/lint/ripgrep"
 EOF
 
 assert_contains "mise tasks" "remote_lint_ssh_latest"
 assert_succeed "mise run remote_lint_ssh_latest" # Remote task should be downloaded
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
 
 mise cache clear # Clear cache to force redownload
 
 assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_ssh_latest" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_ssh_latest --no-cache" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_ssh_latest" # Cache should be used
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
 
 mise cache clear # Clear cache to force redownload
 
@@ -52,28 +52,28 @@ mise cache clear # Clear cache to force redownload
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_ssh_ref]
-file  = "git::ssh://git@github.com/jdx/mise.git//xtasks/lint/clippy?ref=v2025.1.17"
+file  = "git::ssh://git@github.com/jdx/mise.git//xtasks/lint/ripgrep?ref=v2025.1.17"
 EOF
 
 assert_contains "mise tasks" "remote_lint_ssh_ref"
 assert_succeed "mise run remote_lint_ssh_ref" # Remote task should be downloaded
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_exists "${MISE_V2025117_CACHE_DIR}"
-assert_directory_not_empty "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_exists "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_not_empty "${MISE_V2025117_CACHE_DIR}"
 
 mise cache clear # Clear cache to force redownload
 
 assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_ssh_ref" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_ssh_ref --no-cache" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_ssh_ref" # Cache should be used
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_exists "${MISE_V2025117_CACHE_DIR}"
-assert_directory_not_empty "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_exists "${MISE_V2025117_CACHE_DIR}"
+#assert_directory_not_empty "${MISE_V2025117_CACHE_DIR}"

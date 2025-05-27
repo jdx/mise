@@ -1,7 +1,7 @@
 mod path;
 
-use crate::exit;
-use std::collections::BTreeMap;
+use crate::{exit, plugins::PluginEnum};
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
@@ -21,7 +21,6 @@ use heck::ToSnakeCase;
 use indexmap::IndexMap;
 use indoc::formatdoc;
 use itertools::Itertools;
-use rayon::prelude::*;
 use std::env::split_paths;
 use std::path::{Path, PathBuf};
 use strum::IntoEnumIterator;
@@ -46,19 +45,19 @@ pub enum Commands {
 }
 
 impl Doctor {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         if let Some(cmd) = self.subcommand {
             match cmd {
-                Commands::Path(cmd) => cmd.run(),
+                Commands::Path(cmd) => cmd.run().await,
             }
         } else if self.json {
-            self.doctor_json()
+            self.doctor_json().await
         } else {
-            self.doctor()
+            self.doctor().await
         }
     }
 
-    fn doctor_json(mut self) -> crate::Result<()> {
+    async fn doctor_json(mut self) -> crate::Result<()> {
         let mut data: BTreeMap<String, _> = BTreeMap::new();
         data.insert(
             "version".into(),
@@ -99,13 +98,14 @@ impl Doctor {
             serde_json::from_str(&cmd!(&*env::MISE_BIN, "settings", "-J").read()?)?,
         );
 
-        let config = Config::get();
-        let ts = config.get_toolset()?;
-        self.analyze_shims(ts);
+        let config = Config::get().await;
+        let ts = config.get_toolset().await?;
+        self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
         data.insert(
             "paths".into(),
-            self.paths(ts)?
+            self.paths(ts)
+                .await?
                 .into_iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect(),
@@ -131,7 +131,7 @@ impl Doctor {
                 .iter()
                 .map(|tv: &ToolVersion| {
                     let mut tool = serde_json::Map::new();
-                    match f.is_version_installed(tv, true) {
+                    match f.is_version_installed(&config, tv, true) {
                         true => {
                             tool.insert("version".into(), tv.version.to_string().into());
                         }
@@ -169,7 +169,7 @@ impl Doctor {
         Ok(())
     }
 
-    fn doctor(mut self) -> eyre::Result<()> {
+    async fn doctor(mut self) -> eyre::Result<()> {
         info::inline_section("version", &*VERSION)?;
         #[cfg(unix)]
         info::inline_section("activated", yn(env::is_activated()))?;
@@ -190,8 +190,8 @@ impl Doctor {
             .join("\n");
         info::section("dirs", mise_dirs)?;
 
-        match Config::try_get() {
-            Ok(config) => self.analyze_config(config)?,
+        match Config::try_get().await {
+            Ok(config) => self.analyze_config(&config).await?,
             Err(err) => self.errors.push(format!("failed to load config: {err}")),
         }
 
@@ -208,8 +208,8 @@ impl Doctor {
         }
         self.analyze_settings()?;
 
-        if let Some(latest) = version::check_for_new_version(duration::HOURLY) {
-            version::show_latest();
+        if let Some(latest) = version::check_for_new_version(duration::HOURLY).await {
+            version::show_latest().await;
             self.errors.push(format!(
                 "new mise version {latest} available, currently on {}",
                 *version::V
@@ -254,9 +254,7 @@ impl Doctor {
         }
         Ok(())
     }
-    fn analyze_config(&mut self, config: impl AsRef<Config>) -> eyre::Result<()> {
-        let config = config.as_ref();
-
+    async fn analyze_config(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
         info::section("config_files", render_config_files(config))?;
         if IGNORED_CONFIG_FILES.is_empty() {
             println!();
@@ -299,11 +297,11 @@ impl Doctor {
             }
         }
 
-        match ToolsetBuilder::new().build(config) {
+        match ToolsetBuilder::new().build(config).await {
             Ok(ts) => {
-                self.analyze_shims(&ts);
-                self.analyze_toolset(&ts)?;
-                self.analyze_paths(&ts)?;
+                self.analyze_shims(config, &ts).await;
+                self.analyze_toolset(&ts).await?;
+                self.analyze_paths(&ts).await?;
             }
             Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
         }
@@ -311,11 +309,12 @@ impl Doctor {
         Ok(())
     }
 
-    fn analyze_toolset(&mut self, ts: &Toolset) -> eyre::Result<()> {
+    async fn analyze_toolset(&mut self, ts: &Toolset) -> eyre::Result<()> {
+        let config = Config::try_get().await?;
         let tools = ts
             .list_current_versions()
             .into_iter()
-            .map(|(f, tv)| match f.is_version_installed(&tv, true) {
+            .map(|(f, tv)| match f.is_version_installed(&config, &tv, true) {
                 true => (tv.to_string(), style::nstyle("")),
                 false => {
                     self.errors.push(format!(
@@ -342,10 +341,10 @@ impl Doctor {
         Ok(())
     }
 
-    fn analyze_shims(&mut self, toolset: &Toolset) {
+    async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) {
         let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
 
-        if let Ok((missing, extra)) = shims::get_shim_diffs(mise_bin, toolset) {
+        if let Ok((missing, extra)) = shims::get_shim_diffs(config, mise_bin, toolset).await {
             let cmd = style::nyellow("mise reshim");
 
             if !missing.is_empty() {
@@ -379,17 +378,22 @@ impl Doctor {
         }
     }
 
-    fn paths(&mut self, ts: &Toolset) -> eyre::Result<Vec<PathBuf>> {
-        let config = Config::get();
-        let env = ts.full_env(&config)?;
+    async fn paths(&mut self, ts: &Toolset) -> eyre::Result<Vec<PathBuf>> {
+        let config = Config::get().await;
+        let env = ts.full_env(&config).await?;
         let path = env
             .get(&*PATH_KEY)
             .ok_or_else(|| eyre::eyre!("Path not found"))?;
         Ok(split_paths(path).collect())
     }
 
-    fn analyze_paths(&mut self, ts: &Toolset) -> eyre::Result<()> {
-        let paths = self.paths(ts)?.into_iter().map(display_path).join("\n");
+    async fn analyze_paths(&mut self, ts: &Toolset) -> eyre::Result<()> {
+        let paths = self
+            .paths(ts)
+            .await?
+            .into_iter()
+            .map(display_path)
+            .join("\n");
 
         info::section("path", paths)?;
         Ok(())
@@ -473,13 +477,13 @@ fn render_plugins() -> String {
         .unwrap_or(0)
         .min(40);
     plugins
-        .into_par_iter()
+        .into_iter()
         .filter(|b| b.plugin().is_some())
         .map(|p| {
             let p = p.plugin().unwrap();
             let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
-            let extra = match p.get_plugin_type() {
-                PluginType::Asdf | PluginType::Vfox => {
+            let extra = match p {
+                PluginEnum::Asdf(_) | PluginEnum::Vfox(_) => {
                     let git = Git::new(dirs::PLUGINS.join(p.name()));
                     match git.get_remote_url() {
                         Some(url) => {

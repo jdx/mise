@@ -5,10 +5,13 @@ use once_cell::sync::OnceCell;
 use serde::de::Visitor;
 use serde::{Deserializer, de};
 use serde_derive::Deserialize;
-use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::{Mutex, MutexGuard},
+};
 use tera::Context as TeraContext;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
@@ -50,11 +53,11 @@ pub struct MiseToml {
     #[serde(default)]
     alias: AliasMap,
     #[serde(skip)]
-    doc: OnceCell<DocumentMut>,
+    doc: Mutex<OnceCell<DocumentMut>>,
     #[serde(default)]
     hooks: IndexMap<Hooks, toml::Value>,
     #[serde(default)]
-    tools: IndexMap<BackendArg, MiseTomlToolList>,
+    tools: Mutex<IndexMap<BackendArg, MiseTomlToolList>>,
     #[serde(default)]
     plugins: HashMap<String, String>,
     #[serde(default)]
@@ -128,16 +131,20 @@ impl MiseToml {
         Ok(rf)
     }
 
-    fn doc(&self) -> eyre::Result<&DocumentMut> {
-        self.doc.get_or_try_init(|| {
-            let body = file::read_to_string(&self.path).unwrap_or_default();
-            Ok(body.parse()?)
-        })
+    fn doc(&self) -> eyre::Result<DocumentMut> {
+        self.doc
+            .lock()
+            .unwrap()
+            .get_or_try_init(|| {
+                let body = file::read_to_string(&self.path).unwrap_or_default();
+                Ok(body.parse()?)
+            })
+            .cloned()
     }
 
-    fn doc_mut(&mut self) -> eyre::Result<&mut DocumentMut> {
+    fn doc_mut(&self) -> eyre::Result<MutexGuard<'_, OnceCell<DocumentMut>>> {
         self.doc()?;
-        Ok(self.doc.get_mut().unwrap())
+        Ok(self.doc.lock().unwrap())
     }
 
     pub fn set_alias(&mut self, fa: &BackendArg, from: &str, to: &str) -> eyre::Result<()> {
@@ -147,6 +154,8 @@ impl MiseToml {
             .versions
             .insert(from.into(), to.into());
         self.doc_mut()?
+            .get_mut()
+            .unwrap()
             .entry("alias")
             .or_insert_with(table)
             .as_table_like_mut()
@@ -164,11 +173,15 @@ impl MiseToml {
     }
 
     pub fn remove_alias(&mut self, fa: &BackendArg, from: &str) -> eyre::Result<()> {
-        if let Some(aliases) = self
-            .doc_mut()?
-            .get_mut("alias")
-            .and_then(|v| v.as_table_mut())
-        {
+        if let Some(aliases) = self.alias.get_mut(&fa.short) {
+            aliases.versions.shift_remove(from);
+            if aliases.versions.is_empty() && aliases.backend.is_none() {
+                self.alias.shift_remove(&fa.short);
+            }
+        }
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(aliases) = doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
             if let Some(alias) = aliases
                 .get_mut(&fa.to_string())
                 .and_then(|v| v.as_table_mut())
@@ -184,21 +197,17 @@ impl MiseToml {
                 }
             }
             if aliases.is_empty() {
-                self.doc_mut()?.as_table_mut().remove("alias");
-            }
-        }
-        if let Some(aliases) = self.alias.get_mut(&fa.short) {
-            aliases.versions.shift_remove(from);
-            if aliases.versions.is_empty() && aliases.backend.is_none() {
-                self.alias.shift_remove(&fa.short);
+                doc.as_table_mut().remove("alias");
             }
         }
         Ok(())
     }
 
     pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) -> eyre::Result<()> {
-        let mut env_tbl = self
-            .doc_mut()?
+        let mut doc = self.doc_mut()?;
+        let mut env_tbl = doc
+            .get_mut()
+            .unwrap()
             .entry("env")
             .or_insert_with(table)
             .as_table_mut()
@@ -218,8 +227,10 @@ impl MiseToml {
     }
 
     pub fn remove_env(&mut self, key: &str) -> eyre::Result<()> {
-        let env_tbl = self
-            .doc_mut()?
+        let mut doc = self.doc_mut()?;
+        let env_tbl = doc
+            .get_mut()
+            .unwrap()
             .entry("env")
             .or_insert_with(table)
             .as_table_mut()
@@ -317,9 +328,11 @@ impl ConfigFile for MiseToml {
         self.tasks.0.values().collect()
     }
 
-    fn remove_tool(&mut self, fa: &BackendArg) -> eyre::Result<()> {
-        self.tools.shift_remove(fa);
-        let doc = self.doc_mut()?;
+    fn remove_tool(&self, fa: &BackendArg) -> eyre::Result<()> {
+        let mut tools = self.tools.lock().unwrap();
+        tools.shift_remove(fa);
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
         if let Some(tools) = doc.get_mut("tools") {
             if let Some(tools) = tools.as_table_like_mut() {
                 tools.remove(&fa.to_string());
@@ -331,13 +344,11 @@ impl ConfigFile for MiseToml {
         Ok(())
     }
 
-    fn replace_versions(
-        &mut self,
-        ba: &BackendArg,
-        versions: Vec<ToolRequest>,
-    ) -> eyre::Result<()> {
-        let is_tools_sorted = is_tools_sorted(&self.tools); // was it previously sorted (if so we'll keep it sorted)
-        let existing = self.tools.entry(ba.clone()).or_default();
+    fn replace_versions(&self, ba: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
+        trace!("replacing versions {ba:?} {versions:?}");
+        let mut tools = self.tools.lock().unwrap();
+        let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
+        let existing = tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
             if opts.os.is_some() || !opts.install_env.is_empty() {
                 return false;
@@ -354,8 +365,12 @@ impl ConfigFile for MiseToml {
             .iter()
             .map(|tr| MiseTomlTool::from(tr.clone()))
             .collect();
-        let tools = self
-            .doc_mut()?
+        trace!("done replacing versions");
+        let mut doc = self.doc_mut()?;
+        trace!("got doc");
+        let tools = doc
+            .get_mut()
+            .unwrap()
             .entry("tools")
             .or_insert_with(table)
             .as_table_mut()
@@ -441,7 +456,8 @@ impl ConfigFile for MiseToml {
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
-        for (ba, tvp) in &self.tools {
+        let tools = self.tools.lock().unwrap();
+        for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
                 let version = self.parse_template(&tool.tt.to_string())?;
                 let tvr = if let Some(mut options) = tool.options.clone() {
@@ -452,9 +468,9 @@ impl ConfigFile for MiseToml {
                     let mut ba_opts = ba.opts().clone();
                     ba_opts.merge(&options.opts);
                     ba.set_opts(Some(ba_opts.clone()));
-                    ToolRequest::new_opts(ba, &version, options, source.clone())?
+                    ToolRequest::new_opts(ba.into(), &version, options, source.clone())?
                 } else {
-                    ToolRequest::new(ba.clone(), &version, source.clone())?
+                    ToolRequest::new(ba.clone().into(), &version, source.clone())?
                 };
                 trs.add_version(tvr, &source);
             }
@@ -587,9 +603,9 @@ impl Clone for MiseToml {
             env: self.env.clone(),
             env_path: self.env_path.clone(),
             alias: self.alias.clone(),
-            doc: self.doc.clone(),
+            doc: Mutex::new(self.doc.lock().unwrap().clone()),
             hooks: self.hooks.clone(),
-            tools: self.tools.clone(),
+            tools: Mutex::new(self.tools.lock().unwrap().clone()),
             redactions: self.redactions.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
@@ -1501,18 +1517,21 @@ fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
+    use std::sync::Arc;
+
     use indoc::formatdoc;
     use insta::{assert_debug_snapshot, assert_snapshot};
     use test_log::test;
 
-    use crate::dirs::CWD;
     use crate::test::replace_path;
     use crate::toolset::ToolRequest;
+    use crate::{config::Config, dirs::CWD};
 
     use super::*;
 
-    #[test]
-    fn test_fixture() {
+    #[tokio::test]
+    async fn test_fixture() {
+        let _config = Config::get().await;
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env_entries().unwrap());
@@ -1526,8 +1545,9 @@ mod tests {
         assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
     }
 
-    #[test]
-    fn test_env() {
+    #[tokio::test]
+    async fn test_env() {
+        let _config = Config::get().await;
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1553,8 +1573,9 @@ mod tests {
         });
     }
 
-    #[test]
-    fn test_env_array_valid() {
+    #[tokio::test]
+    async fn test_env_array_valid() {
+        let _config = Config::get().await;
         let env = parse_env(formatdoc! {r#"
         [[env]]
         foo="bar"
@@ -1576,8 +1597,9 @@ mod tests {
         ");
     }
 
-    #[test]
-    fn test_path_dirs() {
+    #[tokio::test]
+    async fn test_path_dirs() {
+        let _config = Config::get().await;
         let env = parse_env(formatdoc! {r#"
             env_path=["/foo", "./bar"]
             [env]
@@ -1632,8 +1654,9 @@ mod tests {
         ");
     }
 
-    #[test]
-    fn test_env_file() {
+    #[tokio::test]
+    async fn test_env_file() {
+        let _config = Config::get().await;
         let env = parse_env(formatdoc! {r#"
             env_file = ".env"
             "#});
@@ -1665,8 +1688,9 @@ mod tests {
         assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
     }
 
-    #[test]
-    fn test_set_alias() {
+    #[tokio::test]
+    async fn test_set_alias() {
+        let _config = Config::get().await;
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1690,8 +1714,9 @@ mod tests {
         file::remove_file(&p).unwrap();
     }
 
-    #[test]
-    fn test_remove_alias() {
+    #[tokio::test]
+    async fn test_remove_alias() {
+        let _config = Config::get().await;
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1719,8 +1744,9 @@ mod tests {
         file::remove_file(&p).unwrap();
     }
 
-    #[test]
-    fn test_replace_versions() {
+    #[tokio::test]
+    async fn test_replace_versions() {
+        let _config = Config::get().await;
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1730,13 +1756,13 @@ mod tests {
             "#},
         )
         .unwrap();
-        let mut cf = MiseToml::from_file(&p).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
         let node = "node".into();
         cf.replace_versions(
             &node,
             vec![
-                ToolRequest::new("node".into(), "16.0.1", ToolSource::Unknown).unwrap(),
-                ToolRequest::new("node".into(), "18.0.1", ToolSource::Unknown).unwrap(),
+                ToolRequest::new(Arc::new("node".into()), "16.0.1", ToolSource::Unknown).unwrap(),
+                ToolRequest::new(Arc::new("node".into()), "18.0.1", ToolSource::Unknown).unwrap(),
             ],
         )
         .unwrap();
@@ -1749,8 +1775,9 @@ mod tests {
         file::remove_all(&p).unwrap();
     }
 
-    #[test]
-    fn test_remove_plugin() {
+    #[tokio::test]
+    async fn test_remove_plugin() {
+        let _config = Config::get().await;
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1760,7 +1787,7 @@ mod tests {
             "#},
         )
         .unwrap();
-        let mut cf = MiseToml::from_file(&p).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
         cf.remove_tool(&"node".into()).unwrap();
 
         assert_debug_snapshot!(cf.to_toolset().unwrap());

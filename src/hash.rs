@@ -9,7 +9,6 @@ use crate::ui::progress_report::SingleReport;
 use digest::Digest;
 use eyre::{Result, bail};
 use md5::Md5;
-use rayon::prelude::*;
 use sha1::Sha1;
 use sha2::{Sha256, Sha512};
 use siphasher::sip::SipHasher;
@@ -109,7 +108,7 @@ pub fn ensure_checksum(
 }
 
 pub fn parse_shasums(text: &str) -> HashMap<String, String> {
-    text.par_lines()
+    text.lines()
         .map(|l| {
             let mut parts = l.split_whitespace();
             let hash = parts.next().unwrap();
@@ -123,17 +122,20 @@ pub fn parse_shasums(text: &str) -> HashMap<String, String> {
 mod tests {
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
-    use test_log::test;
+
+    use crate::config::Config;
 
     use super::*;
 
-    #[test]
-    fn test_hash_to_str() {
+    #[tokio::test]
+    async fn test_hash_to_str() {
+        let _config = Config::get().await;
         assert_eq!(hash_to_str(&"foo"), "e1b19adfb2e348a2");
     }
 
-    #[test]
-    fn test_hash_sha256() {
+    #[tokio::test]
+    async fn test_hash_sha256() {
+        let _config = Config::get().await;
         let path = Path::new(".test-tool-versions");
         let hash = file_hash_prog::<Sha256>(path, None).unwrap();
         assert_snapshot!(hash);

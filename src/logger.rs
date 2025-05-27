@@ -1,26 +1,25 @@
 use crate::config::{Config, Settings};
 use eyre::Result;
 use std::fs::{File, OpenOptions, create_dir_all};
-use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;
 use std::thread;
+use std::{io::Write, sync::OnceLock};
 
 use crate::{config, env, ui};
 use log::{Level, LevelFilter, Metadata, Record};
-use std::sync::LazyLock as Lazy;
 
 #[derive(Debug)]
 struct Logger {
-    level: LevelFilter,
-    term_level: LevelFilter,
+    level: Mutex<LevelFilter>,
+    term_level: Mutex<LevelFilter>,
     file_level: LevelFilter,
     log_file: Option<Mutex<File>>,
 }
 
 impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= self.level
+        metadata.level() <= *self.level.lock().unwrap()
     }
 
     fn log(&self, record: &Record) {
@@ -33,11 +32,12 @@ impl log::Log for Logger {
                 }
             }
         }
-        if record.level() <= self.term_level {
+        let term_level = *self.term_level.lock().unwrap();
+        if record.level() <= term_level {
             ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                let out = self.render(record, self.term_level);
+                let out = self.render(record, term_level);
                 if !out.is_empty() {
-                    eprintln!("{}", self.render(record, self.term_level));
+                    eprintln!("{}", self.render(record, term_level));
                 }
             });
         }
@@ -46,19 +46,12 @@ impl log::Log for Logger {
     fn flush(&self) {}
 }
 
-static LOGGER: Lazy<Logger> = Lazy::new(Logger::init);
-
 impl Logger {
-    fn init() -> Self {
-        let settings = Settings::try_get().unwrap_or_else(|_| Default::default());
-
-        let term_level = settings.log_level();
-        let file_level = env::MISE_LOG_FILE_LEVEL.unwrap_or(settings.log_level());
-
+    fn init(term_level: LevelFilter, file_level: LevelFilter) -> Self {
         let mut logger = Logger {
-            level: std::cmp::max(term_level, file_level),
+            level: Mutex::new(std::cmp::max(term_level, file_level)),
             file_level,
-            term_level,
+            term_level: Mutex::new(term_level),
             log_file: None,
         };
 
@@ -76,7 +69,7 @@ impl Logger {
     fn render(&self, record: &Record, level: LevelFilter) -> String {
         let mut args = record.args().to_string();
         if config::is_loaded() {
-            let config = Config::get();
+            let config = Config::get_();
             args = config.redact(args);
         }
         match level {
@@ -133,12 +126,20 @@ pub fn thread_id() -> String {
 }
 
 pub fn init() {
-    static INIT: std::sync::Once = std::sync::Once::new();
-    INIT.call_once(|| {
-        if let Err(err) = log::set_logger(&*LOGGER).map(|()| log::set_max_level(LOGGER.level)) {
+    static LOGGER: OnceLock<Logger> = OnceLock::new();
+    let settings = Settings::try_get().unwrap_or_else(|_| Default::default());
+    let term_level = settings.log_level();
+    if let Some(logger) = LOGGER.get() {
+        *logger.term_level.lock().unwrap() = term_level;
+        *logger.level.lock().unwrap() = std::cmp::max(term_level, logger.file_level);
+    } else {
+        let file_level = env::MISE_LOG_FILE_LEVEL.unwrap_or(settings.log_level());
+        let logger = LOGGER.get_or_init(|| Logger::init(term_level, file_level));
+        if let Err(err) = log::set_logger(logger) {
             eprintln!("mise: could not initialize logger: {err}");
         }
-    });
+    }
+    log::set_max_level(term_level);
 }
 
 fn init_log_file(log_file: &Path) -> Result<File> {
@@ -153,10 +154,13 @@ fn init_log_file(log_file: &Path) -> Result<File> {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
+
     use super::*;
 
-    #[test]
-    fn test_init() {
+    #[tokio::test]
+    async fn test_init() {
+        let _config = Config::get().await;
         init();
     }
 }

@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use console::style;
-use eyre::{Report, Result, WrapErr, eyre};
-use rayon::prelude::*;
+use eyre::{Result, WrapErr, eyre};
+use tokio::{sync::Semaphore, task::JoinSet};
 
 use crate::config::Settings;
 use crate::plugins;
@@ -24,7 +26,7 @@ pub struct Update {
 }
 
 impl Update {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let plugins: Vec<_> = match self.plugin {
             Some(plugins) => plugins
                 .into_iter()
@@ -33,42 +35,44 @@ impl Update {
                     None => (p, None),
                 })
                 .collect(),
-            None => install_state::list_plugins()?
+            None => install_state::list_plugins()
                 .keys()
                 .map(|p| (p.clone(), None))
                 .collect::<Vec<_>>(),
         };
 
         let settings = Settings::try_get()?;
-        let mpr = MultiProgressReport::get();
-        let mut errors = rayon::ThreadPoolBuilder::new()
-            .num_threads(self.jobs.unwrap_or(settings.jobs))
-            .build()?
-            .install(|| {
-                plugins
-                    .into_par_iter()
-                    .map(|(short, ref_)| {
-                        let plugin = plugins::get(&short)?;
-                        let prefix = format!("plugin:{}", style(plugin.name()).blue().for_stderr());
-                        let pr = mpr.add(&prefix);
-                        plugin
-                            .update(&pr, ref_)
-                            .wrap_err_with(|| format!("[{plugin}] plugin update"))?;
-                        Ok(())
-                    })
-                    .filter_map(|r| r.err())
-                    .collect::<Vec<_>>()
+        let mut jset: JoinSet<Result<()>> = JoinSet::new();
+        let semaphore = Arc::new(Semaphore::new(self.jobs.unwrap_or(settings.jobs)));
+        for (short, ref_) in plugins {
+            let semaphore = semaphore.clone();
+            jset.spawn(async move {
+                let _permit = semaphore.acquire_owned().await;
+                let plugin = plugins::get(&short)?;
+                let prefix = format!("plugin:{}", style(plugin.name()).blue().for_stderr());
+                let mpr = MultiProgressReport::get();
+                let pr = mpr.add(&prefix);
+                plugin
+                    .update(&pr, ref_)
+                    .await
+                    .wrap_err_with(|| format!("[{plugin}] plugin update"))?;
+                Ok(())
             });
-        if errors.is_empty() {
-            Ok(())
-        } else if errors.len() == 1 {
-            Err(errors.pop().unwrap())
-        } else {
-            let err = eyre!("{} plugins failed to update", errors.len());
-            Err(errors
-                .into_iter()
-                .fold(err, |report: Report, e| report.wrap_err(e)))
         }
+
+        while let Some(result) = jset.join_next().await {
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    return Err(e);
+                }
+                Err(e) => {
+                    return Err(eyre!(e));
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

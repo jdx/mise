@@ -66,6 +66,7 @@ within_isolated_env() {
     MISE_DATA_DIR="$MISE_DATA_DIR" \
     MISE_DEBUG="${MISE_DEBUG:-0}" \
     MISE_EXPERIMENTAL=1 \
+    MISE_GPG_VERIFY="${MISE_GPG_VERIFY:-}" \
     MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
     MISE_STATE_DIR="$MISE_STATE_DIR" \
     MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
@@ -102,7 +103,7 @@ run_test() {
 
   echo "$TEST: $DURATION" >&2
 
-  if [[ "$status" == 0 ]]; then
+  if [[ $status == 0 ]]; then
     remove_isolated_env
     summary "$TEST" "$DURATION" ":white_check_mark:"
   else

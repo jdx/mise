@@ -27,55 +27,51 @@ pub struct TasksDeps {
 }
 
 impl TasksDeps {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let tasks = if self.tasks.is_none() {
-            self.get_all_tasks()?
+            self.get_all_tasks(&config).await?
         } else {
-            self.get_task_lists()?
+            self.get_task_lists(&config).await?
         };
 
         if self.dot {
-            self.print_deps_dot(tasks)?;
+            self.print_deps_dot(tasks).await?;
         } else {
-            self.print_deps_tree(tasks)?;
+            self.print_deps_tree(tasks).await?;
         }
 
         Ok(())
     }
 
-    fn get_all_tasks(&self) -> Result<Vec<Task>> {
-        Ok(Config::get()
-            .tasks()?
+    async fn get_all_tasks(&self, config: &Config) -> Result<Vec<Task>> {
+        Ok(config
+            .tasks()
+            .await?
             .values()
             .filter(|t| self.hidden || !t.hide)
             .cloned()
             .collect())
     }
 
-    fn get_task_lists(&self) -> Result<Vec<Task>> {
-        let config = Config::get();
-        let tasks = config.tasks()?;
-        let tasks = self.tasks.as_ref().map(|t| {
-            t.iter()
-                .map(|tn| {
-                    tasks
-                        .get(tn)
-                        .cloned()
-                        .or_else(|| {
-                            tasks
-                                .values()
-                                .find(|task| task.display_name().as_str() == tn.as_str())
-                                .cloned()
-                        })
-                        .ok_or_else(|| self.err_no_task(tn.as_str()))
-                })
-                .collect::<Result<Vec<Task>>>()
-        });
-        match tasks {
-            Some(Ok(tasks)) => Ok(tasks),
-            Some(Err(e)) => Err(e),
-            None => Ok(vec![]),
+    async fn get_task_lists(&self, config: &Config) -> Result<Vec<Task>> {
+        let all_tasks = config.tasks().await?;
+        let mut tasks = vec![];
+        for task in self.tasks.as_ref().unwrap_or(&vec![]) {
+            match all_tasks
+                .get(task)
+                .or_else(|| all_tasks.values().find(|t| &t.display_name == task))
+                .cloned()
+            {
+                Some(task) => {
+                    tasks.push(task);
+                }
+                None => {
+                    return Err(self.err_no_task(task).await);
+                }
+            }
         }
+        Ok(tasks)
     }
 
     ///
@@ -90,8 +86,8 @@ impl TasksDeps {
     /// task5
     /// ```
     ///
-    fn print_deps_tree(&self, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(tasks.clone())?;
+    async fn print_deps_tree(&self, tasks: Vec<Task>) -> Result<()> {
+        let deps = Deps::new(tasks.clone()).await?;
         // filter out nodes that are not selected
         let start_indexes = deps.graph.node_indices().filter(|&idx| {
             let task = &deps.graph[idx];
@@ -121,8 +117,8 @@ impl TasksDeps {
     /// }
     /// ```
     //
-    fn print_deps_dot(&self, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(tasks)?;
+    async fn print_deps_dot(&self, tasks: Vec<Task>) -> Result<()> {
+        let deps = Deps::new(tasks).await?;
         miseprintln!(
             "{:?}",
             Dot::with_attr_getters(
@@ -138,11 +134,12 @@ impl TasksDeps {
         Ok(())
     }
 
-    fn err_no_task(&self, t: &str) -> eyre::Report {
-        let config = Config::get();
+    async fn err_no_task(&self, t: &str) -> eyre::Report {
+        let config = Config::get().await;
         let tasks = config
             .tasks()
-            .map(|t| t.values().map(|v| v.display_name()).collect::<Vec<_>>())
+            .await
+            .map(|t| t.values().map(|v| &v.display_name).collect::<Vec<_>>())
             .unwrap_or_default();
         let task_names = tasks.into_iter().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();

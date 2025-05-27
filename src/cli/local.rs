@@ -1,13 +1,19 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use color_eyre::eyre::{ContextCompat, Result, eyre};
 use console::style;
 use itertools::Itertools;
 
-use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Settings, config_file};
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
+use crate::{
+    cli::args::{BackendArg, ToolArg},
+    config::Config,
+};
 use crate::{env, file};
 
 /// Sets/gets tool version in local .tool-versions or mise.toml
@@ -52,13 +58,15 @@ pub struct Local {
 }
 
 impl Local {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         let path = if self.parent {
             get_parent_path()?
         } else {
             get_path()?
         };
         local(
+            &config,
             &path,
             self.tool,
             self.remove,
@@ -66,6 +74,7 @@ impl Local {
             self.fuzzy,
             self.path,
         )
+        .await
     }
 }
 
@@ -94,7 +103,8 @@ pub fn get_parent_path() -> Result<PathBuf> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn local(
+pub async fn local(
+    config: &Arc<Config>,
     path: &Path,
     runtime: Vec<ToolArg>,
     remove: Option<Vec<BackendArg>>,
@@ -107,7 +117,7 @@ pub fn local(
         "mise local/global are deprecated. Use `mise use` instead."
     );
     let settings = Settings::try_get()?;
-    let mut cf = config_file::parse_or_init(path)?;
+    let cf = config_file::parse_or_init(path)?;
     if show_path {
         miseprintln!("{}", path.display());
         return Ok(());
@@ -130,12 +140,13 @@ pub fn local(
             return Ok(());
         }
         let pin = pin || (settings.asdf_compat && !fuzzy);
-        cf.add_runtimes(&runtimes, pin)?;
+        cf.add_runtimes(config, &runtimes, pin).await?;
         let tools = runtimes.iter().map(|t| t.style()).join(" ");
         miseprintln!("{} {} {tools}", style("mise").dim(), display_path(path));
     }
 
     if !runtime.is_empty() || remove.is_some() {
+        trace!("saving config file {}", display_path(path));
         cf.save()?;
     } else {
         miseprint!("{}", cf.dump()?)?;

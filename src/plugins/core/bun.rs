@@ -1,10 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
+use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
@@ -12,17 +15,18 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::Backend, config::Config};
 use crate::{file, github, plugins};
 
 #[derive(Debug)]
 pub struct BunPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl BunPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("bun"),
+            ba: Arc::new(plugins::core::new_backend_arg("bun")),
         }
     }
 
@@ -38,7 +42,7 @@ impl BunPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let url = format!(
             "https://github.com/oven-sh/bun/releases/download/bun-v{}/bun-{}-{}.zip",
             tv.version,
@@ -49,7 +53,7 @@ impl BunPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr))?;
+        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
 
         Ok(tarball_path)
     }
@@ -78,13 +82,15 @@ impl BunPlugin {
     }
 }
 
+#[async_trait]
 impl Backend for BunPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        let versions = github::list_releases("oven-sh/bun")?
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+        let versions = github::list_releases("oven-sh/bun")
+            .await?
             .into_iter()
             .map(|r| r.tag_name)
             .filter_map(|v| v.strip_prefix("bun-v").map(|v| v.to_string()))
@@ -98,8 +104,12 @@ impl Backend for BunPlugin {
         Ok(vec![".bun-version".into()])
     }
 
-    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr)?;
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        let tarball_path = self.download(&tv, &ctx.pr).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;
         self.verify(ctx, &tv)?;

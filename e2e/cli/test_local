@@ -2,9 +2,9 @@
 
 export MISE_USE_TOML=0
 
-mise i dummy@{1,2} tiny@3
+assert "mise i dummy@{1,2} tiny@3"
 
-mise local dummy@2
+assert "mise local dummy@2 -vv"
 assert "mise local" "dummy 2"
 assert "mise local --path" "$PWD/.tool-versions"
 

@@ -1,6 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -8,7 +10,9 @@ use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::Backend, config::Config};
 use crate::{file, plugins};
+use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -16,13 +20,13 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct ElixirPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl ElixirPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("elixir"),
+            ba: Arc::new(plugins::core::new_backend_arg("elixir")),
         }
     }
 
@@ -30,16 +34,16 @@ impl ElixirPlugin {
         tv.install_path().join("bin").join(elixir_bin_name())
     }
 
-    fn test_elixir(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+    async fn test_elixir(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("elixir --version".into());
         CmdLineRunner::new(self.elixir_bin(tv))
             .with_pr(&ctx.pr)
-            .envs(self.dependency_env()?)
+            .envs(self.dependency_env(&ctx.config).await?)
             .arg("--version")
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let version = &tv.version;
         let version = if regex!(r"^[0-9]").is_match(version) {
             &format!("v{version}")
@@ -53,13 +57,18 @@ impl ElixirPlugin {
 
         pr.set_message(format!("download {filename}"));
         if !tarball_path.exists() {
-            HTTP.download_file(&url, &tarball_path, Some(pr))?;
+            HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
         }
 
         Ok(tarball_path)
     }
 
-    fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
+    async fn install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        tarball_path: &Path,
+    ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
@@ -68,19 +77,21 @@ impl ElixirPlugin {
         Ok(())
     }
 
-    fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        self.test_elixir(ctx, tv)
+    async fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        self.test_elixir(ctx, tv).await
     }
 }
 
+#[async_trait]
 impl Backend for ElixirPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions: Vec<String> = HTTP_FETCH
-            .get_text("https://builds.hex.pm/builds/elixir/builds.txt")?
+            .get_text("https://builds.hex.pm/builds/elixir/builds.txt")
+            .await?
             .lines()
             .unique()
             .filter_map(|s| s.split_once(' ').map(|(v, _)| v.trim_start_matches('v')))
@@ -103,15 +114,19 @@ impl Backend for ElixirPlugin {
         Ok(vec!["erlang"])
     }
 
-    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr)?;
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        let tarball_path = self.download(&tv, &ctx.pr).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
-        self.install(ctx, &tv, &tarball_path)?;
-        self.verify(ctx, &tv)?;
+        self.install(ctx, &tv, &tarball_path).await?;
+        self.verify(ctx, &tv).await?;
         Ok(tv)
     }
 
-    fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         Ok(["bin", ".mix/escripts"]
             .iter()
             .map(|p| tv.install_path().join(p))

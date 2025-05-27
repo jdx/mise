@@ -1,5 +1,8 @@
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -12,6 +15,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, github, plugins};
+use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
@@ -19,13 +23,13 @@ use xx::regex;
 
 #[derive(Debug)]
 pub struct RubyPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl RubyPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("ruby"),
+            ba: plugins::core::new_backend_arg("ruby").into(),
         }
     }
 
@@ -37,9 +41,9 @@ impl RubyPlugin {
         tv.install_path().join("bin").join("gem.cmd")
     }
 
-    fn install_default_gems(
+    async fn install_default_gems(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
@@ -56,7 +60,7 @@ impl RubyPlugin {
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
                 .arg("install")
-                .envs(config.env()?);
+                .envs(config.env().await?);
             match package.split_once(' ') {
                 Some((name, "--pre")) => cmd = cmd.arg(name).arg("--pre"),
                 Some((name, version)) => cmd = cmd.arg(name).arg("--version").arg(version),
@@ -68,18 +72,23 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn test_ruby(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
+    async fn test_ruby(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<()> {
         pr.set_message("ruby -v".into());
         CmdLineRunner::new(self.ruby_path(tv))
             .with_pr(pr)
             .arg("-v")
-            .envs(Config::get().env()?)
+            .envs(config.env().await?)
             .execute()
     }
 
-    fn test_gem(
+    async fn test_gem(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
@@ -87,7 +96,7 @@ impl RubyPlugin {
         CmdLineRunner::new(self.gem_path(tv))
             .with_pr(pr)
             .arg("-v")
-            .envs(config.env()?)
+            .envs(config.env().await?)
             .env(&*PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()
     }
@@ -100,22 +109,27 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let arch = arch();
         let url = format!(
             "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-{version}-1/rubyinstaller-{version}-1-{arch}.7z",
             version = tv.version,
         );
-        let filename = url.split('/').last().unwrap();
+        let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr))?;
+        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
 
         Ok(tarball_path)
     }
 
-    fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
+    async fn install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        tarball_path: &Path,
+    ) -> Result<()> {
         let arch = arch();
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("extract {filename}"));
@@ -129,23 +143,24 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        self.test_ruby(tv, &ctx.pr)
+    async fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        self.test_ruby(&ctx.config, tv, &ctx.pr).await
     }
 }
 
+#[async_trait]
 impl Backend for RubyPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         // TODO: use windows set of versions
         //  match self.core.fetch_remote_versions_from_mise() {
         //      Ok(Some(versions)) => return Ok(versions),
         //      Ok(None) => {}
         //      Err(e) => warn!("failed to fetch remote versions: {}", e),
         //  }
-        let releases: Vec<GithubRelease> = github::list_releases("oneclick/rubyinstaller2")?;
+        let releases: Vec<GithubRelease> = github::list_releases("oneclick/rubyinstaller2").await?;
         let versions = releases
             .into_iter()
             .map(|r| r.tag_name)
@@ -180,27 +195,26 @@ impl Backend for RubyPlugin {
         Ok(v)
     }
 
-    fn install_version_(
+    async fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let config = Config::get();
-        let tarball = self.download(&tv, &ctx.pr)?;
+        let tarball = self.download(&tv, &ctx.pr).await?;
         self.verify_checksum(ctx, &mut tv, &tarball)?;
-        self.install(ctx, &tv, &tarball)?;
-        self.verify(ctx, &tv)?;
+        self.install(ctx, &tv, &tarball).await?;
+        self.verify(ctx, &tv).await?;
         self.install_rubygems_hook(&tv)?;
-        self.test_gem(&config, &tv, &ctx.pr)?;
-        if let Err(err) = self.install_default_gems(&config, &tv, &ctx.pr) {
+        self.test_gem(&ctx.config, &tv, &ctx.pr).await?;
+        if let Err(err) = self.install_default_gems(&ctx.config, &tv, &ctx.pr).await {
             warn!("failed to install default ruby gems {err:#}");
         }
         Ok(tv)
     }
 
-    fn exec_env(
+    async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         _tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
@@ -248,28 +262,36 @@ fn arch() -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
     use super::*;
 
-    #[test]
-    fn test_list_versions_matching() {
+    #[tokio::test]
+    async fn test_list_versions_matching() {
+        let config = Config::get().await;
         let plugin = RubyPlugin::new();
         assert!(
-            !plugin.list_versions_matching("3").unwrap().is_empty(),
+            !plugin
+                .list_versions_matching(&config, "3")
+                .await
+                .unwrap()
+                .is_empty(),
             "versions for 3 should not be empty"
         );
         assert!(
             !plugin
-                .list_versions_matching("truffleruby-24")
+                .list_versions_matching(&config, "truffleruby-24")
+                .await
                 .unwrap()
                 .is_empty(),
             "versions for truffleruby-24 should not be empty"
         );
         assert!(
             !plugin
-                .list_versions_matching("truffleruby+graalvm-24")
+                .list_versions_matching(&config, "truffleruby+graalvm-24")
+                .await
                 .unwrap()
                 .is_empty(),
             "versions for truffleruby+graalvm-24 should not be empty"

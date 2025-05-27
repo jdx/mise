@@ -53,7 +53,7 @@ struct DevcontainerMount {
 }
 
 impl Devcontainer {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         SETTINGS.ensure_experimental("generate devcontainer")?;
         let output = self.generate()?;
 

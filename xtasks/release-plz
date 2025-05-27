@@ -6,14 +6,14 @@ git config user.email release@mise.jdx.dev
 
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
 if ! curl https://crates.io/api/v1/crates/mise | jq -r '.versions[0].num' | grep -q "$cur_version"; then
-  echo "Releasing $cur_version"
-  cargo publish
-  changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
-  changelog="$(echo "$changelog" | tail -n +3)"
-  git tag "v$cur_version" -s -m "$changelog"
-  git push --tags
-  gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
-  exit 0
+	echo "Releasing $cur_version"
+	cargo publish
+	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
+	changelog="$(echo "$changelog" | tail -n +3)"
+	git tag "v$cur_version" -s -m "$changelog"
+	git push --tags
+	gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
+	exit 0
 fi
 
 git submodule update --remote
@@ -21,11 +21,11 @@ git submodule update --remote
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
-  cargo set-version --bump patch
+	cargo set-version --bump patch
 elif echo "$cur_version" | grep -e "^$year\."; then
-  cargo set-version --bump minor
+	cargo set-version --bump minor
 else
-  cargo set-version "$year.1.0"
+	cargo set-version "$year.1.0"
 fi
 
 version="$(cargo pkgid mise | cut -d# -f2)"
@@ -39,25 +39,25 @@ sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/versio
 mise run render ::: lint-fix
 
 mise up
-#cargo update
+cargo update
 git add \
-  Cargo.lock \
-  Cargo.toml \
-  CHANGELOG.md \
-  README.md \
-  aqua-registry \
-  default.nix \
-  packaging/rpm/mise.spec \
-  mise.usage.kdl \
-  completions \
-  man/
+	Cargo.lock \
+	Cargo.toml \
+	CHANGELOG.md \
+	README.md \
+	aqua-registry \
+	default.nix \
+	packaging/rpm/mise.spec \
+	mise.usage.kdl \
+	completions \
+	man/
 git clean -df
 git checkout -B release
 git commit -m "chore: release $version"
 git push origin release --force
 
 if [[ "$(gh pr list --label release)" == "" ]]; then
-  gh pr create --title "chore: release $version" --body "$changelog" --label "release" --head release
+	gh pr create --title "chore: release $version" --body "$changelog" --label "release" --head release
 else
-  gh pr edit --title "chore: release $version" --body "$changelog"
+	gh pr edit --title "chore: release $version" --body "$changelog"
 fi

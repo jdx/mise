@@ -1,3 +1,4 @@
+use crate::path::{Path, PathBuf, PathExt};
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::fs;
@@ -7,7 +8,6 @@ use std::io::Write;
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
 use std::os::unix::prelude::*;
-use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -16,7 +16,6 @@ use eyre::bail;
 use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
-use rayon::prelude::*;
 use std::sync::LazyLock as Lazy;
 use tar::Archive;
 use walkdir::WalkDir;
@@ -91,6 +90,14 @@ pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("rm {}", display_path(path));
     fs::remove_file(path).wrap_err_with(|| format!("failed rm: {}", display_path(path)))
+}
+
+pub async fn remove_file_async<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("rm {}", display_path(path));
+    tokio::fs::remove_file(path)
+        .await
+        .wrap_err_with(|| format!("failed rm: {}", display_path(path)))
 }
 
 pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -170,12 +177,27 @@ pub fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()>
     trace!("write {}", display_path(path));
     fs::write(path, contents).wrap_err_with(|| format!("failed write: {}", display_path(path)))
 }
+pub async fn write_async<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("write {}", display_path(path));
+    tokio::fs::write(path, contents)
+        .await
+        .wrap_err_with(|| format!("failed write: {}", display_path(path)))
+}
 
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
     let path = path.as_ref();
-    trace!("cat {}", display_path(path));
+    trace!("cat {}", path.display_user());
     fs::read_to_string(path)
-        .wrap_err_with(|| format!("failed read_to_string: {}", display_path(path)))
+        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
+}
+
+pub async fn read_to_string_async<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    tokio::fs::read_to_string(path)
+        .await
+        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
 }
 
 pub fn create(path: &Path) -> Result<File> {
@@ -206,12 +228,7 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
 
 /// replaces $HOME with "~"
 pub fn display_path<P: AsRef<Path>>(path: P) -> String {
-    let home = dirs::HOME.to_string_lossy();
-    let path = path.as_ref();
-    match cfg!(unix) && path.starts_with(home.as_ref()) && home != "/" {
-        true => path.to_string_lossy().replacen(home.as_ref(), "~", 1),
-        false => path.to_string_lossy().to_string(),
-    }
+    path.as_ref().display_user()
 }
 
 pub fn display_rel_path<P: AsRef<Path>>(path: P) -> String {
@@ -384,11 +401,6 @@ pub fn resolve_symlink(link: &Path) -> Result<PathBuf> {
 
 #[cfg(unix)]
 pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
-    trace!("ln -sf {} {}", target.display(), link.display());
-    if link.is_file() || link.is_symlink() {
-        // remove existing file if exists
-        fs::remove_file(link)?;
-    }
     make_symlink(target, link)?;
     Ok(())
 }
@@ -453,6 +465,22 @@ pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
 
 #[cfg(windows)]
 pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+pub async fn make_executable_async<P: AsRef<Path>>(path: P) -> Result<()> {
+    trace!("chmod +x {}", display_path(&path));
+    let path = path.as_ref();
+    let mut perms = path.metadata()?.permissions();
+    perms.set_mode(perms.mode() | 0o111);
+    tokio::fs::set_permissions(path, perms)
+        .await
+        .wrap_err_with(|| format!("failed to chmod +x: {}", display_path(path)))
+}
+
+#[cfg(windows)]
+pub async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 
@@ -551,7 +579,7 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
 
 fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
     let name = name.as_ref();
-    paths.par_iter().find_map_first(|path| {
+    paths.iter().find_map(|path| {
         let bin = path.join(name);
         if is_executable(&bin) { Some(bin) } else { None }
     })
@@ -803,12 +831,14 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
-    use test_log::test;
+
+    use crate::config::Config;
 
     use super::*;
 
-    #[test]
-    fn test_find_up() {
+    #[tokio::test]
+    async fn test_find_up() {
+        let _config = Config::get().await;
         let path = &env::current_dir().unwrap();
         let filenames = vec![".miserc", ".mise.toml", ".test-tool-versions"]
             .into_iter()
@@ -824,23 +854,26 @@ mod tests {
         assert_eq!(find_up.next(), Some(dirs::HOME.join(".test-tool-versions")));
     }
 
-    #[test]
-    fn test_find_up_2() {
+    #[tokio::test]
+    async fn test_find_up_2() {
+        let _config = Config::get().await;
         let path = &dirs::HOME.join("fixtures");
         let filenames = vec![".test-tool-versions"];
         let result = find_up(path, &filenames);
         assert_eq!(result, Some(dirs::HOME.join(".test-tool-versions")));
     }
 
-    #[test]
-    fn test_dir_subdirs() {
+    #[tokio::test]
+    async fn test_dir_subdirs() {
+        let _config = Config::get().await;
         let subdirs = dir_subdirs(&dirs::HOME).unwrap();
         assert!(subdirs.contains("cwd"));
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_display_path() {
+    async fn test_display_path() {
+        let _config = Config::get().await;
         use std::ops::Deref;
         let path = dirs::HOME.join("cwd");
         assert_eq!(display_path(path), "~/cwd");
@@ -851,8 +884,9 @@ mod tests {
         assert_eq!(display_path(&path), path.display().to_string());
     }
 
-    #[test]
-    fn test_replace_path() {
+    #[tokio::test]
+    async fn test_replace_path() {
+        let _config = Config::get().await;
         assert_eq!(replace_path(Path::new("~/cwd")), dirs::HOME.join("cwd"));
         assert_eq!(replace_path(Path::new("/cwd")), Path::new("/cwd"));
     }

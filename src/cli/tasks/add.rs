@@ -68,9 +68,11 @@ pub struct TasksAdd {
 }
 
 impl TasksAdd {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.file {
-            let mut path = Task::task_dir().join(self.task.replace(':', MAIN_SEPARATOR_STR));
+            let mut path = Task::task_dir()
+                .await
+                .join(self.task.replace(':', MAIN_SEPARATOR_STR));
             if path.is_dir() {
                 path = path.join("_default");
             }

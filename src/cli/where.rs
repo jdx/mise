@@ -27,24 +27,25 @@ pub struct Where {
 }
 
 impl Where {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
+        let config = Config::try_get().await?;
         let tvr = match self.tool.tvr {
             Some(tvr) => tvr,
             None => match self.asdf_version {
                 Some(version) => self.tool.with_version(&version).tvr.unwrap(),
                 None => {
-                    let ts = ToolsetBuilder::new().build(&Config::get())?;
+                    let ts = ToolsetBuilder::new().build(&config).await?;
                     ts.versions
-                        .get(&self.tool.ba)
+                        .get(self.tool.ba.as_ref())
                         .and_then(|tvr| tvr.requests.first().cloned())
                         .unwrap_or_else(|| self.tool.with_version("latest").tvr.unwrap())
                 }
             },
         };
 
-        let tv = tvr.resolve(&Default::default())?;
+        let tv = tvr.resolve(&config, &Default::default()).await?;
 
-        if tv.backend()?.is_version_installed(&tv, true) {
+        if tv.backend()?.is_version_installed(&config, &tv, true) {
             miseprintln!("{}", tv.install_path().to_string_lossy());
             Ok(())
         } else {

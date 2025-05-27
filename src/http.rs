@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
-use eyre::{Report, Result, bail};
+use eyre::{Report, Result, bail, ensure};
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Response};
 use std::sync::LazyLock as Lazy;
@@ -11,7 +11,6 @@ use url::Url;
 use crate::cli::version;
 use crate::config::SETTINGS;
 use crate::file::display_path;
-use crate::tokio::RUNTIME;
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file};
 
@@ -48,12 +47,10 @@ impl Client {
             .zstd(true)
     }
 
-    pub fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
+    pub async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
         let url = url.into_url().unwrap();
-        RUNTIME.block_on(async {
-            let resp = self.get_async(url.clone()).await?;
-            Ok(resp.bytes().await?)
-        })
+        let resp = self.get_async(url.clone()).await?;
+        Ok(resp.bytes().await?)
     }
 
     pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
@@ -67,6 +64,7 @@ impl Client {
         url: U,
         headers: &HeaderMap,
     ) -> Result<Response> {
+        ensure!(!*env::OFFLINE, "offline mode is enabled");
         let get = |url: Url| async move {
             debug!("GET {}", &url);
             let mut req = self.reqwest.get(url.clone());
@@ -95,12 +93,7 @@ impl Client {
         Ok(resp)
     }
 
-    pub fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
-        let url = url.into_url().unwrap();
-        RUNTIME.block_on(self.head_async(url))
-    }
-
-    pub async fn head_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
+    pub async fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let url = url.into_url().unwrap();
         let headers = github_headers(&url);
         self.head_async_with_headers(url, &headers).await
@@ -111,6 +104,7 @@ impl Client {
         url: U,
         headers: &HeaderMap,
     ) -> Result<Response> {
+        ensure!(!*env::OFFLINE, "offline mode is enabled");
         let head = |url: Url| async move {
             debug!("HEAD {}", &url);
             let mut req = self.reqwest.head(url.clone());
@@ -139,49 +133,43 @@ impl Client {
         Ok(resp)
     }
 
-    pub fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
+    pub async fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         let mut url = url.into_url().unwrap();
-        let text = RUNTIME.block_on(async {
-            let resp = self.get_async(url.clone()).await?;
-            Ok::<String, eyre::Error>(resp.text().await?)
-        })?;
+        let resp = self.get_async(url.clone()).await?;
+        let text = resp.text().await?;
         if text.starts_with("<!DOCTYPE html>") {
             if url.scheme() == "http" {
                 // try with https since http may be blocked
                 url.set_scheme("https").unwrap();
-                return self.get_text(url);
+                return Box::pin(self.get_text(url)).await;
             }
             bail!("Got HTML instead of text from {}", url);
         }
         Ok(text)
     }
 
-    pub fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
+    pub async fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url().unwrap();
-        let html = RUNTIME.block_on(async {
-            let resp = self.get_async(url.clone()).await?;
-            Ok::<String, eyre::Error>(resp.text().await?)
-        })?;
+        let resp = self.get_async(url.clone()).await?;
+        let html = resp.text().await?;
         if !html.starts_with("<!DOCTYPE html>") {
             bail!("Got non-HTML text from {}", url);
         }
         Ok(html)
     }
 
-    pub fn json_headers<T, U: IntoUrl>(&self, url: U) -> Result<(T, HeaderMap)>
+    pub async fn json_headers<T, U: IntoUrl>(&self, url: U) -> Result<(T, HeaderMap)>
     where
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url().unwrap();
-        let (json, headers) = RUNTIME.block_on(async {
-            let resp = self.get_async(url).await?;
-            let headers = resp.headers().clone();
-            Ok::<(T, HeaderMap), eyre::Error>((resp.json().await?, headers))
-        })?;
+        let resp = self.get_async(url).await?;
+        let headers = resp.headers().clone();
+        let json = resp.json().await?;
         Ok((json, headers))
     }
 
-    pub fn json_headers_with_headers<T, U: IntoUrl>(
+    pub async fn json_headers_with_headers<T, U: IntoUrl>(
         &self,
         url: U,
         headers: &HeaderMap,
@@ -190,30 +178,29 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         let url = url.into_url().unwrap();
-        let (json, headers) = RUNTIME.block_on(async {
-            let resp = self.get_async_with_headers(url, headers).await?;
-            let headers = resp.headers().clone();
-            Ok::<(T, HeaderMap), eyre::Error>((resp.json().await?, headers))
-        })?;
+        let resp = self.get_async_with_headers(url, headers).await?;
+        let headers = resp.headers().clone();
+        let json = resp.json().await?;
         Ok((json, headers))
     }
 
-    pub fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
+    pub async fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
-        self.json_headers(url).map(|(json, _)| json)
+        self.json_headers(url).await.map(|(json, _)| json)
     }
 
-    pub fn json_with_headers<T, U: IntoUrl>(&self, url: U, headers: &HeaderMap) -> Result<T>
+    pub async fn json_with_headers<T, U: IntoUrl>(&self, url: U, headers: &HeaderMap) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
         self.json_headers_with_headers(url, headers)
+            .await
             .map(|(json, _)| json)
     }
 
-    pub fn download_file<U: IntoUrl>(
+    pub async fn download_file<U: IntoUrl>(
         &self,
         url: U,
         path: &Path,
@@ -222,26 +209,23 @@ impl Client {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
 
-        RUNTIME.block_on(async {
-            let mut resp = self.get_async(url).await?;
-            if let Some(length) = resp.content_length() {
-                if let Some(pr) = pr {
-                    pr.set_length(length);
-                }
+        let mut resp = self.get_async(url).await?;
+        if let Some(length) = resp.content_length() {
+            if let Some(pr) = pr {
+                pr.set_length(length);
             }
+        }
 
-            let parent = path.parent().unwrap();
-            file::create_dir_all(parent)?;
-            let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
-            while let Some(chunk) = resp.chunk().await? {
-                file.write_all(&chunk)?;
-                if let Some(pr) = pr {
-                    pr.inc(chunk.len() as u64);
-                }
+        let parent = path.parent().unwrap();
+        file::create_dir_all(parent)?;
+        let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
+        while let Some(chunk) = resp.chunk().await? {
+            file.write_all(&chunk)?;
+            if let Some(pr) = pr {
+                pr.inc(chunk.len() as u64);
             }
-            file.persist(path)?;
-            Ok::<(), eyre::Error>(())
-        })?;
+        }
+        file.persist(path)?;
         Ok(())
     }
 }

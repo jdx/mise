@@ -23,7 +23,7 @@ pub struct GithubAction {
 }
 
 impl GithubAction {
-    pub fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         let settings = Settings::get();
         settings.ensure_experimental("generate github-action")?;
         let output = self.generate()?;

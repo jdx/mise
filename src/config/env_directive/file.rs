@@ -1,10 +1,13 @@
-use crate::config::env_directive::EnvResults;
+use crate::config::{Config, env_directive::EnvResults};
 use crate::file::display_path;
 use crate::{Result, file, sops};
 use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, YamlFileFormat};
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 // use indexmap so source is after value for `mise env --json` output
 type EnvMap = IndexMap<String, String>;
@@ -19,7 +22,8 @@ struct Env<V> {
 
 impl EnvResults {
     #[allow(clippy::too_many_arguments)]
-    pub fn file(
+    pub async fn file(
+        config: &Arc<Config>,
         ctx: &mut tera::Context,
         tera: &mut tera::Tera,
         r: &mut EnvResults,
@@ -38,16 +42,16 @@ impl EnvResults {
                 .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
             *env = match ext.as_str() {
-                "json" => Self::json(&p, parse_template)?,
-                "yaml" => Self::yaml(&p, parse_template)?,
-                "toml" => Self::toml(&p)?,
-                _ => Self::dotenv(&p)?,
+                "json" => Self::json(config, &p, parse_template).await?,
+                "yaml" => Self::yaml(config, &p, parse_template).await?,
+                "toml" => Self::toml(&p).await?,
+                _ => Self::dotenv(&p).await?,
             };
         }
         Ok(out)
     }
 
-    fn json<PT>(p: &Path, parse_template: PT) -> Result<EnvMap>
+    async fn json<PT>(config: &Arc<Config>, p: &Path, parse_template: PT) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
     {
@@ -55,7 +59,8 @@ impl EnvResults {
         if let Ok(raw) = file::read_to_string(p) {
             let mut f: Env<serde_json::Value> = serde_json::from_str(&raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
-                let raw = sops::decrypt::<_, JsonFileFormat>(&raw, parse_template, "json")?;
+                let raw = sops::decrypt::<_, JsonFileFormat>(config, &raw, parse_template, "json")
+                    .await?;
                 f = serde_json::from_str(&raw).wrap_err_with(errfn)?;
             }
             f.env
@@ -77,7 +82,7 @@ impl EnvResults {
         }
     }
 
-    fn yaml<PT>(p: &Path, parse_template: PT) -> Result<EnvMap>
+    async fn yaml<PT>(config: &Arc<Config>, p: &Path, parse_template: PT) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
     {
@@ -85,7 +90,8 @@ impl EnvResults {
         if let Ok(raw) = file::read_to_string(p) {
             let mut f: Env<serde_yaml::Value> = serde_yaml::from_str(&raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
-                let raw = sops::decrypt::<_, YamlFileFormat>(&raw, parse_template, "yaml")?;
+                let raw = sops::decrypt::<_, YamlFileFormat>(config, &raw, parse_template, "yaml")
+                    .await?;
                 f = serde_yaml::from_str(&raw).wrap_err_with(errfn)?;
             }
             f.env
@@ -107,7 +113,7 @@ impl EnvResults {
         }
     }
 
-    fn toml(p: &Path) -> Result<EnvMap> {
+    async fn toml(p: &Path) -> Result<EnvMap> {
         let errfn = || eyre!("failed to parse toml file: {}", display_path(p));
         // sops does not support toml yet, so no need to parse sops
         if let Ok(raw) = file::read_to_string(p) {
@@ -132,7 +138,7 @@ impl EnvResults {
         }
     }
 
-    fn dotenv(p: &Path) -> Result<EnvMap> {
+    async fn dotenv(p: &Path) -> Result<EnvMap> {
         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(p));
         let mut env = EnvMap::new();
         if let Ok(dotenv) = dotenvy::from_path_iter(p) {

@@ -11,7 +11,7 @@ use crate::shell::{ActivateOptions, Shell};
 pub struct Xonsh {}
 
 fn xonsh_escape_sq(input: &str) -> Cow<str> {
-    for (i, ch) in input.chars().enumerate() {
+    for (i, ch) in input.char_indices() {
         if xonsh_escape_char(ch).is_some() {
             let mut escaped_string = String::with_capacity(input.len());
 

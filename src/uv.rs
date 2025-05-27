@@ -4,9 +4,10 @@ use crate::config::{Config, SETTINGS};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::Result;
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{LazyLock as Lazy, Mutex};
+use std::sync::LazyLock as Lazy;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::OnceCell;
 
 #[derive(Clone, Debug)]
 pub struct Venv {
@@ -16,34 +17,41 @@ pub struct Venv {
 
 // use a mutex to prevent deadlocks that occurs due to reentrantly initialization
 // when resolving the venv path or env vars
-static UV_VENV: Mutex<Lazy<Option<Venv>>> = Mutex::new(Lazy::new(|| {
+static UV_VENV: Lazy<OnceCell<Option<Venv>>> = Lazy::new(Default::default);
+
+pub async fn uv_venv(config: &Arc<Config>) -> Option<Venv> {
+    if let Some(venv) = UV_VENV.get() {
+        return venv.clone();
+    }
     if !SETTINGS.python.uv_venv_auto {
+        UV_VENV.set(None).unwrap();
         return None;
     }
-    if let (Some(venv_path), Some(uv_path)) = (venv_path(), uv_path()) {
-        match get_or_create_venv(venv_path, uv_path) {
-            Ok(venv) => return Some(venv),
+    if let (Some(venv_path), Some(uv_path)) = (venv_path(), uv_path(config).await) {
+        match get_or_create_venv(venv_path, uv_path).await {
+            Ok(venv) => {
+                UV_VENV.set(Some(venv.clone())).unwrap();
+                return Some(venv);
+            }
             Err(e) => {
                 warn!("uv venv failed: {e}");
             }
         }
     }
+    UV_VENV.set(None).unwrap();
     None
-}));
-
-pub fn get_uv_venv() -> Option<Venv> {
-    let uv_venv = UV_VENV.try_lock().ok()?;
-    uv_venv.as_ref().cloned()
 }
 
-fn get_or_create_venv(venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
+async fn get_or_create_venv(venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
     SETTINGS.ensure_experimental("uv venv auto")?;
     let mut venv = Venv {
         env: Default::default(),
         venv_path: venv_path.join("bin"),
     };
     if let Some(python_tv) = Config::get()
-        .get_toolset()?
+        .await
+        .get_toolset()
+        .await?
         .versions
         .get(&BackendArg::from("python"))
         .and_then(|tvl| tvl.versions.first())
@@ -77,10 +85,10 @@ fn uv_root() -> Option<PathBuf> {
 fn venv_path() -> Option<PathBuf> {
     Some(uv_root()?.join(".venv"))
 }
-fn uv_path() -> Option<PathBuf> {
-    Config::get()
-        .get_toolset()
-        .ok()?
-        .which_bin("uv")
-        .or_else(|| which::which("uv").ok())
+async fn uv_path(config: &Arc<Config>) -> Option<PathBuf> {
+    let ts = config.get_toolset().await.ok()?;
+    if let Some(uv_path) = ts.which_bin(config, "uv").await {
+        return Some(uv_path);
+    }
+    which::which("uv").ok()
 }

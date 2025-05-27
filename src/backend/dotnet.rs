@@ -1,22 +1,26 @@
-use crate::backend::Backend;
+use std::sync::Arc;
+
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
 use crate::http::HTTP_FETCH;
+use crate::{backend::Backend, config::Config};
+use async_trait::async_trait;
 use eyre::eyre;
 
 #[derive(Debug)]
 pub struct DotnetBackend {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
+#[async_trait]
 impl Backend for DotnetBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Dotnet
     }
 
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
@@ -24,18 +28,20 @@ impl Backend for DotnetBackend {
         Ok(vec!["dotnet"])
     }
 
-    fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
-        let feed_url = self.get_search_url()?;
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        let feed_url = self.get_search_url().await?;
 
-        let feed: NugetFeedSearch = HTTP_FETCH.json(format!(
-            "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
-            feed_url,
-            &self.tool_name(),
-            SETTINGS
-                .dotnet
-                .package_flags
-                .contains(&"prerelease".to_string())
-        ))?;
+        let feed: NugetFeedSearch = HTTP_FETCH
+            .json(format!(
+                "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
+                feed_url,
+                &self.tool_name(),
+                SETTINGS
+                    .dotnet
+                    .package_flags
+                    .contains(&"prerelease".to_string())
+            ))
+            .await?;
 
         if feed.total_hits == 0 {
             return Err(eyre!("No tool found"));
@@ -51,7 +57,7 @@ impl Backend for DotnetBackend {
         Ok(data.versions.iter().map(|x| x.version.clone()).collect())
     }
 
-    fn install_version_(
+    async fn install_version_(
         &self,
         ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
@@ -70,7 +76,7 @@ impl Backend for DotnetBackend {
         }
 
         cli.with_pr(&ctx.pr)
-            .envs(self.dependency_env()?)
+            .envs(self.dependency_env(&ctx.config).await?)
             .execute()?;
 
         Ok(tv)
@@ -79,13 +85,13 @@ impl Backend for DotnetBackend {
 
 impl DotnetBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba }
+        Self { ba: Arc::new(ba) }
     }
 
-    fn get_search_url(&self) -> eyre::Result<String> {
+    async fn get_search_url(&self) -> eyre::Result<String> {
         let nuget_registry = SETTINGS.dotnet.registry_url.as_str();
 
-        let services: NugetFeed = HTTP_FETCH.json(nuget_registry)?;
+        let services: NugetFeed = HTTP_FETCH.json(nuget_registry).await?;
 
         let feed = services
             .resources

@@ -1,9 +1,12 @@
-use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, Once};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use eyre::{Result, eyre};
 use idiomatic_version::IdiomaticVersionFile;
@@ -28,6 +31,8 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, T
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
 use crate::{backend, config, dirs, env, file, hash};
+
+use super::Config;
 
 pub mod idiomatic_version;
 pub mod mise_toml;
@@ -81,9 +86,8 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn tasks(&self) -> Vec<&Task> {
         Default::default()
     }
-    fn remove_tool(&mut self, ba: &BackendArg) -> eyre::Result<()>;
-    fn replace_versions(&mut self, ba: &BackendArg, versions: Vec<ToolRequest>)
-    -> eyre::Result<()>;
+    fn remove_tool(&self, ba: &BackendArg) -> eyre::Result<()>;
+    fn replace_versions(&self, ba: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()>;
     fn save(&self) -> eyre::Result<()>;
     fn dump(&self) -> eyre::Result<String>;
     fn source(&self) -> ToolSource;
@@ -115,10 +119,16 @@ pub trait ConfigFile: Debug + Send + Sync {
 }
 
 impl dyn ConfigFile {
-    pub fn add_runtimes(&mut self, tools: &[ToolArg], pin: bool) -> eyre::Result<()> {
+    pub async fn add_runtimes(
+        &self,
+        config: &Arc<Config>,
+        tools: &[ToolArg],
+        pin: bool,
+    ) -> eyre::Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
         let mut ts = self.to_toolset()?.to_owned();
-        ts.resolve()?;
+        ts.resolve(config).await?;
+        trace!("resolved toolset");
         let mut plugins_to_update = HashMap::new();
         for ta in tools {
             if let Some(tv) = &ta.tvr {
@@ -128,44 +138,47 @@ impl dyn ConfigFile {
                     .push(tv);
             }
         }
-        for (fa, versions) in &plugins_to_update {
+        trace!("plugins to update: {plugins_to_update:?}");
+        for (ba, versions) in &plugins_to_update {
             let mut tvl = ToolVersionList::new(
-                fa.clone(),
+                ba.clone(),
                 ts.source.clone().unwrap_or(ToolSource::Argument),
             );
             for tv in versions {
                 tvl.requests.push((*tv).clone());
             }
-            ts.versions.insert(fa.clone(), tvl);
+            ts.versions.insert(ba.clone(), tvl);
         }
-        ts.resolve()?;
+        trace!("resolving toolset 2");
+        ts.resolve(config).await?;
+        trace!("resolved toolset 2");
         for (ba, versions) in plugins_to_update {
-            let versions = versions
-                .into_iter()
-                .map(|tr| {
-                    let mut tr = tr.clone();
-                    if pin {
-                        let tv = tr.resolve(&Default::default())?;
-                        if let ToolRequest::Version {
-                            version: _version,
+            let mut new = vec![];
+            for tr in versions {
+                let mut tr = tr.clone();
+                if pin {
+                    let tv = tr.resolve(config, &Default::default()).await?;
+                    if let ToolRequest::Version {
+                        version: _version,
+                        source,
+                        options,
+                        backend,
+                    } = tr
+                    {
+                        tr = ToolRequest::Version {
+                            version: tv.version,
                             source,
                             options,
                             backend,
-                        } = tr
-                        {
-                            tr = ToolRequest::Version {
-                                version: tv.version,
-                                source,
-                                options,
-                                backend,
-                            };
-                        }
+                        };
                     }
-                    Ok(tr)
-                })
-                .collect::<eyre::Result<Vec<_>>>()?;
-            self.replace_versions(&ba, versions)?;
+                }
+                new.push(tr);
+            }
+            trace!("replacing versions {new:?}");
+            self.replace_versions(&ba, new)?;
         }
+        trace!("done adding runtimes");
 
         Ok(())
     }
@@ -205,18 +218,18 @@ impl dyn ConfigFile {
     }
 }
 
-fn init(path: &Path) -> Box<dyn ConfigFile> {
+fn init(path: &Path) -> Arc<dyn ConfigFile> {
     match detect_config_file_type(path) {
-        Some(ConfigFileType::MiseToml) => Box::new(MiseToml::init(path)),
-        Some(ConfigFileType::ToolVersions) => Box::new(ToolVersions::init(path)),
+        Some(ConfigFileType::MiseToml) => Arc::new(MiseToml::init(path)),
+        Some(ConfigFileType::ToolVersions) => Arc::new(ToolVersions::init(path)),
         Some(ConfigFileType::IdiomaticVersion) => {
-            Box::new(IdiomaticVersionFile::init(path.to_path_buf()))
+            Arc::new(IdiomaticVersionFile::init(path.to_path_buf()))
         }
         _ => panic!("Unknown config file type: {}", path.display()),
     }
 }
 
-pub fn parse_or_init(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
+pub fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     let path = if path.is_dir() {
         path.join("mise.toml")
     } else {
@@ -229,20 +242,20 @@ pub fn parse_or_init(path: &Path) -> eyre::Result<Box<dyn ConfigFile>> {
     Ok(cf)
 }
 
-pub fn parse(path: &Path) -> Result<Box<dyn ConfigFile>> {
+pub fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     if let Ok(settings) = Settings::try_get() {
         if settings.paranoid {
             trust_check(path)?;
         }
     }
     match detect_config_file_type(path) {
-        Some(ConfigFileType::MiseToml) => Ok(Box::new(MiseToml::from_file(path)?)),
-        Some(ConfigFileType::ToolVersions) => Ok(Box::new(ToolVersions::from_file(path)?)),
+        Some(ConfigFileType::MiseToml) => Ok(Arc::new(MiseToml::from_file(path)?)),
+        Some(ConfigFileType::ToolVersions) => Ok(Arc::new(ToolVersions::from_file(path)?)),
         Some(ConfigFileType::IdiomaticVersion) => {
-            Ok(Box::new(IdiomaticVersionFile::from_file(path)?))
+            Ok(Arc::new(IdiomaticVersionFile::from_file(path)?))
         }
         #[allow(clippy::box_default)]
-        _ => Ok(Box::new(MiseToml::default())),
+        _ => Ok(Arc::new(MiseToml::default())),
     }
 }
 

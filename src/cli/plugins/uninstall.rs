@@ -24,27 +24,27 @@ pub struct PluginsUninstall {
 }
 
 impl PluginsUninstall {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let mpr = MultiProgressReport::get();
 
         let plugins = match self.all {
-            true => install_state::list_plugins()?.keys().cloned().collect(),
+            true => install_state::list_plugins().keys().cloned().collect(),
             false => self.plugin.clone(),
         };
 
         for plugin_name in plugins {
             let plugin_name = unalias_backend(&plugin_name);
-            self.uninstall_one(plugin_name, &mpr)?;
+            self.uninstall_one(plugin_name, &mpr).await?;
         }
         Ok(())
     }
 
-    fn uninstall_one(&self, plugin_name: &str, mpr: &MultiProgressReport) -> Result<()> {
+    async fn uninstall_one(&self, plugin_name: &str, mpr: &MultiProgressReport) -> Result<()> {
         if let Ok(plugin) = plugins::get(plugin_name) {
             if plugin.is_installed() {
                 let prefix = format!("plugin:{}", style::eblue(&plugin.name()));
                 let pr = mpr.add(&prefix);
-                plugin.uninstall(&pr)?;
+                plugin.uninstall(&pr).await?;
                 if self.purge {
                     let backend = backend::get(&plugin_name.into()).unwrap();
                     backend.purge(&pr)?;

@@ -31,7 +31,7 @@ mise use -g python
 pip install --user pipx
 ```
 
-Other installation instructions can be found [here](https://pipx.pypa.io/latest/installation/)
+[Other installation instructions](https://pipx.pypa.io/latest/installation/)
 
 ## Usage
 

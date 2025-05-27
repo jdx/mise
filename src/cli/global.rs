@@ -1,8 +1,11 @@
 use eyre::Result;
 
-use crate::cli::args::{BackendArg, ToolArg};
 use crate::cli::local::local;
 use crate::config::Settings;
+use crate::{
+    cli::args::{BackendArg, ToolArg},
+    config::Config,
+};
 
 /// Sets/gets the global tool version(s)
 ///
@@ -45,9 +48,11 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let settings = Settings::try_get()?;
+        let config = Config::get().await;
         local(
+            &config,
             &settings.global_tools_file(),
             self.tool,
             self.remove,
@@ -55,6 +60,7 @@ impl Global {
             self.fuzzy,
             self.path,
         )
+        .await
     }
 }
 

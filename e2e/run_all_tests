@@ -7,8 +7,15 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/style.sh"
 
 pushd e2e
-mapfile -t SLOW_FILES < <(fd -tf -g "test_*_slow" | sort)
-mapfile -t FAST_FILES < <(fd -tf -g "test_*" | grep -v "_slow$" | sort)
+# Avoid mapfile that is not available on bash 3.2 for compatibility with macOS
+SLOW_FILES=()
+while IFS= read -r line; do
+  SLOW_FILES+=("$line")
+done < <(fd -tf -g "test_*_slow" | sort)
+FAST_FILES=()
+while IFS= read -r line; do
+  FAST_FILES+=("$line")
+done < <(fd -tf -g "test_*" | grep -v "_slow$" | sort)
 popd
 FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
 test_count=0
@@ -22,14 +29,14 @@ for index in "${!FILES[@]}"; do
   TEST_NAME="${FILES[$index]}"
 
   # split tests into tranches to reduce test time
-  if [[ -n "${TEST_TRANCHE_COUNT:-}" ]]; then
+  if [[ -n ${TEST_TRANCHE_COUNT:-} ]]; then
     if [[ $((index % TEST_TRANCHE_COUNT)) -ne $TEST_TRANCHE ]]; then
       continue
     fi
   fi
 
   # Skip slow tests unless TEST_ALL == 1
-  if [[ ${TEST_ALL:-0} != 1 && $TEST_NAME = *_slow ]]; then
+  if [[ ${TEST_ALL:-0} != 1 && $TEST_NAME == *_slow ]]; then
     #    title="E2E test $TEST_NAME skipped" file="e2e/$TEST_NAME" warn "slow tests are disabled"
     skipped_count=$((skipped_count + 1))
     summary "$TEST_NAME" "-" ":zap:"

@@ -27,20 +27,20 @@ pub struct Version {
 }
 
 impl Version {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if self.json {
-            self.json()?
+            self.json().await?
         } else {
             show_version()?;
-            show_latest();
+            show_latest().await;
         }
         Ok(())
     }
 
-    fn json(&self) -> Result<()> {
+    async fn json(&self) -> Result<()> {
         let json = serde_json::json!({
             "version": *VERSION,
-            "latest": get_latest_version(duration::DAILY),
+            "latest": get_latest_version(duration::DAILY).await,
             "os": *OS,
             "arch": *ARCH,
             "build_time": BUILD_TIME.to_string(),
@@ -118,11 +118,11 @@ fn show_version() -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn show_latest() {
+pub async fn show_latest() {
     if ci_info::is_ci() && !cfg!(test) {
         return;
     }
-    if let Some(latest) = check_for_new_version(duration::DAILY) {
+    if let Some(latest) = check_for_new_version(duration::DAILY).await {
         warn!("mise version {} available", latest);
         if SelfUpdate::is_available() {
             let cmd = style("mise self-update").bright().yellow().for_stderr();
@@ -131,8 +131,11 @@ pub fn show_latest() {
     }
 }
 
-pub fn check_for_new_version(cache_duration: Duration) -> Option<String> {
-    if let Some(latest) = get_latest_version(cache_duration).and_then(Versioning::new) {
+pub async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
+    if let Some(latest) = get_latest_version(cache_duration)
+        .await
+        .and_then(Versioning::new)
+    {
         if *V < latest {
             return Some(latest.to_string());
         }
@@ -140,7 +143,7 @@ pub fn check_for_new_version(cache_duration: Duration) -> Option<String> {
     None
 }
 
-fn get_latest_version(duration: Duration) -> Option<String> {
+async fn get_latest_version(duration: Duration) -> Option<String> {
     let version_file_path = dirs::CACHE.join("latest-version");
     if let Ok(metadata) = modified_duration(&version_file_path) {
         if metadata < duration {
@@ -150,18 +153,18 @@ fn get_latest_version(duration: Duration) -> Option<String> {
         }
     }
     let _ = file::create_dir_all(*dirs::CACHE);
-    let version = get_latest_version_call();
+    let version = get_latest_version_call().await;
     let _ = file::write(version_file_path, version.clone().unwrap_or_default());
     version
 }
 
 #[cfg(test)]
-fn get_latest_version_call() -> Option<String> {
+async fn get_latest_version_call() -> Option<String> {
     Some("0.0.0".to_string())
 }
 
 #[cfg(not(test))]
-fn get_latest_version_call() -> Option<String> {
+async fn get_latest_version_call() -> Option<String> {
     let settings = Settings::get();
     let url = match settings.paranoid {
         true => "https://mise.jdx.dev/VERSION",
@@ -169,7 +172,7 @@ fn get_latest_version_call() -> Option<String> {
         false => "http://mise.jdx.dev/VERSION",
     };
     debug!("checking mise version from {}", url);
-    match crate::http::HTTP_VERSION_CHECK.get_text(url) {
+    match crate::http::HTTP_VERSION_CHECK.get_text(url).await {
         Ok(text) => {
             debug!("got version {text}");
             Some(text.trim().to_string())

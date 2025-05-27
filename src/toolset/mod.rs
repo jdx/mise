@@ -1,8 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::{panic, thread};
+use std::sync::Arc;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
@@ -17,17 +16,17 @@ use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::registry::tool_enabled;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::uv::get_uv_venv;
+use crate::uv;
 use crate::{backend, config, env, hooks};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
-use eyre::{Result, WrapErr, eyre};
+use eyre::{Result, WrapErr};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
 use outdated_info::OutdatedInfo;
 pub use outdated_info::is_outdated_version;
-use rayon::prelude::*;
+use tokio::sync::OnceCell;
+use tokio::{sync::Semaphore, task::JoinSet};
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
@@ -85,7 +84,7 @@ pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
     tvo
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InstallOptions {
     pub force: bool,
     pub jobs: Option<usize>,
@@ -116,7 +115,7 @@ impl Default for InstallOptions {
 /// merge in other toolsets from various sources
 #[derive(Debug, Default, Clone)]
 pub struct Toolset {
-    pub versions: IndexMap<BackendArg, ToolVersionList>,
+    pub versions: IndexMap<Arc<BackendArg>, ToolVersionList>,
     pub source: Option<ToolSource>,
     tera_ctx: OnceCell<tera::Context>,
 }
@@ -150,29 +149,28 @@ impl Toolset {
         self.versions = versions;
         self.source = other.source;
     }
-    pub fn resolve(&mut self) -> eyre::Result<()> {
+    #[async_backtrace::framed]
+    pub async fn resolve(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
         self.list_missing_plugins();
-        let errors = self
-            .versions
-            .iter_mut()
-            .collect::<Vec<_>>()
-            .par_iter_mut()
-            .map(|(_, v)| v.resolve(&Default::default()))
-            .filter(|r| r.is_err())
-            .map(|r| r.unwrap_err())
-            .collect::<Vec<_>>();
-        match errors.is_empty() {
-            true => Ok(()),
-            false => {
-                let err = eyre!("error resolving versions");
-                Err(errors.into_iter().fold(err, |e, x| e.wrap_err(x)))
-            }
+        let mut tvls = vec![];
+        for (ba, mut tvl) in self.versions.clone().into_iter() {
+            tvl.resolve(config, &Default::default()).await?;
+            tvls.push((ba, tvl));
         }
+        for (ba, tvl) in tvls {
+            self.versions.insert(ba, tvl);
+        }
+        Ok(())
     }
-    pub fn install_missing_versions(&mut self, opts: &InstallOptions) -> Result<Vec<ToolVersion>> {
-        let mpr = MultiProgressReport::get();
+    #[async_backtrace::framed]
+    pub async fn install_missing_versions(
+        &mut self,
+        config: &Arc<Config>,
+        opts: &InstallOptions,
+    ) -> Result<Vec<ToolVersion>> {
         let versions = self
-            .list_missing_versions()
+            .list_missing_versions(config)
+            .await
             .into_iter()
             .filter(|tv| {
                 !opts.missing_args_only
@@ -187,9 +185,9 @@ impl Toolset {
             })
             .map(|tv| tv.request)
             .collect_vec();
-        let versions = self.install_all_versions(versions, &mpr, opts)?;
+        let versions = self.install_all_versions(config, versions, opts).await?;
         if !versions.is_empty() {
-            config::rebuild_shims_and_runtime_symlinks(&versions)?;
+            config::rebuild_shims_and_runtime_symlinks(&versions).await?;
         }
         Ok(versions)
     }
@@ -232,16 +230,17 @@ impl Toolset {
         }
     }
 
-    pub fn install_all_versions(
+    #[async_backtrace::framed]
+    pub async fn install_all_versions(
         &mut self,
+        config: &Arc<Config>,
         mut versions: Vec<ToolRequest>,
-        mpr: &MultiProgressReport,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
         if versions.is_empty() {
             return Ok(vec![]);
         }
-        hooks::run_one_hook(self, Hooks::Preinstall, None);
+        hooks::run_one_hook(self, Hooks::Preinstall, None).await;
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
         let mut installed = vec![];
@@ -251,13 +250,13 @@ impl Toolset {
                 debug!("installing {} leaf tools first", leaf_deps.len());
             }
             versions.retain(|tr| !leaf_deps.contains(tr));
-            installed.extend(self.install_some_versions(leaf_deps, mpr, opts)?);
+            installed.extend(self.install_some_versions(config, leaf_deps, opts).await?);
             leaf_deps = get_leaf_dependencies(&versions)?;
         }
 
         trace!("install: resolving");
-        install_state::reset();
-        if let Err(err) = self.resolve() {
+        // TODO: do I neeed this? backend::reset().await?;
+        if let Err(err) = self.resolve(config).await {
             debug!("error resolving versions after install: {err:#}");
         }
         if log::log_enabled!(log::Level::Debug) {
@@ -265,13 +264,15 @@ impl Toolset {
                 let backend = tv.backend()?;
                 let bin_paths = backend
                     .list_bin_paths(tv)
+                    .await
                     .map_err(|e| {
                         warn!("Error listing bin paths for {tv}: {e:#}");
                     })
                     .unwrap_or_default();
                 debug!("[{tv}] list_bin_paths: {bin_paths:?}");
                 let env = backend
-                    .exec_env(&Config::get(), self, tv)
+                    .exec_env(config, self, tv)
+                    .await
                     .map_err(|e| {
                         warn!("Error running exec-env: {e:#}");
                     })
@@ -281,14 +282,14 @@ impl Toolset {
                 }
             }
         }
-        hooks::run_one_hook(self, Hooks::Postinstall, None);
+        hooks::run_one_hook(self, Hooks::Postinstall, None).await;
         Ok(installed)
     }
 
-    fn install_some_versions(
+    async fn install_some_versions(
         &mut self,
+        config: &Arc<Config>,
         versions: Vec<ToolRequest>,
-        mpr: &MultiProgressReport,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
         debug!("install_some_versions: {}", versions.iter().join(" "));
@@ -302,7 +303,8 @@ impl Toolset {
         for (backend, _) in &queue {
             if let Some(plugin) = backend.plugin() {
                 if !plugin.is_installed() {
-                    plugin.ensure_installed(mpr, false).or_else(|err| {
+                    let mpr = MultiProgressReport::get();
+                    plugin.ensure_installed(&mpr, false).await.or_else(|err| {
                         if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
                             Ok(())
                         } else {
@@ -312,87 +314,82 @@ impl Toolset {
                 }
             }
         }
-        let queue = Arc::new(Mutex::new(queue));
         let raw = opts.raw || SETTINGS.raw;
         let jobs = match raw {
             true => 1,
             false => opts.jobs.unwrap_or(SETTINGS.jobs),
         };
-        thread::scope(|s| {
-            #[allow(clippy::map_collect_result_unit)]
-            (0..jobs)
-                .map(|_| {
-                    let queue = queue.clone();
-                    let ts = &*self;
-                    s.spawn(move || {
-                        let next_job = || queue.lock().unwrap().pop();
-                        let mut installed = vec![];
-                        while let Some((t, versions)) = next_job() {
-                            for tr in versions {
-                                let tv = tr.resolve(&opts.resolve_options)?;
-                                let ctx = InstallContext {
-                                    ts,
-                                    pr: mpr.add(&tv.style()),
-                                    force: opts.force,
-                                };
-                                let old_tv = tv.clone();
-                                let tv = t
-                                    .install_version(ctx, tv)
-                                    .wrap_err_with(|| format!("failed to install {old_tv}"))?;
-                                installed.push(tv);
-                            }
-                        }
-                        Ok(installed)
-                    })
-                })
-                .collect::<Vec<_>>()
+        let semaphore = Arc::new(Semaphore::new(jobs));
+        let ts = Arc::new(self.clone());
+        let mut tset: JoinSet<Result<Vec<ToolVersion>, eyre::Report>> = JoinSet::new();
+        let opts = Arc::new(opts.clone());
+        for (ba, trs) in queue {
+            let ts = ts.clone();
+            let semaphore = semaphore.clone();
+            let opts = opts.clone();
+            let ba = ba.clone();
+            let config = config.clone();
+            tset.spawn(async move {
+                let _permit = semaphore.acquire().await?;
+                let mpr = MultiProgressReport::get();
+                let mut installed = vec![];
+                for tr in trs {
+                    let tv = tr.resolve(&config, &opts.resolve_options).await?;
+                    let ctx = InstallContext {
+                        config: config.clone(),
+                        ts: ts.clone(),
+                        pr: mpr.add(&tv.style()),
+                        force: opts.force,
+                    };
+                    let old_tv = tv.clone();
+                    let tv = ba
+                        .install_version(ctx, tv)
+                        .await
+                        .wrap_err_with(|| format!("failed to install {old_tv}"))?;
+                    installed.push(tv);
+                }
+                Ok(installed)
+            });
+        }
+        let mut installed = vec![];
+        while let Some(res) = tset.join_next().await {
+            installed.extend(res??);
+        }
+        installed.reverse();
+        Ok(installed)
+    }
+
+    pub async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
+        trace!("list_missing_versions");
+        measure!("toolset::list_missing_versions", {
+            self.list_current_versions()
                 .into_iter()
-                .map(|t| match t.join() {
-                    Ok(x) => x,
-                    Err(e) => panic::resume_unwind(e),
+                .filter(|(p, tv)| {
+                    tv.request.is_os_supported() && !p.is_version_installed(config, tv, true)
                 })
-                .collect::<Result<Vec<Vec<ToolVersion>>>>()
-                .map(|x| x.into_iter().flatten().rev().collect())
+                .map(|(_, tv)| tv)
+                .collect()
         })
     }
-
-    pub fn list_missing_versions(&self) -> Vec<ToolVersion> {
-        self.list_current_versions()
-            .into_par_iter()
-            .filter(|(p, tv)| tv.request.is_os_supported() && !p.is_version_installed(tv, true))
-            .map(|(_, tv)| tv)
-            .collect()
-    }
-    pub fn list_installed_versions(&self) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-        let current_versions: HashMap<(String, String), (Arc<dyn Backend>, ToolVersion)> = self
+    pub async fn list_installed_versions(&self, config: &Arc<Config>) -> Result<Vec<TVTuple>> {
+        let current_versions: HashMap<(String, String), TVTuple> = self
             .list_current_versions()
-            .into_par_iter()
+            .into_iter()
             .map(|(p, tv)| ((p.id().into(), tv.version.clone()), (p.clone(), tv)))
             .collect();
-        let versions = backend::list()
-            .into_par_iter()
-            .map(|p| {
-                let versions = p.list_installed_versions()?;
-                versions
-                    .into_iter()
-                    .map(
-                        |v| match current_versions.get(&(p.id().into(), v.clone())) {
-                            Some((p, tv)) => Ok((p.clone(), tv.clone())),
-                            None => {
-                                let tv = ToolRequest::new(p.ba().clone(), &v, ToolSource::Unknown)?
-                                    .resolve(&Default::default())
-                                    .unwrap();
-                                Ok((p.clone(), tv))
-                            }
-                        },
-                    )
-                    .collect::<Result<Vec<_>>>()
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect();
-
+        let current_versions = Arc::new(current_versions);
+        let mut versions = vec![];
+        for b in backend::list().into_iter() {
+            for v in b.list_installed_versions() {
+                if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
+                    versions.push((p.clone(), tv.clone()));
+                }
+                let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
+                    .resolve(config, &Default::default())
+                    .await?;
+                versions.push((b.clone(), tv));
+            }
+        }
         Ok(versions)
     }
     pub fn list_current_requests(&self) -> Vec<&ToolRequest> {
@@ -408,6 +405,7 @@ impl Toolset {
             .collect()
     }
     pub fn list_current_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
+        trace!("list_current_versions");
         self.list_versions_by_plugin()
             .iter()
             .flat_map(|(p, v)| {
@@ -432,82 +430,102 @@ impl Toolset {
             })
             .collect()
     }
-    pub fn list_all_versions(&self) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
+    pub async fn list_all_versions(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
         let versions = self
             .list_current_versions()
             .into_iter()
-            .chain(self.list_installed_versions()?)
+            .chain(self.list_installed_versions(config).await?)
             .unique_by(|(ba, tv)| (ba.clone(), tv.tv_pathname().to_string()))
             .collect();
         Ok(versions)
     }
-    pub fn list_current_installed_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
+    pub fn list_current_installed_versions(
+        &self,
+        config: &Arc<Config>,
+    ) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         self.list_current_versions()
-            .into_par_iter()
-            .filter(|(p, v)| p.is_version_installed(v, true))
+            .into_iter()
+            .filter(|(p, v)| p.is_version_installed(config, v, true))
             .collect()
     }
-    pub fn list_outdated_versions(&self, bump: bool) -> Vec<OutdatedInfo> {
-        self.list_current_versions()
-            .into_par_iter()
-            .filter_map(|(t, tv)| {
-                match t.outdated_info(&tv, bump) {
-                    Ok(Some(oi)) => return Some(oi),
-                    Ok(None) => {}
-                    Err(e) => {
-                        warn!("Error getting outdated info for {tv}: {e:#}");
-                        return None;
-                    }
+    pub async fn list_outdated_versions(
+        &self,
+        config: &Arc<Config>,
+        bump: bool,
+    ) -> Vec<OutdatedInfo> {
+        let mut outdated = vec![];
+        for (t, tv) in self.list_current_versions().into_iter() {
+            match t.outdated_info(config, &tv, bump).await {
+                Ok(Some(oi)) => outdated.push(oi),
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("Error getting outdated info for {tv}: {e:#}");
+                    continue;
                 }
-                if t.symlink_path(&tv).is_some() {
-                    trace!("skipping symlinked version {tv}");
-                    // do not consider symlinked versions to be outdated
-                    return None;
-                }
-                OutdatedInfo::resolve(tv.clone(), bump).unwrap_or_else(|e| {
+            }
+            if t.symlink_path(&tv).is_some() {
+                trace!("skipping symlinked version {tv}");
+                // do not consider symlinked versions to be outdated
+                continue;
+            }
+            match OutdatedInfo::resolve(config, tv.clone(), bump).await {
+                Ok(Some(oi)) => outdated.push(oi),
+                Ok(None) => {}
+                Err(e) => {
                     warn!("Error creating OutdatedInfo for {tv}: {e:#}");
-                    None
-                })
-            })
-            .collect()
+                }
+            }
+        }
+        outdated
     }
     /// returns env_with_path but also with the existing env vars from the system
-    pub fn full_env(&self, config: &Config) -> Result<EnvMap> {
+    pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
-        env.extend(self.env_with_path(config)?.clone());
+        env.extend(self.env_with_path(config).await?.clone());
         Ok(env)
     }
     /// the full mise environment including all tool paths
-    pub fn env_with_path(&self, config: &Config) -> Result<EnvMap> {
-        let (mut env, env_results) = self.final_env(config)?;
+    pub async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
+        let (mut env, env_results) = self.final_env(config).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in self.list_final_paths(config, env_results)? {
+        for p in self.list_final_paths(config, env_results).await? {
             path_env.add(p.clone());
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
         Ok(env)
     }
-    pub fn env_from_tools(&self, config: &Config) -> Vec<(String, String, String)> {
-        self.list_current_installed_versions()
-            .into_par_iter()
-            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
-            .flat_map(|(p, tv)| match p.exec_env(config, self, &tv) {
+    pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
+        let mut envs = vec![];
+        for (b, tv) in self.list_current_installed_versions(config).into_iter() {
+            if matches!(tv.request, ToolRequest::System { .. }) {
+                continue;
+            }
+            let this = Arc::new(self.clone());
+            let config = config.clone();
+            envs.push(match b.exec_env(&config, &this, &tv).await {
                 Ok(env) => env
                     .into_iter()
-                    .map(|(k, v)| (k, v, p.id().into()))
+                    .map(|(k, v)| (k, v, b.id().to_string()))
                     .collect(),
                 Err(e) => {
                     warn!("Error running exec-env: {:#}", e);
                     Vec::new()
                 }
-            })
-            .filter(|(_, k, _)| k.to_uppercase() != "PATH")
-            .collect::<Vec<(String, String, String)>>()
+            });
+        }
+        envs.into_iter()
+            .flatten()
+            .filter(|(k, _, _)| k.to_uppercase() != "PATH")
+            .collect()
     }
-    fn env(&self, config: &Config) -> Result<EnvMap> {
+    async fn env(&self, config: &Arc<Config>) -> Result<EnvMap> {
         time!("env start");
         let entries = self
             .env_from_tools(config)
+            .await
             .into_iter()
             .map(|(k, v, _)| (k, v))
             .collect::<Vec<(String, String)>>();
@@ -527,8 +545,8 @@ impl Toolset {
         if !add_paths.is_empty() {
             env.insert(PATH_KEY.to_string(), add_paths);
         }
-        env.extend(config.env()?.clone());
-        if let Some(venv) = get_uv_venv() {
+        env.extend(config.env().await?.clone());
+        if let Some(venv) = uv::uv_venv(config).await {
             for (k, v) in venv.env {
                 env.insert(k, v);
             }
@@ -536,21 +554,21 @@ impl Toolset {
         time!("env end");
         Ok(env)
     }
-    pub fn final_env(&self, config: &Config) -> Result<(EnvMap, EnvResults)> {
-        let mut env = self.env(config)?;
+    pub async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
+        let mut env = self.env(config).await?;
         let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         tera_env.extend(env.clone());
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in self.list_paths() {
+        for p in self.list_paths(config).await {
             path_env.add(p);
         }
-        for p in config.path_dirs()?.clone() {
+        for p in config.path_dirs().await?.clone() {
             path_env.add(p);
         }
         tera_env.insert(PATH_KEY.to_string(), path_env.to_string());
         let mut ctx = config.tera_ctx.clone();
         ctx.insert("env", &tera_env);
-        let env_results = self.load_post_env(config, ctx, &tera_env)?;
+        let env_results = self.load_post_env(config, ctx, &tera_env).await?;
         env.extend(
             env_results
                 .env
@@ -559,36 +577,37 @@ impl Toolset {
         );
         Ok((env, env_results))
     }
-    pub fn list_paths(&self) -> Vec<PathBuf> {
-        self.list_current_installed_versions()
-            .into_par_iter()
-            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
-            .flat_map(|(p, tv)| {
-                p.list_bin_paths(&tv).unwrap_or_else(|e| {
-                    warn!("Error listing bin paths for {tv}: {e:#}");
-                    Vec::new()
-                })
-            })
-            .filter(|p| p.parent().is_some())
+    pub async fn list_paths(&self, config: &Arc<Config>) -> Vec<PathBuf> {
+        let mut paths = vec![];
+        for (p, tv) in self.list_current_installed_versions(config).into_iter() {
+            paths.extend(p.list_bin_paths(&tv).await.unwrap_or_else(|e| {
+                warn!("Error listing bin paths for {tv}: {e:#}");
+                Vec::new()
+            }));
+        }
+
+        paths
+            .into_iter()
+            .filter(|p| p.parent().is_some()) // TODO: why?
             .collect()
     }
     /// same as list_paths but includes config.list_paths, venv paths, and MISE_ADD_PATHs from self.env()
-    pub fn list_final_paths(
+    pub async fn list_final_paths(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         env_results: EnvResults,
     ) -> Result<Vec<PathBuf>> {
         let mut paths = IndexSet::new();
-        for p in config.path_dirs()?.clone() {
+        for p in config.path_dirs().await?.clone() {
             paths.insert(p);
         }
-        if let Some(venv) = get_uv_venv() {
+        if let Some(venv) = uv::uv_venv(config).await {
             paths.insert(venv.venv_path);
         }
-        if let Some(path) = self.env(config)?.get(&*PATH_KEY) {
+        if let Some(path) = self.env(config).await?.get(&*PATH_KEY) {
             paths.insert(PathBuf::from(path));
         }
-        for p in self.list_paths() {
+        for p in self.list_paths(config).await {
             paths.insert(p);
         }
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
@@ -599,48 +618,53 @@ impl Toolset {
         let paths = env_results.env_paths.into_iter().chain(paths).collect();
         Ok(paths)
     }
-    pub fn tera_ctx(&self) -> Result<&tera::Context> {
-        self.tera_ctx.get_or_try_init(|| {
-            let config = Config::get();
-            let env = self.full_env(&config)?;
-            let mut ctx = config.tera_ctx.clone();
-            ctx.insert("env", &env);
-            Ok(ctx)
-        })
+    pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
+        self.tera_ctx
+            .get_or_try_init(async || {
+                let env = self.full_env(config).await?;
+                let mut ctx = config.tera_ctx.clone();
+                ctx.insert("env", &env);
+                Ok(ctx)
+            })
+            .await
     }
-    pub fn which(&self, bin_name: &str) -> Option<(Arc<dyn Backend>, ToolVersion)> {
-        self.list_current_installed_versions()
-            .into_par_iter()
-            .find_first(|(p, tv)| match p.which(tv, bin_name) {
-                Ok(x) => x.is_some(),
+    pub async fn which(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Option<(Arc<dyn Backend>, ToolVersion)> {
+        for (p, tv) in self.list_current_installed_versions(config) {
+            match Box::pin(p.which(&tv, bin_name)).await {
+                Ok(Some(_bin)) => return Some((p, tv)),
+                Ok(None) => {}
                 Err(e) => {
                     debug!("Error running which: {:#}", e);
-                    false
                 }
-            })
+            }
+        }
+        None
     }
-    pub fn which_bin(&self, bin_name: &str) -> Option<PathBuf> {
-        self.which(bin_name)
-            .and_then(|(p, tv)| p.which(&tv, bin_name).ok())
-            .flatten()
+    pub async fn which_bin(&self, config: &Arc<Config>, bin_name: &str) -> Option<PathBuf> {
+        let (p, tv) = Box::pin(self.which(config, bin_name)).await?;
+        Box::pin(p.which(&tv, bin_name)).await.ok().flatten()
     }
-    pub fn install_missing_bin(&mut self, bin_name: &str) -> Result<Option<Vec<ToolVersion>>> {
-        let plugins = self
-            .list_installed_versions()?
-            .into_iter()
-            .filter(|(p, tv)| {
-                if let Ok(x) = p.which(tv, bin_name) {
-                    x.is_some()
-                } else {
-                    false
-                }
-            })
-            .collect_vec();
-        for (plugin, _) in plugins {
+    pub async fn install_missing_bin(
+        &mut self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<Option<Vec<ToolVersion>>> {
+        let mut plugins = IndexSet::new();
+        for (p, tv) in self.list_current_installed_versions(config) {
+            if let Ok(Some(_bin)) = p.which(&tv, bin_name).await {
+                plugins.insert(p);
+            }
+        }
+        for plugin in plugins {
             let versions = self
-                .list_missing_versions()
+                .list_missing_versions(config)
+                .await
                 .into_iter()
-                .filter(|tv| tv.ba() == plugin.ba())
+                .filter(|tv| tv.ba() == &**plugin.ba())
                 .filter(|tv| match &SETTINGS.auto_install_disable_tools {
                     Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
                     None => true,
@@ -648,11 +672,11 @@ impl Toolset {
                 .map(|tv| tv.request)
                 .collect_vec();
             if !versions.is_empty() {
-                let mpr = MultiProgressReport::get();
-                let versions =
-                    self.install_all_versions(versions.clone(), &mpr, &InstallOptions::default())?;
+                let versions = self
+                    .install_all_versions(config, versions.clone(), &InstallOptions::default())
+                    .await?;
                 if !versions.is_empty() {
-                    config::rebuild_shims_and_runtime_symlinks(&versions)?;
+                    config::rebuild_shims_and_runtime_symlinks(&versions).await?;
                 }
                 return Ok(Some(versions));
             }
@@ -660,35 +684,45 @@ impl Toolset {
         Ok(None)
     }
 
-    pub fn list_rtvs_with_bin(&self, bin_name: &str) -> Result<Vec<ToolVersion>> {
-        Ok(self
-            .list_installed_versions()?
-            .into_par_iter()
-            .filter(|(p, tv)| match p.which(tv, bin_name) {
-                Ok(x) => x.is_some(),
+    pub async fn list_rtvs_with_bin(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<Vec<ToolVersion>> {
+        let mut rtvs = vec![];
+        for (p, tv) in self.list_installed_versions(config).await? {
+            match p.which(&tv, bin_name).await {
+                Ok(Some(_bin)) => rtvs.push(tv),
+                Ok(None) => {}
                 Err(e) => {
                     warn!("Error running which: {:#}", e);
-                    false
                 }
-            })
-            .map(|(_, tv)| tv)
-            .collect())
+            }
+        }
+        Ok(rtvs)
     }
 
     // shows a warning if any versions are missing
     // only displays for tools which have at least one version already installed
-    pub fn notify_if_versions_missing(&self) {
-        let missing = self
-            .list_missing_versions()
-            .into_iter()
-            .filter(|tv| match SETTINGS.status.missing_tools() {
-                SettingsStatusMissingTools::Never => false,
-                SettingsStatusMissingTools::Always => true,
-                SettingsStatusMissingTools::IfOtherVersionsInstalled => tv
-                    .backend()
-                    .is_ok_and(|b| b.list_installed_versions().is_ok_and(|f| !f.is_empty())),
-            })
-            .collect_vec();
+    #[async_backtrace::framed]
+    pub async fn notify_if_versions_missing(&self, config: &Arc<Config>) {
+        if SETTINGS.status.missing_tools() == SettingsStatusMissingTools::Never {
+            return;
+        }
+        let mut missing = vec![];
+        let missing_versions = self.list_missing_versions(config).await;
+        for tv in missing_versions.into_iter() {
+            if SETTINGS.status.missing_tools() == SettingsStatusMissingTools::Always {
+                missing.push(tv);
+                continue;
+            }
+            if let Ok(backend) = tv.backend() {
+                let installed = backend.list_installed_versions();
+                if !installed.is_empty() {
+                    missing.push(tv);
+                }
+            }
+        }
         if missing.is_empty() || *env::__MISE_SHIM {
             return;
         }
@@ -712,9 +746,9 @@ impl Toolset {
             )
     }
 
-    fn load_post_env(
+    async fn load_post_env(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         ctx: tera::Context,
         env: &EnvMap,
     ) -> Result<EnvResults> {
@@ -732,6 +766,7 @@ impl Toolset {
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
         let env_results = EnvResults::resolve(
+            config,
             ctx,
             env,
             entries,
@@ -739,7 +774,8 @@ impl Toolset {
                 tools: true,
                 ..Default::default()
             },
-        )?;
+        )
+        .await?;
         if log::log_enabled!(log::Level::Trace) {
             trace!("{env_results:#?}");
         } else if !env_results.is_empty() {
@@ -814,6 +850,8 @@ fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<ToolReque
         .collect::<Result<Vec<_>>>()?;
     Ok(leaves)
 }
+
+type TVTuple = (Arc<dyn Backend>, ToolVersion);
 
 #[cfg(test)]
 mod tests {

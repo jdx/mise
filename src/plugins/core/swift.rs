@@ -1,4 +1,3 @@
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
@@ -6,20 +5,25 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::Backend, config::Config};
 use crate::{file, github, gpg, plugins};
+use async_trait::async_trait;
 use eyre::Result;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tempfile::tempdir_in;
 
 #[derive(Debug)]
 pub struct SwiftPlugin {
-    ba: BackendArg,
+    ba: Arc<BackendArg>,
 }
 
 impl SwiftPlugin {
     pub fn new() -> Self {
         Self {
-            ba: plugins::core::new_backend_arg("swift"),
+            ba: Arc::new(plugins::core::new_backend_arg("swift")),
         }
     }
 
@@ -35,7 +39,7 @@ impl SwiftPlugin {
             .execute()
     }
 
-    fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
         let url = format!(
             "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
             version = tv.version,
@@ -51,7 +55,7 @@ impl SwiftPlugin {
         let tarball_path = tv.download_path().join(filename);
         if !tarball_path.exists() {
             pr.set_message(format!("download {filename}"));
-            HTTP.download_file(&url, &tarball_path, Some(pr))?;
+            HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
         }
 
         Ok(tarball_path)
@@ -112,7 +116,7 @@ impl SwiftPlugin {
         Ok(())
     }
 
-    fn verify_gpg(
+    async fn verify_gpg(
         &self,
         ctx: &InstallContext,
         tv: &ToolVersion,
@@ -125,7 +129,8 @@ impl SwiftPlugin {
         }
         gpg::add_keys_swift(ctx)?;
         let sig_path = PathBuf::from(format!("{}.sig", tarball_path.to_string_lossy()));
-        HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(&ctx.pr))?;
+        HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(&ctx.pr))
+            .await?;
         self.gpg(ctx)
             .arg("--quiet")
             .arg("--trust-model")
@@ -146,13 +151,15 @@ impl SwiftPlugin {
     }
 }
 
+#[async_trait]
 impl Backend for SwiftPlugin {
-    fn ba(&self) -> &BackendArg {
+    fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
-    fn _list_remote_versions(&self) -> Result<Vec<String>> {
-        let versions = github::list_releases("swiftlang/swift")?
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+        let versions = github::list_releases("swiftlang/swift")
+            .await?
             .into_iter()
             .map(|r| r.tag_name)
             .filter_map(|v| v.strip_prefix("swift-").map(|v| v.to_string()))
@@ -170,10 +177,14 @@ impl Backend for SwiftPlugin {
         }
     }
 
-    fn install_version_(&self, ctx: &InstallContext, mut tv: ToolVersion) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr)?;
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        let tarball_path = self.download(&tv, &ctx.pr).await?;
         if cfg!(target_os = "linux") && SETTINGS.swift.gpg_verify != Some(false) {
-            self.verify_gpg(ctx, &tv, &tarball_path)?;
+            self.verify_gpg(ctx, &tv, &tarball_path).await?;
         }
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;

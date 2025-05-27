@@ -1,61 +1,64 @@
-use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
+use std::{
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
 use eyre::{Result, bail};
 use versions::{Chunk, Version};
 use xx::file;
 
-use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
 use crate::lockfile::LockfileTool;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
 use crate::{backend, lockfile};
+use crate::{backend::ABackend, config::Config};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ToolRequest {
     Version {
-        backend: BackendArg,
+        backend: Arc<BackendArg>,
         version: String,
         options: ToolVersionOptions,
         source: ToolSource,
     },
     Prefix {
-        backend: BackendArg,
+        backend: Arc<BackendArg>,
         prefix: String,
         options: ToolVersionOptions,
         source: ToolSource,
     },
     Ref {
-        backend: BackendArg,
+        backend: Arc<BackendArg>,
         ref_: String,
         ref_type: String,
         options: ToolVersionOptions,
         source: ToolSource,
     },
     Sub {
-        backend: BackendArg,
+        backend: Arc<BackendArg>,
         sub: String,
         orig_version: String,
         options: ToolVersionOptions,
         source: ToolSource,
     },
     Path {
-        backend: BackendArg,
+        backend: Arc<BackendArg>,
         path: PathBuf,
         options: ToolVersionOptions,
         source: ToolSource,
     },
     System {
-        backend: BackendArg,
+        backend: Arc<BackendArg>,
         source: ToolSource,
         options: ToolVersionOptions,
     },
 }
 
 impl ToolRequest {
-    pub fn new(backend: BackendArg, s: &str, source: ToolSource) -> eyre::Result<Self> {
+    pub fn new(backend: Arc<BackendArg>, s: &str, source: ToolSource) -> eyre::Result<Self> {
         let s = match s.split_once('-') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => format!("{ref_type}:{r}"),
             _ => s.to_string(),
@@ -107,7 +110,7 @@ impl ToolRequest {
         })
     }
     pub fn new_opts(
-        backend: BackendArg,
+        backend: Arc<BackendArg>,
         s: &str,
         options: ToolVersionOptions,
         source: ToolSource,
@@ -132,7 +135,7 @@ impl ToolRequest {
         }
         self.clone()
     }
-    pub fn ba(&self) -> &BackendArg {
+    pub fn ba(&self) -> &Arc<BackendArg> {
         match self {
             Self::Version { backend, .. }
             | Self::Prefix { backend, .. }
@@ -202,10 +205,11 @@ impl ToolRequest {
         }
     }
 
-    pub fn is_installed(&self) -> bool {
+    pub async fn is_installed(&self) -> bool {
+        let config = Config::get().await;
         if let Some(backend) = backend::get(self.ba()) {
-            match self.resolve(&Default::default()) {
-                Ok(tv) => backend.is_version_installed(&tv, false),
+            match self.resolve(&config, &Default::default()).await {
+                Ok(tv) => backend.is_version_installed(&config, &tv, false),
                 Err(e) => {
                     debug!("ToolRequest.is_installed: {e:#}");
                     false
@@ -216,7 +220,7 @@ impl ToolRequest {
         }
     }
 
-    pub fn install_path(&self) -> Option<PathBuf> {
+    pub fn install_path(&self, config: &Config) -> Option<PathBuf> {
         match self {
             Self::Version {
                 backend, version, ..
@@ -233,7 +237,7 @@ impl ToolRequest {
                 orig_version,
                 ..
             } => self
-                .local_resolve(orig_version)
+                .local_resolve(config, orig_version)
                 .inspect_err(|e| warn!("ToolRequest.local_resolve: {e:#}"))
                 .unwrap_or_default()
                 .map(|v| backend.installs_path.join(version_sub(&v, sub.as_str()))),
@@ -254,21 +258,21 @@ impl ToolRequest {
         }
     }
 
-    pub fn lockfile_resolve(&self) -> Result<Option<LockfileTool>> {
+    pub fn lockfile_resolve(&self, config: &Config) -> Result<Option<LockfileTool>> {
         match self.source() {
             ToolSource::MiseToml(path) => {
-                lockfile::get_locked_version(Some(path), &self.ba().short, &self.version())
+                lockfile::get_locked_version(config, Some(path), &self.ba().short, &self.version())
             }
-            _ => lockfile::get_locked_version(None, &self.ba().short, &self.version()),
+            _ => lockfile::get_locked_version(config, None, &self.ba().short, &self.version()),
         }
     }
 
-    pub fn local_resolve(&self, v: &str) -> eyre::Result<Option<String>> {
-        if let Some(lt) = self.lockfile_resolve()? {
+    pub fn local_resolve(&self, config: &Config, v: &str) -> eyre::Result<Option<String>> {
+        if let Some(lt) = self.lockfile_resolve(config)? {
             return Ok(Some(lt.version));
         }
         if let Some(backend) = backend::get(self.ba()) {
-            let matches = backend.list_installed_versions_matching(v)?;
+            let matches = backend.list_installed_versions_matching(v);
             if matches.iter().any(|m| m == v) {
                 return Ok(Some(v.to_string()));
             }
@@ -279,8 +283,12 @@ impl ToolRequest {
         Ok(None)
     }
 
-    pub fn resolve(&self, opts: &ResolveOptions) -> Result<ToolVersion> {
-        ToolVersion::resolve(self.clone(), opts)
+    pub async fn resolve(
+        &self,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+    ) -> Result<ToolVersion> {
+        ToolVersion::resolve(config, self.clone(), opts).await
     }
 
     pub fn is_os_supported(&self) -> bool {

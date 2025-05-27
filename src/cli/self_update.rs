@@ -35,7 +35,7 @@ pub struct SelfUpdate {
 }
 
 impl SelfUpdate {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
             bail!("mise is installed via a package manager, cannot update");
         }

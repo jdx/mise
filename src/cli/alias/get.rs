@@ -17,8 +17,8 @@ pub struct AliasGet {
 }
 
 impl AliasGet {
-    pub fn run(self) -> Result<()> {
-        let config = Config::try_get()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         match config.all_aliases.get(&self.plugin.short) {
             Some(alias) => match alias.versions.get(&self.alias) {
                 Some(alias) => {

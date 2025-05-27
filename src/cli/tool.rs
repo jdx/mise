@@ -54,20 +54,27 @@ pub struct ToolInfoFilter {
 }
 
 impl Tool {
-    pub fn run(self) -> Result<()> {
-        let mut ts = ToolsetBuilder::new().build(&Config::get())?;
-        ts.resolve()?;
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
+        let mut ts = ToolsetBuilder::new().build(&config).await?;
+        ts.resolve(&config).await?;
         let tvl = ts.versions.get(&self.tool);
         let tv = tvl.map(|tvl| tvl.versions.first().unwrap());
         let ba = tv.map(|tv| tv.ba()).unwrap_or_else(|| &self.tool);
         let backend = ba.backend().ok();
+        let description = if let Some(backend) = backend {
+            backend.description().await
+        } else {
+            None
+        };
         let info = ToolInfo {
             backend: ba.full(),
-            description: backend.and_then(|b| b.description()),
+            description,
             installed_versions: ts
-                .list_installed_versions()?
+                .list_installed_versions(&config)
+                .await?
                 .into_iter()
-                .filter(|(b, _)| b.ba() == ba)
+                .filter(|(b, _)| b.ba().as_ref() == ba)
                 .map(|(_, tv)| tv.version)
                 .collect::<Vec<_>>(),
             active_versions: tvl.map(|tvl| {

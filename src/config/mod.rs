@@ -2,8 +2,6 @@ use config_file::ConfigFileType;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
-use rayon::prelude::*;
 pub use settings::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
@@ -11,11 +9,11 @@ use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
+use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
-use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::{ConfigFile, config_trust_root};
@@ -31,6 +29,7 @@ use crate::toolset::{
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 use crate::{backend::ABackend, cli::version::VERSION};
+use crate::{backend::Backend, cli::version};
 
 pub mod config_file;
 pub mod env_directive;
@@ -48,7 +47,7 @@ use crate::wildcard::Wildcard;
 pub use settings::SETTINGS;
 
 type AliasMap = IndexMap<String, Alias>;
-type ConfigMap = IndexMap<PathBuf, Box<dyn ConfigFile>>;
+type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
 pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
 pub struct Config {
@@ -58,10 +57,10 @@ pub struct Config {
     pub repo_urls: HashMap<String, String>,
     pub vars: IndexMap<String, String>,
     pub tera_ctx: tera::Context,
+    pub shorthands: Shorthands,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
-    shorthands: OnceLock<Shorthands>,
     hooks: OnceCell<Vec<(PathBuf, Hook)>>,
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
@@ -82,70 +81,102 @@ pub fn is_loaded() -> bool {
 }
 
 impl Config {
-    pub fn get() -> Arc<Self> {
-        Self::try_get().unwrap()
+    pub async fn get() -> Arc<Self> {
+        Self::try_get().await.unwrap()
     }
-    pub fn try_get() -> Result<Arc<Self>> {
+    pub fn get_() -> Arc<Self> {
+        (*_CONFIG.read().unwrap()).clone().unwrap()
+    }
+    pub async fn try_get() -> Result<Arc<Self>> {
         if let Some(config) = &*_CONFIG.read().unwrap() {
             return Ok(config.clone());
         }
-        let config = Arc::new(Self::load()?);
+        let config = measure!("load config", { Arc::new(Self::load().await?) });
         *_CONFIG.write().unwrap() = Some(config.clone());
         Ok(config)
     }
-    pub fn load() -> Result<Self> {
-        reset();
-        time!("load start");
-        let idiomatic_files = load_idiomatic_files();
-        time!("load idiomatic_files");
+    #[async_backtrace::framed]
+    pub async fn load() -> Result<Self> {
+        measure!("config::load reset", {
+            reset().await?;
+        });
+        let idiomatic_files = measure!("config::load idiomatic_files", {
+            load_idiomatic_files().await
+        });
         let config_filenames = idiomatic_files
             .keys()
             .chain(DEFAULT_CONFIG_FILENAMES.iter())
             .cloned()
             .collect_vec();
-        time!("load config_filenames");
-        let config_paths = load_config_paths(&config_filenames, false);
-        time!("load config_paths");
+        let config_paths = measure!("config::load config_paths", {
+            load_config_paths(&config_filenames, false)
+        });
         trace!("config_paths: {config_paths:?}");
-        let config_files = load_all_config_files(&config_paths, &idiomatic_files)?;
-        time!("load config_files");
-        warn_about_idiomatic_version_files(&config_files);
-
-        let mut tera_ctx = BASE_CONTEXT.clone();
-        let vars_results = load_vars(tera_ctx.clone(), &config_files)?;
-        let vars: IndexMap<String, String> = vars_results
-            .vars
-            .iter()
-            .map(|(k, (v, _))| (k.clone(), v.clone()))
-            .collect();
-        tera_ctx.insert("vars", &vars);
+        let config_files = measure!("config::load config_files", {
+            load_all_config_files(&config_paths, &idiomatic_files).await?
+        });
+        measure!("config::load warn_about_idiomatic_version_files", {
+            warn_about_idiomatic_version_files(&config_files);
+        });
 
         let mut config = Self {
-            aliases: load_aliases(&config_files)?,
-            project_root: get_project_root(&config_files),
-            repo_urls: load_plugins(&config_files)?,
-            tera_ctx,
-            vars: vars.clone(),
+            tera_ctx: BASE_CONTEXT.clone(),
             config_files,
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
-            shorthands: OnceLock::new(),
+            shorthands: get_shorthands(&SETTINGS),
             hooks: OnceCell::new(),
             tasks: OnceCell::new(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            vars: Default::default(),
         };
-        time!("load build");
+        let vars_config = Arc::new(Self {
+            tera_ctx: config.tera_ctx.clone(),
+            config_files: config.config_files.clone(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: config.shorthands.clone(),
+            hooks: OnceCell::new(),
+            tasks: OnceCell::new(),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: config.all_aliases.clone(),
+            aliases: config.aliases.clone(),
+            project_root: config.project_root.clone(),
+            repo_urls: config.repo_urls.clone(),
+            vars: config.vars.clone(),
+        });
+        let vars_results = measure!("config::load vars_results", {
+            load_vars(&vars_config).await?
+        });
+        let vars: IndexMap<String, String> = vars_results
+            .vars
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        config.tera_ctx.insert("vars", &vars);
 
-        config.validate()?;
-        time!("load validate");
+        config.vars = vars;
+        config.aliases = load_aliases(&config.config_files)?;
+        config.project_root = get_project_root(&config.config_files);
+        config.repo_urls = load_plugins(&config.config_files)?;
+        measure!("config::load validate", {
+            config.validate()?;
+        });
 
-        config.all_aliases = config.load_all_aliases();
-        time!("load all aliases");
+        config.all_aliases = measure!("config::load all_aliases", { config.load_all_aliases() });
 
-        config.add_redactions(config.redaction_keys(), &vars.into_iter().collect());
-        time!("load redactions");
+        measure!("config::load redactions", {
+            config.add_redactions(
+                config.redaction_keys(),
+                &config.vars.clone().into_iter().collect(),
+            );
+        });
 
         if log::log_enabled!(log::Level::Trace) {
             trace!("config: {config:#?}");
@@ -157,24 +188,28 @@ impl Config {
 
         time!("load done");
 
-        for (plugin, url) in &config.repo_urls {
-            let plugin_type = match url.contains("vfox-") {
-                true => PluginType::Vfox,
-                false => PluginType::Asdf,
-            };
-            install_state::add_plugin(plugin, plugin_type)?;
-        }
+        measure!("config::load install_state", {
+            for (plugin, url) in &config.repo_urls {
+                let plugin_type = match url.contains("vfox-") {
+                    true => PluginType::Vfox,
+                    false => PluginType::Asdf,
+                };
+                install_state::add_plugin(plugin, plugin_type).await?;
+            }
+        });
 
-        for short in config
-            .all_aliases
-            .iter()
-            .filter(|(_, a)| a.backend.is_some())
-            .map(|(s, _)| s)
-            .chain(config.repo_urls.keys())
-        {
-            // we need to remove aliased tools so they get re-added with updated "full" values
-            backend::remove(short);
-        }
+        measure!("config::load remove_aliased_tools", {
+            for short in config
+                .all_aliases
+                .iter()
+                .filter(|(_, a)| a.backend.is_some())
+                .map(|(s, _)| s)
+                .chain(config.repo_urls.keys())
+            {
+                // we need to remove aliased tools so they get re-added with updated "full" values
+                backend::remove(short);
+            }
+        });
 
         Ok(config)
     }
@@ -185,53 +220,58 @@ impl Config {
                 .collect()
         })
     }
-    pub fn env(&self) -> eyre::Result<IndexMap<String, String>> {
+    pub async fn env(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
-            .env_with_sources()?
+            .env_with_sources()
+            .await?
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect())
     }
-    pub fn env_with_sources(&self) -> eyre::Result<&EnvWithSources> {
-        self.env_with_sources.get_or_try_init(|| {
-            let mut env = self.env_results()?.env.clone();
-            for env_file in SETTINGS.env_files() {
-                match dotenvy::from_path_iter(&env_file) {
-                    Ok(iter) => {
-                        for item in iter {
-                            let (k, v) = item.unwrap_or_else(|err| {
-                                warn!("env_file: {err}");
-                                Default::default()
-                            });
-                            env.insert(k, (v, env_file.clone()));
+    pub async fn env_with_sources(self: &Arc<Self>) -> eyre::Result<&EnvWithSources> {
+        self.env_with_sources
+            .get_or_try_init(async || {
+                let mut env = self.env_results().await?.env.clone();
+                for env_file in SETTINGS.env_files() {
+                    match dotenvy::from_path_iter(&env_file) {
+                        Ok(iter) => {
+                            for item in iter {
+                                let (k, v) = item.unwrap_or_else(|err| {
+                                    warn!("env_file: {err}");
+                                    Default::default()
+                                });
+                                env.insert(k, (v, env_file.clone()));
+                            }
                         }
+                        Err(err) => trace!("env_file: {err}"),
                     }
-                    Err(err) => trace!("env_file: {err}"),
                 }
-            }
-            Ok(env)
-        })
+                Ok(env)
+            })
+            .await
     }
-    pub fn env_results(&self) -> Result<&EnvResults> {
-        self.env.get_or_try_init(|| self.load_env())
+    pub async fn env_results(self: &Arc<Self>) -> Result<&EnvResults> {
+        self.env
+            .get_or_try_init(|| async { self.load_env().await })
+            .await
     }
-    pub fn path_dirs(&self) -> eyre::Result<&Vec<PathBuf>> {
-        Ok(&self.env_results()?.env_paths)
+    pub async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
+        Ok(&self.env_results().await?.env_paths)
     }
-    pub fn get_shorthands(&self) -> &Shorthands {
-        self.shorthands.get_or_init(|| get_shorthands(&SETTINGS))
-    }
-    pub fn get_tool_request_set(&self) -> eyre::Result<&ToolRequestSet> {
+    pub async fn get_tool_request_set(&self) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
-            .get_or_try_init(|| ToolRequestSetBuilder::new().build())
+            .get_or_try_init(async || ToolRequestSetBuilder::new().build(self).await)
+            .await
     }
 
-    pub fn get_toolset(&self) -> Result<&Toolset> {
-        self.toolset.get_or_try_init(|| {
-            let mut ts = Toolset::from(self.get_tool_request_set()?.clone());
-            ts.resolve()?;
-            Ok(ts)
-        })
+    pub async fn get_toolset(self: &Arc<Self>) -> Result<&Toolset> {
+        self.toolset
+            .get_or_try_init(|| async {
+                let mut ts = Toolset::from(self.get_tool_request_set().await?.clone());
+                ts.resolve(self).await?;
+                Ok(ts)
+            })
+            .await
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
@@ -243,7 +283,7 @@ impl Config {
             .unwrap_or(plugin_name.to_string());
         let plugin_name = plugin_name.strip_prefix("asdf:").unwrap_or(&plugin_name);
         let plugin_name = plugin_name.strip_prefix("vfox:").unwrap_or(plugin_name);
-        self.get_shorthands()
+        self.shorthands
             .get(plugin_name)
             .map(|full| registry::full_to_url(&full[0]))
             .or_else(|| {
@@ -255,13 +295,18 @@ impl Config {
             })
     }
 
-    pub fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
-        self.tasks.get_or_try_init(|| self.load_all_tasks())
+    pub async fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
+        self.tasks
+            .get_or_try_init(|| async {
+                measure!("config::load_all_tasks", { self.load_all_tasks().await })
+            })
+            .await
     }
 
-    pub fn tasks_with_aliases(&self) -> Result<BTreeMap<String, &Task>> {
+    pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, &Task>> {
         Ok(self
-            .tasks()?
+            .tasks()
+            .await?
             .iter()
             .flat_map(|(_, t)| {
                 t.aliases
@@ -273,7 +318,7 @@ impl Config {
             .collect())
     }
 
-    pub fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
+    pub async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
         if let Some(plugin_aliases) = self.all_aliases.get(&backend.ba().short) {
             if let Some(alias) = plugin_aliases.versions.get(v) {
                 return Ok(alias.clone());
@@ -288,7 +333,7 @@ impl Config {
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
         let plugin_aliases: Vec<_> = backend::list()
-            .into_par_iter()
+            .into_iter()
             .map(|backend| {
                 let aliases = backend.get_aliases().unwrap_or_else(|err| {
                     warn!("get_aliases: {err}");
@@ -320,23 +365,30 @@ impl Config {
         aliases
     }
 
-    fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
+    async fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
+        let config = Config::get().await;
         time!("load_all_tasks");
-        let mut file_tasks = None;
-        let mut global_tasks = None;
-        let mut system_tasks = None;
-        rayon::scope(|s| {
-            s.spawn(|_| {
-                file_tasks = Some(self.load_local_tasks());
-            });
-            global_tasks = Some(self.load_global_tasks());
-            system_tasks = Some(self.load_system_tasks());
-        });
-        let tasks: BTreeMap<String, Task> = file_tasks
-            .unwrap()?
+        // let (file_tasks, global_tasks, system_tasks) = tokio::join!(
+        //     {
+        //         let config = config.clone();
+        //         tokio::task::spawn(async move { load_local_tasks(&config).await })
+        //     },
+        //     {
+        //         let config = config.clone();
+        //         tokio::task::spawn(async move { load_global_tasks(&config).await })
+        //     },
+        //     {
+        //         let config = config.clone();
+        //         tokio::task::spawn(async move { load_system_tasks(&config).await })
+        //     },
+        // );
+        let file_tasks = load_local_tasks(&config).await?;
+        let global_tasks = load_global_tasks(&config).await?;
+        let system_tasks = load_system_tasks(&config).await?;
+        let mut tasks: BTreeMap<String, Task> = file_tasks
             .into_iter()
-            .chain(global_tasks.unwrap()?)
-            .chain(system_tasks.unwrap()?)
+            .chain(global_tasks)
+            .chain(system_tasks)
             .rev()
             .inspect(|t| {
                 trace!(
@@ -347,201 +399,17 @@ impl Config {
             })
             .map(|t| (t.name.clone(), t))
             .collect();
+        let all_tasks = tasks.clone();
+        for task in tasks.values_mut() {
+            task.display_name = task.display_name(&all_tasks);
+        }
         time!("load_all_tasks {count}", count = tasks.len(),);
         Ok(tasks)
     }
 
-    pub fn task_includes_for_dir(&self, dir: &Path) -> Vec<PathBuf> {
-        self.configs_at_root(dir)
-            .iter()
-            .rev()
-            .find_map(|cf| cf.task_config().includes.clone())
-            .unwrap_or_else(default_task_includes)
-            .into_par_iter()
-            .map(|p| if p.is_absolute() { p } else { dir.join(p) })
-            .filter(|p| p.exists())
-            .collect::<Vec<_>>()
-            .into_iter()
-            .unique()
-            .collect::<Vec<_>>()
-    }
-
-    pub fn load_tasks_in_dir(&self, dir: &Path) -> Result<Vec<Task>> {
-        let configs = self.configs_at_root(dir);
-        let config_tasks = configs
-            .par_iter()
-            .flat_map(|cf| self.load_config_tasks(&Some(*cf), dir))
-            .collect::<Vec<_>>();
-        let includes = self.task_includes_for_dir(dir);
-        let extra_tasks = includes
-            .par_iter()
-            .filter(|p| {
-                p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml"
-            })
-            .map(|p| {
-                self.load_task_file(p, dir)
-                    .wrap_err_with(|| format!("loading tasks in {}", display_path(p)))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        let file_tasks = includes
-            .into_par_iter()
-            .flat_map(|p| {
-                self.load_tasks_includes(&p, dir).unwrap_or_else(|err| {
-                    warn!("loading tasks in {}: {err}", display_path(&p));
-                    vec![]
-                })
-            })
-            .collect::<Vec<_>>();
-        Ok(file_tasks
-            .into_iter()
-            .chain(config_tasks)
-            .chain(extra_tasks)
-            .sorted_by_cached_key(|t| t.name.clone())
-            .collect())
-    }
-
-    fn load_task_file(&self, path: &Path, config_root: &Path) -> Result<Vec<Task>> {
-        let raw = file::read_to_string(path)?;
-        let mut tasks = toml::from_str::<Tasks>(&raw)
-            .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?
-            .0;
-        for (name, task) in &mut tasks {
-            task.name = name.clone();
-            task.config_source = path.to_path_buf();
-            task.config_root = Some(config_root.to_path_buf());
-        }
-        Ok(tasks
-            .into_values()
-            .map(|mut t| {
-                if let Err(err) = t.render(config_root) {
-                    warn!("rendering task: {err:?}");
-                }
-                t
-            })
-            .collect())
-    }
-
-    fn load_local_tasks(&self) -> Result<Vec<Task>> {
-        Ok(file::all_dirs()?
-            .into_par_iter()
-            .filter(|d| {
-                if cfg!(test) {
-                    d.starts_with(*dirs::HOME)
-                } else {
-                    true
-                }
-            })
-            .map(|d| self.load_tasks_in_dir(&d))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect())
-    }
-
-    fn load_global_tasks(&self) -> Result<Vec<Task>> {
-        let tasks = self
-            .config_files
-            .values()
-            .filter(|cf| is_global_config(cf.get_path()))
-            .flat_map(|cf| self.load_config_and_file_tasks(cf.as_ref()))
-            .collect();
-        Ok(tasks)
-    }
-
-    fn load_system_tasks(&self) -> Result<Vec<Task>> {
-        let tasks = self
-            .config_files
-            .values()
-            .filter(|cf| is_system_config(cf.get_path()))
-            .flat_map(|cf| self.load_config_and_file_tasks(cf.as_ref()))
-            .collect();
-        Ok(tasks)
-    }
-
-    fn load_config_and_file_tasks(&self, cf: &dyn ConfigFile) -> Vec<Task> {
-        let project_root = cf.project_root().unwrap_or(&*env::HOME);
-        let cf = Some(cf);
-        let tasks = self.load_config_tasks(&cf, project_root);
-        let file_tasks = self.load_file_tasks(&cf, project_root);
-        tasks.into_iter().chain(file_tasks).collect()
-    }
-
-    fn load_config_tasks(&self, cf: &Option<&dyn ConfigFile>, config_root: &Path) -> Vec<Task> {
-        let Some(cf) = cf else {
-            return vec![];
-        };
-        let is_global = is_global_config(cf.get_path());
-        cf.tasks()
-            .into_iter()
-            .cloned()
-            .map(|mut t| {
-                if let Err(err) = t.render(config_root) {
-                    warn!("rendering task: {err:?}");
-                }
-                t.global = is_global;
-                t
-            })
-            .collect()
-    }
-
-    fn load_file_tasks(&self, cf: &Option<&dyn ConfigFile>, config_root: &Path) -> Vec<Task> {
-        let includes = match cf {
-            Some(cf) => cf
-                .task_config()
-                .includes
-                .clone()
-                .unwrap_or(vec!["tasks".into()])
-                .into_iter()
-                .map(|p| cf.get_path().parent().unwrap().join(p))
-                .collect(),
-            None => vec![dirs::CONFIG.join("tasks")],
-        };
-        includes
-            .into_iter()
-            .flat_map(|p| {
-                self.load_tasks_includes(&p, config_root)
-                    .unwrap_or_else(|err| {
-                        warn!("loading tasks in {}: {err}", display_path(&p));
-                        vec![]
-                    })
-            })
-            .collect()
-    }
-
-    fn load_tasks_includes(&self, root: &Path, config_root: &Path) -> Result<Vec<Task>> {
-        if !root.is_dir() {
-            return Ok(vec![]);
-        }
-        WalkDir::new(root)
-            .follow_links(true)
-            .into_iter()
-            // skip hidden directories (if the root is hidden that's ok)
-            .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
-            .filter_ok(|e| e.file_type().is_file())
-            .map_ok(|e| e.path().to_path_buf())
-            .try_collect::<_, Vec<PathBuf>, _>()?
-            .into_par_iter()
-            .filter(|p| file::is_executable(p))
-            .filter(|p| !SETTINGS.task_disable_paths.iter().any(|d| p.starts_with(d)))
-            .map(|path| Task::from_path(&path, root, config_root))
-            .collect()
-    }
-
-    fn configs_at_root(&self, dir: &Path) -> Vec<&dyn ConfigFile> {
-        DEFAULT_CONFIG_FILENAMES
-            .iter()
-            .rev()
-            .map(|f| dir.join(f))
-            .filter_map(|f| self.config_files.get(&f).map(|cf| cf.as_ref()))
-            .collect()
-    }
-
     pub fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let config_files = Tracker::list_all()?
-            .into_par_iter()
+            .into_iter()
             .map(|path| match config_file::parse(&path) {
                 Ok(cf) => Some((path, cf)),
                 Err(err) => {
@@ -589,7 +457,7 @@ impl Config {
         Ok(())
     }
 
-    fn load_env(&self) -> Result<EnvResults> {
+    async fn load_env(self: &Arc<Self>) -> Result<EnvResults> {
         time!("load_env start");
         let entries = self
             .config_files
@@ -605,11 +473,13 @@ impl Config {
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
         let env_results = EnvResults::resolve(
+            self,
             self.tera_ctx.clone(),
             &env::PRISTINE_ENV,
             entries,
             EnvResolveOptions::default(),
-        )?;
+        )
+        .await?;
         let redact_keys = self
             .redaction_keys()
             .into_iter()
@@ -631,21 +501,23 @@ impl Config {
         Ok(env_results)
     }
 
-    pub fn hooks(&self) -> Result<&Vec<(PathBuf, Hook)>> {
-        self.hooks.get_or_try_init(|| {
-            self.config_files
-                .values()
-                .map(|cf| Ok((cf.project_root(), cf.hooks()?)))
-                .filter_map_ok(|(root, hooks)| root.map(|r| (r.to_path_buf(), hooks)))
-                .map_ok(|(root, hooks)| {
-                    hooks
-                        .into_iter()
-                        .map(|h| (root.clone(), h))
-                        .collect::<Vec<_>>()
-                })
-                .flatten_ok()
-                .collect()
-        })
+    pub async fn hooks(&self) -> Result<&Vec<(PathBuf, Hook)>> {
+        self.hooks
+            .get_or_try_init(|| async {
+                self.config_files
+                    .values()
+                    .map(|cf| Ok((cf.project_root(), cf.hooks()?)))
+                    .filter_map_ok(|(root, hooks)| root.map(|r| (r.to_path_buf(), hooks)))
+                    .map_ok(|(root, hooks)| {
+                        hooks
+                            .into_iter()
+                            .map(|h| (root.clone(), h))
+                            .collect::<Vec<_>>()
+                    })
+                    .flatten_ok()
+                    .collect()
+            })
+            .await
     }
 
     pub fn watch_file_hooks(&self) -> Result<IndexSet<(PathBuf, WatchFile)>> {
@@ -665,13 +537,16 @@ impl Config {
             .collect())
     }
 
-    pub fn watch_files(&self) -> Result<BTreeSet<WatchFilePattern>> {
-        let env_results = self.env_results()?;
+    pub async fn watch_files(self: &Arc<Self>) -> Result<BTreeSet<WatchFilePattern>> {
+        let env_results = self.env_results().await?;
         Ok(self
             .config_files
             .iter()
             .map(|(p, cf)| {
                 let mut watch_files: Vec<WatchFilePattern> = vec![p.as_path().into()];
+                if let Some(parent) = p.parent() {
+                    watch_files.push(parent.join("mise.lock").into());
+                }
                 watch_files.extend(cf.watch_files()?.iter().map(|wf| WatchFilePattern {
                     root: cf.project_root().map(|pr| pr.to_path_buf()),
                     patterns: wf.patterns.clone(),
@@ -752,6 +627,15 @@ impl Config {
     }
 }
 
+fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
+    DEFAULT_CONFIG_FILENAMES
+        .iter()
+        .rev()
+        .map(|f| dir.join(f))
+        .filter_map(|f| config_files.get(&f))
+        .collect()
+}
+
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
     let project_root = config_files
         .values()
@@ -761,7 +645,7 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
     project_root
 }
 
-fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
+async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
     if !SETTINGS.idiomatic_version_file {
         return BTreeMap::new();
     }
@@ -771,35 +655,41 @@ fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
             "is deprecated, use idiomatic_version_file_enable_tools instead"
         );
     }
-    let idiomatic = backend::list()
-        .into_par_iter()
-        .filter(|tool| {
-            if let Some(enable_tools) = &SETTINGS.idiomatic_version_file_enable_tools {
-                enable_tools.contains(tool.id())
-            } else if !SETTINGS.idiomatic_version_file_disable_tools.is_empty() {
-                !SETTINGS
-                    .idiomatic_version_file_disable_tools
-                    .contains(tool.id())
-            } else {
-                true
+    let mut jset = JoinSet::new();
+    let tool_is_enabled = |tool: &dyn Backend| {
+        if let Some(enable_tools) = &SETTINGS.idiomatic_version_file_enable_tools {
+            enable_tools.contains(tool.id())
+        } else if !SETTINGS.idiomatic_version_file_disable_tools.is_empty() {
+            !SETTINGS
+                .idiomatic_version_file_disable_tools
+                .contains(tool.id())
+        } else {
+            true
+        }
+    };
+    for tool in backend::list() {
+        jset.spawn(async move {
+            if !tool_is_enabled(&*tool) {
+                return vec![];
             }
-        })
-        .filter_map(|tool| match tool.idiomatic_filenames() {
-            Ok(filenames) => Some(
-                filenames
+            match tool.idiomatic_filenames() {
+                Ok(filenames) => filenames
                     .iter()
                     .map(|f| (f.to_string(), tool.id().to_string()))
-                    .collect_vec(),
-            ),
-            Err(err) => {
-                eprintln!("Error: {err}");
-                None
+                    .collect::<Vec<_>>(),
+                Err(err) => {
+                    eprintln!("Error: {err}");
+                    vec![]
+                }
             }
-        })
-        .collect::<Vec<Vec<(String, String)>>>()
+        });
+    }
+    let idiomatic = jset
+        .join_all()
+        .await
         .into_iter()
         .flatten()
-        .collect::<Vec<(String, String)>>();
+        .collect::<Vec<_>>();
 
     let mut idiomatic_filenames = BTreeMap::new();
     for (filename, plugin) in idiomatic {
@@ -945,7 +835,7 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     let dirs = file::all_dirs().unwrap_or_default();
 
     let mut config_files = dirs
-        .par_iter()
+        .iter()
         .flat_map(|dir| {
             if !include_ignored
                 && env::MISE_IGNORED_CONFIG_PATHS
@@ -1093,15 +983,14 @@ pub fn local_toml_config_path() -> PathBuf {
         })
 }
 
-fn load_all_config_files(
+async fn load_all_config_files(
     config_filenames: &[PathBuf],
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
+    backend::load_tools().await?;
     Ok(config_filenames
         .iter()
         .unique()
-        .collect_vec()
-        .into_par_iter()
         .map(|f| {
             if f.is_dir() {
                 return Ok(None);
@@ -1133,7 +1022,7 @@ fn load_all_config_files(
 fn parse_config_file(
     f: &PathBuf,
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
-) -> Result<Box<dyn ConfigFile>> {
+) -> Result<Arc<dyn ConfigFile>> {
     match idiomatic_filenames.get(&f.file_name().unwrap().to_string_lossy().to_string()) {
         Some(plugin) => {
             trace!("idiomatic version file: {}", display_path(f));
@@ -1141,7 +1030,7 @@ fn parse_config_file(
                 .into_iter()
                 .filter(|f| plugin.contains(&f.to_string()))
                 .collect::<Vec<_>>();
-            IdiomaticVersionFile::parse(f.into(), tools).map(|f| Box::new(f) as Box<dyn ConfigFile>)
+            IdiomaticVersionFile::parse(f.into(), tools).map(|f| Arc::new(f) as Arc<dyn ConfigFile>)
         }
         None => config_file::parse(f),
     }
@@ -1177,9 +1066,10 @@ fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
     Ok(plugins)
 }
 
-fn load_vars(ctx: tera::Context, config_files: &ConfigMap) -> Result<EnvResults> {
+async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
     time!("load_vars start");
-    let entries = config_files
+    let entries = config
+        .config_files
         .iter()
         .rev()
         .map(|(source, cf)| {
@@ -1191,14 +1081,16 @@ fn load_vars(ctx: tera::Context, config_files: &ConfigMap) -> Result<EnvResults>
         .flatten()
         .collect();
     let vars_results = EnvResults::resolve(
-        ctx,
+        config,
+        config.tera_ctx.clone(),
         &env::PRISTINE_ENV,
         entries,
         EnvResolveOptions {
             vars: true,
             ..Default::default()
         },
-    )?;
+    )
+    .await?;
     time!("load_vars done");
     if log::log_enabled!(log::Level::Trace) {
         trace!("{vars_results:#?}");
@@ -1257,16 +1149,26 @@ fn default_task_includes() -> Vec<PathBuf> {
     ]
 }
 
-pub fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Result<()> {
-    let config = Config::load()?;
-    let ts = ToolsetBuilder::new().build(&config)?;
-    trace!("rebuilding shims");
-    shims::reshim(&ts, false).wrap_err("failed to rebuild shims")?;
-    trace!("rebuilding runtime symlinks");
-    runtime_symlinks::rebuild(&config).wrap_err("failed to rebuild runtime symlinks")?;
-    trace!("updating lockfiles");
-    lockfile::update_lockfiles(&config, &ts, new_versions)
-        .wrap_err("failed to update lockfiles")?;
+#[async_backtrace::framed]
+pub async fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Result<()> {
+    let config = Arc::new(Config::load().await?);
+    let ts = measure!("build_toolset", {
+        ToolsetBuilder::new().build(&config).await?
+    });
+    measure!("rebuilding shims", {
+        shims::reshim(&config, &ts, false)
+            .await
+            .wrap_err("failed to rebuild shims")?;
+    });
+    measure!("rebuilding runtime symlinks", {
+        runtime_symlinks::rebuild(&config)
+            .await
+            .wrap_err("failed to rebuild runtime symlinks")?;
+    });
+    measure!("updating lockfiles", {
+        lockfile::update_lockfiles(&config, &ts, new_versions)
+            .wrap_err("failed to update lockfiles")?;
+    });
 
     Ok(())
 }
@@ -1312,11 +1214,10 @@ See https://github.com/jdx/mise/discussions/4345 for more information."#,
     );
 }
 
-fn reset() {
-    if let Err(err) = timeout::run_with_timeout(
-        || {
-            install_state::reset();
-            backend::reset();
+async fn reset() -> Result<()> {
+    backend::reset().await?;
+    timeout::run_with_timeout_async(
+        async || {
             _CONFIG.write().unwrap().take();
             *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
             *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
@@ -1324,9 +1225,226 @@ fn reset() {
             Ok(())
         },
         Duration::from_secs(5),
-    ) {
-        error!("reset: {err}");
+    )
+    .await?;
+    Ok(())
+}
+
+async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
+    let mut tasks = vec![];
+    for d in file::all_dirs()? {
+        if cfg!(test) && !d.starts_with(*dirs::HOME) {
+            continue;
+        }
+        tasks.extend(load_tasks_in_dir(config, &d, &config.config_files).await?);
     }
+    Ok(tasks)
+}
+
+async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
+    let global_config_files = config
+        .config_files
+        .values()
+        .filter(|cf| is_global_config(cf.get_path()))
+        .collect::<Vec<_>>();
+    let mut tasks = vec![];
+    for cf in global_config_files {
+        let cf = cf.clone();
+        let config = config.clone();
+        tasks.extend(load_config_and_file_tasks(&config, cf).await?);
+    }
+    Ok(tasks)
+}
+
+async fn load_system_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
+    let system_config_files = config
+        .config_files
+        .values()
+        .filter(|cf| is_system_config(cf.get_path()))
+        .collect::<Vec<_>>();
+    let mut tasks = vec![];
+    for cf in system_config_files {
+        let cf = cf.clone();
+        let config = config.clone();
+        tasks.extend(load_config_and_file_tasks(&config, cf).await?);
+    }
+    Ok(tasks)
+}
+
+async fn load_config_and_file_tasks(
+    config: &Arc<Config>,
+    cf: Arc<dyn ConfigFile>,
+) -> Result<Vec<Task>> {
+    let project_root = cf.project_root().unwrap_or(&*env::HOME);
+    let tasks = load_config_tasks(config, cf.clone(), project_root).await?;
+    let file_tasks = load_file_tasks(config, cf.clone(), project_root).await?;
+    Ok(tasks.into_iter().chain(file_tasks).collect())
+}
+
+async fn load_config_tasks(
+    config: &Arc<Config>,
+    cf: Arc<dyn ConfigFile>,
+    config_root: &Path,
+) -> Result<Vec<Task>> {
+    let is_global = is_global_config(cf.get_path());
+    let config_root = Arc::new(config_root.to_path_buf());
+    let mut tasks = vec![];
+    for t in cf.tasks().into_iter() {
+        let config_root = config_root.clone();
+        let config = config.clone();
+        let mut t = t.clone();
+        if is_global {
+            t.global = true;
+        }
+        match t.render(&config, &config_root).await {
+            Ok(()) => {
+                tasks.push(t);
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
+    }
+    Ok(tasks)
+}
+
+async fn load_tasks_includes(
+    config: &Arc<Config>,
+    root: &Path,
+    config_root: &Path,
+) -> Result<Vec<Task>> {
+    if !root.is_dir() {
+        return Ok(vec![]);
+    }
+    let files = WalkDir::new(root)
+        .follow_links(true)
+        .into_iter()
+        // skip hidden directories (if the root is hidden that's ok)
+        .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
+        .filter_ok(|e| e.file_type().is_file())
+        .map_ok(|e| e.path().to_path_buf())
+        .try_collect::<_, Vec<PathBuf>, _>()?
+        .into_iter()
+        .filter(|p| file::is_executable(p))
+        .filter(|p| !SETTINGS.task_disable_paths.iter().any(|d| p.starts_with(d)))
+        .collect::<Vec<_>>();
+    let mut tasks = vec![];
+    let root = Arc::new(root.to_path_buf());
+    let config_root = Arc::new(config_root.to_path_buf());
+    for path in files {
+        let root = root.clone();
+        let config_root = config_root.clone();
+        let config = config.clone();
+        tasks.push(Task::from_path(&config, &path, &root, &config_root).await?);
+    }
+    Ok(tasks)
+}
+
+async fn load_file_tasks(
+    config: &Arc<Config>,
+    cf: Arc<dyn ConfigFile>,
+    config_root: &Path,
+) -> Result<Vec<Task>> {
+    let includes = cf
+        .task_config()
+        .includes
+        .clone()
+        .unwrap_or(vec!["tasks".into()])
+        .into_iter()
+        .map(|p| cf.get_path().parent().unwrap().join(p))
+        .collect::<Vec<_>>();
+    let mut tasks = vec![];
+    let config_root = Arc::new(config_root.to_path_buf());
+    for p in includes {
+        let config_root = config_root.clone();
+        let config = config.clone();
+        tasks.extend(load_tasks_includes(&config, &p, &config_root).await?);
+    }
+    Ok(tasks)
+}
+
+pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
+    configs_at_root(dir, config_files)
+        .iter()
+        .rev()
+        .find_map(|cf| cf.task_config().includes.clone())
+        .unwrap_or_else(default_task_includes)
+        .into_iter()
+        .map(|p| if p.is_absolute() { p } else { dir.join(p) })
+        .filter(|p| p.exists())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .unique()
+        .collect::<Vec<_>>()
+}
+
+pub async fn load_tasks_in_dir(
+    config: &Arc<Config>,
+    dir: &Path,
+    config_files: &ConfigMap,
+) -> Result<Vec<Task>> {
+    let configs = configs_at_root(dir, config_files);
+    let mut config_tasks = vec![];
+    for cf in configs {
+        let dir = dir.to_path_buf();
+        config_tasks.extend(load_config_tasks(config, cf.clone(), &dir).await?);
+    }
+    let includes = task_includes_for_dir(dir, config_files);
+    let extra_tasks = includes
+        .iter()
+        .filter(|p| p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml");
+    for p in extra_tasks {
+        let p = p.clone();
+        let dir = dir.to_path_buf();
+        let config = config.clone();
+        config_tasks.extend(load_task_file(&config, &p, &dir).await?);
+    }
+    let mut file_tasks = vec![];
+    for p in includes {
+        let dir = dir.to_path_buf();
+        let p = p.clone();
+        let config = config.clone();
+        file_tasks.extend(load_tasks_includes(&config, &p, &dir).await?);
+    }
+    let mut tasks = file_tasks
+        .into_iter()
+        .chain(config_tasks)
+        .sorted_by_cached_key(|t| t.name.clone())
+        .collect::<Vec<_>>();
+    let all_tasks = tasks
+        .clone()
+        .into_iter()
+        .map(|t| (t.name.clone(), t))
+        .collect::<BTreeMap<_, _>>();
+    for task in tasks.iter_mut() {
+        task.display_name = task.display_name(&all_tasks);
+    }
+    Ok(tasks)
+}
+
+async fn load_task_file(
+    config: &Arc<Config>,
+    path: &Path,
+    config_root: &Path,
+) -> Result<Vec<Task>> {
+    let raw = file::read_to_string_async(path).await?;
+    let mut tasks = toml::from_str::<Tasks>(&raw)
+        .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?
+        .0;
+    for (name, task) in &mut tasks {
+        task.name = name.clone();
+        task.config_source = path.to_path_buf();
+        task.config_root = Some(config_root.to_path_buf());
+    }
+    let mut out = vec![];
+    for (_, mut task) in tasks {
+        let config_root = config_root.to_path_buf();
+        if let Err(err) = task.render(config, &config_root).await {
+            warn!("rendering task: {err:?}");
+        }
+        out.push(task);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1339,14 +1457,15 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_load() {
-        let config = Config::load().unwrap();
+    #[tokio::test]
+    async fn test_load() {
+        let config = Config::load().await.unwrap();
         assert_debug_snapshot!(config);
     }
 
-    #[test]
-    fn test_load_all_config_files_skips_directories() -> Result<()> {
+    #[tokio::test]
+    async fn test_load_all_config_files_skips_directories() -> Result<()> {
+        let _config = Config::get().await;
         let temp_dir = TempDir::new()?;
         let temp_path = temp_dir.path();
 
@@ -1364,7 +1483,7 @@ mod tests {
         let config_filenames = vec![file1_path.clone(), file2_path.clone(), sub_dir.clone()];
         let idiomatic_filenames = BTreeMap::new();
 
-        let result = load_all_config_files(&config_filenames, &idiomatic_filenames)?;
+        let result = load_all_config_files(&config_filenames, &idiomatic_filenames).await?;
 
         // the result should have only two entries for the files, the directory should not be present
         assert_eq!(result.len(), 2);

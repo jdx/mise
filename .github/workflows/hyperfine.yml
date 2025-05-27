@@ -4,6 +4,9 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+    # paths:
+    #   - ".github/workflows/hyperfine.yml"
+    #   - "Cargo.toml"
   workflow_dispatch:
 
 concurrency:
@@ -22,7 +25,6 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: github.head_ref == 'release' || github.head_ref == 'hyperfine'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -56,6 +58,15 @@ jobs:
             ~/.cache/mise
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
+      - run: mise run test:perf
+        env:
+          NUM_TOOLS: 200
+          NUM_TASKS: 2000
+          MISE_ALT: mise-${{ steps.versions.outputs.release }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flamegraphs
+          path: flamegraphs
       - run: |
           CMDS=(
             "x -- echo"
@@ -63,21 +74,24 @@ jobs:
             "hook-env"
             "ls"
           )
-          echo "# Hyperfine Performance" >> comment.md
+          echo "## Hyperfine Performance" >> comment.md
           for cmd in "${CMDS[@]}"; do
-             #mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-main $cmd" "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
-             mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
+            if [ -n "${MISE_ALT:-}" ]; then
+              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "$MISE_ALT $cmd" "mise $cmd"
+            else
+              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
+            fi
             echo "### \`mise $cmd\`" >> comment.md
             cat out.md >> comment.md
           done
-          cat comment.md >> "$GITHUB_STEP_SUMMARY"
         env:
           SHELL: zsh
+      - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
+        if: always() && github.event_name == 'pull_request'
       - name: Comment on PR
         uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request'
         continue-on-error: true
-        #if: "startsWith(github.event.pull_request.title, 'perf:') || startsWith(github.event.pull_request.title, 'chore: release')"
         with:
           file-path: comment.md
           comment-tag: hyperfine

@@ -2,6 +2,8 @@ use crate::config::Config;
 use crate::{dirs, file};
 use std::path::PathBuf;
 
+use crate::config;
+
 /// Generate documentation for tasks in a project
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
@@ -39,21 +41,21 @@ enum TaskDocsStyle {
 }
 
 impl TaskDocs {
-    pub fn run(self) -> eyre::Result<()> {
-        let config = Config::get();
-        let ts = config.get_toolset()?;
+    pub async fn run(self) -> eyre::Result<()> {
+        let config = Config::get().await;
+        let ts = config.get_toolset().await?;
         let dir = dirs::CWD.as_ref().unwrap();
-        let tasks = config.load_tasks_in_dir(dir)?;
+        let tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;
         let mut out = vec![];
         for task in tasks.iter().filter(|t| !t.hide) {
-            out.push(task.render_markdown(ts, dir)?);
+            out.push(task.render_markdown(&config, ts, dir).await?);
         }
         if let Some(output) = &self.output {
             if self.multi {
                 if output.is_dir() {
                     for (i, task) in tasks.iter().filter(|t| !t.hide).enumerate() {
                         let path = output.join(format!("{i}.md"));
-                        file::write(&path, &task.render_markdown(ts, dir)?)?;
+                        file::write(&path, &task.render_markdown(&config, ts, dir).await?)?;
                     }
                 } else {
                     return Err(eyre::eyre!(

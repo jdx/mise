@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-mise alias set tiny xxx 2
+assert "mise alias set tiny xxx 2"
 assert_contains "mise alias ls tiny" "tiny  xxx 2"
-mise alias unset tiny xxx
+assert "mise alias unset tiny xxx"
 assert_not_contains "mise alias ls" "tiny  xxx"
 
 assert "mise config set alias.nushell aqua:nushell/nushell"

@@ -113,7 +113,7 @@ impl BackendArg {
             return backend_type;
         }
         if config::is_loaded() {
-            if let Some(repo_url) = Config::get().get_repo_url(&self.short) {
+            if let Some(repo_url) = Config::get_().get_repo_url(&self.short) {
                 return if repo_url.contains("vfox-") {
                     BackendType::Vfox
                 } else {
@@ -128,21 +128,24 @@ impl BackendArg {
     pub fn full(&self) -> String {
         let short = unalias_backend(&self.short);
         if config::is_loaded() {
-            if let Some(full) = Config::get()
+            if let Some(full) = Config::get_()
                 .all_aliases
                 .get(short)
                 .and_then(|a| a.backend.clone())
             {
                 return full;
             }
-            if let Some(url) = Config::get().repo_urls.get(short) {
+            if let Some(url) = Config::get_().repo_urls.get(short) {
                 deprecated!(
                     "config_plugins",
                     "[plugins] section of mise.toml is deprecated. Use [alias] instead. https://mise.jdx.dev/dev-tools/aliases.html"
                 );
                 return format!("asdf:{url}");
             }
-            if let Some(lt) = lockfile::get_locked_version(None, short, "").unwrap_or_default() {
+            let config = Config::get_();
+            if let Some(lt) =
+                lockfile::get_locked_version(&config, None, short, "").unwrap_or_default()
+            {
                 if let Some(backend) = lt.backend {
                     return backend;
                 }
@@ -150,9 +153,9 @@ impl BackendArg {
         }
         if let Some(full) = &self.full {
             full.clone()
-        } else if let Some(full) = install_state::get_tool_full(short).unwrap_or_default() {
+        } else if let Some(full) = install_state::get_tool_full(short) {
             full
-        } else if let Some(pt) = install_state::get_plugin_type(short).unwrap_or_default() {
+        } else if let Some(pt) = install_state::get_plugin_type(short) {
             match pt {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
@@ -176,6 +179,8 @@ impl BackendArg {
             let opts_str = opts
                 .opts
                 .iter()
+                // filter out global options that are only relevant for initial installation
+                .filter(|(k, _)| !["postinstall", "install_env"].contains(&k.as_str()))
                 .map(|(k, v)| format!("{k}={v}"))
                 .collect::<Vec<_>>()
                 .join(",");
@@ -235,7 +240,7 @@ impl BackendArg {
     }
 
     pub fn uses_plugin(&self) -> bool {
-        install_state::get_plugin_type(&self.short).is_ok_and(|pt| pt.is_some())
+        install_state::get_plugin_type(&self.short).is_some()
     }
 }
 
@@ -286,8 +291,9 @@ mod tests {
     use super::*;
     use pretty_assertions::{assert_eq, assert_str_eq};
 
-    #[test]
-    fn test_backend_arg() {
+    #[tokio::test]
+    async fn test_backend_arg() {
+        let _config = Config::get().await;
         let t = |s: &str, full, tool_name, t| {
             let fa: BackendArg = s.into();
             assert_str_eq!(full, fa.full());

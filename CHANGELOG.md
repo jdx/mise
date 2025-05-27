@@ -1,5 +1,53 @@
 # Changelog
 
+## [2025.5.14](https://github.com/jdx/mise/compare/v2025.5.13..v2025.5.14) - 2025-05-26
+
+### 🐛 Bug Fixes
+
+- installing tools with postinstall hooks fails by [@roele](https://github.com/roele) in [#5191](https://github.com/jdx/mise/pull/5191)
+- prefer offline when executing shims by [@jdx](https://github.com/jdx) in [#5195](https://github.com/jdx/mise/pull/5195)
+- multi-line task output is shown in bold by [@roele](https://github.com/roele) in [#5197](https://github.com/jdx/mise/pull/5197)
+
+### ⚡ Performance
+
+- improve tool loading performance in async code by [@jdx](https://github.com/jdx) in [#5198](https://github.com/jdx/mise/pull/5198)
+
+## [2025.5.13](https://github.com/jdx/mise/compare/v2025.5.12..v2025.5.13) - 2025-05-26
+
+### 🐛 Bug Fixes
+
+- output was silenced on task fail with keep-order by [@artemisart](https://github.com/artemisart) in [#5175](https://github.com/jdx/mise/pull/5175)
+- avoid mapfile to run e2e tests on macOS (bash 3.2) by [@artemisart](https://github.com/artemisart) in [#5170](https://github.com/jdx/mise/pull/5170)
+- flaky keep-order e2e test by [@artemisart](https://github.com/artemisart) in [#5178](https://github.com/jdx/mise/pull/5178)
+- watch mise.lock for changes by [@jdx](https://github.com/jdx) in [#5184](https://github.com/jdx/mise/pull/5184)
+- remote task dependency does not work by [@roele](https://github.com/roele) in [#5183](https://github.com/jdx/mise/pull/5183)
+- rayon -> tokio by [@jdx](https://github.com/jdx) in [#5172](https://github.com/jdx/mise/pull/5172)
+- cache results from version host by [@jdx](https://github.com/jdx) in [#5187](https://github.com/jdx/mise/pull/5187)
+- cache results from version host for aqua packages by [@jdx](https://github.com/jdx) in [#5188](https://github.com/jdx/mise/pull/5188)
+
+### 📚 Documentation
+
+- standardize subcommand format to 'u|use' for consistency by [@LuckyWindsck](https://github.com/LuckyWindsck) in [#5167](https://github.com/jdx/mise/pull/5167)
+- clarify how to enable ideomatic version file reading for ruby by [@amkisko](https://github.com/amkisko) in [#5163](https://github.com/jdx/mise/pull/5163)
+
+### 🧪 Testing
+
+- added perf test by [@jdx](https://github.com/jdx) in [#5179](https://github.com/jdx/mise/pull/5179)
+- skip benchmark errors for now by [@jdx](https://github.com/jdx) in [#5186](https://github.com/jdx/mise/pull/5186)
+
+### Chore
+
+- fix clippy issue in xonsh by [@jdx](https://github.com/jdx) in [#5180](https://github.com/jdx/mise/pull/5180)
+- improve shfmt linter by [@jdx](https://github.com/jdx) in [#5181](https://github.com/jdx/mise/pull/5181)
+- cargo up by [@jdx](https://github.com/jdx) in [3ece604](https://github.com/jdx/mise/commit/3ece60479bd8b8e6a00a02b83c0afdd544d95034)
+- fix hyperfine step summary by [@jdx](https://github.com/jdx) in [36ab4a1](https://github.com/jdx/mise/commit/36ab4a12ffed85f07ce918d1a21a6da9f7ebef2c)
+- adjust perf thresholds by [@jdx](https://github.com/jdx) in [4113a3b](https://github.com/jdx/mise/commit/4113a3b82c3fca4eae0dbe7845ec2d513f5b6c8b)
+
+### New Contributors
+
+- @amkisko made their first contribution in [#5163](https://github.com/jdx/mise/pull/5163)
+- @LuckyWindsck made their first contribution in [#5167](https://github.com/jdx/mise/pull/5167)
+
 ## [2025.5.12](https://github.com/jdx/mise/compare/v2025.5.11..v2025.5.12) - 2025-05-25
 
 ### 🐛 Bug Fixes

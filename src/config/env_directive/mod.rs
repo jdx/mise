@@ -9,10 +9,12 @@ use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_json::Value;
-use std::cmp::PartialEq;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::{cmp::PartialEq, sync::Arc};
+
+use super::Config;
 
 mod file;
 mod module;
@@ -129,7 +131,8 @@ pub struct EnvResolveOptions {
 }
 
 impl EnvResults {
-    pub fn resolve(
+    pub async fn resolve(
+        config: &Arc<Config>,
         mut ctx: tera::Context,
         initial: &EnvMap,
         input: Vec<(EnvDirective, PathBuf)>,
@@ -236,7 +239,7 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Path(input_str, _opts) => {
-                    let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str)?;
+                    let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str).await?;
                     paths.push((path.clone(), source.clone()));
                     let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
                     let mut env_path: PathEnv = env_path.parse()?;
@@ -245,6 +248,7 @@ impl EnvResults {
                 }
                 EnvDirective::File(input, _opts) => {
                     let files = Self::file(
+                        config,
                         &mut ctx,
                         &mut tera,
                         &mut r,
@@ -252,7 +256,8 @@ impl EnvResults {
                         &source,
                         &config_root,
                         input,
-                    )?;
+                    )
+                    .await?;
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
@@ -304,6 +309,7 @@ impl EnvResults {
                     options: _opts,
                 } => {
                     Self::venv(
+                        config,
                         &mut ctx,
                         &mut tera,
                         &mut env,
@@ -317,10 +323,11 @@ impl EnvResults {
                         python,
                         uv_create_args,
                         python_create_args,
-                    )?;
+                    )
+                    .await?;
                 }
                 EnvDirective::Module(name, value, _opts) => {
-                    Self::module(&mut r, source, name, &value, redact)?;
+                    Self::module(&mut r, source, name, &value, redact).await?;
                 }
             };
         }
