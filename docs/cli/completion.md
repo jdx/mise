@@ -29,7 +29,7 @@ you may source it separately or enable this flag to include it in the script.
 Examples:
 
 ```
-mise completion bash > ~/.local/share/bash-completion/mise
+mise completion bash > ~/.local/share/bash-completion/completions/mise
 mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
 mise completion fish > ~/.config/fish/completions/mise.fish
 ```

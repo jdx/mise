@@ -154,7 +154,7 @@ cmd "completion" help="Generate shell completions" {
     alias "complete" "completions" hide=true
     after_long_help r"Examples:
 
-    $ mise completion bash > ~/.local/share/bash-completion/mise
+    $ mise completion bash > ~/.local/share/bash-completion/completions/mise
     $ mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
     $ mise completion fish > ~/.config/fish/completions/mise.fish
 "
