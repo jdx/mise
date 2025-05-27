@@ -3799,6 +3799,7 @@ dependencies = [
  "vfox",
  "walkdir",
  "which",
+ "winapi",
  "xx",
  "xz2",
  "zip 3.0.0",
