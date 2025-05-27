@@ -1,6 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
-use crate::config::SETTINGS;
+use crate::config::{Config, SETTINGS};
 use crate::env::{
     GITHUB_TOKEN, GITLAB_TOKEN, MISE_GITHUB_ENTERPRISE_TOKEN, MISE_GITLAB_ENTERPRISE_TOKEN,
 };
@@ -36,7 +36,7 @@ impl Backend for UbiBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         if name_is_url(&self.tool_name()) {
             Ok(vec!["latest".to_string()])
         } else {
@@ -187,15 +187,16 @@ impl Backend for UbiBackend {
         Ok(tv)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
             "\\D*[0-9].*"
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{query}([-.].+)?$"))?;
-        let versions = versions
+        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+
+        versions
             .into_iter()
             .filter(|v| {
                 if query == v {
@@ -206,8 +207,7 @@ impl Backend for UbiBackend {
                 }
                 query_regex.is_match(v)
             })
-            .collect();
-        Ok(versions)
+            .collect()
     }
 
     fn verify_checksum(

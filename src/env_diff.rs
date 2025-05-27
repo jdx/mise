@@ -281,20 +281,23 @@ impl Default for EnvDiffOptions {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
+
     use super::*;
 
     use insta::assert_debug_snapshot;
     use pretty_assertions::assert_str_eq;
-    use test_log::test;
 
-    #[test]
-    fn test_diff() {
+    #[tokio::test]
+    async fn test_diff() {
+        let _config = Config::get().await;
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         assert_debug_snapshot!(diff.to_patches());
     }
 
-    #[test]
-    fn test_reverse() {
+    #[tokio::test]
+    async fn test_reverse() {
+        let _config = Config::get().await;
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let patches = diff.reverse().to_patches();
         let to_remove = patches
@@ -346,18 +349,20 @@ mod tests {
             .into()
     }
 
-    #[test]
-    fn test_serialize() {
+    #[tokio::test]
+    async fn test_serialize() {
+        let _config = Config::get().await;
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let serialized = diff.serialize().unwrap();
         let deserialized = EnvDiff::deserialize(&serialized).unwrap();
         assert_debug_snapshot!(deserialized.to_patches());
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_from_bash_script() {
-        use crate::dirs;
+    async fn test_from_bash_script() {
+        let _config = Config::get().await;
+        use crate::{config::Config, dirs};
         use indexmap::indexmap;
         let path = dirs::HOME.join("fixtures/exec-env");
         let orig = indexmap! {
@@ -392,8 +397,9 @@ mod tests {
         assert_debug_snapshot!(ed);
     }
 
-    #[test]
-    fn test_invalid_escape_sequence() {
+    #[tokio::test]
+    async fn test_invalid_escape_sequence() {
+        let _config = Config::get().await;
         let input = r#""\g\""#;
         let output = normalize_escape_sequences(input);
         // just warns

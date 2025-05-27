@@ -50,7 +50,16 @@ pub struct SettingsMeta {
 }
 
 #[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, Default, strum::EnumString, strum::Display,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Default,
+    strum::EnumString,
+    strum::Display,
+    PartialEq,
+    Eq,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]

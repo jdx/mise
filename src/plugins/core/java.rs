@@ -291,7 +291,7 @@ impl Backend for JavaPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         // TODO: find out how to get this to work for different os/arch
         // See https://github.com/jdx/mise/issues/1196
         // match self.core.fetch_remote_versions_from_mise() {
@@ -328,14 +328,18 @@ impl Backend for JavaPlugin {
         Ok(versions)
     }
 
-    fn list_installed_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_installed_versions()?;
+    fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
+        let versions = self.list_installed_versions();
         self.fuzzy_match_filter(versions, query)
     }
 
-    async fn list_versions_matching(&self, query: &str) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions().await?;
-        self.fuzzy_match_filter(versions, query)
+    async fn list_versions_matching(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = self.list_remote_versions(config).await?;
+        Ok(self.fuzzy_match_filter(versions, query))
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
@@ -399,7 +403,7 @@ impl Backend for JavaPlugin {
 
     async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
@@ -410,7 +414,7 @@ impl Backend for JavaPlugin {
         Ok(map)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
         let query_trim = regex::escape(query.trim_end_matches('-'));
         let query_version = format!("{}[0-9.]+", regex::escape(query));
         let query_trim_version = format!("{query_trim}-[0-9.]+");
@@ -423,8 +427,9 @@ impl Backend for JavaPlugin {
             // else; use trimmed query
             _ => &query_trim,
         };
-        let query_regex = Regex::new(&format!("^{query}([+-.].+)?$"))?;
-        let versions = versions
+        let query_regex = Regex::new(&format!("^{query}([+-.].+)?$")).unwrap();
+
+        versions
             .into_iter()
             .filter(|v| {
                 if query == v {
@@ -435,8 +440,7 @@ impl Backend for JavaPlugin {
                 }
                 query_regex.is_match(v)
             })
-            .collect();
-        Ok(versions)
+            .collect()
     }
 }
 

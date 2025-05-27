@@ -186,7 +186,7 @@ impl Backend for GoPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         plugins::core::run_fetch_task_with_timeout(move || {
             let output = cmd!("git", "ls-remote", "--tags", &SETTINGS.go_repo, "go*").read()?;
             let lines = output.split('\n');
@@ -238,7 +238,7 @@ impl Backend for GoPlugin {
 
     async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {

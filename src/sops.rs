@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::config::{Config, SETTINGS};
 use crate::env;
 use crate::file::replace_path;
@@ -10,7 +12,7 @@ use rops::file::state::EncryptedFile;
 use tokio::sync::{Mutex, OnceCell};
 
 pub async fn decrypt<PT, F>(
-    config: &Config,
+    config: &Arc<Config>,
     input: &str,
     mut parse_template: PT,
     format: &str,
@@ -80,9 +82,9 @@ where
             .unwrap_or_default()
             .filter_by_tool(["sops".into()].into())
             .into_toolset();
-        Box::pin(ts.resolve()).await?;
+        Box::pin(ts.resolve(config)).await?;
         let sops = ts
-            .which_bin("sops")
+            .which_bin(config, "sops")
             .await
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or("sops".into());

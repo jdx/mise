@@ -52,6 +52,7 @@ pub struct Unuse {
 
 impl Unuse {
     pub async fn run(self) -> Result<()> {
+        let config = Config::get().await;
         let cf = self.get_config_file().await?;
         let tools = cf.to_tool_request_set()?.tools;
         let mut removed: Vec<&ToolArg> = vec![];
@@ -79,6 +80,7 @@ impl Unuse {
 
         if !self.no_prune {
             prune(
+                &config,
                 self.installed_tool
                     .iter()
                     .map(|ta| ta.ba.as_ref())

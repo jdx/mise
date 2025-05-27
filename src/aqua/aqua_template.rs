@@ -173,11 +173,14 @@ impl Parser<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
+
     use super::*;
     use crate::hashmap;
 
-    #[test]
-    fn test_render() {
+    #[tokio::test]
+    async fn test_render() {
+        let _config = Config::get().await;
         let tmpl = "Hello, {{.OS}}!";
         let mut ctx = HashMap::new();
         ctx.insert("OS".to_string(), "world".to_string());
@@ -187,8 +190,9 @@ mod tests {
     macro_rules! parse_tests {
     ($($name:ident: $value:expr,)*) => {
         $(
-            #[test]
-            fn $name() {
+            #[tokio::test]
+            async fn $name() {
+                let _config = Config::get().await;
                 let (input, expected, ctx): (&str, &str, HashMap<&str, &str>) = $value;
                 let ctx = ctx.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
                 let parser = Parser { ctx: &ctx };
@@ -210,8 +214,9 @@ mod tests {
         test_parse_replace: (r#"replace "foo" "bar" "foo-bar""#, "bar-bar", hashmap!{}),
     );
 
-    #[test]
-    fn test_parse_err() {
+    #[tokio::test]
+    async fn test_parse_err() {
+        let _config = Config::get().await;
         let parser = Parser {
             ctx: &HashMap::new(),
         };
@@ -219,8 +224,9 @@ mod tests {
         assert!(parser.parse(tokens.iter().collect()).is_err());
     }
 
-    #[test]
-    fn test_lex() {
+    #[tokio::test]
+    async fn test_lex() {
+        let _config = Config::get().await;
         assert_eq!(
             lex(r#"trimPrefix "foo-" "foo-v1.0.0" | trimV"#).unwrap(),
             vec![

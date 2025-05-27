@@ -4,9 +4,9 @@ use crate::config::{Config, SETTINGS};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::Result;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::OnceCell;
 
 #[derive(Clone, Debug)]
@@ -19,7 +19,7 @@ pub struct Venv {
 // when resolving the venv path or env vars
 static UV_VENV: Lazy<OnceCell<Option<Venv>>> = Lazy::new(Default::default);
 
-pub async fn uv_venv() -> Option<Venv> {
+pub async fn uv_venv(config: &Arc<Config>) -> Option<Venv> {
     if let Some(venv) = UV_VENV.get() {
         return venv.clone();
     }
@@ -27,7 +27,7 @@ pub async fn uv_venv() -> Option<Venv> {
         UV_VENV.set(None).unwrap();
         return None;
     }
-    if let (Some(venv_path), Some(uv_path)) = (venv_path(), uv_path().await) {
+    if let (Some(venv_path), Some(uv_path)) = (venv_path(), uv_path(config).await) {
         match get_or_create_venv(venv_path, uv_path).await {
             Ok(venv) => {
                 UV_VENV.set(Some(venv.clone())).unwrap();
@@ -85,10 +85,9 @@ fn uv_root() -> Option<PathBuf> {
 fn venv_path() -> Option<PathBuf> {
     Some(uv_root()?.join(".venv"))
 }
-async fn uv_path() -> Option<PathBuf> {
-    let config = Config::try_get().await.ok()?;
+async fn uv_path(config: &Arc<Config>) -> Option<PathBuf> {
     let ts = config.get_toolset().await.ok()?;
-    if let Some(uv_path) = ts.which_bin("uv").await {
+    if let Some(uv_path) = ts.which_bin(config, "uv").await {
         return Some(uv_path);
     }
     which::which("uv").ok()

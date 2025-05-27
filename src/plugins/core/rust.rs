@@ -74,7 +74,7 @@ impl Backend for RustPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions = github::list_releases("rust-lang/rust")
             .await?
             .into_iter()
@@ -151,7 +151,7 @@ impl Backend for RustPlugin {
 
     async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<BTreeMap<String, String>> {
@@ -170,17 +170,21 @@ impl Backend for RustPlugin {
         .into())
     }
 
-    async fn outdated_info(&self, tv: &ToolVersion, bump: bool) -> Result<Option<OutdatedInfo>> {
-        let config = Config::get().await;
+    async fn outdated_info(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        bump: bool,
+    ) -> Result<Option<OutdatedInfo>> {
         let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
         if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
-            let oi = OutdatedInfo::resolve(&config, tv.clone(), bump).await?;
+            let oi = OutdatedInfo::resolve(config, tv.clone(), bump).await?;
             Ok(oi)
         } else {
-            let config = Config::get().await;
             let ts = config.get_toolset().await?;
-            let mut cmd = cmd!(RUSTUP_BIN, "check").env("PATH", self.path_env_for_cmd(tv).await?);
-            for (k, v) in self.exec_env(&config, ts, tv).await? {
+            let mut cmd =
+                cmd!(RUSTUP_BIN, "check").env("PATH", self.path_env_for_cmd(config, tv).await?);
+            for (k, v) in self.exec_env(config, ts, tv).await? {
                 cmd = cmd.env(k, v);
             }
             let out = cmd.read()?;
@@ -189,7 +193,7 @@ impl Backend for RustPlugin {
                     if let Some(_cap) = v_re.captures(line) {
                         // let requested = cap.get(1).unwrap().as_str().to_string();
                         // let latest = cap.get(2).unwrap().as_str().to_string();
-                        let oi = OutdatedInfo::new(&config, tv.clone(), tv.version.clone())?;
+                        let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
                         return Ok(Some(oi));
                     }
                 }

@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::{cmp::Ordering, sync::LazyLock};
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
@@ -38,7 +38,7 @@ impl ToolVersion {
     }
 
     pub async fn resolve(
-        config: &Config,
+        config: &Arc<Config>,
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
@@ -62,7 +62,7 @@ impl ToolVersion {
                 Self::resolve_version(config, request, &v, opts).await?
             }
             ToolRequest::Prefix { prefix, .. } => {
-                Self::resolve_prefix(request, &prefix, opts).await?
+                Self::resolve_prefix(config, request, &prefix, opts).await?
             }
             ToolRequest::Sub {
                 sub, orig_version, ..
@@ -125,7 +125,7 @@ impl ToolVersion {
     pub fn download_path(&self) -> PathBuf {
         self.request.ba().downloads_path.join(self.tv_pathname())
     }
-    pub async fn latest_version(&self, config: &Config) -> Result<String> {
+    pub async fn latest_version(&self, config: &Arc<Config>) -> Result<String> {
         let opts = ResolveOptions {
             latest_versions: true,
             use_locked_version: false,
@@ -165,7 +165,7 @@ impl ToolVersion {
         .replace([':', '/'], "-")
     }
     async fn resolve_version(
-        config: &Config,
+        config: &Arc<Config>,
         request: ToolRequest,
         v: &str,
         opts: &ResolveOptions,
@@ -185,7 +185,7 @@ impl ToolVersion {
                 return Self::resolve_path(PathBuf::from(p), &request);
             }
             Some(("prefix", p)) => {
-                return Self::resolve_prefix(request, p, opts).await;
+                return Self::resolve_prefix(config, request, p, opts).await;
             }
             Some((part, v)) if part.starts_with("sub-") => {
                 let sub = part.split_once('-').unwrap().1;
@@ -208,12 +208,12 @@ impl ToolVersion {
                     return build(v);
                 }
             }
-            if let Some(v) = backend.latest_version(None).await? {
+            if let Some(v) = backend.latest_version(config, None).await? {
                 return build(v);
             }
         }
         if !opts.latest_versions {
-            let matches = backend.list_installed_versions_matching(&v)?;
+            let matches = backend.list_installed_versions_matching(&v);
             if matches.contains(&v) {
                 return build(v);
             }
@@ -221,16 +221,16 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        let matches = backend.list_versions_matching(&v).await?;
+        let matches = backend.list_versions_matching(config, &v).await?;
         if matches.contains(&v) {
             return build(v);
         }
-        Self::resolve_prefix(request, &v, opts).await
+        Self::resolve_prefix(config, request, &v, opts).await
     }
 
     /// resolve a version like `sub-1:12.0.0` which becomes `11.0.0`, `sub-0.1:12.1.0` becomes `12.0.0`
     async fn resolve_sub(
-        config: &Config,
+        config: &Arc<Config>,
         request: ToolRequest,
         sub: &str,
         v: &str,
@@ -238,7 +238,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         let v = match v {
-            "latest" => backend.latest_version(None).await?.unwrap(),
+            "latest" => backend.latest_version(config, None).await?.unwrap(),
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
@@ -246,17 +246,18 @@ impl ToolVersion {
     }
 
     async fn resolve_prefix(
+        config: &Arc<Config>,
         request: ToolRequest,
         prefix: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
         if !opts.latest_versions {
-            if let Some(v) = backend.list_installed_versions_matching(prefix)?.last() {
+            if let Some(v) = backend.list_installed_versions_matching(prefix).last() {
                 return Ok(Self::new(request, v.to_string()));
             }
         }
-        let matches = backend.list_versions_matching(prefix).await?;
+        let matches = backend.list_versions_matching(config, prefix).await?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,

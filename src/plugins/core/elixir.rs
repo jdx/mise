@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -11,6 +10,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::Backend, config::Config};
 use crate::{file, plugins};
 use async_trait::async_trait;
 use eyre::Result;
@@ -38,7 +38,7 @@ impl ElixirPlugin {
         ctx.pr.set_message("elixir --version".into());
         CmdLineRunner::new(self.elixir_bin(tv))
             .with_pr(&ctx.pr)
-            .envs(self.dependency_env().await?)
+            .envs(self.dependency_env(&ctx.config).await?)
             .arg("--version")
             .execute()
     }
@@ -88,7 +88,7 @@ impl Backend for ElixirPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions: Vec<String> = HTTP_FETCH
             .get_text("https://builds.hex.pm/builds/elixir/builds.txt")
             .await?

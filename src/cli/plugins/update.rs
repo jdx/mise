@@ -35,7 +35,7 @@ impl Update {
                     None => (p, None),
                 })
                 .collect(),
-            None => install_state::list_plugins()?
+            None => install_state::list_plugins()
                 .keys()
                 .map(|p| (p.clone(), None))
                 .collect::<Vec<_>>(),

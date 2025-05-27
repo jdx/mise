@@ -222,7 +222,7 @@ impl Use {
         config_file::parse_or_init(&path)
     }
 
-    async fn warn_if_hidden(&self, config: &Config, global: &Path) {
+    async fn warn_if_hidden(&self, config: &Arc<Config>, global: &Path) {
         let ts = ToolsetBuilder::new()
             .build(config)
             .await

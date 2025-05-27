@@ -40,17 +40,17 @@ benchmark_error() {
 	local error="$2"
 	local cmd="$3"
 	mise cache clear
-	CLICOLOR_FORCE=1 MISE_TIMINGS=1 timeout -v 10 mise $4 >/dev/null || true
-	CLICOLOR_FORCE=1 MISE_TIMINGS=1 timeout -v 10 mise $4 >/dev/null || true
+	CLICOLOR_FORCE=1 MISE_TIMINGS=1 MISE_TRACE=1 timeout -v 20 mise $4 >/dev/null || true
+	CLICOLOR_FORCE=1 MISE_TIMINGS=1 MISE_TRACE=1 timeout -v 20 mise $4 >/dev/null || true
 	# TODO: mise task
 	if [ "$name" = "*-uncached" ]; then
 		mise cache clear
 	fi
-	rm -rf cargo-flamegraph.trace
-	CARGO_PROFILE_RELEASE_DEBUG=true timeout -v 180 \
-		mise x cargo:flamegraph -- \
-		cargo flamegraph --verbose -o "flamegraphs/$1.svg" --title "$1" --notes "$error" -- $cmd \
-		>/dev/null || true
+	# rm -rf cargo-flamegraph.trace
+	# CARGO_PROFILE_RELEASE_DEBUG=true timeout -v 180 \
+	# 	mise x cargo:flamegraph -- \
+	# 	cargo flamegraph --verbose -o "flamegraphs/$1.svg" --title "$1" --notes "$error" -- $cmd \
+	# 	>/dev/null || true
 	errors+=("::error file=xtasks/test/perf,title=$1::$2")
 }
 
@@ -62,7 +62,7 @@ time_command() {
 	shift
 	start_time=$(date +%s%N)
 	echo "running $cmd $*..." >&2
-	timeout -v 10 $cmd "$@" >/dev/null || true
+	timeout -v 20 $cmd "$@" >/dev/null || true
 	end_time=$(date +%s%N)
 	duration=$(((end_time - start_time) / 1000000))
 	echo "$duration"
@@ -112,6 +112,7 @@ benchmark install install
 benchmark ls ls
 benchmark bin-paths bin-paths
 benchmark task-ls task ls
+set +x
 
 if [ -n "${MISE_ALT:-}" ]; then
 	echo "| Command    | Uncached mise | Cached mise | Uncached $MISE_ALT | Cached $MISE_ALT |"

@@ -79,6 +79,7 @@ async fn all_hooks() -> &'static Vec<(PathBuf, Hook)> {
         .await
 }
 
+#[async_backtrace::framed]
 pub async fn run_one_hook(ts: &Toolset, hook: Hooks, shell: Option<&dyn Shell>) {
     for (root, h) in all_hooks().await {
         if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {

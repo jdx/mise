@@ -1,4 +1,3 @@
-use crate::Result;
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
@@ -8,6 +7,7 @@ use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
+use crate::{Result, config::Config};
 use async_trait::async_trait;
 use indoc::formatdoc;
 use std::{fmt::Debug, sync::Arc};
@@ -32,7 +32,7 @@ impl Backend for GemBackend {
         Ok(vec!["ruby"])
     }
 
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         // The `gem list` command does not supporting listing versions as json output
         // so we use the rubygems.org api to get the list of versions.
         let raw = HTTP_FETCH.get_text(get_gem_url(&self.tool_name())?).await?;
@@ -61,7 +61,7 @@ impl Backend for GemBackend {
             //       gem. We should find a way to fix this.
             // .arg("--env-shebang")
             .with_pr(&ctx.pr)
-            .envs(self.dependency_env().await?)
+            .envs(self.dependency_env(&ctx.config).await?)
             .execute()?;
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable

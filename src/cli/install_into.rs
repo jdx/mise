@@ -43,6 +43,7 @@ impl InstallInto {
         let backend = tv.backend()?;
         let mpr = MultiProgressReport::get();
         let install_ctx = InstallContext {
+            config: config.clone(),
             ts: ts.clone(),
             pr: mpr.add(&tv.style()),
             force: true,

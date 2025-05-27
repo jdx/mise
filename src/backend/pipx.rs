@@ -48,7 +48,7 @@ impl Backend for PIPXBackend {
      * Pipx doesn't have a remote version concept across its backends, so
      * we return a single version.
      */
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
                 let registry_url = self.get_registry_url()?;
@@ -95,7 +95,7 @@ impl Backend for PIPXBackend {
         }
     }
 
-    async fn latest_stable_version(&self) -> eyre::Result<Option<String>> {
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         let this = self;
         timeout::run_with_timeout_async(
             async || {
@@ -137,7 +137,7 @@ impl Backend for PIPXBackend {
                                 Ok(version)
                             }
                         }
-                        _ => this.latest_version(Some("latest".into())).await,
+                        _ => this.latest_version(config, Some("latest".into())).await,
                     })
                     .await
             },
@@ -148,20 +148,19 @@ impl Backend for PIPXBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let config = Config::get().await;
         let pipx_request = self
             .tool_name()
             .parse::<PipxRequest>()?
             .pipx_request(&tv.version, &tv.request.options());
 
-        if self.uv_is_installed().await
+        if self.uv_is_installed(&ctx.config).await
             && SETTINGS.pipx.uvx != Some(false)
             && tv.request.options().get("uvx") != Some(&"false".to_string())
         {
             ctx.pr
                 .set_message(format!("uv tool install {pipx_request}"));
             let mut cmd = Self::uvx_cmd(
-                &config,
+                &ctx.config,
                 &["tool", "install", &pipx_request],
                 self,
                 &tv,
@@ -176,7 +175,7 @@ impl Backend for PIPXBackend {
         } else {
             ctx.pr.set_message(format!("pipx install {pipx_request}"));
             let mut cmd = Self::pipx_cmd(
-                &config,
+                &ctx.config,
                 &["install", &pipx_request],
                 self,
                 &tv,
@@ -222,10 +221,10 @@ impl PIPXBackend {
     }
 
     pub async fn reinstall_all() -> Result<()> {
-        let config = Config::load().await?;
+        let config = Arc::new(Config::load().await?);
         let ts = ToolsetBuilder::new().build(&config).await?;
         let pipx_tools = ts
-            .list_installed_versions()
+            .list_installed_versions(&config)
             .await?
             .into_iter()
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
@@ -256,7 +255,7 @@ impl PIPXBackend {
     }
 
     async fn uvx_cmd<'a>(
-        config: &Config,
+        config: &Arc<Config>,
         args: &[&str],
         b: &dyn Backend,
         tv: &ToolVersion,
@@ -271,13 +270,13 @@ impl PIPXBackend {
             .env("UV_TOOL_DIR", tv.install_path())
             .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
             .envs(ts.env_with_path(config).await?)
-            .prepend_path(ts.list_paths().await)?
+            .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
-            .prepend_path(b.dependency_toolset().await?.list_paths().await)
+            .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
     }
 
     async fn pipx_cmd<'a>(
-        config: &Config,
+        config: &Arc<Config>,
         args: &[&str],
         b: &dyn Backend,
         tv: &ToolVersion,
@@ -292,13 +291,13 @@ impl PIPXBackend {
             .env("PIPX_HOME", tv.install_path())
             .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
             .envs(ts.env_with_path(config).await?)
-            .prepend_path(ts.list_paths().await)?
+            .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
-            .prepend_path(b.dependency_toolset().await?.list_paths().await)
+            .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
     }
 
-    async fn uv_is_installed(&self) -> bool {
-        self.dependency_which("uv").await.is_some()
+    async fn uv_is_installed(&self, config: &Arc<Config>) -> bool {
+        self.dependency_which(config, "uv").await.is_some()
     }
 }
 

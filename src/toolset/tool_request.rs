@@ -272,7 +272,7 @@ impl ToolRequest {
             return Ok(Some(lt.version));
         }
         if let Some(backend) = backend::get(self.ba()) {
-            let matches = backend.list_installed_versions_matching(v)?;
+            let matches = backend.list_installed_versions_matching(v);
             if matches.iter().any(|m| m == v) {
                 return Ok(Some(v.to_string()));
             }
@@ -283,7 +283,11 @@ impl ToolRequest {
         Ok(None)
     }
 
-    pub async fn resolve(&self, config: &Config, opts: &ResolveOptions) -> Result<ToolVersion> {
+    pub async fn resolve(
+        &self,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+    ) -> Result<ToolVersion> {
         ToolVersion::resolve(config, self.clone(), opts).await
     }
 

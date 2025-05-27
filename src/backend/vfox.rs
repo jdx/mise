@@ -44,7 +44,7 @@ impl Backend for VfoxBackend {
         Some(PluginType::Vfox)
     }
 
-    async fn _list_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
@@ -93,7 +93,7 @@ impl Backend for VfoxBackend {
 
     async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<EnvMap> {

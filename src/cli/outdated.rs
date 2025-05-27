@@ -54,7 +54,7 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
-        let outdated = ts.list_outdated_versions(self.bump).await;
+        let outdated = ts.list_outdated_versions(&config, self.bump).await;
         self.display(outdated).await?;
         Ok(())
     }

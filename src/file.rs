@@ -187,9 +187,17 @@ pub async fn write_async<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -
 
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
     let path = path.as_ref();
-    trace!("cat {}", display_path(path));
+    trace!("cat {}", path.display_user());
     fs::read_to_string(path)
-        .wrap_err_with(|| format!("failed read_to_string: {}", display_path(path)))
+        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
+}
+
+pub async fn read_to_string_async<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    tokio::fs::read_to_string(path)
+        .await
+        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
 }
 
 pub fn create(path: &Path) -> Result<File> {
@@ -823,12 +831,14 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
-    use test_log::test;
+
+    use crate::config::Config;
 
     use super::*;
 
-    #[test]
-    fn test_find_up() {
+    #[tokio::test]
+    async fn test_find_up() {
+        let _config = Config::get().await;
         let path = &env::current_dir().unwrap();
         let filenames = vec![".miserc", ".mise.toml", ".test-tool-versions"]
             .into_iter()
@@ -844,23 +854,26 @@ mod tests {
         assert_eq!(find_up.next(), Some(dirs::HOME.join(".test-tool-versions")));
     }
 
-    #[test]
-    fn test_find_up_2() {
+    #[tokio::test]
+    async fn test_find_up_2() {
+        let _config = Config::get().await;
         let path = &dirs::HOME.join("fixtures");
         let filenames = vec![".test-tool-versions"];
         let result = find_up(path, &filenames);
         assert_eq!(result, Some(dirs::HOME.join(".test-tool-versions")));
     }
 
-    #[test]
-    fn test_dir_subdirs() {
+    #[tokio::test]
+    async fn test_dir_subdirs() {
+        let _config = Config::get().await;
         let subdirs = dir_subdirs(&dirs::HOME).unwrap();
         assert!(subdirs.contains("cwd"));
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_display_path() {
+    async fn test_display_path() {
+        let _config = Config::get().await;
         use std::ops::Deref;
         let path = dirs::HOME.join("cwd");
         assert_eq!(display_path(path), "~/cwd");
@@ -871,8 +884,9 @@ mod tests {
         assert_eq!(display_path(&path), path.display().to_string());
     }
 
-    #[test]
-    fn test_replace_path() {
+    #[tokio::test]
+    async fn test_replace_path() {
+        let _config = Config::get().await;
         assert_eq!(replace_path(Path::new("~/cwd")), dirs::HOME.join("cwd"));
         assert_eq!(replace_path(Path::new("/cwd")), Path::new("/cwd"));
     }

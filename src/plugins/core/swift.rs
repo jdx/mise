@@ -1,4 +1,3 @@
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::SETTINGS;
@@ -6,6 +5,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
+use crate::{backend::Backend, config::Config};
 use crate::{file, github, gpg, plugins};
 use async_trait::async_trait;
 use eyre::Result;
@@ -157,7 +157,7 @@ impl Backend for SwiftPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions = github::list_releases("swiftlang/swift")
             .await?
             .into_iter()

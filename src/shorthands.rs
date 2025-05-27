@@ -65,13 +65,17 @@ mod tests {
 
     #[cfg(unix)]
     use pretty_assertions::assert_str_eq;
-    use test_log::test;
+
+    use crate::config::Config;
 
     use super::*;
 
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn test_get_shorthands() {
+    async fn test_get_shorthands() {
+        use crate::config::Config;
+
+        let _config = Config::get().await;
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
@@ -84,8 +88,9 @@ mod tests {
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
     }
 
-    #[test]
-    fn test_get_shorthands_missing_file() {
+    #[tokio::test]
+    async fn test_get_shorthands_missing_file() {
+        let _config = Config::get().await;
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("test/fixtures/missing.toml".into());

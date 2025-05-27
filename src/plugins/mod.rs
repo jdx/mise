@@ -179,7 +179,7 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 
 pub fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
-    let plugin_type = if let Some(plugin_type) = install_state::list_plugins()?.get(short) {
+    let plugin_type = if let Some(plugin_type) = install_state::list_plugins().get(short) {
         *plugin_type
     } else {
         PluginType::from_full(full)?

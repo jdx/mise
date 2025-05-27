@@ -209,6 +209,7 @@ type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
 impl Run {
     pub async fn run(mut self) -> Result<()> {
+        let config = Config::try_get().await?;
         if self.task == "-h" {
             self.get_clap_command().print_help()?;
             return Ok(());
@@ -224,7 +225,7 @@ impl Run {
             .chain(self.args.clone())
             .chain(self.args_last.clone())
             .collect_vec();
-        let task_list = get_task_lists(&args, true).await?;
+        let task_list = get_task_lists(&config, &args, true).await?;
         time!("run get_task_lists");
         self.parallelize_tasks(task_list).await?;
         time!("run done");
@@ -333,9 +334,10 @@ impl Run {
                 let this_ = this_.clone();
                 let semaphore = semaphore.clone();
                 let tasks = tasks.clone();
+                let config = config.clone();
                 jset.lock().await.spawn(async move {
                     let _permit = semaphore.acquire().await?;
-                    let result = this_.run_task(&task).await;
+                    let result = this_.run_task(&task, &config).await;
                     if let Err(err) = &result {
                         let status = Error::get_exit_status(err);
                         if !this_.is_stopping() && status.is_none() {
@@ -419,7 +421,7 @@ impl Run {
         }
     }
 
-    async fn run_task(&self, task: &Task) -> Result<()> {
+    async fn run_task(&self, task: &Task, config: &Arc<Config>) -> Result<()> {
         let prefix = task.estyled_prefix();
         if SETTINGS.task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
@@ -427,7 +429,7 @@ impl Run {
             }
             return Ok(());
         }
-        if !self.force && self.sources_are_fresh(task).await? {
+        if !self.force && self.sources_are_fresh(task, config).await? {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
@@ -448,7 +450,7 @@ impl Run {
             .with_args(&tools)
             .build(&config)
             .await?;
-        let mut env = task.render_env(&ts).await?;
+        let mut env = task.render_env(&config, &ts).await?;
         let output = self.output(Some(task));
         env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
         if output == TaskOutput::Prefix {
@@ -478,10 +480,10 @@ impl Run {
         let timer = std::time::Instant::now();
 
         if let Some(file) = &task.file {
-            self.exec_file(file, task, &env, &prefix).await?;
+            self.exec_file(&config, file, task, &env, &prefix).await?;
         } else {
             let rendered_run_scripts = task
-                .render_run_scripts_with_args(self.cd.clone(), &task.args, &env)
+                .render_run_scripts_with_args(&config, self.cd.clone(), &task.args, &env)
                 .await?;
 
             let get_args = || {
@@ -491,7 +493,7 @@ impl Run {
                     .cloned()
                     .collect()
             };
-            self.parse_usage_spec_and_init_env(task, &mut env, get_args)
+            self.parse_usage_spec_and_init_env(&config, task, &mut env, get_args)
                 .await?;
 
             for (script, args) in rendered_run_scripts {
@@ -605,13 +607,19 @@ impl Run {
         }
     }
 
-    async fn exec_file(&self, file: &Path, task: &Task, env: &EnvMap, prefix: &str) -> Result<()> {
-        let config = Config::get().await;
+    async fn exec_file(
+        &self,
+        config: &Arc<Config>,
+        file: &Path,
+        task: &Task,
+        env: &EnvMap,
+        prefix: &str,
+    ) -> Result<()> {
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
         let get_args = || once(command.clone()).chain(args.clone()).collect_vec();
-        self.parse_usage_spec_and_init_env(task, &mut env, get_args)
+        self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
             .await?;
 
         if !self.quiet(Some(task)) {
@@ -733,7 +741,7 @@ impl Run {
                 }
             }
         }
-        let dir = self.cwd(task).await?;
+        let dir = self.cwd(task, &config).await?;
         if !dir.exists() {
             self.eprint(
                 task,
@@ -818,11 +826,12 @@ impl Run {
 
     async fn parse_usage_spec_and_init_env(
         &self,
+        config: &Arc<Config>,
         task: &Task,
         env: &mut EnvMap,
         get_args: impl Fn() -> Vec<String>,
     ) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(self.cd.clone(), env).await?;
+        let (spec, _) = task.parse_usage_spec(config, self.cd.clone(), env).await?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args: Vec<String> = get_args();
             debug!("Parsing usage spec for {:?}", args);
@@ -838,7 +847,7 @@ impl Run {
         Ok(())
     }
 
-    async fn sources_are_fresh(&self, task: &Task) -> Result<bool> {
+    async fn sources_are_fresh(&self, task: &Task, config: &Arc<Config>) -> Result<bool> {
         let outputs = task.outputs.paths(task);
         if task.sources.is_empty() && outputs.is_empty() {
             return Ok(false);
@@ -846,7 +855,7 @@ impl Run {
         // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
         // perhaps using some manifest in a state directory or something, maybe leveraging atime?
         let run = async || -> Result<bool> {
-            let root = self.cwd(task).await?;
+            let root = self.cwd(task, config).await?;
             let mut sources = task.sources.clone();
             sources.push(task.config_source.to_string_lossy().to_string());
             let source_metadatas = self.get_file_metadatas(&root, &sources)?;
@@ -980,14 +989,13 @@ impl Run {
         Ok(last_mod)
     }
 
-    async fn cwd(&self, task: &Task) -> Result<PathBuf> {
+    async fn cwd(&self, task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
         if let Some(d) = &self.cd {
             Ok(d.clone())
-        } else if let Some(d) = task.dir().await? {
+        } else if let Some(d) = task.dir(config).await? {
             Ok(d)
         } else {
-            Ok(Config::get()
-                .await
+            Ok(config
                 .project_root
                 .clone()
                 .or_else(|| dirs::CWD.clone())
@@ -1232,8 +1240,11 @@ async fn prompt_for_task() -> Result<Task> {
     }
 }
 
-pub async fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> {
-    let config = Config::get().await;
+pub async fn get_task_lists(
+    config: &Arc<Config>,
+    args: &[String],
+    prompt: bool,
+) -> Result<Vec<Task>> {
     let args = args
         .iter()
         .map(|s| vec![s.to_string()])
@@ -1266,7 +1277,7 @@ pub async fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> 
                     .clone()
                     .or_else(|| dirs::CWD.clone())
                     .unwrap_or_default();
-                let task = Task::from_path(&path, &PathBuf::new(), &config_root).await?;
+                let task = Task::from_path(config, &path, &PathBuf::new(), &config_root).await?;
                 return Ok(vec![task.with_args(args)]);
             }
         }
@@ -1279,7 +1290,7 @@ pub async fn get_task_lists(args: &[String], prompt: bool) -> Result<Vec<Task>> 
             .collect_vec();
         if cur_tasks.is_empty() {
             if t != "default" || !prompt || !console::user_attended_stderr() {
-                err_no_task(&config, &t).await?;
+                err_no_task(config, &t).await?;
             }
             tasks.push(prompt_for_task().await?);
         } else {

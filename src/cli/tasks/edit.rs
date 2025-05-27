@@ -34,7 +34,7 @@ impl TasksEdit {
         {
             task
         } else {
-            Task::from_path(&path, path.parent().unwrap(), &project_root)
+            Task::from_path(&config, &path, path.parent().unwrap(), &project_root)
                 .await
                 .or_else(|_| Task::new(&path, path.parent().unwrap(), &project_root))?
         };

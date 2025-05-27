@@ -1,4 +1,3 @@
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
@@ -17,6 +16,7 @@ use crate::{
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
+use crate::{backend::Backend, config::Config};
 use crate::{file, github, minisign};
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -56,7 +56,7 @@ impl Backend for AquaBackend {
         Ok(vec!["cosign", "slsa-verifier"])
     }
 
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
             let versions = get_versions(&pkg).await?;
@@ -161,15 +161,15 @@ impl Backend for AquaBackend {
         Ok(paths)
     }
 
-    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> eyre::Result<Vec<String>> {
+    fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
             "\\D*[0-9].*"
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{query}([-.].+)?$"))?;
-        let versions = versions
+        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+        versions
             .into_iter()
             .filter(|v| {
                 if query == v {
@@ -180,8 +180,7 @@ impl Backend for AquaBackend {
                 }
                 query_regex.is_match(v)
             })
-            .collect();
-        Ok(versions)
+            .collect()
     }
 }
 
@@ -429,7 +428,7 @@ impl AquaBackend {
                 debug!("slsa is disabled for {tv}");
                 return Ok(());
             }
-            if let Some(slsa_bin) = self.dependency_which("slsa-verifier").await {
+            if let Some(slsa_bin) = self.dependency_which(&ctx.config, "slsa-verifier").await {
                 ctx.pr.set_message("verify slsa".to_string());
                 let repo_owner = slsa
                     .repo_owner
@@ -511,7 +510,7 @@ impl AquaBackend {
                 debug!("cosign is disabled for {tv}");
                 return Ok(());
             }
-            if let Some(cosign_bin) = self.dependency_which("cosign").await {
+            if let Some(cosign_bin) = self.dependency_which(&ctx.config, "cosign").await {
                 ctx.pr
                     .set_message("verify checksums with cosign".to_string());
                 let mut cmd = CmdLineRunner::new(cosign_bin)

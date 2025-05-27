@@ -73,11 +73,11 @@ impl Uninstall {
 
     async fn get_all_tool_versions(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
     ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
         let ts = ToolsetBuilder::new().build(config).await?;
         let tool_versions = ts
-            .list_installed_versions()
+            .list_installed_versions(config)
             .await?
             .into_iter()
             .collect::<Vec<_>>();
@@ -85,14 +85,14 @@ impl Uninstall {
     }
     async fn get_requested_tool_versions(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
     ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
         let runtimes = ToolArg::double_tool_condition(&self.installed_tool)?;
         let mut tool_versions = Vec::new();
         for ta in runtimes {
             let backend = ta.ba.backend()?;
             let query = ta.tvr.as_ref().map(|tvr| tvr.version()).unwrap_or_default();
-            let installed_versions = backend.list_installed_versions()?;
+            let installed_versions = backend.list_installed_versions();
             let exact_match = installed_versions.iter().find(|v| v == &&query);
             let matches = match exact_match {
                 Some(m) => vec![m],

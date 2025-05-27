@@ -175,7 +175,7 @@ impl RubyPlugin {
 
     async fn install_default_gems(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
@@ -228,7 +228,7 @@ impl RubyPlugin {
 
     async fn install_cmd<'a>(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &'a Box<dyn SingleReport>,
     ) -> Result<CmdLineRunner<'a>> {
@@ -316,7 +316,7 @@ impl Backend for RubyPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
-    async fn _list_remote_versions(&self) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         timeout::run_with_timeout_async(
             async || {
                 if let Err(err) = self.update_build_tool(None).await {
@@ -375,7 +375,7 @@ impl Backend for RubyPlugin {
 
     async fn exec_env(
         &self,
-        _config: &Config,
+        _config: &Arc<Config>,
         _ts: &Toolset,
         _tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {

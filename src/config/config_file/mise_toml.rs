@@ -1523,14 +1523,15 @@ mod tests {
     use insta::{assert_debug_snapshot, assert_snapshot};
     use test_log::test;
 
-    use crate::dirs::CWD;
     use crate::test::replace_path;
     use crate::toolset::ToolRequest;
+    use crate::{config::Config, dirs::CWD};
 
     use super::*;
 
-    #[test]
-    fn test_fixture() {
+    #[tokio::test]
+    async fn test_fixture() {
+        let _config = Config::get().await;
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env_entries().unwrap());
@@ -1544,8 +1545,9 @@ mod tests {
         assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
     }
 
-    #[test]
-    fn test_env() {
+    #[tokio::test]
+    async fn test_env() {
+        let _config = Config::get().await;
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1571,8 +1573,9 @@ mod tests {
         });
     }
 
-    #[test]
-    fn test_env_array_valid() {
+    #[tokio::test]
+    async fn test_env_array_valid() {
+        let _config = Config::get().await;
         let env = parse_env(formatdoc! {r#"
         [[env]]
         foo="bar"
@@ -1594,8 +1597,9 @@ mod tests {
         ");
     }
 
-    #[test]
-    fn test_path_dirs() {
+    #[tokio::test]
+    async fn test_path_dirs() {
+        let _config = Config::get().await;
         let env = parse_env(formatdoc! {r#"
             env_path=["/foo", "./bar"]
             [env]
@@ -1650,8 +1654,9 @@ mod tests {
         ");
     }
 
-    #[test]
-    fn test_env_file() {
+    #[tokio::test]
+    async fn test_env_file() {
+        let _config = Config::get().await;
         let env = parse_env(formatdoc! {r#"
             env_file = ".env"
             "#});
@@ -1683,8 +1688,9 @@ mod tests {
         assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
     }
 
-    #[test]
-    fn test_set_alias() {
+    #[tokio::test]
+    async fn test_set_alias() {
+        let _config = Config::get().await;
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1708,8 +1714,9 @@ mod tests {
         file::remove_file(&p).unwrap();
     }
 
-    #[test]
-    fn test_remove_alias() {
+    #[tokio::test]
+    async fn test_remove_alias() {
+        let _config = Config::get().await;
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1737,8 +1744,9 @@ mod tests {
         file::remove_file(&p).unwrap();
     }
 
-    #[test]
-    fn test_replace_versions() {
+    #[tokio::test]
+    async fn test_replace_versions() {
+        let _config = Config::get().await;
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1767,8 +1775,9 @@ mod tests {
         file::remove_all(&p).unwrap();
     }
 
-    #[test]
-    fn test_remove_plugin() {
+    #[tokio::test]
+    async fn test_remove_plugin() {
+        let _config = Config::get().await;
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,

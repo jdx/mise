@@ -1,8 +1,8 @@
-use crate::Result;
 use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
 use crate::exit::exit;
 use crate::ui::ctrlc;
+use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
@@ -319,13 +319,17 @@ impl Commands {
 }
 
 impl Cli {
+    #[async_backtrace::framed]
     pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
-        measure!("hande_shim", { shims::handle_shim().await })?;
+        measure!("logger", { logger::init() });
+        measure!("handle_shim", { shims::handle_shim().await })?;
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
-
-        let cli = measure!("pre_settings", { Self::pre_settings().await? });
+        let _ = measure!("backend::load_tools", { backend::load_tools().await });
+        let cli = measure!("get_matches_from", {
+            Cli::parse_from(crate::env::ARGS.read().unwrap().iter())
+        });
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
@@ -342,18 +346,6 @@ impl Cli {
         }
         let cmd = cli.get_command().await?;
         measure!("run {cmd}", { cmd.run().await })
-    }
-
-    async fn pre_settings() -> Result<Cli> {
-        let (_, cli) = tokio::join!(
-            measure!("install_state", { crate::install_state::init() }),
-            tokio::task::spawn(async {
-                measure!("get_matches_from", {
-                    Result::Ok(Cli::parse_from(crate::env::ARGS.read().unwrap().iter()))
-                })
-            }),
-        );
-        cli?
     }
 
     async fn get_command(self) -> Result<Commands> {

@@ -119,11 +119,15 @@ pub trait ConfigFile: Debug + Send + Sync {
 }
 
 impl dyn ConfigFile {
-    pub async fn add_runtimes(&self, tools: &[ToolArg], pin: bool) -> eyre::Result<()> {
-        let config = Config::get().await;
+    pub async fn add_runtimes(
+        &self,
+        config: &Arc<Config>,
+        tools: &[ToolArg],
+        pin: bool,
+    ) -> eyre::Result<()> {
         // TODO: this has become a complete mess and could probably be greatly simplified
         let mut ts = self.to_toolset()?.to_owned();
-        ts.resolve().await?;
+        ts.resolve(config).await?;
         trace!("resolved toolset");
         let mut plugins_to_update = HashMap::new();
         for ta in tools {
@@ -146,14 +150,14 @@ impl dyn ConfigFile {
             ts.versions.insert(ba.clone(), tvl);
         }
         trace!("resolving toolset 2");
-        ts.resolve().await?;
+        ts.resolve(config).await?;
         trace!("resolved toolset 2");
         for (ba, versions) in plugins_to_update {
             let mut new = vec![];
             for tr in versions {
                 let mut tr = tr.clone();
                 if pin {
-                    let tv = tr.resolve(&config, &Default::default()).await?;
+                    let tv = tr.resolve(config, &Default::default()).await?;
                     if let ToolRequest::Version {
                         version: _version,
                         source,

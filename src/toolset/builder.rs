@@ -37,7 +37,7 @@ impl ToolsetBuilder {
         self
     }
 
-    pub async fn build(self, config: &Config) -> Result<Toolset> {
+    pub async fn build(self, config: &Arc<Config>) -> Result<Toolset> {
         let mut toolset = Toolset {
             ..Default::default()
         };
@@ -51,7 +51,7 @@ impl ToolsetBuilder {
             self.load_runtime_args(&mut toolset)?;
         });
         measure!("toolset_builder::build::resolve", {
-            if let Err(err) = toolset.resolve().await {
+            if let Err(err) = toolset.resolve(config).await {
                 if Error::is_argument_err(&err) {
                     return Err(err);
                 }
@@ -63,7 +63,7 @@ impl ToolsetBuilder {
         Ok(toolset)
     }
 
-    fn load_config_files(&self, config: &Config, ts: &mut Toolset) -> eyre::Result<()> {
+    fn load_config_files(&self, config: &Arc<Config>, ts: &mut Toolset) -> eyre::Result<()> {
         for cf in config.config_files.values().rev() {
             if self.global_only && !config::is_global_config(cf.get_path()) {
                 continue;
