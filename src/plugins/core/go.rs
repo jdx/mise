@@ -87,6 +87,8 @@ impl GoPlugin {
     fn test_go(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         pr.set_message("go version".into());
         CmdLineRunner::new(self.go_bin(tv))
+            // run the command in the install path to prevent issues with go.mod version mismatch
+            .current_dir(tv.install_path())
             .with_pr(pr)
             .arg("version")
             .execute()

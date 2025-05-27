@@ -12,5 +12,17 @@ assert_contains "mise x -- go version" "go version go1.20"
 assert "mise x -- go env GOBIN" "${MISE_DATA_DIR}/installs/go/1.20/bin"
 assert_contains "mise x -- go-example" "hello world"
 
+# ensure go.mod does not prevent installation on version mismatch
+mkdir -p "$HOME/go-mod/"
+cd "$HOME/go-mod/" || exit 1
+cat >"go.mod" <<EOF
+package github.com/jdx/go-example
+go 1.22
+EOF
+assert_fail "mise x go@1.21.4 -- go version"
+assert_contains "mise ls go" "go  1.21.4"
+cd -
+rm -rf "$HOME/go-mod/"
+
 # Required to properly cleanup as go installs read-only sources
 chmod -R +w ~/go
