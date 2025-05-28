@@ -21,7 +21,7 @@ pub struct TasksEdit {
 
 impl TasksEdit {
     pub async fn run(self) -> Result<()> {
-        let config = Config::try_get().await?;
+        let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
         let path = Task::task_dir().await.join(&self.task);

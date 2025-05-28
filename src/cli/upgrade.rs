@@ -60,7 +60,7 @@ pub struct Upgrade {
 
 impl Upgrade {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let mut config = Config::get().await?;
         let ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&config)
@@ -85,13 +85,13 @@ impl Upgrade {
                 );
             }
         } else {
-            self.upgrade(&config, outdated).await?;
+            self.upgrade(&mut config, outdated).await?;
         }
 
         Ok(())
     }
 
-    async fn upgrade(&self, config: &Arc<Config>, outdated: Vec<OutdatedInfo>) -> Result<()> {
+    async fn upgrade(&self, config: &mut Arc<Config>, outdated: Vec<OutdatedInfo>) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
@@ -209,18 +209,25 @@ impl Upgrade {
                 .any(|v| v.ba() == o.tool_version.ba())
             {
                 let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
-                if let Err(e) = self.uninstall_old_version(&o.tool_version, &pr).await {
+                if let Err(e) = self
+                    .uninstall_old_version(config, &o.tool_version, &pr)
+                    .await
+                {
                     warn!("Failed to uninstall old version of {}: {}", o.name, e);
                 }
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&successful_versions).await?;
+        *config = Config::load().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
-            PIPXBackend::reinstall_all().await.unwrap_or_else(|err| {
-                warn!("failed to reinstall pipx tools: {err}");
-            });
+            PIPXBackend::reinstall_all(config)
+                .await
+                .unwrap_or_else(|err| {
+                    warn!("failed to reinstall pipx tools: {err}");
+                });
         }
 
         if had_errors {
@@ -232,11 +239,12 @@ impl Upgrade {
 
     async fn uninstall_old_version(
         &self,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
     ) -> Result<()> {
         tv.backend()?
-            .uninstall_version(tv, pr, self.dry_run)
+            .uninstall_version(config, tv, pr, self.dry_run)
             .await
             .wrap_err_with(|| format!("failed to uninstall {tv}"))?;
         pr.finish();

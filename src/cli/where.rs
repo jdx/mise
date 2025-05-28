@@ -28,7 +28,7 @@ pub struct Where {
 
 impl Where {
     pub async fn run(self) -> Result<()> {
-        let config = Config::try_get().await?;
+        let config = Config::get().await?;
         let tvr = match self.tool.tvr {
             Some(tvr) => tvr,
             None => match self.asdf_version {

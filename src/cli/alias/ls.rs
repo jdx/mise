@@ -28,7 +28,7 @@ pub struct AliasLs {
 
 impl AliasLs {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let rows = config
             .all_aliases
             .iter()

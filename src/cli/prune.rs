@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::backend::Backend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::tracking::Tracker;
 use crate::config::{Config, SETTINGS};
@@ -9,6 +8,7 @@ use crate::runtime_symlinks;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
+use crate::{backend::Backend, config};
 use console::style;
 use eyre::Result;
 
@@ -44,7 +44,7 @@ pub struct Prune {
 
 impl Prune {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let mut config = Config::get().await?;
         if self.configs || !self.tools {
             self.prune_configs()?;
         }
@@ -54,6 +54,9 @@ impl Prune {
                 .as_ref()
                 .map(|it| it.iter().map(|ta| ta.ba.as_ref()).collect());
             prune(&config, backends.unwrap_or_default(), self.dry_run).await?;
+            config = Config::load().await?;
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
         }
         Ok(())
     }
@@ -99,10 +102,14 @@ pub async fn prunable_tools(
 
 pub async fn prune(config: &Arc<Config>, tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
     let to_delete = prunable_tools(config, tools).await?;
-    delete(dry_run, to_delete).await
+    delete(config, dry_run, to_delete).await
 }
 
-async fn delete(dry_run: bool, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) -> Result<()> {
+async fn delete(
+    config: &Arc<Config>,
+    dry_run: bool,
+    to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>,
+) -> Result<()> {
     let mpr = MultiProgressReport::get();
     for (p, tv) in to_delete {
         let mut prefix = tv.style();
@@ -111,7 +118,7 @@ async fn delete(dry_run: bool, to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>) 
         }
         let pr = mpr.add(&prefix);
         if dry_run || SETTINGS.yes || prompt::confirm_with_all(format!("remove {} ?", &tv))? {
-            p.uninstall_version(&tv, &pr, dry_run).await?;
+            p.uninstall_version(config, &tv, &pr, dry_run).await?;
             runtime_symlinks::remove_missing_symlinks(p)?;
             pr.finish();
         }

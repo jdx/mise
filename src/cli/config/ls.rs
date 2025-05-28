@@ -37,7 +37,7 @@ impl ConfigLs {
     }
 
     async fn display(&self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let configs = config
             .config_files
             .values()
@@ -62,7 +62,7 @@ impl ConfigLs {
 
     async fn display_json(&self) -> Result<()> {
         let array_items = Config::get()
-            .await
+            .await?
             .config_files
             .values()
             .map(|cf| {

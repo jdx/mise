@@ -52,8 +52,8 @@ pub struct Unuse {
 
 impl Unuse {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
-        let cf = self.get_config_file().await?;
+        let config = Config::get().await?;
+        let cf = self.get_config_file(&config).await?;
         let tools = cf.to_tool_request_set()?.tools;
         let mut removed: Vec<&ToolArg> = vec![];
         for ta in &self.installed_tool {
@@ -88,13 +88,15 @@ impl Unuse {
                 false,
             )
             .await?;
-            config::rebuild_shims_and_runtime_symlinks(&[]).await?;
+            let config = Config::load().await?;
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
         }
 
         Ok(())
     }
 
-    async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
+    async fn get_config_file(&self, config: &Config) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
         let path = if self.global {
             config::global_config_path()
@@ -115,7 +117,6 @@ impl Unuse {
         } else if env::in_home_dir() {
             config::global_config_path()
         } else {
-            let config = Config::get().await;
             for cf in config.config_files.values() {
                 if cf
                     .to_tool_request_set()?

@@ -205,11 +205,10 @@ impl ToolRequest {
         }
     }
 
-    pub async fn is_installed(&self) -> bool {
-        let config = Config::get().await;
+    pub async fn is_installed(&self, config: &Arc<Config>) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
-            match self.resolve(&config, &Default::default()).await {
-                Ok(tv) => backend.is_version_installed(&config, &tv, false),
+            match self.resolve(config, &Default::default()).await {
+                Ok(tv) => backend.is_version_installed(config, &tv, false),
                 Err(e) => {
                     debug!("ToolRequest.is_installed: {e:#}");
                     false

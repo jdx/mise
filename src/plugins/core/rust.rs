@@ -38,28 +38,26 @@ impl RustPlugin {
             .await?;
         file::make_executable(rustup_path())?;
         file::create_dir_all(rustup_home())?;
-        let config = Config::get().await;
-        let ts = config.get_toolset().await?;
+        let ts = ctx.config.get_toolset().await?;
         let cmd = CmdLineRunner::new(rustup_path())
             .with_pr(&ctx.pr)
             .arg("--no-modify-path")
             .arg("--default-toolchain")
             .arg("none")
             .arg("-y")
-            .envs(self.exec_env(&config, ts, tv).await?);
+            .envs(self.exec_env(&ctx.config, ts, tv).await?);
         cmd.execute()?;
         Ok(())
     }
 
     async fn test_rust(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message(format!("{RUSTC_BIN} -V"));
-        let config = Config::get().await;
-        let ts = config.get_toolset().await?;
+        let ts = ctx.config.get_toolset().await?;
         CmdLineRunner::new(RUSTC_BIN)
             .with_pr(&ctx.pr)
             .arg("-V")
-            .envs(self.exec_env(&config, ts, tv).await?)
-            .prepend_path(self.list_bin_paths(tv).await?)?
+            .envs(self.exec_env(&ctx.config, ts, tv).await?)
+            .prepend_path(self.list_bin_paths(&ctx.config, tv).await?)?
             .execute()
     }
 
@@ -100,8 +98,7 @@ impl Backend for RustPlugin {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         self.setup_rustup(ctx, &tv).await?;
-        let config = Config::try_get().await?;
-        let ts = config.get_toolset().await?;
+        let ts = ctx.config.get_toolset().await?;
 
         let (profile, components, targets) = get_args(&tv);
 
@@ -114,8 +111,8 @@ impl Backend for RustPlugin {
             .opt_arg(profile)
             .opt_args("--component", components)
             .opt_args("--target", targets)
-            .prepend_path(self.list_bin_paths(&tv).await?)?
-            .envs(self.exec_env(&config, ts, &tv).await?)
+            .prepend_path(self.list_bin_paths(&ctx.config, &tv).await?)?
+            .envs(self.exec_env(&ctx.config, ts, &tv).await?)
             .execute()?;
 
         file::remove_all(tv.install_path())?;
@@ -128,24 +125,28 @@ impl Backend for RustPlugin {
 
     async fn uninstall_version_impl(
         &self,
+        config: &Arc<Config>,
         pr: &Box<dyn SingleReport>,
         tv: &ToolVersion,
     ) -> Result<()> {
-        let config = Config::try_get().await?;
         let ts = config.get_toolset().await?;
-        let mut env = self.exec_env(&config, ts, tv).await?;
+        let mut env = self.exec_env(config, ts, tv).await?;
         env.remove("RUSTUP_TOOLCHAIN");
         CmdLineRunner::new(RUSTUP_BIN)
             .with_pr(pr)
             .arg("toolchain")
             .arg("uninstall")
             .arg(&tv.version)
-            .prepend_path(self.list_bin_paths(tv).await?)?
+            .prepend_path(self.list_bin_paths(config, tv).await?)?
             .envs(env)
             .execute()
     }
 
-    async fn list_bin_paths(&self, _tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        _tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         Ok(vec![cargo_bindir()])
     }
 

@@ -293,7 +293,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_backend_arg() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let t = |s: &str, full, tool_name, t| {
             let fa: BackendArg = s.into();
             assert_str_eq!(full, fa.full());
@@ -323,8 +323,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_backend_arg_pathname() {
+    #[tokio::test]
+    async fn test_backend_arg_pathname() {
+        let _config = Config::get().await.unwrap();
         let t = |s: &str, expected| {
             let fa: BackendArg = s.into();
             let actual = fa.installs_path.to_string_lossy();

@@ -13,7 +13,7 @@ pub struct Path {
 
 impl Path {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let ts = config.get_toolset().await?;
         let paths = if self.full {
             let env = ts.env_with_path(&config).await?;

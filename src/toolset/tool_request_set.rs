@@ -43,10 +43,10 @@ impl ToolRequestSet {
     //         .collect()
     // }
 
-    pub async fn missing_tools(&self) -> Vec<&ToolRequest> {
+    pub async fn missing_tools(&self, config: &Arc<Config>) -> Vec<&ToolRequest> {
         let mut tools = vec![];
         for tr in self.tools.values().flatten() {
-            if tr.is_os_supported() && !tr.is_installed().await {
+            if tr.is_os_supported() && !tr.is_installed(config).await {
                 tools.push(tr);
             }
         }

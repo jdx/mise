@@ -4,9 +4,11 @@ export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 
 touch mise.lock
-mise install tiny@1.0.0
-mise use tiny@1
-mise install tiny@1.0.1
+assert "mise install tiny@1.0.0"
+assert "mise use tiny@1"
+assert "mise current tiny" "1.0.0"
+assert "mise install tiny@1.0.1"
+assert "mise current tiny" "1.0.0"
 assert "mise x -- rtx-tiny" "rtx-tiny: v1.0.0 args:"
 #TODO: assert "mise x tiny -- rtx-tiny" "rtx-tiny: v1.0.0 args:"
 assert "mise x tiny@1.0.1 -- rtx-tiny" "rtx-tiny: v1.0.1 args:"

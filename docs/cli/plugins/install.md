@@ -39,6 +39,10 @@ i.e.: they don't need the full git repo url
 
 Show installation output
 
+### `-j --jobs <JOBS>`
+
+Number of jobs to run in parallel
+
 Examples:
 
 ```

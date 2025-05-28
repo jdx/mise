@@ -59,7 +59,7 @@ pub struct Local {
 
 impl Local {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let path = if self.parent {
             get_parent_path()?
         } else {

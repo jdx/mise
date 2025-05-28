@@ -88,7 +88,7 @@ pub enum SortOrder {
 
 impl TasksLs {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let ts = config.get_toolset().await?;
         let tasks = config
             .tasks()

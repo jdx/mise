@@ -274,7 +274,6 @@ impl PythonPlugin {
     }
 
     async fn install_compiled(&self, ctx: &InstallContext, tv: &ToolVersion) -> eyre::Result<()> {
-        let config = Config::get().await;
         self.install_or_update_python_build(Some(ctx))?;
         if matches!(&tv.request, ToolRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
@@ -285,7 +284,7 @@ impl PythonPlugin {
             .arg(tv.version.as_str())
             .arg(tv.install_path())
             .env("PIP_REQUIRE_VIRTUALENV", "false")
-            .envs(config.env().await?);
+            .envs(ctx.config.env().await?);
         if SETTINGS.verbose {
             cmd = cmd.arg("--verbose");
         }
@@ -474,7 +473,11 @@ impl Backend for PythonPlugin {
     }
 
     #[cfg(windows)]
-    async fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<Vec<PathBuf>> {
         Ok(vec![tv.install_path()])
     }
 

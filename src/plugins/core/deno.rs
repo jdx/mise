@@ -131,7 +131,11 @@ impl Backend for DenoPlugin {
         Ok(tv)
     }
 
-    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         if let ToolRequest::System { .. } = tv.request {
             return Ok(vec![]);
         }

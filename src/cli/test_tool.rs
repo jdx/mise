@@ -7,8 +7,8 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
 use eyre::{Result, bail, eyre};
-use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::{collections::BTreeSet, sync::Arc};
 
 /// Test a tool installs and executes
 #[derive(Debug, clap::Args)]
@@ -49,7 +49,7 @@ impl TestTool {
             "---".to_string(),
             "---".to_string(),
         ])?;
-        let config = Config::get().await;
+        let mut config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
         let tools: BTreeSet<String> = ts.versions.keys().map(|t| t.short.clone()).collect();
         let mut found = false;
@@ -81,7 +81,7 @@ impl TestTool {
                 continue;
             };
             let start = std::time::Instant::now();
-            match self.test(&tool, &cmd, expected).await {
+            match self.test(&mut config, &tool, &cmd, expected).await {
                 Ok(_) => {
                     info!("{}: OK", tool.short);
                     self.github_summary(vec![
@@ -117,7 +117,13 @@ impl TestTool {
         Ok(())
     }
 
-    async fn test(&self, tool: &ToolArg, cmd: &str, expected: &str) -> Result<()> {
+    async fn test(
+        &self,
+        config: &mut Arc<Config>,
+        tool: &ToolArg,
+        cmd: &str,
+        expected: &str,
+    ) -> Result<()> {
         let mut args = vec![tool.clone()];
         args.extend(
             tool.ba
@@ -127,11 +133,10 @@ impl TestTool {
                 .map(|ba| ba.to_string().parse())
                 .collect::<Result<Vec<ToolArg>>>()?,
         );
-        let config = Config::get().await;
         let mut ts = ToolsetBuilder::new()
             .with_args(&args)
             .with_default_to_latest(true)
-            .build(&config)
+            .build(config)
             .await?;
         let opts = InstallOptions {
             missing_args_only: false,
@@ -139,8 +144,8 @@ impl TestTool {
             raw: self.raw,
             ..Default::default()
         };
-        ts.install_missing_versions(&config, &opts).await?;
-        ts.notify_if_versions_missing(&config).await;
+        ts.install_missing_versions(config, &opts).await?;
+        ts.notify_if_versions_missing(config).await;
         let tv = if let Some(tv) = ts
             .versions
             .get(tool.ba.as_ref())
@@ -152,11 +157,13 @@ impl TestTool {
             return Ok(());
         };
         let backend = tv.backend()?;
-        let config = Config::get().await;
-        let env = ts.env_with_path(&config).await?;
+        let env = ts.env_with_path(config).await?;
         let mut which_parts = cmd.split_whitespace().collect::<Vec<_>>();
         let cmd = which_parts.remove(0);
-        let mut which_cmd = backend.which(&tv, cmd).await?.unwrap_or(PathBuf::from(cmd));
+        let mut which_cmd = backend
+            .which(config, &tv, cmd)
+            .await?
+            .unwrap_or(PathBuf::from(cmd));
         if cfg!(windows) && which_cmd == PathBuf::from("which") {
             which_cmd = PathBuf::from("where");
         }
@@ -176,7 +183,7 @@ impl TestTool {
             Some(0) => {}
             Some(code) => {
                 if code == 127 {
-                    let bin_dirs = backend.list_bin_paths(&tv).await?;
+                    let bin_dirs = backend.list_bin_paths(config, &tv).await?;
                     for bin_dir in &bin_dirs {
                         let bins = file::ls(bin_dir)?
                             .into_iter()

@@ -98,7 +98,7 @@ impl Doctor {
             serde_json::from_str(&cmd!(&*env::MISE_BIN, "settings", "-J").read()?)?,
         );
 
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let ts = config.get_toolset().await?;
         self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
@@ -190,7 +190,7 @@ impl Doctor {
             .join("\n");
         info::section("dirs", mise_dirs)?;
 
-        match Config::try_get().await {
+        match Config::get().await {
             Ok(config) => self.analyze_config(&config).await?,
             Err(err) => self.errors.push(format!("failed to load config: {err}")),
         }
@@ -310,7 +310,7 @@ impl Doctor {
     }
 
     async fn analyze_toolset(&mut self, ts: &Toolset) -> eyre::Result<()> {
-        let config = Config::try_get().await?;
+        let config = Config::get().await?;
         let tools = ts
             .list_current_versions()
             .into_iter()
@@ -379,7 +379,7 @@ impl Doctor {
     }
 
     async fn paths(&mut self, ts: &Toolset) -> eyre::Result<Vec<PathBuf>> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let env = ts.full_env(&config).await?;
         let path = env
             .get(&*PATH_KEY)

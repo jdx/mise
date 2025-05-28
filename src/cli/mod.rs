@@ -353,7 +353,7 @@ impl Cli {
             Ok(cmd)
         } else {
             if let Some(task) = self.task {
-                let config = Config::get().await;
+                let config = Config::get().await?;
                 if config.tasks().await?.iter().any(|(_, t)| t.is_match(&task)) {
                     return Ok(Commands::Run(run::Run {
                         task,

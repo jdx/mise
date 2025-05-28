@@ -430,7 +430,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_parse_arg() {
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(i=0, name='foo') }}".to_string()];
@@ -458,7 +458,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_parse_multi_use_arg() {
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec![
@@ -492,7 +492,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_parse_arg_var() {
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ arg(var=true) }}".to_string()];
@@ -520,7 +520,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_parse_flag() {
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ flag(name='foo') }}".to_string()];
@@ -560,7 +560,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_parse_option() {
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec!["echo {{ option(name='foo') }}".to_string()];
@@ -588,7 +588,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_nested_template() {
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts =

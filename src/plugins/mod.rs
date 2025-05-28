@@ -1,10 +1,10 @@
-use crate::dirs;
 use crate::errors::Error::PluginNotInstalled;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
+use crate::{config::Config, dirs};
 use async_trait::async_trait;
 use clap::Command;
 use eyre::{Result, eyre};
@@ -119,10 +119,14 @@ impl PluginEnum {
         }
     }
 
-    pub async fn install(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    pub async fn install(
+        &self,
+        config: &Arc<Config>,
+        pr: &Box<dyn SingleReport>,
+    ) -> eyre::Result<()> {
         match self {
-            PluginEnum::Asdf(plugin) => plugin.install(pr).await,
-            PluginEnum::Vfox(plugin) => plugin.install(pr).await,
+            PluginEnum::Asdf(plugin) => plugin.install(config, pr).await,
+            PluginEnum::Vfox(plugin) => plugin.install(config, pr).await,
         }
     }
 
@@ -142,12 +146,13 @@ impl PluginEnum {
 
     pub async fn ensure_installed(
         &self,
+        config: &Arc<Config>,
         mpr: &MultiProgressReport,
         force: bool,
     ) -> eyre::Result<()> {
         match self {
-            PluginEnum::Asdf(plugin) => plugin.ensure_installed(mpr, force).await,
-            PluginEnum::Vfox(plugin) => plugin.ensure_installed(mpr, force).await,
+            PluginEnum::Asdf(plugin) => plugin.ensure_installed(config, mpr, force).await,
+            PluginEnum::Vfox(plugin) => plugin.ensure_installed(config, mpr, force).await,
         }
     }
 }
@@ -206,7 +211,12 @@ pub trait Plugin: Debug + Send {
         Ok(())
     }
 
-    async fn ensure_installed(&self, _mpr: &MultiProgressReport, _force: bool) -> eyre::Result<()> {
+    async fn ensure_installed(
+        &self,
+        _config: &Arc<Config>,
+        _mpr: &MultiProgressReport,
+        _force: bool,
+    ) -> eyre::Result<()> {
         Ok(())
     }
     async fn update(
@@ -219,7 +229,11 @@ pub trait Plugin: Debug + Send {
     async fn uninstall(&self, _pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         Ok(())
     }
-    async fn install(&self, _pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    async fn install(
+        &self,
+        _config: &Arc<Config>,
+        _pr: &Box<dyn SingleReport>,
+    ) -> eyre::Result<()> {
         Ok(())
     }
     fn external_commands(&self) -> eyre::Result<Vec<Command>> {

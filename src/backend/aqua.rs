@@ -122,7 +122,11 @@ impl Backend for AquaBackend {
         Ok(tv)
     }
 
-    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         // TODO: instead of caching it would probably be better to create this as part of installation
         let cache = self
             .bin_path_caches

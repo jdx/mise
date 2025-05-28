@@ -522,7 +522,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cmd() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let output = cmd!("echo", "foo", "bar").read().unwrap();
         assert_eq!("foo bar", output);
     }

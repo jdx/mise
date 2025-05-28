@@ -241,7 +241,11 @@ impl Backend for UbiBackend {
         Ok(())
     }
 
-    async fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<std::path::PathBuf>> {
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
         if let Some(bin_path) = opts.get("bin_path") {
             Ok(vec![tv.install_path().join(bin_path)])

@@ -21,7 +21,7 @@ pub struct Current {
 
 impl Current {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
         match &self.plugin {
             Some(ba) => {
@@ -69,7 +69,7 @@ impl Current {
     }
 
     async fn all(&self, ts: Toolset) -> Result<()> {
-        let config = Config::try_get().await?;
+        let config = Config::get().await?;
         for (plugin, versions) in ts.list_versions_by_plugin() {
             if versions.is_empty() {
                 continue;

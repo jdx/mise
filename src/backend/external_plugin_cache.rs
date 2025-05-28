@@ -8,7 +8,7 @@ use crate::hash::hash_to_str;
 use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolVersion};
 use eyre::{WrapErr, eyre};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Default)]
@@ -20,6 +20,7 @@ pub struct ExternalPluginCache {
 impl ExternalPluginCache {
     pub async fn list_bin_paths<F, Fut>(
         &self,
+        config: &Arc<Config>,
         plugin: &AsdfBackend,
         tv: &ToolVersion,
         fetch: F,
@@ -28,12 +29,11 @@ impl ExternalPluginCache {
         Fut: Future<Output = eyre::Result<Vec<String>>>,
         F: FnOnce() -> Fut,
     {
-        let config = Config::get().await;
         let mut w = self.list_bin_paths.write().await;
         let cm = w.entry(tv.request.clone()).or_insert_with(|| {
             let list_bin_paths_filename = match &plugin.toml.list_bin_paths.cache_key {
                 Some(key) => {
-                    let key = render_cache_key(&config, tv, key);
+                    let key = render_cache_key(config, tv, key);
                     let filename = format!("{key}.msgpack.z");
                     tv.cache_path().join("list_bin_paths").join(filename)
                 }

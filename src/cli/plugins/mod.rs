@@ -72,7 +72,7 @@ impl Commands {
 
 impl Plugins {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let cmd = self.command.unwrap_or(Commands::Ls(ls::PluginsLs {
             all: self.all,
             core: self.core,

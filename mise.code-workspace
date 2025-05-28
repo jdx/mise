@@ -17,5 +17,8 @@
       "!**/vendor",
       "!**/CHANGELOG.md"
     ],
+    "files.exclude": {
+      "aqua-registry/**": true
+    },
   },
 }

@@ -3,10 +3,9 @@ use std::sync::Arc;
 use color_eyre::eyre::{Result, bail, eyre};
 use contracts::ensures;
 use heck::ToKebabCase;
-use tokio::task::JoinSet;
+use tokio::{sync::Semaphore, task::JoinSet};
 use url::Url;
 
-use crate::backend::unalias_backend;
 use crate::config::Config;
 use crate::dirs;
 use crate::plugins::Plugin;
@@ -15,6 +14,7 @@ use crate::plugins::core::CORE_PLUGINS;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
+use crate::{backend::unalias_backend, config::SETTINGS};
 
 /// Install a plugin
 ///
@@ -52,6 +52,10 @@ pub struct PluginsInstall {
     #[clap(long, short, action = clap::ArgAction::Count, verbatim_doc_comment)]
     verbose: u8,
 
+    /// Number of jobs to run in parallel
+    #[clap(long, short, verbatim_doc_comment)]
+    jobs: Option<usize>,
+
     #[clap(hide = true)]
     rest: Vec<String>,
 }
@@ -64,7 +68,7 @@ impl PluginsInstall {
         }
         let (name, git_url) = get_name_and_url(&this.new_plugin.clone().unwrap(), &this.git_url)?;
         if git_url.is_some() {
-            this.install_one(name, git_url).await?;
+            this.install_one(config, name, git_url).await?;
         } else {
             let is_core = CORE_PLUGINS.contains_key(&name);
             if is_core {
@@ -76,7 +80,7 @@ impl PluginsInstall {
                 plugins.push(second);
             };
             plugins.extend(this.rest.clone());
-            this.install_many(plugins).await?;
+            this.install_many(config, plugins).await?;
         }
 
         Ok(())
@@ -88,15 +92,26 @@ impl PluginsInstall {
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
-        self.install_many(missing_plugins).await?;
+        self.install_many(config, missing_plugins).await?;
         Ok(())
     }
 
-    async fn install_many(self: Arc<Self>, plugins: Vec<String>) -> Result<()> {
+    async fn install_many(
+        self: Arc<Self>,
+        config: &Arc<Config>,
+        plugins: Vec<String>,
+    ) -> Result<()> {
         let mut jset: JoinSet<Result<()>> = JoinSet::new();
+        let semaphore = Arc::new(Semaphore::new(self.jobs.unwrap_or(SETTINGS.jobs)));
         for plugin in plugins {
             let this = self.clone();
-            jset.spawn(async move { this.install_one(plugin, None).await });
+            let config = config.clone();
+            let permit = semaphore.clone().acquire_owned().await?;
+            jset.spawn(async move {
+                let _permit = permit;
+                println!("installing {plugin}");
+                this.install_one(&config, plugin, None).await
+            });
         }
         while let Some(result) = jset.join_next().await {
             match result {
@@ -112,7 +127,12 @@ impl PluginsInstall {
         Ok(())
     }
 
-    async fn install_one(self: Arc<Self>, name: String, git_url: Option<String>) -> Result<()> {
+    async fn install_one(
+        self: Arc<Self>,
+        config: &Arc<Config>,
+        name: String,
+        git_url: Option<String>,
+    ) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
         let plugin = AsdfPlugin::new(name.clone(), path);
         if let Some(url) = git_url {
@@ -123,7 +143,7 @@ impl PluginsInstall {
             warn!("Use --force to install anyway");
         } else {
             let mpr = MultiProgressReport::get();
-            plugin.ensure_installed(&mpr, self.force).await?;
+            plugin.ensure_installed(config, &mpr, self.force).await?;
         }
         Ok(())
     }

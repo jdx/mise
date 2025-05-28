@@ -270,7 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_versions_matching() {
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let plugin = RubyPlugin::new();
         assert!(
             !plugin

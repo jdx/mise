@@ -160,7 +160,7 @@ mod tests {
     #[tokio::test]
     async fn test_venv_path() {
         let env = EnvMap::new();
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let results = EnvResults::resolve(
             &config,
             BASE_CONTEXT.clone(),

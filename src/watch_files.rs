@@ -5,10 +5,10 @@ use crate::toolset::Toolset;
 use eyre::Result;
 use globset::{GlobBuilder, GlobSetBuilder};
 use itertools::Itertools;
-use std::collections::BTreeSet;
 use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::{collections::BTreeSet, sync::Arc};
 
 #[derive(
     Debug, Clone, serde::Serialize, serde::Deserialize, Ord, PartialOrd, Eq, PartialEq, Hash,
@@ -26,7 +26,7 @@ pub fn add_modified_file(file: PathBuf) {
     set.insert(file);
 }
 
-pub async fn execute_runs(ts: &Toolset) {
+pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
     let files = {
         let mut mu = MODIFIED_FILES.lock().unwrap();
         mu.take().unwrap_or_default()
@@ -34,14 +34,13 @@ pub async fn execute_runs(ts: &Toolset) {
     if files.is_empty() {
         return;
     }
-    let config = Config::get().await;
     for (root, wf) in config.watch_file_hooks().unwrap_or_default() {
         match has_matching_files(&root, &wf, &files) {
             Ok(files) if files.is_empty() => {
                 continue;
             }
             Ok(files) => {
-                if let Err(e) = execute(ts, &root, &wf.run, files).await {
+                if let Err(e) = execute(config, ts, &root, &wf.run, files).await {
                     warn!("error executing watch_file hook: {e}");
                 }
             }
@@ -52,7 +51,13 @@ pub async fn execute_runs(ts: &Toolset) {
     }
 }
 
-async fn execute(ts: &Toolset, root: &Path, run: &str, files: Vec<&PathBuf>) -> Result<()> {
+async fn execute(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    root: &Path,
+    run: &str,
+    files: Vec<&PathBuf>,
+) -> Result<()> {
     SETTINGS.ensure_experimental("watch_file_hooks")?;
     let modified_files_var = files
         .iter()
@@ -66,8 +71,7 @@ async fn execute(ts: &Toolset, root: &Path, run: &str, files: Vec<&PathBuf>) -> 
         .map(|s| s.as_str())
         .chain(once(run))
         .collect_vec();
-    let config = Config::get().await;
-    let mut env = ts.full_env(&config).await?;
+    let mut env = ts.full_env(config).await?;
     env.insert("MISE_WATCH_FILES_MODIFIED".to_string(), modified_files_var);
     if let Some(cwd) = &*dirs::CWD {
         env.insert(

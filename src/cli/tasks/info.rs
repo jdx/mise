@@ -24,7 +24,7 @@ pub struct TasksInfo {
 
 impl TasksInfo {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let tasks = config.tasks().await?;
 
         let task = tasks

@@ -6,8 +6,8 @@ use console::style;
 use eyre::bail;
 use path_absolutize::Absolutize;
 
-use crate::cli::args::ToolArg;
 use crate::file::{make_symlink, remove_all};
+use crate::{cli::args::ToolArg, config::Config};
 use crate::{config, file};
 
 /// Symlinks a tool version into mise
@@ -58,7 +58,10 @@ impl Link {
         file::create_dir_all(target.parent().unwrap())?;
         make_symlink(&path, &target)?;
 
-        config::rebuild_shims_and_runtime_symlinks(&[]).await
+        let config = Config::load().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
+        Ok(())
     }
 }
 

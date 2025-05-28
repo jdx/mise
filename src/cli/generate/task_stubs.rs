@@ -25,9 +25,9 @@ pub struct TaskStubs {
 }
 
 impl TaskStubs {
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self) -> eyre::Result<()> {
         SETTINGS.ensure_experimental("generate task-stubs")?;
-        let config = Config::get().await;
+        let config = Config::get().await?;
         for task in config.tasks().await?.values() {
             let bin = self.dir.join(task.name_to_path());
             let output = self.generate(task)?;

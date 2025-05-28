@@ -1514,6 +1514,14 @@ const completionSpec: Fig.Spec = {
               description: "Show installation output",
               isRepeatable: true,
             },
+            {
+              name: ["-j", "--jobs"],
+              description: "Number of jobs to run in parallel",
+              isRepeatable: false,
+              args: {
+                name: "jobs",
+              },
+            },
           ],
           args: [
             {

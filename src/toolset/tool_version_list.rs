@@ -58,7 +58,7 @@ mod tests {
     #[tokio::test]
     #[cfg(unix)]
     async fn test_tool_version_list() {
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let ba: Arc<BackendArg> = Arc::new("tiny".into());
         let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
         tvl.requests
@@ -77,10 +77,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_version_list_failure() {
-        Config::load().await.unwrap();
         env::set_var("MISE_FAILURE", "1");
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
-        let config = Config::get().await;
+        let config = Config::load().await.unwrap();
         let ba: Arc<BackendArg> = Arc::new("dummy".into());
         let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
         tvl.requests
@@ -96,5 +95,6 @@ mod tests {
             .await;
         assert_eq!(tvl.versions.len(), 0);
         env::remove_var("MISE_FAILURE");
+        Config::load().await.unwrap();
     }
 }

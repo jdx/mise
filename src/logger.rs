@@ -160,7 +160,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_init() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         init();
     }
 }

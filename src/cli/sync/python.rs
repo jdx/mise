@@ -2,8 +2,8 @@ use eyre::Result;
 use itertools::sorted;
 use std::env::consts::{ARCH, OS};
 
-use crate::env::PYENV_ROOT;
 use crate::{backend, config, dirs, env, file};
+use crate::{config::Config, env::PYENV_ROOT};
 
 /// Symlinks all tool versions from an external tool into mise
 ///
@@ -30,7 +30,10 @@ impl SyncPython {
         if self.uv {
             self.uv().await?;
         }
-        config::rebuild_shims_and_runtime_symlinks(&[]).await
+        let config = Config::get().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
+        Ok(())
     }
 
     async fn pyenv(&self) -> Result<()> {

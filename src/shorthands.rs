@@ -75,7 +75,7 @@ mod tests {
     async fn test_get_shorthands() {
         use crate::config::Config;
 
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
@@ -90,7 +90,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_shorthands_missing_file() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("test/fixtures/missing.toml".into());

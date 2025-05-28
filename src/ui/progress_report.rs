@@ -188,7 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_progress_report() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let pr = ProgressReport::new("foo".into());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
@@ -196,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_progress_report_verbose() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let pr = VerboseReport::new("PREFIX".to_string());
         pr.set_message("message".into());
         pr.finish_with_message("message".into());
@@ -204,7 +204,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_progress_report_quiet() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let pr = QuietReport::new();
         pr.set_message("message".into());
         pr.finish_with_message("message".into());

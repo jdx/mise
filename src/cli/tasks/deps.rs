@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::config::Config;
 use crate::task::{Deps, Task};
 use crate::ui::style::{self};
@@ -28,7 +30,7 @@ pub struct TasksDeps {
 
 impl TasksDeps {
     pub async fn run(self) -> Result<()> {
-        let config = Config::try_get().await?;
+        let config = Config::get().await?;
         let tasks = if self.tasks.is_none() {
             self.get_all_tasks(&config).await?
         } else {
@@ -36,15 +38,15 @@ impl TasksDeps {
         };
 
         if self.dot {
-            self.print_deps_dot(tasks).await?;
+            self.print_deps_dot(&config, tasks).await?;
         } else {
-            self.print_deps_tree(tasks).await?;
+            self.print_deps_tree(&config, tasks).await?;
         }
 
         Ok(())
     }
 
-    async fn get_all_tasks(&self, config: &Config) -> Result<Vec<Task>> {
+    async fn get_all_tasks(&self, config: &Arc<Config>) -> Result<Vec<Task>> {
         Ok(config
             .tasks()
             .await?
@@ -54,7 +56,7 @@ impl TasksDeps {
             .collect())
     }
 
-    async fn get_task_lists(&self, config: &Config) -> Result<Vec<Task>> {
+    async fn get_task_lists(&self, config: &Arc<Config>) -> Result<Vec<Task>> {
         let all_tasks = config.tasks().await?;
         let mut tasks = vec![];
         for task in self.tasks.as_ref().unwrap_or(&vec![]) {
@@ -67,7 +69,7 @@ impl TasksDeps {
                     tasks.push(task);
                 }
                 None => {
-                    return Err(self.err_no_task(task).await);
+                    return Err(self.err_no_task(config, task).await);
                 }
             }
         }
@@ -86,8 +88,8 @@ impl TasksDeps {
     /// task5
     /// ```
     ///
-    async fn print_deps_tree(&self, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(tasks.clone()).await?;
+    async fn print_deps_tree(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
+        let deps = Deps::new(config, tasks.clone()).await?;
         // filter out nodes that are not selected
         let start_indexes = deps.graph.node_indices().filter(|&idx| {
             let task = &deps.graph[idx];
@@ -117,8 +119,8 @@ impl TasksDeps {
     /// }
     /// ```
     //
-    async fn print_deps_dot(&self, tasks: Vec<Task>) -> Result<()> {
-        let deps = Deps::new(tasks).await?;
+    async fn print_deps_dot(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
+        let deps = Deps::new(config, tasks).await?;
         miseprintln!(
             "{:?}",
             Dot::with_attr_getters(
@@ -134,8 +136,7 @@ impl TasksDeps {
         Ok(())
     }
 
-    async fn err_no_task(&self, t: &str) -> eyre::Report {
-        let config = Config::get().await;
+    async fn err_no_task(&self, config: &Arc<Config>, t: &str) -> eyre::Report {
         let tasks = config
             .tasks()
             .await

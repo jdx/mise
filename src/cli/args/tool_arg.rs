@@ -184,7 +184,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_arg() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let tool = ToolArg::from_str("node").unwrap();
         assert_eq!(
             tool,
@@ -200,7 +200,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_arg_with_version() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let tool = ToolArg::from_str("node@20").unwrap();
         assert_eq!(
             tool,
@@ -218,7 +218,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_arg_with_version_and_alias() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let tool = ToolArg::from_str("nodejs@lts").unwrap();
         assert_eq!(
             tool,
@@ -236,7 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_arg_parse_input() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let t = |input, f, v| {
             let (backend, version) = parse_input(input);
             assert_eq!(backend, f);

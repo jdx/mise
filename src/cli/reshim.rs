@@ -37,7 +37,7 @@ pub struct Reshim {
 
 impl Reshim {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
 
         shims::reshim(&config, &ts, self.force).await

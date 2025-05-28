@@ -20,7 +20,7 @@ pub struct AliasSet {
 
 impl AliasSet {
     pub async fn run(self) -> Result<()> {
-        let mut global_config = Config::get().await.global_config()?;
+        let mut global_config = Config::get().await?.global_config()?;
         global_config.set_alias(&self.plugin, &self.alias, &self.value)?;
         global_config.save()
     }
