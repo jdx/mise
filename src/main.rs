@@ -89,30 +89,37 @@ pub(crate) use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> eyre::Result<()> {
-    let rt = tokio::runtime::Builder::new_multi_thread()
+    let nprocs = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or_default();
+    let threads = crate::env::MISE_JOBS.unwrap_or(nprocs).max(8);
+    tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?;
-    rt.block_on(async {
-        color_eyre::install()?;
-        install_panic_hook();
-        unsafe {
-            path_absolutize::update_cwd();
-        }
-        measure!("main", {
-            let args = env::args().collect_vec();
-            match Cli::run(&args)
-                .await
-                .with_section(|| VERSION.to_string().header("Version:"))
-            {
-                Ok(()) => Ok(()),
-                Err(err) => handle_err(err),
-            }?;
-        });
-        if let Some(mpr) = MultiProgressReport::try_get() {
-            mpr.stop()?;
-        }
-        Ok(())
-    })
+        .worker_threads(threads)
+        .build()?
+        .block_on(main_())
+}
+
+async fn main_() -> eyre::Result<()> {
+    color_eyre::install()?;
+    install_panic_hook();
+    unsafe {
+        path_absolutize::update_cwd();
+    }
+    measure!("main", {
+        let args = env::args().collect_vec();
+        match Cli::run(&args)
+            .await
+            .with_section(|| VERSION.to_string().header("Version:"))
+        {
+            Ok(()) => Ok(()),
+            Err(err) => handle_err(err),
+        }?;
+    });
+    if let Some(mpr) = MultiProgressReport::try_get() {
+        mpr.stop()?;
+    }
+    Ok(())
 }
 
 fn handle_err(err: Report) -> eyre::Result<()> {

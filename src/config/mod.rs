@@ -88,11 +88,25 @@ impl Config {
     pub fn get_() -> Arc<Self> {
         (*_CONFIG.read().unwrap()).clone().unwrap()
     }
+    pub async fn reset() -> Result<Arc<Self>> {
+        backend::reset().await?;
+        timeout::run_with_timeout_async(
+            async || {
+                _CONFIG.write().unwrap().take();
+                *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
+                *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
+                GLOB_RESULTS.lock().unwrap().clear();
+                Ok(())
+            },
+            Duration::from_secs(5),
+        )
+        .await?;
+        Config::load().await
+    }
+
     #[async_backtrace::framed]
     pub async fn load() -> Result<Arc<Self>> {
-        measure!("config::load reset", {
-            reset().await?;
-        });
+        backend::load_tools().await?;
         let idiomatic_files = measure!("config::load idiomatic_files", {
             load_idiomatic_files().await
         });
@@ -1209,22 +1223,6 @@ See https://github.com/jdx/mise/discussions/4345 for more information."#,
     );
 }
 
-async fn reset() -> Result<()> {
-    backend::reset().await?;
-    timeout::run_with_timeout_async(
-        async || {
-            _CONFIG.write().unwrap().take();
-            *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
-            *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
-            GLOB_RESULTS.lock().unwrap().clear();
-            Ok(())
-        },
-        Duration::from_secs(5),
-    )
-    .await?;
-    Ok(())
-}
-
 async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
     let mut tasks = vec![];
     for d in file::all_dirs()? {
@@ -1454,7 +1452,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_load() {
-        let config = Config::load().await.unwrap();
+        let config = Config::reset().await.unwrap();
         assert_debug_snapshot!(config);
     }
 

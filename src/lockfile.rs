@@ -1,6 +1,7 @@
 use crate::config::{Config, SETTINGS};
 use crate::file;
 use crate::file::display_path;
+use crate::path::PathExt;
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{Report, Result, bail};
@@ -32,7 +33,11 @@ pub struct LockfileTool {
 
 impl Lockfile {
     fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
-        trace!("reading lockfile {}", display_path(&path));
+        let path = path.as_ref();
+        if !path.exists() {
+            return Ok(Lockfile::default());
+        }
+        trace!("reading lockfile {}", path.display_user());
         let content = file::read_to_string(path)?;
         let mut table: toml::Table = toml::from_str(&content)?;
         let tools: toml::Table = table
@@ -231,14 +236,10 @@ pub fn get_locked_version(
 }
 
 fn handle_missing_lockfile(err: Report, lockfile_path: &Path) -> Lockfile {
-    if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
-        if io_err.kind() != std::io::ErrorKind::NotFound {
-            warn!(
-                "failed to read lockfile {}: {err:?}",
-                display_path(lockfile_path)
-            );
-        }
-    }
+    warn!(
+        "failed to read lockfile {}: {err:?}",
+        display_path(lockfile_path)
+    );
     Lockfile::default()
 }
 

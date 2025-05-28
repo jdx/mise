@@ -69,7 +69,7 @@ impl Uninstall {
         }
 
         file::touch_dir(&dirs::DATA)?;
-        let config = Config::load().await?;
+        let config = Config::reset().await?;
         let ts = config.get_toolset().await?;
         config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
 

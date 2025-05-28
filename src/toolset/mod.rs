@@ -256,7 +256,7 @@ impl Toolset {
         }
 
         trace!("install: reloading config");
-        *config = Config::load().await?;
+        *config = Config::reset().await?;
         trace!("install: resolving");
         if let Err(err) = self.resolve(config).await {
             debug!("error resolving versions after install: {err:#}");

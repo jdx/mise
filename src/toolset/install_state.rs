@@ -30,14 +30,12 @@ static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::n
 static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
 
 pub(crate) async fn init() -> Result<()> {
-    measure!("init_plugins", { init_plugins().await? });
-    measure!("init_tools", { init_tools().await? });
-    // let (plugins, tools) = tokio::join!(
-    //     tokio::task::spawn(async { measure!("init_plugins", { init_plugins().await }) }),
-    //     tokio::task::spawn(async { measure!("init_tools", { init_tools().await }) }),
-    // );
-    // plugins??;
-    // tools??;
+    let (plugins, tools) = tokio::join!(
+        tokio::task::spawn(async { measure!("init_plugins", { init_plugins().await }) }),
+        tokio::task::spawn(async { measure!("init_tools", { init_tools().await }) }),
+    );
+    plugins??;
+    tools??;
     Ok(())
 }
 
@@ -76,7 +74,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     let mut jset = JoinSet::new();
     for dir in file::dir_subdirs(&dirs::INSTALLS)? {
         jset.spawn(async move {
-            let backend_meta = read_backend_meta(&dir).await.unwrap_or_default();
+            let backend_meta = read_backend_meta(&dir).unwrap_or_default();
             let short = backend_meta.first().unwrap_or(&dir).to_string();
             let full = backend_meta.get(1).cloned();
             let dir = dirs::INSTALLS.join(&dir);
@@ -213,12 +211,11 @@ fn migrate_backend_meta_json(dir: &str) {
     }
 }
 
-async fn read_backend_meta(short: &str) -> Option<Vec<String>> {
+fn read_backend_meta(short: &str) -> Option<Vec<String>> {
     migrate_backend_meta_json(short);
     let path = backend_meta_path(short);
     if path.exists() {
-        let body = file::read_to_string_async(&path)
-            .await
+        let body = file::read_to_string(&path)
             .map_err(|err| {
                 warn!("{err:?}");
             })

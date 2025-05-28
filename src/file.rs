@@ -391,11 +391,14 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn resolve_symlink(link: &Path) -> Result<PathBuf> {
+pub fn resolve_symlink(link: &Path) -> Result<Option<PathBuf>> {
+    if !link.is_symlink() {
+        return Ok(None);
+    }
     if cfg!(windows) {
-        Ok(fs::read_to_string(link)?.into())
+        Ok(Some(fs::read_to_string(link)?.into()))
     } else {
-        Ok(fs::read_link(link)?)
+        Ok(Some(fs::read_link(link)?))
     }
 }
 

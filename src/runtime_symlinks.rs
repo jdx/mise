@@ -19,7 +19,9 @@ pub async fn rebuild(config: &Config) -> Result<()> {
         for (from, to) in symlinks {
             let from = installs_dir.join(from);
             if from.exists() {
-                if is_runtime_symlink(&from) && file::resolve_symlink(&from)? != to {
+                if is_runtime_symlink(&from)
+                    && file::resolve_symlink(&from)?.unwrap_or_default() != to
+                {
                     trace!("Removing existing symlink: {}", from.display());
                     file::remove_file(&from)?;
                 } else {
@@ -102,7 +104,7 @@ pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
 }
 
 pub fn is_runtime_symlink(path: &Path) -> bool {
-    if let Ok(link) = file::resolve_symlink(path) {
+    if let Ok(Some(link)) = file::resolve_symlink(path) {
         return link.starts_with("./");
     }
     false

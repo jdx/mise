@@ -54,7 +54,7 @@ impl Prune {
                 .as_ref()
                 .map(|it| it.iter().map(|ta| ta.ba.as_ref()).collect());
             prune(&config, backends.unwrap_or_default(), self.dry_run).await?;
-            config = Config::load().await?;
+            config = Config::reset().await?;
             let ts = config.get_toolset().await?;
             config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
         }

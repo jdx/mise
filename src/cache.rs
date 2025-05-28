@@ -227,8 +227,8 @@ pub(crate) struct PruneOptions {
 }
 
 pub(crate) fn auto_prune() -> Result<()> {
-    if rand::random::<u8>() % 10 != 0 {
-        return Ok(()); // only prune 10% of the time
+    if rand::random::<u8>() % 100 != 0 {
+        return Ok(()); // only prune 1% of the time
     }
     let settings = Settings::get();
     let age = match settings.cache_prune_age_duration() {
