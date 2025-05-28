@@ -486,7 +486,8 @@ pub async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
 
 pub fn all_dirs() -> Result<Vec<PathBuf>> {
     let mut output = vec![];
-    let mut cwd = dirs::CWD.as_ref().map(|p| p.as_path());
+    let dir = env::current_dir().ok();
+    let mut cwd = dir.as_deref();
     while let Some(dir) = cwd {
         output.push(dir.to_path_buf());
         cwd = dir.parent();
