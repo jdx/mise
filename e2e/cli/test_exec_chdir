@@ -5,3 +5,5 @@ mkdir direnv
 assert "mise x -C $PWD/direnv -- pwd" "$(pwd)/direnv"
 assert "mise x -C ./direnv -- pwd" "$(pwd)/direnv"
 assert "mise x -C direnv -- pwd" "$(pwd)/direnv"
+
+assert_fail "mise x -C non-existent -- pwd" "mise ERROR failed to set current directory to ~/workdir/non-existent"

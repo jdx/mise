@@ -1,8 +1,8 @@
 use crate::cli::Cli;
 use crate::config::ALL_TOML_CONFIG_FILES;
-use crate::duration;
 use crate::file::FindUp;
 use crate::{dirs, env, file};
+use crate::{duration, exit};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Partial};
@@ -100,7 +100,13 @@ pub struct SettingsFile {
 
 impl Settings {
     pub fn get() -> Arc<Self> {
-        Self::try_get().unwrap()
+        match Self::try_get() {
+            Ok(settings) => settings,
+            Err(e) => {
+                error!("{e}");
+                exit(1);
+            }
+        }
     }
     pub fn try_get() -> Result<Arc<Self>> {
         if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
