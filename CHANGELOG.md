@@ -1,5 +1,32 @@
 # Changelog
 
+## [2025.5.15](https://github.com/jdx/mise/compare/v2025.5.14..v2025.5.15) - 2025-05-28
+
+### 🚀 Features
+
+- **(registry)** add aqua backend for maven by [@ZeroAurora](https://github.com/ZeroAurora) in [#5219](https://github.com/jdx/mise/pull/5219)
+
+### 🐛 Bug Fixes
+
+- **(zig)** **breaking** get tarball url from download index by [@mangkoran](https://github.com/mangkoran) in [#5182](https://github.com/jdx/mise/pull/5182)
+- **(zig)** get version list from download index by [@mangkoran](https://github.com/mangkoran) in [#5217](https://github.com/jdx/mise/pull/5217)
+- use a better completion dir for more compatibility by [@ken-kuro](https://github.com/ken-kuro) in [#5207](https://github.com/jdx/mise/pull/5207)
+- set handler for ctrlc on windows shell by [@L0RD-ZER0](https://github.com/L0RD-ZER0) in [#5209](https://github.com/jdx/mise/pull/5209)
+- prevent go installation failure on go.mod version mismatch by [@roele](https://github.com/roele) in [#5212](https://github.com/jdx/mise/pull/5212)
+- mise run --cd <dir> not working with latest mise by [@roele](https://github.com/roele) in [#5221](https://github.com/jdx/mise/pull/5221)
+
+### 📚 Documentation
+
+- update dependencies section in contributing.md by [@LuckyWindsck](https://github.com/LuckyWindsck) in [#5200](https://github.com/jdx/mise/pull/5200)
+
+### Chore
+
+- disable auto cargo up by [@jdx](https://github.com/jdx) in [3306f6e](https://github.com/jdx/mise/commit/3306f6ef726fe85d71163121497e1d5dd5cd73ca)
+
+### New Contributors
+
+- @L0RD-ZER0 made their first contribution in [#5209](https://github.com/jdx/mise/pull/5209)
+
 ## [2025.5.14](https://github.com/jdx/mise/compare/v2025.5.13..v2025.5.14) - 2025-05-26
 
 ### 🐛 Bug Fixes
