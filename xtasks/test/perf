@@ -124,9 +124,9 @@ get_performance_emoji() {
 	local variance="$1"
 	if [ ${variance#-} -gt 20 ]; then
 		if [ $variance -gt 0 ]; then
-			echo "⚠️ "
-		else
 			echo "✅ "
+		else
+			echo "⚠️ "
 		fi
 	fi
 }
@@ -137,9 +137,9 @@ get_performance_warning() {
 	local type="$3"
 	if [ ${variance#-} -gt 20 ]; then
 		if [ $variance -gt 0 ]; then
-			echo "⚠️  Warning: $name $type performance variance is ${variance}%"
-		else
 			echo "✅  Performance improvement: $name $type is ${variance}%"
+		else
+			echo "⚠️  Warning: $name $type performance variance is ${variance}%"
 		fi
 	fi
 }
@@ -147,12 +147,12 @@ get_performance_warning() {
 print_performance_table() {
 	local output_file="$1"
 	if [ -n "${MISE_ALT:-}" ]; then
-		echo "| Command    | mise | $MISE_ALT |" >> "$output_file"
-		echo "|------------|------|-----------|" >> "$output_file"
+		echo "| Command    | mise | $MISE_ALT |" >>"$output_file"
+		echo "|------------|------|-----------|" >>"$output_file"
 		for name in "${names[@]}"; do
 			uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
 			cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
-			
+
 			uncached_emoji=$(get_performance_emoji "$uncached_variance")
 			cached_emoji=$(get_performance_emoji "$cached_variance")
 
@@ -160,19 +160,19 @@ print_performance_table() {
 				"$name (uncached)" \
 				"$uncached_emoji" \
 				"${benchmarks["$name-uncached"]}" \
-				"${alt_benchmarks["$name-uncached"]}" >> "$output_file"
+				"${alt_benchmarks["$name-uncached"]}" >>"$output_file"
 			printf "| %-10s | %s%6dms | %6dms |\n" \
 				"$name (cached)" \
 				"$cached_emoji" \
 				"${benchmarks["$name-cached"]}" \
-				"${alt_benchmarks["$name-cached"]}" >> "$output_file"
+				"${alt_benchmarks["$name-cached"]}" >>"$output_file"
 		done
 	else
-		echo "| Command    | Time   |" >> "$output_file"
-		echo "|------------|--------|" >> "$output_file"
+		echo "| Command    | Time   |" >>"$output_file"
+		echo "|------------|--------|" >>"$output_file"
 		for name in "${names[@]}"; do
-			printf "| %-10s-uncached | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" >> "$output_file"
-			printf "| %-10s-cached   | %6dms |\n" "$name" "${benchmarks["$name-cached"]}" >> "$output_file"
+			printf "| %-10s-uncached | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" >>"$output_file"
+			printf "| %-10s-cached   | %6dms |\n" "$name" "${benchmarks["$name-cached"]}" >>"$output_file"
 		done
 	fi
 }
@@ -185,11 +185,11 @@ print_performance_warnings() {
 
 		warning=$(get_performance_warning "$name" "$uncached_variance" "uncached")
 		if [ -n "$warning" ]; then
-			echo "$warning" >> "$output_file"
+			echo "$warning" >>"$output_file"
 		fi
 		warning=$(get_performance_warning "$name" "$cached_variance" "cached")
 		if [ -n "$warning" ]; then
-			echo "$warning" >> "$output_file"
+			echo "$warning" >>"$output_file"
 		fi
 	done
 }
@@ -215,5 +215,5 @@ if [ ${#errors[@]} -gt 0 ]; then
 	for error in "${errors[@]}"; do
 		echo "$error" >&2
 	done
-	# exit 1
+	exit 1
 fi
