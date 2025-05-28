@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+mkdir -p ./test
+cat <<EOF >./test/mise.toml
+[tasks.hello]
+run = 'echo "Hello, World!"'
+EOF
+
+assert_contains "mise config --cd $PWD/test ls" "test/mise.toml"
+
+assert_contains "mise run --cd $PWD/test hello" "Hello, World!"
+assert_contains "mise run --cd ./test hello" "Hello, World!"
+assert_contains "mise run --cd test hello" "Hello, World!"

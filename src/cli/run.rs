@@ -990,9 +990,7 @@ impl Run {
     }
 
     async fn cwd(&self, task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
-        if let Some(d) = &self.cd {
-            Ok(d.clone())
-        } else if let Some(d) = task.dir(config).await? {
+        if let Some(d) = task.dir(config).await? {
             Ok(d)
         } else {
             Ok(config
