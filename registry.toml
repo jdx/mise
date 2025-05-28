@@ -1321,6 +1321,7 @@ marp-cli.backends = ["aqua:marp-team/marp-cli", "asdf:xataz/asdf-marp-cli"]
 mask.backends = ["aqua:jacobdeichert/mask", "asdf:aaaaninja/asdf-mask"]
 mask.test = ["mask --version", "mask {{version}}"]
 maven.backends = [
+    "aqua:apache/maven",
     "asdf:mise-plugins/mise-maven",
     "vfox:mise-plugins/vfox-maven"
 ]
