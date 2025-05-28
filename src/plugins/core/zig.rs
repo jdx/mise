@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -13,7 +14,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{file, github, minisign, plugins};
+use crate::{file, minisign, plugins};
 use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
@@ -51,19 +52,16 @@ impl ZigPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
-        let zig_download_index = "https://ziglang.org/download/index.json";
-        let machengine_download_index = "https://machengine.org/zig/index.json";
+        let indexes = HashMap::from([
+            ("zig", "https://ziglang.org/download/index.json"),
+            ("mach", "https://machengine.org/zig/index.json"),
+        ]);
 
         let url = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
-            self.get_tarball_url_from_json(
-                machengine_download_index,
-                tv.version.as_str(),
-                arch(),
-                os(),
-            )
-            .await?
+            self.get_tarball_url_from_json(indexes["mach"], tv.version.as_str(), arch(), os())
+                .await?
         } else {
-            self.get_tarball_url_from_json(zig_download_index, tv.version.as_str(), arch(), os())
+            self.get_tarball_url_from_json(indexes["zig"], tv.version.as_str(), arch(), os())
                 .await?
         };
 
@@ -130,13 +128,30 @@ impl Backend for ZigPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let versions: Vec<String> = github::list_releases("ziglang/zig")
-            .await?
+        let indexes = [
+            "https://ziglang.org/download/index.json",
+            "https://machengine.org/zig/index.json",
+        ];
+        let mut versions: Vec<String> = Vec::new();
+
+        for index in indexes {
+            let index_json: serde_json::Value = HTTP_FETCH.json(index).await?;
+            let index_versions: Vec<String> = index_json
+                .as_object()
+                .ok_or_else(|| eyre::eyre!("Failed to get zig version from {:?}", index))?
+                .keys()
+                .cloned()
+                .collect();
+
+            versions.extend(index_versions);
+        }
+
+        let versions = versions
             .into_iter()
-            .map(|r| r.tag_name)
             .unique()
             .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
             .collect();
+
         Ok(versions)
     }
 
