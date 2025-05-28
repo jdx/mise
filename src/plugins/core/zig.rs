@@ -51,19 +51,14 @@ impl ZigPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
-        let zig_download_index = "https://ziglang.org/download/index.json";
-        let machengine_download_index = "https://machengine.org/zig/index.json";
+        let zig_index = "https://ziglang.org/download/index.json";
+        let mach_index = "https://machengine.org/zig/index.json";
 
         let url = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
-            self.get_tarball_url_from_json(
-                machengine_download_index,
-                tv.version.as_str(),
-                arch(),
-                os(),
-            )
-            .await?
+            self.get_tarball_url_from_json(mach_index, tv.version.as_str(), arch(), os())
+                .await?
         } else {
-            self.get_tarball_url_from_json(zig_download_index, tv.version.as_str(), arch(), os())
+            self.get_tarball_url_from_json(zig_index, tv.version.as_str(), arch(), os())
                 .await?
         };
 
