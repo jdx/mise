@@ -35,7 +35,7 @@ use itertools::Itertools;
 use nix::sys::signal::SIGTERM;
 use tokio::{
     sync::{Mutex, Semaphore},
-    task::JoinSet,
+    task::{JoinHandle, JoinSet},
 };
 use xx::regex;
 
@@ -209,7 +209,7 @@ type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
 impl Run {
     pub async fn run(mut self) -> Result<()> {
-        let config = Config::try_get().await?;
+        let config = Config::get().await?;
         if self.task == "-h" {
             self.get_clap_command().print_help()?;
             return Ok(());
@@ -227,7 +227,7 @@ impl Run {
             .collect_vec();
         let task_list = get_task_lists(&config, &args, true).await?;
         time!("run get_task_lists");
-        self.parallelize_tasks(task_list).await?;
+        self.parallelize_tasks(config, task_list).await?;
         time!("run done");
         Ok(())
     }
@@ -240,7 +240,7 @@ impl Run {
             .clone()
     }
 
-    async fn parallelize_tasks(mut self, tasks: Vec<Task>) -> Result<()> {
+    async fn parallelize_tasks(mut self, mut config: Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         time!("parallelize_tasks start");
 
         ctrlc::exit_on_ctrl_c(false);
@@ -269,10 +269,10 @@ impl Run {
             });
         }
 
-        let mut tasks = resolve_depends(tasks).await?;
+        let mut tasks = resolve_depends(&config, tasks).await?;
         self.fetch_tasks(&mut tasks).await?;
 
-        let tasks = Deps::new(tasks).await?;
+        let tasks = Deps::new(&config, tasks).await?;
         for task in tasks.all() {
             self.validate_task(task)?;
             match self.output(Some(task)) {
@@ -301,14 +301,13 @@ impl Run {
                 all_tools.push(format!("{k}@{v}").parse()?);
             }
         }
-        let config = Config::get().await;
         let mut ts = ToolsetBuilder::new()
             .with_args(&all_tools)
             .build(&config)
             .await?;
 
         ts.install_missing_versions(
-            &config,
+            &mut config,
             &InstallOptions {
                 missing_args_only: !SETTINGS.task_run_auto_install,
                 ..Default::default()
@@ -320,8 +319,9 @@ impl Run {
         let this_ = this.clone();
         let jset = Arc::new(Mutex::new(JoinSet::new()));
         let jset_ = jset.clone();
+        let config = config.clone();
 
-        let handle = tokio::task::spawn(async move {
+        let handle: JoinHandle<Result<()>> = tokio::task::spawn(async move {
             let tasks = Arc::new(Mutex::new(tasks));
             let semaphore = Arc::new(Semaphore::new(this_.jobs()));
             let mut rx = tasks.lock().await.subscribe();
@@ -329,14 +329,14 @@ impl Run {
                 if this_.is_stopping() {
                     break;
                 }
-                trace!("running task: {task}");
                 let jset = jset_.clone();
                 let this_ = this_.clone();
-                let semaphore = semaphore.clone();
+                let permit = semaphore.clone().acquire_owned().await?;
                 let tasks = tasks.clone();
                 let config = config.clone();
+                trace!("running task: {task}");
                 jset.lock().await.spawn(async move {
-                    let _permit = semaphore.acquire().await?;
+                    let _permit = permit;
                     let result = this_.run_task(&task, &config).await;
                     if let Err(err) = &result {
                         let status = Error::get_exit_status(err);
@@ -357,6 +357,7 @@ impl Run {
                     result
                 });
             }
+            Ok(())
         });
 
         while let Some(result) = jset.lock().await.join_next().await {
@@ -369,7 +370,7 @@ impl Run {
             CmdLineRunner::kill_all();
             break;
         }
-        handle.await?;
+        handle.await??;
 
         if this.output(None) == TaskOutput::KeepOrder {
             // TODO: display these as tasks complete in order somehow rather than waiting until everything is done
@@ -441,16 +442,15 @@ impl Run {
             }
         }
 
-        let config = Config::get().await;
         let mut tools = self.tool.clone();
         for (k, v) in &task.tools {
             tools.push(format!("{k}@{v}").parse()?);
         }
         let ts = ToolsetBuilder::new()
             .with_args(&tools)
-            .build(&config)
+            .build(config)
             .await?;
-        let mut env = task.render_env(&config, &ts).await?;
+        let mut env = task.render_env(config, &ts).await?;
         let output = self.output(Some(task));
         env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
         if output == TaskOutput::Prefix {
@@ -480,10 +480,10 @@ impl Run {
         let timer = std::time::Instant::now();
 
         if let Some(file) = &task.file {
-            self.exec_file(&config, file, task, &env, &prefix).await?;
+            self.exec_file(config, file, task, &env, &prefix).await?;
         } else {
             let rendered_run_scripts = task
-                .render_run_scripts_with_args(&config, self.cd.clone(), &task.args, &env)
+                .render_run_scripts_with_args(config, self.cd.clone(), &task.args, &env)
                 .await?;
 
             let get_args = || {
@@ -493,7 +493,7 @@ impl Run {
                     .cloned()
                     .collect()
             };
-            self.parse_usage_spec_and_init_env(&config, task, &mut env, get_args)
+            self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
                 .await?;
 
             for (script, args) in rendered_run_scripts {
@@ -523,7 +523,7 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let script = script.trim_start();
         let cmd = format!("$ {script} {args}", args = args.join(" ")).to_string();
         if !self.quiet(Some(task)) {
@@ -654,7 +654,7 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let program = program.to_executable();
         let redactions = config.redactions();
         let raw = self.raw(Some(task));
@@ -1207,7 +1207,7 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
 }
 
 async fn prompt_for_task() -> Result<Task> {
-    let config = Config::get().await;
+    let config = Config::get().await?;
     let tasks = config.tasks().await?;
     ensure!(
         !tasks.is_empty(),
@@ -1301,8 +1301,7 @@ pub async fn get_task_lists(
     Ok(tasks)
 }
 
-pub async fn resolve_depends(tasks: Vec<Task>) -> Result<Vec<Task>> {
-    let config = Config::get().await;
+pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
     let all_tasks = config.tasks_with_aliases().await?;
     tasks
         .into_iter()

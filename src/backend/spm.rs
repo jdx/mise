@@ -245,7 +245,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spm_repo_init_by_shorthand() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let package_name = "nicklockwood/SwiftFormat";
         let package_repo = SwiftPackageRepo::new(package_name).unwrap();
         assert_str_eq!(
@@ -257,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spm_repo_init_name() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         assert!(
             SwiftPackageRepo::new("owner/name.swift").is_ok(),
             "name part can contain ."
@@ -278,7 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_spm_repo_init_by_url() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let package_name = "https://github.com/nicklockwood/SwiftFormat.git";
         let package_repo = SwiftPackageRepo::new(package_name).unwrap();
         assert_str_eq!(

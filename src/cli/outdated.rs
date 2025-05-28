@@ -42,7 +42,7 @@ pub struct Outdated {
 
 impl Outdated {
     pub async fn run(self) -> Result<()> {
-        let config = Config::try_get().await?;
+        let config = Config::get().await?;
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&config)

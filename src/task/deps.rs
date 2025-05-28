@@ -1,9 +1,12 @@
-use crate::cli::run::resolve_depends;
 use crate::task::Task;
+use crate::{cli::run::resolve_depends, config::Config};
 use itertools::Itertools;
 use petgraph::Direction;
 use petgraph::graph::DiGraph;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -20,7 +23,7 @@ fn task_key(task: &Task) -> (String, Vec<String>) {
 
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
-    pub async fn new(tasks: Vec<Task>) -> eyre::Result<Self> {
+    pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
         let mut stack = vec![];
@@ -38,14 +41,14 @@ impl Deps {
             stack.push(t.clone());
             add_idx(t, &mut graph);
         }
-        let all_tasks_to_run = resolve_depends(tasks).await?;
+        let all_tasks_to_run = resolve_depends(config, tasks).await?;
         while let Some(a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop
                 continue;
             }
             let a_idx = add_idx(&a, &mut graph);
-            let (pre, post) = a.resolve_depends(&all_tasks_to_run).await?;
+            let (pre, post) = a.resolve_depends(config, &all_tasks_to_run).await?;
             for b in pre {
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(a_idx, b_idx, ());

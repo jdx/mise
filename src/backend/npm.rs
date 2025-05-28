@@ -76,8 +76,6 @@ impl Backend for NPMBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let config = Config::get().await;
-
         if SETTINGS.npm.bun {
             CmdLineRunner::new("bun")
                 .arg("install")
@@ -87,7 +85,7 @@ impl Backend for NPMBackend {
                 .arg("--global")
                 .arg("--trust")
                 .with_pr(&ctx.pr)
-                .envs(ctx.ts.env_with_path(&config).await?)
+                .envs(ctx.ts.env_with_path(&ctx.config).await?)
                 .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
                 .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
                 .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
@@ -106,7 +104,7 @@ impl Backend for NPMBackend {
                 .arg("--prefix")
                 .arg(tv.install_path())
                 .with_pr(&ctx.pr)
-                .envs(ctx.ts.env_with_path(&config).await?)
+                .envs(ctx.ts.env_with_path(&ctx.config).await?)
                 .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                 .prepend_path(
                     self.dependency_toolset(&ctx.config)
@@ -122,6 +120,7 @@ impl Backend for NPMBackend {
     #[cfg(windows)]
     async fn list_bin_paths(
         &self,
+        _config: &Arc<Config>,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
         Ok(vec![tv.install_path()])

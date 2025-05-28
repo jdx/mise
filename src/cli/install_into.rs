@@ -25,7 +25,7 @@ pub struct InstallInto {
 
 impl InstallInto {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let ts = Arc::new(
             ToolsetBuilder::new()
                 .with_args(&[self.tool.clone()])

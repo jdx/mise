@@ -304,9 +304,8 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
     }
-    async fn is_version_outdated(&self, tv: &ToolVersion) -> bool {
-        let config = Config::get().await;
-        let latest = match tv.latest_version(&config).await {
+    async fn is_version_outdated(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        let latest = match tv.latest_version(config).await {
             Ok(latest) => latest,
             Err(e) => {
                 warn!(
@@ -317,7 +316,7 @@ pub trait Backend: Debug + Send + Sync {
                 return false;
             }
         };
-        !self.is_version_installed(&config, tv, true) || is_outdated_version(&tv.version, &latest)
+        !self.is_version_installed(config, tv, true) || is_outdated_version(&tv.version, &latest)
     }
     fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
         match tv.install_path() {
@@ -388,7 +387,7 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
 
-    async fn warn_if_dependencies_missing(&self) -> eyre::Result<()> {
+    async fn warn_if_dependencies_missing(&self, config: &Arc<Config>) -> eyre::Result<()> {
         let deps = self
             .get_all_dependencies(false)?
             .into_iter()
@@ -397,9 +396,8 @@ pub trait Backend: Debug + Send + Sync {
             .collect::<HashSet<_>>();
         if !deps.is_empty() {
             trace!("Ensuring dependencies installed for {}", self.id());
-            let config = Config::get().await;
             let ts = config.get_tool_request_set().await?.filter_by_tool(deps);
-            let missing = ts.missing_tools().await;
+            let missing = ts.missing_tools(config).await;
             if !missing.is_empty() {
                 warn_once!(
                     "missing dependency: {}",
@@ -440,10 +438,10 @@ pub trait Backend: Debug + Send + Sync {
         if let Some(plugin) = self.plugin() {
             plugin.is_installed_err()?;
         }
-        let config = Config::try_get().await?;
-        if self.is_version_installed(&config, &tv, true) {
+        if self.is_version_installed(&ctx.config, &tv, true) {
             if ctx.force {
-                self.uninstall_version(&tv, &ctx.pr, false).await?;
+                self.uninstall_version(&ctx.config, &tv, &ctx.pr, false)
+                    .await?;
             } else {
                 return Ok(tv);
             }
@@ -469,7 +467,7 @@ pub trait Backend: Debug + Send + Sync {
         self.cleanup_install_dirs(&tv);
         // attempt to touch all the .tool-version files to trigger updates in hook-env
         let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
-        touch_dirs.extend(config.config_files.keys().cloned());
+        touch_dirs.extend(ctx.config.config_files.keys().cloned());
         for path in touch_dirs {
             let err = file::touch_dir(&path);
             if let Err(err) = err {
@@ -495,19 +493,19 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         script: &str,
     ) -> eyre::Result<()> {
-        let config = Config::get().await;
         CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .with_pr(&ctx.pr)
             .arg("-c")
             .arg(script)
-            .envs(self.exec_env(&config, &ctx.ts, tv).await?)
+            .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
             .execute()?;
         Ok(())
     }
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
     async fn uninstall_version(
         &self,
+        config: &Arc<Config>,
         tv: &ToolVersion,
         pr: &Box<dyn SingleReport>,
         dryrun: bool,
@@ -515,7 +513,7 @@ pub trait Backend: Debug + Send + Sync {
         pr.set_message("uninstall".into());
 
         if !dryrun {
-            self.uninstall_version_impl(pr, tv).await?;
+            self.uninstall_version_impl(config, pr, tv).await?;
         }
         let rmdir = |dir: &Path| {
             if !dir.exists() {
@@ -536,12 +534,17 @@ pub trait Backend: Debug + Send + Sync {
     }
     async fn uninstall_version_impl(
         &self,
+        _config: &Arc<Config>,
         _pr: &Box<dyn SingleReport>,
         _tv: &ToolVersion,
     ) -> Result<()> {
         Ok(())
     }
-    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         match tv.request {
             ToolRequest::System { .. } => Ok(vec![]),
             _ => Ok(vec![tv.install_path().join("bin")]),
@@ -557,9 +560,14 @@ pub trait Backend: Debug + Send + Sync {
         Ok(BTreeMap::new())
     }
 
-    async fn which(&self, tv: &ToolVersion, bin_name: &str) -> eyre::Result<Option<PathBuf>> {
+    async fn which(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        bin_name: &str,
+    ) -> eyre::Result<Option<PathBuf>> {
         let bin_paths = self
-            .list_bin_paths(tv)
+            .list_bin_paths(config, tv)
             .await?
             .into_iter()
             .filter(|p| p.parent().is_some());
@@ -614,7 +622,7 @@ pub trait Backend: Debug + Send + Sync {
 
     async fn path_env_for_cmd(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<OsString> {
         let path = self
-            .list_bin_paths(tv)
+            .list_bin_paths(config, tv)
             .await?
             .into_iter()
             .chain(
@@ -650,7 +658,7 @@ pub trait Backend: Debug + Send + Sync {
             return None;
         };
         let (b, tv) = ts.which(config, bin).await?;
-        b.which(&tv, bin).await.ok().flatten()
+        b.which(config, &tv, bin).await.ok().flatten()
     }
 
     async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {

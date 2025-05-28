@@ -32,7 +32,7 @@ pub struct Uninstall {
 
 impl Uninstall {
     pub async fn run(self) -> Result<()> {
-        let config = Config::try_get().await?;
+        let config = Config::get().await?;
         let tool_versions = if self.installed_tool.is_empty() && self.all {
             self.get_all_tool_versions(&config).await?
         } else {
@@ -54,7 +54,10 @@ impl Uninstall {
             }
 
             let pr = mpr.add(&tv.style());
-            if let Err(err) = plugin.uninstall_version(&tv, &pr, self.dry_run).await {
+            if let Err(err) = plugin
+                .uninstall_version(&config, &tv, &pr, self.dry_run)
+                .await
+            {
                 error!("{err}");
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
@@ -66,7 +69,9 @@ impl Uninstall {
         }
 
         file::touch_dir(&dirs::DATA)?;
-        config::rebuild_shims_and_runtime_symlinks(&[]).await?;
+        let config = Config::load().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
 
         Ok(())
     }

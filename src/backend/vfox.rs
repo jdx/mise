@@ -44,12 +44,12 @@ impl Backend for VfoxBackend {
         Some(PluginType::Vfox)
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
                 let (vfox, _log_rx) = this.plugin.vfox();
-                this.ensure_plugin_installed().await?;
+                this.ensure_plugin_installed(config).await?;
                 let versions = vfox.list_available_versions(&this.pathname).await?;
                 Ok(versions
                     .into_iter()
@@ -64,10 +64,10 @@ impl Backend for VfoxBackend {
 
     async fn install_version_(
         &self,
-        _ctx: &InstallContext,
+        ctx: &InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        self.ensure_plugin_installed().await?;
+        self.ensure_plugin_installed(&ctx.config).await?;
         let (vfox, log_rx) = self.plugin.vfox();
         thread::spawn(|| {
             for line in log_rx {
@@ -80,9 +80,13 @@ impl Backend for VfoxBackend {
         Ok(tv)
     }
 
-    async fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+    async fn list_bin_paths(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<Vec<PathBuf>> {
         let path = self
-            ._exec_env(tv)
+            ._exec_env(config, tv)
             .await?
             .iter()
             .find(|(k, _)| k.to_uppercase() == "PATH")
@@ -93,12 +97,12 @@ impl Backend for VfoxBackend {
 
     async fn exec_env(
         &self,
-        _config: &Arc<Config>,
+        config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<EnvMap> {
         Ok(self
-            ._exec_env(tv)
+            ._exec_env(config, tv)
             .await?
             .into_iter()
             .filter(|(k, _)| k.to_uppercase() != "PATH")
@@ -126,7 +130,11 @@ impl VfoxBackend {
         }
     }
 
-    async fn _exec_env(&self, tv: &ToolVersion) -> eyre::Result<BTreeMap<String, String>> {
+    async fn _exec_env(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<BTreeMap<String, String>> {
         let key = tv.to_string();
         if !self.exec_env_cache.read().await.contains_key(&key) {
             let mut caches = self.exec_env_cache.write().await;
@@ -143,7 +151,7 @@ impl VfoxBackend {
         let cache = exec_env_cache.get(&key).unwrap();
         cache
             .get_or_try_init_async(async || {
-                self.ensure_plugin_installed().await?;
+                self.ensure_plugin_installed(config).await?;
                 let (vfox, _log_rx) = self.plugin.vfox();
                 Ok(vfox
                     .env_keys(&self.pathname, &tv.version)
@@ -171,9 +179,9 @@ impl VfoxBackend {
             .cloned()
     }
 
-    async fn ensure_plugin_installed(&self) -> eyre::Result<()> {
+    async fn ensure_plugin_installed(&self, config: &Arc<Config>) -> eyre::Result<()> {
         self.plugin
-            .ensure_installed(&MultiProgressReport::get(), false)
+            .ensure_installed(config, &MultiProgressReport::get(), false)
             .await
     }
 }

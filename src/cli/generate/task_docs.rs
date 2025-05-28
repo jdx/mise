@@ -42,7 +42,7 @@ enum TaskDocsStyle {
 
 impl TaskDocs {
     pub async fn run(self) -> eyre::Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let ts = config.get_toolset().await?;
         let dir = dirs::CWD.as_ref().unwrap();
         let tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;

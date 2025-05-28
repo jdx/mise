@@ -23,9 +23,7 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::Task;
-use crate::toolset::{
-    ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, ToolsetBuilder, install_state,
-};
+use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, install_state};
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 use crate::{backend::ABackend, cli::version::VERSION};
@@ -81,22 +79,17 @@ pub fn is_loaded() -> bool {
 }
 
 impl Config {
-    pub async fn get() -> Arc<Self> {
-        Self::try_get().await.unwrap()
+    pub async fn get() -> Result<Arc<Self>> {
+        if let Some(config) = &*_CONFIG.read().unwrap() {
+            return Ok(config.clone());
+        }
+        measure!("load config", { Self::load().await })
     }
     pub fn get_() -> Arc<Self> {
         (*_CONFIG.read().unwrap()).clone().unwrap()
     }
-    pub async fn try_get() -> Result<Arc<Self>> {
-        if let Some(config) = &*_CONFIG.read().unwrap() {
-            return Ok(config.clone());
-        }
-        let config = measure!("load config", { Arc::new(Self::load().await?) });
-        *_CONFIG.write().unwrap() = Some(config.clone());
-        Ok(config)
-    }
     #[async_backtrace::framed]
-    pub async fn load() -> Result<Self> {
+    pub async fn load() -> Result<Arc<Self>> {
         measure!("config::load reset", {
             reset().await?;
         });
@@ -211,6 +204,8 @@ impl Config {
             }
         });
 
+        let config = Arc::new(config);
+        *_CONFIG.write().unwrap() = Some(config.clone());
         Ok(config)
     }
     pub fn env_maybe(&self) -> Option<IndexMap<String, String>> {
@@ -366,7 +361,7 @@ impl Config {
     }
 
     async fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         time!("load_all_tasks");
         // let (file_tasks, global_tasks, system_tasks) = tokio::join!(
         //     {
@@ -1150,23 +1145,23 @@ fn default_task_includes() -> Vec<PathBuf> {
 }
 
 #[async_backtrace::framed]
-pub async fn rebuild_shims_and_runtime_symlinks(new_versions: &[ToolVersion]) -> Result<()> {
-    let config = Arc::new(Config::load().await?);
-    let ts = measure!("build_toolset", {
-        ToolsetBuilder::new().build(&config).await?
-    });
+pub async fn rebuild_shims_and_runtime_symlinks(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    new_versions: &[ToolVersion],
+) -> Result<()> {
     measure!("rebuilding shims", {
-        shims::reshim(&config, &ts, false)
+        shims::reshim(config, ts, false)
             .await
             .wrap_err("failed to rebuild shims")?;
     });
     measure!("rebuilding runtime symlinks", {
-        runtime_symlinks::rebuild(&config)
+        runtime_symlinks::rebuild(config)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
     });
     measure!("updating lockfiles", {
-        lockfile::update_lockfiles(&config, &ts, new_versions)
+        lockfile::update_lockfiles(config, ts, new_versions)
             .wrap_err("failed to update lockfiles")?;
     });
 
@@ -1465,7 +1460,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_all_config_files_skips_directories() -> Result<()> {
-        let _config = Config::get().await;
+        let _config = Config::get().await?;
         let temp_dir = TempDir::new()?;
         let temp_path = temp_dir.path();
 

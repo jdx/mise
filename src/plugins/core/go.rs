@@ -220,6 +220,7 @@ impl Backend for GoPlugin {
 
     async fn uninstall_version_impl(
         &self,
+        _config: &Arc<Config>,
         _pr: &Box<dyn SingleReport>,
         tv: &ToolVersion,
     ) -> eyre::Result<()> {
@@ -230,7 +231,11 @@ impl Backend for GoPlugin {
         Ok(())
     }
 
-    async fn list_bin_paths(&self, tv: &ToolVersion) -> eyre::Result<Vec<PathBuf>> {
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<Vec<PathBuf>> {
         if let ToolRequest::System { .. } = tv.request {
             return Ok(vec![]);
         }

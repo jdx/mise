@@ -290,14 +290,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_diff() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         assert_debug_snapshot!(diff.to_patches());
     }
 
     #[tokio::test]
     async fn test_reverse() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let patches = diff.reverse().to_patches();
         let to_remove = patches
@@ -351,7 +351,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_serialize() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let serialized = diff.serialize().unwrap();
         let deserialized = EnvDiff::deserialize(&serialized).unwrap();
@@ -361,7 +361,7 @@ mod tests {
     #[tokio::test]
     #[cfg(unix)]
     async fn test_from_bash_script() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         use crate::{config::Config, dirs};
         use indexmap::indexmap;
         let path = dirs::HOME.join("fixtures/exec-env");
@@ -399,7 +399,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_escape_sequence() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let input = r#""\g\""#;
         let output = normalize_escape_sequences(input);
         // just warns

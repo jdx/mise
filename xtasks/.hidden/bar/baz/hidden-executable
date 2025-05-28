@@ -3,6 +3,7 @@ set -euxo pipefail
 
 cargo clippy -- -Dwarnings
 cargo fmt --all -- --check
+# shellcheck disable=SC2046
 prettier -c $(git ls-files '*.yml' '*.yaml')
 markdownlint .
 actionlint

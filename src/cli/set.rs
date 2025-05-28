@@ -146,7 +146,7 @@ impl Set {
                 .collect()
         } else {
             Config::get()
-                .await
+                .await?
                 .env_with_sources()
                 .await?
                 .iter()

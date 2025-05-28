@@ -6,10 +6,10 @@ use crate::{dirs, hook_env};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
+use std::{iter::once, sync::Arc};
 use tokio::sync::OnceCell;
 
 #[derive(
@@ -48,21 +48,20 @@ pub fn schedule_hook(hook: Hooks) {
     mu.insert(hook);
 }
 
-pub async fn run_all_hooks(ts: &Toolset, shell: &dyn Shell) {
+pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell) {
     let hooks = {
         let mut mu = SCHEDULED_HOOKS.lock().unwrap();
         mu.drain(..).collect::<Vec<_>>()
     };
     for hook in hooks {
-        run_one_hook(ts, hook, Some(shell)).await;
+        run_one_hook(config, ts, hook, Some(shell)).await;
     }
 }
 
-async fn all_hooks() -> &'static Vec<(PathBuf, Hook)> {
+async fn all_hooks(config: &Arc<Config>) -> &'static Vec<(PathBuf, Hook)> {
     static ALL_HOOKS: OnceCell<Vec<(PathBuf, Hook)>> = OnceCell::const_new();
     ALL_HOOKS
         .get_or_init(async || {
-            let config = Config::get().await;
             let mut hooks = config.hooks().await.cloned().unwrap_or_default();
             let cur_configs = config.config_files.keys().cloned().collect::<IndexSet<_>>();
             let prev_configs = &hook_env::PREV_SESSION.loaded_configs;
@@ -80,8 +79,13 @@ async fn all_hooks() -> &'static Vec<(PathBuf, Hook)> {
 }
 
 #[async_backtrace::framed]
-pub async fn run_one_hook(ts: &Toolset, hook: Hooks, shell: Option<&dyn Shell>) {
-    for (root, h) in all_hooks().await {
+pub async fn run_one_hook(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    hook: Hooks,
+    shell: Option<&dyn Shell>,
+) {
+    for (root, h) in all_hooks(config).await {
         if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
             continue;
         }
@@ -112,7 +116,7 @@ pub async fn run_one_hook(ts: &Toolset, hook: Hooks, shell: Option<&dyn Shell>) 
         }
         if h.shell.is_some() {
             println!("{}", h.script);
-        } else if let Err(e) = execute(ts, root, h).await {
+        } else if let Err(e) = execute(config, ts, root, h).await {
             warn!("error executing hook: {e}");
         }
     }
@@ -155,7 +159,7 @@ impl Hook {
     }
 }
 
-async fn execute(ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
+async fn execute(config: &Arc<Config>, ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
     SETTINGS.ensure_experimental("hooks")?;
     let shell = SETTINGS.default_inline_shell()?;
 
@@ -165,8 +169,7 @@ async fn execute(ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
         .map(|s| s.as_str())
         .chain(once(hook.script.as_str()))
         .collect_vec();
-    let config = Config::get().await;
-    let mut env = ts.full_env(&config).await?;
+    let mut env = ts.full_env(config).await?;
     if let Some(cwd) = dirs::CWD.as_ref() {
         env.insert(
             "MISE_ORIGINAL_CWD".to_string(),

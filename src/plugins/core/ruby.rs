@@ -363,11 +363,12 @@ impl Backend for RubyPlugin {
             warn!("ruby build tool update error: {err:#}");
         }
         ctx.pr.set_message("ruby-build".into());
-        let config = Config::get().await;
-        self.install_cmd(&config, &tv, &ctx.pr).await?.execute()?;
+        self.install_cmd(&ctx.config, &tv, &ctx.pr)
+            .await?
+            .execute()?;
 
         self.install_rubygems_hook(&tv)?;
-        if let Err(err) = self.install_default_gems(&config, &tv, &ctx.pr).await {
+        if let Err(err) = self.install_default_gems(&ctx.config, &tv, &ctx.pr).await {
             warn!("failed to install default ruby gems {err:#}");
         }
         Ok(tv)

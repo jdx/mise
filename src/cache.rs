@@ -311,7 +311,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let cache = CacheManagerBuilder::new(dirs::CACHE.join("test-cache")).build();
         cache.clear().unwrap();
         let val = cache.get_or_try_init(|| Ok(1)).unwrap();

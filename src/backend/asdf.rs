@@ -106,12 +106,12 @@ impl AsdfBackend {
         Ok(())
     }
 
-    async fn fetch_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<String>> {
+    async fn fetch_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<String>> {
         let list_bin_paths = self.plugin_path.join("bin/list-bin-paths");
         let bin_paths = if matches!(tv.request, ToolRequest::System { .. }) {
             Vec::new()
         } else if list_bin_paths.exists() {
-            let sm = self.script_man_for_tv(tv).await?;
+            let sm = self.script_man_for_tv(config, tv).await?;
             // TODO: find a way to enable this without deadlocking
             // for (t, tv) in ts.list_current_installed_versions(config) {
             //     if t.name == self.name {
@@ -143,7 +143,7 @@ impl AsdfBackend {
         ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<EnvMap> {
-        let mut sm = self.script_man_for_tv(tv).await?;
+        let mut sm = self.script_man_for_tv(config, tv).await?;
         for p in ts.list_paths(config).await {
             sm.prepend_path(p);
         }
@@ -162,8 +162,11 @@ impl AsdfBackend {
         Ok(env)
     }
 
-    async fn script_man_for_tv(&self, tv: &ToolVersion) -> Result<ScriptManager> {
-        let config = Config::get().await;
+    async fn script_man_for_tv(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<ScriptManager> {
         let mut sm = self.plugin.script_man.clone();
         for (key, value) in tv.request.options().opts {
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
@@ -333,7 +336,7 @@ impl Backend for AsdfBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let mut sm = self.script_man_for_tv(&tv).await?;
+        let mut sm = self.script_man_for_tv(&ctx.config, &tv).await?;
 
         for p in ctx.ts.list_paths(&ctx.config).await {
             sm.prepend_path(p);
@@ -354,21 +357,24 @@ impl Backend for AsdfBackend {
 
     async fn uninstall_version_impl(
         &self,
+        config: &Arc<Config>,
         pr: &Box<dyn SingleReport>,
         tv: &ToolVersion,
     ) -> Result<()> {
         if self.plugin_path.join("bin/uninstall").exists() {
-            self.script_man_for_tv(tv)
+            self.script_man_for_tv(config, tv)
                 .await?
                 .run_by_line(&Script::Uninstall, pr)?;
         }
         Ok(())
     }
 
-    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
         Ok(self
             .cache
-            .list_bin_paths(self, tv, async || self.fetch_bin_paths(tv).await)
+            .list_bin_paths(config, self, tv, async || {
+                self.fetch_bin_paths(config, tv).await
+            })
             .await?
             .into_iter()
             .map(|path| tv.install_path().join(path))
@@ -417,7 +423,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_debug() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let plugin = AsdfBackend::from_arg("dummy".into());
         assert!(format!("{plugin:?}").starts_with("AsdfPlugin { name: \"dummy\""));
     }

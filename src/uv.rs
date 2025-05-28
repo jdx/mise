@@ -28,7 +28,7 @@ pub async fn uv_venv(config: &Arc<Config>) -> Option<Venv> {
         return None;
     }
     if let (Some(venv_path), Some(uv_path)) = (venv_path(), uv_path(config).await) {
-        match get_or_create_venv(venv_path, uv_path).await {
+        match get_or_create_venv(config, venv_path, uv_path).await {
             Ok(venv) => {
                 UV_VENV.set(Some(venv.clone())).unwrap();
                 return Some(venv);
@@ -42,14 +42,17 @@ pub async fn uv_venv(config: &Arc<Config>) -> Option<Venv> {
     None
 }
 
-async fn get_or_create_venv(venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
+async fn get_or_create_venv(
+    config: &Arc<Config>,
+    venv_path: PathBuf,
+    uv_path: PathBuf,
+) -> Result<Venv> {
     SETTINGS.ensure_experimental("uv venv auto")?;
     let mut venv = Venv {
         env: Default::default(),
         venv_path: venv_path.join("bin"),
     };
-    if let Some(python_tv) = Config::get()
-        .await
+    if let Some(python_tv) = config
         .get_toolset()
         .await?
         .versions

@@ -28,11 +28,11 @@ pub async fn handle_shim() -> Result<()> {
     if bin_name.starts_with("mise") || cfg!(test) {
         return Ok(());
     }
-    let config = Config::try_get().await?;
+    let mut config = Config::get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    args[0] = which_shim(&config, &env::MISE_BIN_NAME)
+    args[0] = which_shim(&mut config, &env::MISE_BIN_NAME)
         .await?
         .to_string_lossy()
         .to_string();
@@ -49,10 +49,10 @@ pub async fn handle_shim() -> Result<()> {
     exit(0);
 }
 
-async fn which_shim(config: &Arc<Config>, bin_name: &str) -> Result<PathBuf> {
+async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf> {
     let mut ts = ToolsetBuilder::new().build(config).await?;
     if let Some((p, tv)) = ts.which(config, bin_name).await {
-        if let Some(bin) = p.which(&tv, bin_name).await? {
+        if let Some(bin) = p.which(config, &tv, bin_name).await? {
             trace!(
                 "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
                 bin = display_path(&bin)
@@ -67,7 +67,7 @@ async fn which_shim(config: &Arc<Config>, bin_name: &str) -> Result<PathBuf> {
             .unwrap_or_default()
         {
             let p = tv.backend()?;
-            if let Some(bin) = p.which(&tv, bin_name).await? {
+            if let Some(bin) = p.which(config, &tv, bin_name).await? {
                 trace!(
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
@@ -287,10 +287,12 @@ fn list_shims() -> Result<HashSet<String>> {
 async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<HashSet<String>> {
     let mut shims = HashSet::new();
     for (t, tv) in toolset.list_installed_versions(config).await? {
-        let bins = list_tool_bins(t.clone(), &tv).await.unwrap_or_else(|e| {
-            warn!("Error listing bin paths for {}: {:#}", tv, e);
-            Vec::new()
-        });
+        let bins = list_tool_bins(config, t.clone(), &tv)
+            .await
+            .unwrap_or_else(|e| {
+                warn!("Error listing bin paths for {}: {:#}", tv, e);
+                Vec::new()
+            });
         if cfg!(windows) {
             shims.extend(bins.into_iter().flat_map(|b| {
                 let p = PathBuf::from(&b);
@@ -318,8 +320,12 @@ async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<Ha
 }
 
 // lists all the paths to bins in a tv that shims will be needed for
-async fn list_tool_bins(t: Arc<dyn Backend>, tv: &ToolVersion) -> Result<Vec<String>> {
-    Ok(t.list_bin_paths(tv)
+async fn list_tool_bins(
+    config: &Arc<Config>,
+    t: Arc<dyn Backend>,
+    tv: &ToolVersion,
+) -> Result<Vec<String>> {
+    Ok(t.list_bin_paths(config, tv)
         .await?
         .into_iter()
         .filter(|p| p.parent().is_some())

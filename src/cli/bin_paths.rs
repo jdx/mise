@@ -15,7 +15,7 @@ pub struct BinPaths {
 
 impl BinPaths {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {
             tsb = tsb.with_args(tool);

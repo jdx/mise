@@ -36,12 +36,12 @@ pub struct Env {
 
 impl Env {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let mut config = Config::get().await?;
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&config)
             .await?;
-        ts.install_missing_versions(&config, &InstallOptions::default())
+        ts.install_missing_versions(&mut config, &InstallOptions::default())
             .await?;
         ts.notify_if_versions_missing(&config).await;
 

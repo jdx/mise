@@ -55,7 +55,7 @@ pub struct ToolInfoFilter {
 
 impl Tool {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let mut ts = ToolsetBuilder::new().build(&config).await?;
         ts.resolve(&config).await?;
         let tvl = ts.versions.get(&self.tool);

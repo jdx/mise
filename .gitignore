@@ -31,3 +31,4 @@ megalinter-reports/
 .vscode/
 testResults.xml
 .mise/
+comment.md

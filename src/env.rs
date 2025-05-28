@@ -580,7 +580,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_apply_patches() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let mut env = EnvMap::new();
         env.insert("foo".into(), "bar".into());
         env.insert("baz".into(), "qux".into());
@@ -597,7 +597,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_var_path() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         set_var("MISE_TEST_PATH", "/foo/bar");
         assert_eq!(
             var_path("MISE_TEST_PATH").unwrap(),

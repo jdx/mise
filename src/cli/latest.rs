@@ -28,7 +28,7 @@ pub struct Latest {
 
 impl Latest {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let mut prefix = match self.tool.tvr {
             None => self.asdf_version,
             Some(ToolRequest::Version { version, .. }) => Some(version),
@@ -38,7 +38,7 @@ impl Latest {
         let backend = self.tool.ba.backend()?;
         let mpr = MultiProgressReport::get();
         if let Some(plugin) = backend.plugin() {
-            plugin.ensure_installed(&mpr, false).await?;
+            plugin.ensure_installed(&config, &mpr, false).await?;
         }
         if let Some(v) = prefix {
             prefix = Some(config.resolve_alias(&backend, &v).await?);

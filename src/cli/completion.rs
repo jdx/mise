@@ -53,7 +53,7 @@ impl Completion {
     }
 
     async fn call_usage(&self, shell: Shell) -> Result<String> {
-        let config = Config::try_get().await?;
+        let config = Config::get().await?;
         let toolset = ToolsetBuilder::new().build(&config).await?;
         let mut args = vec![
             "generate".into(),
@@ -68,7 +68,6 @@ impl Completion {
         if self.include_bash_completion_lib {
             args.push("--include-bash-completion-lib".into());
         }
-        let config = Config::get().await;
         let output = cmd("usage", args)
             .full_env(toolset.full_env(&config).await?)
             .read()?;

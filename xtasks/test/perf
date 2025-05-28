@@ -3,8 +3,7 @@
 # shellcheck disable=SC2086,SC2129
 set -xeuo pipefail
 
-num_tools="${NUM_TOOLS:-100}"
-num_tasks="${NUM_TASKS:-1000}"
+runs="${RUNS:-1}"
 cd perf-workspace
 mkdir -p flamegraphs
 MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
@@ -55,17 +54,26 @@ benchmark_error() {
 }
 
 time_command() {
+	local uncached="$1"
+	shift
 	local cmd="$1"
 	local start_time
 	local end_time
 	local duration
+	local total=0
 	shift
-	start_time=$(date +%s%N)
-	echo "running $cmd $*..." >&2
-	timeout -v 20 $cmd "$@" >/dev/null || true
-	end_time=$(date +%s%N)
-	duration=$(((end_time - start_time) / 1000000))
-	echo "$duration"
+	echo "running $cmd $* $runs times..." >&2
+	for _ in $(seq 1 $runs); do
+		if [ "$uncached" = "uncached" ]; then
+			"$cmd" cache clear
+		fi
+		start_time=$(date +%s%N)
+		timeout -v 20 "$cmd" "$@" >/dev/null || true
+		end_time=$(date +%s%N)
+		duration=$(((end_time - start_time) / 1000000))
+		total=$((total + duration))
+	done
+	echo $((total / runs))
 }
 
 benchmark() {
@@ -73,16 +81,14 @@ benchmark() {
 	local uncached_duration
 	local cached_duration
 	shift
-	mise cache clear
-	uncached_duration=$(time_command mise "$@")
-	cached_duration=$(time_command mise "$@")
+	uncached_duration=$(time_command uncached mise "$@")
+	cached_duration=$(time_command cached mise "$@")
 	benchmarks["$name-uncached"]=$uncached_duration
 	benchmarks["$name-cached"]=$cached_duration
 
 	if [ -n "${MISE_ALT:-}" ]; then
-		mise cache clear
-		alt_uncached_duration=$(time_command "$MISE_ALT" "$@")
-		alt_cached_duration=$(time_command "$MISE_ALT" "$@")
+		alt_uncached_duration=$(time_command uncached "$MISE_ALT" "$@")
+		alt_cached_duration=$(time_command cached "$MISE_ALT" "$@")
 		alt_benchmarks["$name-uncached"]=$alt_uncached_duration
 		alt_benchmarks["$name-cached"]=$alt_cached_duration
 	fi
@@ -114,55 +120,100 @@ benchmark bin-paths bin-paths
 benchmark task-ls task ls
 set +x
 
-if [ -n "${MISE_ALT:-}" ]; then
-	echo "| Command    | Uncached mise | Cached mise | Uncached $MISE_ALT | Cached $MISE_ALT |"
-	echo "|------------|---------------|-------------|--------------------|------------------|"
-	for name in "${names[@]}"; do
-		printf "| %-10s | %11dms | %10dms | %15dms | %13dms |\n" \
-			"$name" \
-			"${benchmarks["$name-uncached"]}" \
-			"${benchmarks["$name-cached"]}" \
-			"${alt_benchmarks["$name-uncached"]}" \
-			"${alt_benchmarks["$name-cached"]}"
-	done
-else
-	echo "| Command    | Uncached | Cached   |"
-	echo "|------------|----------|----------|"
-	for name in "${names[@]}"; do
-		printf "| %-10s | %6dms | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" "${benchmarks["$name-cached"]}"
-	done
-fi
+get_performance_emoji() {
+	local variance="$1"
+	if [ ${variance#-} -gt 20 ]; then
+		if [ $variance -gt 0 ]; then
+			echo "✅ "
+		else
+			echo "⚠️ "
+		fi
+	fi
+}
 
-if [ -v GITHUB_STEP_SUMMARY ]; then
-	echo "## e2e/perf/test_many_tasks" >>../comment.md
-	echo "" >>../comment.md
-	echo "- NUM_TASKS: $num_tasks" >>../comment.md
-	echo "- NUM_TOOLS: $num_tools" >>../comment.md
-	echo "" >>../comment.md
+get_performance_warning() {
+	local name="$1"
+	local variance="$2"
+	local type="$3"
+	if [ ${variance#-} -gt 20 ]; then
+		if [ $variance -gt 0 ]; then
+			echo "✅  Performance improvement: $name $type is ${variance}%"
+		else
+			echo "⚠️  Warning: $name $type performance variance is ${variance}%"
+		fi
+	fi
+}
 
+print_performance_table() {
+	local output_file="$1"
 	if [ -n "${MISE_ALT:-}" ]; then
-		echo "| Command    | Uncached mise | Cached mise | Uncached $MISE_ALT | Cached $MISE_ALT |" >>../comment.md
-		echo "|------------|---------------|-------------|--------------------|------------------|" >>../comment.md
+		echo "| Command    | mise | $MISE_ALT |" >>"$output_file"
+		echo "|------------|------|-----------|" >>"$output_file"
 		for name in "${names[@]}"; do
-			printf "| %-10s | %11dms | %10dms | %15dms | %13dms |\n" \
-				"$name" \
+			uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
+			cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
+
+			uncached_emoji=$(get_performance_emoji "$uncached_variance")
+			cached_emoji=$(get_performance_emoji "$cached_variance")
+
+			printf "| %-10s | %s%6dms | %6dms |\n" \
+				"$name (uncached)" \
+				"$uncached_emoji" \
 				"${benchmarks["$name-uncached"]}" \
+				"${alt_benchmarks["$name-uncached"]}" >>"$output_file"
+			printf "| %-10s | %s%6dms | %6dms |\n" \
+				"$name (cached)" \
+				"$cached_emoji" \
 				"${benchmarks["$name-cached"]}" \
-				"${alt_benchmarks["$name-uncached"]}" \
-				"${alt_benchmarks["$name-cached"]}" >>../comment.md
+				"${alt_benchmarks["$name-cached"]}" >>"$output_file"
 		done
 	else
-		echo "| Command    | Uncached | Cached   |" >>../comment.md
-		echo "|------------|----------|----------|" >>../comment.md
+		echo "| Command    | Time   |" >>"$output_file"
+		echo "|------------|--------|" >>"$output_file"
 		for name in "${names[@]}"; do
-			printf "| %-10s | %6dms | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" "${benchmarks["$name-cached"]}" >>../comment.md
+			printf "| %-10s-uncached | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" >>"$output_file"
+			printf "| %-10s-cached   | %6dms |\n" "$name" "${benchmarks["$name-cached"]}" >>"$output_file"
 		done
 	fi
+}
+
+print_performance_warnings() {
+	local output_file="$1"
+	for name in "${names[@]}"; do
+		uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
+		cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
+
+		warning=$(get_performance_warning "$name" "$uncached_variance" "uncached")
+		if [ -n "$warning" ]; then
+			echo "$warning" >>"$output_file"
+		fi
+		warning=$(get_performance_warning "$name" "$cached_variance" "cached")
+		if [ -n "$warning" ]; then
+			echo "$warning" >>"$output_file"
+		fi
+	done
+}
+
+# Print table to console
+print_performance_table "/dev/stdout"
+
+if [ -v GITHUB_STEP_SUMMARY ]; then
+	# shellcheck disable=SC2016
+	echo '## `xtasks/test/perf`' >>../comment.md
+	# echo "" >>../comment.md
+	# echo "- NUM_TASKS: $num_tasks" >>../comment.md
+	# echo "- NUM_TOOLS: $num_tools" >>../comment.md
+	# echo "- RUNS: $runs" >>../comment.md
+	# echo "" >>../comment.md
+
+	print_performance_table "../comment.md"
+	echo "" >>../comment.md
+	print_performance_warnings "../comment.md"
 fi
 
 if [ ${#errors[@]} -gt 0 ]; then
 	for error in "${errors[@]}"; do
 		echo "$error" >&2
 	done
-	# exit 1
+	exit 1
 fi

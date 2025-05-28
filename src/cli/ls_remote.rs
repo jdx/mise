@@ -31,8 +31,8 @@ pub struct LsRemote {
 
 impl LsRemote {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
-        if let Some(plugin) = self.get_plugin().await? {
+        let config = Config::get().await?;
+        if let Some(plugin) = self.get_plugin(&config).await? {
             self.run_single(&config, plugin).await
         } else {
             self.run_all(&config).await
@@ -81,13 +81,13 @@ impl LsRemote {
         Ok(())
     }
 
-    async fn get_plugin(&self) -> Result<Option<Arc<dyn Backend>>> {
+    async fn get_plugin(&self, config: &Arc<Config>) -> Result<Option<Arc<dyn Backend>>> {
         match &self.plugin {
             Some(tool_arg) => {
                 let backend = tool_arg.ba.backend()?;
                 let mpr = MultiProgressReport::get();
                 if let Some(plugin) = backend.plugin() {
-                    plugin.ensure_installed(&mpr, false).await?;
+                    plugin.ensure_installed(config, &mpr, false).await?;
                 }
                 Ok(Some(backend))
             }

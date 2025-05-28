@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - release
-  pull_request_target:
+  pull_request:
     branches: [main]
     paths:
       - registry.toml
@@ -30,16 +30,6 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: thollander/actions-comment-pull-request@v3
-        if: github.event.pull_request.number != null
-        with:
-          comment-tag: "mise-registry-bot"
-          message: |
-            If you are adding a new tool to mise, note the following:
-
-            - New asdf plugins are not accepted
-            - Tools may be rejected if they are not notable
-            - A test is required in `registry.toml`
       - uses: actions/checkout@v4
         with:
           submodules: true

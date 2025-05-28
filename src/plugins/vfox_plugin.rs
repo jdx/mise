@@ -4,14 +4,14 @@ use crate::plugins::Plugin;
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, registry};
+use crate::{config::Config, dirs, registry};
 use async_trait::async_trait;
 use console::style;
 use contracts::requires;
 use eyre::{Context, eyre};
 use indexmap::{IndexMap, indexmap};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use url::Url;
 use vfox::Vfox;
 use xx::regex;
@@ -125,7 +125,12 @@ impl Plugin for VfoxPlugin {
             .wrap_err("run with --yes to install plugin automatically"))
     }
 
-    async fn ensure_installed(&self, mpr: &MultiProgressReport, _force: bool) -> Result<()> {
+    async fn ensure_installed(
+        &self,
+        _config: &Arc<Config>,
+        mpr: &MultiProgressReport,
+        _force: bool,
+    ) -> Result<()> {
         if !self.plugin_path.exists() {
             let url = self.get_repo_url()?;
             trace!("Cloning vfox plugin: {url}");
@@ -188,7 +193,7 @@ impl Plugin for VfoxPlugin {
         Ok(())
     }
 
-    async fn install(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    async fn install(&self, _config: &Arc<Config>, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
         let repository = self.get_repo_url()?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(repository.as_str());
         debug!("vfox_plugin[{}]:install {:?}", self.name, repository);

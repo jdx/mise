@@ -3,8 +3,11 @@ use std::path::PathBuf;
 use eyre::Result;
 use itertools::sorted;
 
-use crate::env::{NODENV_ROOT, NVM_DIR};
 use crate::{backend, cmd, config, dirs, file};
+use crate::{
+    config::Config,
+    env::{NODENV_ROOT, NVM_DIR},
+};
 
 /// Symlinks all tool versions from an external tool into mise
 ///
@@ -45,6 +48,9 @@ impl SyncNode {
         if self._type.nodenv {
             self.run_nodenv().await?;
         }
+        let config = Config::load().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
         Ok(())
     }
 
@@ -69,8 +75,7 @@ impl SyncNode {
                 miseprintln!("Synced node@{} from Homebrew", v);
             }
         }
-
-        config::rebuild_shims_and_runtime_symlinks(&[]).await
+        Ok(())
     }
 
     async fn run_nvm(&self) -> Result<()> {
@@ -103,8 +108,7 @@ impl SyncNode {
         if !created.is_empty() {
             debug!("Created symlinks: {created:?}");
         }
-
-        config::rebuild_shims_and_runtime_symlinks(&[]).await
+        Ok(())
     }
 
     async fn run_nodenv(&self) -> Result<()> {
@@ -127,8 +131,7 @@ impl SyncNode {
                 miseprintln!("Synced node@{} from nodenv", v);
             }
         }
-
-        config::rebuild_shims_and_runtime_symlinks(&[]).await
+        Ok(())
     }
 }
 

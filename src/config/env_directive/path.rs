@@ -33,7 +33,7 @@ mod tests {
         let mut env = EnvMap::new();
         env.insert("A".to_string(), "1".to_string());
         env.insert("B".to_string(), "2".to_string());
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let results = EnvResults::resolve(
             &config,
             BASE_CONTEXT.clone(),

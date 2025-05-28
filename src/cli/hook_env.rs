@@ -40,7 +40,7 @@ pub struct HookEnv {
 
 impl HookEnv {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let watch_files = config.watch_files().await?;
         time!("hook-env");
         if !self.force && hook_env::should_exit_early(watch_files.clone()) {
@@ -63,15 +63,15 @@ impl HookEnv {
         patches.extend(self.build_path_operations(&paths, &__MISE_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(
-            self.build_session_operation(ts, mise_env, watch_files)
+            self.build_session_operation(&config, ts, mise_env, watch_files)
                 .await?,
         );
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
 
-        hooks::run_all_hooks(ts, &*shell).await;
-        watch_files::execute_runs(ts).await;
+        hooks::run_all_hooks(&config, ts, &*shell).await;
+        watch_files::execute_runs(&config, ts).await;
 
         Ok(())
     }
@@ -214,6 +214,7 @@ impl HookEnv {
 
     async fn build_session_operation(
         &self,
+        config: &Arc<Config>,
         ts: &Toolset,
         env: EnvMap,
         watch_files: BTreeSet<WatchFilePattern>,
@@ -226,7 +227,7 @@ impl HookEnv {
         } else {
             Default::default()
         };
-        let session = hook_env::build_session(env, loaded_tools, watch_files).await?;
+        let session = hook_env::build_session(config, env, loaded_tools, watch_files).await?;
         Ok(EnvDiffOperation::Add(
             "__MISE_SESSION".into(),
             hook_env::serialize(&session)?,

@@ -180,7 +180,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_render() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let tmpl = "Hello, {{.OS}}!";
         let mut ctx = HashMap::new();
         ctx.insert("OS".to_string(), "world".to_string());
@@ -192,7 +192,7 @@ mod tests {
         $(
             #[tokio::test]
             async fn $name() {
-                let _config = Config::get().await;
+                let _config = Config::get().await.unwrap();
                 let (input, expected, ctx): (&str, &str, HashMap<&str, &str>) = $value;
                 let ctx = ctx.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
                 let parser = Parser { ctx: &ctx };
@@ -216,7 +216,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_err() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let parser = Parser {
             ctx: &HashMap::new(),
         };
@@ -226,7 +226,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_lex() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         assert_eq!(
             lex(r#"trimPrefix "foo-" "foo-v1.0.0" | trimV"#).unwrap(),
             vec![

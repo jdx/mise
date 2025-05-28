@@ -53,8 +53,8 @@ pub struct Exec {
 
 impl Exec {
     #[async_backtrace::framed]
-    pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+    pub async fn run(self) -> eyre::Result<()> {
+        let mut config = Config::get().await?;
         let mut ts = measure!("toolset", {
             ToolsetBuilder::new()
                 .with_args(&self.tool)
@@ -77,7 +77,7 @@ impl Exec {
             ..Default::default()
         };
         measure!("install_arg_versions", {
-            ts.install_missing_versions(&config, &opts).await?
+            ts.install_missing_versions(&mut config, &opts).await?
         });
         measure!("notify_if_versions_missing", {
             ts.notify_if_versions_missing(&config).await;

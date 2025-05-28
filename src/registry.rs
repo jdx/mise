@@ -156,7 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_disabled() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         use super::*;
         let name = "cargo";
 

@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use eyre::Result;
 use itertools::sorted;
 
-use crate::{backend, cmd, config, dirs, file};
+use crate::{
+    backend, cmd,
+    config::{self, Config},
+    dirs, file,
+};
 
 /// Symlinks all ruby tool versions from an external tool into mise
 #[derive(Debug, clap::Args)]
@@ -26,6 +30,9 @@ impl SyncRuby {
         if self._type.brew {
             self.run_brew().await?;
         }
+        let config = Config::load().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
         Ok(())
     }
 
@@ -50,8 +57,7 @@ impl SyncRuby {
                 miseprintln!("Synced ruby@{} from Homebrew", v);
             }
         }
-
-        config::rebuild_shims_and_runtime_symlinks(&[]).await
+        Ok(())
     }
 }
 

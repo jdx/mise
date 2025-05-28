@@ -1,8 +1,8 @@
-use std::collections::BTreeSet;
 use std::io::prelude::*;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{collections::BTreeSet, sync::Arc};
 
 use base64::prelude::*;
 use eyre::Result;
@@ -166,11 +166,11 @@ pub fn deserialize<T: serde::de::DeserializeOwned>(raw: String) -> Result<T> {
 }
 
 pub async fn build_session(
+    config: &Arc<Config>,
     env: EnvMap,
     loaded_tools: IndexSet<String>,
     watch_files: BTreeSet<WatchFilePattern>,
 ) -> Result<HookEnvSession> {
-    let config = Config::get().await;
     let mut max_modtime = UNIX_EPOCH;
     for cf in get_watch_files(watch_files)? {
         if let Ok(Ok(modified)) = cf.metadata().map(|m| m.modified()) {

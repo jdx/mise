@@ -20,7 +20,7 @@ pub struct Asdf {
 
 impl Asdf {
     pub async fn run(mut self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let mut args = vec![String::from("mise")];
         args.append(&mut self.args);
 

@@ -39,7 +39,7 @@ pub struct Shell {
 
 impl Shell {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let mut config = Config::get().await?;
         if !env::is_activated() {
             err_inactive()?;
         }
@@ -67,7 +67,7 @@ impl Shell {
             raw: self.raw,
             ..Default::default()
         };
-        ts.install_missing_versions(&config, &opts).await?;
+        ts.install_missing_versions(&mut config, &opts).await?;
         ts.notify_if_versions_missing(&config).await;
 
         for (p, tv) in ts.list_current_installed_versions(&config) {

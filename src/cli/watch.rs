@@ -56,7 +56,7 @@ impl Watch {
                 return Ok(());
             }
         }
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
         if let Err(err) = which::which("watchexec") {
             let watchexec: BackendArg = "watchexec".into();

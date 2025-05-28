@@ -155,7 +155,11 @@ impl Backend for ZigPlugin {
         Ok(versions)
     }
 
-    async fn list_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
         if cfg!(windows) {
             Ok(vec![tv.install_path()])
         } else {

@@ -1531,7 +1531,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fixture() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
 
         assert_debug_snapshot!(cf.env_entries().unwrap());
@@ -1547,7 +1547,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_env() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1575,7 +1575,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_env_array_valid() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let env = parse_env(formatdoc! {r#"
         [[env]]
         foo="bar"
@@ -1599,7 +1599,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_path_dirs() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let env = parse_env(formatdoc! {r#"
             env_path=["/foo", "./bar"]
             [env]
@@ -1656,7 +1656,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_env_file() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let env = parse_env(formatdoc! {r#"
             env_file = ".env"
             "#});
@@ -1690,7 +1690,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_alias() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1716,7 +1716,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_remove_alias() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
         file::write(
             &p,
@@ -1746,7 +1746,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_replace_versions() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,
@@ -1777,7 +1777,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_remove_plugin() {
-        let _config = Config::get().await;
+        let _config = Config::get().await.unwrap();
         let p = PathBuf::from("/tmp/.mise.toml");
         file::write(
             &p,

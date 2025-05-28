@@ -238,7 +238,7 @@ impl Task {
     }
 
     pub async fn task_dir() -> PathBuf {
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
         for dir in config::task_includes_for_dir(&project_root, &config.config_files) {
@@ -284,8 +284,11 @@ impl Task {
         Ok(depends)
     }
 
-    pub async fn resolve_depends(&self, tasks_to_run: &[Task]) -> Result<(Vec<Task>, Vec<Task>)> {
-        let config = Config::get().await;
+    pub async fn resolve_depends(
+        &self,
+        config: &Arc<Config>,
+        tasks_to_run: &[Task],
+    ) -> Result<(Vec<Task>, Vec<Task>)> {
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
         let tasks = config.tasks_with_aliases().await?;
         let depends = self
@@ -727,7 +730,7 @@ mod tests {
     #[tokio::test]
     async fn test_from_path() {
         let test_cases = [(".mise/tasks/filetask", "filetask", vec!["ft"])];
-        let config = Config::get().await;
+        let config = Config::get().await.unwrap();
         for (path, name, aliases) in test_cases {
             let t = Task::from_path(
                 &config,

@@ -80,7 +80,7 @@ pub struct Ls {
 
 impl Ls {
     pub async fn run(mut self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         self.installed_tool = self
             .installed_tool
             .or_else(|| self.tool_flag.clone().map(|p| vec![p]));
@@ -380,7 +380,7 @@ async fn version_status_from(
         VersionStatus::Missing(tv.version.clone())
     } else if !source.is_unknown() {
         let outdated = if ls.outdated {
-            p.is_version_outdated(tv).await
+            p.is_version_outdated(config, tv).await
         } else {
             false
         };

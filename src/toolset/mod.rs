@@ -165,7 +165,7 @@ impl Toolset {
     #[async_backtrace::framed]
     pub async fn install_missing_versions(
         &mut self,
-        config: &Arc<Config>,
+        config: &mut Arc<Config>,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
         let versions = self
@@ -187,7 +187,8 @@ impl Toolset {
             .collect_vec();
         let versions = self.install_all_versions(config, versions, opts).await?;
         if !versions.is_empty() {
-            config::rebuild_shims_and_runtime_symlinks(&versions).await?;
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(config, ts, &versions).await?;
         }
         Ok(versions)
     }
@@ -233,14 +234,14 @@ impl Toolset {
     #[async_backtrace::framed]
     pub async fn install_all_versions(
         &mut self,
-        config: &Arc<Config>,
+        config: &mut Arc<Config>,
         mut versions: Vec<ToolRequest>,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
         if versions.is_empty() {
             return Ok(vec![]);
         }
-        hooks::run_one_hook(self, Hooks::Preinstall, None).await;
+        hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
         let mut installed = vec![];
@@ -254,8 +255,9 @@ impl Toolset {
             leaf_deps = get_leaf_dependencies(&versions)?;
         }
 
+        trace!("install: reloading config");
+        *config = Config::load().await?;
         trace!("install: resolving");
-        // TODO: do I neeed this? backend::reset().await?;
         if let Err(err) = self.resolve(config).await {
             debug!("error resolving versions after install: {err:#}");
         }
@@ -263,7 +265,7 @@ impl Toolset {
             for tv in installed.iter() {
                 let backend = tv.backend()?;
                 let bin_paths = backend
-                    .list_bin_paths(tv)
+                    .list_bin_paths(config, tv)
                     .await
                     .map_err(|e| {
                         warn!("Error listing bin paths for {tv}: {e:#}");
@@ -282,7 +284,7 @@ impl Toolset {
                 }
             }
         }
-        hooks::run_one_hook(self, Hooks::Postinstall, None).await;
+        hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
         Ok(installed)
     }
 
@@ -304,13 +306,17 @@ impl Toolset {
             if let Some(plugin) = backend.plugin() {
                 if !plugin.is_installed() {
                     let mpr = MultiProgressReport::get();
-                    plugin.ensure_installed(&mpr, false).await.or_else(|err| {
-                        if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
-                            Ok(())
-                        } else {
-                            Err(err)
-                        }
-                    })?;
+                    plugin
+                        .ensure_installed(config, &mpr, false)
+                        .await
+                        .or_else(|err| {
+                            if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>()
+                            {
+                                Ok(())
+                            } else {
+                                Err(err)
+                            }
+                        })?;
                 }
             }
         }
@@ -325,12 +331,12 @@ impl Toolset {
         let opts = Arc::new(opts.clone());
         for (ba, trs) in queue {
             let ts = ts.clone();
-            let semaphore = semaphore.clone();
+            let permit = semaphore.clone().acquire_owned().await?;
             let opts = opts.clone();
             let ba = ba.clone();
             let config = config.clone();
             tset.spawn(async move {
-                let _permit = semaphore.acquire().await?;
+                let _permit = permit;
                 let mpr = MultiProgressReport::get();
                 let mut installed = vec![];
                 for tr in trs {
@@ -580,7 +586,7 @@ impl Toolset {
     pub async fn list_paths(&self, config: &Arc<Config>) -> Vec<PathBuf> {
         let mut paths = vec![];
         for (p, tv) in self.list_current_installed_versions(config).into_iter() {
-            paths.extend(p.list_bin_paths(&tv).await.unwrap_or_else(|e| {
+            paths.extend(p.list_bin_paths(config, &tv).await.unwrap_or_else(|e| {
                 warn!("Error listing bin paths for {tv}: {e:#}");
                 Vec::new()
             }));
@@ -634,7 +640,7 @@ impl Toolset {
         bin_name: &str,
     ) -> Option<(Arc<dyn Backend>, ToolVersion)> {
         for (p, tv) in self.list_current_installed_versions(config) {
-            match Box::pin(p.which(&tv, bin_name)).await {
+            match Box::pin(p.which(config, &tv, bin_name)).await {
                 Ok(Some(_bin)) => return Some((p, tv)),
                 Ok(None) => {}
                 Err(e) => {
@@ -646,16 +652,19 @@ impl Toolset {
     }
     pub async fn which_bin(&self, config: &Arc<Config>, bin_name: &str) -> Option<PathBuf> {
         let (p, tv) = Box::pin(self.which(config, bin_name)).await?;
-        Box::pin(p.which(&tv, bin_name)).await.ok().flatten()
+        Box::pin(p.which(config, &tv, bin_name))
+            .await
+            .ok()
+            .flatten()
     }
     pub async fn install_missing_bin(
         &mut self,
-        config: &Arc<Config>,
+        config: &mut Arc<Config>,
         bin_name: &str,
     ) -> Result<Option<Vec<ToolVersion>>> {
         let mut plugins = IndexSet::new();
         for (p, tv) in self.list_current_installed_versions(config) {
-            if let Ok(Some(_bin)) = p.which(&tv, bin_name).await {
+            if let Ok(Some(_bin)) = p.which(config, &tv, bin_name).await {
                 plugins.insert(p);
             }
         }
@@ -676,7 +685,8 @@ impl Toolset {
                     .install_all_versions(config, versions.clone(), &InstallOptions::default())
                     .await?;
                 if !versions.is_empty() {
-                    config::rebuild_shims_and_runtime_symlinks(&versions).await?;
+                    let ts = config.get_toolset().await?;
+                    config::rebuild_shims_and_runtime_symlinks(config, ts, &versions).await?;
                 }
                 return Ok(Some(versions));
             }
@@ -691,7 +701,7 @@ impl Toolset {
     ) -> Result<Vec<ToolVersion>> {
         let mut rtvs = vec![];
         for (p, tv) in self.list_installed_versions(config).await? {
-            match p.which(&tv, bin_name).await {
+            match p.which(config, &tv, bin_name).await {
                 Ok(Some(_bin)) => rtvs.push(tv),
                 Ok(None) => {}
                 Err(e) => {

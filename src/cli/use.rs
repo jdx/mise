@@ -103,7 +103,7 @@ impl Use {
             self.tool = vec![self.tool_selector()?];
         }
         env::TOOL_ARGS.write().unwrap().clone_from(&self.tool);
-        let config = Config::get().await;
+        let mut config = Config::get().await?;
         let mut ts = ToolsetBuilder::new()
             .with_global_only(self.global)
             .build(&config)
@@ -136,7 +136,7 @@ impl Use {
             .collect::<Result<_>>()?;
         let mut versions = ts
             .install_all_versions(
-                &config,
+                &mut config,
                 versions.clone(),
                 &InstallOptions {
                     force: self.force,
@@ -190,7 +190,9 @@ impl Use {
             tv.request.set_source(cf.source());
         }
 
-        config::rebuild_shims_and_runtime_symlinks(&versions).await?;
+        let config = Config::load().await?;
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
 
         self.render_success_message(cf.as_ref(), &versions)?;
         Ok(())

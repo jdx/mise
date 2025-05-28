@@ -26,4 +26,5 @@ export BACKTICK=$'`'
 export DOLLAR=$'$'
 export G=$'g'
 
+# shellcheck disable=SC2034
 unexported="unexported val"

@@ -15,10 +15,10 @@ use console::style;
 use contracts::requires;
 use eyre::{Context, bail, eyre};
 use itertools::Itertools;
-use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
+use std::{collections::HashMap, sync::Arc};
 use xx::regex;
 
 #[derive(Debug)]
@@ -227,15 +227,19 @@ impl Plugin for AsdfPlugin {
             .wrap_err("run with --yes to install plugin automatically"))
     }
 
-    async fn ensure_installed(&self, mpr: &MultiProgressReport, force: bool) -> Result<()> {
-        let config = Config::try_get().await?;
+    async fn ensure_installed(
+        &self,
+        config: &Arc<Config>,
+        mpr: &MultiProgressReport,
+        force: bool,
+    ) -> Result<()> {
         let settings = Settings::try_get()?;
         if !force {
             if self.is_installed() {
                 return Ok(());
             }
             if !settings.yes && self.repo_url.lock().unwrap().is_none() {
-                let url = self.get_repo_url(&config).unwrap_or_default();
+                let url = self.get_repo_url(config).unwrap_or_default();
                 if !registry::is_trusted_plugin(self.name(), &url) {
                     warn!(
                         "⚠️ {} is a community-developed plugin – {}",
@@ -259,7 +263,7 @@ impl Plugin for AsdfPlugin {
         let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
         let pr = mpr.add(&prefix);
         let _lock = lock_file::get(&self.plugin_path, force)?;
-        self.install(&pr).await
+        self.install(config, &pr).await
     }
 
     async fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
@@ -316,9 +320,8 @@ impl Plugin for AsdfPlugin {
         Ok(())
     }
 
-    async fn install(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
-        let config = Config::try_get().await?;
-        let repository = self.get_repo_url(&config)?;
+    async fn install(&self, config: &Arc<Config>, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+        let repository = self.get_repo_url(config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
         debug!("asdf_plugin[{}]:install {:?}", self.name, repository);
 

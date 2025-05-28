@@ -62,12 +62,15 @@ jobs:
         env:
           NUM_TOOLS: 200
           NUM_TASKS: 2000
+          RUNS: 10
           MISE_ALT: mise-${{ steps.versions.outputs.release }}
       - uses: actions/upload-artifact@v4
         with:
           name: flamegraphs
           path: flamegraphs
       - run: |
+          set -x
+          failed=false
           CMDS=(
             "x -- echo"
             "env"
@@ -83,9 +86,26 @@ jobs:
             fi
             echo "### \`mise $cmd\`" >> comment.md
             cat out.md >> comment.md
+            cat out.md
+            
+            # Extract relative performance from hyperfine output
+            variance=$(grep "mise $cmd" out.md | awk '{print $(NF-3)}' | sed 's/%//')
+            variance=$(echo "($variance * 100 - 100)/1" | bc)
+            
+            # Add warning if variance exceeds 10%
+            if (( $(echo "$variance > 10" | bc -l) )); then
+              echo "⚠️  Warning: Performance variance for \`$cmd\` is ${variance}%" >> comment.md
+              failed=true
+            elif (( $(echo "$variance < -10" | bc -l) )); then
+              echo "✅  Performance improvement for \`$cmd\` is ${variance}%" >> comment.md
+            fi
           done
+          if [ "$failed" = true ]; then
+            exit 1
+          fi
         env:
           SHELL: zsh
+        if: always()
       - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
         if: always() && github.event_name == 'pull_request'
       - name: Comment on PR

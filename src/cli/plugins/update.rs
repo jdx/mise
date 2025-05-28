@@ -45,9 +45,9 @@ impl Update {
         let mut jset: JoinSet<Result<()>> = JoinSet::new();
         let semaphore = Arc::new(Semaphore::new(self.jobs.unwrap_or(settings.jobs)));
         for (short, ref_) in plugins {
-            let semaphore = semaphore.clone();
+            let permit = semaphore.clone().acquire_owned().await?;
             jset.spawn(async move {
-                let _permit = semaphore.acquire_owned().await;
+                let _permit = permit;
                 let plugin = plugins::get(&short)?;
                 let prefix = format!("plugin:{}", style(plugin.name()).blue().for_stderr());
                 let mpr = MultiProgressReport::get();

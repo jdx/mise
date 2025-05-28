@@ -37,7 +37,7 @@ pub struct Which {
 
 impl Which {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         if self.complete {
             return self.complete(&config).await;
         }
@@ -51,7 +51,7 @@ impl Which {
                 } else if self.plugin {
                     miseprintln!("{p}");
                 } else {
-                    let path = p.which(&tv, &bin_name).await?;
+                    let path = p.which(&config, &tv, &bin_name).await?;
                     miseprintln!("{}", path.unwrap().display());
                 }
                 Ok(())

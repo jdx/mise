@@ -42,7 +42,7 @@ impl Commands {
 
 impl Direnv {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await;
+        let config = Config::get().await?;
         let cmd = self
             .command
             .unwrap_or(Commands::Activate(activate::DirenvActivate {}));

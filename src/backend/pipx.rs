@@ -220,11 +220,10 @@ impl PIPXBackend {
         Ok(registry_url)
     }
 
-    pub async fn reinstall_all() -> Result<()> {
-        let config = Arc::new(Config::load().await?);
-        let ts = ToolsetBuilder::new().build(&config).await?;
+    pub async fn reinstall_all(config: &Arc<Config>) -> Result<()> {
+        let ts = ToolsetBuilder::new().build(config).await?;
         let pipx_tools = ts
-            .list_installed_versions(&config)
+            .list_installed_versions(config)
             .await?
             .into_iter()
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
@@ -237,7 +236,7 @@ impl PIPXBackend {
                     ("install", format!("{}=={}", tv.ba().tool_name, tv.version)),
                 ] {
                     let args = &["tool", cmd, tool];
-                    Self::uvx_cmd(&config, args, &*b, &tv, &ts, &pr)
+                    Self::uvx_cmd(config, args, &*b, &tv, &ts, &pr)
                         .await?
                         .execute()?;
                 }
@@ -246,7 +245,7 @@ impl PIPXBackend {
             let pr = MultiProgressReport::get().add("reinstalling pipx tools");
             for (b, tv) in pipx_tools {
                 let args = &["reinstall", &tv.ba().tool_name];
-                Self::pipx_cmd(&config, args, &*b, &tv, &ts, &pr)
+                Self::pipx_cmd(config, args, &*b, &tv, &ts, &pr)
                     .await?
                     .execute()?;
             }
