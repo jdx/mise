@@ -1325,6 +1325,7 @@ maven.backends = [
     "asdf:mise-plugins/mise-maven",
     "vfox:mise-plugins/vfox-maven"
 ]
+maven.test = ["mvn --version", "Apache Maven {{version}}"]
 mc.backends = ["asdf:mise-plugins/mise-mc"]
 mdbook.backends = ["aqua:rust-lang/mdBook", "asdf:cipherstash/asdf-mdbook"]
 mdbook.test = ["mdbook --version", "mdbook v{{version}}"]
