@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -51,14 +52,16 @@ impl ZigPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
-        let zig_index = "https://ziglang.org/download/index.json";
-        let mach_index = "https://machengine.org/zig/index.json";
+        let indexes = HashMap::from([
+            ("zig", "https://ziglang.org/download/index.json"),
+            ("mach", "https://machengine.org/zig/index.json"),
+        ]);
 
         let url = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
-            self.get_tarball_url_from_json(mach_index, tv.version.as_str(), arch(), os())
+            self.get_tarball_url_from_json(indexes["mach"], tv.version.as_str(), arch(), os())
                 .await?
         } else {
-            self.get_tarball_url_from_json(zig_index, tv.version.as_str(), arch(), os())
+            self.get_tarball_url_from_json(indexes["zig"], tv.version.as_str(), arch(), os())
                 .await?
         };
 
