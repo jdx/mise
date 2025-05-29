@@ -306,7 +306,8 @@ impl Settings {
 
     pub fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
         let raw = measure!("settings file read", { file::read_to_string(path)? });
-        let settings_file: SettingsFile = measure!("settings file parse", { toml::from_str(&raw)? });
+        let settings_file: SettingsFile =
+            measure!("settings file parse", { toml::from_str(&raw)? });
 
         Ok(settings_file.settings)
     }

@@ -62,18 +62,18 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
     measure!("load_tools install_state", {
         install_state::init().await?;
     });
-    
+
     let mut tools = measure!("load_tools core_plugins", {
         CORE_PLUGINS.values().cloned().collect::<Vec<ABackend>>()
     });
     // add tools with idiomatic files so they get parsed even if no versions are installed
-    measure!("load_tools idiomatic_files", {  
-    tools.extend(
-        REGISTRY
-            .values()
-            .filter(|rt| !rt.idiomatic_files.is_empty() && rt.is_supported_os())
-            .filter_map(|rt| arg_to_backend(rt.short.into())),
-    );
+    measure!("load_tools idiomatic_files", {
+        tools.extend(
+            REGISTRY
+                .values()
+                .filter(|rt| !rt.idiomatic_files.is_empty() && rt.is_supported_os())
+                .filter_map(|rt| arg_to_backend(rt.short.into())),
+        );
     });
     time!("load_tools core");
     measure!("load_tools install_state", {
@@ -86,33 +86,33 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
     });
 
     measure!("load_tools tool_enabled", {
-    tools.retain(|backend| {
-        tool_enabled(
-            &SETTINGS.enable_tools(),
-            &SETTINGS.disable_tools(),
-            &backend.id().to_string(),
-        )
-    });
+        tools.retain(|backend| {
+            tool_enabled(
+                &SETTINGS.enable_tools(),
+                &SETTINGS.disable_tools(),
+                &backend.id().to_string(),
+            )
+        });
     });
 
     measure!("load_tools disable_backends", {
-    tools.retain(|backend| {
-        !SETTINGS
-            .disable_backends
-            .contains(&backend.get_type().to_string())
-    });
+        tools.retain(|backend| {
+            !SETTINGS
+                .disable_backends
+                .contains(&backend.get_type().to_string())
+        });
     });
 
     let tools: BackendMap = measure!("load_tools into_map", {
-    tools
-        .into_iter()
-        .map(|backend| (backend.ba().short.clone(), backend))
-        .collect()
+        tools
+            .into_iter()
+            .map(|backend| (backend.ba().short.clone(), backend))
+            .collect()
     });
 
     time!("load_tools done");
-        let tools = Arc::new(tools);
-        *TOOLS.lock().unwrap() = Some(tools.clone());
+    let tools = Arc::new(tools);
+    *TOOLS.lock().unwrap() = Some(tools.clone());
     Ok(tools)
 }
 

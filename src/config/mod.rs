@@ -850,28 +850,26 @@ pub fn load_config_paths<S: AsRef<str>>(
             return vec![];
         }
     });
-    let dirs = 
-        file::all_dirs().unwrap_or_default();
+    let dirs = file::all_dirs().unwrap_or_default();
 
-    let mut config_files = 
-        dirs.iter()
-            .flat_map(|dir| {
-                if !include_ignored
-                    && env::MISE_IGNORED_CONFIG_PATHS
-                        .iter()
-                        .any(|p| dir.starts_with(p))
-                {
-                    vec![]
-                } else {
-                    config_filenames
-                        .iter()
-                        .rev()
-                        .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
-                        .collect()
-                }
-            })
-            .collect::<Vec<_>>()
-    ;
+    let mut config_files = dirs
+        .iter()
+        .flat_map(|dir| {
+            if !include_ignored
+                && env::MISE_IGNORED_CONFIG_PATHS
+                    .iter()
+                    .any(|p| dir.starts_with(p))
+            {
+                vec![]
+            } else {
+                config_filenames
+                    .iter()
+                    .rev()
+                    .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+                    .collect()
+            }
+        })
+        .collect::<Vec<_>>();
 
     config_files.extend(global_config_files());
     config_files.extend(system_config_files());
@@ -882,8 +880,7 @@ pub fn load_config_paths<S: AsRef<str>>(
         .unique_by(|p| file::desymlink_path(p))
         .filter(|p| {
             include_ignored
-                    || !(config_file::is_ignored(&config_trust_root(p))
-                        || config_file::is_ignored(p))
+                || !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
         })
         .collect()
 }

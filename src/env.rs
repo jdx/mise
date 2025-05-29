@@ -2,10 +2,7 @@ use crate::Result;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
-use crate::{
-    cli::args::{ToolArg},
-    file::display_path,
-};
+use crate::{cli::args::ToolArg, file::display_path};
 use eyre::Context;
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -495,8 +492,7 @@ fn prefer_offline(args: &[String]) -> bool {
 fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
-    args
-        .windows(2)
+    args.windows(2)
         .take_while(|a| &*a[0] != "--" && &*a[1] != "--")
         .find_map(|window| {
             if arg_defs.contains(window[0].as_str()) {
